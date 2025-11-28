@@ -237,6 +237,16 @@
         }
       }
     },
+    "Resolution" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分辨率"
+          }
+        }
+      }
+    },
     "Screen" : {
       "localizations" : {
         "zh-Hans" : {

@@ -15,6 +15,7 @@ struct creatVirtualDisplay: View {
     @Binding var isShow:Bool
     @State var serialNumError=false
     @State var customSerialNumError=false
+    @State var selectedResolution:Resolutions = .r_1920_1080
     @EnvironmentObject var appHelper:AppHelper
     var body: some View {
         Form{
@@ -22,6 +23,12 @@ struct creatVirtualDisplay: View {
             TextField("Serial Number", value: $serialNum, format: .number)
                 .disabled(!customSerialNumError)
             Toggle("Custom Serial Number", isOn: $customSerialNumError)
+            Picker(selection: $selectedResolution, label: Text("Resolution")) {
+                ForEach(Resolutions.allCases){someCase in
+                    Text("\(String(someCase.resolutions.0)) × \(String(someCase.resolutions.1))")
+                        .tag(someCase)
+                }
+            }
             
         }
         .padding()
@@ -70,12 +77,13 @@ struct creatVirtualDisplay: View {
 
         let display = CGVirtualDisplay(descriptor: desc)
 
+        let (width,height)=(selectedResolution.resolutions.0,selectedResolution.resolutions.1)
         let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = 200
+        settings.hiDPI = 1000
         settings.modes = [
-            CGVirtualDisplayMode(width: 1920, height: 1080, refreshRate: 120),
-            CGVirtualDisplayMode(width: 1920, height: 1080, refreshRate: 60),
-            CGVirtualDisplayMode(width: 1920, height: 1080, refreshRate: 30),
+            CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 120),
+            CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 60),
+            CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 30),
         ]
         appHelper.displays.append(display)
         //self.display = display
