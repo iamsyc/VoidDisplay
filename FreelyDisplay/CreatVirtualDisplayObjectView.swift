@@ -79,7 +79,7 @@ struct creatVirtualDisplay: View {
 
         let (width,height)=(selectedResolution.resolutions.0,selectedResolution.resolutions.1)
         let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = 200
+        settings.hiDPI = 1000
         settings.modes = [
             CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 120),
             CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 60),
