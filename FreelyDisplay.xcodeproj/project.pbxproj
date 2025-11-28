@@ -71,6 +71,11 @@
 			path = docs;
 			sourceTree = "<group>";
 		};
+		BAEC727F2ED9D31E0029F02B /* .github */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = .github;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +106,7 @@
 		BA0465C72E90E53C00012958 = {
 			isa = PBXGroup;
 			children = (
+				BAEC727F2ED9D31E0029F02B /* .github */,
 				BAE7E1582EC0186F009F4303 /* Readme.md */,
 				BAE7E12B2EBFA094009F4303 /* docs */,
 				BA0465D22E90E53C00012958 /* FreelyDisplay */,
@@ -138,6 +144,7 @@
 			fileSystemSynchronizedGroups = (
 				BA0465D22E90E53C00012958 /* FreelyDisplay */,
 				BAE7E12B2EBFA094009F4303 /* docs */,
+				BAEC727F2ED9D31E0029F02B /* .github */,
 			);
 			name = FreelyDisplay;
 			packageProductDependencies = (
