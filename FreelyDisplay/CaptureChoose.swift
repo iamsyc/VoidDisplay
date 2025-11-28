@@ -119,6 +119,7 @@ struct IsCapturing: View {
                                     appHelper.screenCaptureObjects[Int(index)]=nil
                                     
                                 })
+                                .foregroundStyle(.red)
                             }
                         }
                     }

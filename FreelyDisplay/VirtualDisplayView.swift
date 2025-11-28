@@ -33,6 +33,7 @@ struct VirtualDisplayView: View {
                                 }
                                 appHelper.id=UUID()
                             })
+                            .foregroundStyle(.red)
                         }
                     }
                     .id(appHelper.id)
