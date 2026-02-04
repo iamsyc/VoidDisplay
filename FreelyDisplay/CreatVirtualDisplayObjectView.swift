@@ -50,71 +50,117 @@ struct creatVirtualDisplay: View {
     }
     
     var body: some View {
-        Form {
+        VStack(alignment: .leading, spacing: 16) {
             // Basic Info Section
-            Section {
-                TextField("Name", text: $name)
-                TextField("Serial Number", value: $serialNum, format: .number)
-                    .disabled(!customSerialNumError)
-                Toggle("Custom Serial Number", isOn: $customSerialNumError)
+            GroupBox(label: Text("Basic Info").font(.headline)) {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Name")
+                            .frame(width: 120, alignment: .leading)
+                        TextField("Virtual Display", text: $name)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    HStack {
+                        Text("Serial Number")
+                            .frame(width: 120, alignment: .leading)
+                        TextField("", value: $serialNum, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(!customSerialNumError)
+                    }
+                    HStack {
+                        Text("")
+                            .frame(width: 120, alignment: .leading)
+                        Toggle("Custom Serial Number", isOn: $customSerialNumError)
+                        Spacer()
+                    }
+                }
+                .padding(.vertical, 8)
             }
             
             // Physical Display Section
-            Section(header: Text("Physical Display")) {
-                HStack {
-                    Text("Screen Size")
-                    Spacer()
-                    TextField("Inches", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
-                        .frame(width: 60)
-                        .textFieldStyle(.roundedBorder)
-                    Text("inches")
-                }
-                
-                Picker("Aspect Ratio", selection: $selectedAspectRatio) {
-                    ForEach(AspectRatio.allCases) { ratio in
-                        Text(ratio.rawValue).tag(ratio)
+            GroupBox(label: Text("Physical Display").font(.headline)) {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Screen Size")
+                            .frame(width: 120, alignment: .leading)
+                        TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                        Text("inches")
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text("Aspect Ratio")
+                            .frame(width: 120, alignment: .leading)
+                        Picker("", selection: $selectedAspectRatio) {
+                            ForEach(AspectRatio.allCases) { ratio in
+                                Text(ratio.rawValue).tag(ratio)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text("Physical Size")
+                            .frame(width: 120, alignment: .leading)
+                        Text("\(physicalSize.width) × \(physicalSize.height) mm")
+                            .foregroundColor(.secondary)
+                        Spacer()
                     }
                 }
-                
-                // Show calculated physical dimensions
-                HStack {
-                    Text("Physical Size")
-                    Spacer()
-                    Text("\(physicalSize.width)mm × \(physicalSize.height)mm")
-                        .foregroundColor(.secondary)
-                }
+                .padding(.vertical, 8)
             }
             
             // Resolution Section
-            Section(header: Text("Resolution")) {
-                Picker("Logical Resolution", selection: $selectedResolution) {
-                    ForEach(Resolutions.allCases) { res in
-                        Text("\(res.resolutions.0) × \(res.resolutions.1)")
-                            .tag(res)
+            GroupBox(label: Text("Resolution").font(.headline)) {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("Logical Resolution")
+                            .frame(width: 120, alignment: .leading)
+                        Picker("", selection: $selectedResolution) {
+                            ForEach(Resolutions.allCases) { res in
+                                Text("\(res.resolutions.0) × \(res.resolutions.1)")
+                                    .tag(res)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text("")
+                            .frame(width: 120, alignment: .leading)
+                        Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text("Physical Pixels")
+                            .frame(width: 120, alignment: .leading)
+                        Text("\(physicalPixels.width) × \(physicalPixels.height)")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Text("Calculated PPI")
+                            .frame(width: 120, alignment: .leading)
+                        Text(String(format: "%.0f", calculatedPPI))
+                            .foregroundColor(.secondary)
+                        Spacer()
                     }
                 }
-                
-                Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
-                
-                // Show physical pixels
-                HStack {
-                    Text("Physical Pixels")
-                    Spacer()
-                    Text("\(physicalPixels.width) × \(physicalPixels.height)")
-                        .foregroundColor(.secondary)
-                }
-                
-                // Show PPI
-                HStack {
-                    Text("Calculated PPI")
-                    Spacer()
-                    Text(String(format: "%.0f", calculatedPPI))
-                        .foregroundColor(.secondary)
-                }
+                .padding(.vertical, 8)
             }
+            
+            Spacer()
         }
-        .padding()
-        .frame(minWidth: 400)
+        .padding(20)
+        .frame(width: 480, height: 520)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
