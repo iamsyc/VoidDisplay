@@ -23,7 +23,6 @@ struct CreateVirtualDisplay: View {
     
     // Resolution modes
     @State private var selectedModes: [ResolutionSelection] = []
-    @State private var enableHiDPI: Bool = true
     
     // Mode input
     @State private var usePresetMode = true
@@ -53,7 +52,9 @@ struct CreateVirtualDisplay: View {
         guard let maxMode = selectedModes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
             return (1920, 1080)
         }
-        if enableHiDPI {
+        // Check if any mode has HiDPI enabled
+        let anyHiDPI = selectedModes.contains { $0.enableHiDPI }
+        if anyHiDPI {
             return (UInt32(maxMode.width * 2), UInt32(maxMode.height * 2))
         }
         return (UInt32(maxMode.width), UInt32(maxMode.height))
@@ -136,18 +137,27 @@ struct CreateVirtualDisplay: View {
             
             // Resolution Modes Section
             Section {
-                Toggle("启用 HiDPI (Retina)", isOn: $enableHiDPI)
-                
                 // Mode list
                 if selectedModes.isEmpty {
                     Text("尚未添加分辨率模式")
                         .foregroundColor(.secondary)
                         .italic()
                 } else {
-                    ForEach(selectedModes) { mode in
+                    ForEach($selectedModes) { $mode in
                         HStack {
-                            Text(mode.displayString)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
+                                if mode.enableHiDPI {
+                                    Text("HiDPI 已启用")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
                             Spacer()
+                            Toggle("", isOn: $mode.enableHiDPI)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .scaleEffect(0.8)
                             Button(action: { removeMode(mode) }) {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundColor(.red)
@@ -211,11 +221,9 @@ struct CreateVirtualDisplay: View {
             } header: {
                 Text("分辨率模式")
             } footer: {
-                if enableHiDPI {
-                    Text("启用 HiDPI 后，每个逻辑分辨率将自动生成 2x 物理像素模式")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                Text("每个分辨率可单独设置是否启用 HiDPI，启用后将自动生成 2x 物理像素模式")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -256,7 +264,7 @@ struct CreateVirtualDisplay: View {
     // MARK: - Actions
     
     private func addPresetMode() {
-        let newMode = ResolutionSelection(preset: presetResolution)
+        let newMode = ResolutionSelection(preset: presetResolution)  // HiDPI defaults to true
         if selectedModes.contains(newMode) {
             showDuplicateWarning = true
         } else {
@@ -270,7 +278,7 @@ struct CreateVirtualDisplay: View {
             showError = true
             return
         }
-        let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)
+        let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)  // HiDPI defaults to true
         if selectedModes.contains(newMode) {
             showDuplicateWarning = true
         } else {
@@ -291,8 +299,7 @@ struct CreateVirtualDisplay: View {
                 serialNum: serialNum,
                 physicalSize: CGSize(width: size.width, height: size.height),
                 maxPixels: maxPixelDimensions,
-                modes: selectedModes,
-                hiDPI: enableHiDPI
+                modes: selectedModes
             )
             isShow = false
         } catch let error as AppHelper.VirtualDisplayError {

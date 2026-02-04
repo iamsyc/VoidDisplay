@@ -96,8 +96,7 @@ class AppHelper:ObservableObject{
     ///   - serialNum: Unique serial number
     ///   - physicalSize: Physical size in millimeters
     ///   - maxPixels: Maximum supported pixel dimensions
-    ///   - modes: Array of resolution modes to support
-    ///   - hiDPI: Whether to enable HiDPI (Retina) mode
+    ///   - modes: Array of resolution modes to support (each with its own HiDPI setting)
     /// - Returns: The created CGVirtualDisplay
     /// - Throws: VirtualDisplayError if creation fails
     func createDisplay(
@@ -105,8 +104,7 @@ class AppHelper:ObservableObject{
         serialNum: UInt32,
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
-        modes: [ResolutionSelection],
-        hiDPI: Bool
+        modes: [ResolutionSelection]
     ) throws -> CGVirtualDisplay {
         // Check for duplicate serial number
         if displays.contains(where: { $0.serialNum == serialNum }) {
@@ -137,13 +135,16 @@ class AppHelper:ObservableObject{
         
         // Configure settings
         let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = hiDPI ? 1 : 0
+        
+        // Enable HiDPI if any mode has HiDPI enabled
+        let anyHiDPI = modes.contains { $0.enableHiDPI }
+        settings.hiDPI = anyHiDPI ? 1 : 0
         
         // Build modes array
         var displayModes: [CGVirtualDisplayMode] = []
         
         for mode in modes {
-            if hiDPI {
+            if mode.enableHiDPI {
                 // Add HiDPI version first (physical pixels = logical × 2)
                 let hiDPIMode = mode.hiDPIVersion()
                 displayModes.append(hiDPIMode.toVirtualDisplayMode())
