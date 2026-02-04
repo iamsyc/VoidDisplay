@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Cocoa
 import CoreGraphics
 
 struct CreateVirtualDisplay: View {
@@ -50,94 +49,8 @@ struct CreateVirtualDisplay: View {
     @Binding var isShow: Bool
     @EnvironmentObject var appHelper: AppHelper
 
-    private func dismissFocus() {
+    private func clearFocus() {
         focusedField = nil
-        NSApp.sendAction(#selector(NSResponder.resignFirstResponder), to: nil, from: nil)
-        (NSApp.keyWindow ?? NSApp.mainWindow)?.makeFirstResponder(nil)
-    }
-
-    private struct ResignFocusOnMouseDown: NSViewRepresentable {
-        var isEnabled: Bool
-        var onResign: () -> Void
-
-        func makeCoordinator() -> Coordinator {
-            Coordinator(isEnabled: isEnabled, onResign: onResign)
-        }
-
-        func makeNSView(context: Context) -> NSView {
-            NSView(frame: .zero)
-        }
-
-        func updateNSView(_ nsView: NSView, context: Context) {
-            context.coordinator.isEnabled = isEnabled
-            context.coordinator.onResign = onResign
-            context.coordinator.updateMonitor()
-        }
-
-        static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-            coordinator.stop()
-        }
-
-        final class Coordinator {
-            var isEnabled: Bool
-            var onResign: () -> Void
-            private var monitor: Any?
-
-            init(isEnabled: Bool, onResign: @escaping () -> Void) {
-                self.isEnabled = isEnabled
-                self.onResign = onResign
-            }
-
-            func updateMonitor() {
-                if isEnabled {
-                    startIfNeeded()
-                } else {
-                    stop()
-                }
-            }
-
-            private func startIfNeeded() {
-                guard monitor == nil else { return }
-                monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
-                    self?.handle(event)
-                    return event
-                }
-            }
-
-            func stop() {
-                if let monitor {
-                    NSEvent.removeMonitor(monitor)
-                    self.monitor = nil
-                }
-            }
-
-            private func handle(_ event: NSEvent) {
-                guard isEnabled else { return }
-                guard let window = event.window else { return }
-                guard let contentView = window.contentView else {
-                    onResign()
-                    return
-                }
-
-                let pointInContent = contentView.convert(event.locationInWindow, from: nil)
-                let hitView = contentView.hitTest(pointInContent)
-                if isTextInputView(hitView) {
-                    return
-                }
-                onResign()
-            }
-
-            private func isTextInputView(_ view: NSView?) -> Bool {
-                var current = view
-                while let v = current {
-                    if v is NSTextView || v is NSTextField {
-                        return true
-                    }
-                    current = v.superview
-                }
-                return false
-            }
-        }
     }
     
     // MARK: - Computed Properties
@@ -208,12 +121,19 @@ struct CreateVirtualDisplay: View {
                         Text(ratio.rawValue).tag(ratio)
                     }
                 }
+                .onChange(of: selectedAspectRatio) { _, _ in
+                    clearFocus()
+                }
                 
                 HStack {
                     Text("Physical Size")
                     Spacer()
                     Text("\(physicalSize.width) × \(physicalSize.height) mm")
                         .foregroundColor(.secondary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    clearFocus()
                 }
                 
                 // Aspect ratio preview
@@ -258,6 +178,9 @@ struct CreateVirtualDisplay: View {
                                     .labelsHidden()
                                     .controlSize(.small)
                             }
+                            .onChange(of: mode.enableHiDPI) { _, _ in
+                                clearFocus()
+                            }
                             Button(action: { removeMode(mode) }) {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundColor(.red)
@@ -276,6 +199,9 @@ struct CreateVirtualDisplay: View {
                         Text("Custom").tag(false)
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: usePresetMode) { _, _ in
+                        clearFocus()
+                    }
                     
                     if usePresetMode {
                         // Preset mode
@@ -287,8 +213,14 @@ struct CreateVirtualDisplay: View {
                                 }
                             }
                             .labelsHidden()
+                            .onChange(of: presetResolution) { _, _ in
+                                clearFocus()
+                            }
                             
-                            Button(action: addPresetMode) {
+                            Button(action: {
+                                clearFocus()
+                                addPresetMode()
+                            }) {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.green)
                             }
@@ -313,7 +245,10 @@ struct CreateVirtualDisplay: View {
                                 .focused($focusedField, equals: .customRefreshRate)
                             Text("Hz")
                             
-                            Button(action: addCustomMode) {
+                            Button(action: {
+                                clearFocus()
+                                addCustomMode()
+                            }) {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.green)
                             }
@@ -331,18 +266,17 @@ struct CreateVirtualDisplay: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
-        .background(ResignFocusOnMouseDown(isEnabled: focusedField != nil, onResign: dismissFocus))
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
-                    dismissFocus()
+                    clearFocus()
                     createDisplayAction()
                 }
                 .disabled(selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
-                    dismissFocus()
+                    clearFocus()
                     isShow = false
                 }
             }
