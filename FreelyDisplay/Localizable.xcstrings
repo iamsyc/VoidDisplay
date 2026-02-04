@@ -11,6 +11,16 @@
         }
       }
     },
+    "@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "@"
+          }
+        }
+      }
+    },
     "%@ × %@" : {
       "localizations" : {
         "en" : {
@@ -75,12 +85,22 @@
         }
       }
     },
-    "@" : {
+    "•" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "@"
+            "value" : "•"
+          }
+        }
+      }
+    },
+    "×" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "×"
           }
         }
       }
@@ -146,6 +166,7 @@
       }
     },
     "Calculated PPI" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -261,6 +282,16 @@
         }
       }
     },
+    "Display configuration not found." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到显示器配置"
+          }
+        }
+      }
+    },
     "Display Info" : {
       "localizations" : {
         "zh-Hans" : {
@@ -272,31 +303,12 @@
       }
     },
     "Display Settings" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示设置"
-          }
-        }
-      }
-    },
-    "Display configuration not found." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到显示器配置"
-          }
-        }
-      }
-    },
-    "Each resolution can enable HiDPI." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每个分辨率可单独设置是否启用 HiDPI"
           }
         }
       }
@@ -307,6 +319,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每个分辨率可单独设置是否启用 HiDPI，启用后将自动生成 2x 物理像素模式"
+          }
+        }
+      }
+    },
+    "Each resolution can enable HiDPI." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个分辨率可单独设置是否启用 HiDPI"
           }
         }
       }
@@ -342,6 +364,7 @@
       }
     },
     "Enable HiDPI (Retina)" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -401,6 +424,16 @@
         }
       }
     },
+    "inches" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英寸"
+          }
+        }
+      }
+    },
     "Invalid configuration: %@" : {
       "localizations" : {
         "en" : {
@@ -428,6 +461,7 @@
       }
     },
     "Logical Resolution" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -487,16 +521,6 @@
         }
       }
     },
-    "No Virtual Displays" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有虚拟显示器"
-          }
-        }
-      }
-    },
     "No display" : {
       "localizations" : {
         "zh-Hans" : {
@@ -523,6 +547,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无可共享的屏幕"
+          }
+        }
+      }
+    },
+    "No Virtual Displays" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有虚拟显示器"
           }
         }
       }
@@ -578,6 +612,7 @@
       }
     },
     "Physical Pixels" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -638,6 +673,7 @@
       }
     },
     "Resolution" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -717,22 +753,6 @@
         }
       }
     },
-    "Serial Number: %u" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Serial Number: %1$u"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "序列号: %1$u"
-          }
-        }
-      }
-    },
     "Serial number %u is already in use." : {
       "localizations" : {
         "en" : {
@@ -745,6 +765,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "序列号 %1$u 已被使用。"
+          }
+        }
+      }
+    },
+    "Serial Number: %u" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Serial Number: %1$u"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "序列号: %1$u"
           }
         }
       }
@@ -800,6 +836,7 @@
       }
     },
     "This serial number has already been used." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -845,36 +882,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "宽"
-          }
-        }
-      }
-    },
-    "inches" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "英寸"
-          }
-        }
-      }
-    },
-    "×" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "×"
-          }
-        }
-      }
-    },
-    "•" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "•"
           }
         }
       }
