@@ -69,6 +69,107 @@ class AppHelper:ObservableObject{
     init() {
         webServer?.startListener()
     }
+    
+    // MARK: - Virtual Display Creation
+    
+    /// Error types for virtual display creation
+    enum VirtualDisplayError: LocalizedError {
+        case duplicateSerialNumber(UInt32)
+        case invalidConfiguration(String)
+        case creationFailed
+        
+        var errorDescription: String? {
+            switch self {
+            case .duplicateSerialNumber(let num):
+                return "序列号 \(num) 已被使用"
+            case .invalidConfiguration(let reason):
+                return "配置无效: \(reason)"
+            case .creationFailed:
+                return "创建虚拟显示器失败"
+            }
+        }
+    }
+    
+    /// Creates a new virtual display with the specified configuration
+    /// - Parameters:
+    ///   - name: Display name
+    ///   - serialNum: Unique serial number
+    ///   - physicalSize: Physical size in millimeters
+    ///   - maxPixels: Maximum supported pixel dimensions
+    ///   - modes: Array of resolution modes to support
+    ///   - hiDPI: Whether to enable HiDPI (Retina) mode
+    /// - Returns: The created CGVirtualDisplay
+    /// - Throws: VirtualDisplayError if creation fails
+    func createDisplay(
+        name: String,
+        serialNum: UInt32,
+        physicalSize: CGSize,
+        maxPixels: (width: UInt32, height: UInt32),
+        modes: [ResolutionSelection],
+        hiDPI: Bool
+    ) throws -> CGVirtualDisplay {
+        // Check for duplicate serial number
+        if displays.contains(where: { $0.serialNum == serialNum }) {
+            throw VirtualDisplayError.duplicateSerialNumber(serialNum)
+        }
+        
+        // Validate modes
+        guard !modes.isEmpty else {
+            throw VirtualDisplayError.invalidConfiguration("至少需要一个分辨率模式")
+        }
+        
+        // Configure descriptor
+        let desc = CGVirtualDisplayDescriptor()
+        desc.setDispatchQueue(DispatchQueue.main)
+        desc.terminationHandler = { _, display in
+            NSLog("Virtual display terminated: \(String(describing: display))")
+        }
+        desc.name = name
+        desc.maxPixelsWide = maxPixels.width
+        desc.maxPixelsHigh = maxPixels.height
+        desc.sizeInMillimeters = physicalSize
+        desc.productID = 0x1234
+        desc.vendorID = 0x3456
+        desc.serialNum = serialNum
+        
+        // Create display
+        let display = CGVirtualDisplay(descriptor: desc)
+        
+        // Configure settings
+        let settings = CGVirtualDisplaySettings()
+        settings.hiDPI = hiDPI ? 1 : 0
+        
+        // Build modes array
+        var displayModes: [CGVirtualDisplayMode] = []
+        
+        for mode in modes {
+            if hiDPI {
+                // Add HiDPI version first (physical pixels = logical × 2)
+                let hiDPIMode = mode.hiDPIVersion()
+                displayModes.append(hiDPIMode.toVirtualDisplayMode())
+            }
+            // Add standard mode
+            displayModes.append(mode.toVirtualDisplayMode())
+        }
+        
+        settings.modes = displayModes
+        display.apply(settings)
+        
+        // Add to managed displays
+        displays.append(display)
+        
+        return display
+    }
+    
+    /// Generates the next available serial number
+    func nextAvailableSerialNumber() -> UInt32 {
+        let usedNumbers = Set(displays.map { $0.serialNum })
+        var next: UInt32 = 1
+        while usedNumbers.contains(next) {
+            next += 1
+        }
+        return next
+    }
 }
 
 

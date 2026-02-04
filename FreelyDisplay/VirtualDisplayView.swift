@@ -50,7 +50,7 @@ struct VirtualDisplayView: View {
             }
         }
         
-        .sheet(isPresented: $creatView, content: {creatVirtualDisplay(isShow: $creatView)})
+        .sheet(isPresented: $creatView, content: {CreateVirtualDisplay(isShow: $creatView)})
         .sheet(isPresented: $editView, content: {
             if let display = selectedDisplay {
                 EditDisplaySettingsView(display: display, isShow: $editView)

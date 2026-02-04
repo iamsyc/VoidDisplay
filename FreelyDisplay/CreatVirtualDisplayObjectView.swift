@@ -9,237 +9,302 @@ import SwiftUI
 import Cocoa
 import CoreGraphics
 
-struct creatVirtualDisplay: View {
-    @State var name = "Virtual Display"
-    @State var serialNum = 1
+struct CreateVirtualDisplay: View {
+    // MARK: - State Properties
+    
+    // Basic info
+    @State private var name = "Virtual Display"
+    @State private var serialNum: UInt32 = 1
+    @State private var customSerialNum = false
+    
+    // Physical display
+    @State private var screenDiagonal: Double = 14.0
+    @State private var selectedAspectRatio: AspectRatio = .ratio_16_9
+    
+    // Resolution modes
+    @State private var selectedModes: [ResolutionSelection] = []
+    @State private var enableHiDPI: Bool = true
+    
+    // Mode input
+    @State private var usePresetMode = true
+    @State private var presetResolution: Resolutions = .r_1920_1080
+    @State private var customWidth: Int = 1920
+    @State private var customHeight: Int = 1080
+    @State private var customRefreshRate: Double = 60.0
+    
+    // Validation & alerts
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var showDuplicateWarning = false
+    
+    // Focus state
+    @FocusState private var isNameFocused: Bool
+    
     @Binding var isShow: Bool
-    @State var serialNumError = false
-    @State var customSerialNumError = false
-    
-    // Flexible display configuration
-    @State var screenDiagonal: Double = 14.0          // Screen size in inches
-    @State var selectedAspectRatio: AspectRatio = .ratio_16_9
-    @State var selectedResolution: Resolutions = .r_1920_1080
-    @State var enableHiDPI: Bool = true               // HiDPI toggle
-    
     @EnvironmentObject var appHelper: AppHelper
     
-    // Computed properties for display info
+    // MARK: - Computed Properties
+    
     private var physicalSize: (width: Int, height: Int) {
         selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
     }
     
-    private var logicalResolution: (width: Int, height: Int) {
-        selectedResolution.resolutions
+    private var maxPixelDimensions: (width: UInt32, height: UInt32) {
+        guard let maxMode = selectedModes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
+            return (1920, 1080)
+        }
+        if enableHiDPI {
+            return (UInt32(maxMode.width * 2), UInt32(maxMode.height * 2))
+        }
+        return (UInt32(maxMode.width), UInt32(maxMode.height))
     }
     
-    private var physicalPixels: (width: Int, height: Int) {
-        DisplayCalculator.physicalPixels(
-            logicalWidth: logicalResolution.width,
-            logicalHeight: logicalResolution.height,
-            hiDPI: enableHiDPI
-        )
+    private var aspectPreviewRatio: CGFloat {
+        let components = selectedAspectRatio.components
+        return CGFloat(components.width / components.height)
     }
     
-    private var calculatedPPI: Double {
-        DisplayCalculator.calculatePPI(
-            widthPixels: physicalPixels.width,
-            heightPixels: physicalPixels.height,
-            diagonalInches: screenDiagonal
-        )
-    }
+    // MARK: - Body
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        Form {
             // Basic Info Section
-            GroupBox(label: Text("Basic Info").font(.headline)) {
-                VStack(spacing: 12) {
-                    HStack {
-                        Text("Name")
-                            .frame(width: 120, alignment: .leading)
-                        TextField("Virtual Display", text: $name)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    HStack {
-                        Text("Serial Number")
-                            .frame(width: 120, alignment: .leading)
+            Section {
+                TextField("名称", text: $name)
+                    .focused($isNameFocused)
+                
+                HStack {
+                    Text("序列号")
+                    Spacer()
+                    if customSerialNum {
                         TextField("", value: $serialNum, format: .number)
                             .textFieldStyle(.roundedBorder)
-                            .disabled(!customSerialNumError)
+                            .frame(width: 80)
+                    } else {
+                        Text("\(serialNum)")
+                            .foregroundColor(.secondary)
                     }
-                    Toggle("Custom Serial Number", isOn: $customSerialNumError)
-                        .padding(.leading, 120)
                 }
-                .padding(8)
+                
+                Toggle("自定义序列号", isOn: $customSerialNum)
+            } header: {
+                Text("基本信息")
             }
             
             // Physical Display Section
-            GroupBox(label: Text("Physical Display").font(.headline)) {
-                VStack(spacing: 12) {
-                    HStack {
-                        Text("Screen Size")
-                            .frame(width: 120, alignment: .leading)
-                        TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                        Text("inches")
-                        Spacer()
-                    }
-                    
-                    HStack {
-                        Text("Aspect Ratio")
-                            .frame(width: 120, alignment: .leading)
-                        Picker("", selection: $selectedAspectRatio) {
-                            ForEach(AspectRatio.allCases) { ratio in
-                                Text(ratio.rawValue).tag(ratio)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
-                        Spacer()
-                    }
-                    
-                    HStack {
-                        Text("Physical Size")
-                            .frame(width: 120, alignment: .leading)
-                        Text("\(physicalSize.width) × \(physicalSize.height) mm")
-                            .foregroundColor(.secondary)
-                        Spacer()
+            Section {
+                HStack {
+                    Text("屏幕尺寸")
+                    Spacer()
+                    TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    Text("英寸")
+                }
+                
+                Picker("宽高比", selection: $selectedAspectRatio) {
+                    ForEach(AspectRatio.allCases) { ratio in
+                        Text(ratio.rawValue).tag(ratio)
                     }
                 }
-                .padding(8)
+                
+                HStack {
+                    Text("物理尺寸")
+                    Spacer()
+                    Text("\(physicalSize.width) × \(physicalSize.height) mm")
+                        .foregroundColor(.secondary)
+                }
+                
+                // Aspect ratio preview
+                HStack {
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .aspectRatio(aspectPreviewRatio, contentMode: .fit)
+                        .frame(height: 60)
+                        .overlay {
+                            Text(selectedAspectRatio.rawValue)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("物理显示")
             }
             
-            // Resolution Section
-            GroupBox(label: Text("Resolution").font(.headline)) {
-                VStack(spacing: 12) {
-                    HStack {
-                        Text("Logical Resolution")
-                            .frame(width: 120, alignment: .leading)
-                        Picker("", selection: $selectedResolution) {
-                            ForEach(Resolutions.allCases) { res in
-                                Text("\(res.resolutions.0) × \(res.resolutions.1)")
-                                    .tag(res)
+            // Resolution Modes Section
+            Section {
+                Toggle("启用 HiDPI (Retina)", isOn: $enableHiDPI)
+                
+                // Mode list
+                if selectedModes.isEmpty {
+                    Text("尚未添加分辨率模式")
+                        .foregroundColor(.secondary)
+                        .italic()
+                } else {
+                    ForEach(selectedModes) { mode in
+                        HStack {
+                            Text(mode.displayString)
+                            Spacer()
+                            Button(action: { removeMode(mode) }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundColor(.red)
                             }
+                            .buttonStyle(.plain)
                         }
-                        .labelsHidden()
-                        .frame(width: 150)
-                        Spacer()
-                    }
-                    
-                    Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
-                        .padding(.leading, 120)
-                    
-                    HStack {
-                        Text("Physical Pixels")
-                            .frame(width: 120, alignment: .leading)
-                        Text("\(physicalPixels.width) × \(physicalPixels.height)")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    
-                    HStack {
-                        Text("Calculated PPI")
-                            .frame(width: 120, alignment: .leading)
-                        Text(String(format: "%.0f", calculatedPPI))
-                            .foregroundColor(.secondary)
-                        Spacer()
                     }
                 }
-                .padding(8)
+                
+                Divider()
+                
+                // Add mode controls
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("添加方式", selection: $usePresetMode) {
+                        Text("从预设").tag(true)
+                        Text("自定义").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    if usePresetMode {
+                        // Preset mode
+                        HStack {
+                            Picker("预设分辨率", selection: $presetResolution) {
+                                ForEach(Resolutions.allCases) { res in
+                                    Text("\(res.resolutions.0) × \(res.resolutions.1)")
+                                        .tag(res)
+                                }
+                            }
+                            .labelsHidden()
+                            
+                            Button(action: addPresetMode) {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } else {
+                        // Custom mode
+                        HStack {
+                            TextField("宽", value: $customWidth, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 70)
+                            Text("×")
+                            TextField("高", value: $customHeight, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 70)
+                            Text("@")
+                            TextField("Hz", value: $customRefreshRate, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 50)
+                            Text("Hz")
+                            
+                            Button(action: addCustomMode) {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            } header: {
+                Text("分辨率模式")
+            } footer: {
+                if enableHiDPI {
+                    Text("启用 HiDPI 后，每个逻辑分辨率将自动生成 2x 物理像素模式")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            
-            Spacer()
         }
-        .padding(20)
-        .frame(width: 480, height: 520)
+        .formStyle(.grouped)
+        .frame(width: 480, height: 580)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Create") {
-                    if appHelper.displays.filter({ Int($0.serialNum) == serialNum }).isEmpty {
-                        makeVirtualDisplay()
-                    } else {
-                        serialNumError = true
-                    }
+                Button("创建") {
+                    createDisplayAction()
                 }
+                .disabled(selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
+                Button("取消") {
                     isShow = false
                 }
             }
         }
-        .alert(Text("Error"), isPresented: $serialNumError, actions: { Button("OK") {} }, message: { Text("This serial number has already been used.") })
+        .alert("错误", isPresented: $showError) {
+            Button("确定") {}
+        } message: {
+            Text(errorMessage)
+        }
+        .alert("提示", isPresented: $showDuplicateWarning) {
+            Button("确定") {}
+        } message: {
+            Text("该分辨率模式已存在")
+        }
         .onAppear {
-            let _ = appHelper.displays.map { item in
-                if serialNum <= Int(item.serialNum) {
-                    serialNum += 1
-                }
+            serialNum = appHelper.nextAvailableSerialNumber()
+            isNameFocused = true
+            // Add a default mode
+            if selectedModes.isEmpty {
+                selectedModes.append(ResolutionSelection(preset: .r_1920_1080))
             }
         }
     }
     
-    private func makeVirtualDisplay() {
-        // Get logical resolution
-        let (logicalWidth, logicalHeight) = logicalResolution
-        
-        // Calculate physical pixels based on HiDPI setting
-        let (physWidth, physHeight) = physicalPixels
-        
-        // Configure virtual display descriptor
-        let desc = CGVirtualDisplayDescriptor()
-        desc.setDispatchQueue(DispatchQueue.main)
-        desc.terminationHandler = { a, b in
-            NSLog("\(String(describing: a)), \(String(describing: b))")
+    // MARK: - Actions
+    
+    private func addPresetMode() {
+        let newMode = ResolutionSelection(preset: presetResolution)
+        if selectedModes.contains(newMode) {
+            showDuplicateWarning = true
+        } else {
+            selectedModes.append(newMode)
         }
-        desc.name = name
-        
-        // Set max pixels to support the physical resolution
-        desc.maxPixelsWide = UInt32(physWidth)
-        desc.maxPixelsHigh = UInt32(physHeight)
-        
-        // Physical size calculated from screen diagonal and aspect ratio
+    }
+    
+    private func addCustomMode() {
+        guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
+            errorMessage = "请输入有效的分辨率值"
+            showError = true
+            return
+        }
+        let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)
+        if selectedModes.contains(newMode) {
+            showDuplicateWarning = true
+        } else {
+            selectedModes.append(newMode)
+        }
+    }
+    
+    private func removeMode(_ mode: ResolutionSelection) {
+        selectedModes.removeAll { $0 == mode }
+    }
+    
+    private func createDisplayAction() {
         let size = physicalSize
-        desc.sizeInMillimeters = CGSize(width: size.width, height: size.height)
         
-        desc.productID = 0x1234
-        desc.vendorID = 0x3456
-        desc.serialNum = UInt32(serialNum)
-
-        let display = CGVirtualDisplay(descriptor: desc)
-
-        // Configure display settings
-        let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = enableHiDPI ? 1 : 0
-        
-        // Build modes array
-        var modes: [CGVirtualDisplayMode] = []
-        
-        if enableHiDPI {
-            // HiDPI mode: physical pixels = logical × 2
-            modes.append(CGVirtualDisplayMode(
-                width: UInt(physWidth),
-                height: UInt(physHeight),
-                refreshRate: 60
-            ))
+        do {
+            _ = try appHelper.createDisplay(
+                name: name,
+                serialNum: serialNum,
+                physicalSize: CGSize(width: size.width, height: size.height),
+                maxPixels: maxPixelDimensions,
+                modes: selectedModes,
+                hiDPI: enableHiDPI
+            )
+            isShow = false
+        } catch let error as AppHelper.VirtualDisplayError {
+            errorMessage = error.localizedDescription
+            showError = true
+        } catch {
+            errorMessage = "创建失败: \(error.localizedDescription)"
+            showError = true
         }
-        
-        // Always include standard mode (logical resolution)
-        modes.append(CGVirtualDisplayMode(
-            width: UInt(logicalWidth),
-            height: UInt(logicalHeight),
-            refreshRate: 60
-        ))
-        
-        settings.modes = modes
-        
-        appHelper.displays.append(display)
-        display.apply(settings)
-        
-        isShow = false
     }
 }
 
 #Preview {
-//    creatVirtualDisplay(isShow: .constant(true))
+//    CreateVirtualDisplay(isShow: .constant(true))
 }
