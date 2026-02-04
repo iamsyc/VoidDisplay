@@ -58,7 +58,7 @@ struct EditDisplaySettingsView: View {
                         Spacer()
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(8)
             }
             
             // Editable Settings
@@ -78,12 +78,8 @@ struct EditDisplaySettingsView: View {
                         Spacer()
                     }
                     
-                    HStack {
-                        Text("")
-                            .frame(width: 120, alignment: .leading)
-                        Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
-                        Spacer()
-                    }
+                    Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
+                        .padding(.leading, 120)
                     
                     HStack {
                         Text("Physical Pixels")
@@ -93,7 +89,7 @@ struct EditDisplaySettingsView: View {
                         Spacer()
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(8)
             }
             
             Spacer()

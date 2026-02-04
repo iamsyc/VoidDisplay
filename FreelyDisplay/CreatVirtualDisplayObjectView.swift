@@ -67,14 +67,10 @@ struct creatVirtualDisplay: View {
                             .textFieldStyle(.roundedBorder)
                             .disabled(!customSerialNumError)
                     }
-                    HStack {
-                        Text("")
-                            .frame(width: 120, alignment: .leading)
-                        Toggle("Custom Serial Number", isOn: $customSerialNumError)
-                        Spacer()
-                    }
+                    Toggle("Custom Serial Number", isOn: $customSerialNumError)
+                        .padding(.leading, 120)
                 }
-                .padding(.vertical, 8)
+                .padding(8)
             }
             
             // Physical Display Section
@@ -111,7 +107,7 @@ struct creatVirtualDisplay: View {
                         Spacer()
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(8)
             }
             
             // Resolution Section
@@ -131,12 +127,8 @@ struct creatVirtualDisplay: View {
                         Spacer()
                     }
                     
-                    HStack {
-                        Text("")
-                            .frame(width: 120, alignment: .leading)
-                        Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
-                        Spacer()
-                    }
+                    Toggle("Enable HiDPI (Retina)", isOn: $enableHiDPI)
+                        .padding(.leading, 120)
                     
                     HStack {
                         Text("Physical Pixels")
@@ -154,7 +146,7 @@ struct creatVirtualDisplay: View {
                         Spacer()
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(8)
             }
             
             Spacer()
