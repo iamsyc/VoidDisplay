@@ -394,7 +394,18 @@
         }
       }
     },
+    "HiDPI" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HiDPI"
+          }
+        }
+      }
+    },
     "HiDPI Enabled" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

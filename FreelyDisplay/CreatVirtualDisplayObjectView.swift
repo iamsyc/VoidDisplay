@@ -247,17 +247,17 @@ struct CreateVirtualDisplay: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
-                                if mode.enableHiDPI {
-                                    Text("HiDPI Enabled")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
                             }
                             Spacer()
-                            Toggle("", isOn: $mode.enableHiDPI)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                                .scaleEffect(0.8)
+                            HStack(spacing: 6) {
+                                Text("HiDPI")
+                                    .font(.caption)
+                                    .foregroundColor($mode.enableHiDPI.wrappedValue ? .green : .secondary)
+                                Toggle("", isOn: $mode.enableHiDPI)
+                                    .toggleStyle(.switch)
+                                    .labelsHidden()
+                                    .controlSize(.small)
+                            }
                             Button(action: { removeMode(mode) }) {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundColor(.red)
@@ -371,7 +371,7 @@ struct CreateVirtualDisplay: View {
     
     private func addPresetMode() {
         let newMode = ResolutionSelection(preset: presetResolution)  // HiDPI defaults to true
-        if selectedModes.contains(newMode) {
+        if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
             showDuplicateWarning = true
         } else {
             selectedModes.append(newMode)
@@ -385,7 +385,7 @@ struct CreateVirtualDisplay: View {
             return
         }
         let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)  // HiDPI defaults to true
-        if selectedModes.contains(newMode) {
+        if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
             showDuplicateWarning = true
         } else {
             selectedModes.append(newMode)
@@ -393,7 +393,7 @@ struct CreateVirtualDisplay: View {
     }
     
     private func removeMode(_ mode: ResolutionSelection) {
-        selectedModes.removeAll { $0 == mode }
+        selectedModes.removeAll { $0.id == mode.id }
     }
     
     private func createDisplayAction() {

@@ -66,19 +66,27 @@ struct ResolutionSelection: Identifiable, Hashable {
         )
     }
     
-    // MARK: - Hashable conformance (exclude id for value-based comparison)
+    // MARK: - Hashable conformance
     func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
         hasher.combine(width)
         hasher.combine(height)
         hasher.combine(refreshRate)
-        // Note: enableHiDPI is excluded from hash to allow toggling without duplicate detection
+        hasher.combine(enableHiDPI)
     }
     
     static func == (lhs: ResolutionSelection, rhs: ResolutionSelection) -> Bool {
+        lhs.id == rhs.id &&
         lhs.width == rhs.width &&
         lhs.height == rhs.height &&
-        lhs.refreshRate == rhs.refreshRate
-        // Note: enableHiDPI is excluded to detect duplicates based on resolution only
+        lhs.refreshRate == rhs.refreshRate &&
+        lhs.enableHiDPI == rhs.enableHiDPI
+    }
+
+    /// Duplicate check helper that ignores `id` and `enableHiDPI`.
+    func matchesResolution(of other: ResolutionSelection) -> Bool {
+        width == other.width &&
+        height == other.height &&
+        refreshRate == other.refreshRate
     }
 }
-
