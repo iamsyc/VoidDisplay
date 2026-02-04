@@ -75,7 +75,7 @@ class Capture:NSObject,SCStreamOutput,ObservableObject{
             let ciImage = CIImage(cvPixelBuffer: self.surface!)
             let context=CIContext()
             let streamCGImage=context.createCGImage(ciImage, from: ciImage.extent)
-            self.jpgData=NSImage(cgImage: streamCGImage!, size: NSSize(width: streamCGImage!.width/4 ?? 0, height: streamCGImage!.height/4 ?? 0)).jpgRepresentation
+            self.jpgData=NSImage(cgImage: streamCGImage!, size: NSSize(width: streamCGImage!.width/4, height: streamCGImage!.height/4)).jpgRepresentation
         }
         
         

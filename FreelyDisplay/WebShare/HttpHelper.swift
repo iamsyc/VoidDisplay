@@ -67,7 +67,7 @@ extension NSImage {
         let mutableData = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             mutableData,
-            kUTTypeJPEG,
+            UTType.jpeg.identifier as CFString,
             1,
             nil
         ) else { return nil }
