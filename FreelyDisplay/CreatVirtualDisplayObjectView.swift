@@ -37,10 +37,108 @@ struct CreateVirtualDisplay: View {
     @State private var showDuplicateWarning = false
     
     // Focus state
-    @FocusState private var isNameFocused: Bool
+    private enum FocusField: Hashable {
+        case name
+        case serialNum
+        case screenDiagonal
+        case customWidth
+        case customHeight
+        case customRefreshRate
+    }
+    @FocusState private var focusedField: FocusField?
     
     @Binding var isShow: Bool
     @EnvironmentObject var appHelper: AppHelper
+
+    private func dismissFocus() {
+        focusedField = nil
+        NSApp.sendAction(#selector(NSResponder.resignFirstResponder), to: nil, from: nil)
+        (NSApp.keyWindow ?? NSApp.mainWindow)?.makeFirstResponder(nil)
+    }
+
+    private struct ResignFocusOnMouseDown: NSViewRepresentable {
+        var isEnabled: Bool
+        var onResign: () -> Void
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(isEnabled: isEnabled, onResign: onResign)
+        }
+
+        func makeNSView(context: Context) -> NSView {
+            NSView(frame: .zero)
+        }
+
+        func updateNSView(_ nsView: NSView, context: Context) {
+            context.coordinator.isEnabled = isEnabled
+            context.coordinator.onResign = onResign
+            context.coordinator.updateMonitor()
+        }
+
+        static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+            coordinator.stop()
+        }
+
+        final class Coordinator {
+            var isEnabled: Bool
+            var onResign: () -> Void
+            private var monitor: Any?
+
+            init(isEnabled: Bool, onResign: @escaping () -> Void) {
+                self.isEnabled = isEnabled
+                self.onResign = onResign
+            }
+
+            func updateMonitor() {
+                if isEnabled {
+                    startIfNeeded()
+                } else {
+                    stop()
+                }
+            }
+
+            private func startIfNeeded() {
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                    self?.handle(event)
+                    return event
+                }
+            }
+
+            func stop() {
+                if let monitor {
+                    NSEvent.removeMonitor(monitor)
+                    self.monitor = nil
+                }
+            }
+
+            private func handle(_ event: NSEvent) {
+                guard isEnabled else { return }
+                guard let window = event.window else { return }
+                guard let contentView = window.contentView else {
+                    onResign()
+                    return
+                }
+
+                let pointInContent = contentView.convert(event.locationInWindow, from: nil)
+                let hitView = contentView.hitTest(pointInContent)
+                if isTextInputView(hitView) {
+                    return
+                }
+                onResign()
+            }
+
+            private func isTextInputView(_ view: NSView?) -> Bool {
+                var current = view
+                while let v = current {
+                    if v is NSTextView || v is NSTextField {
+                        return true
+                    }
+                    current = v.superview
+                }
+                return false
+            }
+        }
+    }
     
     // MARK: - Computed Properties
     
@@ -72,7 +170,7 @@ struct CreateVirtualDisplay: View {
             // Basic Info Section
             Section {
                 TextField("Name", text: $name)
-                    .focused($isNameFocused)
+                    .focused($focusedField, equals: .name)
                 
                 HStack {
                     Text("Serial Number")
@@ -81,6 +179,7 @@ struct CreateVirtualDisplay: View {
                         TextField("", value: $serialNum, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
+                            .focused($focusedField, equals: .serialNum)
                     } else {
                         Text(serialNum, format: .number)
                             .foregroundColor(.secondary)
@@ -100,6 +199,7 @@ struct CreateVirtualDisplay: View {
                     TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
+                        .focused($focusedField, equals: .screenDiagonal)
                     Text("inches")
                 }
                 
@@ -200,14 +300,17 @@ struct CreateVirtualDisplay: View {
                             TextField("Width", value: $customWidth, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
+                                .focused($focusedField, equals: .customWidth)
                             Text("×")
                             TextField("Height", value: $customHeight, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
+                                .focused($focusedField, equals: .customHeight)
                             Text("@")
                             TextField("Hz", value: $customRefreshRate, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 50)
+                                .focused($focusedField, equals: .customRefreshRate)
                             Text("Hz")
                             
                             Button(action: addCustomMode) {
@@ -228,15 +331,18 @@ struct CreateVirtualDisplay: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
+        .background(ResignFocusOnMouseDown(isEnabled: focusedField != nil, onResign: dismissFocus))
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
+                    dismissFocus()
                     createDisplayAction()
                 }
                 .disabled(selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
+                    dismissFocus()
                     isShow = false
                 }
             }
@@ -253,7 +359,7 @@ struct CreateVirtualDisplay: View {
         }
         .onAppear {
             serialNum = appHelper.nextAvailableSerialNumber()
-            isNameFocused = true
+            focusedField = .name
             // Add a default mode
             if selectedModes.isEmpty {
                 selectedModes.append(ResolutionSelection(preset: .r_1920_1080))
