@@ -239,6 +239,9 @@ struct EditDisplaySettingsView: View {
         // Apply settings to existing display
         display.apply(settings)
         
+        // Update stored config with new modes
+        appHelper.updateConfig(for: display, modes: selectedModes)
+        
         // Refresh the display list
         appHelper.id = UUID()
         
