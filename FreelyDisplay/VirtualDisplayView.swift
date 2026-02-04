@@ -41,14 +41,14 @@ struct VirtualDisplayView: View {
                                 .foregroundColor(config.isEnabled ? .primary : .secondary)
                             
                             HStack {
-                                Text("序列号: \(config.serialNum)")
+                                Text("Serial Number: \(config.serialNum)")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                 
                                 Text("•")
                                     .foregroundColor(.secondary)
                                 
-                                Text(config.isEnabled ? "运行中" : "已停用")
+                                Text(config.isEnabled ? "Running" : "Disabled")
                                     .font(.caption)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -65,7 +65,7 @@ struct VirtualDisplayView: View {
                             Button(action: {
                                 toggleDisplayState(config)
                             }) {
-                                Text(config.isEnabled ? "停用" : "启用")
+                                Text(config.isEnabled ? "Disable" : "Enable")
                                     .frame(width: 50)
                             }
                             .buttonStyle(.bordered)
@@ -73,14 +73,14 @@ struct VirtualDisplayView: View {
                             
                             // Edit button (only for enabled displays)
                             if config.isEnabled {
-                                Button("编辑") {
+                                Button("Edit") {
                                     selectedConfig = config
                                     editView = true
                                 }
                             }
                             
                             // Destroy button
-                            Button("销毁") {
+                            Button("Destroy") {
                                 appHelper.destroyDisplay(config.id)
                             }
                             .foregroundStyle(.red)
@@ -91,9 +91,9 @@ struct VirtualDisplayView: View {
                 }
             } else {
                 ContentUnavailableView(
-                    "没有虚拟显示器",
+                    "No Virtual Displays",
                     systemImage: "display.trianglebadge.exclamationmark",
-                    description: Text("点击右上角的 + 按钮创建一个虚拟显示器")
+                    description: Text("Click the + button in the top right to create a virtual display.")
                 )
             }
         }
@@ -109,12 +109,12 @@ struct VirtualDisplayView: View {
             }
         }
         .toolbar {
-            Button("添加虚拟显示器", systemImage: "plus") {
+            Button("Add Virtual Display", systemImage: "plus") {
                 creatView = true
             }
         }
-        .alert("启用失败", isPresented: $showError) {
-            Button("确定") {}
+        .alert("Enable Failed", isPresented: $showError) {
+            Button("OK") {}
         } message: {
             Text(errorMessage)
         }
@@ -139,4 +139,3 @@ struct VirtualDisplayView: View {
 #Preview {
     VirtualDisplayView()
 }
-

@@ -83,13 +83,13 @@ class AppHelper:ObservableObject{
         var errorDescription: String? {
             switch self {
             case .duplicateSerialNumber(let num):
-                return "序列号 \(num) 已被使用"
+                return String(localized: "Serial number \(num) is already in use.")
             case .invalidConfiguration(let reason):
-                return "配置无效: \(reason)"
+                return String(localized: "Invalid configuration: \(reason)")
             case .creationFailed:
-                return "创建虚拟显示器失败"
+                return String(localized: "Virtual display creation failed.")
             case .configNotFound:
-                return "找不到显示器配置"
+                return String(localized: "Display configuration not found.")
             }
         }
     }
@@ -118,7 +118,7 @@ class AppHelper:ObservableObject{
         
         // Validate modes
         guard !modes.isEmpty else {
-            throw VirtualDisplayError.invalidConfiguration("至少需要一个分辨率模式")
+            throw VirtualDisplayError.invalidConfiguration(String(localized: "At least one resolution mode is required."))
         }
         
         // Configure descriptor
@@ -287,5 +287,4 @@ class AppHelper:ObservableObject{
         return next
     }
 }
-
 

@@ -27,12 +27,130 @@
         }
       }
     },
+    "%lld × %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld × %2$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld × %2$lld"
+          }
+        }
+      }
+    },
+    "%lld × %lld @ %lldHz" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld × %2$lld @ %3$lldHz"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld × %2$lld @ %3$lldHz"
+          }
+        }
+      }
+    },
+    "%lld × %lld mm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld × %2$lld mm"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld × %2$lld mm"
+          }
+        }
+      }
+    },
+    "@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "@"
+          }
+        }
+      }
+    },
+    "Add Method" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加方式"
+          }
+        }
+      }
+    },
     "Add Virtual Display" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加虚拟显示器"
+          }
+        }
+      }
+    },
+    "Apply" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用"
+          }
+        }
+      }
+    },
+    "Aspect Ratio" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宽高比"
+          }
+        }
+      }
+    },
+    "At least one resolution mode is required." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少需要一个分辨率模式"
+          }
+        }
+      }
+    },
+    "Basic Info" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本信息"
+          }
+        }
+      }
+    },
+    "Calculated PPI" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "计算 PPI"
           }
         }
       }
@@ -57,12 +175,48 @@
         }
       }
     },
-    "Creat" : {
+    "Click the + button in the top right to create a virtual display." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击右上角的 + 按钮创建一个虚拟显示器"
+          }
+        }
+      }
+    },
+    "Create" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建"
+          }
+        }
+      }
+    },
+    "Create failed: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Create failed: %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建失败: %1$@"
+          }
+        }
+      }
+    },
+    "Custom" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义"
           }
         }
       }
@@ -87,12 +241,152 @@
         }
       }
     },
+    "Disable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停用"
+          }
+        }
+      }
+    },
+    "Disabled" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停用"
+          }
+        }
+      }
+    },
+    "Display Info" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器信息"
+          }
+        }
+      }
+    },
+    "Display Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示设置"
+          }
+        }
+      }
+    },
+    "Display configuration not found." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到显示器配置"
+          }
+        }
+      }
+    },
+    "Each resolution can enable HiDPI." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个分辨率可单独设置是否启用 HiDPI"
+          }
+        }
+      }
+    },
+    "Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个分辨率可单独设置是否启用 HiDPI，启用后将自动生成 2x 物理像素模式"
+          }
+        }
+      }
+    },
+    "Edit" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
+    "Enable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用"
+          }
+        }
+      }
+    },
+    "Enable Failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用失败"
+          }
+        }
+      }
+    },
+    "Enable HiDPI (Retina)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用 HiDPI (Retina)"
+          }
+        }
+      }
+    },
     "Error" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "错误"
+          }
+        }
+      }
+    },
+    "Height" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高"
+          }
+        }
+      }
+    },
+    "HiDPI Enabled" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HiDPI 已启用"
+          }
+        }
+      }
+    },
+    "Hz" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hz"
           }
         }
       }
@@ -107,12 +401,38 @@
         }
       }
     },
+    "Invalid configuration: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Invalid configuration: %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置无效: %1$@"
+          }
+        }
+      }
+    },
     "Listening window" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "监听屏幕"
+          }
+        }
+      }
+    },
+    "Logical Resolution" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "逻辑分辨率"
           }
         }
       }
@@ -167,12 +487,32 @@
         }
       }
     },
+    "No Virtual Displays" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有虚拟显示器"
+          }
+        }
+      }
+    },
     "No display" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "无显示器"
+          }
+        }
+      }
+    },
+    "No resolution modes added" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未添加分辨率模式"
           }
         }
       }
@@ -217,12 +557,42 @@
         }
       }
     },
+    "Physical Display" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理显示器"
+          }
+        }
+      }
+    },
     "Physical Display or other Virtual Display" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "物理显示器或其他虚拟显示器"
+          }
+        }
+      }
+    },
+    "Physical Pixels" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理像素"
+          }
+        }
+      }
+    },
+    "Physical Size" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理尺寸"
           }
         }
       }
@@ -237,12 +607,62 @@
         }
       }
     },
+    "Please enter valid resolution values." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入有效的分辨率值"
+          }
+        }
+      }
+    },
+    "Preset" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从预设"
+          }
+        }
+      }
+    },
+    "Preset Resolution" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预设分辨率"
+          }
+        }
+      }
+    },
     "Resolution" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "分辨率"
+          }
+        }
+      }
+    },
+    "Resolution Modes" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分辨率模式"
+          }
+        }
+      }
+    },
+    "Running" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行中"
           }
         }
       }
@@ -277,12 +697,54 @@
         }
       }
     },
+    "Screen Size" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕尺寸"
+          }
+        }
+      }
+    },
     "Serial Number" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "序列号"
+          }
+        }
+      }
+    },
+    "Serial Number: %u" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Serial Number: %1$u"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "序列号: %1$u"
+          }
+        }
+      }
+    },
+    "Serial number %u is already in use." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Serial number %1$u is already in use."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "序列号 %1$u 已被使用。"
           }
         }
       }
@@ -327,12 +789,32 @@
         }
       }
     },
+    "This resolution mode already exists." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该分辨率模式已存在"
+          }
+        }
+      }
+    },
     "This serial number has already been used." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "此序列号已被使用"
+          }
+        }
+      }
+    },
+    "Tip" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示"
           }
         }
       }
@@ -347,32 +829,22 @@
         }
       }
     },
-    "Basic Info" : {
+    "Virtual display creation failed." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "基本信息"
+            "value" : "创建虚拟显示器失败"
           }
         }
       }
     },
-    "Physical Display" : {
+    "Width" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "物理显示器"
-          }
-        }
-      }
-    },
-    "Screen Size" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "屏幕尺寸"
+            "value" : "宽"
           }
         }
       }
@@ -387,112 +859,22 @@
         }
       }
     },
-    "Aspect Ratio" : {
+    "×" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "宽高比"
+            "value" : "×"
           }
         }
       }
     },
-    "Physical Size" : {
+    "•" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "物理尺寸"
-          }
-        }
-      }
-    },
-    "Logical Resolution" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "逻辑分辨率"
-          }
-        }
-      }
-    },
-    "Enable HiDPI (Retina)" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用 HiDPI (Retina)"
-          }
-        }
-      }
-    },
-    "Physical Pixels" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "物理像素"
-          }
-        }
-      }
-    },
-    "Calculated PPI" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "计算 PPI"
-          }
-        }
-      }
-    },
-    "Create" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创建"
-          }
-        }
-      }
-    },
-    "Edit" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑"
-          }
-        }
-      }
-    },
-    "Display Info" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示器信息"
-          }
-        }
-      }
-    },
-    "Display Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示设置"
-          }
-        }
-      }
-    },
-    "Apply" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用"
+            "value" : "•"
           }
         }
       }

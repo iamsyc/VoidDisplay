@@ -34,32 +34,32 @@ struct EditDisplaySettingsView: View {
             // Display Info (Read-only)
             Section {
                 HStack {
-                    Text("名称")
+                    Text("Name")
                     Spacer()
                     Text(display.name)
                         .foregroundColor(.secondary)
                 }
                 HStack {
-                    Text("序列号")
+                    Text("Serial Number")
                     Spacer()
                     Text(String(display.serialNum))
                         .foregroundColor(.secondary)
                 }
                 HStack {
-                    Text("物理尺寸")
+                    Text("Physical Size")
                     Spacer()
                     Text("\(Int(display.sizeInMillimeters.width)) × \(Int(display.sizeInMillimeters.height)) mm")
                         .foregroundColor(.secondary)
                 }
             } header: {
-                Text("显示器信息")
+                Text("Display Info")
             }
             
             // Resolution Modes Section
             Section {
                 // Mode list
                 if selectedModes.isEmpty {
-                    Text("尚未添加分辨率模式")
+                    Text("No resolution modes added")
                         .foregroundColor(.secondary)
                         .italic()
                 } else {
@@ -68,7 +68,7 @@ struct EditDisplaySettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
                                 if mode.enableHiDPI {
-                                    Text("HiDPI 已启用")
+                                    Text("HiDPI Enabled")
                                         .font(.caption)
                                         .foregroundColor(.green)
                                 }
@@ -91,15 +91,15 @@ struct EditDisplaySettingsView: View {
                 
                 // Add mode controls
                 VStack(alignment: .leading, spacing: 8) {
-                    Picker("添加方式", selection: $usePresetMode) {
-                        Text("从预设").tag(true)
-                        Text("自定义").tag(false)
+                    Picker("Add Method", selection: $usePresetMode) {
+                        Text("Preset").tag(true)
+                        Text("Custom").tag(false)
                     }
                     .pickerStyle(.segmented)
                     
                     if usePresetMode {
                         HStack {
-                            Picker("预设分辨率", selection: $presetResolution) {
+                            Picker("Preset Resolution", selection: $presetResolution) {
                                 ForEach(Resolutions.allCases) { res in
                                     Text("\(res.resolutions.0) × \(res.resolutions.1)")
                                         .tag(res)
@@ -115,11 +115,11 @@ struct EditDisplaySettingsView: View {
                         }
                     } else {
                         HStack {
-                            TextField("宽", value: $customWidth, format: .number)
+                            TextField("Width", value: $customWidth, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
                             Text("×")
-                            TextField("高", value: $customHeight, format: .number)
+                            TextField("Height", value: $customHeight, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
                             Text("@")
@@ -137,9 +137,9 @@ struct EditDisplaySettingsView: View {
                     }
                 }
             } header: {
-                Text("分辨率模式")
+                Text("Resolution Modes")
             } footer: {
-                Text("每个分辨率可单独设置是否启用 HiDPI")
+                Text("Each resolution can enable HiDPI.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -148,24 +148,24 @@ struct EditDisplaySettingsView: View {
         .frame(width: 480, height: 500)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("应用") {
+                Button("Apply") {
                     applySettings()
                 }
                 .disabled(selectedModes.isEmpty)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button("取消") {
+                Button("Cancel") {
                     isShow = false
                 }
             }
         }
-        .alert("提示", isPresented: $showDuplicateWarning) {
-            Button("确定") {}
+        .alert("Tip", isPresented: $showDuplicateWarning) {
+            Button("OK") {}
         } message: {
-            Text("该分辨率模式已存在")
+            Text("This resolution mode already exists.")
         }
-        .alert("错误", isPresented: $showError) {
-            Button("确定") {}
+        .alert("Error", isPresented: $showError) {
+            Button("OK") {}
         } message: {
             Text(errorMessage)
         }
@@ -194,7 +194,7 @@ struct EditDisplaySettingsView: View {
     
     private func addCustomMode() {
         guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
-            errorMessage = "请输入有效的分辨率值"
+            errorMessage = String(localized: "Please enter valid resolution values.")
             showError = true
             return
         }
@@ -212,7 +212,7 @@ struct EditDisplaySettingsView: View {
     
     private func applySettings() {
         guard !selectedModes.isEmpty else {
-            errorMessage = "至少需要一个分辨率模式"
+            errorMessage = String(localized: "At least one resolution mode is required.")
             showError = true
             return
         }
@@ -248,4 +248,3 @@ struct EditDisplaySettingsView: View {
         isShow = false
     }
 }
-

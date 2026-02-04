@@ -13,7 +13,7 @@ struct CreateVirtualDisplay: View {
     // MARK: - State Properties
     
     // Basic info
-    @State private var name = "Virtual Display"
+    @State private var name = String(localized: "Virtual Display")
     @State private var serialNum: UInt32 = 1
     @State private var customSerialNum = false
     
@@ -71,46 +71,46 @@ struct CreateVirtualDisplay: View {
         Form {
             // Basic Info Section
             Section {
-                TextField("名称", text: $name)
+                TextField("Name", text: $name)
                     .focused($isNameFocused)
                 
                 HStack {
-                    Text("序列号")
+                    Text("Serial Number")
                     Spacer()
                     if customSerialNum {
                         TextField("", value: $serialNum, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
                     } else {
-                        Text("\(serialNum)")
+                        Text(serialNum, format: .number)
                             .foregroundColor(.secondary)
                     }
                 }
                 
-                Toggle("自定义序列号", isOn: $customSerialNum)
+                Toggle("Custom Serial Number", isOn: $customSerialNum)
             } header: {
-                Text("基本信息")
+                Text("Basic Info")
             }
             
             // Physical Display Section
             Section {
                 HStack {
-                    Text("屏幕尺寸")
+                    Text("Screen Size")
                     Spacer()
                     TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                    Text("英寸")
+                    Text("inches")
                 }
                 
-                Picker("宽高比", selection: $selectedAspectRatio) {
+                Picker("Aspect Ratio", selection: $selectedAspectRatio) {
                     ForEach(AspectRatio.allCases) { ratio in
                         Text(ratio.rawValue).tag(ratio)
                     }
                 }
                 
                 HStack {
-                    Text("物理尺寸")
+                    Text("Physical Size")
                     Spacer()
                     Text("\(physicalSize.width) × \(physicalSize.height) mm")
                         .foregroundColor(.secondary)
@@ -132,14 +132,14 @@ struct CreateVirtualDisplay: View {
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("物理显示")
+                Text("Physical Display")
             }
             
             // Resolution Modes Section
             Section {
                 // Mode list
                 if selectedModes.isEmpty {
-                    Text("尚未添加分辨率模式")
+                    Text("No resolution modes added")
                         .foregroundColor(.secondary)
                         .italic()
                 } else {
@@ -148,7 +148,7 @@ struct CreateVirtualDisplay: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
                                 if mode.enableHiDPI {
-                                    Text("HiDPI 已启用")
+                                    Text("HiDPI Enabled")
                                         .font(.caption)
                                         .foregroundColor(.green)
                                 }
@@ -171,16 +171,16 @@ struct CreateVirtualDisplay: View {
                 
                 // Add mode controls
                 VStack(alignment: .leading, spacing: 8) {
-                    Picker("添加方式", selection: $usePresetMode) {
-                        Text("从预设").tag(true)
-                        Text("自定义").tag(false)
+                    Picker("Add Method", selection: $usePresetMode) {
+                        Text("Preset").tag(true)
+                        Text("Custom").tag(false)
                     }
                     .pickerStyle(.segmented)
                     
                     if usePresetMode {
                         // Preset mode
                         HStack {
-                            Picker("预设分辨率", selection: $presetResolution) {
+                            Picker("Preset Resolution", selection: $presetResolution) {
                                 ForEach(Resolutions.allCases) { res in
                                     Text("\(res.resolutions.0) × \(res.resolutions.1)")
                                         .tag(res)
@@ -197,11 +197,11 @@ struct CreateVirtualDisplay: View {
                     } else {
                         // Custom mode
                         HStack {
-                            TextField("宽", value: $customWidth, format: .number)
+                            TextField("Width", value: $customWidth, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
                             Text("×")
-                            TextField("高", value: $customHeight, format: .number)
+                            TextField("Height", value: $customHeight, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
                             Text("@")
@@ -219,9 +219,9 @@ struct CreateVirtualDisplay: View {
                     }
                 }
             } header: {
-                Text("分辨率模式")
+                Text("Resolution Modes")
             } footer: {
-                Text("每个分辨率可单独设置是否启用 HiDPI，启用后将自动生成 2x 物理像素模式")
+                Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -230,26 +230,26 @@ struct CreateVirtualDisplay: View {
         .frame(width: 480, height: 580)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("创建") {
+                Button("Create") {
                     createDisplayAction()
                 }
                 .disabled(selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button("取消") {
+                Button("Cancel") {
                     isShow = false
                 }
             }
         }
-        .alert("错误", isPresented: $showError) {
-            Button("确定") {}
+        .alert("Error", isPresented: $showError) {
+            Button("OK") {}
         } message: {
             Text(errorMessage)
         }
-        .alert("提示", isPresented: $showDuplicateWarning) {
-            Button("确定") {}
+        .alert("Tip", isPresented: $showDuplicateWarning) {
+            Button("OK") {}
         } message: {
-            Text("该分辨率模式已存在")
+            Text("This resolution mode already exists.")
         }
         .onAppear {
             serialNum = appHelper.nextAvailableSerialNumber()
@@ -274,7 +274,7 @@ struct CreateVirtualDisplay: View {
     
     private func addCustomMode() {
         guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
-            errorMessage = "请输入有效的分辨率值"
+            errorMessage = String(localized: "Please enter valid resolution values.")
             showError = true
             return
         }
@@ -306,7 +306,7 @@ struct CreateVirtualDisplay: View {
             errorMessage = error.localizedDescription
             showError = true
         } catch {
-            errorMessage = "创建失败: \(error.localizedDescription)"
+            errorMessage = String(localized: "Create failed: \(error.localizedDescription)")
             showError = true
         }
     }
