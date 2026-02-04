@@ -14,6 +14,7 @@ enum Resolutions:String,CaseIterable,Identifiable{
     case r_1147_745
     case r_1512_945
     case r_1280_800
+    case r_1440_900
     case r_1920_1080
     case r_1920_1200
     
