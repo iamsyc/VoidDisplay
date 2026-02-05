@@ -11,7 +11,10 @@ struct VirtualDisplayView: View {
     @EnvironmentObject var appHelper: AppHelper
     @State var creatView = false
     @State var editView = false
-    @State var selectedConfig: VirtualDisplayConfig?
+    @State var selectedConfigId: UUID?
+
+    @State private var showDeleteConfirm = false
+    @State private var deleteCandidate: VirtualDisplayConfig?
     
     // Error handling
     @State private var showError = false
@@ -21,16 +24,17 @@ struct VirtualDisplayView: View {
         Group {
             if !appHelper.displayConfigs.isEmpty {
                 List(appHelper.displayConfigs) { config in
+                    let isRunning = appHelper.isVirtualDisplayRunning(configId: config.id)
                     HStack(alignment: .center) {
                         // Display icon with status indicator
                         ZStack(alignment: .bottomTrailing) {
                             Image(systemName: "display")
                                 .font(.system(size: 30))
-                                .foregroundColor(config.isEnabled ? .primary : .secondary)
+                                .foregroundColor(isRunning ? .primary : .secondary)
                             
                             // Status indicator
                             Circle()
-                                .fill(config.isEnabled ? Color.green : Color.gray)
+                                .fill(isRunning ? Color.green : Color.gray)
                                 .frame(width: 10, height: 10)
                                 .offset(x: 2, y: 2)
                         }
@@ -38,7 +42,7 @@ struct VirtualDisplayView: View {
                         VStack(alignment: .leading) {
                             Text(config.name)
                                 .font(.headline)
-                                .foregroundColor(config.isEnabled ? .primary : .secondary)
+                                .foregroundColor(isRunning ? .primary : .secondary)
                             
                             HStack {
                                 Text("Serial Number: \(config.serialNum)")
@@ -48,12 +52,12 @@ struct VirtualDisplayView: View {
                                 Text("•")
                                     .foregroundColor(.secondary)
                                 
-                                Text(config.isEnabled ? "Running" : "Disabled")
+                                Text(isRunning ? "Running" : "Disabled")
                                     .font(.caption)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(config.isEnabled ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
-                                    .foregroundColor(config.isEnabled ? .green : .gray)
+                                    .background(isRunning ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
+                                    .foregroundColor(isRunning ? .green : .gray)
                                     .cornerRadius(4)
                             }
                         }
@@ -65,29 +69,27 @@ struct VirtualDisplayView: View {
                             Button(action: {
                                 toggleDisplayState(config)
                             }) {
-                                Text(config.isEnabled ? "Disable" : "Enable")
+                                Text(isRunning ? "Disable" : "Enable")
                                     .frame(width: 50)
                             }
                             .buttonStyle(.bordered)
-                            .tint(config.isEnabled ? .orange : .green)
+                            .tint(isRunning ? .orange : .green)
                             
-                            // Edit button (only for enabled displays)
-                            if config.isEnabled {
-                                Button("Edit") {
-                                    selectedConfig = config
-                                    editView = true
-                                }
+                            Button("Edit") {
+                                selectedConfigId = config.id
+                                editView = true
                             }
                             
                             // Destroy button
-                            Button("Destroy") {
-                                appHelper.destroyDisplay(config.id)
+                            Button("Delete") {
+                                deleteCandidate = config
+                                showDeleteConfirm = true
                             }
                             .foregroundStyle(.red)
                         }
                     }
                     .padding(.vertical, 4)
-                    .opacity(config.isEnabled ? 1.0 : 0.7)
+                    .opacity(isRunning ? 1.0 : 0.7)
                 }
             } else {
                 ContentUnavailableView(
@@ -102,16 +104,33 @@ struct VirtualDisplayView: View {
             CreateVirtualDisplay(isShow: $creatView)
         }
         .sheet(isPresented: $editView) {
-            if let config = selectedConfig,
-               let display = appHelper.displays.first(where: { $0.serialNum == config.serialNum }) {
-                EditDisplaySettingsView(display: display, isShow: $editView)
+            if let configId = selectedConfigId {
+                EditVirtualDisplayConfigView(configId: configId, isShow: $editView)
                     .environmentObject(appHelper)
+            } else {
+                Text("No selection")
+                    .padding()
             }
         }
         .toolbar {
             Button("Add Virtual Display", systemImage: "plus") {
                 creatView = true
             }
+        }
+        .confirmationDialog(
+            "Delete Virtual Display",
+            isPresented: $showDeleteConfirm,
+            presenting: deleteCandidate
+        ) { config in
+            Button("Delete", role: .destructive) {
+                appHelper.destroyDisplay(config.id)
+                deleteCandidate = nil
+            }
+            Button("Cancel", role: .cancel) {
+                deleteCandidate = nil
+            }
+        } message: { config in
+            Text("This will remove the configuration and disable the display if it is running.\n\n\(config.name) (Serial \(config.serialNum))")
         }
         .alert("Enable Failed", isPresented: $showError) {
             Button("OK") {}
@@ -121,17 +140,15 @@ struct VirtualDisplayView: View {
     }
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {
-        if config.isEnabled {
-            // Disable: save config and destroy display
+        if appHelper.isVirtualDisplayRunning(configId: config.id) {
             appHelper.disableDisplayByConfig(config.id)
-        } else {
-            // Enable: recreate display from config
-            do {
-                try appHelper.enableDisplay(config.id)
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
-            }
+            return
+        }
+        do {
+            try appHelper.enableDisplay(config.id)
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
         }
     }
 }

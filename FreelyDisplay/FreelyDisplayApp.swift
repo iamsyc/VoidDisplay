@@ -9,6 +9,7 @@ import SwiftUI
 import Combine
 import ScreenCaptureKit
 import Network
+import CoreGraphics
 
 //var sceneCapture:SceneCapture?
 @main
@@ -59,7 +60,7 @@ struct FreelyDisplayApp: App {
 
 class AppHelper:ObservableObject{
     @Published var displays:[CGVirtualDisplay]=[]
-    @Published var displayConfigs:[VirtualDisplayConfig]=[]  // Stores configs for all displays (enabled and disabled)
+    @Published var displayConfigs:[VirtualDisplayConfig]=[]  // Stored configs (persisted)
     static var shared=AppHelper()
     @Published var id=UUID()
     @Published var screenCaptureObjects:[SCStream?]=[]
@@ -67,8 +68,50 @@ class AppHelper:ObservableObject{
     @Published var sharingScreenCaptureStream:Capture?=nil
     @Published var isSharing=false
     let webServer=try? WebServer(using: 8081)
+
+    private let virtualDisplayStore = VirtualDisplayStore()
+    private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
+
     init() {
         webServer?.startListener()
+
+        do {
+            displayConfigs = try virtualDisplayStore.load()
+        } catch {
+            NSLog("Failed to load virtual display configs: \(error.localizedDescription)")
+            displayConfigs = []
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.restoreDesiredVirtualDisplays()
+        }
+    }
+
+    private func persistVirtualDisplayConfigs() {
+        do {
+            try virtualDisplayStore.save(displayConfigs)
+        } catch {
+            NSLog("Failed to save virtual display configs: \(error.localizedDescription)")
+        }
+    }
+
+    func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
+        activeDisplaysByConfigId[configId]
+    }
+
+    func isVirtualDisplayRunning(configId: UUID) -> Bool {
+        activeDisplaysByConfigId[configId] != nil
+    }
+
+    private func restoreDesiredVirtualDisplays() {
+        for config in displayConfigs where config.desiredEnabled {
+            do {
+                _ = try createRuntimeDisplay(from: config)
+            } catch {
+                NSLog("Failed to restore virtual display \(config.serialNum): \(error.localizedDescription)")
+            }
+        }
+        id = UUID()
     }
     
     // MARK: - Virtual Display Creation
@@ -111,8 +154,8 @@ class AppHelper:ObservableObject{
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
     ) throws -> CGVirtualDisplay {
-        // Check for duplicate serial number in active displays
-        if displays.contains(where: { $0.serialNum == serialNum }) {
+        if displays.contains(where: { $0.serialNum == serialNum }) ||
+            displayConfigs.contains(where: { $0.serialNum == serialNum }) {
             throw VirtualDisplayError.duplicateSerialNumber(serialNum)
         }
         
@@ -120,84 +163,125 @@ class AppHelper:ObservableObject{
         guard !modes.isEmpty else {
             throw VirtualDisplayError.invalidConfiguration(String(localized: "At least one resolution mode is required."))
         }
-        
+
+        let config = VirtualDisplayConfig(
+            name: name,
+            serialNum: serialNum,
+            physicalWidth: Int(physicalSize.width),
+            physicalHeight: Int(physicalSize.height),
+            modes: modes.map {
+                VirtualDisplayConfig.ModeConfig(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            },
+            desiredEnabled: true
+        )
+
+        displayConfigs.append(config)
+        persistVirtualDisplayConfigs()
+
+        do {
+            let display = try createRuntimeDisplay(from: config, maxPixels: maxPixels)
+            id = UUID()
+            return display
+        } catch {
+            displayConfigs.removeAll { $0.id == config.id }
+            persistVirtualDisplayConfigs()
+            throw error
+        }
+    }
+
+    private func createRuntimeDisplay(from config: VirtualDisplayConfig, maxPixels: (width: UInt32, height: UInt32)? = nil) throws -> CGVirtualDisplay {
+        // Already running
+        if let existing = activeDisplaysByConfigId[config.id] {
+            return existing
+        }
+
+        // Prevent duplicate serial numbers among runtime displays
+        if displays.contains(where: { $0.serialNum == config.serialNum }) {
+            throw VirtualDisplayError.duplicateSerialNumber(config.serialNum)
+        }
+
+        // Validate modes
+        let modes = config.resolutionModes
+        guard !modes.isEmpty else {
+            throw VirtualDisplayError.invalidConfiguration(String(localized: "At least one resolution mode is required."))
+        }
+
         // Configure descriptor
         let desc = CGVirtualDisplayDescriptor()
         desc.setDispatchQueue(DispatchQueue.main)
-        desc.terminationHandler = { _, display in
-            NSLog("Virtual display terminated: \(String(describing: display))")
+        desc.terminationHandler = { [weak self] _, _ in
+            DispatchQueue.main.async {
+                self?.handleVirtualDisplayTermination(configId: config.id, serialNum: config.serialNum)
+            }
         }
-        desc.name = name
-        desc.maxPixelsWide = maxPixels.width
-        desc.maxPixelsHigh = maxPixels.height
-        desc.sizeInMillimeters = physicalSize
+        desc.name = config.name
+        let max = maxPixels ?? config.maxPixelDimensions
+        desc.maxPixelsWide = max.width
+        desc.maxPixelsHigh = max.height
+        desc.sizeInMillimeters = config.physicalSize
         desc.productID = 0x1234
         desc.vendorID = 0x3456
-        desc.serialNum = serialNum
-        
+        desc.serialNum = config.serialNum
+
         // Create display
         let display = CGVirtualDisplay(descriptor: desc)
-        
+
         // Configure settings
         let settings = CGVirtualDisplaySettings()
-        
-        // Enable HiDPI if any mode has HiDPI enabled
         let anyHiDPI = modes.contains { $0.enableHiDPI }
         settings.hiDPI = anyHiDPI ? 1 : 0
-        
-        // Build modes array
+
         var displayModes: [CGVirtualDisplayMode] = []
-        
         for mode in modes {
             if mode.enableHiDPI {
-                // Add HiDPI version first (physical pixels = logical × 2)
-                let hiDPIMode = mode.hiDPIVersion()
-                displayModes.append(hiDPIMode.toVirtualDisplayMode())
+                displayModes.append(mode.hiDPIVersion().toVirtualDisplayMode())
             }
-            // Add standard mode
             displayModes.append(mode.toVirtualDisplayMode())
         }
-        
+
         settings.modes = displayModes
         display.apply(settings)
-        
-        // Add to managed displays
+
+        // Track runtime display
+        activeDisplaysByConfigId[config.id] = display
+        displays.removeAll { $0.serialNum == config.serialNum }
         displays.append(display)
-        
-        // Create and store config (enabled) only if not already exists
-        if !displayConfigs.contains(where: { $0.serialNum == serialNum }) {
-            let config = VirtualDisplayConfig(from: display, modes: modes)
-            displayConfigs.append(config)
-        }
-        
         return display
+    }
+
+    private func handleVirtualDisplayTermination(configId: UUID, serialNum: UInt32) {
+        activeDisplaysByConfigId[configId] = nil
+        displays.removeAll { $0.serialNum == serialNum }
+        id = UUID()
     }
     
     /// Creates a display from a stored configuration
     func createDisplayFromConfig(_ config: VirtualDisplayConfig) throws -> CGVirtualDisplay {
-        let modes = config.resolutionModes
-        return try createDisplay(
-            name: config.name,
-            serialNum: config.serialNum,
-            physicalSize: config.physicalSize,
-            maxPixels: config.maxPixelDimensions,
-            modes: modes
-        )
+        try createRuntimeDisplay(from: config)
     }
     
     /// Disables a display (destroys it but keeps the config)
     func disableDisplay(_ display: CGVirtualDisplay, modes: [ResolutionSelection]) {
         // Find or create config
         if let index = displayConfigs.firstIndex(where: { $0.serialNum == display.serialNum }) {
-            displayConfigs[index].isEnabled = false
+            displayConfigs[index].desiredEnabled = false
         } else {
             var config = VirtualDisplayConfig(from: display, modes: modes)
-            config.isEnabled = false
+            config.desiredEnabled = false
             displayConfigs.append(config)
         }
         
         // Remove from active displays (this destroys the display)
         displays.removeAll { $0.serialNum == display.serialNum }
+        for (configId, activeDisplay) in activeDisplaysByConfigId where activeDisplay.serialNum == display.serialNum {
+            activeDisplaysByConfigId[configId] = nil
+        }
+        persistVirtualDisplayConfigs()
         id = UUID()
     }
     
@@ -205,11 +289,13 @@ class AppHelper:ObservableObject{
     func disableDisplayByConfig(_ configId: UUID) {
         guard let index = displayConfigs.firstIndex(where: { $0.id == configId }) else { return }
         
-        let serialNum = displayConfigs[index].serialNum
-        displayConfigs[index].isEnabled = false
+        displayConfigs[index].desiredEnabled = false
         
         // Remove from active displays
-        displays.removeAll { $0.serialNum == serialNum }
+        let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? displayConfigs[index].serialNum
+        activeDisplaysByConfigId[configId] = nil
+        displays.removeAll { $0.serialNum == runtimeSerialNum }
+        persistVirtualDisplayConfigs()
         id = UUID()
     }
     
@@ -218,14 +304,13 @@ class AppHelper:ObservableObject{
         guard let index = displayConfigs.firstIndex(where: { $0.id == configId }) else {
             throw VirtualDisplayError.configNotFound
         }
-        
+
+        // Persist user intent first (even if runtime creation fails)
+        displayConfigs[index].desiredEnabled = true
+        persistVirtualDisplayConfigs()
+
         let config = displayConfigs[index]
-        
-        // Create the display
-        _ = try createDisplayFromConfig(config)
-        
-        // Update config state
-        displayConfigs[index].isEnabled = true
+        _ = try createRuntimeDisplay(from: config)
         id = UUID()
     }
     
@@ -234,10 +319,13 @@ class AppHelper:ObservableObject{
         guard let config = displayConfigs.first(where: { $0.id == configId }) else { return }
         
         // Remove from active displays if enabled
-        displays.removeAll { $0.serialNum == config.serialNum }
+        let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? config.serialNum
+        activeDisplaysByConfigId[configId] = nil
+        displays.removeAll { $0.serialNum == runtimeSerialNum }
         
         // Remove config
         displayConfigs.removeAll { $0.id == configId }
+        persistVirtualDisplayConfigs()
         
         id = UUID()
     }
@@ -248,13 +336,60 @@ class AppHelper:ObservableObject{
         
         // Remove from active displays
         displays.removeAll { $0.serialNum == serialNum }
+        for (configId, activeDisplay) in activeDisplaysByConfigId where activeDisplay.serialNum == serialNum {
+            activeDisplaysByConfigId[configId] = nil
+        }
         
         // Remove config
         displayConfigs.removeAll { $0.serialNum == serialNum }
+        persistVirtualDisplayConfigs()
         
         id = UUID()
     }
-    
+
+    func getConfig(_ configId: UUID) -> VirtualDisplayConfig? {
+        displayConfigs.first { $0.id == configId }
+    }
+
+    func updateConfig(_ updated: VirtualDisplayConfig) {
+        guard let index = displayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
+        displayConfigs[index] = updated
+        persistVirtualDisplayConfigs()
+        id = UUID()
+    }
+
+    func applyModes(configId: UUID, modes: [ResolutionSelection]) {
+        guard let display = activeDisplaysByConfigId[configId] else { return }
+        let settings = CGVirtualDisplaySettings()
+
+        let anyHiDPI = modes.contains { $0.enableHiDPI }
+        settings.hiDPI = anyHiDPI ? 1 : 0
+
+        var displayModes: [CGVirtualDisplayMode] = []
+        for mode in modes {
+            if mode.enableHiDPI {
+                displayModes.append(mode.hiDPIVersion().toVirtualDisplayMode())
+            }
+            displayModes.append(mode.toVirtualDisplayMode())
+        }
+        settings.modes = displayModes
+        display.apply(settings)
+    }
+
+    func rebuildVirtualDisplay(configId: UUID) throws {
+        guard let config = displayConfigs.first(where: { $0.id == configId }) else {
+            throw VirtualDisplayError.configNotFound
+        }
+
+        if let running = activeDisplaysByConfigId[configId] {
+            activeDisplaysByConfigId[configId] = nil
+            displays.removeAll { $0.serialNum == running.serialNum }
+        }
+
+        _ = try createRuntimeDisplay(from: config)
+        id = UUID()
+    }
+
     /// Gets the config for a display
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
         displayConfigs.first { $0.serialNum == display.serialNum }
@@ -271,6 +406,7 @@ class AppHelper:ObservableObject{
                 enableHiDPI: $0.enableHiDPI
             )
         }
+        persistVirtualDisplayConfigs()
     }
     
     /// Generates the next available serial number
@@ -287,4 +423,3 @@ class AppHelper:ObservableObject{
         return next
     }
 }
-

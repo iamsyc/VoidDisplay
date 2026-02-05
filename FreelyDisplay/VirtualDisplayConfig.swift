@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CoreGraphics
 
 /// Stores the configuration of a virtual display for later restoration
 struct VirtualDisplayConfig: Identifiable, Codable {
@@ -15,7 +16,8 @@ struct VirtualDisplayConfig: Identifiable, Codable {
     var physicalWidth: Int  // in millimeters
     var physicalHeight: Int // in millimeters
     var modes: [ModeConfig]
-    var isEnabled: Bool
+    /// Persisted user intent: whether this config should be enabled (auto-restored) by default.
+    var desiredEnabled: Bool
     
     /// Mode configuration
     struct ModeConfig: Codable, Hashable {
@@ -41,7 +43,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
         physicalWidth: Int,
         physicalHeight: Int,
         modes: [ModeConfig],
-        isEnabled: Bool = true
+        desiredEnabled: Bool = true
     ) {
         self.id = id
         self.name = name
@@ -49,7 +51,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
         self.physicalWidth = physicalWidth
         self.physicalHeight = physicalHeight
         self.modes = modes
-        self.isEnabled = isEnabled
+        self.desiredEnabled = desiredEnabled
     }
     
     /// Create from a CGVirtualDisplay and its modes
@@ -65,7 +67,50 @@ struct VirtualDisplayConfig: Identifiable, Codable {
             refreshRate: $0.refreshRate,
             enableHiDPI: $0.enableHiDPI
         )}
-        self.isEnabled = true
+        self.desiredEnabled = true
+    }
+
+    // MARK: - Codable (backward compatible)
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case serialNum
+        case physicalWidth
+        case physicalHeight
+        case modes
+        case desiredEnabled
+        // Backward-compat: older builds stored this as `isEnabled`
+        case isEnabled
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        serialNum = try container.decode(UInt32.self, forKey: .serialNum)
+        physicalWidth = try container.decode(Int.self, forKey: .physicalWidth)
+        physicalHeight = try container.decode(Int.self, forKey: .physicalHeight)
+        modes = try container.decode([ModeConfig].self, forKey: .modes)
+
+        if let desiredEnabled = try container.decodeIfPresent(Bool.self, forKey: .desiredEnabled) {
+            self.desiredEnabled = desiredEnabled
+        } else if let legacyEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) {
+            desiredEnabled = legacyEnabled
+        } else {
+            desiredEnabled = true
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(serialNum, forKey: .serialNum)
+        try container.encode(physicalWidth, forKey: .physicalWidth)
+        try container.encode(physicalHeight, forKey: .physicalHeight)
+        try container.encode(modes, forKey: .modes)
+        try container.encode(desiredEnabled, forKey: .desiredEnabled)
     }
     
     /// Get resolution selections from stored modes
