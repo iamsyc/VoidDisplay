@@ -15,11 +15,12 @@ import CoreGraphics
 @main
 struct FreelyDisplayApp: App {
 //    @StateObject var captureOutput=Capture()
+    @StateObject private var appHelper = AppHelper.shared
     
     var body: some Scene {
         WindowGroup {
             HomeView()
-                .environmentObject(AppHelper.shared)
+                .environmentObject(appHelper)
 //                .onAppear{
 //                    Task{
 //                        let content = try? await SCShareableContent.excludingDesktopWindows(
@@ -32,21 +33,9 @@ struct FreelyDisplayApp: App {
 //                }
         }
         
-        WindowGroup(for: Int.self){$index in
-            @Environment(\.dismiss) var dismiss
-            let caputure=Capture()
-            if let index = index{
-                if AppHelper.shared.screenCaptureObjects.count > index{
-                    CaptureDisplayView(index: index)
-                        .navigationTitle("Screen Monitoring")
-                        .environmentObject(caputure)
-                        .environmentObject(AppHelper.shared)
-                }else{Group{}.onAppear{
-                    dismiss()
-                }}
-            }
-            
-                
+        WindowGroup(for: UUID.self){$sessionId in
+            CaptureDisplayWindowRoot(sessionId: sessionId)
+                .environmentObject(appHelper)
         }
         
         
@@ -56,17 +45,44 @@ struct FreelyDisplayApp: App {
     
 }
 
+private struct CaptureDisplayWindowRoot: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appHelper: AppHelper
+    let sessionId: UUID?
+
+    var body: some View {
+        if let sessionId {
+            CaptureDisplayView(sessionId: sessionId)
+                .navigationTitle("Screen Monitoring")
+        } else {
+            Color.clear
+                .onAppear { dismiss() }
+        }
+    }
+}
+
 class AppHelper:ObservableObject{
+    struct ScreenMonitoringSession: Identifiable {
+        let id: UUID
+        let displayID: CGDirectDisplayID
+        let displayName: String
+        let resolutionText: String
+        let isVirtualDisplay: Bool
+        let stream: SCStream
+        let delegate: StreamDelegate
+    }
+
     @Published var displays:[CGVirtualDisplay]=[]
     @Published var displayConfigs:[VirtualDisplayConfig]=[]  // Stored configs (persisted)
     static var shared=AppHelper()
     @Published private(set) var runningConfigIds: Set<UUID> = []
     @Published private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
-    @Published var screenCaptureObjects:[SCStream?]=[]
+    @Published var screenCaptureSessions: [ScreenMonitoringSession] = []
     @Published var sharingScreenCaptureObject:SCStream?=nil
     @Published var sharingScreenCaptureStream:Capture?=nil
     @Published var isSharing=false
     let webServer=try? WebServer(using: 8081)
+    var sharingScreenCaptureDelegate: StreamDelegate? = nil
 
     private let virtualDisplayStore = VirtualDisplayStore()
     private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
@@ -91,6 +107,23 @@ class AppHelper:ObservableObject{
         DispatchQueue.main.async { [weak self] in
             self?.restoreDesiredVirtualDisplays()
         }
+    }
+
+    // MARK: - Screen Monitoring
+
+    func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
+        screenCaptureSessions.first { $0.id == id }
+    }
+
+    func addMonitoringSession(_ session: ScreenMonitoringSession) {
+        screenCaptureSessions.append(session)
+    }
+
+    func removeMonitoringSession(id: UUID) {
+        if let session = screenCaptureSessions.first(where: { $0.id == id }) {
+            session.stream.stopCapture()
+        }
+        screenCaptureSessions.removeAll { $0.id == id }
     }
 
     private func persistVirtualDisplayConfigs() {

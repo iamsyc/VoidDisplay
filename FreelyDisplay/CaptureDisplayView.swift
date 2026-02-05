@@ -10,67 +10,60 @@ import ScreenCaptureKit
 import CoreImage
 
 struct CaptureDisplayView: View {
-//    @State var screenCapture:SceneCapture?=nil
-    @State var index:Int
-    @State var cgImage:CGImage?
-    @EnvironmentObject var captureOut:Capture
-    @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var appHelper:AppHelper
+    let sessionId: UUID
+
+    @EnvironmentObject var appHelper: AppHelper
+    @Environment(\.dismiss) private var dismiss
+
+    @StateObject private var captureOut = Capture()
+    @State private var cgImage: CGImage?
+    @State private var startTask: Task<Void, Never>?
+
+    private var session: AppHelper.ScreenMonitoringSession? {
+        appHelper.monitoringSession(for: sessionId)
+    }
+
     var body: some View {
-        Group{
-            if let image=cgImage{
+        Group {
+            if let image = cgImage {
                 Image(decorative: image, scale: 1.0)
                     .resizable()
-//                    .aspectRatio(contentMode: .fit)
                     .scaledToFit()
-            }else{
+            } else {
                 Text("No Data")
             }
-            
         }
-        .onAppear{
-                Task{
-//                    let content = try? await SCShareableContent.excludingDesktopWindows(
-//                        false,
-//                                                onScreenWindowsOnly: false
-//                                            )
-//                    guard let displays = content?.displays else { return }
-//                    screenCapture=await SceneCapture(display: display, output: captureOut,width: display.width*2,height: display.height*2)
-//                    screenCapture?.start()
-                    
-                }
+        .onReceive(appHelper.$screenCaptureSessions) { sessions in
+            if !sessions.contains(where: { $0.id == sessionId }) {
+                startTask?.cancel()
+                startTask = nil
+                dismiss()
             }
-            .onChange(of: captureOut.surface){
-                guard let surface=captureOut.surface else{ return }
-                let ciImage = CIImage(cvPixelBuffer: surface)
-                let context=CIContext()
-                cgImage=context.createCGImage(ciImage, from: ciImage.extent)
+        }
+        .onChange(of: captureOut.surface) {
+            guard let surface = captureOut.surface else { return }
+            let ciImage = CIImage(cvPixelBuffer: surface)
+            let context = CIContext()
+            cgImage = context.createCGImage(ciImage, from: ciImage.extent)
+        }
+        .onAppear {
+            guard let session else {
+                dismiss()
+                return
             }
-            .onChange(of: appHelper.screenCaptureObjects){oldObject,newObject in
-                if newObject[index]==nil{
-                    dismiss()
-                }
-                    
-                
+
+            try? session.stream.addStreamOutput(captureOut, type: .screen, sampleHandlerQueue: .main)
+            startTask?.cancel()
+            startTask = Task {
+                try? await session.stream.startCapture()
             }
-            .onDisappear{
-//                screenCapture?.stop()
-                guard let screenCaptureObject=appHelper.screenCaptureObjects[index] else {return}
-                screenCaptureObject.stopCapture()
-                appHelper.screenCaptureObjects[index]=nil
-                
-            }
-            .onAppear{
-                guard let screenCaptureObject=appHelper.screenCaptureObjects[index] else {return}
-                try? screenCaptureObject.addStreamOutput(captureOut, type: .screen, sampleHandlerQueue: .main)
-                screenCaptureObject.startCapture()
-                
-            }
-            .background(.black)
+        }
+        .onDisappear {
+            startTask?.cancel()
+            startTask = nil
+            appHelper.removeMonitoringSession(id: sessionId)
+        }
+        .background(.black)
     }
 }
-
-//#Preview {
-////    CaaptureDisplayView()
-//}
 

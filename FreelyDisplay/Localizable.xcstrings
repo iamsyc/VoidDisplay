@@ -165,16 +165,6 @@
         }
       }
     },
-    "Bundle ID" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "包标识符"
-          }
-        }
-      }
-    },
     "Aspect Ratio" : {
       "localizations" : {
         "zh-Hans" : {
@@ -205,6 +195,16 @@
         }
       }
     },
+    "Bundle ID" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包标识符"
+          }
+        }
+      }
+    },
     "Calculated PPI" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -227,6 +227,7 @@
       }
     },
     "Cannot destroy this window" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -454,6 +455,36 @@
         }
       }
     },
+    "Error Code" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "错误码"
+          }
+        }
+      }
+    },
+    "Error Domain" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "错误域"
+          }
+        }
+      }
+    },
+    "Failure Reason" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败原因"
+          }
+        }
+      }
+    },
     "Height" : {
       "localizations" : {
         "zh-Hans" : {
@@ -505,6 +536,16 @@
         }
       }
     },
+    "If System Settings shows permission is ON but this page still says it is OFF, the change has not been applied to this running app process. Quit (⌘Q) and reopen, or remove and re-add the app in the permission list." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果系统设置里权限已开启，但此页面仍显示未授权，说明权限变更尚未应用到当前运行的应用进程。请退出（⌘Q）并重新打开，或在权限列表中移除并重新添加本应用。"
+          }
+        }
+      }
+    },
     "inches" : {
       "localizations" : {
         "zh-Hans" : {
@@ -527,6 +568,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配置无效: %1$@"
+          }
+        }
+      }
+    },
+    "Last Error" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近一次错误"
           }
         }
       }
@@ -633,6 +684,16 @@
         }
       }
     },
+    "No Listening Windows" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无监听窗口"
+          }
+        }
+      }
+    },
     "No resolution modes added" : {
       "localizations" : {
         "zh-Hans" : {
@@ -694,22 +755,22 @@
         }
       }
     },
-    "Open the page" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开页面"
-          }
-        }
-      }
-    },
     "Open System Settings" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开系统设置"
+          }
+        }
+      }
+    },
+    "Open the page" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开页面"
           }
         }
       }
@@ -795,6 +856,16 @@
         }
       }
     },
+    "Preflight Permission" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "权限预检结果"
+          }
+        }
+      }
+    },
     "Preset" : {
       "localizations" : {
         "zh-Hans" : {
@@ -811,16 +882,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预设分辨率"
-          }
-        }
-      }
-    },
-    "Refresh" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新"
           }
         }
       }
@@ -845,12 +906,42 @@
         }
       }
     },
+    "Recovery Suggestion" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议操作"
+          }
+        }
+      }
+    },
+    "Refresh" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新"
+          }
+        }
+      }
+    },
     "Request Permission" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "请求权限"
+          }
+        }
+      }
+    },
+    "Request Permission Result" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求权限结果"
           }
         }
       }
@@ -1069,6 +1160,7 @@
       }
     },
     "The system is lower than macOS 26 and cannot display the monitor name. Replaced with 'Monitor'." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

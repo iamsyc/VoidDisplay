@@ -8,6 +8,7 @@
 import SwiftUI
 import ScreenCaptureKit
 import Network
+import Cocoa
 
 struct ShareView: View {
     @EnvironmentObject var appHelper:AppHelper
@@ -25,19 +26,10 @@ struct ShareView: View {
                             VStack(alignment: .leading,spacing:5){
                                 VStack(alignment: .leading){
                                     
-                                    if #available(macOS 26.0, *) {
-                                        Text(NSScreen.screens.filter({item in
-                                            item.cgDirectDisplayID==display.displayID
-                                        }).first?.localizedName ?? "Monitor")
-                                            .font(.headline)
-    //                                    Text(display.description)
-    //                                        .font(.callout)
-                                    }else{
-                                        Text("Monitor")
-                                            .font(.headline)
-    //                                    Text(display.description)
-    //                                        .font(.headline)
-                                    }
+                                    Text(
+                                        NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? "Monitor"
+                                    )
+                                    .font(.headline)
                                     
                                         
                                     Text("\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))")
@@ -64,24 +56,33 @@ struct ShareView: View {
                             Button("Sharing",action:{
                                 Task{
                                     
-                                    let screenCapture=await creatScreenCapture(display: display)
+                                    let captureSession = await creatScreenCapture(display: display)
                                     
                                     let stream=Capture()
-                                    appHelper.sharingScreenCaptureStream=stream
-                                    appHelper.sharingScreenCaptureObject=screenCapture
-                                    try? screenCapture.addStreamOutput(stream, type: .screen, sampleHandlerQueue: .main)
-                                    try? await appHelper.sharingScreenCaptureObject?.startCapture()
-                                    appHelper.isSharing=true
+                                    do {
+                                        try captureSession.stream.addStreamOutput(stream, type: .screen, sampleHandlerQueue: .main)
+                                        try await captureSession.stream.startCapture()
+                                        await MainActor.run {
+                                            appHelper.sharingScreenCaptureStream = stream
+                                            appHelper.sharingScreenCaptureObject = captureSession.stream
+                                            appHelper.sharingScreenCaptureDelegate = captureSession.delegate
+                                            appHelper.isSharing = true
+                                        }
+                                    } catch {
+                                        // Keep UI in "not sharing" state on failure.
+                                        await MainActor.run {
+                                            appHelper.sharingScreenCaptureStream = nil
+                                            appHelper.sharingScreenCaptureObject = nil
+                                            appHelper.sharingScreenCaptureDelegate = nil
+                                            appHelper.isSharing = false
+                                        }
+                                    }
                                 }
                             })
                         }
                     }
                     .safeAreaInset(edge: .bottom, content: {
                         VStack{
-                            if #available(macOS 26.0, *) {}else{
-                            Text("The system is lower than macOS 26 and cannot display the monitor name. Replaced with 'Monitor'.")
-                                .font(.footnote)
-                            }
                             Text("If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display.")
                                 .font(.footnote)
                         }
@@ -107,6 +108,7 @@ struct ShareView: View {
                 HStack{
                     Button("Stop sharing"){
                         appHelper.sharingScreenCaptureObject?.stopCapture()
+                        appHelper.sharingScreenCaptureDelegate = nil
                         appHelper.isSharing=false
                     }
                     .foregroundStyle(.red)

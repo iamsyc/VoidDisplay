@@ -9,8 +9,12 @@ import Foundation
 import ScreenCaptureKit
 import Combine
 
+struct ScreenCaptureSession {
+    let stream: SCStream
+    let delegate: StreamDelegate
+}
     
-func creatScreenCapture(display:SCDisplay,showsCursor:Bool=true,excludedOtherApps:[SCRunningApplication]=[],exceptingOtherWindows:[SCWindow]=[]) async -> SCStream {
+func creatScreenCapture(display:SCDisplay,showsCursor:Bool=true,excludedOtherApps:[SCRunningApplication]=[],exceptingOtherWindows:[SCWindow]=[]) async -> ScreenCaptureSession {
 
     
     let streamConfig = SCStreamConfiguration()
@@ -27,7 +31,7 @@ func creatScreenCapture(display:SCDisplay,showsCursor:Bool=true,excludedOtherApp
     
 
     
-    let content = try? await SCShareableContent.excludingDesktopWindows(false,onScreenWindowsOnly:true)
+    let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
     
     
 
@@ -45,7 +49,7 @@ func creatScreenCapture(display:SCDisplay,showsCursor:Bool=true,excludedOtherApp
     
 //    try? stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .main)
     
-    return stream
+    return ScreenCaptureSession(stream: stream, delegate: delegate)
         
 
         
@@ -70,12 +74,18 @@ class Capture:NSObject,SCStreamOutput,ObservableObject{
         // Get the backing IOSurface.
 //        guard let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
         
+        DispatchQueue.main.async {
+            self.surface = pixelBuffer
+        }
+
         DispatchQueue.global().async {
-            self.surface=pixelBuffer
-            let ciImage = CIImage(cvPixelBuffer: self.surface!)
-            let context=CIContext()
-            let streamCGImage=context.createCGImage(ciImage, from: ciImage.extent)
-            self.jpgData=NSImage(cgImage: streamCGImage!, size: NSSize(width: streamCGImage!.width/4, height: streamCGImage!.height/4)).jpgRepresentation
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let context = CIContext()
+            guard let streamCGImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+            self.jpgData = NSImage(
+                cgImage: streamCGImage,
+                size: NSSize(width: streamCGImage.width / 4, height: streamCGImage.height / 4)
+            ).jpgRepresentation
         }
         
         
