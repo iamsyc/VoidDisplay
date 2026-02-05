@@ -10,11 +10,15 @@ import SwiftUI
 struct VirtualDisplayView: View {
     @EnvironmentObject var appHelper: AppHelper
     @State var creatView = false
-    @State var editView = false
-    @State var selectedConfigId: UUID?
+    @State private var editingConfig: EditingConfig?
 
     @State private var showDeleteConfirm = false
     @State private var deleteCandidate: VirtualDisplayConfig?
+    @State private var showRestoreFailureAlert = false
+
+    private struct EditingConfig: Identifiable {
+        let id: UUID
+    }
     
     // Error handling
     @State private var showError = false
@@ -76,8 +80,7 @@ struct VirtualDisplayView: View {
                             .tint(isRunning ? .orange : .green)
                             
                             Button("Edit") {
-                                selectedConfigId = config.id
-                                editView = true
+                                editingConfig = EditingConfig(id: config.id)
                             }
                             
                             // Destroy button
@@ -99,18 +102,12 @@ struct VirtualDisplayView: View {
                 )
             }
         }
-        .id(appHelper.id)
         .sheet(isPresented: $creatView) {
             CreateVirtualDisplay(isShow: $creatView)
         }
-        .sheet(isPresented: $editView) {
-            if let configId = selectedConfigId {
-                EditVirtualDisplayConfigView(configId: configId, isShow: $editView)
-                    .environmentObject(appHelper)
-            } else {
-                Text("No selection")
-                    .padding()
-            }
+        .sheet(item: $editingConfig) { item in
+            EditVirtualDisplayConfigView(configId: item.id)
+                .environmentObject(appHelper)
         }
         .toolbar {
             Button("Add Virtual Display", systemImage: "plus") {
@@ -136,6 +133,28 @@ struct VirtualDisplayView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage)
+        }
+        .onAppear {
+            if !appHelper.restoreFailures.isEmpty {
+                showRestoreFailureAlert = true
+            }
+        }
+        .onChange(of: appHelper.restoreFailures) { _, newValue in
+            if !newValue.isEmpty {
+                showRestoreFailureAlert = true
+            }
+        }
+        .alert(String(localized: "Restore Failed"), isPresented: $showRestoreFailureAlert) {
+            Button("OK") {
+                appHelper.clearRestoreFailures()
+            }
+        } message: {
+            let failures = appHelper.restoreFailures.prefix(3)
+            let summary = failures
+                .map { "\($0.name) (Serial \($0.serialNum)): \($0.message)" }
+                .joined(separator: "\n\n")
+            let more = appHelper.restoreFailures.count > 3 ? "\n\n…" : ""
+            Text(summary + more)
         }
     }
     

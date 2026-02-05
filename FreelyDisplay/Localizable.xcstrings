@@ -593,6 +593,7 @@
       }
     },
     "No selection" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -763,6 +764,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分辨率模式"
+          }
+        }
+      }
+    },
+    "Restore Failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复失败"
           }
         }
       }

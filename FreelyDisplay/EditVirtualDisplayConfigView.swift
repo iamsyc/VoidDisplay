@@ -2,9 +2,9 @@ import SwiftUI
 
 struct EditVirtualDisplayConfigView: View {
     let configId: UUID
-    @Binding var isShow: Bool
 
     @EnvironmentObject var appHelper: AppHelper
+    @Environment(\.dismiss) private var dismiss
 
     @State private var loadedConfig: VirtualDisplayConfig?
 
@@ -22,6 +22,7 @@ struct EditVirtualDisplayConfigView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showRebuildPrompt = false
+    @State private var pendingUpdate: VirtualDisplayConfig?
 
     private var isRunning: Bool {
         appHelper.runtimeDisplay(for: configId) != nil
@@ -168,7 +169,7 @@ struct EditVirtualDisplayConfigView: View {
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
-                    isShow = false
+                    dismiss()
                 }
             }
         }
@@ -184,12 +185,14 @@ struct EditVirtualDisplayConfigView: View {
         }
         .alert("Rebuild Required", isPresented: $showRebuildPrompt) {
             Button("Save Only") {
-                isShow = false
+                savePendingAndDismiss()
             }
             Button("Rebuild Now") {
-                rebuildNow()
+                savePendingAndRebuild()
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) {
+                pendingUpdate = nil
+            }
         } message: {
             Text("Name or serial number changes require recreating the virtual display to take effect.")
         }
@@ -251,26 +254,40 @@ struct EditVirtualDisplayConfigView: View {
                 enableHiDPI: $0.enableHiDPI
             )
         }
-        appHelper.updateConfig(updated)
-        loadedConfig = updated
 
         let needsRebuild = isRunning && (original.name != updated.name || original.serialNum != updated.serialNum)
         if needsRebuild {
+            pendingUpdate = updated
             showRebuildPrompt = true
             return
         }
 
+        appHelper.updateConfig(updated)
+        loadedConfig = updated
         if isRunning {
             appHelper.applyModes(configId: configId, modes: selectedModes)
         }
-        isShow = false
+        dismiss()
     }
 
-    private func rebuildNow() {
+    private func savePendingAndDismiss() {
+        guard let pendingUpdate else { return }
+        appHelper.updateConfig(pendingUpdate)
+        loadedConfig = pendingUpdate
+        self.pendingUpdate = nil
+        dismiss()
+    }
+
+    private func savePendingAndRebuild() {
+        guard let pendingUpdate else { return }
+        appHelper.updateConfig(pendingUpdate)
+        loadedConfig = pendingUpdate
+        self.pendingUpdate = nil
+
         do {
             try appHelper.rebuildVirtualDisplay(configId: configId)
             appHelper.applyModes(configId: configId, modes: selectedModes)
-            isShow = false
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
             showError = true
@@ -305,4 +322,3 @@ struct EditVirtualDisplayConfigView: View {
         selectedModes.removeAll { $0.id == mode.id }
     }
 }
-
