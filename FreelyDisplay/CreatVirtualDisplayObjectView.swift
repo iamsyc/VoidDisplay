@@ -47,7 +47,7 @@ struct CreateVirtualDisplay: View {
     @FocusState private var focusedField: FocusField?
     
     @Binding var isShow: Bool
-    @EnvironmentObject var appHelper: AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
 
     private func clearFocus() {
         focusedField = nil

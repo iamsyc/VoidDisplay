@@ -27,7 +27,7 @@ struct EditDisplaySettingsView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     
-    @EnvironmentObject var appHelper: AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     
     var body: some View {
         Form {

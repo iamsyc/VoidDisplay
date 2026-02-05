@@ -7,10 +7,10 @@
 
 import Foundation
 import ScreenCaptureKit
-import Combine
 import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
+import Observation
 
 struct ScreenCaptureSession {
     let stream: SCStream
@@ -67,14 +67,23 @@ class StreamDelegate: NSObject, SCStreamDelegate {
 }
 
 
-class Capture:NSObject,SCStreamOutput,ObservableObject{
-    @Published var surface:CVImageBuffer?
-    var jpgData:Data?
-    private let encodingQueue = DispatchQueue(label: "phineas.mac.FreelyDisplay.capture.jpeg", qos: .userInitiated)
-    private let ciContext = CIContext()
-    private let jpegScale: CGFloat = 0.25
+@Observable
+final class Capture: NSObject, SCStreamOutput {
+    // `DispatchQueue.async` closures are `@Sendable`. `CVImageBuffer` is not `Sendable`, but we only read it
+    // while encoding and we keep it strongly referenced for the duration of the closure, so this is safe here.
+    private struct UncheckedSendable<T>: @unchecked Sendable {
+        let value: T
+    }
 
-    private func encodeJPEG(from pixelBuffer: CVImageBuffer) -> Data? {
+    @ObservationIgnored var surface: CVImageBuffer?
+    var frameNumber: UInt64 = 0
+
+    @ObservationIgnored var jpgData: Data?
+    @ObservationIgnored nonisolated private let encodingQueue = DispatchQueue(label: "phineas.mac.FreelyDisplay.capture.jpeg", qos: .userInitiated)
+    @ObservationIgnored nonisolated private let ciContext = CIContext()
+    @ObservationIgnored nonisolated private let jpegScale: CGFloat = 0.25
+
+    nonisolated private func encodeJPEG(from pixelBuffer: CVImageBuffer) -> Data? {
         autoreleasepool {
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
             let outputImage = ciImage.transformed(by: CGAffineTransform(scaleX: jpegScale, y: jpegScale))
@@ -94,21 +103,26 @@ class Capture:NSObject,SCStreamOutput,ObservableObject{
         }
     }
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    @MainActor func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        assert(
+            Thread.isMainThread,
+            "Expected Capture.stream(...) to run on main thread. Keep addStreamOutput(sampleHandlerQueue: .main) to avoid cross-actor hops."
+        )
         guard let pixelBuffer = sampleBuffer.imageBuffer else { return }
 
 
         // Get the backing IOSurface.
 //        guard let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
-        
-        // Keep UI updates on main thread.
-        self.surface = pixelBuffer
+
+        surface = pixelBuffer
+        frameNumber &+= 1
 
         // Encode JPEG off-main, but publish the result back on main to avoid data races with readers.
-        encodingQueue.async { [weak self] in
+        let pixelBufferBox = UncheckedSendable(value: pixelBuffer)
+        encodingQueue.async { [weak self, pixelBufferBox] in
             guard let self else { return }
-            let encoded = self.encodeJPEG(from: pixelBuffer)
-            DispatchQueue.main.async { [weak self] in
+            let encoded = self.encodeJPEG(from: pixelBufferBox.value)
+            Task { @MainActor [weak self] in
                 self?.jpgData = encoded
             }
         }

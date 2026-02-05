@@ -12,11 +12,12 @@ import CoreImage
 struct CaptureDisplayView: View {
     let sessionId: UUID
 
-    @EnvironmentObject var appHelper: AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     @Environment(\.dismiss) private var dismiss
 
-    @StateObject private var captureOut = Capture()
+    @State private var captureOut = Capture()
     @State private var cgImage: CGImage?
+    @State private var ciContext = CIContext()
     @State private var startTask: Task<Void, Never>?
 
     private var session: AppHelper.ScreenMonitoringSession? {
@@ -33,18 +34,17 @@ struct CaptureDisplayView: View {
                 Text("No Data")
             }
         }
-        .onReceive(appHelper.$screenCaptureSessions) { sessions in
-            if !sessions.contains(where: { $0.id == sessionId }) {
+        .onChange(of: appHelper.screenCaptureSessions.map(\.id)) { _, ids in
+            if !ids.contains(sessionId) {
                 startTask?.cancel()
                 startTask = nil
                 dismiss()
             }
         }
-        .onChange(of: captureOut.surface) {
+        .onChange(of: captureOut.frameNumber) { _, _ in
             guard let surface = captureOut.surface else { return }
             let ciImage = CIImage(cvPixelBuffer: surface)
-            let context = CIContext()
-            cgImage = context.createCGImage(ciImage, from: ciImage.extent)
+            cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
         }
         .onAppear {
             guard let session else {
@@ -66,4 +66,3 @@ struct CaptureDisplayView: View {
         .background(.black)
     }
 }
-

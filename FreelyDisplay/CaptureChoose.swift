@@ -11,7 +11,7 @@ import Cocoa
 import CoreGraphics
 
 struct CaptureChoose: View {
-    @EnvironmentObject var appHelper:AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     @State var displays:[SCDisplay]?
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
@@ -301,7 +301,7 @@ struct CaptureChoose: View {
 }
 
 struct IsCapturing: View {
-    @EnvironmentObject var appHelper:AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     @State var showAddView=false
 //    @Environment(\.openWindow) var openWindow
 
@@ -359,4 +359,5 @@ struct IsCapturing: View {
 
 #Preview {
     CaptureChoose()
+        .environment(AppHelper(preview: true))
 }

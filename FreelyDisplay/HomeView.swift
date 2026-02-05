@@ -66,4 +66,5 @@ struct HomeView: View {
 
 #Preview {
     HomeView()
+        .environment(AppHelper(preview: true))
 }

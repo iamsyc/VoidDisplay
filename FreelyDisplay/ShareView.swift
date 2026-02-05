@@ -11,7 +11,7 @@ import Network
 import Cocoa
 
 struct ShareView: View {
-    @EnvironmentObject var appHelper:AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     @State var displays:[SCDisplay]?
     @Environment(\.openWindow) var openWindow
     @State private var showOpenPageError = false
@@ -154,4 +154,5 @@ struct ShareView: View {
 
 #Preview {
     ShareView()
+        .environment(AppHelper(preview: true))
 }

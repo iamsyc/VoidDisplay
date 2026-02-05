@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct VirtualDisplayView: View {
-    @EnvironmentObject var appHelper: AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     @State var creatView = false
     @State private var editingConfig: EditingConfig?
 
@@ -107,7 +107,7 @@ struct VirtualDisplayView: View {
         }
         .sheet(item: $editingConfig) { item in
             EditVirtualDisplayConfigView(configId: item.id)
-                .environmentObject(appHelper)
+                .environment(appHelper)
         }
         .toolbar {
             Button("Add Virtual Display", systemImage: "plus") {
@@ -174,4 +174,5 @@ struct VirtualDisplayView: View {
 
 #Preview {
     VirtualDisplayView()
+        .environment(AppHelper(preview: true))
 }

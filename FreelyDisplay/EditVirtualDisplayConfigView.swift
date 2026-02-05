@@ -3,7 +3,7 @@ import SwiftUI
 struct EditVirtualDisplayConfigView: View {
     let configId: UUID
 
-    @EnvironmentObject var appHelper: AppHelper
+    @Environment(AppHelper.self) private var appHelper: AppHelper
     @Environment(\.dismiss) private var dismiss
 
     @State private var loadedConfig: VirtualDisplayConfig?

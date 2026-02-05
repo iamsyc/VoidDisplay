@@ -6,21 +6,21 @@
 //
 
 import SwiftUI
-import Combine
 import ScreenCaptureKit
 import Network
 import CoreGraphics
+import Observation
 
 //var sceneCapture:SceneCapture?
 @main
 struct FreelyDisplayApp: App {
 //    @StateObject var captureOutput=Capture()
-    @StateObject private var appHelper = AppHelper.shared
+    @State private var appHelper = AppHelper()
     
     var body: some Scene {
         WindowGroup {
             HomeView()
-                .environmentObject(appHelper)
+                .environment(appHelper)
 //                .onAppear{
 //                    Task{
 //                        let content = try? await SCShareableContent.excludingDesktopWindows(
@@ -35,7 +35,7 @@ struct FreelyDisplayApp: App {
         
         WindowGroup(for: UUID.self){$sessionId in
             CaptureDisplayWindowRoot(sessionId: sessionId)
-                .environmentObject(appHelper)
+                .environment(appHelper)
         }
         
         
@@ -47,7 +47,6 @@ struct FreelyDisplayApp: App {
 
 private struct CaptureDisplayWindowRoot: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var appHelper: AppHelper
     let sessionId: UUID?
 
     var body: some View {
@@ -61,7 +60,9 @@ private struct CaptureDisplayWindowRoot: View {
     }
 }
 
-class AppHelper:ObservableObject{
+@MainActor
+@Observable
+final class AppHelper {
     struct ScreenMonitoringSession: Identifiable {
         let id: UUID
         let displayID: CGDirectDisplayID
@@ -72,20 +73,20 @@ class AppHelper:ObservableObject{
         let delegate: StreamDelegate
     }
 
-    @Published var displays:[CGVirtualDisplay]=[]
-    @Published var displayConfigs:[VirtualDisplayConfig]=[]  // Stored configs (persisted)
-    static var shared=AppHelper()
-    @Published private(set) var runningConfigIds: Set<UUID> = []
-    @Published private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
-    @Published var screenCaptureSessions: [ScreenMonitoringSession] = []
-    @Published var sharingScreenCaptureObject:SCStream?=nil
-    @Published var sharingScreenCaptureStream:Capture?=nil
-    @Published var isSharing=false
-    let webServer=try? WebServer(using: 8081)
-    var sharingScreenCaptureDelegate: StreamDelegate? = nil
+    var displays: [CGVirtualDisplay] = []
+    var displayConfigs: [VirtualDisplayConfig] = []  // Stored configs (persisted)
+    private(set) var runningConfigIds: Set<UUID> = []
+    private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
+    var screenCaptureSessions: [ScreenMonitoringSession] = []
+    var sharingScreenCaptureObject: SCStream? = nil
+    var sharingScreenCaptureStream: Capture? = nil
+    var isSharing = false
 
-    private let virtualDisplayStore = VirtualDisplayStore()
-    private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
+    @ObservationIgnored private(set) var webServer: WebServer? = nil
+    @ObservationIgnored var sharingScreenCaptureDelegate: StreamDelegate? = nil
+
+    @ObservationIgnored private let virtualDisplayStore = VirtualDisplayStore()
+    @ObservationIgnored private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
 
     struct VirtualDisplayRestoreFailure: Identifiable, Equatable {
         let id: UUID
@@ -94,7 +95,12 @@ class AppHelper:ObservableObject{
         let message: String
     }
 
-    init() {
+    init(preview: Bool = false) {
+        guard !preview else { return }
+
+        webServer = try? WebServer(using: 8081, frameProvider: { [weak self] in
+            self?.sharingScreenCaptureStream?.jpgData
+        })
         webServer?.startListener()
 
         do {
@@ -104,9 +110,7 @@ class AppHelper:ObservableObject{
             displayConfigs = []
         }
 
-        DispatchQueue.main.async { [weak self] in
-            self?.restoreDesiredVirtualDisplays()
-        }
+        restoreDesiredVirtualDisplays()
     }
 
     // MARK: - Screen Monitoring
