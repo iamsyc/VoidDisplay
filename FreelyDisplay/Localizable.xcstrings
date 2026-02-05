@@ -485,6 +485,22 @@
         }
       }
     },
+    "Failed to build URL: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Failed to build URL: %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法生成 URL：%1$@"
+          }
+        }
+      }
+    },
     "Height" : {
       "localizations" : {
         "zh-Hans" : {
@@ -680,6 +696,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无显示器"
+          }
+        }
+      }
+    },
+    "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到可用的局域网 IP 地址。请连接 Wi‑Fi 或以太网后重试。"
           }
         }
       }
@@ -1233,6 +1259,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建虚拟显示器失败"
+          }
+        }
+      }
+    },
+    "Web server is not running." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务器未运行。"
           }
         }
       }

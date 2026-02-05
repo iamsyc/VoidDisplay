@@ -13,8 +13,9 @@ import Cocoa
 struct ShareView: View {
     @EnvironmentObject var appHelper:AppHelper
     @State var displays:[SCDisplay]?
-    @Environment(\.openURL) var openURL
     @Environment(\.openWindow) var openWindow
+    @State private var showOpenPageError = false
+    @State private var openPageErrorMessage = ""
     var body: some View {
         if !appHelper.isSharing{
             Group{
@@ -106,21 +107,45 @@ struct ShareView: View {
                 Text("Sharing in progress")
                     .font(.largeTitle)
                 HStack{
-                    Button("Stop sharing"){
+                    Button {
                         appHelper.sharingScreenCaptureObject?.stopCapture()
                         appHelper.sharingScreenCaptureDelegate = nil
                         appHelper.isSharing=false
+                    } label: {
+                        Text("Stop sharing")
                     }
                     .foregroundStyle(.red)
 //                    .buttonStyle(.bordered)
-                    Button("Open the page"){
+                    Button {
 //                        print(getWiFiIPAddress())
 //                        openURL(URL(string: "\(getWiFiIPAddress()):\(appHelper.webServer?.listener?.port)")!)
-                        guard let ip=getWiFiIPAddress(),let port=appHelper.webServer?.listener?.port else {return}
-                        openURL(URL(string:"http://\(ip):\(port)")!)
+                        guard let ip = getWiFiIPAddress() else {
+                            openPageErrorMessage = String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again.")
+                            showOpenPageError = true
+                            return
+                        }
+                        guard let port = appHelper.webServer?.listener?.port else {
+                            openPageErrorMessage = String(localized: "Web server is not running.")
+                            showOpenPageError = true
+                            return
+                        }
+                        let urlString = "http://\(ip):\(port.rawValue)"
+                        guard let url = URL(string: urlString) else {
+                            openPageErrorMessage = String(localized: "Failed to build URL: \(urlString)")
+                            showOpenPageError = true
+                            return
+                        }
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Text("Open the page")
                     }
                 }
                     
+            }
+            .alert("Error", isPresented: $showOpenPageError) {
+                Button("OK") {}
+            } message: {
+                Text(openPageErrorMessage)
             }
         }
             

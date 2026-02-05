@@ -8,6 +8,9 @@
 import Foundation
 import ScreenCaptureKit
 import Combine
+import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
 
 struct ScreenCaptureSession {
     let stream: SCStream
@@ -67,6 +70,30 @@ class StreamDelegate: NSObject, SCStreamDelegate {
 class Capture:NSObject,SCStreamOutput,ObservableObject{
     @Published var surface:CVImageBuffer?
     var jpgData:Data?
+    private let encodingQueue = DispatchQueue(label: "phineas.mac.FreelyDisplay.capture.jpeg", qos: .userInitiated)
+    private let ciContext = CIContext()
+    private let jpegScale: CGFloat = 0.25
+
+    private func encodeJPEG(from pixelBuffer: CVImageBuffer) -> Data? {
+        autoreleasepool {
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let outputImage = ciImage.transformed(by: CGAffineTransform(scaleX: jpegScale, y: jpegScale))
+            guard let cgImage = ciContext.createCGImage(outputImage, from: outputImage.extent) else { return nil }
+
+            let mutableData = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(
+                mutableData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            ) else { return nil }
+
+            let options = [kCGImageDestinationLossyCompressionQuality as String: 0.65] as CFDictionary
+            CGImageDestinationAddImage(destination, cgImage, options)
+            return CGImageDestinationFinalize(destination) ? (mutableData as Data) : nil
+        }
+    }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard let pixelBuffer = sampleBuffer.imageBuffer else { return }
 
@@ -74,18 +101,16 @@ class Capture:NSObject,SCStreamOutput,ObservableObject{
         // Get the backing IOSurface.
 //        guard let surfaceRef = CVPixelBufferGetIOSurface(pixelBuffer)?.takeUnretainedValue() else { return }
         
-        DispatchQueue.main.async {
-            self.surface = pixelBuffer
-        }
+        // Keep UI updates on main thread.
+        self.surface = pixelBuffer
 
-        DispatchQueue.global().async {
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-            let context = CIContext()
-            guard let streamCGImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-            self.jpgData = NSImage(
-                cgImage: streamCGImage,
-                size: NSSize(width: streamCGImage.width / 4, height: streamCGImage.height / 4)
-            ).jpgRepresentation
+        // Encode JPEG off-main, but publish the result back on main to avoid data races with readers.
+        encodingQueue.async { [weak self] in
+            guard let self else { return }
+            let encoded = self.encodeJPEG(from: pixelBuffer)
+            DispatchQueue.main.async { [weak self] in
+                self?.jpgData = encoded
+            }
         }
         
         
