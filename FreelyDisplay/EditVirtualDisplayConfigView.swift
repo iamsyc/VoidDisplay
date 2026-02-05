@@ -12,6 +12,12 @@ struct EditVirtualDisplayConfigView: View {
     @State private var serialNum: Int = 1
     @State private var selectedModes: [ResolutionSelection] = []
 
+    // Physical display
+    @State private var screenDiagonal: Double = 14.0
+    @State private var selectedAspectRatio: AspectRatio = .ratio_16_9
+    @State private var initialScreenDiagonal: Double = 14.0
+    @State private var initialAspectRatio: AspectRatio = .ratio_16_9
+
     @State private var usePresetMode = true
     @State private var presetResolution: Resolutions = .r_1920_1080
     @State private var customWidth: Int = 1920
@@ -26,6 +32,27 @@ struct EditVirtualDisplayConfigView: View {
 
     private var isRunning: Bool {
         appHelper.runtimeDisplay(for: configId) != nil
+    }
+
+    private var physicalSizeFromInputs: (width: Int, height: Int) {
+        selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
+    }
+
+    private var aspectPreviewRatio: CGFloat {
+        let components = selectedAspectRatio.components
+        return CGFloat(components.width / components.height)
+    }
+
+    private var displayedPhysicalSizeText: String {
+        guard let loadedConfig else {
+            return "\(physicalSizeFromInputs.width) × \(physicalSizeFromInputs.height) mm"
+        }
+
+        let unchanged = abs(screenDiagonal - initialScreenDiagonal) < 0.0001 && selectedAspectRatio == initialAspectRatio
+        let size: (width: Int, height: Int) = unchanged
+            ? (width: loadedConfig.physicalWidth, height: loadedConfig.physicalHeight)
+            : physicalSizeFromInputs
+        return "\(size.width) × \(size.height) mm"
     }
 
     var body: some View {
@@ -48,6 +75,47 @@ struct EditVirtualDisplayConfigView: View {
                 }
             } header: {
                 Text("Basic Info")
+            }
+
+            Section {
+                HStack {
+                    Text("Screen Size")
+                    Spacer()
+                    TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    Text("inches")
+                }
+
+                Picker("Aspect Ratio", selection: $selectedAspectRatio) {
+                    ForEach(AspectRatio.allCases) { ratio in
+                        Text(ratio.rawValue).tag(ratio)
+                    }
+                }
+
+                HStack {
+                    Text("Physical Size")
+                    Spacer()
+                    Text(verbatim: displayedPhysicalSizeText)
+                        .foregroundColor(.secondary)
+                }
+
+                HStack {
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .aspectRatio(aspectPreviewRatio, contentMode: .fit)
+                        .frame(height: 60)
+                        .overlay {
+                            Text(selectedAspectRatio.rawValue)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Physical Display")
             }
 
             Section {
@@ -159,7 +227,7 @@ struct EditVirtualDisplayConfigView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 560)
+        .frame(width: 480, height: 580)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
@@ -194,7 +262,7 @@ struct EditVirtualDisplayConfigView: View {
                 pendingUpdate = nil
             }
         } message: {
-            Text("Name or serial number changes require recreating the virtual display to take effect.")
+            Text("Some changes require recreating the virtual display to take effect.")
         }
         .onAppear {
             load()
@@ -212,6 +280,25 @@ struct EditVirtualDisplayConfigView: View {
         name = config.name
         serialNum = Int(config.serialNum)
         selectedModes = config.resolutionModes
+
+        let physicalWidth = Double(config.physicalWidth)
+        let physicalHeight = Double(config.physicalHeight)
+        if physicalWidth > 0, physicalHeight > 0 {
+            let inferredRatio = physicalWidth / physicalHeight
+            let closestRatio = AspectRatio.allCases.min { lhs, rhs in
+                let l = abs((lhs.components.width / lhs.components.height) - inferredRatio)
+                let r = abs((rhs.components.width / rhs.components.height) - inferredRatio)
+                return l < r
+            } ?? .ratio_16_9
+
+            let diagonal = sqrt(physicalWidth * physicalWidth + physicalHeight * physicalHeight) / 25.4
+            let rounded = (diagonal * 10).rounded() / 10
+
+            selectedAspectRatio = closestRatio
+            screenDiagonal = rounded
+            initialAspectRatio = closestRatio
+            initialScreenDiagonal = rounded
+        }
 
         if let first = selectedModes.first {
             customWidth = first.width
@@ -236,6 +323,12 @@ struct EditVirtualDisplayConfigView: View {
             return
         }
 
+        guard screenDiagonal > 0 else {
+            errorMessage = String(localized: "Please enter a valid screen size.")
+            showError = true
+            return
+        }
+
         let newSerial = UInt32(serialNum)
         if appHelper.displayConfigs.contains(where: { $0.id != configId && $0.serialNum == newSerial }) {
             errorMessage = String(localized: "Serial number \(newSerial) is already in use.")
@@ -255,7 +348,23 @@ struct EditVirtualDisplayConfigView: View {
             )
         }
 
-        let needsRebuild = isRunning && (original.name != updated.name || original.serialNum != updated.serialNum)
+        let physicalInputsChanged = abs(screenDiagonal - initialScreenDiagonal) >= 0.0001 || selectedAspectRatio != initialAspectRatio
+        if physicalInputsChanged {
+            let size = physicalSizeFromInputs
+            updated.physicalWidth = size.width
+            updated.physicalHeight = size.height
+        }
+
+        let newMaxPixels = updated.maxPixelDimensions
+        let oldMaxPixels = original.maxPixelDimensions
+        let needsRebuild = isRunning && (
+            original.name != updated.name ||
+            original.serialNum != updated.serialNum ||
+            original.physicalWidth != updated.physicalWidth ||
+            original.physicalHeight != updated.physicalHeight ||
+            newMaxPixels.width > oldMaxPixels.width ||
+            newMaxPixels.height > oldMaxPixels.height
+        )
         if needsRebuild {
             pendingUpdate = updated
             showRebuildPrompt = true

@@ -543,6 +543,7 @@
       }
     },
     "Name or serial number changes require recreating the virtual display to take effect." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -694,8 +695,25 @@
         }
       }
     },
+    "Please enter a valid screen size." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入有效的屏幕尺寸。"
+          }
+        }
+      }
+    },
     "Please enter a valid serial number." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入有效的序列号。"
+          }
+        }
+      }
     },
     "Please enter valid resolution values." : {
       "localizations" : {
@@ -916,6 +934,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示器运行时，部分修改需要重建后才能生效。"
+          }
+        }
+      }
+    },
+    "Some changes require recreating the virtual display to take effect." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分修改需要重建虚拟显示器后才能生效。"
           }
         }
       }
