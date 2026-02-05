@@ -128,7 +128,7 @@ struct CreateVirtualDisplay: View {
                 HStack {
                     Text("Physical Size")
                     Spacer()
-                    Text("\(physicalSize.width) × \(physicalSize.height) mm")
+                    Text(verbatim: "\(physicalSize.width) × \(physicalSize.height) mm")
                         .foregroundColor(.secondary)
                 }
                 .contentShape(Rectangle())
@@ -166,7 +166,7 @@ struct CreateVirtualDisplay: View {
                     ForEach($selectedModes) { $mode in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
+                                Text(verbatim: "\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
                             }
                             Spacer()
                             HStack(spacing: 6) {
@@ -192,23 +192,21 @@ struct CreateVirtualDisplay: View {
                 
                 Divider()
                 
-                // Add mode controls
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker("Add Method", selection: $usePresetMode) {
-                        Text("Preset").tag(true)
-                        Text("Custom").tag(false)
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: usePresetMode) { _, _ in
-                        clearFocus()
-                    }
-                    
-                    if usePresetMode {
-                        // Preset mode
-                        HStack {
+                Picker("Add Method", selection: $usePresetMode) {
+                    Text("Preset").tag(true)
+                    Text("Custom").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: usePresetMode) { _, _ in
+                    clearFocus()
+                }
+
+                if usePresetMode {
+                    LabeledContent(String(localized: "Preset")) {
+                        HStack(spacing: 8) {
                             Picker("Preset Resolution", selection: $presetResolution) {
                                 ForEach(Resolutions.allCases) { res in
-                                    Text("\(res.resolutions.0) × \(res.resolutions.1)")
+                                    Text(verbatim: "\(res.resolutions.0) × \(res.resolutions.1) @ 60Hz")
                                         .tag(res)
                                 }
                             }
@@ -216,7 +214,7 @@ struct CreateVirtualDisplay: View {
                             .onChange(of: presetResolution) { _, _ in
                                 clearFocus()
                             }
-                            
+
                             Button(action: {
                                 clearFocus()
                                 addPresetMode()
@@ -226,37 +224,46 @@ struct CreateVirtualDisplay: View {
                             }
                             .buttonStyle(.plain)
                         }
-                    } else {
-                        // Custom mode
+                    }
+                } else {
+                    LabeledContent(String(localized: "Custom")) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            TextField("", value: $customWidth, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 90)
-                                .multilineTextAlignment(.trailing)
-                                .focused($focusedField, equals: .customWidth)
-                                .accessibilityLabel("Width")
-                                .monospacedDigit()
-                            Text("×")
-                                .foregroundColor(.secondary)
-                            TextField("", value: $customHeight, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 90)
-                                .multilineTextAlignment(.trailing)
-                                .focused($focusedField, equals: .customHeight)
-                                .accessibilityLabel("Height")
-                                .monospacedDigit()
-                            Text("@")
-                                .foregroundColor(.secondary)
-                            TextField("", value: $customRefreshRate, format: .number)
+                            TextField("Width", value: $customWidth, format: .number)
+                                .labelsHidden()
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
                                 .multilineTextAlignment(.trailing)
-                                .focused($focusedField, equals: .customRefreshRate)
-                                .accessibilityLabel("Refresh rate")
+                                .focused($focusedField, equals: .customWidth)
                                 .monospacedDigit()
+                                .controlSize(.small)
+
+                            Text("×")
+                                .foregroundColor(.secondary)
+
+                            TextField("Height", value: $customHeight, format: .number)
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 70)
+                                .multilineTextAlignment(.trailing)
+                                .focused($focusedField, equals: .customHeight)
+                                .monospacedDigit()
+                                .controlSize(.small)
+
+                            Text("@")
+                                .foregroundColor(.secondary)
+
+                            TextField("Hz", value: $customRefreshRate, format: .number)
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 44)
+                                .multilineTextAlignment(.trailing)
+                                .focused($focusedField, equals: .customRefreshRate)
+                                .monospacedDigit()
+                                .controlSize(.small)
+
                             Text("Hz")
                                 .foregroundColor(.secondary)
-                            
+
                             Button(action: {
                                 clearFocus()
                                 addCustomMode()
