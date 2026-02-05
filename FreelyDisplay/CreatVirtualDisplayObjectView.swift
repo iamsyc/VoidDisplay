@@ -52,6 +52,14 @@ struct CreateVirtualDisplay: View {
     private func clearFocus() {
         focusedField = nil
     }
+
+    private var baseDisplayName: String {
+        String(localized: "Virtual Display")
+    }
+
+    private func defaultName(for serial: UInt32) -> String {
+        "\(baseDisplayName) \(serial)"
+    }
     
     // MARK: - Computed Properties
     
@@ -312,6 +320,9 @@ struct CreateVirtualDisplay: View {
         }
         .onAppear {
             serialNum = appHelper.nextAvailableSerialNumber()
+            if name == baseDisplayName {
+                name = defaultName(for: serialNum)
+            }
             focusedField = .name
             // Add a default mode
             if selectedModes.isEmpty {
