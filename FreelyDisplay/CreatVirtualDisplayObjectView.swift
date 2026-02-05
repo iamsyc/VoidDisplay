@@ -228,22 +228,34 @@ struct CreateVirtualDisplay: View {
                         }
                     } else {
                         // Custom mode
-                        HStack {
-                            TextField("Width", value: $customWidth, format: .number)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            TextField("", value: $customWidth, format: .number)
                                 .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
+                                .frame(width: 90)
+                                .multilineTextAlignment(.trailing)
                                 .focused($focusedField, equals: .customWidth)
+                                .accessibilityLabel("Width")
+                                .monospacedDigit()
                             Text("×")
-                            TextField("Height", value: $customHeight, format: .number)
+                                .foregroundColor(.secondary)
+                            TextField("", value: $customHeight, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 90)
+                                .multilineTextAlignment(.trailing)
+                                .focused($focusedField, equals: .customHeight)
+                                .accessibilityLabel("Height")
+                                .monospacedDigit()
+                            Text("@")
+                                .foregroundColor(.secondary)
+                            TextField("", value: $customRefreshRate, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 70)
-                                .focused($focusedField, equals: .customHeight)
-                            Text("@")
-                            TextField("Hz", value: $customRefreshRate, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 50)
+                                .multilineTextAlignment(.trailing)
                                 .focused($focusedField, equals: .customRefreshRate)
+                                .accessibilityLabel("Refresh rate")
+                                .monospacedDigit()
                             Text("Hz")
+                                .foregroundColor(.secondary)
                             
                             Button(action: {
                                 clearFocus()
