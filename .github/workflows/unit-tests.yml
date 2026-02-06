@@ -7,6 +7,10 @@ on:
       - 'codex/**'
   pull_request:
 
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit-tests:
     runs-on: macos-14
