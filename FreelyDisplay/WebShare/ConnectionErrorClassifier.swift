@@ -28,7 +28,7 @@ private func isExpectedClientDisconnect(_ nwError: NWError) -> Bool {
 
 private func isExpectedClientDisconnect(_ code: POSIXErrorCode) -> Bool {
     switch code {
-    case .ECONNRESET, .EPIPE, .ECANCELED:
+    case .ECONNRESET, .EPIPE, .ECANCELED, .ECONNABORTED, .ENOTCONN:
         return true
     default:
         return false

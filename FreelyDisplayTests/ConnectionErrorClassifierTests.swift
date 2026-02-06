@@ -19,6 +19,16 @@ struct ConnectionErrorClassifierTests {
         #expect(shouldTreatAsExpectedClientDisconnect(error))
     }
 
+    @Test func marksConnectionAbortedAsExpectedDisconnect() {
+        let error = POSIXError(.ECONNABORTED)
+        #expect(shouldTreatAsExpectedClientDisconnect(error))
+    }
+
+    @Test func marksNotConnectedAsExpectedDisconnect() {
+        let error = NWError.posix(.ENOTCONN)
+        #expect(shouldTreatAsExpectedClientDisconnect(error))
+    }
+
     @Test func keepsUnexpectedNetworkErrorAsFailure() {
         let error = NWError.posix(.ETIMEDOUT)
         #expect(shouldTreatAsExpectedClientDisconnect(error) == false)
