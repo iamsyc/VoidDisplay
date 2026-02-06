@@ -247,6 +247,16 @@
         }
       }
     },
+    "Close service" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭服务"
+          }
+        }
+      }
+    },
     "Create" : {
       "localizations" : {
         "zh-Hans" : {
@@ -475,16 +485,6 @@
         }
       }
     },
-    "Failure Reason" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失败原因"
-          }
-        }
-      }
-    },
     "Failed to build URL: %@" : {
       "localizations" : {
         "en" : {
@@ -497,6 +497,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法生成 URL：%1$@"
+          }
+        }
+      }
+    },
+    "Failed to start web service." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 Web 服务失败。"
+          }
+        }
+      }
+    },
+    "Failure Reason" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败原因"
           }
         }
       }
@@ -680,6 +700,16 @@
         }
       }
     },
+    "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到可用的局域网 IP 地址。请连接 Wi‑Fi 或以太网后重试。"
+          }
+        }
+      }
+    },
     "No Data" : {
       "localizations" : {
         "zh-Hans" : {
@@ -696,16 +726,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无显示器"
-          }
-        }
-      }
-    },
-    "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到可用的局域网 IP 地址。请连接 Wi‑Fi 或以太网后重试。"
           }
         }
       }
@@ -1175,6 +1195,16 @@
         }
       }
     },
+    "Start service" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动服务"
+          }
+        }
+      }
+    },
     "Stop sharing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1264,11 +1294,32 @@
       }
     },
     "Web server is not running." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 服务器未运行。"
+          }
+        }
+      }
+    },
+    "Web service is not running." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务未运行。"
+          }
+        }
+      }
+    },
+    "Web service is off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务已关闭"
           }
         }
       }

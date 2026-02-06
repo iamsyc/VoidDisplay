@@ -31,14 +31,77 @@
             height: auto;
             display: inline-block;
         }
+        .status {
+            margin-top: 0.75rem;
+            color: #b03a2e;
+            font-size: 1rem;
+            display: none;
+        }
+        .retry-button {
+            margin-top: 0.75rem;
+            border: 1px solid #666;
+            background: white;
+            border-radius: 8px;
+            padding: 0.45rem 0.8rem;
+            cursor: pointer;
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="title-bar">
-        <h1>Display</h1>
+        <h1 id="pageTitle">Display</h1>
     </div>
     <div class="image-container">
         <img src="./stream" alt="display" class="responsive-image" id="display">
+        <p class="status" id="status">Sharing has stopped</p>
+        <button class="retry-button" id="retry" type="button">Retry connection</button>
     </div>
+    <script>
+        const displayImage = document.getElementById("display");
+        const pageTitle = document.getElementById("pageTitle");
+        const status = document.getElementById("status");
+        const retry = document.getElementById("retry");
+        const lang = navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
+
+        const i18n = {
+            en: {
+                title: "Display",
+                statusStopped: "Sharing has stopped",
+                retry: "Retry connection"
+            },
+            "zh-Hans": {
+                title: "屏幕共享",
+                statusStopped: "共享已停止",
+                retry: "重试连接"
+            }
+        };
+
+        function applyLocale() {
+            const text = i18n[lang] || i18n.en;
+            document.documentElement.lang = lang;
+            document.title = text.title;
+            pageTitle.textContent = text.title;
+            status.textContent = text.statusStopped;
+            retry.textContent = text.retry;
+            displayImage.alt = text.title;
+        }
+
+        function updateState(stopped) {
+            status.style.display = stopped ? "block" : "none";
+            retry.style.display = stopped ? "inline-block" : "none";
+            displayImage.style.display = stopped ? "none" : "inline-block";
+        }
+
+        function reloadStream() {
+            updateState(false);
+            displayImage.src = `./stream?t=${Date.now()}`;
+        }
+
+        displayImage.addEventListener("load", () => updateState(false));
+        displayImage.addEventListener("error", () => updateState(true));
+        retry.addEventListener("click", reloadStream);
+        applyLocale();
+    </script>
 </body>
 </html>

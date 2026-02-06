@@ -81,12 +81,14 @@ final class AppHelper {
     var sharingScreenCaptureObject: SCStream? = nil
     var sharingScreenCaptureStream: Capture? = nil
     var isSharing = false
+    var isWebServiceRunning = false
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored var sharingScreenCaptureDelegate: StreamDelegate? = nil
 
     @ObservationIgnored private let virtualDisplayStore = VirtualDisplayStore()
     @ObservationIgnored private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
+    @ObservationIgnored private let webServicePort: NWEndpoint.Port = 8081
 
     struct VirtualDisplayRestoreFailure: Identifiable, Equatable {
         let id: UUID
@@ -98,10 +100,7 @@ final class AppHelper {
     init(preview: Bool = false) {
         guard !preview else { return }
 
-        webServer = try? WebServer(using: 8081, frameProvider: { [weak self] in
-            self?.sharingScreenCaptureStream?.jpgData
-        })
-        webServer?.startListener()
+        _ = startWebService()
 
         do {
             displayConfigs = try virtualDisplayStore.load()
@@ -111,6 +110,57 @@ final class AppHelper {
         }
 
         restoreDesiredVirtualDisplays()
+    }
+
+    @discardableResult
+    func startWebService() -> Bool {
+        guard !isWebServiceRunning else { return true }
+        guard webServer == nil else {
+            isWebServiceRunning = true
+            return true
+        }
+
+        webServer = try? WebServer(
+            using: webServicePort,
+            isSharingProvider: { [weak self] in
+                self?.isSharing ?? false
+            },
+            frameProvider: { [weak self] in
+                guard let self, self.isSharing else { return nil }
+                return self.sharingScreenCaptureStream?.jpgData
+            }
+        )
+        webServer?.startListener()
+        isWebServiceRunning = webServer != nil
+        return isWebServiceRunning
+    }
+
+    func stopWebService() {
+        stopSharing()
+        webServer?.stopListener()
+        webServer = nil
+        isWebServiceRunning = false
+    }
+
+    func beginSharing(stream: SCStream, output: Capture, delegate: StreamDelegate) {
+        sharingScreenCaptureStream = output
+        sharingScreenCaptureObject = stream
+        sharingScreenCaptureDelegate = delegate
+        isSharing = true
+    }
+
+    func stopSharing() {
+        sharingScreenCaptureObject?.stopCapture()
+        sharingScreenCaptureObject = nil
+        sharingScreenCaptureDelegate = nil
+        sharingScreenCaptureStream?.jpgData = nil
+        sharingScreenCaptureStream = nil
+        isSharing = false
+        webServer?.disconnectStreamClient()
+    }
+
+    var webServicePortValue: UInt16 {
+        webServicePort.rawValue
     }
 
     // MARK: - Screen Monitoring
