@@ -23,17 +23,22 @@ struct HomeView: View {
                 Section("Monitor"){
                     Label("Screen", systemImage: "display")
                         .tag(SidebarItem.screen)
+                        .accessibilityIdentifier("sidebar_screen")
                     Label("Virtual Display", systemImage: "display.2")
                         .tag(SidebarItem.virtualDisplay)
+                        .accessibilityIdentifier("sidebar_virtual_display")
                     Label("Monitor Screen", systemImage: "dot.scope.display")
                         .tag(SidebarItem.monitorScreen)
+                        .accessibilityIdentifier("sidebar_monitor_screen")
                 }
                 Section("Sharing"){
                     Label("Screen Sharing", systemImage: "display")
                         .tag(SidebarItem.screenSharing)
+                        .accessibilityIdentifier("sidebar_screen_sharing")
                     
                 }
             }
+            .accessibilityIdentifier("home_sidebar")
             .navigationSplitViewColumnWidth(min: 160, ideal: 160,max: 190)
         } detail: {
             NavigationStack {
@@ -42,15 +47,19 @@ struct HomeView: View {
                     case .screen:
                         DisplaysView()
                             .navigationTitle("Screen")
+                            .accessibilityIdentifier("detail_screen")
                     case .virtualDisplay:
                         VirtualDisplayView()
                             .navigationTitle("Virtual Display")
+                            .accessibilityIdentifier("detail_virtual_display")
                     case .monitorScreen:
                         IsCapturing()
                             .navigationTitle("Monitor Screen")
+                            .accessibilityIdentifier("detail_monitor_screen")
                     case .screenSharing:
                         ShareView()
                             .navigationTitle("Screen Sharing")
+                            .accessibilityIdentifier("detail_screen_sharing")
                     }
                 }
             }

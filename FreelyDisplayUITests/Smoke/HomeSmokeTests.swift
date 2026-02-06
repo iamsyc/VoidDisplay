@@ -7,7 +7,7 @@
 
 import XCTest
 
-final class FreelyDisplayUITests: XCTestCase {
+final class HomeSmokeTests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -23,19 +23,23 @@ final class FreelyDisplayUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testHomeSmoke() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-    }
+        let sidebar = app.descendants(matching: .any)
+            .matching(identifier: "home_sidebar")
+            .firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+        let sidebarScreen = app.descendants(matching: .any)
+            .matching(identifier: "sidebar_screen")
+            .firstMatch
+        XCTAssertTrue(sidebarScreen.waitForExistence(timeout: 2))
+
+        let defaultDetail = app.descendants(matching: .any)
+            .matching(identifier: "detail_screen")
+            .firstMatch
+        XCTAssertTrue(defaultDetail.waitForExistence(timeout: 2))
     }
 }
