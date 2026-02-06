@@ -1,0 +1,151 @@
+name: CI Summary
+
+on:
+  workflow_run:
+    workflows:
+      - Unit Tests
+      - UI Smoke Tests
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-summary-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Collect workflow results
+        id: collect
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_NAME: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+
+          repo_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs"
+          max_attempts=18
+          attempt=1
+
+          unit_status="missing"
+          unit_conclusion="missing"
+          unit_url=""
+          ui_status="missing"
+          ui_conclusion="missing"
+          ui_url=""
+
+          while [ "$attempt" -le "$max_attempts" ]; do
+            response="$(curl -fsSL \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${repo_api}?head_sha=${SHA}&per_page=100")"
+
+            unit_status="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+              .workflow_runs
+              | map(select(.name == "Unit Tests" and .event == $event))
+              | sort_by(.run_number) | reverse
+              | (.[0].status // "missing")')"
+            unit_conclusion="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+              .workflow_runs
+              | map(select(.name == "Unit Tests" and .event == $event))
+              | sort_by(.run_number) | reverse
+              | (.[0].conclusion // "missing")')"
+            unit_url="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+              .workflow_runs
+              | map(select(.name == "Unit Tests" and .event == $event))
+              | sort_by(.run_number) | reverse
+              | (.[0].html_url // "")')"
+
+            ui_status="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+              .workflow_runs
+              | map(select(.name == "UI Smoke Tests" and .event == $event))
+              | sort_by(.run_number) | reverse
+              | (.[0].status // "missing")')"
+            ui_conclusion="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+              .workflow_runs
+              | map(select(.name == "UI Smoke Tests" and .event == $event))
+              | sort_by(.run_number) | reverse
+              | (.[0].conclusion // "missing")')"
+            ui_url="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+              .workflow_runs
+              | map(select(.name == "UI Smoke Tests" and .event == $event))
+              | sort_by(.run_number) | reverse
+              | (.[0].html_url // "")')"
+
+            wait_needed=0
+            if [ "$unit_status" != "missing" ] && [ "$unit_status" != "completed" ]; then
+              wait_needed=1
+            fi
+            if [ "$ui_status" != "missing" ] && [ "$ui_status" != "completed" ]; then
+              wait_needed=1
+            fi
+
+            if [ "$wait_needed" -eq 0 ]; then
+              break
+            fi
+
+            attempt=$((attempt + 1))
+            sleep 20
+          done
+
+          {
+            echo "unit_status=${unit_status}"
+            echo "unit_conclusion=${unit_conclusion}"
+            echo "unit_url=${unit_url}"
+            echo "ui_status=${ui_status}"
+            echo "ui_conclusion=${ui_conclusion}"
+            echo "ui_url=${ui_url}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write summary
+        env:
+          UNIT_STATUS: ${{ steps.collect.outputs.unit_status }}
+          UNIT_CONCLUSION: ${{ steps.collect.outputs.unit_conclusion }}
+          UNIT_URL: ${{ steps.collect.outputs.unit_url }}
+          UI_STATUS: ${{ steps.collect.outputs.ui_status }}
+          UI_CONCLUSION: ${{ steps.collect.outputs.ui_conclusion }}
+          UI_URL: ${{ steps.collect.outputs.ui_url }}
+        run: |
+          set -euo pipefail
+
+          unit_link="-"
+          ui_link="-"
+          if [ -n "$UNIT_URL" ]; then unit_link="[Open]($UNIT_URL)"; fi
+          if [ -n "$UI_URL" ]; then ui_link="[Open]($UI_URL)"; fi
+
+          {
+            echo "## CI Summary"
+            echo
+            echo "| Workflow | Status | Conclusion | Link |"
+            echo "| --- | --- | --- | --- |"
+            echo "| Unit Tests | ${UNIT_STATUS} | ${UNIT_CONCLUSION} | ${unit_link} |"
+            echo "| UI Smoke Tests | ${UI_STATUS} | ${UI_CONCLUSION} | ${ui_link} |"
+            echo
+            echo "Gate rule: only \`Unit Tests\` is required to pass; \`UI Smoke Tests\` is informational (non-blocking)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce unit-test gate
+        env:
+          UNIT_CONCLUSION: ${{ steps.collect.outputs.unit_conclusion }}
+        run: |
+          set -euo pipefail
+          case "$UNIT_CONCLUSION" in
+            success|neutral|skipped)
+              exit 0
+              ;;
+            missing)
+              echo "Unit Tests workflow result is missing for this commit/event."
+              exit 1
+              ;;
+            *)
+              echo "Unit Tests concluded with: ${UNIT_CONCLUSION}"
+              exit 1
+              ;;
+          esac
