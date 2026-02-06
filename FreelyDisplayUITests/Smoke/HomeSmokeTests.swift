@@ -25,6 +25,7 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     func testHomeSmoke() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["FREELYDISPLAY_UI_TEST_MODE"] = "1"
         app.launch()
 
         let sidebar = app.descendants(matching: .any)

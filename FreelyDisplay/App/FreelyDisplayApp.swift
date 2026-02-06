@@ -50,6 +50,8 @@ private struct CaptureDisplayWindowRoot: View {
 @MainActor
 @Observable
 final class AppHelper {
+    private static let uiTestModeEnvironmentKey = "FREELYDISPLAY_UI_TEST_MODE"
+
     struct ScreenMonitoringSession: Identifiable {
         let id: UUID
         let displayID: CGDirectDisplayID
@@ -79,8 +81,12 @@ final class AppHelper {
 
     typealias VirtualDisplayError = VirtualDisplayService.VirtualDisplayError
 
+    private var isUITestMode: Bool {
+        ProcessInfo.processInfo.environment[Self.uiTestModeEnvironmentKey] == "1"
+    }
+
     init(preview: Bool = false) {
-        guard !preview else { return }
+        guard !preview, !isUITestMode else { return }
 
         _ = startWebService()
         virtualDisplayService.loadPersistedConfigs()
