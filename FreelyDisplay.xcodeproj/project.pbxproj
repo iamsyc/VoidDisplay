@@ -144,7 +144,6 @@
 			fileSystemSynchronizedGroups = (
 				BA0465D22E90E53C00012958 /* FreelyDisplay */,
 				BAE7E12B2EBFA094009F4303 /* docs */,
-				BAEC727F2ED9D31E0029F02B /* .github */,
 			);
 			name = FreelyDisplay;
 			packageProductDependencies = (
