@@ -28,8 +28,8 @@ struct EditVirtualDisplayConfigView: View {
     @State private var showDuplicateWarning = false
     @State private var showError = false
     @State private var errorMessage = ""
-    @State private var showRebuildPrompt = false
-    @State private var pendingUpdate: VirtualDisplayConfig?
+    @State private var showSaveAndRebuildPrompt = false
+    @State private var pendingConfigForRebuildAction: VirtualDisplayConfig?
 
     private var isRunning: Bool {
         appHelper.runtimeDisplay(for: configId) != nil
@@ -252,15 +252,15 @@ struct EditVirtualDisplayConfigView: View {
         } message: {
             Text(errorMessage)
         }
-        .alert("Rebuild Required", isPresented: $showRebuildPrompt) {
+        .alert("Rebuild Required", isPresented: $showSaveAndRebuildPrompt) {
             Button("Save Only") {
-                savePendingAndDismiss()
+                savePendingConfigOnlyAndDismiss()
             }
-            Button("Rebuild Now") {
-                savePendingAndRebuild()
+            Button("Save and Rebuild Now") {
+                savePendingConfigAndRebuildNow()
             }
             Button("Cancel", role: .cancel) {
-                pendingUpdate = nil
+                pendingConfigForRebuildAction = nil
             }
         } message: {
             Text("Some changes require recreating the virtual display to take effect.")
@@ -358,7 +358,7 @@ struct EditVirtualDisplayConfigView: View {
 
         let newMaxPixels = updated.maxPixelDimensions
         let oldMaxPixels = original.maxPixelDimensions
-        let needsRebuild = isRunning && (
+        let requiresSaveAndRebuild = isRunning && (
             original.name != updated.name ||
             original.serialNum != updated.serialNum ||
             original.physicalWidth != updated.physicalWidth ||
@@ -366,9 +366,9 @@ struct EditVirtualDisplayConfigView: View {
             newMaxPixels.width > oldMaxPixels.width ||
             newMaxPixels.height > oldMaxPixels.height
         )
-        if needsRebuild {
-            pendingUpdate = updated
-            showRebuildPrompt = true
+        if requiresSaveAndRebuild {
+            pendingConfigForRebuildAction = updated
+            showSaveAndRebuildPrompt = true
             return
         }
 
@@ -380,19 +380,19 @@ struct EditVirtualDisplayConfigView: View {
         dismiss()
     }
 
-    private func savePendingAndDismiss() {
-        guard let pendingUpdate else { return }
-        appHelper.updateConfig(pendingUpdate)
-        loadedConfig = pendingUpdate
-        self.pendingUpdate = nil
+    private func savePendingConfigOnlyAndDismiss() {
+        guard let pendingConfigForRebuildAction else { return }
+        appHelper.updateConfig(pendingConfigForRebuildAction)
+        loadedConfig = pendingConfigForRebuildAction
+        self.pendingConfigForRebuildAction = nil
         dismiss()
     }
 
-    private func savePendingAndRebuild() {
-        guard let pendingUpdate else { return }
-        appHelper.updateConfig(pendingUpdate)
-        loadedConfig = pendingUpdate
-        self.pendingUpdate = nil
+    private func savePendingConfigAndRebuildNow() {
+        guard let pendingConfigForRebuildAction else { return }
+        appHelper.updateConfig(pendingConfigForRebuildAction)
+        loadedConfig = pendingConfigForRebuildAction
+        self.pendingConfigForRebuildAction = nil
 
         do {
             try appHelper.rebuildVirtualDisplay(configId: configId)

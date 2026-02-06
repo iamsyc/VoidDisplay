@@ -26,7 +26,25 @@ final class CaptureChooseViewModel {
     var showDebugInfo = false
 
     func isVirtualDisplay(_ display: SCDisplay, appHelper: AppHelper) -> Bool {
-        appHelper.displays.contains { $0.displayID == display.displayID }
+        if appHelper.displays.contains(where: { $0.displayID == display.displayID }) {
+            return true
+        }
+
+        let name = displayName(for: display)
+        if appHelper.displays.contains(where: { $0.name == name }) {
+            return true
+        }
+
+        let width = Int(display.frame.width)
+        let height = Int(display.frame.height)
+        let runningConfigs = appHelper.displayConfigs.filter { appHelper.isVirtualDisplayRunning(configId: $0.id) }
+
+        return runningConfigs.contains { config in
+            guard config.name == name else { return false }
+            return config.modes.contains { mode in
+                mode.width == width && mode.height == height
+            }
+        }
     }
 
     func displayName(for display: SCDisplay) -> String {

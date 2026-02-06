@@ -970,12 +970,12 @@
         }
       }
     },
-    "Rebuild Now" : {
+    "Save and Rebuild Now" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "立即重建"
+            "value" : "保存并立即重建"
           }
         }
       }

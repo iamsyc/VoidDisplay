@@ -246,7 +246,10 @@ final class VirtualDisplayService {
             displayModes.append(mode.toVirtualDisplayMode())
         }
         settings.modes = displayModes
-        display.apply(settings)
+        let applied = display.apply(settings)
+        if !applied {
+            AppLog.virtualDisplay.error("Apply virtual display modes failed (serial: \(display.serialNum, privacy: .public)).")
+        }
     }
 
     func rebuildVirtualDisplay(configId: UUID) throws {
@@ -260,7 +263,26 @@ final class VirtualDisplayService {
             displays.removeAll { $0.serialNum == running.serialNum }
         }
 
-        _ = try createRuntimeDisplay(from: config)
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                _ = try createRuntimeDisplay(from: config)
+                return
+            } catch {
+                let shouldRetry: Bool
+                if let virtualDisplayError = error as? VirtualDisplayError,
+                   case .creationFailed = virtualDisplayError {
+                    shouldRetry = true
+                } else {
+                    shouldRetry = false
+                }
+                if shouldRetry && attempt < maxAttempts {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+                    continue
+                }
+                throw error
+            }
+        }
     }
 
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
@@ -344,7 +366,13 @@ final class VirtualDisplayService {
         }
 
         settings.modes = displayModes
-        display.apply(settings)
+        let applied = display.apply(settings)
+        guard applied else {
+            AppLog.virtualDisplay.error(
+                "Create virtual display apply settings failed (name: \(config.name, privacy: .public), serial: \(config.serialNum, privacy: .public))."
+            )
+            throw VirtualDisplayError.creationFailed
+        }
 
         activeDisplaysByConfigId[config.id] = display
         runningConfigIds.insert(config.id)

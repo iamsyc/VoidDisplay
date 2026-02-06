@@ -228,8 +228,10 @@ final class AppHelper {
     }
 
     func rebuildVirtualDisplay(configId: UUID) throws {
+        // Release AppHelper-side references first so the old runtime display can fully tear down.
+        displays.removeAll()
+        defer { syncVirtualDisplayState() }
         try virtualDisplayService.rebuildVirtualDisplay(configId: configId)
-        syncVirtualDisplayState()
     }
 
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
