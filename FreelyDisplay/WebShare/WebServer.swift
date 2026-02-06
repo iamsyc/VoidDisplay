@@ -162,13 +162,100 @@ final class WebServer {
     private let streamHub: StreamHub
     private let requestHandler = WebRequestHandler()
 
+    private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
+        switch state {
+        case .failed(let error):
+            AppErrorMapper.logFailure("Connection failed", error: error, logger: AppLog.web)
+            streamHub.removeClient(connection)
+            connection.cancel()
+        case .cancelled:
+            AppLog.web.info("Connection cancelled.")
+            streamHub.removeClient(connection)
+        default:
+            break
+        }
+    }
+
+    private func processRequest(
+        _ content: Data?,
+        on connection: NWConnection,
+        isSharingProvider: @escaping @MainActor @Sendable () -> Bool
+    ) {
+        guard let content else {
+            AppLog.web.notice("Received empty request content; closing connection.")
+            connection.cancel()
+            return
+        }
+        guard let request = parseHTTPRequest(from: content) else {
+            AppLog.web.notice("Failed to parse HTTP request; closing connection.")
+            connection.cancel()
+            return
+        }
+
+        let decision = requestHandler.decision(
+            forPath: request.path,
+            isSharing: isSharingProvider()
+        )
+        AppLog.web.info("HTTP request: path=\(request.path), decision=\(String(describing: decision))")
+
+        switch decision {
+        case .showDisplayPage:
+            sendResponseAndClose(
+                requestHandler.responseData(for: .showDisplayPage, displayPage: displayPage),
+                on: connection,
+                failureContext: "Send display page response"
+            )
+        case .openStream:
+            openStream(for: connection)
+        case .sharingUnavailable, .notFound:
+            sendResponseAndClose(
+                requestHandler.responseData(for: decision, displayPage: displayPage),
+                on: connection,
+                failureContext: "Send HTTP error response"
+            )
+        }
+    }
+
+    private func sendResponseAndClose(
+        _ response: Data,
+        on connection: NWConnection,
+        failureContext: String
+    ) {
+        connection.send(content: response, completion: .contentProcessed { error in
+            Task { @MainActor in
+                if let error {
+                    AppErrorMapper.logFailure(failureContext, error: error, logger: AppLog.web)
+                }
+                connection.cancel()
+            }
+        })
+    }
+
+    private func openStream(for connection: NWConnection) {
+        AppLog.web.info("Open MJPEG stream for client.")
+        connection.send(
+            content: requestHandler.responseData(for: .openStream, displayPage: displayPage),
+            completion: .contentProcessed { [weak self] error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let error {
+                        AppErrorMapper.logFailure("Send stream response header", error: error, logger: AppLog.web)
+                        connection.cancel()
+                        return
+                    }
+                    streamHub.addClient(connection)
+                }
+            }
+        )
+    }
+
     private func receiveHTTPRequest(
         on connection: NWConnection,
         accumulated: Data = Data(),
         completion: @escaping @MainActor (Data?) -> Void
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { [weak self] content, _, isComplete, error in
-            MainActor.assumeIsolated {
+            Task { @MainActor [weak self] in
                 guard let self else { return }
 
                 if let error {
@@ -221,84 +308,15 @@ final class WebServer {
             guard let self else { return }
             connection.start(queue: .main)
             connection.stateUpdateHandler = { [weak self] state in
-                MainActor.assumeIsolated {
+                Task { @MainActor [weak self] in
                     guard let self else { return }
-                    switch state {
-                    case .failed(let error):
-                        AppErrorMapper.logFailure("Connection failed", error: error, logger: AppLog.web)
-                        self.streamHub.removeClient(connection)
-                        connection.cancel()
-                    case .cancelled:
-                        AppLog.web.info("Connection cancelled.")
-                        self.streamHub.removeClient(connection)
-                    default:
-                        break
-                    }
+                    self.handleConnectionState(state, for: connection)
                 }
             }
-            MainActor.assumeIsolated {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 self.receiveHTTPRequest(on: connection) { content in
-                    MainActor.assumeIsolated {
-                        guard let content else {
-                            AppLog.web.notice("Received empty request content; closing connection.")
-                            connection.cancel()
-                            return
-                        }
-                        guard let request = parseHTTPRequest(from: content) else {
-                            AppLog.web.notice("Failed to parse HTTP request; closing connection.")
-                            connection.cancel()
-                            return
-                        }
-
-                        let decision = self.requestHandler.decision(
-                            forPath: request.path,
-                            isSharing: isSharingProvider()
-                        )
-                        AppLog.web.info("HTTP request: path=\(request.path), decision=\(String(describing: decision))")
-
-                        switch decision {
-                        case .showDisplayPage:
-                            connection.send(
-                                content: self.requestHandler.responseData(for: .showDisplayPage, displayPage: self.displayPage),
-                                completion: .contentProcessed { error in
-                                    MainActor.assumeIsolated {
-                                        if let error {
-                                            AppErrorMapper.logFailure("Send display page response", error: error, logger: AppLog.web)
-                                        }
-                                        connection.cancel()
-                                    }
-                                }
-                            )
-                        case .openStream:
-                            AppLog.web.info("Open MJPEG stream for client.")
-                            connection.send(
-                                content: self.requestHandler.responseData(for: .openStream, displayPage: self.displayPage),
-                                completion: .contentProcessed { [weak self] error in
-                                    MainActor.assumeIsolated {
-                                        guard let self else { return }
-                                        if let error {
-                                            AppErrorMapper.logFailure("Send stream response header", error: error, logger: AppLog.web)
-                                            connection.cancel()
-                                            return
-                                        }
-                                        self.streamHub.addClient(connection)
-                                    }
-                                }
-                            )
-                        case .sharingUnavailable, .notFound:
-                            connection.send(
-                                content: self.requestHandler.responseData(for: decision, displayPage: self.displayPage),
-                                completion: .contentProcessed { error in
-                                    MainActor.assumeIsolated {
-                                        if let error {
-                                            AppErrorMapper.logFailure("Send HTTP error response", error: error, logger: AppLog.web)
-                                        }
-                                        connection.cancel()
-                                    }
-                                }
-                            )
-                        }
-                    }
+                    self.processRequest(content, on: connection, isSharingProvider: isSharingProvider)
                 }
             }
         }
