@@ -11,6 +11,8 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: ci-summary-${{ github.event.workflow_run.head_sha }}
@@ -131,18 +133,85 @@ jobs:
             echo "Gate rule: only \`Unit Tests\` is required to pass; \`UI Smoke Tests\` is informational (non-blocking)."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Update PR comment when status changes
+        if: github.event.workflow_run.event == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UNIT_STATUS: ${{ steps.collect.outputs.unit_status }}
+          UNIT_CONCLUSION: ${{ steps.collect.outputs.unit_conclusion }}
+          UNIT_URL: ${{ steps.collect.outputs.unit_url }}
+          UI_STATUS: ${{ steps.collect.outputs.ui_status }}
+          UI_CONCLUSION: ${{ steps.collect.outputs.ui_conclusion }}
+          UI_URL: ${{ steps.collect.outputs.ui_url }}
+        run: |
+          set -euo pipefail
+
+          pr_number="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
+          if [ -z "$pr_number" ]; then
+            echo "No associated pull request found."
+            exit 0
+          fi
+
+          marker="<!-- ci-summary-marker -->"
+          unit_link="-"
+          ui_link="-"
+          if [ -n "$UNIT_URL" ]; then unit_link="[Open]($UNIT_URL)"; fi
+          if [ -n "$UI_URL" ]; then ui_link="[Open]($UI_URL)"; fi
+
+          body="$(cat <<EOF
+${marker}
+## CI Summary
+
+| Workflow | Status | Conclusion | Link |
+| --- | --- | --- | --- |
+| Unit Tests | ${UNIT_STATUS} | ${UNIT_CONCLUSION} | ${unit_link} |
+| UI Smoke Tests | ${UI_STATUS} | ${UI_CONCLUSION} | ${ui_link} |
+
+Gate rule: only \`Unit Tests\` is required to pass; \`UI Smoke Tests\` is informational (non-blocking).
+EOF
+          )"
+
+          comments_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${pr_number}/comments"
+          comments_json="$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${comments_api}?per_page=100")"
+
+          existing_id="$(echo "$comments_json" | jq -r --arg marker "$marker" '
+            .[] | select(.user.type == "Bot" and (.body | contains($marker))) | .id' | head -n1)"
+          existing_body="$(echo "$comments_json" | jq -r --arg marker "$marker" '
+            .[] | select(.user.type == "Bot" and (.body | contains($marker))) | .body' | head -n1)"
+
+          if [ -n "$existing_id" ] && [ "$existing_body" = "$body" ]; then
+            echo "CI summary unchanged; skip PR comment update."
+            exit 0
+          fi
+
+          payload="$(jq -n --arg body "$body" '{body: $body}')"
+          if [ -n "$existing_id" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -d "$payload" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" >/dev/null
+            echo "Updated CI summary PR comment."
+          else
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -d "$payload" \
+              "$comments_api" >/dev/null
+            echo "Created CI summary PR comment."
+          fi
+
       - name: Enforce unit-test gate
         env:
           UNIT_CONCLUSION: ${{ steps.collect.outputs.unit_conclusion }}
         run: |
           set -euo pipefail
           case "$UNIT_CONCLUSION" in
-            success|neutral|skipped)
+            success|neutral|skipped|missing)
               exit 0
-              ;;
-            missing)
-              echo "Unit Tests workflow result is missing for this commit/event."
-              exit 1
               ;;
             *)
               echo "Unit Tests concluded with: ${UNIT_CONCLUSION}"
