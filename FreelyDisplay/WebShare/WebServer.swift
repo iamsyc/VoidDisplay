@@ -191,8 +191,12 @@ final class WebServer {
             return
         }
         guard let request = parseHTTPRequest(from: content) else {
-            AppLog.web.notice("Failed to parse HTTP request; closing connection.")
-            connection.cancel()
+            AppLog.web.notice("Failed to parse HTTP request; returning bad request response.")
+            sendResponseAndClose(
+                requestHandler.responseData(for: .badRequest, displayPage: displayPage),
+                on: connection,
+                failureContext: "Send bad request response"
+            )
             return
         }
 
@@ -214,7 +218,7 @@ final class WebServer {
             )
         case .openStream:
             openStream(for: connection)
-        case .sharingUnavailable, .methodNotAllowed, .notFound:
+        case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision, displayPage: displayPage),
                 on: connection,

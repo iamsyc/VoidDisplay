@@ -1,6 +1,7 @@
 import Foundation
 
 enum WebRequestDecision: Equatable {
+    case badRequest
     case showDisplayPage
     case openStream
     case sharingUnavailable
@@ -46,6 +47,17 @@ struct WebRequestHandler {
 
     func responseData(for decision: WebRequestDecision, displayPage: String) -> Data {
         switch decision {
+        case .badRequest:
+            let body = "Bad Request"
+            return buildResponse(
+                statusLine: "HTTP/1.1 400 Bad Request",
+                headers: [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Length", "\(body.utf8.count)"),
+                    ("Connection", "close")
+                ],
+                body: body
+            )
         case .showDisplayPage:
             return buildResponse(
                 statusLine: "HTTP/1.1 200 OK",

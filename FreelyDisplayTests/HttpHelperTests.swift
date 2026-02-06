@@ -112,6 +112,12 @@ struct HttpHelperTests {
         #expect(rootText.contains("HTTP/1.1 200 OK"))
         #expect(rootText.contains(page))
 
+        let badRequestResponse = handler.responseData(for: .badRequest, displayPage: page)
+        let badRequestText = try #require(String(data: badRequestResponse, encoding: .utf8))
+        let badRequestBody = "Bad Request"
+        #expect(badRequestText.contains("400 Bad Request"))
+        #expect(badRequestText.contains("Content-Length: \(badRequestBody.utf8.count)"))
+
         let streamResponse = handler.responseData(for: .openStream, displayPage: page)
         let streamText = try #require(String(data: streamResponse, encoding: .utf8))
         #expect(streamText.contains("multipart/x-mixed-replace"))
