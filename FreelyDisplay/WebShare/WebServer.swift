@@ -110,22 +110,14 @@ final class WebServer {
             }
 
             guard let frame = frameProvider() else { return }
-            let frameData = makeFramePayload(frame: frame)
+            let frameData = makeMJPEGFramePayload(
+                frame: frame,
+                boundary: WebRequestHandler.streamBoundary
+            )
 
             for key in Array(clients.keys) {
                 enqueue(frameData, to: key)
             }
-        }
-
-        private func makeFramePayload(frame: Data) -> Data {
-            let boundary = "--\(WebRequestHandler.streamBoundary)\r\n"
-            let contentHeader = "Content-Type: image/jpeg\r\n"
-            let contentLength = "Content-Length: \(frame.count)\r\n\r\n"
-            return Data(boundary.utf8)
-            + Data(contentHeader.utf8)
-            + Data(contentLength.utf8)
-            + frame
-            + Data("\r\n".utf8)
         }
 
         private func enqueue(_ frameData: Data, to key: ObjectIdentifier) {
