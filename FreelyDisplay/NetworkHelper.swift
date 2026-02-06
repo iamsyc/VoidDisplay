@@ -8,6 +8,22 @@
 import Foundation
 import Darwin
 
+struct LANIPv4Candidate: Equatable {
+    let name: String
+    let address: String
+}
+
+private let preferredLANInterfaces = ["en0", "en1", "en2", "en3", "bridge0", "pdp_ip0"]
+
+func selectPreferredLANIPv4Address(from candidates: [LANIPv4Candidate]) -> String? {
+    for preferred in preferredLANInterfaces {
+        if let match = candidates.first(where: { $0.name == preferred }) {
+            return match.address
+        }
+    }
+    return candidates.first?.address
+}
+
 /// Returns a best-effort LAN IPv4 address for opening the local share page.
 /// - Note: The previous implementation only looked at `en0` (often Wi‑Fi), which
 ///   can be wrong on some Macs (e.g. Ethernet may be `en0`, Wi‑Fi may be `en1`),
@@ -17,7 +33,7 @@ func getLANIPv4Address() -> String? {
     guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
     defer { freeifaddrs(ifaddr) }
 
-    var candidates: [(name: String, address: String)] = []
+    var candidates: [LANIPv4Candidate] = []
 
     for ifptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
         let interface = ifptr.pointee
@@ -38,17 +54,10 @@ func getLANIPv4Address() -> String? {
 
         let ip = String(cString: buffer)
         if ip.hasPrefix("169.254.") { continue } // link-local (usually not reachable by other devices)
-        candidates.append((name: name, address: ip))
+        candidates.append(.init(name: name, address: ip))
     }
 
-    let preferredInterfaces = ["en0", "en1", "en2", "en3", "bridge0", "pdp_ip0"]
-    for preferred in preferredInterfaces {
-        if let match = candidates.first(where: { $0.name == preferred }) {
-            return match.address
-        }
-    }
-
-    return candidates.first?.address
+    return selectPreferredLANIPv4Address(from: candidates)
 }
 
 // Backwards-compatible name (used by ShareView).

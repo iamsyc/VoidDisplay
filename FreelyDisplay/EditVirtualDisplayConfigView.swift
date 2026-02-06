@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 struct EditVirtualDisplayConfigView: View {
     let configId: UUID
@@ -398,7 +399,8 @@ struct EditVirtualDisplayConfigView: View {
             appHelper.applyModes(configId: configId, modes: selectedModes)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            AppErrorMapper.logFailure("Rebuild virtual display", error: error, logger: AppLog.virtualDisplay)
+            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
             showError = true
         }
     }

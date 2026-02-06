@@ -52,7 +52,11 @@ struct CaptureDisplayView: View {
                 return
             }
 
-            try? session.stream.addStreamOutput(captureOut, type: .screen, sampleHandlerQueue: .main)
+            try? session.stream.addStreamOutput(
+                captureOut,
+                type: .screen,
+                sampleHandlerQueue: captureOut.sampleHandlerQueue
+            )
             startTask?.cancel()
             startTask = Task {
                 try? await session.stream.startCapture()

@@ -12,87 +12,49 @@ import CoreGraphics
 
 struct CaptureChoose: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
-    @State var displays:[SCDisplay]?
+    @State private var viewModel = CaptureChooseViewModel()
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
-    @State private var hasScreenCapturePermission: Bool?
-    @State private var lastPreflightPermission: Bool?
-    @State private var lastRequestPermission: Bool?
-    @State private var isLoadingDisplays = false
-    @State private var loadErrorMessage: String?
-    @State private var lastLoadError: LoadErrorInfo?
-    @State private var showDebugInfo = false
 
-    private struct LoadErrorInfo: Equatable {
-        var domain: String
-        var code: Int
-        var description: String
-        var failureReason: String?
-        var recoverySuggestion: String?
-    }
     var body: some View {
         Group{
-            if hasScreenCapturePermission == false {
+            if viewModel.hasScreenCapturePermission == false {
                 screenCapturePermissionView
-            } else if let displays=displays{
+            } else if let displays = viewModel.displays {
                 List(displays,id:\.self){display in
                     HStack{
                         Image(systemName: "display")
                             .font(.system(size: 40))
                             VStack(alignment: .leading,spacing:5){
                                 VStack(alignment: .leading){
-                                    
-                                Text(
-                                    NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? "Monitor"
-                                )
-                                .font(.headline)
-                                
-                                    
-                                Text("\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))")
-                                    .font(.subheadline)
+                                    Text(viewModel.displayName(for: display))
+                                        .font(.headline)
+                                    Text(viewModel.resolutionText(for: display))
+                                        .font(.subheadline)
+                                }
+                                if viewModel.isVirtualDisplay(display, appHelper: appHelper) {
+                                    Text("Virtual Display")
+                                        .font(.caption)
+                                        .padding(3)
+                                        .padding(.horizontal,5)
+                                        .background(.gray.opacity(0.2),in: .capsule)
+                                } else {
+                                    Text("Physical Display or other Virtual Display")
+                                        .font(.caption)
+                                        .padding(3)
+                                        .padding(.horizontal,5)
+                                        .background(.gray.opacity(0.2),in: .capsule)
+                                }
                             }
-                            if !appHelper.displays.filter({item in
-                                item.displayID==display.displayID
-                            }).isEmpty{
-                                Text("Virtual Display")
-                                    .font(.caption)
-                                    .padding(3)
-                                    .padding(.horizontal,5)
-                                    .background(.gray.opacity(0.2),in: .capsule)
-                            }else{
-                                Text("Physical Display or other Virtual Display")
-                                    .font(.caption)
-                                    .padding(3)
-                                    .padding(.horizontal,5)
-                                    .background(.gray.opacity(0.2),in: .capsule)
-                            }
-                        }
-                        .padding(.bottom,5)
+                            .padding(.bottom,5)
                         Spacer()
                         Button("Monitor Display",action:{
                             Task{
-                                
-                                let captureSession = await creatScreenCapture(display: display)
-                                
-                                let displayName: String = {
-                                    NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? "Monitor"
-                                }()
-                                let resolutionText = "\(Int(display.frame.width)) × \(Int(display.frame.height))"
-                                let isVirtual = !appHelper.displays.filter({ $0.displayID == display.displayID }).isEmpty
-
-                                let session = AppHelper.ScreenMonitoringSession(
-                                    id: UUID(),
-                                    displayID: display.displayID,
-                                    displayName: displayName,
-                                    resolutionText: resolutionText,
-                                    isVirtualDisplay: isVirtual,
-                                    stream: captureSession.stream,
-                                    delegate: captureSession.delegate
-                                )
-
-                                await MainActor.run {
-                                    appHelper.addMonitoringSession(session)
-                                    openWindow(value: session.id)
+                                await viewModel.startMonitoring(
+                                    display: display,
+                                    appHelper: appHelper
+                                ) { sessionId in
+                                    openWindow(value: sessionId)
                                 }
                             }
                         })
@@ -105,7 +67,7 @@ struct CaptureChoose: View {
                     }
                     .padding()
                 })
-            } else if isLoadingDisplays || hasScreenCapturePermission == nil {
+            } else if viewModel.isLoadingDisplays || viewModel.hasScreenCapturePermission == nil {
                 VStack(spacing: 12) {
                     ProgressView()
                     Text("Loading…")
@@ -115,7 +77,7 @@ struct CaptureChoose: View {
             } else {
                 VStack(spacing: 12) {
                     Text("No watchable screen")
-                    if let loadErrorMessage {
+                    if let loadErrorMessage = viewModel.loadErrorMessage {
                         Text(loadErrorMessage)
                             .font(.footnote)
                             .foregroundColor(.secondary)
@@ -123,7 +85,7 @@ struct CaptureChoose: View {
                             .textSelection(.enabled)
                     }
                     Button("Retry") {
-                        refreshPermissionAndMaybeLoad()
+                        viewModel.refreshPermissionAndMaybeLoad()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -131,7 +93,7 @@ struct CaptureChoose: View {
             
         }
             .onAppear{
-                refreshPermissionAndMaybeLoad()
+                viewModel.refreshPermissionAndMaybeLoad()
             }
     }
 
@@ -151,23 +113,25 @@ struct CaptureChoose: View {
 
                 HStack(spacing: 12) {
                     Button("Open System Settings") {
-                        openScreenCapturePrivacySettings()
+                        viewModel.openScreenCapturePrivacySettings { url in
+                            openURL(url)
+                        }
                     }
                     Button("Request Permission") {
-                        requestScreenCapturePermission()
+                        viewModel.requestScreenCapturePermission()
                     }
                 }
 
                 HStack(spacing: 12) {
                     Button("Refresh") {
-                        refreshPermissionAndMaybeLoad()
+                        viewModel.refreshPermissionAndMaybeLoad()
                     }
                     .controlSize(.small)
 
                     Button("Retry") {
                         // User-initiated retry: attempt to load the display list.
                         // If permission is still missing, macOS may prompt here (expected).
-                        loadDisplays()
+                        viewModel.loadDisplays()
                     }
                     .controlSize(.small)
                 }
@@ -181,7 +145,7 @@ struct CaptureChoose: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
 
-                DisclosureGroup("Debug Info", isExpanded: $showDebugInfo) {
+                DisclosureGroup("Debug Info", isExpanded: $viewModel.showDebugInfo) {
                     VStack(alignment: .leading, spacing: 6) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Bundle ID")
@@ -193,13 +157,13 @@ struct CaptureChoose: View {
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Preflight Permission")
-                            Text(verbatim: (lastPreflightPermission ?? hasScreenCapturePermission).map { $0 ? "true" : "false" } ?? "-")
+                            Text(verbatim: (viewModel.lastPreflightPermission ?? viewModel.hasScreenCapturePermission).map { $0 ? "true" : "false" } ?? "-")
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Request Permission Result")
-                            Text(verbatim: lastRequestPermission.map { $0 ? "true" : "false" } ?? "-")
+                            Text(verbatim: viewModel.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-")
                         }
-                        if let lastLoadError {
+                        if let lastLoadError = viewModel.lastLoadError {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Last Error")
                                 Text(verbatim: lastLoadError.description)
@@ -238,77 +202,15 @@ struct CaptureChoose: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    private func openScreenCapturePrivacySettings() {
-        // Best-effort deep link; exact pane may vary by macOS version.
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            openURL(url)
-        } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
-            openURL(url)
-        }
-    }
-
-    private func requestScreenCapturePermission() {
-        let granted = CGRequestScreenCaptureAccess()
-        hasScreenCapturePermission = granted
-        lastRequestPermission = granted
-        if granted {
-            loadDisplays()
-        }
-    }
-
-    private func refreshPermissionAndMaybeLoad() {
-        let granted = CGPreflightScreenCaptureAccess()
-        hasScreenCapturePermission = granted
-        lastPreflightPermission = granted
-        if granted {
-            loadDisplays()
-        }
-    }
-
-    private func loadDisplays() {
-        isLoadingDisplays = true
-        loadErrorMessage = nil
-        lastLoadError = nil
-        displays = nil
-
-        Task {
-            do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-                await MainActor.run {
-                    self.displays = content.displays
-                    self.hasScreenCapturePermission = true
-                    self.lastPreflightPermission = true
-                }
-            } catch {
-                let nsError = error as NSError
-                await MainActor.run {
-                    loadErrorMessage = error.localizedDescription
-                    lastLoadError = .init(
-                        domain: nsError.domain,
-                        code: nsError.code,
-                        description: nsError.localizedDescription,
-                        failureReason: nsError.localizedFailureReason,
-                        recoverySuggestion: nsError.localizedRecoverySuggestion
-                    )
-                }
-            }
-            await MainActor.run {
-                isLoadingDisplays = false
-            }
-        }
-    }
 }
 
 struct IsCapturing: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
-    @State var showAddView=false
-//    @Environment(\.openWindow) var openWindow
+    @State var showAddView = false
 
     var body: some View {
-        Group{
-            
-            if !appHelper.screenCaptureSessions.isEmpty{
+        Group {
+            if !appHelper.screenCaptureSessions.isEmpty {
                 List(appHelper.screenCaptureSessions) { session in
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -334,23 +236,21 @@ struct IsCapturing: View {
                         .foregroundStyle(.red)
                     }
                 }
-            }else{
+            } else {
                 Text("No Listening Windows")
                     .foregroundColor(.secondary)
             }
-            
-            
         }
-        .toolbar{
+        .toolbar {
             ToolbarItem(content: {
-                Button(action:{
-                    showAddView=true
-                }){
+                Button(action: {
+                    showAddView = true
+                }) {
                     Label("Listening window", systemImage: "plus")
                 }
                 .popover(isPresented: $showAddView, content: {
                     CaptureChoose()
-                        .frame(width: 500,height: 400)
+                        .frame(width: 500, height: 400)
                 })
             })
         }

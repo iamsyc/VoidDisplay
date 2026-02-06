@@ -6,10 +6,11 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct VirtualDisplayView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
-    @State var creatView = false
+    @State var createView = false
     @State private var editingConfig: EditingConfig?
 
     @State private var showDeleteConfirm = false
@@ -102,8 +103,8 @@ struct VirtualDisplayView: View {
                 )
             }
         }
-        .sheet(isPresented: $creatView) {
-            CreateVirtualDisplay(isShow: $creatView)
+        .sheet(isPresented: $createView) {
+            CreateVirtualDisplay(isShow: $createView)
         }
         .sheet(item: $editingConfig) { item in
             EditVirtualDisplayConfigView(configId: item.id)
@@ -111,7 +112,7 @@ struct VirtualDisplayView: View {
         }
         .toolbar {
             Button("Add Virtual Display", systemImage: "plus") {
-                creatView = true
+                createView = true
             }
         }
         .confirmationDialog(
@@ -166,7 +167,8 @@ struct VirtualDisplayView: View {
         do {
             try appHelper.enableDisplay(config.id)
         } catch {
-            errorMessage = error.localizedDescription
+            AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
+            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
             showError = true
         }
     }

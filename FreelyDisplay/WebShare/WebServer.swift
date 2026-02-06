@@ -8,6 +8,7 @@
 import Network
 import CoreGraphics
 import ImageIO
+import OSLog
 
 class WebServer{
     var streamConnection:NWConnection?=nil
@@ -15,6 +16,7 @@ class WebServer{
     let displayPage:String
     private let isSharingProvider: () -> Bool
     private let frameProvider: () -> Data?
+    private let requestHandler = WebRequestHandler()
     private var streamPump: StreamPump?
 
     private final class StreamPump {
@@ -38,6 +40,7 @@ class WebServer{
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
                 guard let self, let connection else { return }
                 guard isSharingProvider() else {
+                    AppLog.web.info("Sharing stopped while streaming; closing client connection.")
                     stop()
                     connection.cancel()
                     return
@@ -48,7 +51,11 @@ class WebServer{
                 let contentHeader = "Content-Type: image/jpg\r\n"
                 let contentLength = "Content-Length: \(frame.count)\r\n\r\n"
                 let frameData = Data(boundary.utf8) + Data(contentHeader.utf8) + Data(contentLength.utf8) + frame + Data("\r\n".utf8)
-                connection.send(content: frameData, completion: .contentProcessed({ _ in }))
+                connection.send(content: frameData, completion: .contentProcessed({ error in
+                    if let error {
+                        AppErrorMapper.logFailure("Stream frame send", error: error, logger: AppLog.web)
+                    }
+                }))
             }
         }
 
@@ -66,79 +73,99 @@ class WebServer{
         self.isSharingProvider = isSharingProvider
         self.frameProvider = frameProvider
         displayPage=try String(contentsOfFile: Bundle.main.path(forResource: "displayPage", ofType: "html")!, encoding: .utf8)
-        do{
-            try listener=NWListener(using: .tcp, on: port)
-            listener?.newConnectionHandler = { [weak self] connection in
+        listener = try NWListener(using: .tcp, on: port)
+        listener?.newConnectionHandler = { [weak self] connection in
+            guard let self else { return }
+            connection.start(queue: .main)
+            connection.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
-                connection.start(queue: .main)
-                connection.stateUpdateHandler = { [weak self] state in
-                    guard let self else { return }
-                    switch state {
-                    case .cancelled, .failed(_):
-                        if self.streamConnection === connection {
-                            self.streamPump?.stop()
-                            self.streamPump = nil
-                            self.streamConnection = nil
-                        }
-                        connection.cancel()
-                    default:
-                        break
+                switch state {
+                case .failed(let error):
+                    AppErrorMapper.logFailure("Connection failed", error: error, logger: AppLog.web)
+                    if self.streamConnection === connection {
+                        self.streamPump?.stop()
+                        self.streamPump = nil
+                        self.streamConnection = nil
                     }
-                }
-                connection.receive(minimumIncompleteLength: 0, maximumLength: 999) { content, contentContext, isComplete, error in
-                    guard let content else {
-                        connection.cancel()
-                        return
+                    connection.cancel()
+                case .cancelled:
+                    AppLog.web.info("Connection cancelled.")
+                    if self.streamConnection === connection {
+                        self.streamPump?.stop()
+                        self.streamPump = nil
+                        self.streamConnection = nil
                     }
-                    if let request = parseHTTPRequest(from: content) {
-                        
-                        guard let path=URL(string: request.path) else {return}
-                        
-                        if path.isRoot{
-                            connection.send(content: ("HTTP/1.1 200 OK\r\n\r\n"+self.displayPage).data(using: .utf8), completion: .contentProcessed({error in
-                                connection.cancel()
-                            }))
-                        }else if(path.hasSubDir(in: URL(string: "/stream")!)){
-                            guard self.isSharingProvider() else {
-                                let response = """
-                                HTTP/1.1 503 Service Unavailable\r
-                                Content-Type: text/plain; charset=utf-8\r
-                                Cache-Control: no-cache\r
-                                Connection: close\r
-                                \r
-                                Sharing has stopped.
-                                """
-                                connection.send(content: Data(response.utf8), completion: .contentProcessed({ _ in
-                                    connection.cancel()
-                                }))
-                                return
-                            }
-
-                            self.streamConnection?.cancel()
-                            self.streamConnection=connection
-                            connection.send(content: ("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=nextFrameK9_4657\r\nConnection: keep-alive\r\nCache-Control: no-cache\r\n\r\n").data(using: .utf8), completion: .contentProcessed({_ in}))
-                            self.streamPump?.stop()
-                            self.streamPump = StreamPump(
-                                connection: connection,
-                                isSharingProvider: self.isSharingProvider,
-                                frameProvider: frameProvider
-                            )
-                            self.streamPump?.start()
-                        }else{
-                            connection.send(content: ("HTTP/1.1 404 OK\r\n\r\n").data(using: .utf8), completion: .contentProcessed({error in
-                                connection.cancel()
-                            }))
-                        }
-                    }
-                    
-                    
-                    
+                default:
+                    break
                 }
             }
-        }catch{
-            throw error
+            connection.receive(minimumIncompleteLength: 0, maximumLength: 999) { content, contentContext, isComplete, error in
+                if let error {
+                    AppErrorMapper.logFailure("Receive HTTP request", error: error, logger: AppLog.web)
+                }
+                guard let content else {
+                    AppLog.web.notice("Received empty request content; closing connection.")
+                    connection.cancel()
+                    return
+                }
+                if isComplete {
+                    _ = contentContext
+                }
+                guard let request = parseHTTPRequest(from: content) else {
+                    AppLog.web.notice("Failed to parse HTTP request; closing connection.")
+                    connection.cancel()
+                    return
+                }
+
+                let decision = self.requestHandler.decision(
+                    forPath: request.path,
+                    isSharing: self.isSharingProvider()
+                )
+
+                switch decision {
+                case .showDisplayPage:
+                    connection.send(
+                        content: self.requestHandler.responseData(for: .showDisplayPage, displayPage: self.displayPage),
+                        completion: .contentProcessed { error in
+                            if let error {
+                                AppErrorMapper.logFailure("Send display page response", error: error, logger: AppLog.web)
+                            }
+                            connection.cancel()
+                        }
+                    )
+                case .openStream:
+                    self.streamConnection?.cancel()
+                    self.streamConnection = connection
+                    AppLog.web.info("Open MJPEG stream for client.")
+                    connection.send(
+                        content: self.requestHandler.responseData(for: .openStream, displayPage: self.displayPage),
+                        completion: .contentProcessed { error in
+                            if let error {
+                                AppErrorMapper.logFailure("Send stream response header", error: error, logger: AppLog.web)
+                            }
+                        }
+                    )
+                    self.streamPump?.stop()
+                    self.streamPump = StreamPump(
+                        connection: connection,
+                        isSharingProvider: self.isSharingProvider,
+                        frameProvider: frameProvider
+                    )
+                    self.streamPump?.start()
+                case .sharingUnavailable, .notFound:
+                    connection.send(
+                        content: self.requestHandler.responseData(for: decision, displayPage: self.displayPage),
+                        completion: .contentProcessed { error in
+                            if let error {
+                                AppErrorMapper.logFailure("Send HTTP error response", error: error, logger: AppLog.web)
+                            }
+                            connection.cancel()
+                        }
+                    )
+                }
+            }
         }
-        
+
     }
     
     public func startListener(){

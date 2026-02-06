@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreGraphics
+import OSLog
 
 struct CreateVirtualDisplay: View {
     // MARK: - State Properties
@@ -373,10 +374,12 @@ struct CreateVirtualDisplay: View {
             )
             isShow = false
         } catch let error as AppHelper.VirtualDisplayError {
+            AppErrorMapper.logFailure("Create virtual display", error: error, logger: AppLog.virtualDisplay)
             errorMessage = error.localizedDescription
             showError = true
         } catch {
-            errorMessage = String(localized: "Create failed: \(error.localizedDescription)")
+            AppErrorMapper.logFailure("Create virtual display", error: error, logger: AppLog.virtualDisplay)
+            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Create failed."))
             showError = true
         }
     }

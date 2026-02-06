@@ -3,10 +3,12 @@ import Foundation
 /// Persists virtual display configurations to disk.
 struct VirtualDisplayStore {
     struct FileFormat: Codable {
+        static let currentSchemaVersion = 2
+
         var schemaVersion: Int
         var configs: [VirtualDisplayConfig]
 
-        init(schemaVersion: Int = 1, configs: [VirtualDisplayConfig]) {
+        init(schemaVersion: Int = FileFormat.currentSchemaVersion, configs: [VirtualDisplayConfig]) {
             self.schemaVersion = schemaVersion
             self.configs = configs
         }
@@ -17,15 +19,21 @@ struct VirtualDisplayStore {
     }
 
     private let fileName = "virtual-displays.json"
+    private let defaultPhysicalWidth = 310
+    private let defaultPhysicalHeight = 174
+    private let defaultMode = VirtualDisplayConfig.ModeConfig(
+        width: 1920,
+        height: 1080,
+        refreshRate: 60,
+        enableHiDPI: true
+    )
 
     func load() throws -> [VirtualDisplayConfig] {
         let url = try storeURL()
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
 
         let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        let decoded = try decoder.decode(FileFormat.self, from: data)
-        return decoded.configs
+        return try decodeConfigs(from: data)
     }
 
     func save(_ configs: [VirtualDisplayConfig]) throws {
@@ -34,8 +42,24 @@ struct VirtualDisplayStore {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(FileFormat(configs: configs))
+        let data = try encoder.encode(FileFormat(configs: sanitize(configs)))
         try data.write(to: url, options: [.atomic])
+    }
+
+    func decodeConfigs(from data: Data) throws -> [VirtualDisplayConfig] {
+        let decoder = JSONDecoder()
+
+        if let wrapped = try? decoder.decode(FileFormat.self, from: data) {
+            return migrate(from: wrapped)
+        }
+
+        if let legacyArray = try? decoder.decode([VirtualDisplayConfig].self, from: data) {
+            return sanitize(legacyArray)
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(codingPath: [], debugDescription: "Unsupported virtual display config format.")
+        )
     }
 
     private func storeURL() throws -> URL {
@@ -45,5 +69,62 @@ struct VirtualDisplayStore {
         return appSupport
             .appendingPathComponent(bundleID, isDirectory: true)
             .appendingPathComponent(fileName, isDirectory: false)
+    }
+
+    private func migrate(from format: FileFormat) -> [VirtualDisplayConfig] {
+        // Current migrations are shape-preserving plus data sanitization.
+        sanitize(format.configs)
+    }
+
+    private func sanitize(_ configs: [VirtualDisplayConfig]) -> [VirtualDisplayConfig] {
+        var result: [VirtualDisplayConfig] = []
+        var usedSerials: Set<UInt32> = []
+        var usedIDs: Set<UUID> = []
+
+        for config in configs {
+            var serial = config.serialNum
+            if serial == 0 || usedSerials.contains(serial) {
+                serial = nextAvailableSerial(used: usedSerials)
+            }
+            usedSerials.insert(serial)
+
+            var id = config.id
+            if usedIDs.contains(id) {
+                id = UUID()
+            }
+            usedIDs.insert(id)
+
+            let filteredModes = config.modes.filter {
+                $0.width > 0 && $0.height > 0 && $0.refreshRate > 0
+            }
+            let modes = filteredModes.isEmpty ? [defaultMode] : filteredModes
+            let name = config.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Virtual Display \(serial)"
+                : config.name
+            let physicalWidth = config.physicalWidth > 0 ? config.physicalWidth : defaultPhysicalWidth
+            let physicalHeight = config.physicalHeight > 0 ? config.physicalHeight : defaultPhysicalHeight
+
+            result.append(
+                VirtualDisplayConfig(
+                    id: id,
+                    name: name,
+                    serialNum: serial,
+                    physicalWidth: physicalWidth,
+                    physicalHeight: physicalHeight,
+                    modes: modes,
+                    desiredEnabled: config.desiredEnabled
+                )
+            )
+        }
+
+        return result
+    }
+
+    private func nextAvailableSerial(used: Set<UInt32>) -> UInt32 {
+        var next: UInt32 = 1
+        while used.contains(next) {
+            next += 1
+        }
+        return next
     }
 }
