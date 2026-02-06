@@ -51,21 +51,6 @@ func createScreenCapture(
     return ScreenCaptureSession(stream: stream, delegate: delegate)
 }
 
-// Backward-compatible alias for old typo name used in earlier code paths.
-func creatScreenCapture(
-    display: SCDisplay,
-    showsCursor: Bool = true,
-    excludedOtherApps: [SCRunningApplication] = [],
-    exceptingOtherWindows: [SCWindow] = []
-) async -> ScreenCaptureSession {
-    await createScreenCapture(
-        display: display,
-        showsCursor: showsCursor,
-        excludedOtherApps: excludedOtherApps,
-        exceptingOtherWindows: exceptingOtherWindows
-    )
-}
-
 
 class StreamDelegate: NSObject, SCStreamDelegate {
     func stream(_ stream: SCStream, didStopWithError error: Error) {

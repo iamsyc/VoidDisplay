@@ -46,20 +46,17 @@ struct VirtualDisplayStore {
         try data.write(to: url, options: [.atomic])
     }
 
+    func reset() throws {
+        let url = try storeURL()
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return }
+        try fm.removeItem(at: url)
+    }
+
     func decodeConfigs(from data: Data) throws -> [VirtualDisplayConfig] {
         let decoder = JSONDecoder()
-
-        if let wrapped = try? decoder.decode(FileFormat.self, from: data) {
-            return migrate(from: wrapped)
-        }
-
-        if let legacyArray = try? decoder.decode([VirtualDisplayConfig].self, from: data) {
-            return sanitize(legacyArray)
-        }
-
-        throw DecodingError.dataCorrupted(
-            DecodingError.Context(codingPath: [], debugDescription: "Unsupported virtual display config format.")
-        )
+        let wrapped = try decoder.decode(FileFormat.self, from: data)
+        return sanitize(wrapped.configs)
     }
 
     private func storeURL() throws -> URL {
@@ -69,11 +66,6 @@ struct VirtualDisplayStore {
         return appSupport
             .appendingPathComponent(bundleID, isDirectory: true)
             .appendingPathComponent(fileName, isDirectory: false)
-    }
-
-    private func migrate(from format: FileFormat) -> [VirtualDisplayConfig] {
-        // Current migrations are shape-preserving plus data sanitization.
-        sanitize(format.configs)
     }
 
     private func sanitize(_ configs: [VirtualDisplayConfig]) -> [VirtualDisplayConfig] {

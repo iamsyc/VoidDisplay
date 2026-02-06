@@ -29,6 +29,19 @@ final class VirtualDisplayPersistenceService {
         }
     }
 
+    func resetConfigs() {
+        do {
+            try store.reset()
+        } catch {
+            AppErrorMapper.logFailure("Reset virtual display configs", error: error, logger: AppLog.persistence)
+            do {
+                try store.save([])
+            } catch {
+                AppErrorMapper.logFailure("Reset fallback save empty configs", error: error, logger: AppLog.persistence)
+            }
+        }
+    }
+
     func restoreDesiredVirtualDisplays(
         from configs: [VirtualDisplayConfig],
         restorer: (VirtualDisplayConfig) throws -> Void

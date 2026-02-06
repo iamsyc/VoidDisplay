@@ -59,8 +59,3 @@ func getLANIPv4Address() -> String? {
 
     return selectPreferredLANIPv4Address(from: candidates)
 }
-
-// Backwards-compatible name (used by ShareView).
-func getWiFiIPAddress() -> String? {
-    getLANIPv4Address()
-}

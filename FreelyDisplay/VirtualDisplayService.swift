@@ -66,6 +66,20 @@ final class VirtualDisplayService {
         restoreFailures = []
     }
 
+    @discardableResult
+    func resetAllVirtualDisplayData() -> Int {
+        let removedConfigCount = displayConfigs.count
+
+        activeDisplaysByConfigId.removeAll()
+        runningConfigIds.removeAll()
+        displays.removeAll()
+        restoreFailures.removeAll()
+        displayConfigs.removeAll()
+        persistenceService.resetConfigs()
+
+        return removedConfigCount
+    }
+
     func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
         activeDisplaysByConfigId[configId]
     }

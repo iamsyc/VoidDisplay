@@ -257,6 +257,17 @@
         }
       }
     },
+    "Configuration Data" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置数据"
+          }
+        }
+      }
+    },
     "Create" : {
       "localizations" : {
         "zh-Hans" : {
@@ -665,6 +676,17 @@
         }
       }
     },
+    "Manage persisted virtual display configurations." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理已持久化的虚拟显示器配置。"
+          }
+        }
+      }
+    },
     "Monitor" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1008,6 +1030,56 @@
         }
       }
     },
+    "Reset" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置"
+          }
+        }
+      }
+    },
+    "Reset completed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置完成。"
+          }
+        }
+      }
+    },
+    "Reset Virtual Display Configurations" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置虚拟显示器配置"
+          }
+        }
+      }
+    },
+    "Reset Virtual Display Configurations?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置虚拟显示器配置？"
+          }
+        }
+      }
+    },
+    "Reset will remove all saved virtual display configurations and stop currently managed virtual displays." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置将删除所有已保存的虚拟显示器配置，并停止当前由应用管理的虚拟显示器。"
+          }
+        }
+      }
+    },
     "Resolution" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1238,6 +1310,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统低于macOS 26，无法显示显示器名称。已用“显示器”代替。"
+          }
+        }
+      }
+    },
+    "This action cannot be undone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作无法撤销。"
           }
         }
       }

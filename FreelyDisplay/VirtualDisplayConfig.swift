@@ -70,7 +70,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
         self.desiredEnabled = true
     }
 
-    // MARK: - Codable (backward compatible)
+    // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -80,8 +80,6 @@ struct VirtualDisplayConfig: Identifiable, Codable {
         case physicalHeight
         case modes
         case desiredEnabled
-        // Backward-compat: older builds stored this as `isEnabled`
-        case isEnabled
     }
 
     init(from decoder: any Decoder) throws {
@@ -93,13 +91,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
         physicalHeight = try container.decode(Int.self, forKey: .physicalHeight)
         modes = try container.decode([ModeConfig].self, forKey: .modes)
 
-        if let desiredEnabled = try container.decodeIfPresent(Bool.self, forKey: .desiredEnabled) {
-            self.desiredEnabled = desiredEnabled
-        } else if let legacyEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) {
-            desiredEnabled = legacyEnabled
-        } else {
-            desiredEnabled = true
-        }
+        desiredEnabled = try container.decode(Bool.self, forKey: .desiredEnabled)
     }
 
     func encode(to encoder: any Encoder) throws {

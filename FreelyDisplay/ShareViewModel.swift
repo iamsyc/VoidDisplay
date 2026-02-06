@@ -84,7 +84,7 @@ final class ShareViewModel {
             presentError(String(localized: "Web service is not running."))
             return
         }
-        guard let ip = getWiFiIPAddress() else {
+        guard let ip = getLANIPv4Address() else {
             AppLog.sharing.notice("No LAN IP available when opening share page.")
             presentError(String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again."))
             return

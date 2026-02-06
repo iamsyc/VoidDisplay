@@ -95,12 +95,12 @@ struct FreelyDisplayTests {
         #expect(maxPixels.height == 1080)
     }
 
-    @MainActor @Test func decodingLegacyIsEnabledField() throws {
+    @MainActor @Test func decodingRequiresDesiredEnabledField() throws {
         let id = UUID().uuidString
         let json = """
         {
           "id": "\(id)",
-          "name": "Legacy Config",
+          "name": "Strict Config",
           "serialNum": 7,
           "physicalWidth": 300,
           "physicalHeight": 200,
@@ -112,30 +112,9 @@ struct FreelyDisplayTests {
         """
 
         let data = try #require(json.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(VirtualDisplayConfig.self, from: data)
-        #expect(decoded.desiredEnabled == false)
-    }
-
-    @MainActor @Test func desiredEnabledTakesPriorityWhenBothFieldsExist() throws {
-        let id = UUID().uuidString
-        let json = """
-        {
-          "id": "\(id)",
-          "name": "Both Fields",
-          "serialNum": 8,
-          "physicalWidth": 300,
-          "physicalHeight": 200,
-          "modes": [
-            { "width": 1920, "height": 1080, "refreshRate": 60, "enableHiDPI": true }
-          ],
-          "desiredEnabled": true,
-          "isEnabled": false
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(VirtualDisplayConfig.self, from: data)
         }
-        """
-
-        let data = try #require(json.data(using: .utf8))
-        let decoded = try JSONDecoder().decode(VirtualDisplayConfig.self, from: data)
-        #expect(decoded.desiredEnabled == true)
     }
 
     @MainActor @Test func codableRoundTripPreservesDesiredEnabled() throws {
@@ -186,7 +165,7 @@ struct FreelyDisplayTests {
         #expect(decoded.configs.isEmpty)
     }
 
-    @MainActor @Test func virtualDisplayStoreDecodesLegacyArrayFormat() throws {
+    @MainActor @Test func virtualDisplayStoreRejectsLegacyArrayFormat() throws {
         let config = VirtualDisplayConfig(
             name: "Legacy Array",
             serialNum: 42,
@@ -197,11 +176,9 @@ struct FreelyDisplayTests {
         )
 
         let data = try JSONEncoder().encode([config])
-        let decoded = try VirtualDisplayStore().decodeConfigs(from: data)
-
-        #expect(decoded.count == 1)
-        #expect(decoded.first?.serialNum == 42)
-        #expect(decoded.first?.name == "Legacy Array")
+        #expect(throws: DecodingError.self) {
+            _ = try VirtualDisplayStore().decodeConfigs(from: data)
+        }
     }
 
     @MainActor @Test func virtualDisplayStoreSanitizesInvalidAndDuplicateConfigs() throws {
