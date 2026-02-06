@@ -56,7 +56,7 @@ jobs:
 
             if xcodebuild \
               -scheme FreelyDisplay \
-              -destination 'platform=macOS' \
+              -destination 'platform=macOS,arch=arm64' \
               -derivedDataPath .derivedData \
               -resultBundlePath UISmokeTests.xcresult \
               CODE_SIGNING_ALLOWED=NO \
