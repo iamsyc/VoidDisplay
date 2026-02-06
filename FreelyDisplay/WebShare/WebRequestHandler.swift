@@ -57,33 +57,39 @@ struct WebRequestHandler {
                 body: displayPage
             )
         case .sharingUnavailable:
+            let body = "Sharing has stopped."
             return buildResponse(
                 statusLine: "HTTP/1.1 503 Service Unavailable",
                 headers: [
                     ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Length", "\(body.utf8.count)"),
                     ("Cache-Control", "no-cache"),
                     ("Connection", "close")
                 ],
-                body: "Sharing has stopped."
+                body: body
             )
         case .methodNotAllowed:
+            let body = "Method Not Allowed"
             return buildResponse(
                 statusLine: "HTTP/1.1 405 Method Not Allowed",
                 headers: [
                     ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Length", "\(body.utf8.count)"),
                     ("Allow", "GET"),
                     ("Connection", "close")
                 ],
-                body: "Method Not Allowed"
+                body: body
             )
         case .notFound:
+            let body = "Not Found"
             return buildResponse(
                 statusLine: "HTTP/1.1 404 Not Found",
                 headers: [
                     ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Length", "\(body.utf8.count)"),
                     ("Connection", "close")
                 ],
-                body: "Not Found"
+                body: body
             )
         case .openStream:
             return buildResponse(

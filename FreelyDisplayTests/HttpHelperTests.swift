@@ -119,16 +119,22 @@ struct HttpHelperTests {
 
         let unavailableResponse = handler.responseData(for: .sharingUnavailable, displayPage: page)
         let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
+        let unavailableBody = "Sharing has stopped."
         #expect(unavailableText.contains("503 Service Unavailable"))
+        #expect(unavailableText.contains("Content-Length: \(unavailableBody.utf8.count)"))
 
         let methodNotAllowedResponse = handler.responseData(for: .methodNotAllowed, displayPage: page)
         let methodNotAllowedText = try #require(String(data: methodNotAllowedResponse, encoding: .utf8))
+        let methodNotAllowedBody = "Method Not Allowed"
         #expect(methodNotAllowedText.contains("405 Method Not Allowed"))
         #expect(methodNotAllowedText.contains("Allow: GET"))
+        #expect(methodNotAllowedText.contains("Content-Length: \(methodNotAllowedBody.utf8.count)"))
 
         let missingResponse = handler.responseData(for: .notFound, displayPage: page)
         let missingText = try #require(String(data: missingResponse, encoding: .utf8))
+        let missingBody = "Not Found"
         #expect(missingText.contains("404 Not Found"))
+        #expect(missingText.contains("Content-Length: \(missingBody.utf8.count)"))
     }
 
     @Test func streamResponseHeaderTerminatesWithCRLFCRLF() throws {
