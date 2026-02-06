@@ -27,7 +27,15 @@ jobs:
             -scheme FreelyDisplay \
             -destination 'platform=macOS' \
             -derivedDataPath .derivedData \
+            -resultBundlePath UISmokeTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             test \
             -only-testing:FreelyDisplayUITests/HomeSmokeTests/testHomeSmoke
+
+      - name: Upload UI smoke test result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-smoke-tests-xcresult
+          path: UISmokeTests.xcresult

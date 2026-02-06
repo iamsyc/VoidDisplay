@@ -24,7 +24,15 @@ jobs:
             -scheme FreelyDisplay \
             -destination 'platform=macOS' \
             -derivedDataPath .derivedData \
+            -resultBundlePath UnitTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             test \
             -only-testing:FreelyDisplayTests
+
+      - name: Upload unit test result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-xcresult
+          path: UnitTests.xcresult
