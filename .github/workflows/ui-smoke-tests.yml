@@ -5,7 +5,17 @@ on:
     branches:
       - main
       - 'codex/**'
+    paths:
+      - 'FreelyDisplay/**'
+      - 'FreelyDisplayUITests/**'
+      - 'FreelyDisplay.xcodeproj/**'
+      - '.github/workflows/ui-smoke-tests.yml'
   pull_request:
+    paths:
+      - 'FreelyDisplay/**'
+      - 'FreelyDisplayUITests/**'
+      - 'FreelyDisplay.xcodeproj/**'
+      - '.github/workflows/ui-smoke-tests.yml'
   workflow_dispatch:
 
 concurrency:
