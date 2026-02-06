@@ -6,187 +6,316 @@
 //
 
 import Network
-import CoreGraphics
-import ImageIO
 import OSLog
 
-class WebServer{
-    var streamConnection:NWConnection?=nil
-    var listener:NWListener?
-    let displayPage:String
-    private let isSharingProvider: () -> Bool
-    private let frameProvider: () -> Data?
-    private let requestHandler = WebRequestHandler()
-    private var streamPump: StreamPump?
+@MainActor
+final class WebServer {
+    private enum InitError: Error {
+        case missingDisplayPageResource
+    }
+    private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
+    private static let maxRequestBytes = 32 * 1024
+    private static let receiveChunkSize = 4096
 
-    private final class StreamPump {
-        weak var connection: NWConnection?
-        let isSharingProvider: () -> Bool
-        let frameProvider: () -> Data?
-        private var timer: Timer?
+    private final class StreamHub {
+        private struct ClientState {
+            let connection: NWConnection
+            var isSending = false
+            var pendingFrame: Data?
+        }
+
+        private var clients: [ObjectIdentifier: ClientState] = [:]
+        private var timer: DispatchSourceTimer?
+        private let isSharingProvider: @MainActor @Sendable () -> Bool
+        private let frameProvider: @MainActor @Sendable () -> Data?
+        private let frameInterval: DispatchTimeInterval = .milliseconds(100)
 
         init(
-            connection: NWConnection,
-            isSharingProvider: @escaping () -> Bool,
-            frameProvider: @escaping () -> Data?
+            isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
+            frameProvider: @escaping @MainActor @Sendable () -> Data?
         ) {
-            self.connection = connection
             self.isSharingProvider = isSharingProvider
             self.frameProvider = frameProvider
         }
 
-        func start() {
-            stop()
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-                guard let self, let connection else { return }
-                guard isSharingProvider() else {
-                    AppLog.web.info("Sharing stopped while streaming; closing client connection.")
-                    stop()
-                    connection.cancel()
-                    return
-                }
-                guard let frame = frameProvider() else { return }
+        func addClient(_ connection: NWConnection) {
+            let key = ObjectIdentifier(connection)
+            clients[key] = ClientState(connection: connection)
+            AppLog.web.info("StreamHub: added client, active=\(self.clients.count)")
+            startTimerIfNeeded()
+        }
 
-                let boundary = "--nextFrameK9_4657\r\n"
-                let contentHeader = "Content-Type: image/jpg\r\n"
-                let contentLength = "Content-Length: \(frame.count)\r\n\r\n"
-                let frameData = Data(boundary.utf8) + Data(contentHeader.utf8) + Data(contentLength.utf8) + frame + Data("\r\n".utf8)
-                connection.send(content: frameData, completion: .contentProcessed({ error in
-                    if let error {
-                        AppErrorMapper.logFailure("Stream frame send", error: error, logger: AppLog.web)
-                    }
-                }))
+        func removeClient(_ connection: NWConnection) {
+            removeClient(for: ObjectIdentifier(connection), cancelConnection: false)
+        }
+
+        func disconnectAllClients() {
+            let keys = Array(clients.keys)
+            for key in keys {
+                removeClient(for: key, cancelConnection: true)
+            }
+            stopTimer()
+        }
+
+        private func removeClient(for key: ObjectIdentifier, cancelConnection: Bool) {
+            guard let removed = clients.removeValue(forKey: key) else { return }
+            if cancelConnection {
+                removed.connection.cancel()
+            }
+            AppLog.web.info("StreamHub: removed client, active=\(self.clients.count)")
+            if clients.isEmpty {
+                stopTimer()
             }
         }
 
-        func stop() {
-            timer?.invalidate()
+        private func startTimerIfNeeded() {
+            guard timer == nil else { return }
+            let source = DispatchSource.makeTimerSource(queue: .main)
+            source.schedule(deadline: .now(), repeating: frameInterval)
+            source.setEventHandler { [weak self] in
+                self?.tick()
+            }
+            timer = source
+            source.resume()
+            AppLog.web.info("StreamHub: timer started")
+        }
+
+        private func stopTimer() {
+            timer?.setEventHandler {}
+            timer?.cancel()
             timer = nil
+            AppLog.web.info("StreamHub: timer stopped")
+        }
+
+        private func tick() {
+            guard !clients.isEmpty else {
+                stopTimer()
+                return
+            }
+
+            guard isSharingProvider() else {
+                AppLog.web.info("StreamHub: sharing stopped, disconnecting all clients.")
+                disconnectAllClients()
+                return
+            }
+
+            guard let frame = frameProvider() else { return }
+            let frameData = makeFramePayload(frame: frame)
+
+            for key in Array(clients.keys) {
+                enqueue(frameData, to: key)
+            }
+        }
+
+        private func makeFramePayload(frame: Data) -> Data {
+            let boundary = "--\(WebRequestHandler.streamBoundary)\r\n"
+            let contentHeader = "Content-Type: image/jpeg\r\n"
+            let contentLength = "Content-Length: \(frame.count)\r\n\r\n"
+            return Data(boundary.utf8)
+            + Data(contentHeader.utf8)
+            + Data(contentLength.utf8)
+            + frame
+            + Data("\r\n".utf8)
+        }
+
+        private func enqueue(_ frameData: Data, to key: ObjectIdentifier) {
+            guard var state = clients[key] else { return }
+            if state.isSending {
+                // Keep only the latest frame for slow clients to avoid backpressure cascade.
+                state.pendingFrame = frameData
+                clients[key] = state
+                return
+            }
+
+            state.isSending = true
+            clients[key] = state
+            send(frameData, to: key)
+        }
+
+        private func send(_ frameData: Data, to key: ObjectIdentifier) {
+            guard let state = clients[key] else { return }
+            state.connection.send(content: frameData, completion: .contentProcessed({ [weak self] error in
+                guard let self else { return }
+                guard var current = self.clients[key] else { return }
+
+                if let error {
+                    AppErrorMapper.logFailure("Stream frame send", error: error, logger: AppLog.web)
+                    self.removeClient(for: key, cancelConnection: true)
+                    return
+                }
+
+                if let pending = current.pendingFrame {
+                    current.pendingFrame = nil
+                    self.clients[key] = current
+                    self.send(pending, to: key)
+                    return
+                }
+
+                current.isSending = false
+                self.clients[key] = current
+            }))
+        }
+    }
+
+    private var listener: NWListener?
+    private let displayPage: String
+    private let streamHub: StreamHub
+    private let requestHandler = WebRequestHandler()
+
+    private func receiveHTTPRequest(
+        on connection: NWConnection,
+        accumulated: Data = Data(),
+        completion: @escaping @MainActor (Data?) -> Void
+    ) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { [weak self] content, _, isComplete, error in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+
+                if let error {
+                    AppErrorMapper.logFailure("Receive HTTP request", error: error, logger: AppLog.web)
+                    completion(nil)
+                    return
+                }
+
+                var nextData = accumulated
+                if let content, !content.isEmpty {
+                    nextData.append(content)
+                }
+
+                if nextData.count > Self.maxRequestBytes {
+                    AppLog.web.notice("HTTP request header exceeds max size; closing connection.")
+                    completion(nil)
+                    return
+                }
+
+                if nextData.range(of: Self.requestHeaderTerminator) != nil {
+                    completion(nextData)
+                    return
+                }
+
+                if isComplete {
+                    completion(nextData.isEmpty ? nil : nextData)
+                    return
+                }
+
+                self.receiveHTTPRequest(on: connection, accumulated: nextData, completion: completion)
+            }
         }
     }
 
     init(
         using port:NWEndpoint.Port = .http,
-        isSharingProvider: @escaping () -> Bool,
-        frameProvider: @escaping () -> Data?
-    ) throws{
-        self.isSharingProvider = isSharingProvider
-        self.frameProvider = frameProvider
-        displayPage=try String(contentsOfFile: Bundle.main.path(forResource: "displayPage", ofType: "html")!, encoding: .utf8)
+        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
+        frameProvider: @escaping @MainActor @Sendable () -> Data?
+    ) throws {
+        self.streamHub = StreamHub(
+            isSharingProvider: isSharingProvider,
+            frameProvider: frameProvider
+        )
+        guard let displayPagePath = Bundle.main.path(forResource: "displayPage", ofType: "html") else {
+            throw InitError.missingDisplayPageResource
+        }
+        displayPage = try String(contentsOfFile: displayPagePath, encoding: .utf8)
         listener = try NWListener(using: .tcp, on: port)
         listener?.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
             connection.start(queue: .main)
             connection.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                switch state {
-                case .failed(let error):
-                    AppErrorMapper.logFailure("Connection failed", error: error, logger: AppLog.web)
-                    if self.streamConnection === connection {
-                        self.streamPump?.stop()
-                        self.streamPump = nil
-                        self.streamConnection = nil
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    switch state {
+                    case .failed(let error):
+                        AppErrorMapper.logFailure("Connection failed", error: error, logger: AppLog.web)
+                        self.streamHub.removeClient(connection)
+                        connection.cancel()
+                    case .cancelled:
+                        AppLog.web.info("Connection cancelled.")
+                        self.streamHub.removeClient(connection)
+                    default:
+                        break
                     }
-                    connection.cancel()
-                case .cancelled:
-                    AppLog.web.info("Connection cancelled.")
-                    if self.streamConnection === connection {
-                        self.streamPump?.stop()
-                        self.streamPump = nil
-                        self.streamConnection = nil
-                    }
-                default:
-                    break
                 }
             }
-            connection.receive(minimumIncompleteLength: 0, maximumLength: 999) { content, contentContext, isComplete, error in
-                if let error {
-                    AppErrorMapper.logFailure("Receive HTTP request", error: error, logger: AppLog.web)
-                }
-                guard let content else {
-                    AppLog.web.notice("Received empty request content; closing connection.")
-                    connection.cancel()
-                    return
-                }
-                if isComplete {
-                    _ = contentContext
-                }
-                guard let request = parseHTTPRequest(from: content) else {
-                    AppLog.web.notice("Failed to parse HTTP request; closing connection.")
-                    connection.cancel()
-                    return
-                }
-
-                let decision = self.requestHandler.decision(
-                    forPath: request.path,
-                    isSharing: self.isSharingProvider()
-                )
-
-                switch decision {
-                case .showDisplayPage:
-                    connection.send(
-                        content: self.requestHandler.responseData(for: .showDisplayPage, displayPage: self.displayPage),
-                        completion: .contentProcessed { error in
-                            if let error {
-                                AppErrorMapper.logFailure("Send display page response", error: error, logger: AppLog.web)
-                            }
+            MainActor.assumeIsolated {
+                self.receiveHTTPRequest(on: connection) { content in
+                    MainActor.assumeIsolated {
+                        guard let content else {
+                            AppLog.web.notice("Received empty request content; closing connection.")
                             connection.cancel()
+                            return
                         }
-                    )
-                case .openStream:
-                    self.streamConnection?.cancel()
-                    self.streamConnection = connection
-                    AppLog.web.info("Open MJPEG stream for client.")
-                    connection.send(
-                        content: self.requestHandler.responseData(for: .openStream, displayPage: self.displayPage),
-                        completion: .contentProcessed { error in
-                            if let error {
-                                AppErrorMapper.logFailure("Send stream response header", error: error, logger: AppLog.web)
-                            }
-                        }
-                    )
-                    self.streamPump?.stop()
-                    self.streamPump = StreamPump(
-                        connection: connection,
-                        isSharingProvider: self.isSharingProvider,
-                        frameProvider: frameProvider
-                    )
-                    self.streamPump?.start()
-                case .sharingUnavailable, .notFound:
-                    connection.send(
-                        content: self.requestHandler.responseData(for: decision, displayPage: self.displayPage),
-                        completion: .contentProcessed { error in
-                            if let error {
-                                AppErrorMapper.logFailure("Send HTTP error response", error: error, logger: AppLog.web)
-                            }
+                        guard let request = parseHTTPRequest(from: content) else {
+                            AppLog.web.notice("Failed to parse HTTP request; closing connection.")
                             connection.cancel()
+                            return
                         }
-                    )
+
+                        let decision = self.requestHandler.decision(
+                            forPath: request.path,
+                            isSharing: isSharingProvider()
+                        )
+                        AppLog.web.info("HTTP request: path=\(request.path), decision=\(String(describing: decision))")
+
+                        switch decision {
+                        case .showDisplayPage:
+                            connection.send(
+                                content: self.requestHandler.responseData(for: .showDisplayPage, displayPage: self.displayPage),
+                                completion: .contentProcessed { error in
+                                    MainActor.assumeIsolated {
+                                        if let error {
+                                            AppErrorMapper.logFailure("Send display page response", error: error, logger: AppLog.web)
+                                        }
+                                        connection.cancel()
+                                    }
+                                }
+                            )
+                        case .openStream:
+                            AppLog.web.info("Open MJPEG stream for client.")
+                            connection.send(
+                                content: self.requestHandler.responseData(for: .openStream, displayPage: self.displayPage),
+                                completion: .contentProcessed { [weak self] error in
+                                    MainActor.assumeIsolated {
+                                        guard let self else { return }
+                                        if let error {
+                                            AppErrorMapper.logFailure("Send stream response header", error: error, logger: AppLog.web)
+                                            connection.cancel()
+                                            return
+                                        }
+                                        self.streamHub.addClient(connection)
+                                    }
+                                }
+                            )
+                        case .sharingUnavailable, .notFound:
+                            connection.send(
+                                content: self.requestHandler.responseData(for: decision, displayPage: self.displayPage),
+                                completion: .contentProcessed { error in
+                                    MainActor.assumeIsolated {
+                                        if let error {
+                                            AppErrorMapper.logFailure("Send HTTP error response", error: error, logger: AppLog.web)
+                                        }
+                                        connection.cancel()
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
-
     }
-    
-    public func startListener(){
-        listener?.start(queue: .global())
+
+    func startListener() {
+        listener?.start(queue: .main)
     }
 
     func disconnectStreamClient() {
-        streamPump?.stop()
-        streamPump = nil
-        streamConnection?.cancel()
-        streamConnection = nil
+        streamHub.disconnectAllClients()
     }
 
     func stopListener() {
         disconnectStreamClient()
         listener?.cancel()
         listener = nil
-    }
-    
-    deinit {
-        stopListener()
     }
     
 }

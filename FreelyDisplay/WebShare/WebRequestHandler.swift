@@ -9,6 +9,21 @@ enum WebRequestDecision: Equatable {
 
 struct WebRequestHandler {
     private let router = HttpRouter()
+    static let streamBoundary = "nextFrameK9_4657"
+
+    private func buildResponse(
+        statusLine: String,
+        headers: [(String, String)] = [],
+        body: String = ""
+    ) -> Data {
+        var response = statusLine + "\r\n"
+        for (key, value) in headers {
+            response += "\(key): \(value)\r\n"
+        }
+        response += "\r\n"
+        response += body
+        return Data(response.utf8)
+    }
 
     func decision(forPath path: String, isSharing: Bool) -> WebRequestDecision {
         switch router.route(for: path) {
@@ -21,32 +36,46 @@ struct WebRequestHandler {
         }
     }
 
-    func responseData(for decision: WebRequestDecision, displayPage: String) -> Data? {
+    func responseData(for decision: WebRequestDecision, displayPage: String) -> Data {
         switch decision {
         case .showDisplayPage:
-            return Data(("HTTP/1.1 200 OK\r\n\r\n" + displayPage).utf8)
+            return buildResponse(
+                statusLine: "HTTP/1.1 200 OK",
+                headers: [
+                    ("Content-Type", "text/html; charset=utf-8"),
+                    ("Content-Length", "\(displayPage.utf8.count)"),
+                    ("Cache-Control", "no-cache")
+                ],
+                body: displayPage
+            )
         case .sharingUnavailable:
-            return Data(
-                """
-                HTTP/1.1 503 Service Unavailable\r
-                Content-Type: text/plain; charset=utf-8\r
-                Cache-Control: no-cache\r
-                Connection: close\r
-                \r
-                Sharing has stopped.
-                """.utf8
+            return buildResponse(
+                statusLine: "HTTP/1.1 503 Service Unavailable",
+                headers: [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Cache-Control", "no-cache"),
+                    ("Connection", "close")
+                ],
+                body: "Sharing has stopped."
             )
         case .notFound:
-            return Data("HTTP/1.1 404 Not Found\r\n\r\n".utf8)
+            return buildResponse(
+                statusLine: "HTTP/1.1 404 Not Found",
+                headers: [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Connection", "close")
+                ],
+                body: "Not Found"
+            )
         case .openStream:
-            return Data(
-                """
-                HTTP/1.1 200 OK\r
-                Content-Type: multipart/x-mixed-replace; boundary=nextFrameK9_4657\r
-                Connection: keep-alive\r
-                Cache-Control: no-cache\r
-                \r
-                """.utf8
+            return buildResponse(
+                statusLine: "HTTP/1.1 200 OK",
+                headers: [
+                    ("Content-Type", "multipart/x-mixed-replace; boundary=\(Self.streamBoundary)"),
+                    ("Cache-Control", "no-cache, no-store, must-revalidate"),
+                    ("Pragma", "no-cache"),
+                    ("Connection", "keep-alive")
+                ]
             )
         }
     }

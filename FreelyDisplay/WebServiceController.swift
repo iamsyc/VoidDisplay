@@ -9,7 +9,10 @@ protocol WebServiceControlling: AnyObject {
     var isRunning: Bool { get }
 
     @discardableResult
-    func start(isSharingProvider: @escaping () -> Bool, frameProvider: @escaping () -> Data?) -> Bool
+    func start(
+        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
+        frameProvider: @escaping @MainActor @Sendable () -> Data?
+    ) -> Bool
     func stop()
     func disconnectStreamClient()
 }
@@ -36,7 +39,10 @@ final class WebServiceController: WebServiceControlling {
     }
 
     @discardableResult
-    func start(isSharingProvider: @escaping () -> Bool, frameProvider: @escaping () -> Data?) -> Bool {
+    func start(
+        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
+        frameProvider: @escaping @MainActor @Sendable () -> Data?
+    ) -> Bool {
         guard webServer == nil else {
             AppLog.web.debug("Start requested while web service is already running.")
             return true

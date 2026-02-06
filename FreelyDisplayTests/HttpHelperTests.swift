@@ -90,7 +90,7 @@ struct HttpHelperTests {
         #expect(other.hasSubDir(in: route) == false)
     }
 
-    @Test func httpRouterRouteDecision() {
+    @MainActor @Test func httpRouterRouteDecision() {
         let router = HttpRouter()
         #expect(router.route(for: "/") == .root)
         #expect(router.route(for: "/stream") == .stream)
@@ -99,7 +99,7 @@ struct HttpHelperTests {
         #expect(router.route(for: "%%%") == .notFound)
     }
 
-    @Test func webRequestHandlerDecision() {
+    @MainActor @Test func webRequestHandlerDecision() {
         let handler = WebRequestHandler()
         #expect(handler.decision(forPath: "/", isSharing: false) == .showDisplayPage)
         #expect(handler.decision(forPath: "/stream", isSharing: true) == .openStream)
@@ -111,22 +111,36 @@ struct HttpHelperTests {
         let handler = WebRequestHandler()
         let page = "<html>ok</html>"
 
-        let rootResponse = try #require(handler.responseData(for: .showDisplayPage, displayPage: page))
+        let rootResponse = handler.responseData(for: .showDisplayPage, displayPage: page)
         let rootText = try #require(String(data: rootResponse, encoding: .utf8))
         #expect(rootText.contains("HTTP/1.1 200 OK"))
         #expect(rootText.contains(page))
 
-        let streamResponse = try #require(handler.responseData(for: .openStream, displayPage: page))
+        let streamResponse = handler.responseData(for: .openStream, displayPage: page)
         let streamText = try #require(String(data: streamResponse, encoding: .utf8))
         #expect(streamText.contains("multipart/x-mixed-replace"))
         #expect(streamText.contains("boundary=nextFrameK9_4657"))
 
-        let unavailableResponse = try #require(handler.responseData(for: .sharingUnavailable, displayPage: page))
+        let unavailableResponse = handler.responseData(for: .sharingUnavailable, displayPage: page)
         let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
         #expect(unavailableText.contains("503 Service Unavailable"))
 
-        let missingResponse = try #require(handler.responseData(for: .notFound, displayPage: page))
+        let missingResponse = handler.responseData(for: .notFound, displayPage: page)
         let missingText = try #require(String(data: missingResponse, encoding: .utf8))
         #expect(missingText.contains("404 Not Found"))
+    }
+
+    @Test func streamResponseHeaderTerminatesWithCRLFCRLF() throws {
+        let handler = WebRequestHandler()
+        let response = handler.responseData(for: .openStream, displayPage: "<html></html>")
+        let text = try #require(String(data: response, encoding: .utf8))
+
+        #expect(text.hasSuffix("\r\n\r\n"))
+        #expect(text.contains("Content-Type: multipart/x-mixed-replace; boundary=\(WebRequestHandler.streamBoundary)"))
+    }
+
+    @MainActor @Test func httpRouterTreatsStreamWithQueryAsStreamRoute() {
+        let router = HttpRouter()
+        #expect(router.route(for: "/stream?t=123") == .stream)
     }
 }

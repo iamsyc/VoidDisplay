@@ -58,114 +58,126 @@ class StreamDelegate: NSObject, SCStreamDelegate {
     }
 }
 
-// `CVImageBuffer` is not `Sendable`; frames are immutable for our usage while flowing through the encoder actor.
 private struct UncheckedImageBuffer: @unchecked Sendable {
-    nonisolated(unsafe) let value: CVImageBuffer
+    let value: CVImageBuffer
 }
 
+private struct UncheckedSampleBuffer: @unchecked Sendable {
+    nonisolated(unsafe) let value: CMSampleBuffer
+}
+
+private struct PendingFrame: @unchecked Sendable {
+    let sampleBuffer: UncheckedSampleBuffer
+    let pixelBuffer: UncheckedImageBuffer
+}
 
 @MainActor
 @Observable
 final class Capture: NSObject, SCStreamOutput {
-    // Sample callbacks run on a dedicated queue. All app-observable state is published back on MainActor.
-    nonisolated private static let captureOutputQueue = DispatchQueue(
-        label: "phineas.mac.FreelyDisplay.capture.output",
-        qos: .userInteractive
+    // Keep callbacks on main actor and offload JPEG encoding to a serial background queue.
+    @ObservationIgnored nonisolated private let encodingQueue = DispatchQueue(
+        label: "phineas.mac.FreelyDisplay.capture.jpeg",
+        qos: .userInitiated
     )
-
-    private actor FramePipeline {
-        private var latestFrame: UncheckedImageBuffer?
-        private var isEncoding = false
-        private let ciContext = CIContext()
-        private let jpegScale: CGFloat
-        private let compressionQuality: CGFloat
-
-        init(jpegScale: CGFloat = 0.25, compressionQuality: CGFloat = 0.65) {
-            self.jpegScale = jpegScale
-            self.compressionQuality = compressionQuality
-        }
-
-        func submit(
-            _ frame: UncheckedImageBuffer,
-            publish: @escaping @Sendable (Data?) async -> Void
-        ) async {
-            latestFrame = frame
-            guard !isEncoding else { return }
-            isEncoding = true
-
-            while let currentFrame = latestFrame {
-                latestFrame = nil
-                let encoded = encodeJPEG(from: currentFrame.value)
-                await publish(encoded)
-            }
-
-            isEncoding = false
-        }
-
-        func reset() {
-            latestFrame = nil
-        }
-
-        private func encodeJPEG(from pixelBuffer: CVImageBuffer) -> Data? {
-            autoreleasepool {
-                let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-                let outputImage = ciImage.transformed(by: CGAffineTransform(scaleX: jpegScale, y: jpegScale))
-                guard let cgImage = ciContext.createCGImage(outputImage, from: outputImage.extent) else { return nil }
-
-                let mutableData = NSMutableData()
-                guard let destination = CGImageDestinationCreateWithData(
-                    mutableData,
-                    UTType.jpeg.identifier as CFString,
-                    1,
-                    nil
-                ) else { return nil }
-
-                let options = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality] as CFDictionary
-                CGImageDestinationAddImage(destination, cgImage, options)
-                return CGImageDestinationFinalize(destination) ? (mutableData as Data) : nil
-            }
-        }
-    }
+    @ObservationIgnored nonisolated private let ciContext = CIContext()
+    @ObservationIgnored nonisolated private let jpegScale: CGFloat = 0.25
+    @ObservationIgnored nonisolated private let compressionQuality: CGFloat = 0.65
 
     @ObservationIgnored var surface: CVImageBuffer?
     var frameNumber: UInt64 = 0
+    // Safe because writes happen on MainActor and reads are also on MainActor (via assumeIsolated).
     @ObservationIgnored var jpgData: Data?
-    @ObservationIgnored private var publishGeneration: UInt64 = 0
-    @ObservationIgnored nonisolated private let framePipeline = FramePipeline()
+    @ObservationIgnored private var latestPendingFrame: PendingFrame?
+    @ObservationIgnored private var isEncodingLoopRunning = false
+    @ObservationIgnored private var encodingGeneration: UInt64 = 0
 
     nonisolated var sampleHandlerQueue: DispatchQueue {
-        Self.captureOutputQueue
+        .main
     }
 
-    func resetFrameState() {
-        publishGeneration &+= 1
-        surface = nil
-        jpgData = nil
-        frameNumber = 0
-        Task {
-            await framePipeline.reset()
+    nonisolated private func encodeJPEG(from pixelBuffer: CVImageBuffer) -> Data? {
+        autoreleasepool {
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let outputImage = ciImage.transformed(by: CGAffineTransform(scaleX: jpegScale, y: jpegScale))
+            guard let cgImage = ciContext.createCGImage(outputImage, from: outputImage.extent) else { return nil }
+
+            let mutableData = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(
+                mutableData,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            ) else { return nil }
+
+            let options = [kCGImageDestinationLossyCompressionQuality as String: compressionQuality] as CFDictionary
+            CGImageDestinationAddImage(destination, cgImage, options)
+            return CGImageDestinationFinalize(destination) ? (mutableData as Data) : nil
         }
     }
 
-    nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    func resetFrameState() {
+        encodingGeneration &+= 1
+        surface = nil
+        jpgData = nil
+        frameNumber = 0
+        latestPendingFrame = nil
+        isEncodingLoopRunning = false
+    }
+
+    @MainActor func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen, let pixelBuffer = sampleBuffer.imageBuffer else { return }
+        
+        // Wrap the sample buffer to extend the pixel buffer's lifetime beyond this callback.
+        // CMSampleBuffer implicitly retains its underlying CVImageBuffer.
+        // ScreenCaptureKit may recycle the buffer after this method returns.
+        let retainedSampleBuffer = UncheckedSampleBuffer(value: sampleBuffer)
         let pixelBufferBox = UncheckedImageBuffer(value: pixelBuffer)
 
-        Task { [weak self, pixelBufferBox] in
-            guard let self else { return }
+        surface = pixelBuffer
+        frameNumber &+= 1
+        latestPendingFrame = PendingFrame(
+            sampleBuffer: retainedSampleBuffer,
+            pixelBuffer: pixelBufferBox
+        )
+        scheduleEncodingLoopIfNeeded()
+    }
 
-            let generation = await MainActor.run { () -> UInt64 in
-                self.surface = pixelBufferBox.value
-                self.frameNumber &+= 1
-                return self.publishGeneration
+    private func scheduleEncodingLoopIfNeeded() {
+        guard !isEncodingLoopRunning else { return }
+        isEncodingLoopRunning = true
+        let generation = encodingGeneration
+
+        Task { [weak self] in
+            await self?.runEncodingLoop(generation: generation)
+        }
+    }
+
+    private func runEncodingLoop(generation: UInt64) async {
+        while true {
+            guard generation == encodingGeneration else { return }
+            guard let frame = latestPendingFrame else {
+                isEncodingLoopRunning = false
+                return
             }
 
-            await self.framePipeline.submit(pixelBufferBox) { [weak self] encoded in
-                guard let self else { return }
-                await MainActor.run {
-                    guard self.publishGeneration == generation else { return }
-                    self.jpgData = encoded
+            // Always keep only the latest pending frame to minimize live-stream latency.
+            latestPendingFrame = nil
+            let encoded = await encodeJPEGAsync(from: frame)
+            guard generation == encodingGeneration else { return }
+            jpgData = encoded
+        }
+    }
+
+    nonisolated private func encodeJPEGAsync(from frame: PendingFrame) async -> Data? {
+        await withCheckedContinuation { continuation in
+            encodingQueue.async { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: nil)
+                    return
                 }
+                // Keep the sample buffer alive while encoding its pixel buffer.
+                _ = frame.sampleBuffer
+                continuation.resume(returning: self.encodeJPEG(from: frame.pixelBuffer.value))
             }
         }
     }
