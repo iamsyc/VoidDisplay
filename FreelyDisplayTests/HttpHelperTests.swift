@@ -42,6 +42,19 @@ struct HttpHelperTests {
         #expect(body == "hello\r\nworld")
     }
 
+    @Test func parseHTTPRequestPreservesBinaryBodyBytes() throws {
+        let header = "POST /upload HTTP/1.1\r\n"
+            + "Content-Type: application/octet-stream\r\n"
+            + "Content-Length: 4\r\n"
+            + "\r\n"
+        var payload = try #require(header.data(using: .utf8))
+        let expectedBody = Data([0x00, 0xFF, 0x10, 0x7F])
+        payload.append(expectedBody)
+
+        let request = try #require(parseHTTPRequest(from: payload))
+        #expect(request.body == expectedBody)
+    }
+
     @Test func parseHTTPRequestRejectsInvalidRequestLine() throws {
         let raw = """
         GET_ONLY_TWO_PARTS /stream\r

@@ -15,16 +15,20 @@ func parseHTTPRequest(from data: Data) -> (
     headers: [String: String],
     body: Data
 )? {
-    guard let requestString = String(data: data, encoding: .utf8) else {
+    let separator = Data("\r\n\r\n".utf8)
+    let headerAndBody: (header: Data, body: Data)
+    if let boundary = data.range(of: separator) {
+        let headerData = data[..<boundary.lowerBound]
+        let bodyData = data[boundary.upperBound...]
+        headerAndBody = (Data(headerData), Data(bodyData))
+    } else {
+        // Allow header-only payloads when terminator is missing.
+        headerAndBody = (data, Data())
+    }
+
+    guard let headerSection = String(data: headerAndBody.header, encoding: .utf8) else {
         return nil
     }
-    let parts = requestString.components(separatedBy: "\r\n\r\n")
-    guard parts.count >= 1 else {
-        return nil
-    }
-    let headerSection = parts[0]
-    let bodyString = parts.count > 1 ? parts[1...].joined(separator: "\r\n\r\n") : ""
-    let bodyData = bodyString.data(using: .utf8) ?? Data()
     let headerLines = headerSection.components(separatedBy: "\r\n")
     guard let firstLine = headerLines.first, !firstLine.isEmpty else {
         return nil
@@ -47,7 +51,7 @@ func parseHTTPRequest(from data: Data) -> (
         headers[key.lowercased()] = value
     }
     
-    return (method, path, version, headers, bodyData)
+    return (method, path, version, headers, headerAndBody.body)
 }
 
 extension NSImage {
