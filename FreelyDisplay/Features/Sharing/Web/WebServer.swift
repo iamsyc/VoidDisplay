@@ -13,9 +13,9 @@ final class WebServer {
     private enum InitError: Error {
         case missingDisplayPageResource
     }
-    private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
-    private static let maxRequestBytes = 32 * 1024
-    private static let receiveChunkSize = 4096
+    nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
+    nonisolated private static let maxRequestBytes = 32 * 1024
+    nonisolated private static let receiveChunkSize = 4096
 
     private static func logConnectionIssue(_ operation: String, error: Error) {
         if shouldTreatAsExpectedClientDisconnect(error) {
@@ -31,6 +31,10 @@ final class WebServer {
     private let displayPage: String
     private let streamHub: StreamHub
     private let requestHandler = WebRequestHandler()
+    nonisolated private let networkQueue = DispatchQueue(
+        label: "phineas.mac.FreelyDisplay.web.network",
+        qos: .userInitiated
+    )
 
     private func handleListenerState(_ state: NWListener.State) {
         switch state {
@@ -140,44 +144,57 @@ final class WebServer {
         )
     }
 
-    private func receiveHTTPRequest(
+    nonisolated private func receiveHTTPRequest(
         on connection: NWConnection,
-        accumulated: Data = Data(),
         completion: @escaping @MainActor (Data?) -> Void
     ) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { [weak self] content, _, isComplete, error in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        Self.receiveHTTPRequestChunk(on: connection, accumulated: Data(), completion: completion)
+    }
 
-                if let error {
+    nonisolated private static func receiveHTTPRequestChunk(
+        on connection: NWConnection,
+        accumulated: Data,
+        completion: @escaping @MainActor (Data?) -> Void
+    ) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { content, _, isComplete, error in
+            if let error {
+                Task { @MainActor in
                     Self.logConnectionIssue("Receive HTTP request", error: error)
                     completion(nil)
-                    return
                 }
+                return
+            }
 
-                var nextData = accumulated
-                if let content, !content.isEmpty {
-                    nextData.append(content)
-                }
+            var nextData = accumulated
+            if let content, !content.isEmpty {
+                nextData.append(content)
+            }
 
-                if nextData.count > Self.maxRequestBytes {
+            if nextData.count > Self.maxRequestBytes {
+                Task { @MainActor in
                     AppLog.web.notice("HTTP request header exceeds max size; closing connection.")
                     completion(nil)
-                    return
                 }
-
-                if nextData.range(of: Self.requestHeaderTerminator) != nil {
-                    completion(nextData)
-                    return
-                }
-
-                if isComplete {
-                    completion(nextData.isEmpty ? nil : nextData)
-                    return
-                }
-
-                self.receiveHTTPRequest(on: connection, accumulated: nextData, completion: completion)
+                return
             }
+
+            if nextData.range(of: Self.requestHeaderTerminator) != nil {
+                let completedData = nextData
+                Task { @MainActor in
+                    completion(completedData)
+                }
+                return
+            }
+
+            if isComplete {
+                let completedData = nextData.isEmpty ? nil : nextData
+                Task { @MainActor in
+                    completion(completedData)
+                }
+                return
+            }
+
+            Self.receiveHTTPRequestChunk(on: connection, accumulated: nextData, completion: completion)
         }
     }
 
@@ -211,18 +228,16 @@ final class WebServer {
                     self.handleConnectionState(state, for: connection)
                 }
             }
-            connection.start(queue: .main)
-            Task { @MainActor [weak self] in
+            connection.start(queue: self.networkQueue)
+            self.receiveHTTPRequest(on: connection) { [weak self] content in
                 guard let self else { return }
-                self.receiveHTTPRequest(on: connection) { content in
-                    self.processRequest(content, on: connection, isSharingProvider: isSharingProvider)
-                }
+                self.processRequest(content, on: connection, isSharingProvider: isSharingProvider)
             }
         }
     }
 
     func startListener() {
-        listener?.start(queue: .main)
+        listener?.start(queue: networkQueue)
     }
 
     func disconnectAllStreamClients() {
