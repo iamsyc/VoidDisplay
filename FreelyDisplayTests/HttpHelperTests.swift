@@ -96,10 +96,11 @@ struct HttpHelperTests {
 
     @MainActor @Test func webRequestHandlerDecision() {
         let handler = WebRequestHandler()
-        #expect(handler.decision(forPath: "/", isSharing: false) == .showDisplayPage)
-        #expect(handler.decision(forPath: "/stream", isSharing: true) == .openStream)
-        #expect(handler.decision(forPath: "/stream", isSharing: false) == .sharingUnavailable)
-        #expect(handler.decision(forPath: "/404", isSharing: true) == .notFound)
+        #expect(handler.decision(forMethod: "GET", path: "/", isSharing: false) == .showDisplayPage)
+        #expect(handler.decision(forMethod: "GET", path: "/stream", isSharing: true) == .openStream)
+        #expect(handler.decision(forMethod: "GET", path: "/stream", isSharing: false) == .sharingUnavailable)
+        #expect(handler.decision(forMethod: "POST", path: "/stream", isSharing: true) == .methodNotAllowed)
+        #expect(handler.decision(forMethod: "GET", path: "/404", isSharing: true) == .notFound)
     }
 
     @Test func webRequestHandlerResponsePayloads() throws {
@@ -119,6 +120,11 @@ struct HttpHelperTests {
         let unavailableResponse = handler.responseData(for: .sharingUnavailable, displayPage: page)
         let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
         #expect(unavailableText.contains("503 Service Unavailable"))
+
+        let methodNotAllowedResponse = handler.responseData(for: .methodNotAllowed, displayPage: page)
+        let methodNotAllowedText = try #require(String(data: methodNotAllowedResponse, encoding: .utf8))
+        #expect(methodNotAllowedText.contains("405 Method Not Allowed"))
+        #expect(methodNotAllowedText.contains("Allow: GET"))
 
         let missingResponse = handler.responseData(for: .notFound, displayPage: page)
         let missingText = try #require(String(data: missingResponse, encoding: .utf8))

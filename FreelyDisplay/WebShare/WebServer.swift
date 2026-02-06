@@ -193,10 +193,13 @@ final class WebServer {
         }
 
         let decision = requestHandler.decision(
-            forPath: request.path,
+            forMethod: request.method,
+            path: request.path,
             isSharing: isSharingProvider()
         )
-        AppLog.web.info("HTTP request: path=\(request.path), decision=\(String(describing: decision))")
+        AppLog.web.info(
+            "HTTP request: method=\(request.method), path=\(request.path), decision=\(String(describing: decision))"
+        )
 
         switch decision {
         case .showDisplayPage:
@@ -207,7 +210,7 @@ final class WebServer {
             )
         case .openStream:
             openStream(for: connection)
-        case .sharingUnavailable, .notFound:
+        case .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision, displayPage: displayPage),
                 on: connection,

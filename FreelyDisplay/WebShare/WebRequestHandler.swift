@@ -4,6 +4,7 @@ enum WebRequestDecision: Equatable {
     case showDisplayPage
     case openStream
     case sharingUnavailable
+    case methodNotAllowed
     case notFound
 }
 
@@ -25,7 +26,14 @@ struct WebRequestHandler {
         return Data(response.utf8)
     }
 
-    func decision(forPath path: String, isSharing: Bool) -> WebRequestDecision {
+    func decision(
+        forMethod method: String,
+        path: String,
+        isSharing: Bool
+    ) -> WebRequestDecision {
+        guard method.uppercased() == "GET" else {
+            return .methodNotAllowed
+        }
         switch router.route(for: path) {
         case .root:
             return .showDisplayPage
@@ -57,6 +65,16 @@ struct WebRequestHandler {
                     ("Connection", "close")
                 ],
                 body: "Sharing has stopped."
+            )
+        case .methodNotAllowed:
+            return buildResponse(
+                statusLine: "HTTP/1.1 405 Method Not Allowed",
+                headers: [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Allow", "GET"),
+                    ("Connection", "close")
+                ],
+                body: "Method Not Allowed"
             )
         case .notFound:
             return buildResponse(
