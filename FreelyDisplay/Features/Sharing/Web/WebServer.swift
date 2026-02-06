@@ -148,12 +148,16 @@ final class WebServer {
         on connection: NWConnection,
         completion: @escaping @MainActor (Data?) -> Void
     ) {
-        Self.receiveHTTPRequestChunk(on: connection, accumulated: Data(), completion: completion)
+        let accumulator = HTTPRequestAccumulator(
+            headerTerminator: Self.requestHeaderTerminator,
+            maxBytes: Self.maxRequestBytes
+        )
+        Self.receiveHTTPRequestChunk(on: connection, accumulator: accumulator, completion: completion)
     }
 
     nonisolated private static func receiveHTTPRequestChunk(
         on connection: NWConnection,
-        accumulated: Data,
+        accumulator: HTTPRequestAccumulator,
         completion: @escaping @MainActor (Data?) -> Void
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { content, _, isComplete, error in
@@ -165,36 +169,20 @@ final class WebServer {
                 return
             }
 
-            var nextData = accumulated
-            if let content, !content.isEmpty {
-                nextData.append(content)
-            }
-
-            if nextData.count > Self.maxRequestBytes {
+            var nextAccumulator = accumulator
+            switch nextAccumulator.ingest(chunk: content, isComplete: isComplete) {
+            case .waiting:
+                Self.receiveHTTPRequestChunk(on: connection, accumulator: nextAccumulator, completion: completion)
+            case .complete(let completedData):
+                Task { @MainActor in
+                    completion(completedData)
+                }
+            case .invalidTooLarge:
                 Task { @MainActor in
                     AppLog.web.notice("HTTP request header exceeds max size; closing connection.")
                     completion(nil)
                 }
-                return
             }
-
-            if nextData.range(of: Self.requestHeaderTerminator) != nil {
-                let completedData = nextData
-                Task { @MainActor in
-                    completion(completedData)
-                }
-                return
-            }
-
-            if isComplete {
-                let completedData = nextData.isEmpty ? nil : nextData
-                Task { @MainActor in
-                    completion(completedData)
-                }
-                return
-            }
-
-            Self.receiveHTTPRequestChunk(on: connection, accumulated: nextData, completion: completion)
         }
     }
 
