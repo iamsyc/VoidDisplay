@@ -17,6 +17,16 @@ final class WebServer {
     private static let maxRequestBytes = 32 * 1024
     private static let receiveChunkSize = 4096
 
+    private static func logConnectionIssue(_ operation: String, error: Error) {
+        if shouldTreatAsExpectedClientDisconnect(error) {
+            AppLog.web.debug(
+                "\(operation, privacy: .public) ended by client disconnect: \(String(describing: error), privacy: .public)"
+            )
+            return
+        }
+        AppErrorMapper.logFailure(operation, error: error, logger: AppLog.web)
+    }
+
     private final class StreamHub {
         private struct ClientState {
             let connection: NWConnection
@@ -135,24 +145,26 @@ final class WebServer {
         private func send(_ frameData: Data, to key: ObjectIdentifier) {
             guard let state = clients[key] else { return }
             state.connection.send(content: frameData, completion: .contentProcessed({ [weak self] error in
-                guard let self else { return }
-                guard var current = self.clients[key] else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard var current = self.clients[key] else { return }
 
-                if let error {
-                    AppErrorMapper.logFailure("Stream frame send", error: error, logger: AppLog.web)
-                    self.removeClient(for: key, cancelConnection: true)
-                    return
-                }
+                    if let error {
+                        WebServer.logConnectionIssue("Stream frame send", error: error)
+                        self.removeClient(for: key, cancelConnection: true)
+                        return
+                    }
 
-                if let pending = current.pendingFrame {
-                    current.pendingFrame = nil
+                    if let pending = current.pendingFrame {
+                        current.pendingFrame = nil
+                        self.clients[key] = current
+                        self.send(pending, to: key)
+                        return
+                    }
+
+                    current.isSending = false
                     self.clients[key] = current
-                    self.send(pending, to: key)
-                    return
                 }
-
-                current.isSending = false
-                self.clients[key] = current
             }))
         }
     }
@@ -165,7 +177,7 @@ final class WebServer {
     private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
         switch state {
         case .failed(let error):
-            AppErrorMapper.logFailure("Connection failed", error: error, logger: AppLog.web)
+            Self.logConnectionIssue("Connection failed", error: error)
             streamHub.removeClient(connection)
             connection.cancel()
         case .cancelled:
@@ -262,7 +274,7 @@ final class WebServer {
                 guard let self else { return }
 
                 if let error {
-                    AppErrorMapper.logFailure("Receive HTTP request", error: error, logger: AppLog.web)
+                    Self.logConnectionIssue("Receive HTTP request", error: error)
                     completion(nil)
                     return
                 }
