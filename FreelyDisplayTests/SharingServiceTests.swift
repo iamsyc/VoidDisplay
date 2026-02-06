@@ -31,7 +31,7 @@ private final class MockWebServiceController: WebServiceControlling {
         isRunning = false
     }
 
-    func disconnectStreamClient() {
+    func disconnectAllStreamClients() {
         disconnectCallCount += 1
     }
 }
@@ -64,7 +64,7 @@ struct SharingServiceTests {
         #expect(sut.isWebServiceRunning == false)
     }
 
-    @MainActor @Test func stopSharingDisconnectsStreamClient() {
+    @MainActor @Test func stopSharingDisconnectsAllStreamClients() {
         let mock = MockWebServiceController()
         let sut = SharingService(webServiceController: mock)
 
@@ -75,7 +75,7 @@ struct SharingServiceTests {
         #expect(sut.isSharing == false)
     }
 
-    @MainActor @Test func stopWebServiceStopsControllerAndDisconnectsClient() {
+    @MainActor @Test func stopWebServiceStopsControllerAndDisconnectsAllStreamClients() {
         let mock = MockWebServiceController()
         let sut = SharingService(webServiceController: mock)
 

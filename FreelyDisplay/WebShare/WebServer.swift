@@ -333,12 +333,12 @@ final class WebServer {
         listener?.start(queue: .main)
     }
 
-    func disconnectStreamClient() {
+    func disconnectAllStreamClients() {
         streamHub.disconnectAllClients()
     }
 
     func stopListener() {
-        disconnectStreamClient()
+        disconnectAllStreamClients()
         listener?.cancel()
         listener = nil
     }

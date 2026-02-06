@@ -77,6 +77,6 @@ final class SharingService {
         sharingScreenCaptureStream?.resetFrameState()
         sharingScreenCaptureStream = nil
         isSharing = false
-        webServiceController.disconnectStreamClient()
+        webServiceController.disconnectAllStreamClients()
     }
 }

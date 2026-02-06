@@ -14,7 +14,7 @@ protocol WebServiceControlling: AnyObject {
         frameProvider: @escaping @MainActor @Sendable () -> Data?
     ) -> Bool
     func stop()
-    func disconnectStreamClient()
+    func disconnectAllStreamClients()
 }
 
 @MainActor
@@ -70,7 +70,7 @@ final class WebServiceController: WebServiceControlling {
         webServer = nil
     }
 
-    func disconnectStreamClient() {
-        webServer?.disconnectStreamClient()
+    func disconnectAllStreamClients() {
+        webServer?.disconnectAllStreamClients()
     }
 }
