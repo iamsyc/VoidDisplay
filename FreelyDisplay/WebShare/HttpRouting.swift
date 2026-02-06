@@ -7,16 +7,36 @@ enum HttpRoute: Equatable {
 }
 
 struct HttpRouter {
-    private let streamURL = URL(string: "/stream")!
+    private static let rootPath = "/"
+    private static let streamPath = "/stream"
+
+    private func normalizedPath(from rawPath: String) -> String? {
+        guard !rawPath.isEmpty else { return nil }
+        guard let path = URLComponents(string: rawPath)?.path, !path.isEmpty else {
+            return nil
+        }
+        guard path.hasPrefix("/") else { return nil }
+
+        var normalized = path
+        while normalized.contains("//") {
+            normalized = normalized.replacingOccurrences(of: "//", with: "/")
+        }
+
+        while normalized.count > 1 && normalized.hasSuffix("/") {
+            normalized.removeLast()
+        }
+        return normalized
+    }
 
     func route(for rawPath: String) -> HttpRoute {
-        guard let pathURL = URL(string: rawPath) else {
+        guard let path = normalizedPath(from: rawPath) else {
             return .notFound
         }
-        if pathURL.isRoot {
+
+        if path == Self.rootPath {
             return .root
         }
-        if pathURL.hasSubDir(in: streamURL) {
+        if path == Self.streamPath {
             return .stream
         }
         return .notFound

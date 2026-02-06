@@ -50,15 +50,6 @@ func parseHTTPRequest(from data: Data) -> (
     return (method, path, version, headers, bodyData)
 }
 
-extension URL{
-    func hasSubDir(in url:URL) -> Bool{
-        return self.pathComponents.contains(url.pathComponents)
-    }
-    var isRoot:Bool{
-        self.pathComponents.count==1 && self.pathComponents.contains("/")
-    }
-}
-
 extension NSImage {
     var jpgRepresentation: Data? {
         guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -75,4 +66,3 @@ extension NSImage {
         return CGImageDestinationFinalize(destination) ? mutableData as Data : nil
     }
 }
-

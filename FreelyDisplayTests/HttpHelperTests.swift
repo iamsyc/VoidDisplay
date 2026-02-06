@@ -71,30 +71,12 @@ struct HttpHelperTests {
         #expect(request.headers["brokenheaderline"] == nil)
     }
 
-    @Test func urlIsRootDetection() throws {
-        let root = try #require(URL(string: "/"))
-        let stream = try #require(URL(string: "/stream"))
-
-        #expect(root.isRoot)
-        #expect(stream.isRoot == false)
-    }
-
-    @Test func urlHasSubDirDetection() throws {
-        let route = try #require(URL(string: "/stream"))
-        let exact = try #require(URL(string: "/stream"))
-        let nested = try #require(URL(string: "/stream/frame"))
-        let other = try #require(URL(string: "/api"))
-
-        #expect(exact.hasSubDir(in: route))
-        #expect(nested.hasSubDir(in: route))
-        #expect(other.hasSubDir(in: route) == false)
-    }
-
     @MainActor @Test func httpRouterRouteDecision() {
         let router = HttpRouter()
         #expect(router.route(for: "/") == .root)
         #expect(router.route(for: "/stream") == .stream)
-        #expect(router.route(for: "/stream/frame") == .stream)
+        #expect(router.route(for: "/stream/") == .stream)
+        #expect(router.route(for: "/stream/frame") == .notFound)
         #expect(router.route(for: "/unknown") == .notFound)
         #expect(router.route(for: "%%%") == .notFound)
     }
@@ -142,5 +124,7 @@ struct HttpHelperTests {
     @MainActor @Test func httpRouterTreatsStreamWithQueryAsStreamRoute() {
         let router = HttpRouter()
         #expect(router.route(for: "/stream?t=123") == .stream)
+        #expect(router.route(for: "/stream/?t=123") == .stream)
+        #expect(router.route(for: "/?v=1") == .root)
     }
 }
