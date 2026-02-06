@@ -9,7 +9,7 @@ import Testing
 import Foundation
 @testable import FreelyDisplay
 
-struct FreelyDisplayTests {
+struct VirtualDisplayAndResolutionTests {
 
     @Test func resolutionsParsing() {
         let res = Resolutions.r_1920_1080.resolutions
