@@ -56,7 +56,7 @@ UI 入口：
 
 常用调试文件：
 - 虚拟显示器创建/编辑问题：
-  - `FreelyDisplay/CreatVirtualDisplayObjectView.swift`
+  - `FreelyDisplay/CreateVirtualDisplayObjectView.swift`
   - `FreelyDisplay/EditVirtualDisplayConfigView.swift`
   - `FreelyDisplay/VirtualDisplayService.swift`
 - 屏幕权限/采集问题：

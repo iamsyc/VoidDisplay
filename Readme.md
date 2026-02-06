@@ -57,7 +57,7 @@ UI entry:
 
 Useful files for debugging:
 - virtual display creation/update issues:
-  - `FreelyDisplay/CreatVirtualDisplayObjectView.swift`
+  - `FreelyDisplay/CreateVirtualDisplayObjectView.swift`
   - `FreelyDisplay/EditVirtualDisplayConfigView.swift`
   - `FreelyDisplay/VirtualDisplayService.swift`
 - screen capture / permission issues:
