@@ -166,6 +166,20 @@ final class WebServer {
     private let streamHub: StreamHub
     private let requestHandler = WebRequestHandler()
 
+    private func handleListenerState(_ state: NWListener.State) {
+        switch state {
+        case .ready:
+            AppLog.web.info("Web listener ready.")
+        case .failed(let error):
+            AppErrorMapper.logFailure("Web listener failed", error: error, logger: AppLog.web)
+            stopListener()
+        case .cancelled:
+            AppLog.web.info("Web listener cancelled.")
+        default:
+            break
+        }
+    }
+
     private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
         switch state {
         case .failed(let error):
@@ -315,15 +329,20 @@ final class WebServer {
         }
         displayPage = try String(contentsOfFile: displayPagePath, encoding: .utf8)
         listener = try NWListener(using: .tcp, on: port)
+        listener?.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor [weak self] in
+                self?.handleListenerState(state)
+            }
+        }
         listener?.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
-            connection.start(queue: .main)
             connection.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.handleConnectionState(state, for: connection)
                 }
             }
+            connection.start(queue: .main)
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.receiveHTTPRequest(on: connection) { content in
