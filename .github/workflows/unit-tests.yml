@@ -54,7 +54,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             test \
-            -only-testing:FreelyDisplayTests
+            -only-testing:FreelyDisplayTests \
+            -skip-testing:FreelyDisplayUITests
 
       - name: Upload unit test result bundle
         if: failure()
