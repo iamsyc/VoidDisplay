@@ -15,7 +15,7 @@ private final class SharingState {
 struct WebServerSocketIntegrationTests {
 
     @Test func rootRouteSupportsFragmentedSocketRequest() async throws {
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { false },
             frameProvider: { nil }
         )
@@ -35,7 +35,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamRouteSendsMultipleFramesToSocketClient() async throws {
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { true },
             frameProvider: { Data("frame-data".utf8) }
         )
@@ -63,7 +63,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamRouteRejectsNonGETMethodWith405() async throws {
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { true },
             frameProvider: { Data("frame-data".utf8) }
         )
@@ -87,7 +87,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamRouteSupportsFragmentedSocketRequestHeader() async throws {
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { true },
             frameProvider: { Data("frame-data".utf8) }
         )
@@ -115,7 +115,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamRouteBroadcastsFramesToAllConnectedClients() async throws {
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { true },
             frameProvider: { Data("frame-data".utf8) }
         )
@@ -158,7 +158,7 @@ struct WebServerSocketIntegrationTests {
 
     @Test func slowClientBackpressureDoesNotBlockFastClient() async throws {
         let largeFrame = Data(repeating: 0xAB, count: 512 * 1024)
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { true },
             frameProvider: { largeFrame }
         )
@@ -199,7 +199,7 @@ struct WebServerSocketIntegrationTests {
 
     @Test func streamClientDisconnectsWhenSharingStopsAndNewStreamReturns503() async throws {
         let sharingState = SharingState(isSharing: true)
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { sharingState.isSharing },
             frameProvider: { Data("frame-data".utf8) }
         )
@@ -242,7 +242,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func oversizedRequestHeaderIsRejected() async throws {
-        let setup = try startServerOnRandomPort(
+        let setup = try await startServerOnRandomPort(
             isSharingProvider: { false },
             frameProvider: { nil }
         )

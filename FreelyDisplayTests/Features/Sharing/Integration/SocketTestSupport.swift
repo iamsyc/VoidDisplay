@@ -12,27 +12,6 @@ enum SocketIntegrationError: Error {
     case receiveTimeout
 }
 
-@MainActor
-private enum SocketTestPortPool {
-    // Use high-but-non-ephemeral ports to reduce collisions with both local services and client source ports.
-    static let candidateRange: ClosedRange<UInt16> = 30_000...45_000
-    static var reservedPorts = Set<UInt16>()
-
-    static func reserveCandidate() -> UInt16? {
-        for _ in 0..<400 {
-            let candidate = UInt16.random(in: candidateRange)
-            if reservedPorts.insert(candidate).inserted {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    static func release(_ port: UInt16) {
-        reservedPorts.remove(port)
-    }
-}
-
 func sendAll(_ fd: Int32, data: Data) throws {
     try data.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.baseAddress else { return }
@@ -263,21 +242,12 @@ func openStreamSocket(
 func startServerOnRandomPort(
     isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
     frameProvider: @escaping @MainActor @Sendable () -> Data?
-) throws -> (server: WebServer, port: UInt16) {
-    for _ in 0..<160 {
-        guard let candidate = SocketTestPortPool.reserveCandidate() else {
-            break
-        }
-        var keepReserved = false
-        defer {
-            if !keepReserved {
-                SocketTestPortPool.release(candidate)
-            }
-        }
+) async throws -> (server: WebServer, port: UInt16) {
+    guard let endpointPort = NWEndpoint.Port(rawValue: 0) else {
+        throw SocketIntegrationError.bindFailed
+    }
 
-        guard let endpointPort = NWEndpoint.Port(rawValue: candidate) else {
-            continue
-        }
+    for _ in 0..<60 {
         do {
             let server = try WebServer(
                 using: endpointPort,
@@ -285,11 +255,17 @@ func startServerOnRandomPort(
                 frameProvider: frameProvider
             )
             server.startListener()
-            if let probeSocket = try? connectLoopbackSocket(port: candidate) {
-                close(probeSocket)
-                keepReserved = true
-                return (server, candidate)
+
+            let deadline = Date().addingTimeInterval(1.5)
+            while Date() < deadline {
+                if let port = server.listeningPort(),
+                   let probeSocket = try? connectLoopbackSocket(port: port) {
+                    close(probeSocket)
+                    return (server, port)
+                }
+                try await Task.sleep(nanoseconds: 20_000_000)
             }
+
             server.stopListener()
             continue
         } catch let error as NWError {

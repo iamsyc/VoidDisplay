@@ -228,6 +228,10 @@ final class WebServer {
         listener?.start(queue: networkQueue)
     }
 
+    func listeningPort() -> UInt16? {
+        listener?.port?.rawValue
+    }
+
     func disconnectAllStreamClients() {
         streamHub.disconnectAllClients()
     }
