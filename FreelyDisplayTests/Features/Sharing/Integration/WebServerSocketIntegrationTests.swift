@@ -11,21 +11,18 @@ private final class SharingState {
     }
 }
 
+@MainActor
 struct WebServerSocketIntegrationTests {
 
     @Test func rootRouteSupportsFragmentedSocketRequest() async throws {
-        let setup = try await MainActor.run {
-            try startServerOnRandomPort(
-                isSharingProvider: { false },
-                frameProvider: { nil }
-            )
-        }
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { false },
+            frameProvider: { nil }
+        )
         let server = setup.server
         let portValue = setup.port
         defer {
-            Task { @MainActor in
-                server.stopListener()
-            }
+            server.stopListener()
         }
 
         let responseData = try await Task.detached {
@@ -38,19 +35,15 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamRouteSendsMultipleFramesToSocketClient() async throws {
-        let setup = try await MainActor.run {
-            try startServerOnRandomPort(
-                isSharingProvider: { true },
-                frameProvider: { Data("frame-data".utf8) }
-            )
-        }
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { true },
+            frameProvider: { Data("frame-data".utf8) }
+        )
         let server = setup.server
         let portValue = setup.port
-        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
+        let streamBoundary = WebRequestHandler.streamBoundary
         defer {
-            Task { @MainActor in
-                server.stopListener()
-            }
+            server.stopListener()
         }
 
         let responseData = try await Task.detached {
@@ -69,20 +62,40 @@ struct WebServerSocketIntegrationTests {
         #expect(countOccurrences(of: boundary, in: responseData) >= 2)
     }
 
-    @Test func streamRouteSupportsFragmentedSocketRequestHeader() async throws {
-        let setup = try await MainActor.run {
-            try startServerOnRandomPort(
-                isSharingProvider: { true },
-                frameProvider: { Data("frame-data".utf8) }
-            )
-        }
+    @Test func streamRouteRejectsNonGETMethodWith405() async throws {
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { true },
+            frameProvider: { Data("frame-data".utf8) }
+        )
         let server = setup.server
         let portValue = setup.port
-        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
         defer {
-            Task { @MainActor in
-                server.stopListener()
-            }
+            server.stopListener()
+        }
+
+        let request = Data("POST /stream HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\nContent-Length: 0\r\n\r\n".utf8)
+        let responseData = try await Task.detached {
+            try sendRequestAndReadUntilClose(
+                port: portValue,
+                request: request
+            )
+        }.value
+
+        let responseText = try #require(String(data: responseData, encoding: .utf8))
+        #expect(responseText.contains("405 Method Not Allowed"))
+        #expect(responseText.contains("Allow: GET"))
+    }
+
+    @Test func streamRouteSupportsFragmentedSocketRequestHeader() async throws {
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { true },
+            frameProvider: { Data("frame-data".utf8) }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        let streamBoundary = WebRequestHandler.streamBoundary
+        defer {
+            server.stopListener()
         }
 
         let responseData = try await Task.detached {
@@ -102,19 +115,15 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamRouteBroadcastsFramesToAllConnectedClients() async throws {
-        let setup = try await MainActor.run {
-            try startServerOnRandomPort(
-                isSharingProvider: { true },
-                frameProvider: { Data("frame-data".utf8) }
-            )
-        }
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { true },
+            frameProvider: { Data("frame-data".utf8) }
+        )
         let server = setup.server
         let portValue = setup.port
-        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
+        let streamBoundary = WebRequestHandler.streamBoundary
         defer {
-            Task { @MainActor in
-                server.stopListener()
-            }
+            server.stopListener()
         }
 
         let firstTask = Task.detached {
@@ -149,19 +158,15 @@ struct WebServerSocketIntegrationTests {
 
     @Test func slowClientBackpressureDoesNotBlockFastClient() async throws {
         let largeFrame = Data(repeating: 0xAB, count: 512 * 1024)
-        let setup = try await MainActor.run {
-            try startServerOnRandomPort(
-                isSharingProvider: { true },
-                frameProvider: { largeFrame }
-            )
-        }
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { true },
+            frameProvider: { largeFrame }
+        )
         let server = setup.server
         let portValue = setup.port
-        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
+        let streamBoundary = WebRequestHandler.streamBoundary
         defer {
-            Task { @MainActor in
-                server.stopListener()
-            }
+            server.stopListener()
         }
 
         let slowClientFD = try openStreamSocket(port: portValue)
@@ -193,22 +198,16 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func streamClientDisconnectsWhenSharingStopsAndNewStreamReturns503() async throws {
-        let sharingState = await MainActor.run {
-            SharingState(isSharing: true)
-        }
-        let setup = try await MainActor.run {
-            try startServerOnRandomPort(
-                isSharingProvider: { sharingState.isSharing },
-                frameProvider: { Data("frame-data".utf8) }
-            )
-        }
+        let sharingState = SharingState(isSharing: true)
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { sharingState.isSharing },
+            frameProvider: { Data("frame-data".utf8) }
+        )
         let server = setup.server
         let portValue = setup.port
-        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
+        let streamBoundary = WebRequestHandler.streamBoundary
         defer {
-            Task { @MainActor in
-                server.stopListener()
-            }
+            server.stopListener()
         }
 
         let activeClientFD = try openStreamSocket(port: portValue)
@@ -223,9 +222,7 @@ struct WebServerSocketIntegrationTests {
             )
         }.value
 
-        await MainActor.run {
-            sharingState.isSharing = false
-        }
+        sharingState.isSharing = false
 
         _ = try await Task.detached {
             try readUntilSocketClosed(from: activeClientFD, timeoutMilliseconds: 4000)
@@ -242,5 +239,34 @@ struct WebServerSocketIntegrationTests {
 
         let responseText = try #require(String(data: unavailableResponse, encoding: .utf8))
         #expect(responseText.contains("503 Service Unavailable"))
+    }
+
+    @Test func oversizedRequestHeaderIsRejected() async throws {
+        let setup = try startServerOnRandomPort(
+            isSharingProvider: { false },
+            frameProvider: { nil }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer {
+            server.stopListener()
+        }
+
+        let largeHeaderValue = String(repeating: "a", count: 40_000)
+        let requestText = "GET / HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\nX-Large: \(largeHeaderValue)\r\n\r\n"
+        let request = Data(requestText.utf8)
+
+        let responseData = try await Task.detached {
+            try sendRequestAndReadUntilClose(
+                port: portValue,
+                request: request,
+                timeoutMilliseconds: 5000,
+                ignoreSendFailure: true
+            )
+        }.value
+
+        let responseText = String(data: responseData, encoding: .utf8)
+        #expect(responseText?.contains("200 OK") != true)
+        #expect(responseData.isEmpty || responseText?.contains("400 Bad Request") == true)
     }
 }
