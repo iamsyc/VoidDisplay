@@ -21,15 +21,15 @@ struct ShareView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolbar {
             if appHelper.isWebServiceRunning && !appHelper.isSharing {
-                Button(String(localized: "Refresh"), systemImage: "arrow.clockwise") {
+                Button("Refresh", systemImage: "arrow.clockwise") {
                     viewModel.refreshDisplays(appHelper: appHelper)
                 }
             }
             if appHelper.isWebServiceRunning {
-                Button(String(localized: "Open Share Page")) {
+                Button("Open Share Page") {
                     viewModel.openSharePage(appHelper: appHelper)
                 }
-                Button(String(localized: "Stop Service")) {
+                Button("Stop Service") {
                     viewModel.stopService(appHelper: appHelper)
                 }
             }
@@ -54,7 +54,7 @@ struct ShareView: View {
 
     private var statusSummary: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "Status"))
+            Text("Status")
                 .font(.headline)
 
             HStack(spacing: 8) {
@@ -72,7 +72,7 @@ struct ShareView: View {
 
             if appHelper.isWebServiceRunning {
                 HStack(spacing: 6) {
-                    Text(String(localized: "Address:"))
+                    Text("Address:")
                     Text(viewModel.sharePageAddress(appHelper: appHelper) ?? String(localized: "LAN IP unavailable"))
                         .textSelection(.enabled)
                 }
@@ -88,9 +88,9 @@ struct ShareView: View {
     private var shareContent: some View {
         if !appHelper.isWebServiceRunning {
             VStack(alignment: .leading, spacing: 10) {
-                Text(String(localized: "Web service is stopped."))
+                Text("Web service is stopped.")
                     .font(.title3)
-                Button(String(localized: "Start service")) {
+                Button("Start service") {
                     viewModel.startService(appHelper: appHelper)
                 }
             }
@@ -98,21 +98,21 @@ struct ShareView: View {
             .padding(.top, 6)
         } else if appHelper.isSharing {
             VStack(alignment: .leading, spacing: 12) {
-                Text(String(localized: "Sharing is in progress."))
+                Text("Sharing is in progress.")
                     .font(.title3)
-                Button(String(localized: "Stop sharing"), role: .destructive) {
+                Button("Stop sharing", role: .destructive) {
                     appHelper.stopSharing()
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 6)
         } else if viewModel.isLoadingDisplays {
-            ProgressView(String(localized: "Loading displays…"))
+            ProgressView("Loading displays…")
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
         } else if let displays = viewModel.displays {
             if displays.isEmpty {
-                Text(String(localized: "No screen to share"))
+                Text("No screen to share")
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
             } else {
@@ -133,7 +133,7 @@ struct ShareView: View {
                 }
             }
         } else {
-            Text(String(localized: "No screen to share"))
+            Text("No screen to share")
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
         }
@@ -159,15 +159,23 @@ struct ShareView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 VStack(alignment: .leading) {
+                    let displayName = NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName
+                        ?? String(localized: "Monitor")
                     Text(
-                        NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? "Monitor"
+                        displayName
                     )
                     .font(.headline)
                     Text("\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))")
                         .font(.subheadline)
                 }
 
-                Text(isManagedVirtualDisplay(display.displayID) ? "Virtual Display" : "Physical Display or other Virtual Display")
+                Text(
+                    String(
+                        localized: isManagedVirtualDisplay(display.displayID)
+                            ? "Virtual Display"
+                            : "Physical Display or other Virtual Display"
+                    )
+                )
                     .font(.caption)
                     .padding(3)
                     .padding(.horizontal, 5)
@@ -186,7 +194,7 @@ struct ShareView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Text(String(localized: "Share"))
+                    Text("Share")
                 }
             }
             .disabled(viewModel.startingDisplayID != nil)

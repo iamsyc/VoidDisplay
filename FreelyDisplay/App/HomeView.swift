@@ -20,19 +20,19 @@ struct HomeView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Section(String(localized: "Display")){
-                    Label(String(localized: "Displays"), systemImage: "display")
+                Section("Display"){
+                    Label("Displays", systemImage: "display")
                         .tag(SidebarItem.screen)
                         .accessibilityIdentifier("sidebar_screen")
-                    Label(String(localized: "Virtual Displays"), systemImage: "display.2")
+                    Label("Virtual Displays", systemImage: "display.2")
                         .tag(SidebarItem.virtualDisplay)
                         .accessibilityIdentifier("sidebar_virtual_display")
-                    Label(String(localized: "Screen Monitoring"), systemImage: "dot.scope.display")
+                    Label("Screen Monitoring", systemImage: "dot.scope.display")
                         .tag(SidebarItem.monitorScreen)
                         .accessibilityIdentifier("sidebar_monitor_screen")
                 }
-                Section(String(localized: "Sharing")){
-                    Label(String(localized: "Screen Sharing"), systemImage: "display")
+                Section("Sharing"){
+                    Label("Screen Sharing", systemImage: "display")
                         .tag(SidebarItem.screenSharing)
                         .accessibilityIdentifier("sidebar_screen_sharing")
                     
@@ -46,19 +46,19 @@ struct HomeView: View {
                     switch selection ?? .screen {
                     case .screen:
                         DisplaysView()
-                            .navigationTitle(String(localized: "Displays"))
+                            .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
                     case .virtualDisplay:
                         VirtualDisplayView()
-                            .navigationTitle(String(localized: "Virtual Displays"))
+                            .navigationTitle("Virtual Displays")
                             .accessibilityIdentifier("detail_virtual_display")
                     case .monitorScreen:
                         IsCapturing()
-                            .navigationTitle(String(localized: "Screen Monitoring"))
+                            .navigationTitle("Screen Monitoring")
                             .accessibilityIdentifier("detail_monitor_screen")
                     case .screenSharing:
                         ShareView()
-                            .navigationTitle(String(localized: "Screen Sharing"))
+                            .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
                     }
                 }

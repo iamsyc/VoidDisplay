@@ -57,7 +57,7 @@ struct VirtualDisplayView: View {
                                 Text("•")
                                     .foregroundColor(.secondary)
                                 
-                                Text(isRunning ? "Running" : "Disabled")
+                                Text(String(localized: isRunning ? "Running" : "Disabled"))
                                     .font(.caption)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -92,7 +92,7 @@ struct VirtualDisplayView: View {
                             Button(action: {
                                 toggleDisplayState(config)
                             }) {
-                                Text(isRunning ? "Disable" : "Enable")
+                                Text(String(localized: isRunning ? "Disable" : "Enable"))
                                     .frame(width: 50)
                             }
                             .buttonStyle(.bordered)

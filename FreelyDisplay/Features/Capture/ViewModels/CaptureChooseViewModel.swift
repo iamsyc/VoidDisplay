@@ -48,7 +48,7 @@ final class CaptureChooseViewModel {
     }
 
     func displayName(for display: SCDisplay) -> String {
-        NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? "Monitor"
+        NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? String(localized: "Monitor")
     }
 
     func resolutionText(for display: SCDisplay) -> String {
