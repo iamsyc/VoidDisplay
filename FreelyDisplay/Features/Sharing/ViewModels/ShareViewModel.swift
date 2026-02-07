@@ -90,22 +90,20 @@ final class ShareViewModel {
     }
 
     func openSharePage(appHelper: AppHelper) {
-        guard appHelper.isWebServiceRunning else {
-            presentError(String(localized: "Web service is not running."))
-            return
-        }
-        guard let ip = getLANIPv4Address() else {
-            AppLog.sharing.notice("No LAN IP available when opening share page.")
-            presentError(String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again."))
-            return
-        }
-        let urlString = "http://\(ip):\(appHelper.webServicePortValue)"
-        guard let url = URL(string: urlString) else {
-            AppLog.sharing.error("Failed to build share URL: \(urlString, privacy: .public)")
-            presentError(String(localized: "Failed to build URL: \(urlString)"))
+        guard let url = sharePageURL(appHelper: appHelper) else {
+            if appHelper.isWebServiceRunning {
+                AppLog.sharing.notice("No LAN IP available when opening share page.")
+                presentError(String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again."))
+            } else {
+                presentError(String(localized: "Web service is not running."))
+            }
             return
         }
         NSWorkspace.shared.open(url)
+    }
+
+    func sharePageAddress(appHelper: AppHelper) -> String? {
+        sharePageURL(appHelper: appHelper)?.absoluteString
     }
 
     func clearError() {
@@ -115,5 +113,20 @@ final class ShareViewModel {
     private func presentError(_ message: String) {
         openPageErrorMessage = message
         showOpenPageError = true
+    }
+
+    private func sharePageURL(appHelper: AppHelper) -> URL? {
+        guard appHelper.isWebServiceRunning else {
+            return nil
+        }
+        guard let ip = getLANIPv4Address() else {
+            return nil
+        }
+        let urlString = "http://\(ip):\(appHelper.webServicePortValue)"
+        guard let url = URL(string: urlString) else {
+            AppLog.sharing.error("Failed to build share URL: \(urlString, privacy: .public)")
+            return nil
+        }
+        return url
     }
 }

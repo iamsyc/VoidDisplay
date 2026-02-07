@@ -4,6 +4,11 @@ import OSLog
 
 @MainActor
 final class VirtualDisplayService {
+    enum ReorderDirection {
+        case up
+        case down
+    }
+
     enum VirtualDisplayError: LocalizedError {
         case duplicateSerialNumber(UInt32)
         case invalidConfiguration(String)
@@ -229,6 +234,25 @@ final class VirtualDisplayService {
         guard let index = displayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
         displayConfigs[index] = updated
         persistConfigs()
+    }
+
+    @discardableResult
+    func moveConfig(_ configId: UUID, direction: ReorderDirection) -> Bool {
+        guard let sourceIndex = displayConfigs.firstIndex(where: { $0.id == configId }) else { return false }
+
+        let destinationIndex: Int
+        switch direction {
+        case .up:
+            destinationIndex = sourceIndex - 1
+        case .down:
+            destinationIndex = sourceIndex + 1
+        }
+
+        guard displayConfigs.indices.contains(destinationIndex) else { return false }
+
+        displayConfigs.swapAt(sourceIndex, destinationIndex)
+        persistConfigs()
+        return true
     }
 
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {

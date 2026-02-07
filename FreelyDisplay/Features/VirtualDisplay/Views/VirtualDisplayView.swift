@@ -70,6 +70,24 @@ struct VirtualDisplayView: View {
                         Spacer()
                         
                         HStack(spacing: 8) {
+                            Button {
+                                _ = appHelper.moveDisplayConfig(config.id, direction: .up)
+                            } label: {
+                                Image(systemName: "chevron.up")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(appHelper.displayConfigs.first?.id == config.id)
+                            .help("Move up")
+
+                            Button {
+                                _ = appHelper.moveDisplayConfig(config.id, direction: .down)
+                            } label: {
+                                Image(systemName: "chevron.down")
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(appHelper.displayConfigs.last?.id == config.id)
+                            .help("Move down")
+
                             // Enable/Disable toggle button
                             Button(action: {
                                 toggleDisplayState(config)

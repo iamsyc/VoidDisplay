@@ -233,6 +233,15 @@ final class AppHelper {
         syncVirtualDisplayState()
     }
 
+    @discardableResult
+    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
+        let moved = virtualDisplayService.moveConfig(configId, direction: direction)
+        if moved {
+            syncVirtualDisplayState()
+        }
+        return moved
+    }
+
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {
         virtualDisplayService.applyModes(configId: configId, modes: modes)
         syncVirtualDisplayState()
@@ -273,7 +282,7 @@ private struct AppSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Virtual Display")
+            Text("Virtual Displays")
                 .font(.headline)
 
             Text("Reset will remove all saved virtual display configurations and stop currently managed virtual displays.")

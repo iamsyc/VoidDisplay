@@ -105,6 +105,17 @@
         }
       }
     },
+    "Active" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "进行中"
+          }
+        }
+      }
+    },
     "Add Method" : {
       "localizations" : {
         "zh-Hans" : {
@@ -121,6 +132,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加虚拟显示器"
+          }
+        }
+      }
+    },
+    "Address:" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址："
           }
         }
       }
@@ -248,6 +269,7 @@
       }
     },
     "Close service" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -378,6 +400,16 @@
         }
       }
     },
+    "Display" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示"
+          }
+        }
+      }
+    },
     "Display configuration not found." : {
       "localizations" : {
         "zh-Hans" : {
@@ -405,6 +437,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示设置"
+          }
+        }
+      }
+    },
+    "Displays" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器"
           }
         }
       }
@@ -504,6 +546,7 @@
       }
     },
     "Failed to build URL: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -589,6 +632,17 @@
         }
       }
     },
+    "Idle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空闲"
+          }
+        }
+      }
+    },
     "If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display." : {
       "localizations" : {
         "zh-Hans" : {
@@ -635,6 +689,16 @@
         }
       }
     },
+    "LAN IP unavailable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局域网 IP 不可用"
+          }
+        }
+      }
+    },
     "Last Error" : {
       "localizations" : {
         "zh-Hans" : {
@@ -651,6 +715,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "监听屏幕"
+          }
+        }
+      }
+    },
+    "Loading displays…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载显示器…"
           }
         }
       }
@@ -688,6 +762,7 @@
       }
     },
     "Monitor" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -708,11 +783,32 @@
       }
     },
     "Monitor Screen" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "监听屏幕"
+          }
+        }
+      }
+    },
+    "Move down" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下移"
+          }
+        }
+      }
+    },
+    "Move up" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上移"
           }
         }
       }
@@ -839,6 +935,16 @@
         }
       }
     },
+    "Open Share Page" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开共享页面"
+          }
+        }
+      }
+    },
     "Open System Settings" : {
       "localizations" : {
         "zh-Hans" : {
@@ -850,6 +956,7 @@
       }
     },
     "Open the page" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -966,16 +1073,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预设分辨率"
-          }
-        }
-      }
-    },
-    "Save and Rebuild Now" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存并立即重建"
           }
         }
       }
@@ -1141,6 +1238,16 @@
         }
       }
     },
+    "Save and Rebuild Now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存并立即重建"
+          }
+        }
+      }
+    },
     "Save Only" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1152,6 +1259,7 @@
       }
     },
     "Screen" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1243,6 +1351,26 @@
         }
       }
     },
+    "Service" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务"
+          }
+        }
+      }
+    },
+    "Share" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享"
+          }
+        }
+      }
+    },
     "Sharing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1254,11 +1382,22 @@
       }
     },
     "Sharing in progress" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在共享"
+          }
+        }
+      }
+    },
+    "Sharing is in progress." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享进行中。"
           }
         }
       }
@@ -1293,12 +1432,43 @@
         }
       }
     },
+    "Status" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态"
+          }
+        }
+      }
+    },
+    "Stop Service" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止服务"
+          }
+        }
+      }
+    },
     "Stop sharing" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止共享"
+          }
+        }
+      }
+    },
+    "Stopped" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止"
           }
         }
       }
@@ -1391,6 +1561,16 @@
         }
       }
     },
+    "Virtual Displays" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器"
+          }
+        }
+      }
+    },
     "Web server is not running." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1413,11 +1593,22 @@
       }
     },
     "Web service is off" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 服务已关闭"
+          }
+        }
+      }
+    },
+    "Web service is stopped." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务已停止。"
           }
         }
       }
