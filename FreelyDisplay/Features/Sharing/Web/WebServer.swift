@@ -17,6 +17,10 @@ final class WebServer {
     nonisolated private static let maxRequestBytes = 32 * 1024
     nonisolated private static let receiveChunkSize = 4096
 
+    nonisolated private static func endpointDescription(for connection: NWConnection) -> String {
+        String(describing: connection.endpoint)
+    }
+
     private static func logConnectionIssue(_ operation: String, error: Error) {
         if shouldTreatAsExpectedClientDisconnect(error) {
             AppLog.web.debug(
@@ -53,11 +57,13 @@ final class WebServer {
     private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
         switch state {
         case .failed(let error):
-            Self.logConnectionIssue("Connection failed", error: error)
+            let endpoint = Self.endpointDescription(for: connection)
+            Self.logConnectionIssue("Connection failed [\(endpoint)]", error: error)
             streamHub.removeClient(connection)
             connection.cancel()
         case .cancelled:
-            AppLog.web.info("Connection cancelled.")
+            let endpoint = Self.endpointDescription(for: connection)
+            AppLog.web.debug("Connection cancelled [\(endpoint, privacy: .public)].")
             streamHub.removeClient(connection)
         default:
             break
@@ -69,13 +75,16 @@ final class WebServer {
         on connection: NWConnection,
         isSharingProvider: @escaping @MainActor @Sendable () -> Bool
     ) {
+        let endpoint = Self.endpointDescription(for: connection)
         guard let content else {
-            AppLog.web.notice("Received empty request content; closing connection.")
+            AppLog.web.debug("Received empty request content from \(endpoint, privacy: .public); closing connection.")
             connection.cancel()
             return
         }
         guard let request = parseHTTPRequest(from: content) else {
-            AppLog.web.notice("Failed to parse HTTP request; returning bad request response.")
+            AppLog.web.notice(
+                "Failed to parse HTTP request from \(endpoint, privacy: .public), bytes=\(content.count); returning bad request."
+            )
             sendResponseAndClose(
                 requestHandler.responseData(for: .badRequest, displayPage: displayPage),
                 on: connection,
@@ -89,9 +98,16 @@ final class WebServer {
             path: request.path,
             isSharing: isSharingProvider()
         )
-        AppLog.web.info(
-            "HTTP request: method=\(request.method), path=\(request.path), decision=\(String(describing: decision))"
-        )
+        switch decision {
+        case .showDisplayPage, .openStream:
+            AppLog.web.debug(
+                "HTTP request from \(endpoint, privacy: .public): method=\(request.method), path=\(request.path), decision=\(String(describing: decision), privacy: .public)"
+            )
+        case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
+            AppLog.web.notice(
+                "HTTP request from \(endpoint, privacy: .public): method=\(request.method), path=\(request.path), decision=\(String(describing: decision), privacy: .public)"
+            )
+        }
 
         switch decision {
         case .showDisplayPage:
@@ -127,7 +143,8 @@ final class WebServer {
     }
 
     private func openStream(for connection: NWConnection) {
-        AppLog.web.info("Open MJPEG stream for client.")
+        let endpoint = Self.endpointDescription(for: connection)
+        AppLog.web.debug("Open MJPEG stream for client \(endpoint, privacy: .public).")
         connection.send(
             content: requestHandler.responseData(for: .openStream, displayPage: displayPage),
             completion: .contentProcessed { [weak self] error in
@@ -179,7 +196,10 @@ final class WebServer {
                 }
             case .invalidTooLarge:
                 Task { @MainActor in
-                    AppLog.web.notice("HTTP request header exceeds max size; closing connection.")
+                    let endpoint = Self.endpointDescription(for: connection)
+                    AppLog.web.notice(
+                        "HTTP request header exceeds max size from \(endpoint, privacy: .public); closing connection."
+                    )
                     completion(nil)
                 }
             }

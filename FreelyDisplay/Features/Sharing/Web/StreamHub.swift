@@ -48,7 +48,7 @@ final class StreamHub {
     func addClient(_ connection: any StreamClientConnection) {
         let key = key(for: connection)
         clients[key] = ClientState(connection: connection)
-        AppLog.web.info("StreamHub: added client, active=\(self.clients.count)")
+        AppLog.web.debug("StreamHub: added client, active=\(self.clients.count)")
         if automaticallyStartTimer {
             startTimerIfNeeded()
         }
@@ -83,7 +83,7 @@ final class StreamHub {
         if cancelConnection {
             removed.connection.cancelStream()
         }
-        AppLog.web.info("StreamHub: removed client, active=\(self.clients.count)")
+        AppLog.web.debug("StreamHub: removed client, active=\(self.clients.count)")
         if clients.isEmpty {
             stopTimer()
         }
@@ -98,7 +98,7 @@ final class StreamHub {
         }
         timer = source
         source.resume()
-        AppLog.web.info("StreamHub: timer started")
+        AppLog.web.debug("StreamHub: timer started")
     }
 
     private func stopTimer() {
@@ -106,7 +106,7 @@ final class StreamHub {
         activeTimer.setEventHandler {}
         activeTimer.cancel()
         timer = nil
-        AppLog.web.info("StreamHub: timer stopped")
+        AppLog.web.debug("StreamHub: timer stopped")
     }
 
     private func tick() {
@@ -116,7 +116,7 @@ final class StreamHub {
         }
 
         guard isSharingProvider() else {
-            AppLog.web.info("StreamHub: sharing stopped, disconnecting all clients.")
+            AppLog.web.debug("StreamHub: sharing stopped, disconnecting all clients.")
             disconnectAllClients()
             return
         }
