@@ -28,24 +28,12 @@ struct ShareView: View {
                 VStack(spacing: 20) {
                     Text("Sharing in progress")
                         .font(.largeTitle)
-                    HStack {
-                        Button {
-                            appHelper.stopSharing()
-                        } label: {
-                            Text("Stop sharing")
-                        }
-                        .foregroundStyle(.red)
-                        Button {
-                            viewModel.openSharePage(appHelper: appHelper)
-                        } label: {
-                            Text("Open the page")
-                        }
-                        Button {
-                            viewModel.stopService(appHelper: appHelper)
-                        } label: {
-                            Text("Close service")
-                        }
+                    Button {
+                        appHelper.stopSharing()
+                    } label: {
+                        Text("Stop sharing")
                     }
+                    .foregroundStyle(.red)
                 }
             } else {
                 Group {
@@ -86,11 +74,19 @@ struct ShareView: View {
                                     }
                                     .padding(.bottom, 5)
                                     Spacer()
-                                    Button("Sharing") {
+                                    Button {
                                         Task {
                                             await viewModel.startSharing(display: display, appHelper: appHelper)
                                         }
+                                    } label: {
+                                        if viewModel.startingDisplayID == display.displayID {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                        } else {
+                                            Text("Sharing")
+                                        }
                                     }
+                                    .disabled(viewModel.startingDisplayID != nil)
                                 }
                             }
                             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -100,17 +96,6 @@ struct ShareView: View {
                                         .font(.footnote)
                                         .multilineTextAlignment(.center)
                                         .foregroundStyle(.secondary)
-                                    HStack(spacing: 12) {
-                                        Button("Open the page") {
-                                            viewModel.openSharePage(appHelper: appHelper)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        Button("Close service") {
-                                            viewModel.stopService(appHelper: appHelper)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .tint(.red)
-                                    }
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.top, 10)
@@ -120,6 +105,21 @@ struct ShareView: View {
                     } else {
                         Text("No screen to share")
                     }
+                }
+            }
+        }
+        .toolbar {
+            if appHelper.isWebServiceRunning && !appHelper.isSharing {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    viewModel.refreshDisplays(appHelper: appHelper)
+                }
+            }
+            if appHelper.isWebServiceRunning {
+                Button("Open the page") {
+                    viewModel.openSharePage(appHelper: appHelper)
+                }
+                Button("Close service") {
+                    viewModel.stopService(appHelper: appHelper)
                 }
             }
         }

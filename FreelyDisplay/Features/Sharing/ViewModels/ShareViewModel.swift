@@ -9,6 +9,7 @@ import OSLog
 final class ShareViewModel {
     var displays: [SCDisplay]?
     var isLoadingDisplays = false
+    var startingDisplayID: CGDirectDisplayID?
     var showOpenPageError = false
     var openPageErrorMessage = ""
 
@@ -55,7 +56,16 @@ final class ShareViewModel {
         }
     }
 
+    func refreshDisplays(appHelper: AppHelper) {
+        guard appHelper.isWebServiceRunning, !appHelper.isSharing else { return }
+        loadDisplays()
+    }
+
     func startSharing(display: SCDisplay, appHelper: AppHelper) async {
+        guard startingDisplayID == nil else { return }
+        startingDisplayID = display.displayID
+        defer { startingDisplayID = nil }
+
         guard appHelper.isWebServiceRunning || appHelper.startWebService() else {
             presentError(String(localized: "Web service is not running."))
             return
