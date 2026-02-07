@@ -12,6 +12,7 @@ import Cocoa
 struct ShareView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
     @State private var viewModel = ShareViewModel()
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -35,7 +36,7 @@ struct ShareView: View {
             }
         }
         .onAppear {
-            viewModel.syncForCurrentState(appHelper: appHelper)
+            viewModel.refreshPermissionAndMaybeLoad(appHelper: appHelper)
         }
         .onChange(of: appHelper.isWebServiceRunning) { _, _ in
             viewModel.syncForCurrentState(appHelper: appHelper)
@@ -86,7 +87,16 @@ struct ShareView: View {
 
     @ViewBuilder
     private var shareContent: some View {
-        if !appHelper.isWebServiceRunning {
+        if viewModel.hasScreenCapturePermission == false {
+            screenCapturePermissionView
+        } else if viewModel.hasScreenCapturePermission == nil {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading…")
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !appHelper.isWebServiceRunning {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Web service is stopped.")
                     .font(.title3)
@@ -137,6 +147,122 @@ struct ShareView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
         }
+    }
+
+    private var screenCapturePermissionView: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                Image(systemName: "lock.circle")
+                    .font(.system(size: 44))
+                    .foregroundColor(.secondary)
+                Text("Screen Recording Permission Required")
+                    .font(.headline)
+                Text("Allow screen recording in System Settings to monitor displays.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+
+                HStack(spacing: 12) {
+                    Button("Open System Settings") {
+                        viewModel.openScreenCapturePrivacySettings { url in
+                            openURL(url)
+                        }
+                    }
+                    Button("Request Permission") {
+                        viewModel.requestScreenCapturePermission(appHelper: appHelper)
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    Button("Refresh") {
+                        viewModel.refreshPermissionAndMaybeLoad(appHelper: appHelper)
+                    }
+                    .controlSize(.small)
+
+                    if viewModel.loadErrorMessage != nil || viewModel.lastLoadError != nil {
+                        Button("Retry") {
+                            // User-initiated retry: attempt to load the display list.
+                            // If permission is still missing, macOS may prompt here (expected).
+                            viewModel.loadDisplays()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                if let loadErrorMessage = viewModel.loadErrorMessage {
+                    Text(loadErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                }
+
+                VStack(spacing: 6) {
+                    Text("After granting permission, you may need to quit and relaunch the app.")
+                    Text("If System Settings shows permission is ON but this page still says it is OFF, the change has not been applied to this running app process. Quit (⌘Q) and reopen, or remove and re-add the app in the permission list.")
+                }
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+
+                DisclosureGroup("Debug Info", isExpanded: $viewModel.showDebugInfo) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Bundle ID")
+                            Text(verbatim: Bundle.main.bundleIdentifier ?? "-")
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("App Path")
+                            Text(verbatim: Bundle.main.bundleURL.path)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Preflight Permission")
+                            Text(verbatim: (viewModel.lastPreflightPermission ?? viewModel.hasScreenCapturePermission).map { $0 ? "true" : "false" } ?? "-")
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Request Permission Result")
+                            Text(verbatim: viewModel.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-")
+                        }
+                        if let lastLoadError = viewModel.lastLoadError {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Last Error")
+                                Text(verbatim: lastLoadError.description)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Error Domain")
+                                Text(verbatim: lastLoadError.domain)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Error Code")
+                                Text(verbatim: "\(lastLoadError.code)")
+                            }
+                            if let failureReason = lastLoadError.failureReason, !failureReason.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Failure Reason")
+                                    Text(verbatim: failureReason)
+                                }
+                            }
+                            if let recoverySuggestion = lastLoadError.recoverySuggestion, !recoverySuggestion.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Recovery Suggestion")
+                                    Text(verbatim: recoverySuggestion)
+                                }
+                            }
+                        }
+                    }
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 420, alignment: .leading)
+                }
+                .frame(maxWidth: 420)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func statusChip(title: String, value: String, tint: Color) -> some View {

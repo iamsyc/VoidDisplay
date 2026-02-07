@@ -79,15 +79,20 @@ final class CaptureChooseViewModel {
     }
 
     func requestScreenCapturePermission() {
-        let granted = CGRequestScreenCaptureAccess()
-        hasScreenCapturePermission = granted
-        lastRequestPermission = granted
-        if !granted {
+        let requestResult = CGRequestScreenCaptureAccess()
+        lastRequestPermission = requestResult
+
+        let preflightResult = CGPreflightScreenCaptureAccess()
+        hasScreenCapturePermission = preflightResult
+        lastPreflightPermission = preflightResult
+
+        if !preflightResult {
+            displays = nil
+            isLoadingDisplays = false
             AppLog.capture.notice("Screen capture permission request denied.")
+            return
         }
-        if granted {
-            loadDisplays()
-        }
+        loadDisplays()
     }
 
     func refreshPermissionAndMaybeLoad() {

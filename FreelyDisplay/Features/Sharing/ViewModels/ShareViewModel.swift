@@ -1,12 +1,28 @@
 import Foundation
 import ScreenCaptureKit
 import Cocoa
+import CoreGraphics
 import Observation
 import OSLog
 
 @MainActor
 @Observable
 final class ShareViewModel {
+    struct LoadErrorInfo: Equatable {
+        var domain: String
+        var code: Int
+        var description: String
+        var failureReason: String?
+        var recoverySuggestion: String?
+    }
+
+    var hasScreenCapturePermission: Bool?
+    var lastPreflightPermission: Bool?
+    var lastRequestPermission: Bool?
+    var loadErrorMessage: String?
+    var lastLoadError: LoadErrorInfo?
+    var showDebugInfo = false
+
     var displays: [SCDisplay]?
     var isLoadingDisplays = false
     var startingDisplayID: CGDirectDisplayID?
@@ -14,6 +30,11 @@ final class ShareViewModel {
     var openPageErrorMessage = ""
 
     func syncForCurrentState(appHelper: AppHelper) {
+        guard hasScreenCapturePermission == true else {
+            displays = nil
+            isLoadingDisplays = false
+            return
+        }
         guard appHelper.isWebServiceRunning else {
             displays = nil
             isLoadingDisplays = false
@@ -37,6 +58,48 @@ final class ShareViewModel {
         syncForCurrentState(appHelper: appHelper)
     }
 
+    func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            openURL(url)
+        } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
+            openURL(url)
+        }
+    }
+
+    func requestScreenCapturePermission(appHelper: AppHelper) {
+        let requestResult = CGRequestScreenCaptureAccess()
+        lastRequestPermission = requestResult
+
+        let preflightResult = CGPreflightScreenCaptureAccess()
+        hasScreenCapturePermission = preflightResult
+        lastPreflightPermission = preflightResult
+
+        AppLog.capture.notice(
+            "Screen capture permission request (sharing): requestResult=\(requestResult, privacy: .public), preflightResult=\(preflightResult, privacy: .public)"
+        )
+
+        if !preflightResult {
+            displays = nil
+            isLoadingDisplays = false
+            loadErrorMessage = String(localized: "Failed to load displays. Check permission and try again.")
+            AppLog.capture.notice("Screen capture permission request denied (sharing).")
+            return
+        }
+        syncForCurrentState(appHelper: appHelper)
+    }
+
+    func refreshPermissionAndMaybeLoad(appHelper: AppHelper) {
+        let granted = CGPreflightScreenCaptureAccess()
+        hasScreenCapturePermission = granted
+        lastPreflightPermission = granted
+        if !granted {
+            displays = nil
+            isLoadingDisplays = false
+            return
+        }
+        syncForCurrentState(appHelper: appHelper)
+    }
+
     func loadDisplaysIfNeeded() {
         guard !isLoadingDisplays, displays == nil else { return }
         loadDisplays()
@@ -45,13 +108,34 @@ final class ShareViewModel {
     func loadDisplays() {
         guard !isLoadingDisplays else { return }
         isLoadingDisplays = true
+        loadErrorMessage = nil
+        lastLoadError = nil
         displays = nil
 
         Task {
-            let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            await MainActor.run {
-                self.displays = content?.displays ?? []
-                self.isLoadingDisplays = false
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                await MainActor.run {
+                    self.displays = content.displays
+                    self.hasScreenCapturePermission = true
+                    self.lastPreflightPermission = true
+                    self.isLoadingDisplays = false
+                }
+            } catch {
+                let nsError = error as NSError
+                AppErrorMapper.logFailure("Load shareable displays (sharing)", error: error, logger: AppLog.capture)
+                await MainActor.run {
+                    self.loadErrorMessage = String(localized: "Failed to load displays. Check permission and try again.")
+                    self.lastLoadError = .init(
+                        domain: nsError.domain,
+                        code: nsError.code,
+                        description: nsError.localizedDescription,
+                        failureReason: nsError.localizedFailureReason,
+                        recoverySuggestion: nsError.localizedRecoverySuggestion
+                    )
+                    self.displays = nil
+                    self.isLoadingDisplays = false
+                }
             }
         }
     }
