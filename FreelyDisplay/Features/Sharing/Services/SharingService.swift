@@ -70,7 +70,11 @@ final class SharingService {
     }
 
     func stopSharing() {
-        AppLog.sharing.info("Stop sharing stream.")
+        if isSharing {
+            AppLog.sharing.info("Stop sharing stream.")
+        } else {
+            AppLog.sharing.debug("Stop sharing requested with no active stream.")
+        }
         sharingScreenCaptureObject?.stopCapture()
         sharingScreenCaptureObject = nil
         sharingScreenCaptureDelegate = nil
