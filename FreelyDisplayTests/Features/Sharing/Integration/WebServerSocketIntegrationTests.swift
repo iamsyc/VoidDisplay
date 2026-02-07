@@ -95,7 +95,7 @@ private func connectLoopbackSocket(port: UInt16) throws -> Int32 {
             break
         }
 
-        if errno == ECONNREFUSED {
+        if errno == ECONNREFUSED || errno == EHOSTUNREACH || errno == ENETDOWN || errno == ENETUNREACH {
             usleep(50_000)
             continue
         }
@@ -173,7 +173,12 @@ private func startServerOnRandomPort(
                 frameProvider: frameProvider
             )
             server.startListener()
-            return (server, candidate)
+            if let probeSocket = try? connectLoopbackSocket(port: candidate) {
+                close(probeSocket)
+                return (server, candidate)
+            }
+            server.stopListener()
+            continue
         } catch let error as NWError {
             if case .posix(let code) = error, code == .EADDRINUSE {
                 continue
