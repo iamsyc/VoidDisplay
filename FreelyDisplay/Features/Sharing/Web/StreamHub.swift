@@ -102,8 +102,9 @@ final class StreamHub {
     }
 
     private func stopTimer() {
-        timer?.setEventHandler {}
-        timer?.cancel()
+        guard let activeTimer = timer else { return }
+        activeTimer.setEventHandler {}
+        activeTimer.cancel()
         timer = nil
         AppLog.web.info("StreamHub: timer stopped")
     }
