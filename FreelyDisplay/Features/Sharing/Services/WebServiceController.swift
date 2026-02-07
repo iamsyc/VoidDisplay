@@ -65,8 +65,12 @@ final class WebServiceController: WebServiceControlling {
     }
 
     func stop() {
+        guard let runningServer = webServer else {
+            AppLog.web.debug("Stop requested while web service is not running.")
+            return
+        }
         AppLog.web.info("Stopping web service.")
-        webServer?.stopListener()
+        runningServer.stopListener()
         webServer = nil
     }
 
