@@ -156,6 +156,35 @@ private func sendFragmentedRequestAndReadResponse(port: UInt16) throws -> Data {
     return try readAll(from: fd)
 }
 
+private func openStreamAndReadResponse(
+    port: UInt16,
+    boundary: String,
+    minimumFrameCount: Int,
+    fragmentedHeader: Bool = false
+) throws -> Data {
+    let fd = try connectLoopbackSocket(port: port)
+    defer { close(fd) }
+    configureReceiveTimeout(fd: fd, milliseconds: 300)
+
+    if fragmentedHeader {
+        let fragment1 = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1".utf8)
+        let fragment2 = Data(":\(port)\r\n\r\n".utf8)
+        try sendAll(fd, data: fragment1)
+        usleep(50_000)
+        try sendAll(fd, data: fragment2)
+    } else {
+        let request = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
+        try sendAll(fd, data: request)
+    }
+
+    return try readUntilFrameBoundaries(
+        from: fd,
+        boundary: boundary,
+        minimumCount: minimumFrameCount,
+        timeoutMilliseconds: 3000
+    )
+}
+
 @MainActor
 private func startServerOnRandomPort(
     isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
@@ -234,17 +263,10 @@ struct WebServerSocketIntegrationTests {
         }
 
         let responseData = try await Task.detached {
-            let fd = try connectLoopbackSocket(port: portValue)
-            defer { close(fd) }
-            configureReceiveTimeout(fd: fd, milliseconds: 300)
-
-            let request = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
-            try sendAll(fd, data: request)
-            return try readUntilFrameBoundaries(
-                from: fd,
+            try openStreamAndReadResponse(
+                port: portValue,
                 boundary: streamBoundary,
-                minimumCount: 2,
-                timeoutMilliseconds: 3000
+                minimumFrameCount: 2
             )
         }.value
 
@@ -273,20 +295,11 @@ struct WebServerSocketIntegrationTests {
         }
 
         let responseData = try await Task.detached {
-            let fd = try connectLoopbackSocket(port: portValue)
-            defer { close(fd) }
-            configureReceiveTimeout(fd: fd, milliseconds: 300)
-
-            let fragment1 = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1".utf8)
-            let fragment2 = Data(":\(portValue)\r\n\r\n".utf8)
-            try sendAll(fd, data: fragment1)
-            usleep(50_000)
-            try sendAll(fd, data: fragment2)
-            return try readUntilFrameBoundaries(
-                from: fd,
+            try openStreamAndReadResponse(
+                port: portValue,
                 boundary: streamBoundary,
-                minimumCount: 1,
-                timeoutMilliseconds: 3000
+                minimumFrameCount: 1,
+                fragmentedHeader: true
             )
         }.value
 
@@ -295,5 +308,51 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("multipart/x-mixed-replace"))
         let boundary = Data("--\(streamBoundary)\r\n".utf8)
         #expect(countOccurrences(of: boundary, in: responseData) >= 1)
+    }
+
+    @Test func streamRouteBroadcastsFramesToAllConnectedClients() async throws {
+        let setup = try await MainActor.run {
+            try startServerOnRandomPort(
+                isSharingProvider: { true },
+                frameProvider: { Data("frame-data".utf8) }
+            )
+        }
+        let server = setup.server
+        let portValue = setup.port
+        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
+        defer {
+            Task { @MainActor in
+                server.stopListener()
+            }
+        }
+
+        let firstTask = Task.detached {
+            try openStreamAndReadResponse(
+                port: portValue,
+                boundary: streamBoundary,
+                minimumFrameCount: 2
+            )
+        }
+        let secondTask = Task.detached {
+            try openStreamAndReadResponse(
+                port: portValue,
+                boundary: streamBoundary,
+                minimumFrameCount: 2
+            )
+        }
+
+        let firstResponseData = try await firstTask.value
+        let secondResponseData = try await secondTask.value
+
+        let firstText = try #require(String(data: firstResponseData, encoding: .utf8))
+        #expect(firstText.contains("HTTP/1.1 200 OK"))
+        #expect(firstText.contains("multipart/x-mixed-replace"))
+        let secondText = try #require(String(data: secondResponseData, encoding: .utf8))
+        #expect(secondText.contains("HTTP/1.1 200 OK"))
+        #expect(secondText.contains("multipart/x-mixed-replace"))
+
+        let boundary = Data("--\(streamBoundary)\r\n".utf8)
+        #expect(countOccurrences(of: boundary, in: firstResponseData) >= 2)
+        #expect(countOccurrences(of: boundary, in: secondResponseData) >= 2)
     }
 }
