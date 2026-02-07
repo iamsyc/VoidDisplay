@@ -51,6 +51,7 @@ private struct CaptureDisplayWindowRoot: View {
 @Observable
 final class AppHelper {
     private static let uiTestModeEnvironmentKey = "FREELYDISPLAY_UI_TEST_MODE"
+    private static let xCTestConfigurationEnvironmentKey = "XCTestConfigurationFilePath"
 
     struct ScreenMonitoringSession: Identifiable {
         let id: UUID
@@ -85,8 +86,12 @@ final class AppHelper {
         ProcessInfo.processInfo.environment[Self.uiTestModeEnvironmentKey] == "1"
     }
 
+    private var isRunningUnderXCTest: Bool {
+        ProcessInfo.processInfo.environment[Self.xCTestConfigurationEnvironmentKey] != nil
+    }
+
     init(preview: Bool = false) {
-        guard !preview, !isUITestMode else { return }
+        guard !preview, !isUITestMode, !isRunningUnderXCTest else { return }
 
         _ = startWebService()
         virtualDisplayService.loadPersistedConfigs()
