@@ -162,8 +162,21 @@ private func openStreamAndReadResponse(
     minimumFrameCount: Int,
     fragmentedHeader: Bool = false
 ) throws -> Data {
-    let fd = try connectLoopbackSocket(port: port)
+    let fd = try openStreamSocket(port: port, fragmentedHeader: fragmentedHeader)
     defer { close(fd) }
+    return try readUntilFrameBoundaries(
+        from: fd,
+        boundary: boundary,
+        minimumCount: minimumFrameCount,
+        timeoutMilliseconds: 3000
+    )
+}
+
+private func openStreamSocket(
+    port: UInt16,
+    fragmentedHeader: Bool = false
+) throws -> Int32 {
+    let fd = try connectLoopbackSocket(port: port)
     configureReceiveTimeout(fd: fd, milliseconds: 300)
 
     if fragmentedHeader {
@@ -176,13 +189,7 @@ private func openStreamAndReadResponse(
         let request = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
         try sendAll(fd, data: request)
     }
-
-    return try readUntilFrameBoundaries(
-        from: fd,
-        boundary: boundary,
-        minimumCount: minimumFrameCount,
-        timeoutMilliseconds: 3000
-    )
+    return fd
 }
 
 @MainActor
@@ -354,5 +361,50 @@ struct WebServerSocketIntegrationTests {
         let boundary = Data("--\(streamBoundary)\r\n".utf8)
         #expect(countOccurrences(of: boundary, in: firstResponseData) >= 2)
         #expect(countOccurrences(of: boundary, in: secondResponseData) >= 2)
+    }
+
+    @Test func slowClientBackpressureDoesNotBlockFastClient() async throws {
+        let largeFrame = Data(repeating: 0xAB, count: 512 * 1024)
+        let setup = try await MainActor.run {
+            try startServerOnRandomPort(
+                isSharingProvider: { true },
+                frameProvider: { largeFrame }
+            )
+        }
+        let server = setup.server
+        let portValue = setup.port
+        let streamBoundary = await MainActor.run { WebRequestHandler.streamBoundary }
+        defer {
+            Task { @MainActor in
+                server.stopListener()
+            }
+        }
+
+        let slowClientFD = try openStreamSocket(port: portValue)
+        defer { close(slowClientFD) }
+
+        // Let server try pushing large frames while slow client is not reading.
+        usleep(600_000)
+
+        let fastResponseData = try await Task.detached {
+            try openStreamAndReadResponse(
+                port: portValue,
+                boundary: streamBoundary,
+                minimumFrameCount: 3
+            )
+        }.value
+
+        let slowResponseData = try await Task.detached {
+            try readUntilFrameBoundaries(
+                from: slowClientFD,
+                boundary: streamBoundary,
+                minimumCount: 1,
+                timeoutMilliseconds: 4000
+            )
+        }.value
+
+        let boundary = Data("--\(streamBoundary)\r\n".utf8)
+        #expect(countOccurrences(of: boundary, in: fastResponseData) >= 3)
+        #expect(countOccurrences(of: boundary, in: slowResponseData) >= 1)
     }
 }
