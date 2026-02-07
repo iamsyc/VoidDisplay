@@ -646,6 +646,16 @@
         }
       }
     },
+    "LIVE" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直播中"
+          }
+        }
+      }
+    },
     "Loading displays…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1392,6 +1402,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "宽"
+          }
+        }
+      }
+    },
+    "Your screen is currently being streamed to connected clients." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "您的屏幕正在实时推送给已连接的客户端。"
           }
         }
       }

@@ -54,33 +54,54 @@ struct ShareView: View {
     }
 
     private var statusSummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Status")
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
-                statusChip(
+            HStack(spacing: 10) {
+                statusTile(
                     title: String(localized: "Service"),
                     value: String(localized: appHelper.isWebServiceRunning ? "Running" : "Stopped"),
+                    symbol: appHelper.isWebServiceRunning ? "network.badge.shield.half.filled" : "network.slash",
                     tint: appHelper.isWebServiceRunning ? .green : .secondary
                 )
-                statusChip(
+                statusTile(
                     title: String(localized: "Sharing"),
                     value: String(localized: appHelper.isSharing ? "Active" : "Idle"),
+                    symbol: appHelper.isSharing ? "waveform.badge.mic" : "pause.circle",
                     tint: appHelper.isSharing ? .green : .secondary
                 )
             }
 
             if appHelper.isWebServiceRunning {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "link")
+                        .foregroundStyle(.secondary)
                     Text("Address:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(viewModel.sharePageAddress(appHelper: appHelper) ?? String(localized: "LAN IP unavailable"))
+                        .font(.system(.footnote, design: .monospaced))
                         .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.white.opacity(0.02))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        )
         .padding(.horizontal, 16)
         .padding(.top, 10)
     }
@@ -107,15 +128,7 @@ struct ShareView: View {
             .padding(.horizontal, 16)
             .padding(.top, 6)
         } else if appHelper.isSharing {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Sharing is in progress.")
-                    .font(.title3)
-                Button("Stop sharing", role: .destructive) {
-                    appHelper.stopSharing()
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 6)
+            sharingInProgressView
         } else if viewModel.isLoadingDisplays {
             ProgressView("Loading displays…")
                 .padding(.horizontal, 16)
@@ -265,17 +278,86 @@ struct ShareView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func statusChip(title: String, value: String, tint: Color) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.caption)
-            Text(value)
+    private var sharingInProgressView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 34, height: 34)
+                    .background(.green.opacity(0.12), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sharing is in progress.")
+                        .font(.headline)
+                    Text("Your screen is currently being streamed to connected clients.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("LIVE")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.green.opacity(0.15), in: Capsule())
+                    .foregroundStyle(.green)
+            }
+
+            HStack(spacing: 10) {
+                Button(role: .destructive) {
+                    appHelper.stopSharing()
+                } label: {
+                    Label("Stop sharing", systemImage: "stop.fill")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Open Share Page") {
+                    viewModel.openSharePage(appHelper: appHelper)
+                }
+                .buttonStyle(.bordered)
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.white.opacity(0.02))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+    }
+
+    private func statusTile(title: String, value: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(tint.opacity(0.18), in: Capsule())
-        .foregroundStyle(tint)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.white.opacity(0.06), lineWidth: 1)
+        )
     }
 
     private func shareableDisplayRow(_ display: SCDisplay) -> some View {
