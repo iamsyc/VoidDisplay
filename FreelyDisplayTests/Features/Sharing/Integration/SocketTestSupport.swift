@@ -14,11 +14,13 @@ enum SocketIntegrationError: Error {
 
 @MainActor
 private enum SocketTestPortPool {
+    // Use high-but-non-ephemeral ports to reduce collisions with both local services and client source ports.
+    static let candidateRange: ClosedRange<UInt16> = 30_000...45_000
     static var reservedPorts = Set<UInt16>()
 
     static func reserveCandidate() -> UInt16? {
         for _ in 0..<400 {
-            let candidate = UInt16.random(in: 20_000...60_000)
+            let candidate = UInt16.random(in: candidateRange)
             if reservedPorts.insert(candidate).inserted {
                 return candidate
             }
