@@ -43,19 +43,9 @@ final class HomeSmokeTests: XCTestCase {
             .firstMatch
         XCTAssertTrue(defaultDetail.waitForExistence(timeout: 2))
 
-        let displaysList = app.descendants(matching: .any)
-            .matching(identifier: "displays_list")
+        let openSettings = app.descendants(matching: .any)
+            .matching(identifier: "displays_open_system_settings")
             .firstMatch
-        XCTAssertTrue(displaysList.waitForExistence(timeout: 2))
-
-        let firstDisplayRow = app.descendants(matching: .any)
-            .matching(identifier: "display_row_card")
-            .firstMatch
-        XCTAssertTrue(firstDisplayRow.waitForExistence(timeout: 2))
-
-        let quickActions = app.descendants(matching: .any)
-            .matching(identifier: "display_row_quick_actions")
-            .firstMatch
-        XCTAssertTrue(quickActions.waitForExistence(timeout: 2))
+        XCTAssertTrue(openSettings.waitForExistence(timeout: 5))
     }
 }

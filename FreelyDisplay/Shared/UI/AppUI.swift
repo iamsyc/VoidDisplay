@@ -19,13 +19,13 @@ enum AppUI {
     }
 
     enum List {
-        static let rowMinHeight: CGFloat = 62
+        static let rowMinHeight: CGFloat = 56
         static let iconBoxWidth: CGFloat = 42 // Increased from 36
         static let iconBoxHeight: CGFloat = 42 // Increased from 30
         static let rowHorizontalInset: CGFloat = 12
-        static let rowVerticalInset: CGFloat = 8
+        static let rowVerticalInset: CGFloat = 6
         static let listHorizontalInset: CGFloat = 12
-        static let listVerticalInset: CGFloat = 6
+        static let listVerticalInset: CGFloat = 3
         static let hoverLift: CGFloat = 1
     }
 

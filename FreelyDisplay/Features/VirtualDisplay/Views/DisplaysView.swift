@@ -21,6 +21,17 @@ struct DisplaysView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                 displays = NSScreen.screens
             }
+            .toolbar {
+                ToolbarItem {
+                    Button {
+                        openDisplaySettings()
+                    } label: {
+                        Label("Open System Settings", systemImage: "gearshape")
+                    }
+                    .help(String(localized: "Open System Display Settings"))
+                    .accessibilityIdentifier("displays_open_system_settings")
+                }
+            }
             .appScreenBackground()
     }
 
@@ -34,6 +45,7 @@ struct DisplaysView: View {
                 systemImage: "display.trianglebadge.exclamationmark",
                 description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
             )
+            .accessibilityIdentifier("displays_empty_state")
         }
     }
 
@@ -60,37 +72,7 @@ struct DisplaysView: View {
         )
 
         return AppListRowCard(model: model) {
-            HStack(spacing: 6) {
-                Button {
-                    copyToPasteboard(resolutionText(for: display))
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .fontWeight(.medium)
-                }
-                .buttonStyle(.borderless)
-                .help(String(localized: "Copy Resolution"))
-
-                Button {
-                    openDisplaySettings()
-                } label: {
-                    Image(systemName: "gearshape")
-                        .fontWeight(.medium)
-                }
-                .buttonStyle(.borderless)
-                .help(String(localized: "Open System Settings"))
-
-                AppQuickActionsMenu(accessibilityIdentifier: "display_row_quick_actions") {
-                    Button(String(localized: "Copy Display Name")) {
-                        copyToPasteboard(display.localizedName)
-                    }
-                    Button(String(localized: "Copy Resolution")) {
-                        copyToPasteboard(resolutionText(for: display))
-                    }
-                    Button(String(localized: "Open System Settings")) {
-                        openDisplaySettings()
-                    }
-                }
-            }
+            EmptyView()
         }
         .appListRowStyle()
     }
@@ -121,11 +103,6 @@ struct DisplaysView: View {
             return false
         }
         return CGDisplayIsMain(displayID) != 0
-    }
-
-    private func copyToPasteboard(_ value: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
     }
 
     private func openDisplaySettings() {
