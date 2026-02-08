@@ -24,6 +24,11 @@ final class CaptureChooseViewModel {
     var loadErrorMessage: String?
     var lastLoadError: LoadErrorInfo?
     var showDebugInfo = false
+    private let permissionProvider: any ScreenCapturePermissionProvider
+
+    init(permissionProvider: (any ScreenCapturePermissionProvider)? = nil) {
+        self.permissionProvider = permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault()
+    }
 
     func isVirtualDisplay(_ display: SCDisplay, appHelper: AppHelper) -> Bool {
         appHelper.isManagedVirtualDisplay(displayID: display.displayID)
@@ -61,10 +66,10 @@ final class CaptureChooseViewModel {
     }
 
     func requestScreenCapturePermission() {
-        let requestResult = CGRequestScreenCaptureAccess()
+        let requestResult = permissionProvider.request()
         lastRequestPermission = requestResult
 
-        let preflightResult = CGPreflightScreenCaptureAccess()
+        let preflightResult = permissionProvider.preflight()
         hasScreenCapturePermission = preflightResult
         lastPreflightPermission = preflightResult
 
@@ -78,7 +83,7 @@ final class CaptureChooseViewModel {
     }
 
     func refreshPermissionAndMaybeLoad() {
-        let granted = CGPreflightScreenCaptureAccess()
+        let granted = permissionProvider.preflight()
         hasScreenCapturePermission = granted
         lastPreflightPermission = granted
         if !granted {
@@ -90,6 +95,14 @@ final class CaptureChooseViewModel {
     }
 
     func loadDisplays() {
+        if UITestRuntime.isEnabled, UITestRuntime.scenario == .permissionDenied {
+            hasScreenCapturePermission = false
+            lastPreflightPermission = false
+            isLoadingDisplays = false
+            displays = nil
+            return
+        }
+
         guard !isLoadingDisplays else { return }
         isLoadingDisplays = true
         loadErrorMessage = nil

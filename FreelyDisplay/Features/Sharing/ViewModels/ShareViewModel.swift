@@ -28,6 +28,11 @@ final class ShareViewModel {
     var startingDisplayID: CGDirectDisplayID?
     var showOpenPageError = false
     var openPageErrorMessage = ""
+    private let permissionProvider: any ScreenCapturePermissionProvider
+
+    init(permissionProvider: (any ScreenCapturePermissionProvider)? = nil) {
+        self.permissionProvider = permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault()
+    }
 
     func syncForCurrentState(appHelper: AppHelper) {
         guard hasScreenCapturePermission == true else {
@@ -67,10 +72,10 @@ final class ShareViewModel {
     }
 
     func requestScreenCapturePermission(appHelper: AppHelper) {
-        let requestResult = CGRequestScreenCaptureAccess()
+        let requestResult = permissionProvider.request()
         lastRequestPermission = requestResult
 
-        let preflightResult = CGPreflightScreenCaptureAccess()
+        let preflightResult = permissionProvider.preflight()
         hasScreenCapturePermission = preflightResult
         lastPreflightPermission = preflightResult
 
@@ -89,7 +94,7 @@ final class ShareViewModel {
     }
 
     func refreshPermissionAndMaybeLoad(appHelper: AppHelper) {
-        let granted = CGPreflightScreenCaptureAccess()
+        let granted = permissionProvider.preflight()
         hasScreenCapturePermission = granted
         lastPreflightPermission = granted
         if !granted {
@@ -106,6 +111,14 @@ final class ShareViewModel {
     }
 
     func loadDisplays() {
+        if UITestRuntime.isEnabled, UITestRuntime.scenario == .permissionDenied {
+            hasScreenCapturePermission = false
+            lastPreflightPermission = false
+            displays = nil
+            isLoadingDisplays = false
+            return
+        }
+
         guard !isLoadingDisplays else { return }
         isLoadingDisplays = true
         loadErrorMessage = nil
