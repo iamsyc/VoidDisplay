@@ -8,6 +8,10 @@ struct ScreenCapturePermissionGuideView: View {
     let onRetry: (() -> Void)?
     @Binding var isDebugInfoExpanded: Bool
     let debugItems: [(title: String, value: String)]
+    let rootAccessibilityIdentifier: String?
+    let openSettingsButtonAccessibilityIdentifier: String?
+    let requestPermissionButtonAccessibilityIdentifier: String?
+    let refreshButtonAccessibilityIdentifier: String?
 
     var body: some View {
         ScrollView {
@@ -27,9 +31,12 @@ struct ScreenCapturePermissionGuideView: View {
                     Button("Open System Settings") {
                         onOpenSettings()
                     }
+                    .optionalAccessibilityIdentifier(openSettingsButtonAccessibilityIdentifier)
+
                     Button("Request Permission") {
                         onRequestPermission()
                     }
+                    .optionalAccessibilityIdentifier(requestPermissionButtonAccessibilityIdentifier)
                 }
 
                 HStack(spacing: AppUI.Spacing.medium) {
@@ -37,6 +44,7 @@ struct ScreenCapturePermissionGuideView: View {
                         onRefresh()
                     }
                     .controlSize(.small)
+                    .optionalAccessibilityIdentifier(refreshButtonAccessibilityIdentifier)
 
                     if let onRetry {
                         Button("Retry") {
@@ -81,7 +89,20 @@ struct ScreenCapturePermissionGuideView: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
+            .accessibilityElement(children: .contain)
+            .optionalAccessibilityIdentifier(rootAccessibilityIdentifier)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalAccessibilityIdentifier(_ identifier: String?) -> some View {
+        if let identifier {
+            accessibilityIdentifier(identifier)
+        } else {
+            self
+        }
     }
 }

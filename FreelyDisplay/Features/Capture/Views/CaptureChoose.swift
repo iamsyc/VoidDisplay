@@ -27,11 +27,13 @@ struct CaptureChoose: View {
                         systemImage: "display.trianglebadge.exclamationmark",
                         description: Text("No available display can be monitored right now.")
                     )
+                    .accessibilityIdentifier("capture_displays_empty_state")
                 } else {
                     List(displays, id: \.self) { display in
                         captureDisplayRow(display)
                             .appListRowStyle()
                     }
+                    .accessibilityIdentifier("capture_displays_list")
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .safeAreaInset(edge: .top, spacing: 0) {
@@ -79,6 +81,7 @@ struct CaptureChoose: View {
             viewModel.refreshPermissionAndMaybeLoad()
         }
         .appScreenBackground()
+        .accessibilityIdentifier("capture_choose_root")
     }
 
     private var screenCapturePermissionView: some View {
@@ -101,7 +104,11 @@ struct CaptureChoose: View {
                 viewModel.loadDisplays()
             } : nil,
             isDebugInfoExpanded: $viewModel.showDebugInfo,
-            debugItems: capturePermissionDebugItems
+            debugItems: capturePermissionDebugItems,
+            rootAccessibilityIdentifier: "capture_permission_guide",
+            openSettingsButtonAccessibilityIdentifier: "capture_open_settings_button",
+            requestPermissionButtonAccessibilityIdentifier: "capture_request_permission_button",
+            refreshButtonAccessibilityIdentifier: "capture_refresh_button"
         )
     }
 
@@ -211,6 +218,7 @@ struct IsCapturing: View {
                 }) {
                     Label("Listening window", systemImage: "plus")
                 }
+                .accessibilityIdentifier("monitoring_add_button")
                 .popover(isPresented: $showAddView, content: {
                     CaptureChoose()
                         .frame(width: 500, height: 400)

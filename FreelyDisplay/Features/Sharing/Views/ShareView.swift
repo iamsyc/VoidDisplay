@@ -32,9 +32,11 @@ struct ShareView: View {
                 Button("Open Share Page") {
                     viewModel.openSharePage(appHelper: appHelper)
                 }
+                .accessibilityIdentifier("share_open_page_button")
                 Button("Stop Service") {
                     viewModel.stopService(appHelper: appHelper)
                 }
+                .accessibilityIdentifier("share_stop_service_button")
             }
         }
         .onAppear {
@@ -65,6 +67,7 @@ struct ShareView: View {
             Text("Status")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier("share_status_summary")
 
             HStack(spacing: AppUI.Spacing.small) {
                 AppStatusBadge(
@@ -115,6 +118,7 @@ struct ShareView: View {
         .appPanelStyle()
         .padding(.horizontal, AppUI.Spacing.large)
         .padding(.top, AppUI.Spacing.small + 2)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -135,6 +139,7 @@ struct ShareView: View {
                 Button("Start service") {
                     viewModel.startService(appHelper: appHelper)
                 }
+                .accessibilityIdentifier("share_start_service_button")
             }
             .padding(.horizontal, AppUI.Spacing.large)
             .padding(.top, 6)
@@ -149,11 +154,13 @@ struct ShareView: View {
                 Text("No screen to share")
                     .padding(.horizontal, AppUI.Spacing.large)
                     .padding(.top, 6)
+                    .accessibilityIdentifier("share_displays_empty_state")
             } else {
                 List(displays, id: \.self) { display in
                     shareableDisplayRow(display)
                         .appListRowStyle()
                 }
+                .accessibilityIdentifier("share_displays_list")
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .safeAreaInset(edge: .top, spacing: 0) {
@@ -177,6 +184,7 @@ struct ShareView: View {
             Text("No screen to share")
                 .padding(.horizontal, AppUI.Spacing.large)
                 .padding(.top, 6)
+                .accessibilityIdentifier("share_displays_empty_state")
         }
     }
 
@@ -200,7 +208,11 @@ struct ShareView: View {
                 viewModel.loadDisplays()
             } : nil,
             isDebugInfoExpanded: $viewModel.showDebugInfo,
-            debugItems: sharingPermissionDebugItems
+            debugItems: sharingPermissionDebugItems,
+            rootAccessibilityIdentifier: "share_permission_guide",
+            openSettingsButtonAccessibilityIdentifier: "share_open_settings_button",
+            requestPermissionButtonAccessibilityIdentifier: "share_request_permission_button",
+            refreshButtonAccessibilityIdentifier: "share_refresh_button"
         )
     }
 

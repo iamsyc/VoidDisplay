@@ -32,6 +32,7 @@ struct VirtualDisplayView: View {
                     virtualDisplayRow(config)
                         .appListRowStyle()
                 }
+                .accessibilityIdentifier("virtual_displays_list")
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
             } else {
@@ -40,6 +41,7 @@ struct VirtualDisplayView: View {
                     systemImage: "display.trianglebadge.exclamationmark",
                     description: Text("Click the + button in the top right to create a virtual display.")
                 )
+                .accessibilityIdentifier("virtual_displays_empty_state")
             }
         }
         .sheet(isPresented: $createView) {
@@ -53,6 +55,7 @@ struct VirtualDisplayView: View {
             Button("Add Virtual Display", systemImage: "plus") {
                 createView = true
             }
+            .accessibilityIdentifier("virtual_display_add_button")
         }
         .confirmationDialog(
             "Delete Virtual Display",
@@ -119,7 +122,7 @@ struct VirtualDisplayView: View {
             ],
             iconSystemName: "display",
             isEmphasized: isRunning,
-            accessibilityIdentifier: nil
+            accessibilityIdentifier: "virtual_display_row_card"
         )
 
         return AppListRowCard(model: model) {
@@ -134,6 +137,7 @@ struct VirtualDisplayView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(isRunning ? .orange : .green)
+                .accessibilityIdentifier("virtual_display_toggle_button")
 
                 AppQuickActionsMenu {
                     Button(String(localized: "Move up"), systemImage: "arrow.up") {

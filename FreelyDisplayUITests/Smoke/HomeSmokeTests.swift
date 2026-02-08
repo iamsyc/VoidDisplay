@@ -23,29 +23,51 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testHomeSmoke() throws {
-        let app = XCUIApplication()
-        app.launchEnvironment["FREELYDISPLAY_UI_TEST_MODE"] = "1"
-        app.launch()
+    func testHomeNavigationSmoke_baseline() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
 
-        let sidebar = app.descendants(matching: .any)
-            .matching(identifier: "home_sidebar")
-            .firstMatch
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        assertExists(app, identifier: "home_sidebar")
+        assertExists(app, identifier: "sidebar_screen")
+        assertExists(app, identifier: "sidebar_virtual_display")
+        assertExists(app, identifier: "sidebar_monitor_screen")
+        assertExists(app, identifier: "sidebar_screen_sharing")
 
-        let sidebarScreen = app.descendants(matching: .any)
-            .matching(identifier: "sidebar_screen")
-            .firstMatch
-        XCTAssertTrue(sidebarScreen.waitForExistence(timeout: 2))
+        assertExists(app, identifier: "detail_screen")
+        assertExists(app, identifier: "displays_open_system_settings")
 
-        let defaultDetail = app.descendants(matching: .any)
-            .matching(identifier: "detail_screen")
-            .firstMatch
-        XCTAssertTrue(defaultDetail.waitForExistence(timeout: 2))
+        assertExists(app, identifier: "sidebar_virtual_display").tap()
+        assertExists(app, identifier: "detail_virtual_display")
+        assertExists(app, identifier: "virtual_display_add_button")
+        assertAnyExists(app, identifiers: ["virtual_display_row_card", "virtual_displays_empty_state"])
 
-        let openSettings = app.descendants(matching: .any)
-            .matching(identifier: "displays_open_system_settings")
-            .firstMatch
-        XCTAssertTrue(openSettings.waitForExistence(timeout: 5))
+        assertExists(app, identifier: "sidebar_monitor_screen").tap()
+        assertExists(app, identifier: "detail_monitor_screen")
+        assertExists(app, identifier: "monitoring_add_button")
+
+        assertExists(app, identifier: "sidebar_screen_sharing").tap()
+        assertExists(app, identifier: "detail_screen_sharing")
+        assertExists(app, identifier: "share_status_summary")
+    }
+
+    @MainActor
+    func testPermissionDeniedSmoke_captureAndShare() throws {
+        let app = launchAppForSmoke(scenario: .permissionDenied)
+
+        assertExists(app, identifier: "sidebar_monitor_screen").tap()
+        assertExists(app, identifier: "detail_monitor_screen")
+        assertExists(app, identifier: "monitoring_add_button").tap()
+
+        assertExists(app, identifier: "capture_choose_root")
+        assertExists(app, identifier: "capture_permission_guide")
+        assertExists(app, identifier: "capture_open_settings_button")
+        assertExists(app, identifier: "capture_request_permission_button")
+        assertExists(app, identifier: "capture_refresh_button")
+
+        assertExists(app, identifier: "sidebar_screen_sharing").tap()
+        assertExists(app, identifier: "detail_screen_sharing")
+        assertExists(app, identifier: "share_permission_guide")
+        assertExists(app, identifier: "share_open_settings_button")
+        assertExists(app, identifier: "share_request_permission_button")
+        assertExists(app, identifier: "share_refresh_button")
     }
 }
