@@ -8,14 +8,16 @@
 import SwiftUI
 import ScreenCaptureKit
 import Cocoa
+import Combine
 
 struct ShareView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
     @State private var viewModel = ShareViewModel()
     @Environment(\.openURL) private var openURL
+    private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
             statusSummary
             shareContent
         }
@@ -44,6 +46,10 @@ struct ShareView: View {
         .onChange(of: appHelper.isSharing) { _, _ in
             viewModel.syncForCurrentState(appHelper: appHelper)
         }
+        .onReceive(sharingStatsTimer) { _ in
+            guard appHelper.isWebServiceRunning else { return }
+            appHelper.refreshSharingClientCount()
+        }
         .alert("Error", isPresented: $viewModel.showOpenPageError) {
             Button("OK") {
                 viewModel.clearError()
@@ -51,31 +57,28 @@ struct ShareView: View {
         } message: {
             Text(viewModel.openPageErrorMessage)
         }
+        .appScreenBackground()
     }
 
     private var statusSummary: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
             Text("Status")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
-                statusTile(
-                    title: String(localized: "Service"),
-                    value: String(localized: appHelper.isWebServiceRunning ? "Running" : "Stopped"),
-                    symbol: appHelper.isWebServiceRunning ? "network.badge.shield.half.filled" : "network.slash",
-                    tint: appHelper.isWebServiceRunning ? .green : .secondary
+            HStack(spacing: AppUI.Spacing.small) {
+                AppStatusBadge(
+                    title: statusBadgeTitle(prefix: String(localized: "Service"), value: serviceStatusText),
+                    style: appHelper.isWebServiceRunning ? .accent(.green) : .neutral
                 )
-                statusTile(
-                    title: String(localized: "Sharing"),
-                    value: String(localized: appHelper.isSharing ? "Active" : "Idle"),
-                    symbol: appHelper.isSharing ? "waveform.badge.mic" : "pause.circle",
-                    tint: appHelper.isSharing ? .green : .secondary
+                AppStatusBadge(
+                    title: statusBadgeTitle(prefix: String(localized: "Sharing"), value: sharingStatusText),
+                    style: appHelper.isSharing ? .accent(.green) : .neutral
                 )
             }
 
             if appHelper.isWebServiceRunning {
-                HStack(spacing: 8) {
+                HStack(spacing: AppUI.Spacing.small) {
                     Image(systemName: "link")
                         .foregroundStyle(.secondary)
                     Text("Address:")
@@ -87,23 +90,31 @@ struct ShareView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, AppUI.Spacing.small + 2)
+                .padding(.vertical, AppUI.Spacing.small)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .appTileStyle()
+
+                HStack(spacing: AppUI.Spacing.small) {
+                    Image(systemName: "person.2")
+                        .foregroundStyle(.secondary)
+                    Text("Connected Clients")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(appHelper.sharingClientCount)")
+                        .font(.system(.footnote, design: .monospaced))
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, AppUI.Spacing.small + 2)
+                .padding(.vertical, AppUI.Spacing.small)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appTileStyle()
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.white.opacity(0.02))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.08), lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .padding(AppUI.Spacing.medium)
+        .appPanelStyle()
+        .padding(.horizontal, AppUI.Spacing.large)
+        .padding(.top, AppUI.Spacing.small + 2)
     }
 
     @ViewBuilder
@@ -118,200 +129,128 @@ struct ShareView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if !appHelper.isWebServiceRunning {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: AppUI.Spacing.small + 2) {
                 Text("Web service is stopped.")
                     .font(.title3)
                 Button("Start service") {
                     viewModel.startService(appHelper: appHelper)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, AppUI.Spacing.large)
             .padding(.top, 6)
         } else if appHelper.isSharing {
             sharingInProgressView
         } else if viewModel.isLoadingDisplays {
             ProgressView("Loading displays…")
-                .padding(.horizontal, 16)
+                .padding(.horizontal, AppUI.Spacing.large)
                 .padding(.top, 6)
         } else if let displays = viewModel.displays {
             if displays.isEmpty {
                 Text("No screen to share")
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, AppUI.Spacing.large)
                     .padding(.top, 6)
             } else {
                 List(displays, id: \.self) { display in
                     shareableDisplayRow(display)
+                        .appListRowStyle()
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    VStack(spacing: 10) {
+                    VStack(spacing: AppUI.Spacing.small + 2) {
                         Divider()
                         Text("If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display.")
                             .font(.footnote)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, AppUI.Spacing.large)
+                    .padding(.top, AppUI.Spacing.small + 2)
+                    .padding(.bottom, AppUI.Spacing.medium)
                 }
             }
         } else {
             Text("No screen to share")
-                .padding(.horizontal, 16)
+                .padding(.horizontal, AppUI.Spacing.large)
                 .padding(.top, 6)
         }
     }
 
     private var screenCapturePermissionView: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                Image(systemName: "lock.circle")
-                    .font(.system(size: 44))
-                    .foregroundColor(.secondary)
-                Text("Screen Recording Permission Required")
-                    .font(.headline)
-                Text("Allow screen recording in System Settings to monitor displays.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-
-                HStack(spacing: 12) {
-                    Button("Open System Settings") {
-                        viewModel.openScreenCapturePrivacySettings { url in
-                            openURL(url)
-                        }
-                    }
-                    Button("Request Permission") {
-                        viewModel.requestScreenCapturePermission(appHelper: appHelper)
-                    }
+        ScreenCapturePermissionGuideView(
+            loadErrorMessage: viewModel.loadErrorMessage,
+            onOpenSettings: {
+                viewModel.openScreenCapturePrivacySettings { url in
+                    openURL(url)
                 }
+            },
+            onRequestPermission: {
+                viewModel.requestScreenCapturePermission(appHelper: appHelper)
+            },
+            onRefresh: {
+                viewModel.refreshPermissionAndMaybeLoad(appHelper: appHelper)
+            },
+            onRetry: (viewModel.loadErrorMessage != nil || viewModel.lastLoadError != nil) ? {
+                // User-initiated retry: attempt to load the display list.
+                // If permission is still missing, macOS may prompt here (expected).
+                viewModel.loadDisplays()
+            } : nil,
+            isDebugInfoExpanded: $viewModel.showDebugInfo,
+            debugItems: sharingPermissionDebugItems
+        )
+    }
 
-                HStack(spacing: 12) {
-                    Button("Refresh") {
-                        viewModel.refreshPermissionAndMaybeLoad(appHelper: appHelper)
-                    }
-                    .controlSize(.small)
+    private var sharingPermissionDebugItems: [(title: String, value: String)] {
+        var items: [(title: String, value: String)] = [
+            (String(localized: "Bundle ID"), Bundle.main.bundleIdentifier ?? "-"),
+            (String(localized: "App Path"), Bundle.main.bundleURL.path),
+            (
+                String(localized: "Preflight Permission"),
+                (viewModel.lastPreflightPermission ?? viewModel.hasScreenCapturePermission)
+                    .map { $0 ? "true" : "false" } ?? "-"
+            ),
+            (
+                String(localized: "Request Permission Result"),
+                viewModel.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-"
+            )
+        ]
 
-                    if viewModel.loadErrorMessage != nil || viewModel.lastLoadError != nil {
-                        Button("Retry") {
-                            // User-initiated retry: attempt to load the display list.
-                            // If permission is still missing, macOS may prompt here (expected).
-                            viewModel.loadDisplays()
-                        }
-                        .controlSize(.small)
-                    }
-                }
+        if let lastLoadError = viewModel.lastLoadError {
+            items.append((String(localized: "Last Error"), lastLoadError.description))
+            items.append((String(localized: "Error Domain"), lastLoadError.domain))
+            items.append((String(localized: "Error Code"), "\(lastLoadError.code)"))
 
-                if let loadErrorMessage = viewModel.loadErrorMessage {
-                    Text(loadErrorMessage)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 360)
-                }
-
-                VStack(spacing: 6) {
-                    Text("After granting permission, you may need to quit and relaunch the app.")
-                    Text("If System Settings shows permission is ON but this page still says it is OFF, the change has not been applied to this running app process. Quit (⌘Q) and reopen, or remove and re-add the app in the permission list.")
-                }
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-
-                DisclosureGroup("Debug Info", isExpanded: $viewModel.showDebugInfo) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Bundle ID")
-                            Text(verbatim: Bundle.main.bundleIdentifier ?? "-")
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("App Path")
-                            Text(verbatim: Bundle.main.bundleURL.path)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Preflight Permission")
-                            Text(verbatim: (viewModel.lastPreflightPermission ?? viewModel.hasScreenCapturePermission).map { $0 ? "true" : "false" } ?? "-")
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Request Permission Result")
-                            Text(verbatim: viewModel.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-")
-                        }
-                        if let lastLoadError = viewModel.lastLoadError {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Last Error")
-                                Text(verbatim: lastLoadError.description)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Error Domain")
-                                Text(verbatim: lastLoadError.domain)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Error Code")
-                                Text(verbatim: "\(lastLoadError.code)")
-                            }
-                            if let failureReason = lastLoadError.failureReason, !failureReason.isEmpty {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Failure Reason")
-                                    Text(verbatim: failureReason)
-                                }
-                            }
-                            if let recoverySuggestion = lastLoadError.recoverySuggestion, !recoverySuggestion.isEmpty {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Recovery Suggestion")
-                                    Text(verbatim: recoverySuggestion)
-                                }
-                            }
-                        }
-                    }
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 420, alignment: .leading)
-                }
-                .frame(maxWidth: 420)
+            if let failureReason = lastLoadError.failureReason, !failureReason.isEmpty {
+                items.append((String(localized: "Failure Reason"), failureReason))
             }
-            .frame(maxWidth: .infinity)
-            .padding()
+            if let recoverySuggestion = lastLoadError.recoverySuggestion, !recoverySuggestion.isEmpty {
+                items.append((String(localized: "Recovery Suggestion"), recoverySuggestion))
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        return items
     }
 
     private var sharingInProgressView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.green)
-                    .frame(width: 34, height: 34)
-                    .background(.green.opacity(0.12), in: Circle())
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Sharing is in progress.")
-                        .font(.headline)
-                    Text("Your screen is currently being streamed to connected clients.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("LIVE")
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.green.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.green)
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            HStack(spacing: AppUI.Spacing.small + 2) {
+                AppStatusBadge(title: String(localized: "LIVE"), style: .accent(.green))
+                Text(String(localized: "Sharing is in progress."))
+                    .font(.headline)
             }
 
-            HStack(spacing: 10) {
+            Text(String(localized: "Your screen is currently being streamed to connected clients."))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: AppUI.Spacing.small + 2) {
                 Button(role: .destructive) {
                     appHelper.stopSharing()
                 } label: {
-                    Label("Stop sharing", systemImage: "stop.fill")
+                    Label(String(localized: "Stop sharing"), systemImage: "stop.fill")
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("Open Share Page") {
+                Button(String(localized: "Open Share Page")) {
                     viewModel.openSharePage(appHelper: appHelper)
                 }
                 .buttonStyle(.bordered)
@@ -319,80 +258,27 @@ struct ShareView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(16)
+        .padding(AppUI.Spacing.large)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.white.opacity(0.02))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.08), lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
+        .appPanelStyle()
+        .padding(.horizontal, AppUI.Spacing.large)
         .padding(.top, 6)
     }
 
-    private func statusTile(title: String, value: String, symbol: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-                .frame(width: 18, height: 18)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.white.opacity(0.06), lineWidth: 1)
-        )
-    }
-
     private func shareableDisplayRow(_ display: SCDisplay) -> some View {
-        HStack {
-            Image(systemName: "display")
-                .font(.system(size: 40))
+        let displayName = NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName
+            ?? String(localized: "Monitor")
+        let isVirtual = isManagedVirtualDisplay(display.displayID)
+        let model = AppListRowModel(
+            id: String(display.displayID),
+            title: displayName,
+            subtitle: "\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))",
+            metaBadges: displayBadges(for: display.displayID, isVirtual: isVirtual),
+            iconSystemName: "display",
+            isEmphasized: true
+        )
 
-            VStack(alignment: .leading, spacing: 5) {
-                VStack(alignment: .leading) {
-                    let displayName = NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName
-                        ?? String(localized: "Monitor")
-                    Text(
-                        displayName
-                    )
-                    .font(.headline)
-                    Text("\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))")
-                        .font(.subheadline)
-                }
-
-                Text(
-                    String(
-                        localized: isManagedVirtualDisplay(display.displayID)
-                            ? "Virtual Display"
-                            : "Physical Display or other Virtual Display"
-                    )
-                )
-                    .font(.caption)
-                    .padding(3)
-                    .padding(.horizontal, 5)
-                    .background(.gray.opacity(0.2), in: .capsule)
-            }
-            .padding(.bottom, 5)
-
-            Spacer()
-
+        return AppListRowCard(model: model) {
             Button {
                 Task {
                     await viewModel.startSharing(display: display, appHelper: appHelper)
@@ -402,15 +288,53 @@ struct ShareView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Text("Share")
+                    Text(String(localized: "Share"))
                 }
             }
             .disabled(viewModel.startingDisplayID != nil)
         }
     }
 
+    private func displayBadges(for displayID: CGDirectDisplayID, isVirtual: Bool) -> [AppBadgeModel] {
+        var badges: [AppBadgeModel] = [
+            AppBadgeModel(
+                title: displayTypeLabel(for: displayID),
+                style: isVirtual ? .accent(.blue) : .neutral
+            )
+        ]
+        if CGDisplayIsMain(displayID) != 0 {
+            badges.insert(AppBadgeModel(title: String(localized: "Primary Display"), style: .accent(.green)), at: 0)
+        }
+        return badges
+    }
+
     private func isManagedVirtualDisplay(_ displayID: CGDirectDisplayID) -> Bool {
-        appHelper.displays.contains(where: { $0.displayID == displayID })
+        appHelper.isManagedVirtualDisplay(displayID: displayID)
+    }
+
+    private var serviceStatusText: String {
+        if appHelper.isWebServiceRunning {
+            return String(localized: "Running")
+        }
+        return String(localized: "Stopped")
+    }
+
+    private var sharingStatusText: String {
+        if appHelper.isSharing {
+            return String(localized: "Active")
+        }
+        return String(localized: "Idle")
+    }
+
+    private func statusBadgeTitle(prefix: String, value: String) -> String {
+        "\(prefix): \(value)"
+    }
+
+    private func displayTypeLabel(for displayID: CGDirectDisplayID) -> String {
+        if isManagedVirtualDisplay(displayID) {
+            return String(localized: "Virtual Display")
+        }
+        return String(localized: "Physical Display")
     }
 }
 

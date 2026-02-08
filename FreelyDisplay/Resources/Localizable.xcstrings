@@ -22,6 +22,7 @@
       }
     },
     "%@ × %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -33,6 +34,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ × %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld"
           }
         }
       }
@@ -86,6 +103,7 @@
       }
     },
     "•" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -106,7 +124,6 @@
       }
     },
     "Active" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -236,12 +253,52 @@
         }
       }
     },
+    "Click + to start a new monitoring window." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击 + 开始一个新的监听窗口。"
+          }
+        }
+      }
+    },
     "Click the + button in the top right to create a virtual display." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "点击右上角的 + 按钮创建一个虚拟显示器"
+          }
+        }
+      }
+    },
+    "Connected Clients" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接客户端"
+          }
+        }
+      }
+    },
+    "Copy Display Name" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制显示器名称"
+          }
+        }
+      }
+    },
+    "Copy Resolution" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制分辨率"
           }
         }
       }
@@ -317,6 +374,7 @@
       }
     },
     "Destroy" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -327,7 +385,6 @@
       }
     },
     "Disable" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -338,7 +395,6 @@
       }
     },
     "Disabled" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -419,7 +475,6 @@
       }
     },
     "Enable" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -560,7 +615,6 @@
       }
     },
     "Idle" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -726,6 +780,16 @@
         }
       }
     },
+    "No available display can be monitored right now." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前没有可监听的显示器。"
+          }
+        }
+      }
+    },
     "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again." : {
       "localizations" : {
         "zh-Hans" : {
@@ -847,6 +911,7 @@
       }
     },
     "Physical Display or other Virtual Display" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -932,6 +997,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预设分辨率"
+          }
+        }
+      }
+    },
+    "Primary Display" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主显示器"
+          }
+        }
+      }
+    },
+    "Quick Actions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷操作"
           }
         }
       }
@@ -1067,7 +1152,6 @@
       }
     },
     "Running" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1174,6 +1258,7 @@
       }
     },
     "Serial Number: %u" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1269,6 +1354,16 @@
         }
       }
     },
+    "Stop Monitoring" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止监听"
+          }
+        }
+      }
+    },
     "Stop Service" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1290,7 +1385,6 @@
       }
     },
     "Stopped" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

@@ -29,90 +29,11 @@ struct VirtualDisplayView: View {
         Group {
             if !appHelper.displayConfigs.isEmpty {
                 List(appHelper.displayConfigs) { config in
-                    let isRunning = appHelper.isVirtualDisplayRunning(configId: config.id)
-                    HStack(alignment: .center) {
-                        // Display icon with status indicator
-                        ZStack(alignment: .bottomTrailing) {
-                            Image(systemName: "display")
-                                .font(.system(size: 30))
-                                .foregroundColor(isRunning ? .primary : .secondary)
-                            
-                            // Status indicator
-                            Circle()
-                                .fill(isRunning ? Color.green : Color.gray)
-                                .frame(width: 10, height: 10)
-                                .offset(x: 2, y: 2)
-                        }
-                        
-                        VStack(alignment: .leading) {
-                            Text(config.name)
-                                .font(.headline)
-                                .foregroundColor(isRunning ? .primary : .secondary)
-                            
-                            HStack {
-                                Text("Serial Number: \(config.serialNum)")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("•")
-                                    .foregroundColor(.secondary)
-                                
-                                Text(String(localized: isRunning ? "Running" : "Disabled"))
-                                    .font(.caption)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(isRunning ? Color.green.opacity(0.2) : Color.gray.opacity(0.2))
-                                    .foregroundColor(isRunning ? .green : .gray)
-                                    .cornerRadius(4)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        HStack(spacing: 8) {
-                            Button {
-                                _ = appHelper.moveDisplayConfig(config.id, direction: .up)
-                            } label: {
-                                Image(systemName: "chevron.up")
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(appHelper.displayConfigs.first?.id == config.id)
-                            .help("Move up")
-
-                            Button {
-                                _ = appHelper.moveDisplayConfig(config.id, direction: .down)
-                            } label: {
-                                Image(systemName: "chevron.down")
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(appHelper.displayConfigs.last?.id == config.id)
-                            .help("Move down")
-
-                            // Enable/Disable toggle button
-                            Button(action: {
-                                toggleDisplayState(config)
-                            }) {
-                                Text(String(localized: isRunning ? "Disable" : "Enable"))
-                                    .frame(width: 50)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(isRunning ? .orange : .green)
-                            
-                            Button("Edit") {
-                                editingConfig = EditingConfig(id: config.id)
-                            }
-                            
-                            // Destroy button
-                            Button("Delete") {
-                                deleteCandidate = config
-                                showDeleteConfirm = true
-                            }
-                            .foregroundStyle(.red)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .opacity(isRunning ? 1.0 : 0.7)
+                    virtualDisplayRow(config)
+                        .appListRowStyle()
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             } else {
                 ContentUnavailableView(
                     "No Virtual Displays",
@@ -175,6 +96,86 @@ struct VirtualDisplayView: View {
             let more = appHelper.restoreFailures.count > 3 ? "\n\n…" : ""
             Text(summary + more)
         }
+        .appScreenBackground()
+    }
+
+    private func virtualDisplayRow(_ config: VirtualDisplayConfig) -> some View {
+        let isRunning = appHelper.isVirtualDisplayRunning(configId: config.id)
+        let isFirst = appHelper.displayConfigs.first?.id == config.id
+        let isLast = appHelper.displayConfigs.last?.id == config.id
+        let model = AppListRowModel(
+            id: config.id.uuidString,
+            title: config.name,
+            subtitle: subtitleText(for: config),
+            metaBadges: [
+                AppBadgeModel(
+                    title: displayStatusLabel(isRunning: isRunning),
+                    style: isRunning ? .accent(.green) : .neutral
+                ),
+                AppBadgeModel(
+                    title: String(localized: "Virtual Display"),
+                    style: .accent(.blue)
+                )
+            ],
+            iconSystemName: "display",
+            isEmphasized: isRunning
+        )
+
+        return AppListRowCard(model: model) {
+            HStack(spacing: AppUI.Spacing.small) {
+                Button {
+                    toggleDisplayState(config)
+                } label: {
+                    Label(
+                        toggleButtonTitle(isRunning: isRunning),
+                        systemImage: isRunning ? "pause.fill" : "play.fill"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(isRunning ? .orange : .green)
+
+                AppQuickActionsMenu {
+                    Button(String(localized: "Move up"), systemImage: "arrow.up") {
+                        _ = appHelper.moveDisplayConfig(config.id, direction: .up)
+                    }
+                    .fontWeight(.medium)
+                    .disabled(isFirst)
+
+                    Button(String(localized: "Move down"), systemImage: "arrow.down") {
+                        _ = appHelper.moveDisplayConfig(config.id, direction: .down)
+                    }
+                    .fontWeight(.medium)
+                    .disabled(isLast)
+
+                    Divider()
+
+                    Button(String(localized: "Edit"), systemImage: "pencil") {
+                        editingConfig = EditingConfig(id: config.id)
+                    }
+
+                    Button(String(localized: "Delete"), systemImage: "trash", role: .destructive) {
+                        deleteCandidate = config
+                        showDeleteConfirm = true
+                    }
+                }
+            }
+        }
+        .opacity(isRunning ? 1.0 : 0.82)
+    }
+
+    private func subtitleText(for config: VirtualDisplayConfig) -> String {
+        let serial = "\(String(localized: "Serial Number")): \(config.serialNum)"
+        guard let mode = modeSummary(config) else {
+            return serial
+        }
+        return "\(serial) • \(mode)"
+    }
+
+    private func modeSummary(_ config: VirtualDisplayConfig) -> String? {
+        guard let maxMode = config.modes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
+            return nil
+        }
+        return "\(maxMode.width) × \(maxMode.height)"
     }
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {
@@ -189,6 +190,20 @@ struct VirtualDisplayView: View {
             errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
             showError = true
         }
+    }
+
+    private func displayStatusLabel(isRunning: Bool) -> String {
+        if isRunning {
+            return String(localized: "Running")
+        }
+        return String(localized: "Disabled")
+    }
+
+    private func toggleButtonTitle(isRunning: Bool) -> String {
+        if isRunning {
+            return String(localized: "Disable")
+        }
+        return String(localized: "Enable")
     }
 }
 
