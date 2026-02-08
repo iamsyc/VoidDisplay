@@ -7,6 +7,7 @@ protocol WebServiceControlling: AnyObject {
     var portValue: UInt16 { get }
     var currentServer: WebServer? { get }
     var isRunning: Bool { get }
+    var activeStreamClientCount: Int { get }
 
     @discardableResult
     func start(
@@ -36,6 +37,10 @@ final class WebServiceController: WebServiceControlling {
 
     var isRunning: Bool {
         webServer != nil
+    }
+
+    var activeStreamClientCount: Int {
+        webServer?.activeStreamClientCount ?? 0
     }
 
     @discardableResult

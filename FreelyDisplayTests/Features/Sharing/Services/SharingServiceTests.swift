@@ -51,4 +51,12 @@ struct SharingServiceTests {
         #expect(mock.disconnectCallCount == 1)
         #expect(sut.isWebServiceRunning == false)
     }
+
+    @MainActor @Test func activeStreamClientCountReflectsControllerValue() {
+        let mock = MockWebServiceController()
+        mock.activeStreamClientCount = 3
+        let sut = SharingService(webServiceController: mock)
+
+        #expect(sut.activeStreamClientCount == 3)
+    }
 }

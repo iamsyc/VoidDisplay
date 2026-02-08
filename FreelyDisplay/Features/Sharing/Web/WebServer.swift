@@ -256,6 +256,10 @@ final class WebServer {
         streamHub.disconnectAllClients()
     }
 
+    var activeStreamClientCount: Int {
+        streamHub.activeClientCount
+    }
+
     func stopListener() {
         disconnectAllStreamClients()
         listener?.cancel()

@@ -6,6 +6,7 @@ final class MockWebServiceController: WebServiceControlling {
     var portValue: UInt16 = 9090
     var currentServer: WebServer?
     var isRunning = false
+    var activeStreamClientCount = 0
 
     var startResult = true
     var startCallCount = 0

@@ -23,6 +23,10 @@ final class SharingService {
         webServiceController.isRunning
     }
 
+    var activeStreamClientCount: Int {
+        webServiceController.activeStreamClientCount
+    }
+
     var currentStream: SCStream? {
         sharingScreenCaptureObject
     }

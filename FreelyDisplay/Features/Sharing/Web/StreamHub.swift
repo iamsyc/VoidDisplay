@@ -74,6 +74,10 @@ final class StreamHub {
         clients.count
     }
 
+    var activeClientCount: Int {
+        clients.count
+    }
+
     private func key(for connection: any StreamClientConnection) -> ObjectIdentifier {
         ObjectIdentifier(connection as AnyObject)
     }
