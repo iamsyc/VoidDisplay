@@ -34,6 +34,10 @@ struct CaptureChoose: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        Spacer()
+                            .frame(height: AppUI.Spacing.small + 2)
+                    }
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         VStack(spacing: AppUI.Spacing.small + 2) {
                             Divider()
