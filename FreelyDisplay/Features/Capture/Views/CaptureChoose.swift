@@ -193,7 +193,7 @@ struct IsCapturing: View {
             } else {
                 ContentUnavailableView(
                     "No Listening Windows",
-                    systemImage: "dot.scope.display",
+                    systemImage: "display.and.arrow.down",
                     description: Text("Click + to start a new monitoring window.")
                 )
             }

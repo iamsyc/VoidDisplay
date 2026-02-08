@@ -27,7 +27,7 @@ struct HomeView: View {
                     Label("Virtual Displays", systemImage: "display.2")
                         .tag(SidebarItem.virtualDisplay)
                         .accessibilityIdentifier("sidebar_virtual_display")
-                    Label("Screen Monitoring", systemImage: "dot.scope.display")
+                    Label("Screen Monitoring", systemImage: "display.and.arrow.down")
                         .tag(SidebarItem.monitorScreen)
                         .accessibilityIdentifier("sidebar_monitor_screen")
                 }
