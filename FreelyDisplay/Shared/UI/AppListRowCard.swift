@@ -4,7 +4,6 @@ struct AppListRowCard<Trailing: View>: View {
     let model: AppListRowModel
     private let trailing: Trailing
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     init(model: AppListRowModel, @ViewBuilder trailing: () -> Trailing) {
@@ -13,10 +12,10 @@ struct AppListRowCard<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: AppUI.Spacing.small + 2) {
+        HStack(spacing: AppUI.Spacing.small) {
             iconTile
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(model.title)
                     .font(.headline)
                     .foregroundStyle(model.isEmphasized ? .primary : .secondary)
@@ -48,8 +47,6 @@ struct AppListRowCard<Trailing: View>: View {
         .padding(.horizontal, AppUI.List.rowHorizontalInset)
         .padding(.vertical, AppUI.List.rowVerticalInset)
         .appInteractiveCardStyle(isHovered: isHovered)
-        .offset(y: isHovered && !reduceMotion ? -AppUI.List.hoverLift : 0)
-        .animation(.easeOut(duration: 0.15), value: isHovered)
         .onHover { hovered in
             isHovered = hovered
         }
@@ -59,7 +56,7 @@ struct AppListRowCard<Trailing: View>: View {
 
     private var iconTile: some View {
         Image(systemName: model.iconSystemName)
-            .font(.system(size: 32, weight: .medium))
+            .font(.system(size: 28, weight: .semibold))
             .foregroundStyle(model.isEmphasized ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
             .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
     }

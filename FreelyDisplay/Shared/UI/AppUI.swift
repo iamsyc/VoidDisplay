@@ -116,25 +116,29 @@ struct AppInteractiveCard: ViewModifier {
     let isHovered: Bool
 
     func body(content: Content) -> some View {
+        let fillColor: Color = {
+            if colorScheme == .dark {
+                return .white.opacity(isHovered ? 0.10 : 0.06)
+            }
+            return Color(nsColor: .controlBackgroundColor).opacity(isHovered ? 0.98 : 0.90)
+        }()
+
+        let strokeColor: Color = {
+            guard isHovered else { return .clear }
+            if colorScheme == .dark {
+                return .white.opacity(0.30)
+            }
+            return Color.accentColor.opacity(0.32)
+        }()
+
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .fill(AppUI.Surface.panelFill(for: colorScheme))
+                    .fill(fillColor)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .stroke(
-                        AppUI.Surface.interactivePanelStroke(for: colorScheme, isHovered: isHovered),
-                        lineWidth: AppUI.Stroke.subtle
-                    )
-            )
-            .shadow(
-                color: colorScheme == .dark
-                    ? .clear
-                    : .black.opacity(isHovered ? 0.12 : 0.08), // Increased opacity for better depth
-                radius: colorScheme == .dark ? 0 : (isHovered ? 8 : 6), // Increased radius
-                x: 0,
-                y: colorScheme == .dark ? 0 : (isHovered ? 3 : 2) // Increased Y offset
+                    .stroke(strokeColor, lineWidth: AppUI.Stroke.subtle)
             )
     }
 }
