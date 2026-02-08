@@ -52,6 +52,7 @@ struct DisplaysView: View {
             id: displayID.map(String.init) ?? display.localizedName,
             title: display.localizedName,
             subtitle: resolutionText(for: display),
+            status: nil,
             metaBadges: displayBadges(for: display),
             iconSystemName: "display",
             isEmphasized: true,

@@ -107,18 +107,19 @@ struct VirtualDisplayView: View {
             id: config.id.uuidString,
             title: config.name,
             subtitle: subtitleText(for: config),
+            status: AppRowStatus(
+                title: displayStatusLabel(isRunning: isRunning),
+                tint: isRunning ? .green : .gray
+            ),
             metaBadges: [
-                AppBadgeModel(
-                    title: displayStatusLabel(isRunning: isRunning),
-                    style: isRunning ? .accent(.green) : .neutral
-                ),
                 AppBadgeModel(
                     title: String(localized: "Virtual Display"),
                     style: .accent(.blue)
                 )
             ],
             iconSystemName: "display",
-            isEmphasized: isRunning
+            isEmphasized: isRunning,
+            accessibilityIdentifier: nil
         )
 
         return AppListRowCard(model: model) {
@@ -194,9 +195,9 @@ struct VirtualDisplayView: View {
 
     private func displayStatusLabel(isRunning: Bool) -> String {
         if isRunning {
-            return String(localized: "Running")
+            return String(localized: "Enable")
         }
-        return String(localized: "Disabled")
+        return String(localized: "Disable")
     }
 
     private func toggleButtonTitle(isRunning: Bool) -> String {

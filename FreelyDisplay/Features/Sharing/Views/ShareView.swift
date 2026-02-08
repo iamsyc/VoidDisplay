@@ -273,9 +273,11 @@ struct ShareView: View {
             id: String(display.displayID),
             title: displayName,
             subtitle: "\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))",
+            status: nil,
             metaBadges: displayBadges(for: display.displayID, isVirtual: isVirtual),
             iconSystemName: "display",
-            isEmphasized: true
+            isEmphasized: true,
+            accessibilityIdentifier: nil
         )
 
         return AppListRowCard(model: model) {

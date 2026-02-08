@@ -20,8 +20,8 @@ enum AppUI {
 
     enum List {
         static let rowMinHeight: CGFloat = 62
-        static let iconBoxWidth: CGFloat = 36
-        static let iconBoxHeight: CGFloat = 30
+        static let iconBoxWidth: CGFloat = 42 // Increased from 36
+        static let iconBoxHeight: CGFloat = 42 // Increased from 30
         static let rowHorizontalInset: CGFloat = 12
         static let rowVerticalInset: CGFloat = 8
         static let listHorizontalInset: CGFloat = 12
@@ -205,6 +205,23 @@ struct AppStatusBadge: View {
             return (.black.opacity(0.70), .black.opacity(0.06), .black.opacity(0.12))
         case .accent(let tint):
             return (tint, tint.opacity(colorScheme == .dark ? 0.24 : 0.16), tint.opacity(colorScheme == .dark ? 0.32 : 0.28))
+        }
+    }
+}
+
+struct AppStatusDotLabel: View {
+    let title: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
         }
     }
 }

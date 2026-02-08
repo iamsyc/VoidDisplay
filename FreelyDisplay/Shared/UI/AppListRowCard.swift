@@ -27,8 +27,12 @@ struct AppListRowCard<Trailing: View>: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                if !model.metaBadges.isEmpty {
+                if model.status != nil || !model.metaBadges.isEmpty {
                     HStack(spacing: 6) {
+                        if let status = model.status {
+                            AppStatusDotLabel(title: status.title, tint: status.tint)
+                        }
+
                         ForEach(model.metaBadges) { badge in
                             AppStatusBadge(title: badge.title, style: badge.style)
                         }
@@ -54,14 +58,9 @@ struct AppListRowCard<Trailing: View>: View {
     }
 
     private var iconTile: some View {
-        ZStack {
-            Circle()
-                .fill(.primary.opacity(0.05))
-                .frame(width: AppUI.List.iconBoxHeight - 4, height: AppUI.List.iconBoxHeight - 4)
-            Image(systemName: model.iconSystemName)
-                .font(.system(size: 14, weight: .semibold)) // Increased weight for better visibility
-                .foregroundStyle(model.isEmphasized ? .primary : .secondary)
-        }
-        .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
+        Image(systemName: model.iconSystemName)
+            .font(.system(size: 32, weight: .medium))
+            .foregroundStyle(model.isEmphasized ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
+            .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
     }
 }

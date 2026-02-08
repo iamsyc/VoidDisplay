@@ -1,5 +1,10 @@
 import SwiftUI
 
+struct AppRowStatus {
+    let title: String
+    let tint: Color
+}
+
 struct AppBadgeModel: Identifiable {
     let id = UUID()
     let title: String
@@ -10,8 +15,9 @@ struct AppListRowModel: Identifiable {
     let id: String
     let title: String
     let subtitle: String
+    let status: AppRowStatus?
     let metaBadges: [AppBadgeModel]
     let iconSystemName: String
     let isEmphasized: Bool
-    var accessibilityIdentifier: String?
+    let accessibilityIdentifier: String?
 }

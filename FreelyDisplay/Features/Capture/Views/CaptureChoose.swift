@@ -137,9 +137,11 @@ struct CaptureChoose: View {
             id: String(display.displayID),
             title: viewModel.displayName(for: display),
             subtitle: viewModel.resolutionText(for: display),
+            status: nil,
             metaBadges: displayBadges(for: display, isVirtualDisplay: isVirtualDisplay),
             iconSystemName: "display",
-            isEmphasized: true
+            isEmphasized: true,
+            accessibilityIdentifier: nil
         )
         return AppListRowCard(model: model) {
             Button("Monitor Display") {
@@ -193,7 +195,7 @@ struct IsCapturing: View {
             } else {
                 ContentUnavailableView(
                     "No Listening Windows",
-                    systemImage: "display.and.arrow.down",
+                    systemImage: "dot.scope.display",
                     description: Text("Click + to start a new monitoring window.")
                 )
             }
@@ -219,6 +221,7 @@ struct IsCapturing: View {
             id: session.id.uuidString,
             title: session.displayName,
             subtitle: session.resolutionText,
+            status: nil,
             metaBadges: [
                 AppBadgeModel(
                     title: monitoringSessionDisplayTypeLabel(session.isVirtualDisplay),
@@ -227,7 +230,8 @@ struct IsCapturing: View {
                 AppBadgeModel(title: String(localized: "Active"), style: .accent(.green))
             ],
             iconSystemName: "display",
-            isEmphasized: true
+            isEmphasized: true,
+            accessibilityIdentifier: nil
         )
         return AppListRowCard(model: model) {
             Button(role: .destructive) {
