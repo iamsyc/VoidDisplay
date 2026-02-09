@@ -22,7 +22,7 @@ struct AppListRowCard<Trailing: View>: View {
 
                 Text(model.subtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.primary.opacity(0.66))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 

@@ -81,32 +81,41 @@ struct ShareView: View {
             }
 
             if appHelper.isWebServiceRunning {
-                HStack(spacing: AppUI.Spacing.small) {
-                    Image(systemName: "link")
-                        .foregroundStyle(.secondary)
-                    Text("Address:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(viewModel.sharePageAddress(appHelper: appHelper) ?? String(localized: "LAN IP unavailable"))
-                        .font(.system(.footnote, design: .monospaced))
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .padding(.horizontal, AppUI.Spacing.small + 2)
-                .padding(.vertical, AppUI.Spacing.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .appTileStyle()
-
-                HStack(spacing: AppUI.Spacing.small) {
-                    Image(systemName: "person.2")
-                        .foregroundStyle(.secondary)
-                    Text("Connected Clients")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("\(appHelper.sharingClientCount)")
-                        .font(.system(.footnote, design: .monospaced))
-                        .fontWeight(.semibold)
+                HStack(spacing: AppUI.Spacing.medium) {
+                    // Address section
+                    HStack(spacing: AppUI.Spacing.small) {
+                        Image(systemName: "link")
+                            .foregroundStyle(.secondary)
+                        Text(viewModel.sharePageAddress(appHelper: appHelper) ?? String(localized: "LAN IP unavailable"))
+                            .font(.system(.footnote, design: .monospaced))
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        
+                        if let address = viewModel.sharePageAddress(appHelper: appHelper) {
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(address, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Copy address")
+                        }
+                    }
+                    
+                    Divider()
+                        .frame(height: 16)
+                    
+                    // Connected clients section
+                    HStack(spacing: AppUI.Spacing.small) {
+                        Image(systemName: "person.2")
+                            .foregroundStyle(.secondary)
+                        Text("\(appHelper.sharingClientCount)")
+                            .font(.system(.footnote, design: .monospaced))
+                            .fontWeight(.semibold)
+                    }
                 }
                 .padding(.horizontal, AppUI.Spacing.small + 2)
                 .padding(.vertical, AppUI.Spacing.small)
@@ -151,22 +160,40 @@ struct ShareView: View {
                 .padding(.top, 6)
         } else if let displays = viewModel.displays {
             if displays.isEmpty {
-                Text("No screen to share")
-                    .padding(.horizontal, AppUI.Spacing.large)
-                    .padding(.top, 6)
-                    .accessibilityIdentifier("share_displays_empty_state")
+                VStack(spacing: AppUI.Spacing.medium) {
+                    Text("No screen to share")
+                    Button("Refresh") {
+                        viewModel.refreshDisplays(appHelper: appHelper)
+                    }
+                    .accessibilityIdentifier("share_empty_refresh_button")
+                }
+                .padding(.horizontal, AppUI.Spacing.large)
+                .padding(.top, 6)
+                .accessibilityIdentifier("share_displays_empty_state")
             } else {
-                List(displays, id: \.self) { display in
-                    shareableDisplayRow(display)
-                        .appListRowStyle()
+                GeometryReader { geometry in
+                    let useGrid = geometry.size.width > 500
+                    ScrollView {
+                        if useGrid {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
+                                ForEach(displays, id: \.self) { display in
+                                    shareableDisplayRow(display)
+                                }
+                            }
+                            .padding(.horizontal, AppUI.List.listHorizontalInset)
+                            .padding(.top, AppUI.Spacing.small + 2)
+                        } else {
+                            LazyVStack(spacing: AppUI.List.listVerticalInset * 2) {
+                                ForEach(displays, id: \.self) { display in
+                                    shareableDisplayRow(display)
+                                }
+                            }
+                            .padding(.horizontal, AppUI.List.listHorizontalInset)
+                            .padding(.top, AppUI.Spacing.small + 2)
+                        }
+                    }
                 }
                 .accessibilityIdentifier("share_displays_list")
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Spacer()
-                        .frame(height: AppUI.Spacing.small + 2)
-                }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: AppUI.Spacing.small + 2) {
                         Divider()
@@ -181,10 +208,16 @@ struct ShareView: View {
                 }
             }
         } else {
-            Text("No screen to share")
-                .padding(.horizontal, AppUI.Spacing.large)
-                .padding(.top, 6)
-                .accessibilityIdentifier("share_displays_empty_state")
+            VStack(spacing: AppUI.Spacing.medium) {
+                Text("No screen to share")
+                Button("Refresh") {
+                    viewModel.refreshDisplays(appHelper: appHelper)
+                }
+                .accessibilityIdentifier("share_empty_refresh_button")
+            }
+            .padding(.horizontal, AppUI.Spacing.large)
+            .padding(.top, 6)
+            .accessibilityIdentifier("share_displays_empty_state")
         }
     }
 
@@ -309,6 +342,7 @@ struct ShareView: View {
                     Text(String(localized: "Share"))
                 }
             }
+            .buttonStyle(.borderedProminent)
             .disabled(viewModel.startingDisplayID != nil)
         }
     }
