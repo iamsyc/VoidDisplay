@@ -11,8 +11,8 @@ protocol WebServiceControlling: AnyObject {
 
     @discardableResult
     func start(
-        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
-        frameProvider: @escaping @MainActor @Sendable () -> Data?
+        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
     ) -> Bool
     func stop()
     func disconnectAllStreamClients()
@@ -45,8 +45,8 @@ final class WebServiceController: WebServiceControlling {
 
     @discardableResult
     func start(
-        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
-        frameProvider: @escaping @MainActor @Sendable () -> Data?
+        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
     ) -> Bool {
         guard webServer == nil else {
             AppLog.web.debug("Start requested while web service is already running.")
@@ -56,7 +56,7 @@ final class WebServiceController: WebServiceControlling {
         do {
             webServer = try WebServer(
                 using: port,
-                isSharingProvider: isSharingProvider,
+                targetStateProvider: targetStateProvider,
                 frameProvider: frameProvider
             )
             webServer?.startListener()

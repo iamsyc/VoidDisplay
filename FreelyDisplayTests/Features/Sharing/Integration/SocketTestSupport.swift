@@ -204,11 +204,16 @@ func sendFragmentedRootRequestAndReadResponse(port: UInt16) throws -> Data {
 
 func openStreamAndReadResponse(
     port: UInt16,
+    path: String = "/stream",
     boundary: String,
     minimumFrameCount: Int,
     fragmentedHeader: Bool = false
 ) throws -> Data {
-    let fd = try openStreamSocket(port: port, fragmentedHeader: fragmentedHeader)
+    let fd = try openStreamSocket(
+        port: port,
+        path: path,
+        fragmentedHeader: fragmentedHeader
+    )
     defer { close(fd) }
     return try readUntilFrameBoundaries(
         from: fd,
@@ -220,19 +225,20 @@ func openStreamAndReadResponse(
 
 func openStreamSocket(
     port: UInt16,
+    path: String = "/stream",
     fragmentedHeader: Bool = false
 ) throws -> Int32 {
     let fd = try connectLoopbackSocket(port: port)
     configureReceiveTimeout(fd: fd, milliseconds: 300)
 
     if fragmentedHeader {
-        let fragment1 = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1".utf8)
+        let fragment1 = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1".utf8)
         let fragment2 = Data(":\(port)\r\n\r\n".utf8)
         try sendAll(fd, data: fragment1)
         usleep(50_000)
         try sendAll(fd, data: fragment2)
     } else {
-        let request = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
+        let request = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
         try sendAll(fd, data: request)
     }
     return fd
@@ -240,8 +246,8 @@ func openStreamSocket(
 
 @MainActor
 func startServerOnRandomPort(
-    isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
-    frameProvider: @escaping @MainActor @Sendable () -> Data?
+    targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+    frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
 ) async throws -> (server: WebServer, port: UInt16) {
     guard let endpointPort = NWEndpoint.Port(rawValue: 0) else {
         throw SocketIntegrationError.bindFailed
@@ -251,7 +257,7 @@ func startServerOnRandomPort(
         do {
             let server = try WebServer(
                 using: endpointPort,
-                isSharingProvider: isSharingProvider,
+                targetStateProvider: targetStateProvider,
                 frameProvider: frameProvider
             )
             server.startListener()

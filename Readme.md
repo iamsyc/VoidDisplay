@@ -34,6 +34,13 @@ High-level flow:
 - Monitoring: `CaptureChoose` -> `CaptureDisplayView` -> `ScreenCaptureFunction`.
 - Sharing: `ShareView` -> `ShareViewModel` -> `SharingService` -> `WebServiceController` -> `WebServer`.
 
+Share routes:
+- `GET /`: reserved info page.
+- `GET /display`: main display page (uses stream from `/stream`).
+- `GET /display/{id}`: target display page (uses stream from `/stream/{id}`).
+- `GET /stream`: main display MJPEG stream.
+- `GET /stream/{id}`: target display MJPEG stream.
+
 ## Build And Test
 
 Requirements:
@@ -84,8 +91,9 @@ log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"
 - Confirm Screen Recording permission in System Settings.
 - Retry in app, then fully quit/reopen if permission was changed while app was running.
 
-2. `/stream` returns 503
-- Sharing is not active. Start sharing from `Screen Sharing` view first.
+2. `/stream` or `/stream/{id}` returns 503
+- The target display is known but currently not sharing.
+- Start sharing that display from `Screen Sharing` view first.
 
 3. Local share page cannot be opened
 - Ensure Mac is connected to LAN (Wi-Fi or Ethernet).

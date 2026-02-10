@@ -45,8 +45,7 @@ final class ShareViewModel {
             isLoadingDisplays = false
             return
         }
-        guard !appHelper.isSharing else { return }
-        loadDisplaysIfNeeded()
+        loadDisplaysIfNeeded(appHelper: appHelper)
     }
 
     func startService(appHelper: AppHelper) {
@@ -105,12 +104,12 @@ final class ShareViewModel {
         syncForCurrentState(appHelper: appHelper)
     }
 
-    func loadDisplaysIfNeeded() {
+    func loadDisplaysIfNeeded(appHelper: AppHelper) {
         guard !isLoadingDisplays, displays == nil else { return }
-        loadDisplays()
+        loadDisplays(appHelper: appHelper)
     }
 
-    func loadDisplays() {
+    func loadDisplays(appHelper: AppHelper) {
         if UITestRuntime.isEnabled, UITestRuntime.scenario == .permissionDenied {
             hasScreenCapturePermission = false
             lastPreflightPermission = false
@@ -133,6 +132,7 @@ final class ShareViewModel {
                     self.hasScreenCapturePermission = true
                     self.lastPreflightPermission = true
                     self.isLoadingDisplays = false
+                    appHelper.registerShareableDisplays(content.displays)
                 }
             } catch {
                 let nsError = error as NSError
@@ -154,8 +154,8 @@ final class ShareViewModel {
     }
 
     func refreshDisplays(appHelper: AppHelper) {
-        guard appHelper.isWebServiceRunning, !appHelper.isSharing else { return }
-        loadDisplays()
+        guard appHelper.isWebServiceRunning else { return }
+        loadDisplays(appHelper: appHelper)
     }
 
     func startSharing(display: SCDisplay, appHelper: AppHelper) async {
@@ -178,29 +178,57 @@ final class ShareViewModel {
                 sampleHandlerQueue: stream.sampleHandlerQueue
             )
             try await captureSession.stream.startCapture()
-            appHelper.beginSharing(stream: captureSession.stream, output: stream, delegate: captureSession.delegate)
+            appHelper.beginSharing(
+                displayID: display.displayID,
+                stream: captureSession.stream,
+                output: stream,
+                delegate: captureSession.delegate
+            )
         } catch {
-            appHelper.stopSharing()
+            appHelper.stopSharing(displayID: display.displayID)
             AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
             presentError(AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing.")))
         }
     }
 
+    func stopSharing(displayID: CGDirectDisplayID, appHelper: AppHelper) {
+        appHelper.stopSharing(displayID: displayID)
+    }
+
     func openSharePage(appHelper: AppHelper) {
-        guard let url = sharePageURL(appHelper: appHelper) else {
-            if appHelper.isWebServiceRunning {
-                AppLog.sharing.notice("No LAN IP available when opening share page.")
-                presentError(String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again."))
-            } else {
-                presentError(String(localized: "Web service is not running."))
-            }
-            return
+        switch appHelper.sharePageURLResolution(for: nil) {
+        case .success(let url):
+            NSWorkspace.shared.open(url)
+        case .failure(.serviceNotRunning):
+            presentError(String(localized: "Web service is not running."))
+        case .failure(.lanUnavailable):
+            AppLog.sharing.notice("No LAN IP available when opening share page.")
+            presentError(String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again."))
+        case .failure(.displayUnavailable):
+            AppLog.sharing.notice("Main display share page is unavailable when opening share page.")
+            presentError(String(localized: "Main display share link is unavailable. Refresh displays and try again."))
         }
-        NSWorkspace.shared.open(url)
     }
 
     func sharePageAddress(appHelper: AppHelper) -> String? {
-        sharePageURL(appHelper: appHelper)?.absoluteString
+        appHelper.sharePageAddress(for: nil)
+    }
+
+    func mainShareAddressPlaceholder(appHelper: AppHelper) -> String {
+        switch appHelper.sharePageURLResolution(for: nil) {
+        case .success:
+            return ""
+        case .failure(.serviceNotRunning):
+            return String(localized: "Web service is not running.")
+        case .failure(.lanUnavailable):
+            return String(localized: "LAN IP unavailable")
+        case .failure(.displayUnavailable):
+            return String(localized: "Main display link unavailable")
+        }
+    }
+
+    func sharePageAddress(for displayID: CGDirectDisplayID, appHelper: AppHelper) -> String? {
+        appHelper.sharePageAddress(for: displayID)
     }
 
     func clearError() {
@@ -210,20 +238,5 @@ final class ShareViewModel {
     private func presentError(_ message: String) {
         openPageErrorMessage = message
         showOpenPageError = true
-    }
-
-    private func sharePageURL(appHelper: AppHelper) -> URL? {
-        guard appHelper.isWebServiceRunning else {
-            return nil
-        }
-        guard let ip = getLANIPv4Address() else {
-            return nil
-        }
-        let urlString = "http://\(ip):\(appHelper.webServicePortValue)"
-        guard let url = URL(string: urlString) else {
-            AppLog.sharing.error("Failed to build share URL: \(urlString, privacy: .public)")
-            return nil
-        }
-        return url
     }
 }

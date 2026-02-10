@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import Testing
 @testable import FreelyDisplay
 
@@ -14,8 +15,9 @@ struct SharingServiceTests {
         #expect(mock.startCallCount == 1)
         #expect(sut.webServicePortValue == 9090)
         #expect(sut.isWebServiceRunning)
-        #expect(mock.capturedIsSharingProvider?() == false)
-        #expect(mock.capturedFrameProvider?() == nil)
+        #expect(mock.capturedTargetStateProvider?(.main) == .knownInactive)
+        #expect(mock.capturedTargetStateProvider?(.id(123)) == .unknown)
+        #expect(mock.capturedFrameProvider?(.main) == nil)
     }
 
     @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() {
@@ -30,15 +32,15 @@ struct SharingServiceTests {
         #expect(sut.isWebServiceRunning == false)
     }
 
-    @MainActor @Test func stopSharingDisconnectsAllStreamClients() {
+    @MainActor @Test func stopSingleSharingKeepsConnectionManagementInTargetHub() {
         let mock = MockWebServiceController()
         let sut = SharingService(webServiceController: mock)
 
-        sut.stopSharing()
-        sut.stopSharing()
+        sut.stopSharing(displayID: CGDirectDisplayID(11))
+        sut.stopSharing(displayID: CGDirectDisplayID(11))
 
-        #expect(mock.disconnectCallCount == 2)
-        #expect(sut.isSharing == false)
+        #expect(mock.disconnectCallCount == 0)
+        #expect(sut.hasAnyActiveSharing == false)
     }
 
     @MainActor @Test func stopWebServiceStopsControllerAndDisconnectsAllStreamClients() {

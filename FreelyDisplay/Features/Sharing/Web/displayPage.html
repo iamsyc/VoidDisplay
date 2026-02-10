@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Display</title>
+    <title>__PAGE_TITLE__</title>
     <style>
         * {
             margin: 0;
@@ -50,16 +50,18 @@
 </head>
 <body>
     <div class="title-bar">
-        <h1 id="pageTitle">Display</h1>
+        <h1 id="pageTitle">__PAGE_TITLE__</h1>
     </div>
     <div class="image-container">
-        <img src="./stream" alt="display" class="responsive-image" id="display">
+        <img src="__STREAM_PATH__" alt="display" class="responsive-image" id="display">
         <p class="status" id="status">Sharing has stopped</p>
         <button class="retry-button" id="retry" type="button">Retry connection</button>
     </div>
     <script>
         const displayImage = document.getElementById("display");
         const pageTitle = document.getElementById("pageTitle");
+        const defaultTitle = "__PAGE_TITLE__";
+        const streamPath = "__STREAM_PATH__";
         const status = document.getElementById("status");
         const retry = document.getElementById("retry");
         const lang = navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
@@ -80,11 +82,11 @@
         function applyLocale() {
             const text = i18n[lang] || i18n.en;
             document.documentElement.lang = lang;
-            document.title = text.title;
-            pageTitle.textContent = text.title;
+            document.title = defaultTitle;
+            pageTitle.textContent = defaultTitle;
             status.textContent = text.statusStopped;
             retry.textContent = text.retry;
-            displayImage.alt = text.title;
+            displayImage.alt = defaultTitle;
         }
 
         function updateState(stopped) {
@@ -95,7 +97,7 @@
 
         function reloadStream() {
             updateState(false);
-            displayImage.src = `./stream?t=${Date.now()}`;
+            displayImage.src = `${streamPath}?t=${Date.now()}`;
         }
 
         displayImage.addEventListener("load", () => updateState(false));

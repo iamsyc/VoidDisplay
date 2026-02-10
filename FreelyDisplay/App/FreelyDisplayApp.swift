@@ -67,20 +67,24 @@ final class AppHelper {
     private(set) var runningConfigIds: Set<UUID> = []
     private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
     var screenCaptureSessions: [ScreenMonitoringSession] = []
-    var sharingScreenCaptureObject: SCStream? = nil
-    var sharingScreenCaptureStream: Capture? = nil
+    var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
     var sharingClientCount = 0
     var isSharing = false
     var isWebServiceRunning = false
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
-    @ObservationIgnored var sharingScreenCaptureDelegate: StreamDelegate? = nil
 
     @ObservationIgnored private let captureMonitoringService = CaptureMonitoringService()
     @ObservationIgnored private let sharingService = SharingService()
     @ObservationIgnored private let virtualDisplayService = VirtualDisplayService()
 
     typealias VirtualDisplayError = VirtualDisplayService.VirtualDisplayError
+
+    enum SharePageURLFailure: Error, Equatable {
+        case serviceNotRunning
+        case lanUnavailable
+        case displayUnavailable
+    }
 
     private var isUITestMode: Bool {
         UITestRuntime.isEnabled
@@ -114,9 +118,7 @@ final class AppHelper {
         displays = []
         restoreFailures = []
         screenCaptureSessions = []
-        sharingScreenCaptureObject = nil
-        sharingScreenCaptureStream = nil
-        sharingScreenCaptureDelegate = nil
+        activeSharingDisplayIDs = []
         sharingClientCount = 0
         isSharing = false
         isWebServiceRunning = false
@@ -169,13 +171,37 @@ final class AppHelper {
         syncSharingState()
     }
 
-    func beginSharing(stream: SCStream, output: Capture, delegate: StreamDelegate) {
-        sharingService.beginSharing(stream: stream, output: output, delegate: delegate)
+    func registerShareableDisplays(_ displays: [SCDisplay]) {
+        sharingService.registerShareableDisplays(
+            displays
+        ) { [weak self] displayID in
+            self?.virtualSerialForManagedDisplay(displayID)
+        }
         syncSharingState()
     }
 
-    func stopSharing() {
-        sharingService.stopSharing()
+    func beginSharing(
+        displayID: CGDirectDisplayID,
+        stream: SCStream,
+        output: Capture,
+        delegate: StreamDelegate
+    ) {
+        sharingService.startSharing(
+            displayID: displayID,
+            stream: stream,
+            output: output,
+            delegate: delegate
+        )
+        syncSharingState()
+    }
+
+    func stopSharing(displayID: CGDirectDisplayID) {
+        sharingService.stopSharing(displayID: displayID)
+        syncSharingState()
+    }
+
+    func stopAllSharing() {
+        sharingService.stopAllSharing()
         syncSharingState()
     }
 
@@ -184,12 +210,10 @@ final class AppHelper {
     }
 
     private func syncSharingState() {
-        sharingScreenCaptureObject = sharingService.currentStream
-        sharingScreenCaptureStream = sharingService.currentCapture
-        sharingScreenCaptureDelegate = sharingService.currentDelegate
         webServer = sharingService.currentWebServer
         sharingClientCount = sharingService.activeStreamClientCount
-        isSharing = sharingService.isSharing
+        activeSharingDisplayIDs = sharingService.activeSharingDisplayIDs
+        isSharing = sharingService.hasAnyActiveSharing
         isWebServiceRunning = sharingService.isWebServiceRunning
     }
 
@@ -199,6 +223,45 @@ final class AppHelper {
 
     func isManagedVirtualDisplay(displayID: CGDirectDisplayID) -> Bool {
         displays.contains(where: { $0.displayID == displayID })
+    }
+
+    func isDisplaySharing(displayID: CGDirectDisplayID) -> Bool {
+        activeSharingDisplayIDs.contains(displayID)
+    }
+
+    func sharePagePath(for displayID: CGDirectDisplayID) -> String? {
+        guard let shareID = sharingService.shareID(for: displayID) else { return nil }
+        return ShareTarget.id(shareID).displayPath
+    }
+
+    func sharePageURLResolution(for displayID: CGDirectDisplayID?) -> Result<URL, SharePageURLFailure> {
+        guard isWebServiceRunning else { return .failure(.serviceNotRunning) }
+        guard let ip = getLANIPv4Address() else { return .failure(.lanUnavailable) }
+
+        let resolvedDisplayID = displayID ?? CGMainDisplayID()
+        guard let path = sharePagePath(for: resolvedDisplayID) else {
+            return .failure(.displayUnavailable)
+        }
+
+        guard let url = URL(string: "http://\(ip):\(webServicePortValue)\(path)") else {
+            return .failure(.displayUnavailable)
+        }
+        return .success(url)
+    }
+
+    func sharePageURL(for displayID: CGDirectDisplayID?) -> URL? {
+        guard case .success(let url) = sharePageURLResolution(for: displayID) else {
+            return nil
+        }
+        return url
+    }
+
+    func sharePageAddress(for displayID: CGDirectDisplayID?) -> String? {
+        sharePageURL(for: displayID)?.absoluteString
+    }
+
+    private func virtualSerialForManagedDisplay(_ displayID: CGDirectDisplayID) -> UInt32? {
+        displays.first(where: { $0.displayID == displayID })?.serialNum
     }
 
     // MARK: - Screen Monitoring

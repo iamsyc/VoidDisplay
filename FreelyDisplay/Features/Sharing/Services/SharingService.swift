@@ -1,18 +1,19 @@
 import Foundation
 import ScreenCaptureKit
 import OSLog
+import CoreGraphics
 
 @MainActor
 final class SharingService {
-    private var sharingScreenCaptureObject: SCStream? = nil
-    private var sharingScreenCaptureStream: Capture? = nil
-    private var sharingScreenCaptureDelegate: StreamDelegate? = nil
+    private let sharingCoordinator: DisplaySharingCoordinator
     private let webServiceController: any WebServiceControlling
 
-    private(set) var isSharing = false
-
-    init(webServiceController: (any WebServiceControlling)? = nil) {
+    init(
+        webServiceController: (any WebServiceControlling)? = nil,
+        sharingCoordinator: DisplaySharingCoordinator? = nil
+    ) {
         self.webServiceController = webServiceController ?? WebServiceController()
+        self.sharingCoordinator = sharingCoordinator ?? DisplaySharingCoordinator()
     }
 
     var webServicePortValue: UInt16 {
@@ -27,31 +28,26 @@ final class SharingService {
         webServiceController.activeStreamClientCount
     }
 
-    var currentStream: SCStream? {
-        sharingScreenCaptureObject
-    }
-
-    var currentCapture: Capture? {
-        sharingScreenCaptureStream
-    }
-
-    var currentDelegate: StreamDelegate? {
-        sharingScreenCaptureDelegate
-    }
-
     var currentWebServer: WebServer? {
         webServiceController.currentServer
+    }
+
+    var hasAnyActiveSharing: Bool {
+        sharingCoordinator.hasAnyActiveSharing
+    }
+
+    var activeSharingDisplayIDs: Set<CGDirectDisplayID> {
+        sharingCoordinator.activeSharingDisplayIDs
     }
 
     @discardableResult
     func startWebService() -> Bool {
         let started = webServiceController.start(
-            isSharingProvider: { [weak self] in
-                self?.isSharing ?? false
+            targetStateProvider: { [weak self] target in
+                self?.sharingCoordinator.state(for: target) ?? .unknown
             },
-            frameProvider: { [weak self] in
-                guard let self, self.isSharing else { return nil }
-                return self.sharingScreenCaptureStream?.jpgData
+            frameProvider: { [weak self] target in
+                self?.sharingCoordinator.frame(for: target)
             }
         )
         if !started {
@@ -61,30 +57,53 @@ final class SharingService {
     }
 
     func stopWebService() {
-        stopSharing()
+        stopAllSharing()
         webServiceController.stop()
     }
 
-    func beginSharing(stream: SCStream, output: Capture, delegate: StreamDelegate) {
-        AppLog.sharing.info("Begin sharing stream.")
-        sharingScreenCaptureStream = output
-        sharingScreenCaptureObject = stream
-        sharingScreenCaptureDelegate = delegate
-        isSharing = true
+    func registerShareableDisplays(
+        _ displays: [SCDisplay],
+        virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
+    ) {
+        sharingCoordinator.registerShareableDisplays(
+            displays,
+            virtualSerialResolver: virtualSerialResolver
+        )
     }
 
-    func stopSharing() {
-        if isSharing {
-            AppLog.sharing.info("Stop sharing stream.")
-        } else {
-            AppLog.sharing.debug("Stop sharing requested with no active stream.")
-        }
-        sharingScreenCaptureObject?.stopCapture()
-        sharingScreenCaptureObject = nil
-        sharingScreenCaptureDelegate = nil
-        sharingScreenCaptureStream?.resetFrameState()
-        sharingScreenCaptureStream = nil
-        isSharing = false
+    func startSharing(
+        displayID: CGDirectDisplayID,
+        stream: SCStream,
+        output: Capture,
+        delegate: StreamDelegate
+    ) {
+        AppLog.sharing.info("Begin sharing stream for display \(displayID, privacy: .public).")
+        sharingCoordinator.startSharing(
+            displayID: displayID,
+            stream: stream,
+            capture: output,
+            delegate: delegate
+        )
+    }
+
+    func stopSharing(displayID: CGDirectDisplayID) {
+        sharingCoordinator.stopSharing(displayID: displayID)
+    }
+
+    func stopAllSharing() {
+        sharingCoordinator.stopAllSharing()
         webServiceController.disconnectAllStreamClients()
+    }
+
+    func isSharing(displayID: CGDirectDisplayID) -> Bool {
+        sharingCoordinator.isSharing(displayID: displayID)
+    }
+
+    func shareID(for displayID: CGDirectDisplayID) -> UInt32? {
+        sharingCoordinator.shareID(for: displayID)
+    }
+
+    func shareTarget(for displayID: CGDirectDisplayID) -> ShareTarget? {
+        sharingCoordinator.target(for: displayID)
     }
 }

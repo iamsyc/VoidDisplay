@@ -33,6 +33,13 @@ FreelyDisplay 是一个 macOS 应用，支持：
 - 屏幕监听：`CaptureChoose` -> `CaptureDisplayView` -> `ScreenCaptureFunction`
 - 局域网共享：`ShareView` -> `ShareViewModel` -> `SharingService` -> `WebServiceController` -> `WebServer`
 
+共享路由：
+- `GET /`：保留说明页。
+- `GET /display`：主显示器页面（页面内流地址为 `/stream`）。
+- `GET /display/{id}`：指定显示器页面（页面内流地址为 `/stream/{id}`）。
+- `GET /stream`：主显示器 MJPEG 流。
+- `GET /stream/{id}`：指定显示器 MJPEG 流。
+
 ## 构建与测试
 
 环境要求：
@@ -83,9 +90,9 @@ log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"
 - 检查“屏幕录制权限”是否已授权；
 - 权限变更后建议退出应用再重开。
 
-2. `/stream` 返回 503
-- 当前没有处于“正在共享”状态；
-- 先在 `Screen Sharing` 页启动共享。
+2. `/stream` 或 `/stream/{id}` 返回 503
+- 目标显示器已识别，但当前未开启共享；
+- 先在 `Screen Sharing` 页对该显示器点击共享。
 
 3. 打不开本机共享页面
 - 确认 Mac 已连接局域网（Wi-Fi 或有线）；

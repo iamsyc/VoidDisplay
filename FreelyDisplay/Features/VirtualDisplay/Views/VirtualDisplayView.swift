@@ -139,24 +139,36 @@ struct VirtualDisplayView: View {
                 .tint(isRunning ? .orange : .green)
                 .accessibilityIdentifier("virtual_display_toggle_button")
 
+                // Inline move buttons for quick access
+                Button {
+                    _ = appHelper.moveDisplayConfig(config.id, direction: .up)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.body.weight(.semibold))
+                }
+                .buttonStyle(.borderless)
+                .disabled(isFirst)
+                .accessibilityLabel(Text("Move up"))
+                .accessibilityIdentifier("virtual_display_move_up_button")
+
+                Button {
+                    _ = appHelper.moveDisplayConfig(config.id, direction: .down)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.body.weight(.semibold))
+                }
+                .buttonStyle(.borderless)
+                .disabled(isLast)
+                .accessibilityLabel(Text("Move down"))
+                .accessibilityIdentifier("virtual_display_move_down_button")
+
+                // Menu for less frequent actions
                 AppQuickActionsMenu {
-                    Button(String(localized: "Move up"), systemImage: "arrow.up") {
-                        _ = appHelper.moveDisplayConfig(config.id, direction: .up)
-                    }
-                    .fontWeight(.medium)
-                    .disabled(isFirst)
-
-                    Button(String(localized: "Move down"), systemImage: "arrow.down") {
-                        _ = appHelper.moveDisplayConfig(config.id, direction: .down)
-                    }
-                    .fontWeight(.medium)
-                    .disabled(isLast)
-
-                    Divider()
-
                     Button(String(localized: "Edit"), systemImage: "pencil") {
                         editingConfig = EditingConfig(id: config.id)
                     }
+
+                    Divider()
 
                     Button(String(localized: "Delete"), systemImage: "trash", role: .destructive) {
                         deleteCandidate = config

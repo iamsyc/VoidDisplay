@@ -154,6 +154,7 @@
       }
     },
     "Address:" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -274,11 +275,32 @@
       }
     },
     "Connected Clients" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接客户端"
+          }
+        }
+      }
+    },
+    "Copy address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制地址"
+          }
+        }
+      }
+    },
+    "Copy display address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制显示器地址"
           }
         }
       }
@@ -733,6 +755,26 @@
         }
       }
     },
+    "Main display link unavailable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主显示器链接不可用"
+          }
+        }
+      }
+    },
+    "Main display share link is unavailable. Refresh displays and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主显示器共享链接暂不可用。请刷新显示器后重试。"
+          }
+        }
+      }
+    },
     "Monitor" : {
       "localizations" : {
         "zh-Hans" : {
@@ -893,22 +935,22 @@
         }
       }
     },
-    "Open System Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开系统设置"
-          }
-        }
-      }
-    },
     "Open System Display Settings" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开系统显示器设置"
+          }
+        }
+      }
+    },
+    "Open System Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开系统设置"
           }
         }
       }
@@ -1318,6 +1360,7 @@
       }
     },
     "Sharing is in progress." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1367,6 +1410,26 @@
         }
       }
     },
+    "Stop" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
+          }
+        }
+      }
+    },
+    "Stop All Sharing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止全部共享"
+          }
+        }
+      }
+    },
     "Stop Monitoring" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1388,6 +1451,7 @@
       }
     },
     "Stop sharing" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1514,6 +1578,7 @@
       }
     },
     "Your screen is currently being streamed to connected clients." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

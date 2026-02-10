@@ -12,15 +12,15 @@ final class MockWebServiceController: WebServiceControlling {
     var startCallCount = 0
     var stopCallCount = 0
     var disconnectCallCount = 0
-    var capturedIsSharingProvider: (@MainActor @Sendable () -> Bool)?
-    var capturedFrameProvider: (@MainActor @Sendable () -> Data?)?
+    var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
+    var capturedFrameProvider: (@MainActor @Sendable (ShareTarget) -> Data?)?
 
     func start(
-        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
-        frameProvider: @escaping @MainActor @Sendable () -> Data?
+        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
     ) -> Bool {
         startCallCount += 1
-        capturedIsSharingProvider = isSharingProvider
+        capturedTargetStateProvider = targetStateProvider
         capturedFrameProvider = frameProvider
         isRunning = startResult
         return startResult

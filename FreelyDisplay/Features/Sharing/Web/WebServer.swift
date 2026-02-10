@@ -13,6 +13,7 @@ final class WebServer {
     private enum InitError: Error {
         case missingDisplayPageResource
     }
+
     nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
     nonisolated private static let maxRequestBytes = 32 * 1024
     nonisolated private static let receiveChunkSize = 4096
@@ -31,14 +32,51 @@ final class WebServer {
         AppErrorMapper.logFailure(operation, error: error, logger: AppLog.web)
     }
 
+    private static func makeRootPage() -> String {
+        """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>FreelyDisplay Share</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; line-height: 1.6; }
+            code { background: #f3f3f3; padding: 2px 6px; border-radius: 4px; }
+          </style>
+        </head>
+        <body>
+          <h1>FreelyDisplay Share</h1>
+          <p>Page routes:</p>
+          <ul>
+            <li><code>/display</code> main display page</li>
+            <li><code>/display/{id}</code> display page for target id</li>
+          </ul>
+          <p>Stream routes:</p>
+          <ul>
+            <li><code>/stream</code> main display stream</li>
+            <li><code>/stream/{id}</code> stream for target id</li>
+          </ul>
+        </body>
+        </html>
+        """
+    }
+
     private var listener: NWListener?
-    private let displayPage: String
-    private let streamHub: StreamHub
+    private let displayPageTemplate: String
     private let requestHandler = WebRequestHandler()
+    private var streamHubs: [ShareTarget: StreamHub] = [:]
+    private var streamTargetByConnectionKey: [ObjectIdentifier: ShareTarget] = [:]
+    private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
+    private let frameProvider: @MainActor @Sendable (ShareTarget) -> Data?
     nonisolated private let networkQueue = DispatchQueue(
         label: "phineas.mac.FreelyDisplay.web.network",
         qos: .userInitiated
     )
+
+    private func connectionKey(for connection: NWConnection) -> ObjectIdentifier {
+        ObjectIdentifier(connection)
+    }
 
     private func handleListenerState(_ state: NWListener.State) {
         switch state {
@@ -54,26 +92,69 @@ final class WebServer {
         }
     }
 
+    private func removeStreamClient(_ connection: NWConnection, cancelConnection: Bool) {
+        let key = connectionKey(for: connection)
+        if let target = streamTargetByConnectionKey.removeValue(forKey: key),
+           let hub = streamHubs[target] {
+            hub.removeClient(connection)
+        }
+        if cancelConnection {
+            connection.cancel()
+        }
+    }
+
     private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
         switch state {
         case .failed(let error):
             let endpoint = Self.endpointDescription(for: connection)
             Self.logConnectionIssue("Connection failed [\(endpoint)]", error: error)
-            streamHub.removeClient(connection)
-            connection.cancel()
+            removeStreamClient(connection, cancelConnection: true)
         case .cancelled:
             let endpoint = Self.endpointDescription(for: connection)
             AppLog.web.debug("Connection cancelled [\(endpoint, privacy: .public)].")
-            streamHub.removeClient(connection)
+            removeStreamClient(connection, cancelConnection: false)
         default:
             break
         }
     }
 
+    private func streamHub(for target: ShareTarget) -> StreamHub {
+        if let existing = streamHubs[target] {
+            return existing
+        }
+
+        let hub = StreamHub(
+            isSharingProvider: { [weak self] in
+                self?.targetStateProvider(target) == .active
+            },
+            frameProvider: { [weak self] in
+                self?.frameProvider(target)
+            },
+            onSendError: { error in
+                Self.logConnectionIssue("Stream frame send", error: error)
+            }
+        )
+        streamHubs[target] = hub
+        return hub
+    }
+
+    private func displayPage(for target: ShareTarget) -> String {
+        let streamPath = target.streamPath
+        let title: String
+        switch target {
+        case .main:
+            title = "Main Display"
+        case .id(let id):
+            title = "Display \(id)"
+        }
+        return displayPageTemplate
+            .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
+            .replacingOccurrences(of: "__STREAM_PATH__", with: streamPath)
+    }
+
     private func processRequest(
         _ content: Data?,
-        on connection: NWConnection,
-        isSharingProvider: @escaping @MainActor @Sendable () -> Bool
+        on connection: NWConnection
     ) {
         let endpoint = Self.endpointDescription(for: connection)
         guard let content else {
@@ -86,7 +167,7 @@ final class WebServer {
                 "Failed to parse HTTP request from \(endpoint, privacy: .public), bytes=\(content.count); returning bad request."
             )
             sendResponseAndClose(
-                requestHandler.responseData(for: .badRequest, displayPage: displayPage),
+                requestHandler.responseData(for: .badRequest),
                 on: connection,
                 failureContext: "Send bad request response"
             )
@@ -96,10 +177,12 @@ final class WebServer {
         let decision = requestHandler.decision(
             forMethod: request.method,
             path: request.path,
-            isSharing: isSharingProvider()
+            targetStateProvider: { [weak self] target in
+                self?.targetStateProvider(target) ?? .unknown
+            }
         )
         switch decision {
-        case .showDisplayPage, .openStream:
+        case .showRootPage, .showDisplayPage, .openStream:
             AppLog.web.debug(
                 "HTTP request from \(endpoint, privacy: .public): method=\(request.method), path=\(request.path), decision=\(String(describing: decision), privacy: .public)"
             )
@@ -110,17 +193,29 @@ final class WebServer {
         }
 
         switch decision {
-        case .showDisplayPage:
+        case .showRootPage:
             sendResponseAndClose(
-                requestHandler.responseData(for: .showDisplayPage, displayPage: displayPage),
+                requestHandler.responseData(
+                    for: .showRootPage,
+                    htmlBody: Self.makeRootPage()
+                ),
+                on: connection,
+                failureContext: "Send root page response"
+            )
+        case .showDisplayPage(let target):
+            sendResponseAndClose(
+                requestHandler.responseData(
+                    for: decision,
+                    htmlBody: displayPage(for: target)
+                ),
                 on: connection,
                 failureContext: "Send display page response"
             )
-        case .openStream:
-            openStream(for: connection)
+        case .openStream(let target):
+            openStream(for: connection, target: target)
         case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
-                requestHandler.responseData(for: decision, displayPage: displayPage),
+                requestHandler.responseData(for: decision),
                 on: connection,
                 failureContext: "Send HTTP error response"
             )
@@ -142,11 +237,11 @@ final class WebServer {
         })
     }
 
-    private func openStream(for connection: NWConnection) {
+    private func openStream(for connection: NWConnection, target: ShareTarget) {
         let endpoint = Self.endpointDescription(for: connection)
         AppLog.web.debug("Open MJPEG stream for client \(endpoint, privacy: .public).")
         connection.send(
-            content: requestHandler.responseData(for: .openStream, displayPage: displayPage),
+            content: requestHandler.responseData(for: .openStream(target)),
             completion: .contentProcessed { [weak self] error in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -155,7 +250,8 @@ final class WebServer {
                         connection.cancel()
                         return
                     }
-                    streamHub.addClient(connection)
+                    streamHub(for: target).addClient(connection)
+                    streamTargetByConnectionKey[connectionKey(for: connection)] = target
                 }
             }
         )
@@ -207,21 +303,18 @@ final class WebServer {
     }
 
     init(
-        using port:NWEndpoint.Port = .http,
-        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
-        frameProvider: @escaping @MainActor @Sendable () -> Data?
+        using port: NWEndpoint.Port = .http,
+        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
     ) throws {
-        self.streamHub = StreamHub(
-            isSharingProvider: isSharingProvider,
-            frameProvider: frameProvider,
-            onSendError: { error in
-                Self.logConnectionIssue("Stream frame send", error: error)
-            }
-        )
+        self.targetStateProvider = targetStateProvider
+        self.frameProvider = frameProvider
+
         guard let displayPagePath = Bundle.main.path(forResource: "displayPage", ofType: "html") else {
             throw InitError.missingDisplayPageResource
         }
-        displayPage = try String(contentsOfFile: displayPagePath, encoding: .utf8)
+        displayPageTemplate = try String(contentsOfFile: displayPagePath, encoding: .utf8)
+
         listener = try NWListener(using: .tcp, on: port)
         listener?.stateUpdateHandler = { [weak self] state in
             Task { @MainActor [weak self] in
@@ -239,7 +332,7 @@ final class WebServer {
             connection.start(queue: self.networkQueue)
             self.receiveHTTPRequest(on: connection) { [weak self] content in
                 guard let self else { return }
-                self.processRequest(content, on: connection, isSharingProvider: isSharingProvider)
+                self.processRequest(content, on: connection)
             }
         }
     }
@@ -253,11 +346,16 @@ final class WebServer {
     }
 
     func disconnectAllStreamClients() {
-        streamHub.disconnectAllClients()
+        for hub in streamHubs.values {
+            hub.disconnectAllClients()
+        }
+        streamTargetByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
-        streamHub.activeClientCount
+        streamHubs.values.reduce(0) { partialResult, hub in
+            partialResult + hub.activeClientCount
+        }
     }
 
     func stopListener() {
@@ -265,5 +363,4 @@ final class WebServer {
         listener?.cancel()
         listener = nil
     }
-    
 }

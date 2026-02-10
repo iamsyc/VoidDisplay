@@ -17,12 +17,12 @@ struct WebRoutingWorkflowSmokeTests {
         let decision = handler.decision(
             forMethod: request.method,
             path: request.path,
-            isSharing: false
+            targetStateProvider: { _ in .unknown }
         )
-        #expect(decision == .showDisplayPage)
+        #expect(decision == .showRootPage)
 
         let html = "<html><body>ok</body></html>"
-        let response = handler.responseData(for: decision, displayPage: html)
+        let response = handler.responseData(for: decision, htmlBody: html)
         let text = try #require(String(data: response, encoding: .utf8))
 
         #expect(text.contains("HTTP/1.1 200 OK"))
@@ -32,7 +32,7 @@ struct WebRoutingWorkflowSmokeTests {
 
     @MainActor @Test func streamRouteWorkflowSmoke() throws {
         let raw = """
-        GET /stream HTTP/1.1\r
+        GET /stream/2 HTTP/1.1\r
         Host: 127.0.0.1:8081\r
         \r
         """
@@ -44,20 +44,20 @@ struct WebRoutingWorkflowSmokeTests {
         let unavailableDecision = handler.decision(
             forMethod: request.method,
             path: request.path,
-            isSharing: false
+            targetStateProvider: { _ in .knownInactive }
         )
         #expect(unavailableDecision == .sharingUnavailable)
-        let unavailableResponse = handler.responseData(for: unavailableDecision, displayPage: "")
+        let unavailableResponse = handler.responseData(for: unavailableDecision, htmlBody: "")
         let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
         #expect(unavailableText.contains("503 Service Unavailable"))
 
         let streamDecision = handler.decision(
             forMethod: request.method,
             path: request.path,
-            isSharing: true
+            targetStateProvider: { _ in .active }
         )
-        #expect(streamDecision == .openStream)
-        let streamResponse = handler.responseData(for: streamDecision, displayPage: "")
+        #expect(streamDecision == .openStream(.id(2)))
+        let streamResponse = handler.responseData(for: streamDecision, htmlBody: "")
         let streamText = try #require(String(data: streamResponse, encoding: .utf8))
         #expect(streamText.contains("HTTP/1.1 200 OK"))
         #expect(streamText.contains("multipart/x-mixed-replace"))

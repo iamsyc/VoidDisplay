@@ -2,11 +2,18 @@ import Foundation
 
 enum WebRequestDecision: Equatable {
     case badRequest
-    case showDisplayPage
-    case openStream
+    case showRootPage
+    case showDisplayPage(ShareTarget)
+    case openStream(ShareTarget)
     case sharingUnavailable
     case methodNotAllowed
     case notFound
+}
+
+enum ShareTargetState: Equatable {
+    case active
+    case knownInactive
+    case unknown
 }
 
 struct WebRequestHandler {
@@ -30,22 +37,38 @@ struct WebRequestHandler {
     func decision(
         forMethod method: String,
         path: String,
-        isSharing: Bool
+        targetStateProvider: (ShareTarget) -> ShareTargetState
     ) -> WebRequestDecision {
         guard method.uppercased() == "GET" else {
             return .methodNotAllowed
         }
         switch router.route(for: path) {
         case .root:
-            return .showDisplayPage
-        case .stream:
-            return isSharing ? .openStream : .sharingUnavailable
+            return .showRootPage
+        case .display(let target):
+            let targetState = targetStateProvider(target)
+            switch targetState {
+            case .active, .knownInactive:
+                return .showDisplayPage(target)
+            case .unknown:
+                return .notFound
+            }
+        case .stream(let target):
+            let targetState = targetStateProvider(target)
+            switch targetState {
+            case .active:
+                return .openStream(target)
+            case .knownInactive:
+                return .sharingUnavailable
+            case .unknown:
+                return .notFound
+            }
         case .notFound:
             return .notFound
         }
     }
 
-    func responseData(for decision: WebRequestDecision, displayPage: String) -> Data {
+    func responseData(for decision: WebRequestDecision, htmlBody: String = "") -> Data {
         switch decision {
         case .badRequest:
             let body = "Bad Request"
@@ -58,15 +81,15 @@ struct WebRequestHandler {
                 ],
                 body: body
             )
-        case .showDisplayPage:
+        case .showRootPage, .showDisplayPage:
             return buildResponse(
                 statusLine: "HTTP/1.1 200 OK",
                 headers: [
                     ("Content-Type", "text/html; charset=utf-8"),
-                    ("Content-Length", "\(displayPage.utf8.count)"),
+                    ("Content-Length", "\(htmlBody.utf8.count)"),
                     ("Cache-Control", "no-cache")
                 ],
-                body: displayPage
+                body: htmlBody
             )
         case .sharingUnavailable:
             let body = "Sharing has stopped."
