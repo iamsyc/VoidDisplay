@@ -50,12 +50,29 @@ struct DisplaysView: View {
     }
 
     private func displayList(_ displays: [NSScreen]) -> some View {
-        List(displays, id: \.self) { display in
-            displayRow(display)
+        GeometryReader { geometry in
+            let useGrid = geometry.size.width > 500
+            ScrollView {
+                if useGrid {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
+                        ForEach(displays, id: \.self) { display in
+                            displayRow(display)
+                        }
+                    }
+                    .padding(.horizontal, AppUI.List.listHorizontalInset)
+                    .padding(.top, AppUI.Spacing.small + 2)
+                } else {
+                    LazyVStack(spacing: AppUI.List.listVerticalInset * 2) {
+                        ForEach(displays, id: \.self) { display in
+                            displayRow(display)
+                        }
+                    }
+                    .padding(.horizontal, AppUI.List.listHorizontalInset)
+                    .padding(.top, AppUI.Spacing.small + 2)
+                }
+            }
         }
         .accessibilityIdentifier("displays_list")
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 
     private func displayRow(_ display: NSScreen) -> some View {
@@ -74,7 +91,6 @@ struct DisplaysView: View {
         return AppListRowCard(model: model) {
             EmptyView()
         }
-        .appListRowStyle()
     }
 
     private func resolutionText(for display: NSScreen) -> String {

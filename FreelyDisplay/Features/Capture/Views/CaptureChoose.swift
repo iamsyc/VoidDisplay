@@ -197,12 +197,28 @@ struct IsCapturing: View {
     var body: some View {
         Group {
             if !appHelper.screenCaptureSessions.isEmpty {
-                List(appHelper.screenCaptureSessions) { session in
-                    monitoringSessionRow(session)
-                        .appListRowStyle()
+                GeometryReader { geometry in
+                    let useGrid = geometry.size.width > 500
+                    ScrollView {
+                        if useGrid {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
+                                ForEach(appHelper.screenCaptureSessions) { session in
+                                    monitoringSessionRow(session)
+                                }
+                            }
+                            .padding(.horizontal, AppUI.List.listHorizontalInset)
+                            .padding(.top, AppUI.Spacing.small + 2)
+                        } else {
+                            LazyVStack(spacing: AppUI.List.listVerticalInset * 2) {
+                                ForEach(appHelper.screenCaptureSessions) { session in
+                                    monitoringSessionRow(session)
+                                }
+                            }
+                            .padding(.horizontal, AppUI.List.listHorizontalInset)
+                            .padding(.top, AppUI.Spacing.small + 2)
+                        }
+                    }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             } else {
                 ContentUnavailableView(
                     "No Listening Windows",
