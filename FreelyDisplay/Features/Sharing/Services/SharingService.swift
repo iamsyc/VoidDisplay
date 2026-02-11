@@ -28,6 +28,10 @@ final class SharingService {
         webServiceController.activeStreamClientCount
     }
 
+    func streamClientCount(for target: ShareTarget) -> Int {
+        webServiceController.streamClientCount(for: target)
+    }
+
     var currentWebServer: WebServer? {
         webServiceController.currentServer
     }

@@ -358,6 +358,10 @@ final class WebServer {
         }
     }
 
+    func streamClientCount(for target: ShareTarget) -> Int {
+        streamHubs[target]?.activeClientCount ?? 0
+    }
+
     func stopListener() {
         disconnectAllStreamClients()
         listener?.cancel()

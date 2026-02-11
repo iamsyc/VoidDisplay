@@ -69,6 +69,7 @@ final class AppHelper {
     var screenCaptureSessions: [ScreenMonitoringSession] = []
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
     var sharingClientCount = 0
+    var sharingClientCounts: [CGDirectDisplayID: Int] = [:]
     var isSharing = false
     var isWebServiceRunning = false
 
@@ -215,10 +216,26 @@ final class AppHelper {
         activeSharingDisplayIDs = sharingService.activeSharingDisplayIDs
         isSharing = sharingService.hasAnyActiveSharing
         isWebServiceRunning = sharingService.isWebServiceRunning
+        refreshSharingClientCounts()
     }
 
     func refreshSharingClientCount() {
         sharingClientCount = sharingService.activeStreamClientCount
+        refreshSharingClientCounts()
+    }
+
+    private func refreshSharingClientCounts() {
+        guard isWebServiceRunning else {
+            sharingClientCounts = [:]
+            return
+        }
+        var counts: [CGDirectDisplayID: Int] = [:]
+        for displayID in sharingService.activeSharingDisplayIDs {
+            if let target = sharingService.shareTarget(for: displayID) {
+                counts[displayID] = sharingService.streamClientCount(for: target)
+            }
+        }
+        sharingClientCounts = counts
     }
 
     func isManagedVirtualDisplay(displayID: CGDirectDisplayID) -> Bool {

@@ -7,6 +7,7 @@ final class MockWebServiceController: WebServiceControlling {
     var currentServer: WebServer?
     var isRunning = false
     var activeStreamClientCount = 0
+    var streamClientCountByTarget: [ShareTarget: Int] = [:]
 
     var startResult = true
     var startCallCount = 0
@@ -33,5 +34,9 @@ final class MockWebServiceController: WebServiceControlling {
 
     func disconnectAllStreamClients() {
         disconnectCallCount += 1
+    }
+
+    func streamClientCount(for target: ShareTarget) -> Int {
+        streamClientCountByTarget[target] ?? 0
     }
 }

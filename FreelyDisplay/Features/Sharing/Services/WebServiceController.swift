@@ -8,6 +8,7 @@ protocol WebServiceControlling: AnyObject {
     var currentServer: WebServer? { get }
     var isRunning: Bool { get }
     var activeStreamClientCount: Int { get }
+    func streamClientCount(for target: ShareTarget) -> Int
 
     @discardableResult
     func start(
@@ -41,6 +42,10 @@ final class WebServiceController: WebServiceControlling {
 
     var activeStreamClientCount: Int {
         webServer?.activeStreamClientCount ?? 0
+    }
+
+    func streamClientCount(for target: ShareTarget) -> Int {
+        webServer?.streamClientCount(for: target) ?? 0
     }
 
     @discardableResult
