@@ -106,6 +106,7 @@ struct VirtualDisplayView: View {
         let isRunning = appHelper.isVirtualDisplayRunning(configId: config.id)
         let isFirst = appHelper.displayConfigs.first?.id == config.id
         let isLast = appHelper.displayConfigs.last?.id == config.id
+        let isPrimary = isPrimaryDisplay(configID: config.id)
         let model = AppListRowModel(
             id: config.id.uuidString,
             title: config.name,
@@ -117,9 +118,15 @@ struct VirtualDisplayView: View {
             metaBadges: [
                 AppBadgeModel(
                     title: String(localized: "Virtual Display"),
-                    style: .accent(.blue)
+                    style: .roundedTag(tint: .blue)
                 )
             ],
+            ribbon: isPrimary
+                ? AppCornerRibbonModel(
+                    title: String(localized: "Primary Display"),
+                    tint: .green
+                )
+                : nil,
             iconSystemName: "display",
             isEmphasized: isRunning,
             accessibilityIdentifier: "virtual_display_row_card"
@@ -177,6 +184,10 @@ struct VirtualDisplayView: View {
                 }
             }
         }
+        .overlay {
+            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                .stroke(isRunning ? Color.green.opacity(0.35) : .clear, lineWidth: AppUI.Stroke.subtle)
+        }
         .opacity(isRunning ? 1.0 : 0.82)
     }
 
@@ -193,6 +204,13 @@ struct VirtualDisplayView: View {
             return nil
         }
         return "\(maxMode.width) × \(maxMode.height)"
+    }
+
+    private func isPrimaryDisplay(configID: UUID) -> Bool {
+        guard let runtimeDisplay = appHelper.runtimeDisplay(for: configID) else {
+            return false
+        }
+        return CGDisplayIsMain(runtimeDisplay.displayID) != 0
     }
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {

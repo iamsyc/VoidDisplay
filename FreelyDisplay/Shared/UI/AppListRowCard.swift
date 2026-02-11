@@ -16,9 +16,17 @@ struct AppListRowCard<Trailing: View>: View {
             iconTile
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(model.title)
-                    .font(.headline)
-                    .foregroundStyle(model.isEmphasized ? .primary : .secondary)
+                HStack(spacing: AppUI.Spacing.xSmall + 2) {
+                    Text(model.title)
+                        .font(.headline)
+                        .foregroundStyle(model.isEmphasized ? .primary : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    if let ribbon = model.ribbon {
+                        AppCornerRibbon(model: ribbon)
+                    }
+                }
 
                 Text(model.subtitle)
                     .font(.subheadline)
@@ -34,6 +42,8 @@ struct AppListRowCard<Trailing: View>: View {
 
                         ForEach(model.metaBadges) { badge in
                             AppStatusBadge(title: badge.title, style: badge.style)
+                                .opacity(badge.isVisible ? 1 : 0)
+                                .accessibilityHidden(!badge.isVisible)
                         }
                     }
                 }

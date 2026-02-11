@@ -77,12 +77,19 @@ struct DisplaysView: View {
 
     private func displayRow(_ display: NSScreen) -> some View {
         let displayID = display.cgDirectDisplayID
+        let isPrimary = isPrimaryDisplay(displayID)
         let model = AppListRowModel(
             id: displayID.map(String.init) ?? display.localizedName,
             title: display.localizedName,
             subtitle: resolutionText(for: display),
             status: nil,
             metaBadges: displayBadges(for: display),
+            ribbon: isPrimary
+                ? AppCornerRibbonModel(
+                    title: String(localized: "Primary Display"),
+                    tint: .green
+                )
+                : nil,
             iconSystemName: "display",
             isEmphasized: true,
             accessibilityIdentifier: "display_row_card"
@@ -99,18 +106,12 @@ struct DisplaysView: View {
 
     private func displayBadges(for display: NSScreen) -> [AppBadgeModel] {
         let displayID = display.cgDirectDisplayID
-        var badges: [AppBadgeModel] = [
+        let badges: [AppBadgeModel] = [
             AppBadgeModel(
                 title: displayTypeLabel(for: displayID),
                 style: displayTypeBadgeStyle(for: displayID)
             )
         ]
-        if isPrimaryDisplay(displayID) {
-            badges.insert(
-                AppBadgeModel(title: String(localized: "Primary Display"), style: .accent(.green)),
-                at: 0
-            )
-        }
         return badges
     }
 
@@ -140,12 +141,12 @@ struct DisplaysView: View {
 
     private func displayTypeBadgeStyle(for displayID: CGDirectDisplayID?) -> AppStatusBadge.Style {
         guard let displayID else {
-            return .neutral
+            return .roundedTag(tint: .gray)
         }
         if appHelper.isManagedVirtualDisplay(displayID: displayID) {
-            return .accent(.blue)
+            return .roundedTag(tint: .blue)
         }
-        return .neutral
+        return .roundedTag(tint: .gray)
     }
 }
 

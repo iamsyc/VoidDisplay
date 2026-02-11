@@ -179,6 +179,7 @@ struct AppStatusBadge: View {
     enum Style {
         case neutral
         case accent(Color)
+        case roundedTag(tint: Color)
     }
 
     let title: String
@@ -186,18 +187,32 @@ struct AppStatusBadge: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let presentation = badgePresentation
-
-        Text(title)
-            .font(.caption2.weight(.semibold))
+        switch style {
+        case .roundedTag(let tint):
+            Text(title)
+                .font(.caption2.weight(.semibold))
             .padding(.horizontal, AppUI.Spacing.small - 1)
             .padding(.vertical, AppUI.Spacing.xSmall - 1)
-            .background(presentation.background, in: Capsule())
+            .background(tint.opacity(colorScheme == .dark ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(
-                Capsule()
-                    .stroke(presentation.stroke, lineWidth: AppUI.Stroke.subtle)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(tint.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: AppUI.Stroke.subtle)
             )
-            .foregroundStyle(presentation.foreground)
+            .foregroundStyle(tint)
+        default:
+            let presentation = badgePresentation
+
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, AppUI.Spacing.small - 1)
+                .padding(.vertical, AppUI.Spacing.xSmall - 1)
+                .background(presentation.background, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(presentation.stroke, lineWidth: AppUI.Stroke.subtle)
+                )
+                .foregroundStyle(presentation.foreground)
+        }
     }
 
     private var badgePresentation: (foreground: Color, background: Color, stroke: Color) {
@@ -209,7 +224,27 @@ struct AppStatusBadge: View {
             return (.black.opacity(0.70), .black.opacity(0.06), .black.opacity(0.12))
         case .accent(let tint):
             return (tint, tint.opacity(colorScheme == .dark ? 0.24 : 0.16), tint.opacity(colorScheme == .dark ? 0.32 : 0.28))
+        case .roundedTag(let tint):
+            return (tint, tint.opacity(colorScheme == .dark ? 0.24 : 0.16), tint.opacity(colorScheme == .dark ? 0.32 : 0.28))
         }
+    }
+}
+
+struct AppCornerRibbon: View {
+    let model: AppCornerRibbonModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Text(model.title)
+            .font(.caption2.weight(.semibold))
+        .padding(.horizontal, AppUI.Spacing.small)
+        .padding(.vertical, AppUI.Spacing.xSmall - 1)
+        .background(model.tint.opacity(colorScheme == .dark ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(model.tint.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: AppUI.Stroke.subtle)
+        )
+        .foregroundStyle(model.tint)
     }
 }
 

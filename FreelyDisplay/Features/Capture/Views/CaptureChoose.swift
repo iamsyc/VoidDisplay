@@ -144,12 +144,19 @@ struct CaptureChoose: View {
 
     private func captureDisplayRow(_ display: SCDisplay) -> some View {
         let isVirtualDisplay = viewModel.isVirtualDisplay(display, appHelper: appHelper)
+        let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let model = AppListRowModel(
             id: String(display.displayID),
             title: viewModel.displayName(for: display),
             subtitle: viewModel.resolutionText(for: display),
             status: nil,
             metaBadges: displayBadges(for: display, isVirtualDisplay: isVirtualDisplay),
+            ribbon: isPrimaryDisplay
+                ? AppCornerRibbonModel(
+                    title: String(localized: "Primary Display"),
+                    tint: .green
+                )
+                : nil,
             iconSystemName: "display",
             isEmphasized: true,
             accessibilityIdentifier: nil
@@ -177,15 +184,14 @@ struct CaptureChoose: View {
     }
 
     private func displayBadges(for display: SCDisplay, isVirtualDisplay: Bool) -> [AppBadgeModel] {
-        var badges: [AppBadgeModel] = [
+        let badges: [AppBadgeModel] = [
             AppBadgeModel(
                 title: monitorDisplayTypeLabel(for: display),
-                style: isVirtualDisplay ? .accent(.blue) : .neutral
+                style: isVirtualDisplay
+                    ? .roundedTag(tint: .blue)
+                    : .roundedTag(tint: .gray)
             )
         ]
-        if CGDisplayIsMain(display.displayID) != 0 {
-            badges.insert(AppBadgeModel(title: String(localized: "Primary Display"), style: .accent(.green)), at: 0)
-        }
         return badges
     }
 }
@@ -253,7 +259,9 @@ struct IsCapturing: View {
             metaBadges: [
                 AppBadgeModel(
                     title: monitoringSessionDisplayTypeLabel(session.isVirtualDisplay),
-                    style: session.isVirtualDisplay ? .accent(.blue) : .neutral
+                    style: session.isVirtualDisplay
+                        ? .roundedTag(tint: .blue)
+                        : .roundedTag(tint: .gray)
                 ),
                 AppBadgeModel(title: String(localized: "Active"), style: .accent(.green))
             ],
