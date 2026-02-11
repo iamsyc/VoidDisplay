@@ -102,6 +102,54 @@
         }
       }
     },
+    "%lld active" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld active"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 个进行中"
+          }
+        }
+      }
+    },
+    "%lld connected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld connected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已连接 %1$lld 人"
+          }
+        }
+      }
+    },
+    "%lld displays" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld displays"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 台显示器"
+          }
+        }
+      }
+    },
     "•" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -275,7 +323,6 @@
       }
     },
     "Connected Clients" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -286,6 +333,7 @@
       }
     },
     "Copy address" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

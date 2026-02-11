@@ -46,7 +46,6 @@ final class HomeSmokeTests: XCTestCase {
 
         assertExists(app, identifier: "sidebar_screen_sharing").tap()
         assertExists(app, identifier: "detail_screen_sharing")
-        assertExists(app, identifier: "share_status_summary")
     }
 
     @MainActor

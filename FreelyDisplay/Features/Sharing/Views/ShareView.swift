@@ -17,9 +17,9 @@ struct ShareView: View {
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            statusSummary
+        VStack(alignment: .leading, spacing: 0) {
             shareContent
+                .accessibilityIdentifier("share_content_root")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolbar {
@@ -66,75 +66,6 @@ struct ShareView: View {
         .appScreenBackground()
     }
 
-    private var statusSummary: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            Text("Status")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("share_status_summary")
-
-            HStack(spacing: AppUI.Spacing.small) {
-                AppStatusBadge(
-                    title: statusBadgeTitle(prefix: String(localized: "Service"), value: serviceStatusText),
-                    style: appHelper.isWebServiceRunning ? .accent(.green) : .neutral
-                )
-                AppStatusBadge(
-                    title: statusBadgeTitle(prefix: String(localized: "Sharing"), value: sharingStatusText),
-                    style: appHelper.isSharing ? .accent(.green) : .neutral
-                )
-            }
-
-            if appHelper.isWebServiceRunning {
-                let mainShareAddress = viewModel.sharePageAddress(appHelper: appHelper)
-                HStack(spacing: AppUI.Spacing.medium) {
-                    // Address section
-                    HStack(spacing: AppUI.Spacing.small) {
-                        Image(systemName: "link")
-                            .foregroundStyle(.secondary)
-                        Text(mainShareAddress ?? viewModel.mainShareAddressPlaceholder(appHelper: appHelper))
-                            .font(.system(.footnote, design: .monospaced))
-                            .textSelection(.enabled)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        
-                        if let address = mainShareAddress {
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(address, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(String(localized: "Copy address"))
-                        }
-                    }
-                    
-                    Divider()
-                        .frame(height: 16)
-                    
-                    // Connected clients section
-                    HStack(spacing: AppUI.Spacing.small) {
-                        Image(systemName: "person.2")
-                            .foregroundStyle(.secondary)
-                        Text("\(appHelper.sharingClientCount)")
-                            .font(.system(.footnote, design: .monospaced))
-                            .fontWeight(.semibold)
-                    }
-                }
-                .padding(.horizontal, AppUI.Spacing.small + 2)
-                .padding(.vertical, AppUI.Spacing.small)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .appTileStyle()
-            }
-        }
-        .padding(AppUI.Spacing.medium)
-        .appPanelStyle()
-        .padding(.horizontal, AppUI.Spacing.large)
-        .padding(.top, AppUI.Spacing.small + 2)
-        .accessibilityElement(children: .contain)
-    }
-
     @ViewBuilder
     private var shareContent: some View {
         if viewModel.hasScreenCapturePermission == false {
@@ -146,6 +77,7 @@ struct ShareView: View {
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("share_loading_permission")
         } else if !appHelper.isWebServiceRunning {
             VStack(alignment: .leading, spacing: AppUI.Spacing.small + 2) {
                 Text("Web service is stopped.")
@@ -161,6 +93,7 @@ struct ShareView: View {
             ProgressView("Loading displays…")
                 .padding(.horizontal, AppUI.Spacing.large)
                 .padding(.top, 6)
+                .accessibilityIdentifier("share_loading_displays")
         } else if let displays = viewModel.displays {
             if displays.isEmpty {
                 VStack(spacing: AppUI.Spacing.medium) {
@@ -174,26 +107,20 @@ struct ShareView: View {
                 .padding(.top, 6)
                 .accessibilityIdentifier("share_displays_empty_state")
             } else {
-                GeometryReader { geometry in
-                    let useGrid = geometry.size.width > 500
+                VStack(spacing: AppUI.Spacing.small) {
+                    shareStatusPanel(displayCount: displays.count)
+                        .padding(.horizontal, AppUI.List.listHorizontalInset)
+                        .padding(.top, AppUI.Spacing.small + 2)
+
                     ScrollView {
-                        if useGrid {
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
-                                ForEach(displays, id: \.self) { display in
-                                    shareableDisplayRow(display)
-                                }
+                        LazyVStack(spacing: AppUI.Spacing.small) {
+                            ForEach(displays, id: \.self) { display in
+                                shareableDisplayRow(display)
                             }
-                            .padding(.horizontal, AppUI.List.listHorizontalInset)
-                            .padding(.top, AppUI.Spacing.small + 2)
-                        } else {
-                            LazyVStack(spacing: AppUI.List.listVerticalInset * 2) {
-                                ForEach(displays, id: \.self) { display in
-                                    shareableDisplayRow(display)
-                                }
-                            }
-                            .padding(.horizontal, AppUI.List.listHorizontalInset)
-                            .padding(.top, AppUI.Spacing.small + 2)
                         }
+                        .padding(.horizontal, AppUI.List.listHorizontalInset)
+                        .padding(.bottom, AppUI.Spacing.small)
+                        .padding(.top, 2)
                     }
                 }
                 .accessibilityIdentifier("share_displays_list")
@@ -222,6 +149,101 @@ struct ShareView: View {
             .padding(.top, 6)
             .accessibilityIdentifier("share_displays_empty_state")
         }
+    }
+
+    private func shareStatusPanel(displayCount: Int) -> some View {
+        let sharingDisplayCount = appHelper.activeSharingDisplayIDs.count
+        let clientsCount = appHelper.sharingClientCount
+
+        return VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+            HStack(alignment: .firstTextBaseline, spacing: AppUI.Spacing.small) {
+                Text(String(localized: "Status"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+
+                Text(localizedDisplayCount(displayCount))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+
+            Divider()
+
+            HStack(spacing: AppUI.Spacing.medium) {
+                statusMetricColumn(
+                    title: String(localized: "Service"),
+                    value: appHelper.isWebServiceRunning ? String(localized: "Running") : String(localized: "Stopped"),
+                    tint: appHelper.isWebServiceRunning ? .green : .secondary,
+                    showsDot: appHelper.isWebServiceRunning
+                )
+
+                Divider()
+                    .frame(maxHeight: 34)
+
+                statusMetricColumn(
+                    title: String(localized: "Sharing"),
+                    value: appHelper.isSharing
+                        ? localizedActiveSharingCount(sharingDisplayCount)
+                        : String(localized: "Idle"),
+                    tint: appHelper.isSharing ? .green : .secondary,
+                    showsDot: appHelper.isSharing
+                )
+
+                Divider()
+                    .frame(maxHeight: 34)
+
+                statusMetricColumn(
+                    title: String(localized: "Connected Clients"),
+                    value: "\(clientsCount)",
+                    tint: clientsCount > 0 ? .accentColor : .secondary
+                )
+            }
+        }
+        .padding(.horizontal, AppUI.Spacing.medium)
+        .padding(.vertical, AppUI.Spacing.small + 2)
+        .background(
+            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.secondary.opacity(0.12),
+                            Color.secondary.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                .stroke(Color.secondary.opacity(0.20), lineWidth: AppUI.Stroke.subtle)
+        )
+        .accessibilityIdentifier("share_status_panel")
+    }
+
+    private func statusMetricColumn(
+        title: String,
+        value: String,
+        tint: Color,
+        showsDot: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            HStack(spacing: AppUI.Spacing.xSmall) {
+                if showsDot {
+                    Circle()
+                        .fill(tint)
+                        .frame(width: 8, height: 8)
+                }
+                Text(value)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var screenCapturePermissionView: some View {
@@ -288,6 +310,10 @@ struct ShareView: View {
         let isVirtual = isManagedVirtualDisplay(display.displayID)
         let isSharingDisplay = appHelper.isDisplaySharing(displayID: display.displayID)
         let displayAddress = viewModel.sharePageAddress(for: display.displayID, appHelper: appHelper)
+        let displayURL = displayAddress.flatMap(URL.init(string:))
+        let displayClientCount = appHelper.sharingClientCounts[display.displayID] ?? 0
+        let isStartingDisplay = viewModel.startingDisplayID == display.displayID
+        let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let model = AppListRowModel(
             id: String(display.displayID),
             title: displayName,
@@ -298,54 +324,165 @@ struct ShareView: View {
                 isVirtual: isVirtual,
                 isSharingDisplay: isSharingDisplay
             ),
+            ribbon: isPrimaryDisplay
+                ? AppCornerRibbonModel(
+                    title: String(localized: "Primary Display"),
+                    tint: .green
+                )
+                : nil,
             iconSystemName: "display",
             isEmphasized: true,
             accessibilityIdentifier: nil
         )
 
         return AppListRowCard(model: model) {
-            VStack(alignment: .trailing, spacing: AppUI.Spacing.xSmall) {
-                if let displayAddress {
-                    HStack(spacing: AppUI.Spacing.xSmall) {
-                        Text(displayAddress)
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(displayAddress, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(String(localized: "Copy display address"))
-                    }
-                }
-                Button {
-                    if isSharingDisplay {
-                        viewModel.stopSharing(displayID: display.displayID, appHelper: appHelper)
-                    } else {
-                        Task {
-                            await viewModel.startSharing(display: display, appHelper: appHelper)
-                        }
-                    }
-                } label: {
-                    if viewModel.startingDisplayID == display.displayID {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else if isSharingDisplay {
-                        Text(String(localized: "Stop"))
-                    } else {
-                        Text(String(localized: "Share"))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(viewModel.startingDisplayID != nil && !isSharingDisplay)
+            displayRowTrailing(
+                display: display,
+                displayAddress: displayAddress,
+                displayURL: displayURL,
+                displayClientCount: displayClientCount,
+                isSharingDisplay: isSharingDisplay,
+                isStartingDisplay: isStartingDisplay
+            )
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                .stroke(isSharingDisplay ? Color.green.opacity(0.35) : .clear, lineWidth: AppUI.Stroke.subtle)
+        }
+    }
+
+    @ViewBuilder
+    private func displayRowTrailing(
+        display: SCDisplay,
+        displayAddress: String?,
+        displayURL: URL?,
+        displayClientCount: Int,
+        isSharingDisplay: Bool,
+        isStartingDisplay: Bool
+    ) -> some View {
+        VStack(alignment: .trailing, spacing: AppUI.Spacing.xSmall + 2) {
+            if let displayAddress {
+                displayAddressCapsule(displayAddress: displayAddress, displayURL: displayURL)
+            }
+
+            HStack(spacing: AppUI.Spacing.small) {
+                displayClientCountCapsule(
+                    displayClientCount: displayClientCount,
+                    isSharingDisplay: isSharingDisplay
+                )
+
+                shareActionButton(
+                    display: display,
+                    isSharingDisplay: isSharingDisplay,
+                    isStartingDisplay: isStartingDisplay
+                )
             }
         }
+        .frame(maxWidth: 520, alignment: .trailing)
+    }
+
+    private func displayAddressCapsule(displayAddress: String, displayURL: URL?) -> some View {
+        HStack(spacing: AppUI.Spacing.xSmall) {
+            if let displayURL {
+                Button {
+                    openURL(displayURL)
+                } label: {
+                    Image(systemName: "link")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(6)
+                        .background(Color.accentColor.opacity(0.16), in: Circle())
+                        .overlay(
+                            Circle()
+                                .stroke(Color.accentColor.opacity(0.28), lineWidth: AppUI.Stroke.subtle)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "Open Share Page"))
+                .accessibilityLabel(String(localized: "Open Share Page"))
+            }
+
+            Text(displayAddress)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(displayAddress, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "Copy display address"))
+        }
+        .padding(.horizontal, AppUI.Spacing.small)
+        .padding(.vertical, AppUI.Spacing.xSmall + 1)
+        .background(Color.secondary.opacity(0.09), in: Capsule(style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func displayClientCountCapsule(displayClientCount: Int, isSharingDisplay: Bool) -> some View {
+        HStack(spacing: AppUI.Spacing.xSmall) {
+            Image(systemName: "person.2")
+                .font(.caption)
+            Text("\(displayClientCount)")
+                .font(.system(.caption, design: .monospaced))
+                .fontWeight(.semibold)
+                .frame(width: 24, alignment: .leading)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, AppUI.Spacing.small)
+        .padding(.vertical, AppUI.Spacing.xSmall)
+        .background(Color.secondary.opacity(0.09), in: Capsule(style: .continuous))
+        .opacity(isSharingDisplay ? 1 : 0)
+        .frame(width: 74, alignment: .leading)
+        .accessibilityHidden(!isSharingDisplay)
+        .accessibilityLabel(connectedClientsAccessibilityLabel(displayClientCount))
+    }
+
+    private func connectedClientsAccessibilityLabel(_ count: Int) -> String {
+        let format = String(localized: "%lld connected")
+        return String.localizedStringWithFormat(format, Int64(count))
+    }
+
+    private func localizedDisplayCount(_ count: Int) -> String {
+        let format = String(localized: "%lld displays")
+        return String.localizedStringWithFormat(format, Int64(count))
+    }
+
+    private func localizedActiveSharingCount(_ count: Int) -> String {
+        let format = String(localized: "%lld active")
+        return String.localizedStringWithFormat(format, Int64(count))
+    }
+
+    @ViewBuilder
+    private func shareActionButton(display: SCDisplay, isSharingDisplay: Bool, isStartingDisplay: Bool) -> some View {
+        Button {
+            if isSharingDisplay {
+                viewModel.stopSharing(displayID: display.displayID, appHelper: appHelper)
+            } else {
+                Task {
+                    await viewModel.startSharing(display: display, appHelper: appHelper)
+                }
+            }
+        } label: {
+            if isStartingDisplay {
+                ProgressView()
+                    .controlSize(.small)
+            } else if isSharingDisplay {
+                Text(String(localized: "Stop"))
+            } else {
+                Text(String(localized: "Share"))
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(isSharingDisplay ? .red : .accentColor)
+        .disabled(viewModel.startingDisplayID != nil && !isSharingDisplay)
     }
 
     private func displayBadges(
@@ -354,18 +491,19 @@ struct ShareView: View {
         isSharingDisplay: Bool
     ) -> [AppBadgeModel] {
         var badges: [AppBadgeModel] = []
-        if isSharingDisplay {
-            badges.append(AppBadgeModel(title: String(localized: "LIVE"), style: .accent(.green)))
-        }
         badges.append(
             AppBadgeModel(
                 title: displayTypeLabel(for: displayID),
-                style: isVirtual ? .accent(.blue) : .neutral
+                style: displayTypeBadgeStyle(isVirtual: isVirtual)
             )
         )
-        if CGDisplayIsMain(displayID) != 0 {
-            badges.insert(AppBadgeModel(title: String(localized: "Primary Display"), style: .accent(.green)), at: 0)
-        }
+        badges.append(
+            AppBadgeModel(
+                title: String(localized: "LIVE"),
+                style: .accent(.green),
+                isVisible: isSharingDisplay
+            )
+        )
         return badges
     }
 
@@ -373,30 +511,18 @@ struct ShareView: View {
         appHelper.isManagedVirtualDisplay(displayID: displayID)
     }
 
-    private var serviceStatusText: String {
-        if appHelper.isWebServiceRunning {
-            return String(localized: "Running")
-                } else {
-            return String(localized: "Stopped")
-                }
-    }
-
-    private var sharingStatusText: String {
-        if appHelper.isSharing {
-            return String(localized: "Active")
-        }
-        return String(localized: "Idle")
-    }
-
-    private func statusBadgeTitle(prefix: String, value: String) -> String {
-        "\(prefix): \(value)"
-    }
-
     private func displayTypeLabel(for displayID: CGDirectDisplayID) -> String {
         if isManagedVirtualDisplay(displayID) {
             return String(localized: "Virtual Display")
         }
         return String(localized: "Physical Display")
+    }
+
+    private func displayTypeBadgeStyle(isVirtual: Bool) -> AppStatusBadge.Style {
+        if isVirtual {
+            return .roundedTag(tint: .blue)
+        }
+        return .roundedTag(tint: .gray)
     }
 }
 
