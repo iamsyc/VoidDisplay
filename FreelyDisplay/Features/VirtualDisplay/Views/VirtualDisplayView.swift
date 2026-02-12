@@ -153,18 +153,23 @@ struct VirtualDisplayView: View {
                     Button {
                         editingConfig = EditingConfig(id: config.id)
                     } label: {
-                        Label(String(localized: "Edit"), systemImage: "pencil")
+                        Image(systemName: "square.and.pencil")
+                            .font(.title3)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(Text("Edit"))
                     .accessibilityIdentifier("virtual_display_edit_button")
 
-                    Button(role: .destructive) {
+                    Button {
                         deleteCandidate = config
                         showDeleteConfirm = true
                     } label: {
-                        Label(String(localized: "Delete"), systemImage: "trash")
+                        Image(systemName: "trash")
+                            .font(.title3)
+                            .foregroundStyle(.red)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(Text("Delete"))
                     .accessibilityIdentifier("virtual_display_delete_button")
                 }
 
