@@ -9,10 +9,13 @@ import SwiftUI
 import ScreenCaptureKit
 import Cocoa
 import Combine
+import CoreGraphics
 
 struct ShareView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
     @State private var viewModel = ShareViewModel()
+    @State private var displayReconfigurationMonitor = DisplayReconfigurationMonitor()
+    @State private var showToolbarRefresh = false
     @Environment(\.openURL) private var openURL
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -24,8 +27,10 @@ struct ShareView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolbar {
             if appHelper.isWebServiceRunning {
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    viewModel.refreshDisplays(appHelper: appHelper)
+                if showToolbarRefresh {
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        viewModel.refreshDisplays(appHelper: appHelper)
+                    }
                 }
                 Button("Stop Service") {
                     viewModel.stopService(appHelper: appHelper)
@@ -35,6 +40,14 @@ struct ShareView: View {
         }
         .onAppear {
             viewModel.refreshPermissionAndMaybeLoad(appHelper: appHelper)
+            let registered = displayReconfigurationMonitor.start {
+                guard viewModel.hasScreenCapturePermission == true else { return }
+                viewModel.refreshDisplays(appHelper: appHelper)
+            }
+            showToolbarRefresh = !registered
+        }
+        .onDisappear {
+            displayReconfigurationMonitor.stop()
         }
         .onChange(of: appHelper.isWebServiceRunning) { _, _ in
             viewModel.syncForCurrentState(appHelper: appHelper)
@@ -433,6 +446,79 @@ struct ShareView: View {
             return .roundedTag(tint: .blue)
         }
         return .roundedTag(tint: .gray)
+    }
+}
+
+@MainActor
+private final class DisplayReconfigurationMonitor {
+    private var handler: (@MainActor () -> Void)?
+    private var debounceTask: Task<Void, Never>?
+    nonisolated(unsafe) private var isRunning = false
+
+    @discardableResult
+    func start(handler: @escaping @MainActor () -> Void) -> Bool {
+        self.handler = handler
+        guard !isRunning else { return true }
+
+        let userInfo = Unmanaged.passRetained(self).toOpaque()
+        let result = CGDisplayRegisterReconfigurationCallback(
+            Self.displayReconfigurationCallback,
+            userInfo
+        )
+        guard result == .success else {
+            Unmanaged<DisplayReconfigurationMonitor>.fromOpaque(userInfo).release()
+            return false
+        }
+        isRunning = true
+        return true
+    }
+
+    func stop() {
+        guard isRunning else {
+            handler = nil
+            debounceTask?.cancel()
+            debounceTask = nil
+            return
+        }
+
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        CGDisplayRemoveReconfigurationCallback(
+            Self.displayReconfigurationCallback,
+            userInfo
+        )
+        isRunning = false
+        handler = nil
+        debounceTask?.cancel()
+        debounceTask = nil
+        Unmanaged<DisplayReconfigurationMonitor>.fromOpaque(userInfo).release()
+    }
+
+    deinit {
+        assert(!isRunning, "DisplayReconfigurationMonitor must be stopped before deallocation.")
+    }
+
+    private func handleDisplayChange() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.handler?()
+        }
+    }
+
+    private nonisolated static let displayReconfigurationCallback: CGDisplayReconfigurationCallBack = {
+        _,
+        _,
+        userInfo in
+        guard let userInfo else { return }
+
+        let monitor = Unmanaged<DisplayReconfigurationMonitor>
+            .fromOpaque(userInfo)
+            .takeUnretainedValue()
+
+        Task { @MainActor in
+            monitor.handleDisplayChange()
+        }
     }
 }
 
