@@ -51,7 +51,7 @@ struct DisplaysView: View {
 
     private func displayList(_ displays: [NSScreen]) -> some View {
         GeometryReader { geometry in
-            let useGrid = geometry.size.width > 500
+            let useGrid = geometry.size.width > 680
             ScrollView {
                 if useGrid {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
