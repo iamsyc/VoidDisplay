@@ -1485,6 +1485,7 @@
       }
     },
     "Start service" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1655,6 +1656,7 @@
       }
     },
     "Web service is stopped." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1663,6 +1665,9 @@
           }
         }
       }
+    },
+    "Web 服务未运行" : {
+
     },
     "Width" : {
       "localizations" : {
@@ -1686,6 +1691,12 @@
       }
     },
     "共享中" : {
+
+    },
+    "启动 Web 服务后，即可共享屏幕给其他设备。" : {
+
+    },
+    "启动服务" : {
 
     },
     "服务已停止" : {
