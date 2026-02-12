@@ -133,53 +133,68 @@ struct VirtualDisplayView: View {
         )
 
         return AppListRowCard(model: model) {
-            HStack(spacing: AppUI.Spacing.small) {
-                Button {
-                    toggleDisplayState(config)
-                } label: {
-                    Label(
-                        toggleButtonTitle(isRunning: isRunning),
-                        systemImage: isRunning ? "pause.fill" : "play.fill"
-                    )
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(isRunning ? .orange : .green)
-                .accessibilityIdentifier("virtual_display_toggle_button")
+            ViewThatFits(in: .horizontal) {
+                // Wide layout: inline Edit / Delete buttons
+                HStack(spacing: AppUI.Spacing.small) {
+                    moveButtons(config: config, isFirst: isFirst, isLast: isLast)
 
-                // Inline move buttons for quick access
-                Button {
-                    _ = appHelper.moveDisplayConfig(config.id, direction: .up)
-                } label: {
-                    Image(systemName: "chevron.up")
-                        .font(.body.weight(.semibold))
-                }
-                .buttonStyle(.borderless)
-                .disabled(isFirst)
-                .accessibilityLabel(Text("Move up"))
-                .accessibilityIdentifier("virtual_display_move_up_button")
-
-                Button {
-                    _ = appHelper.moveDisplayConfig(config.id, direction: .down)
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.body.weight(.semibold))
-                }
-                .buttonStyle(.borderless)
-                .disabled(isLast)
-                .accessibilityLabel(Text("Move down"))
-                .accessibilityIdentifier("virtual_display_move_down_button")
-
-                // Menu for less frequent actions
-                AppQuickActionsMenu {
-                    Button(String(localized: "Edit"), systemImage: "pencil") {
-                        editingConfig = EditingConfig(id: config.id)
+                    Button {
+                        toggleDisplayState(config)
+                    } label: {
+                        Label(
+                            toggleButtonTitle(isRunning: isRunning),
+                            systemImage: isRunning ? "pause.fill" : "play.fill"
+                        )
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(isRunning ? .orange : .green)
+                    .accessibilityIdentifier("virtual_display_toggle_button")
 
-                    Divider()
+                    Button {
+                        editingConfig = EditingConfig(id: config.id)
+                    } label: {
+                        Label(String(localized: "Edit"), systemImage: "pencil")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("virtual_display_edit_button")
 
-                    Button(String(localized: "Delete"), systemImage: "trash", role: .destructive) {
+                    Button(role: .destructive) {
                         deleteCandidate = config
                         showDeleteConfirm = true
+                    } label: {
+                        Label(String(localized: "Delete"), systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("virtual_display_delete_button")
+                }
+
+                // Narrow layout: Edit / Delete collapsed into menu
+                HStack(spacing: AppUI.Spacing.small) {
+                    moveButtons(config: config, isFirst: isFirst, isLast: isLast)
+
+                    Button {
+                        toggleDisplayState(config)
+                    } label: {
+                        Label(
+                            toggleButtonTitle(isRunning: isRunning),
+                            systemImage: isRunning ? "pause.fill" : "play.fill"
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(isRunning ? .orange : .green)
+                    .accessibilityIdentifier("virtual_display_toggle_button")
+
+                    AppQuickActionsMenu {
+                        Button(String(localized: "Edit"), systemImage: "pencil") {
+                            editingConfig = EditingConfig(id: config.id)
+                        }
+
+                        Divider()
+
+                        Button(String(localized: "Delete"), systemImage: "trash", role: .destructive) {
+                            deleteCandidate = config
+                            showDeleteConfirm = true
+                        }
                     }
                 }
             }
@@ -189,6 +204,31 @@ struct VirtualDisplayView: View {
                 .stroke(isRunning ? Color.green.opacity(0.35) : .clear, lineWidth: AppUI.Stroke.subtle)
         }
         .opacity(isRunning ? 1.0 : 0.82)
+    }
+
+    @ViewBuilder
+    private func moveButtons(config: VirtualDisplayConfig, isFirst: Bool, isLast: Bool) -> some View {
+        Button {
+            _ = appHelper.moveDisplayConfig(config.id, direction: .up)
+        } label: {
+            Image(systemName: "chevron.up")
+                .font(.body.weight(.semibold))
+        }
+        .buttonStyle(.borderless)
+        .disabled(isFirst)
+        .accessibilityLabel(Text("Move up"))
+        .accessibilityIdentifier("virtual_display_move_up_button")
+
+        Button {
+            _ = appHelper.moveDisplayConfig(config.id, direction: .down)
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.body.weight(.semibold))
+        }
+        .buttonStyle(.borderless)
+        .disabled(isLast)
+        .accessibilityLabel(Text("Move down"))
+        .accessibilityIdentifier("virtual_display_move_down_button")
     }
 
     private func subtitleText(for config: VirtualDisplayConfig) -> String {
