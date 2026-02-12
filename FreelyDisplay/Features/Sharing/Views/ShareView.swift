@@ -312,7 +312,6 @@ struct ShareView: View {
         let displayAddress = viewModel.sharePageAddress(for: display.displayID, appHelper: appHelper)
         let displayURL = displayAddress.flatMap(URL.init(string:))
         let displayClientCount = appHelper.sharingClientCounts[display.displayID] ?? 0
-        let isStartingDisplay = viewModel.startingDisplayID == display.displayID
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let model = AppListRowModel(
             id: String(display.displayID),
@@ -341,13 +340,16 @@ struct ShareView: View {
                 displayAddress: displayAddress,
                 displayURL: displayURL,
                 displayClientCount: displayClientCount,
-                isSharingDisplay: isSharingDisplay,
-                isStartingDisplay: isStartingDisplay
+                isSharingDisplay: isSharingDisplay
             )
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                .stroke(isSharingDisplay ? Color.green.opacity(0.35) : .clear, lineWidth: AppUI.Stroke.subtle)
+        .overlay(alignment: .leading) {
+            if isSharingDisplay {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.green)
+                    .frame(width: 3)
+                    .padding(.vertical, 6)
+            }
         }
     }
 
@@ -357,31 +359,28 @@ struct ShareView: View {
         displayAddress: String?,
         displayURL: URL?,
         displayClientCount: Int,
-        isSharingDisplay: Bool,
-        isStartingDisplay: Bool
+        isSharingDisplay: Bool
     ) -> some View {
-        VStack(alignment: .trailing, spacing: AppUI.Spacing.xSmall + 2) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
             if let displayAddress {
-                displayAddressCapsule(displayAddress: displayAddress, displayURL: displayURL)
+                displayAddressInline(displayAddress: displayAddress, displayURL: displayURL)
             }
 
-            HStack(spacing: AppUI.Spacing.small) {
-                displayClientCountCapsule(
-                    displayClientCount: displayClientCount,
-                    isSharingDisplay: isSharingDisplay
-                )
-
-                shareActionButton(
-                    display: display,
-                    isSharingDisplay: isSharingDisplay,
-                    isStartingDisplay: isStartingDisplay
+            if isSharingDisplay {
+                displayClientCountLabel(
+                    displayClientCount: displayClientCount
                 )
             }
+
+            shareActionButton(
+                display: display,
+                isSharingDisplay: isSharingDisplay
+            )
         }
         .frame(maxWidth: 520, alignment: .trailing)
     }
 
-    private func displayAddressCapsule(displayAddress: String, displayURL: URL?) -> some View {
+    private func displayAddressInline(displayAddress: String, displayURL: URL?) -> some View {
         HStack(spacing: AppUI.Spacing.xSmall) {
             if let displayURL {
                 Button {
@@ -390,12 +389,6 @@ struct ShareView: View {
                     Image(systemName: "link")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
-                        .padding(6)
-                        .background(Color.accentColor.opacity(0.16), in: Circle())
-                        .overlay(
-                            Circle()
-                                .stroke(Color.accentColor.opacity(0.28), lineWidth: AppUI.Stroke.subtle)
-                        )
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "Open Share Page"))
@@ -420,28 +413,17 @@ struct ShareView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: "Copy display address"))
         }
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall + 1)
-        .background(Color.secondary.opacity(0.09), in: Capsule(style: .continuous))
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    private func displayClientCountCapsule(displayClientCount: Int, isSharingDisplay: Bool) -> some View {
+    private func displayClientCountLabel(displayClientCount: Int) -> some View {
         HStack(spacing: AppUI.Spacing.xSmall) {
             Image(systemName: "person.2")
                 .font(.caption)
             Text("\(displayClientCount)")
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.semibold)
-                .frame(width: 24, alignment: .leading)
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall)
-        .background(Color.secondary.opacity(0.09), in: Capsule(style: .continuous))
-        .opacity(isSharingDisplay ? 1 : 0)
-        .frame(width: 74, alignment: .leading)
-        .accessibilityHidden(!isSharingDisplay)
         .accessibilityLabel(connectedClientsAccessibilityLabel(displayClientCount))
     }
 
@@ -461,7 +443,7 @@ struct ShareView: View {
     }
 
     @ViewBuilder
-    private func shareActionButton(display: SCDisplay, isSharingDisplay: Bool, isStartingDisplay: Bool) -> some View {
+    private func shareActionButton(display: SCDisplay, isSharingDisplay: Bool) -> some View {
         Button {
             if isSharingDisplay {
                 viewModel.stopSharing(displayID: display.displayID, appHelper: appHelper)
@@ -471,18 +453,14 @@ struct ShareView: View {
                 }
             }
         } label: {
-            if isStartingDisplay {
-                ProgressView()
-                    .controlSize(.small)
-            } else if isSharingDisplay {
-                Text(String(localized: "Stop"))
+            if isSharingDisplay {
+                Label(String(localized: "Stop"), systemImage: "stop.fill")
             } else {
-                Text(String(localized: "Share"))
+                Label(String(localized: "Share"), systemImage: "play.fill")
             }
         }
         .buttonStyle(.borderedProminent)
         .tint(isSharingDisplay ? .red : .accentColor)
-        .disabled(viewModel.startingDisplayID != nil && !isSharingDisplay)
     }
 
     private func displayBadges(

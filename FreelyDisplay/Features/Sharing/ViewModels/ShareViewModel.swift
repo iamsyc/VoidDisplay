@@ -25,7 +25,7 @@ final class ShareViewModel {
 
     var displays: [SCDisplay]?
     var isLoadingDisplays = false
-    var startingDisplayID: CGDirectDisplayID?
+    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var showOpenPageError = false
     var openPageErrorMessage = ""
     private let permissionProvider: any ScreenCapturePermissionProvider
@@ -159,9 +159,9 @@ final class ShareViewModel {
     }
 
     func startSharing(display: SCDisplay, appHelper: AppHelper) async {
-        guard startingDisplayID == nil else { return }
-        startingDisplayID = display.displayID
-        defer { startingDisplayID = nil }
+        guard !startingDisplayIDs.contains(display.displayID) else { return }
+        startingDisplayIDs.insert(display.displayID)
+        defer { startingDisplayIDs.remove(display.displayID) }
 
         guard appHelper.isWebServiceRunning || appHelper.startWebService() else {
             presentError(String(localized: "Web service is not running."))
