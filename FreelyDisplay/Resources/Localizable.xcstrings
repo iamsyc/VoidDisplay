@@ -185,6 +185,7 @@
       }
     },
     "Active" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -316,6 +317,7 @@
       }
     },
     "Click + to start a new monitoring window." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -780,6 +782,7 @@
       }
     },
     "Listening window" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -862,6 +865,16 @@
         }
       }
     },
+    "Monitoring" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "监听中"
+          }
+        }
+      }
+    },
     "Move down" : {
       "localizations" : {
         "zh-Hans" : {
@@ -934,6 +947,7 @@
       }
     },
     "No Listening Windows" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -979,6 +993,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无可监听的屏幕"
+          }
+        }
+      }
+    },
+    "Not Monitoring" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未监听"
           }
         }
       }

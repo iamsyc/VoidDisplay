@@ -42,7 +42,6 @@ final class HomeSmokeTests: XCTestCase {
 
         assertExists(app, identifier: "sidebar_monitor_screen").tap()
         assertExists(app, identifier: "detail_monitor_screen")
-        assertExists(app, identifier: "monitoring_add_button")
 
         assertExists(app, identifier: "sidebar_screen_sharing").tap()
         assertExists(app, identifier: "detail_screen_sharing")
@@ -54,9 +53,6 @@ final class HomeSmokeTests: XCTestCase {
 
         assertExists(app, identifier: "sidebar_monitor_screen").tap()
         assertExists(app, identifier: "detail_monitor_screen")
-        assertExists(app, identifier: "monitoring_add_button").tap()
-
-        assertExists(app, identifier: "capture_choose_root")
         assertExists(app, identifier: "capture_permission_guide")
         assertExists(app, identifier: "capture_open_settings_button")
         assertExists(app, identifier: "capture_request_permission_button")

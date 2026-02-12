@@ -21,6 +21,7 @@ final class CaptureChooseViewModel {
     var lastPreflightPermission: Bool?
     var lastRequestPermission: Bool?
     var isLoadingDisplays = false
+    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var loadErrorMessage: String?
     var lastLoadError: LoadErrorInfo?
     var showDebugInfo = false
@@ -42,19 +43,38 @@ final class CaptureChooseViewModel {
         "\(Int(display.frame.width)) × \(Int(display.frame.height))"
     }
 
+    @discardableResult
+    func withDisplayStartLock(
+        displayID: CGDirectDisplayID,
+        operation: () async -> Void
+    ) async -> Bool {
+        guard !startingDisplayIDs.contains(displayID) else { return false }
+        startingDisplayIDs.insert(displayID)
+        defer { startingDisplayIDs.remove(displayID) }
+        await operation()
+        return true
+    }
+
     func startMonitoring(display: SCDisplay, appHelper: AppHelper, openWindow: @escaping (UUID) -> Void) async {
-        let captureSession = await createScreenCapture(display: display)
-        let session = AppHelper.ScreenMonitoringSession(
-            id: UUID(),
-            displayID: display.displayID,
-            displayName: displayName(for: display),
-            resolutionText: resolutionText(for: display),
-            isVirtualDisplay: isVirtualDisplay(display, appHelper: appHelper),
-            stream: captureSession.stream,
-            delegate: captureSession.delegate
-        )
-        appHelper.addMonitoringSession(session)
-        openWindow(session.id)
+        _ = await withDisplayStartLock(displayID: display.displayID) {
+            if let existingSession = appHelper.screenCaptureSessions.first(where: { $0.displayID == display.displayID }) {
+                openWindow(existingSession.id)
+                return
+            }
+
+            let captureSession = await createScreenCapture(display: display)
+            let session = AppHelper.ScreenMonitoringSession(
+                id: UUID(),
+                displayID: display.displayID,
+                displayName: displayName(for: display),
+                resolutionText: resolutionText(for: display),
+                isVirtualDisplay: isVirtualDisplay(display, appHelper: appHelper),
+                stream: captureSession.stream,
+                delegate: captureSession.delegate
+            )
+            appHelper.addMonitoringSession(session)
+            openWindow(session.id)
+        }
     }
 
     func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
