@@ -20,11 +20,9 @@ struct ShareView: View {
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            shareContent
-                .accessibilityIdentifier("share_content_root")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        shareContent
+            .accessibilityIdentifier("share_content_root")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .toolbar {
             if appHelper.isWebServiceRunning {
                 if showToolbarRefresh {

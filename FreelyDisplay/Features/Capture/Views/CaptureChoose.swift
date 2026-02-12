@@ -25,48 +25,49 @@ struct IsCapturing: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if shouldShowActiveSessionFallback {
-                activeMonitoringSessionsFallback
-                Divider()
-            }
-
-            Group {
-                if viewModel.hasScreenCapturePermission == false {
-                    screenCapturePermissionView
-                } else if let displays = viewModel.displays {
-                    if displays.isEmpty {
-                        ContentUnavailableView(
-                            "No watchable screen",
-                            systemImage: "display.trianglebadge.exclamationmark",
-                            description: Text("No available display can be monitored right now.")
-                        )
-                        .accessibilityIdentifier("capture_displays_empty_state")
-                    } else {
-                        displayList(displays)
-                    }
-                } else if viewModel.isLoadingDisplays || viewModel.hasScreenCapturePermission == nil {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("Loading…")
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if viewModel.hasScreenCapturePermission == false {
+                screenCapturePermissionView
+            } else if let displays = viewModel.displays {
+                if displays.isEmpty {
+                    ContentUnavailableView(
+                        "No watchable screen",
+                        systemImage: "display.trianglebadge.exclamationmark",
+                        description: Text("No available display can be monitored right now.")
+                    )
+                    .accessibilityIdentifier("capture_displays_empty_state")
                 } else {
-                    VStack(spacing: 12) {
-                        Text("No watchable screen")
-                        if let loadErrorMessage = viewModel.loadErrorMessage {
-                            Text(loadErrorMessage)
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .textSelection(.enabled)
-                        }
-                        Button("Retry") {
-                            viewModel.refreshPermissionAndMaybeLoad()
-                        }
+                    displayList(displays)
+                }
+            } else if viewModel.isLoadingDisplays || viewModel.hasScreenCapturePermission == nil {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading…")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 12) {
+                    Text("No watchable screen")
+                    if let loadErrorMessage = viewModel.loadErrorMessage {
+                        Text(loadErrorMessage)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .textSelection(.enabled)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Button("Retry") {
+                        viewModel.refreshPermissionAndMaybeLoad()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if shouldShowActiveSessionFallback {
+                VStack(spacing: 0) {
+                    activeMonitoringSessionsFallback
+                    Divider()
                 }
             }
         }

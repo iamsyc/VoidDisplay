@@ -48,18 +48,22 @@ struct HomeView: View {
                         DisplaysView()
                             .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
+                            .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
                     case .virtualDisplay:
                         VirtualDisplayView()
                             .navigationTitle("Virtual Displays")
                             .accessibilityIdentifier("detail_virtual_display")
+                            .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
                     case .monitorScreen:
                         IsCapturing()
                             .navigationTitle("Screen Monitoring")
                             .accessibilityIdentifier("detail_monitor_screen")
+                            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                     case .screenSharing:
                         ShareView()
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
+                            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                     }
                 }
             }
