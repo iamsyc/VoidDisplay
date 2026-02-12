@@ -27,10 +27,6 @@ struct ShareView: View {
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     viewModel.refreshDisplays(appHelper: appHelper)
                 }
-                Button("Open Share Page") {
-                    viewModel.openSharePage(appHelper: appHelper)
-                }
-                .accessibilityIdentifier("share_open_page_button")
                 if appHelper.isSharing {
                     Button("Stop All Sharing") {
                         appHelper.stopAllSharing()
@@ -317,11 +313,15 @@ struct ShareView: View {
             id: String(display.displayID),
             title: displayName,
             subtitle: "\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))",
-            status: nil,
-            metaBadges: displayBadges(
+            status: AppRowStatus(
+                title: isSharingDisplay
+                    ? String(localized: "共享中")
+                    : String(localized: "未共享"),
+                tint: isSharingDisplay ? .green : .gray
+            ),
+            metaBadges: displayTypeBadges(
                 for: display.displayID,
-                isVirtual: isVirtual,
-                isSharingDisplay: isSharingDisplay
+                isVirtual: isVirtual
             ),
             ribbon: isPrimaryDisplay
                 ? AppCornerRibbonModel(
@@ -343,14 +343,6 @@ struct ShareView: View {
                 isSharingDisplay: isSharingDisplay
             )
         }
-        .overlay(alignment: .leading) {
-            if isSharingDisplay {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(Color.green)
-                    .frame(width: 3)
-                    .padding(.vertical, 6)
-            }
-        }
     }
 
     @ViewBuilder
@@ -363,14 +355,12 @@ struct ShareView: View {
     ) -> some View {
         HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
             if let displayAddress {
-                displayAddressInline(displayAddress: displayAddress, displayURL: displayURL)
+                displayAddressInline(displayAddress: displayAddress, displayURL: displayURL, isSharingDisplay: isSharingDisplay)
             }
 
-            if isSharingDisplay {
-                displayClientCountLabel(
-                    displayClientCount: displayClientCount
-                )
-            }
+            displayClientCountLabel(
+                displayClientCount: displayClientCount
+            )
 
             shareActionButton(
                 display: display,
@@ -380,7 +370,7 @@ struct ShareView: View {
         .frame(maxWidth: 520, alignment: .trailing)
     }
 
-    private func displayAddressInline(displayAddress: String, displayURL: URL?) -> some View {
+    private func displayAddressInline(displayAddress: String, displayURL: URL?, isSharingDisplay: Bool) -> some View {
         HStack(spacing: AppUI.Spacing.xSmall) {
             if let displayURL {
                 Button {
@@ -388,9 +378,10 @@ struct ShareView: View {
                 } label: {
                     Image(systemName: "link")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(isSharingDisplay ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
+                .disabled(!isSharingDisplay)
                 .help(String(localized: "Open Share Page"))
                 .accessibilityLabel(String(localized: "Open Share Page"))
             }
@@ -419,11 +410,12 @@ struct ShareView: View {
         HStack(spacing: AppUI.Spacing.xSmall) {
             Image(systemName: "person.2")
                 .font(.caption)
+                .foregroundStyle(displayClientCount > 0 ? Color.accentColor : .secondary)
             Text("\(displayClientCount)")
                 .font(.system(.caption, design: .monospaced))
                 .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
         }
-        .foregroundStyle(.secondary)
         .accessibilityLabel(connectedClientsAccessibilityLabel(displayClientCount))
     }
 
@@ -453,36 +445,31 @@ struct ShareView: View {
                 }
             }
         } label: {
-            if isSharingDisplay {
-                Label(String(localized: "Stop"), systemImage: "stop.fill")
-            } else {
-                Label(String(localized: "Share"), systemImage: "play.fill")
+            ZStack {
+                Label(String(localized: "Share"), systemImage: "play.fill").hidden()
+                Label(String(localized: "Stop"), systemImage: "stop.fill").hidden()
+
+                if isSharingDisplay {
+                    Label(String(localized: "Stop"), systemImage: "stop.fill")
+                } else {
+                    Label(String(localized: "Share"), systemImage: "play.fill")
+                }
             }
         }
         .buttonStyle(.borderedProminent)
         .tint(isSharingDisplay ? .red : .accentColor)
     }
 
-    private func displayBadges(
+    private func displayTypeBadges(
         for displayID: CGDirectDisplayID,
-        isVirtual: Bool,
-        isSharingDisplay: Bool
+        isVirtual: Bool
     ) -> [AppBadgeModel] {
-        var badges: [AppBadgeModel] = []
-        badges.append(
+        [
             AppBadgeModel(
                 title: displayTypeLabel(for: displayID),
                 style: displayTypeBadgeStyle(isVirtual: isVirtual)
             )
-        )
-        badges.append(
-            AppBadgeModel(
-                title: String(localized: "LIVE"),
-                style: .accent(.green),
-                isVisible: isSharingDisplay
-            )
-        )
-        return badges
+        ]
     }
 
     private func isManagedVirtualDisplay(_ displayID: CGDirectDisplayID) -> Bool {

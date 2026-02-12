@@ -158,73 +158,51 @@ final class ShareViewModel {
         loadDisplays(appHelper: appHelper)
     }
 
+    @discardableResult
+    func withDisplayStartLock(
+        displayID: CGDirectDisplayID,
+        operation: () async -> Void
+    ) async -> Bool {
+        guard !startingDisplayIDs.contains(displayID) else { return false }
+        startingDisplayIDs.insert(displayID)
+        defer { startingDisplayIDs.remove(displayID) }
+        await operation()
+        return true
+    }
+
     func startSharing(display: SCDisplay, appHelper: AppHelper) async {
-        guard !startingDisplayIDs.contains(display.displayID) else { return }
-        startingDisplayIDs.insert(display.displayID)
-        defer { startingDisplayIDs.remove(display.displayID) }
+        _ = await withDisplayStartLock(displayID: display.displayID) {
+            guard appHelper.isWebServiceRunning || appHelper.startWebService() else {
+                presentError(String(localized: "Web service is not running."))
+                return
+            }
 
-        guard appHelper.isWebServiceRunning || appHelper.startWebService() else {
-            presentError(String(localized: "Web service is not running."))
-            return
-        }
+            let captureSession = await createScreenCapture(display: display)
+            let stream = Capture()
 
-        let captureSession = await createScreenCapture(display: display)
-        let stream = Capture()
-
-        do {
-            try captureSession.stream.addStreamOutput(
-                stream,
-                type: .screen,
-                sampleHandlerQueue: stream.sampleHandlerQueue
-            )
-            try await captureSession.stream.startCapture()
-            appHelper.beginSharing(
-                displayID: display.displayID,
-                stream: captureSession.stream,
-                output: stream,
-                delegate: captureSession.delegate
-            )
-        } catch {
-            appHelper.stopSharing(displayID: display.displayID)
-            AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
-            presentError(AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing.")))
+            do {
+                try captureSession.stream.addStreamOutput(
+                    stream,
+                    type: .screen,
+                    sampleHandlerQueue: stream.sampleHandlerQueue
+                )
+                try await captureSession.stream.startCapture()
+                appHelper.beginSharing(
+                    displayID: display.displayID,
+                    stream: captureSession.stream,
+                    output: stream,
+                    delegate: captureSession.delegate
+                )
+            } catch {
+                appHelper.stopSharing(displayID: display.displayID)
+                AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
+                presentError(AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing.")))
+            }
         }
     }
 
     func stopSharing(displayID: CGDirectDisplayID, appHelper: AppHelper) {
         appHelper.stopSharing(displayID: displayID)
-    }
-
-    func openSharePage(appHelper: AppHelper) {
-        switch appHelper.sharePageURLResolution(for: nil) {
-        case .success(let url):
-            NSWorkspace.shared.open(url)
-        case .failure(.serviceNotRunning):
-            presentError(String(localized: "Web service is not running."))
-        case .failure(.lanUnavailable):
-            AppLog.sharing.notice("No LAN IP available when opening share page.")
-            presentError(String(localized: "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again."))
-        case .failure(.displayUnavailable):
-            AppLog.sharing.notice("Main display share page is unavailable when opening share page.")
-            presentError(String(localized: "Main display share link is unavailable. Refresh displays and try again."))
-        }
-    }
-
-    func sharePageAddress(appHelper: AppHelper) -> String? {
-        appHelper.sharePageAddress(for: nil)
-    }
-
-    func mainShareAddressPlaceholder(appHelper: AppHelper) -> String {
-        switch appHelper.sharePageURLResolution(for: nil) {
-        case .success:
-            return ""
-        case .failure(.serviceNotRunning):
-            return String(localized: "Web service is not running.")
-        case .failure(.lanUnavailable):
-            return String(localized: "LAN IP unavailable")
-        case .failure(.displayUnavailable):
-            return String(localized: "Main display link unavailable")
-        }
     }
 
     func sharePageAddress(for displayID: CGDirectDisplayID, appHelper: AppHelper) -> String? {

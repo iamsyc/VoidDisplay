@@ -744,6 +744,7 @@
       }
     },
     "LAN IP unavailable" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -774,6 +775,7 @@
       }
     },
     "LIVE" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -804,6 +806,7 @@
       }
     },
     "Main display link unavailable" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -814,6 +817,7 @@
       }
     },
     "Main display share link is unavailable. Refresh displays and try again." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -884,6 +888,7 @@
       }
     },
     "No available LAN IP address was found. Please connect to Wi-Fi/Ethernet and try again." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1635,6 +1640,12 @@
           }
         }
       }
+    },
+    "共享中" : {
+
+    },
+    "未共享" : {
+
     }
   },
   "version" : "1.1"
