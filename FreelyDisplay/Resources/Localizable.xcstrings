@@ -11,6 +11,9 @@
         }
       }
     },
+    "·" : {
+
+    },
     "@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -146,6 +149,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld 台显示器"
+          }
+        }
+      }
+    },
+    "%lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lld"
           }
         }
       }
@@ -323,6 +336,7 @@
       }
     },
     "Connected Clients" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -688,6 +702,7 @@
       }
     },
     "Idle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1260,6 +1275,7 @@
       }
     },
     "Running" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1383,6 +1399,7 @@
       }
     },
     "Service" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1454,6 +1471,7 @@
       }
     },
     "Status" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1474,6 +1492,7 @@
       }
     },
     "Stop All Sharing" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1515,6 +1534,7 @@
       }
     },
     "Stopped" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1642,6 +1662,12 @@
       }
     },
     "共享中" : {
+
+    },
+    "服务已停止" : {
+
+    },
+    "服务运行中" : {
 
     },
     "未共享" : {

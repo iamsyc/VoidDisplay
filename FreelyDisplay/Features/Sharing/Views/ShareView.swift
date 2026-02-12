@@ -27,12 +27,6 @@ struct ShareView: View {
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     viewModel.refreshDisplays(appHelper: appHelper)
                 }
-                if appHelper.isSharing {
-                    Button("Stop All Sharing") {
-                        appHelper.stopAllSharing()
-                    }
-                    .accessibilityIdentifier("share_stop_all_button")
-                }
                 Button("Stop Service") {
                     viewModel.stopService(appHelper: appHelper)
                 }
@@ -87,8 +81,7 @@ struct ShareView: View {
             .padding(.top, 6)
         } else if viewModel.isLoadingDisplays {
             ProgressView("Loading displays…")
-                .padding(.horizontal, AppUI.Spacing.large)
-                .padding(.top, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("share_loading_displays")
         } else if let displays = viewModel.displays {
             if displays.isEmpty {
@@ -150,96 +143,48 @@ struct ShareView: View {
     private func shareStatusPanel(displayCount: Int) -> some View {
         let sharingDisplayCount = appHelper.activeSharingDisplayIDs.count
         let clientsCount = appHelper.sharingClientCount
+        let isRunning = appHelper.isWebServiceRunning
 
-        return VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
-            HStack(alignment: .firstTextBaseline, spacing: AppUI.Spacing.small) {
-                Text(String(localized: "Status"))
-                    .font(.caption.weight(.semibold))
+        return HStack(spacing: AppUI.Spacing.medium) {
+            HStack(spacing: AppUI.Spacing.xSmall) {
+                Circle()
+                    .fill(isRunning ? Color.green : Color.secondary)
+                    .frame(width: 8, height: 8)
+                Text(isRunning ? String(localized: "服务运行中") : String(localized: "服务已停止"))
+                    .foregroundStyle(isRunning ? .primary : .secondary)
+            }
+
+            Text("·").foregroundStyle(.quaternary)
+
+            HStack(spacing: AppUI.Spacing.xSmall) {
+                Text(String(localized: "Sharing"))
                     .foregroundStyle(.secondary)
-
-                Spacer(minLength: 0)
-
-                Text(localizedDisplayCount(displayCount))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                Text("\(sharingDisplayCount)/\(displayCount)")
+                    .foregroundStyle(sharingDisplayCount > 0 ? Color.green : .secondary)
             }
 
-            Divider()
+            Text("·").foregroundStyle(.quaternary)
 
-            HStack(spacing: AppUI.Spacing.medium) {
-                statusMetricColumn(
-                    title: String(localized: "Service"),
-                    value: appHelper.isWebServiceRunning ? String(localized: "Running") : String(localized: "Stopped"),
-                    tint: appHelper.isWebServiceRunning ? .green : .secondary,
-                    showsDot: appHelper.isWebServiceRunning
-                )
-
-                Divider()
-                    .frame(maxHeight: 34)
-
-                statusMetricColumn(
-                    title: String(localized: "Sharing"),
-                    value: appHelper.isSharing
-                        ? localizedActiveSharingCount(sharingDisplayCount)
-                        : String(localized: "Idle"),
-                    tint: appHelper.isSharing ? .green : .secondary,
-                    showsDot: appHelper.isSharing
-                )
-
-                Divider()
-                    .frame(maxHeight: 34)
-
-                statusMetricColumn(
-                    title: String(localized: "Connected Clients"),
-                    value: "\(clientsCount)",
-                    tint: clientsCount > 0 ? .accentColor : .secondary
-                )
+            HStack(spacing: AppUI.Spacing.xSmall) {
+                Image(systemName: "person.2")
+                    .foregroundStyle(clientsCount > 0 ? Color.accentColor : .secondary)
+                Text("\(clientsCount)")
+                    .foregroundStyle(.secondary)
             }
+
+            Spacer(minLength: 0)
+
+            Text(localizedDisplayCount(displayCount))
+                .foregroundStyle(.secondary)
         }
+        .font(.caption.weight(.medium))
         .padding(.horizontal, AppUI.Spacing.medium)
-        .padding(.vertical, AppUI.Spacing.small + 2)
+        .padding(.vertical, AppUI.Spacing.small)
         .background(
             RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.secondary.opacity(0.12),
-                            Color.secondary.opacity(0.05)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                .stroke(Color.secondary.opacity(0.20), lineWidth: AppUI.Stroke.subtle)
+                .fill(Color.secondary.opacity(0.06))
         )
         .accessibilityIdentifier("share_status_panel")
-    }
-
-    private func statusMetricColumn(
-        title: String,
-        value: String,
-        tint: Color,
-        showsDot: Bool = false
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            HStack(spacing: AppUI.Spacing.xSmall) {
-                if showsDot {
-                    Circle()
-                        .fill(tint)
-                        .frame(width: 8, height: 8)
-                }
-                Text(value)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(tint)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var screenCapturePermissionView: some View {
