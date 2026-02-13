@@ -29,6 +29,15 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
       shouldAutocreateTestPlan = "YES">
+      <PreActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Terminate Existing FreelyDisplay"
+               scriptText = "/usr/bin/pkill -9 -f '/FreelyDisplay.app/Contents/MacOS/FreelyDisplay' >/dev/null 2>&amp;1 || true&#10;/usr/bin/pkill -9 -f 'debugserver.*FreelyDisplay\\.app/Contents/MacOS/FreelyDisplay' >/dev/null 2>&amp;1 || true">
+            </ActionContent>
+         </ExecutionAction>
+      </PreActions>
       <Testables>
          <TestableReference
             skipped = "NO"

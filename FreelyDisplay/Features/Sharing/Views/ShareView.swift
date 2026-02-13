@@ -323,7 +323,12 @@ struct ShareView: View {
     ) -> some View {
         HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
             if let displayAddress {
-                displayAddressInline(displayAddress: displayAddress, displayURL: displayURL, isSharingDisplay: isSharingDisplay)
+                displayAddressInline(
+                    displayID: display.displayID,
+                    displayAddress: displayAddress,
+                    displayURL: displayURL,
+                    isSharingDisplay: isSharingDisplay
+                )
             }
 
             displayClientCountLabel(
@@ -338,7 +343,12 @@ struct ShareView: View {
         .frame(maxWidth: 520, alignment: .trailing)
     }
 
-    private func displayAddressInline(displayAddress: String, displayURL: URL?, isSharingDisplay: Bool) -> some View {
+    private func displayAddressInline(
+        displayID: CGDirectDisplayID,
+        displayAddress: String,
+        displayURL: URL?,
+        isSharingDisplay: Bool
+    ) -> some View {
         HStack(spacing: AppUI.Spacing.xSmall) {
             if let displayURL {
                 Button {
@@ -360,6 +370,7 @@ struct ShareView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .accessibilityIdentifier("share_display_address_\(displayID)")
 
             Button {
                 NSPasteboard.general.clearContents()
@@ -426,6 +437,8 @@ struct ShareView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(isSharingDisplay ? .red : .accentColor)
+        .accessibilityIdentifier("share_action_button_\(display.displayID)")
+        .accessibilityValue(isSharingDisplay ? "sharing" : "idle")
     }
 
     private func displayTypeBadges(
