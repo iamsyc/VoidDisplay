@@ -7,6 +7,7 @@
 
 import SwiftUI
 import OSLog
+import AppKit
 
 struct VirtualDisplayView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
@@ -16,6 +17,7 @@ struct VirtualDisplayView: View {
     @State private var showDeleteConfirm = false
     @State private var deleteCandidate: VirtualDisplayConfig?
     @State private var showRestoreFailureAlert = false
+    @State private var screenParametersVersion: UInt = 0
 
     private struct EditingConfig: Identifiable {
         let id: UUID
@@ -99,6 +101,10 @@ struct VirtualDisplayView: View {
             let more = appHelper.restoreFailures.count > 3 ? "\n\n…" : ""
             Text(summary + more)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screenParametersVersion &+= 1
+        }
+        .id(screenParametersVersion)
         .appScreenBackground()
     }
 
@@ -260,7 +266,13 @@ struct VirtualDisplayView: View {
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {
         if appHelper.isVirtualDisplayRunning(configId: config.id) {
-            appHelper.disableDisplayByConfig(config.id)
+            do {
+                try appHelper.disableDisplayByConfig(config.id)
+            } catch {
+                AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
+                errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
+                showError = true
+            }
             return
         }
         do {

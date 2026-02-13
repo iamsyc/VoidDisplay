@@ -14,6 +14,7 @@ final class VirtualDisplayService {
         case invalidConfiguration(String)
         case creationFailed
         case configNotFound
+        case cannotDisablePrimaryWithoutPhysicalDisplay
 
         var errorDescription: String? {
             switch self {
@@ -25,6 +26,8 @@ final class VirtualDisplayService {
                 return String(localized: "Virtual display creation failed.")
             case .configNotFound:
                 return String(localized: "Display configuration not found.")
+            case .cannotDisablePrimaryWithoutPhysicalDisplay:
+                return String(localized: "Cannot disable the primary virtual display while no physical display is connected. Switch primary display first, then try again.")
             }
         }
     }
@@ -166,8 +169,11 @@ final class VirtualDisplayService {
         persistConfigs()
     }
 
-    func disableDisplayByConfig(_ configId: UUID) {
+    func disableDisplayByConfig(_ configId: UUID) throws {
         guard let index = displayConfigs.firstIndex(where: { $0.id == configId }) else { return }
+        if let runtime = activeDisplaysByConfigId[configId] {
+            try validateDisableSafety(for: runtime)
+        }
 
         var updated = displayConfigs[index]
         updated.desiredEnabled = false
@@ -342,6 +348,36 @@ final class VirtualDisplayService {
 
     private func persistConfigs() {
         persistenceService.saveConfigs(displayConfigs)
+    }
+
+    private func validateDisableSafety(for runtimeDisplay: CGVirtualDisplay) throws {
+        guard CGDisplayIsMain(runtimeDisplay.displayID) != 0 else { return }
+        guard hasAnyPhysicalDisplayConnected() else {
+            throw VirtualDisplayError.cannotDisablePrimaryWithoutPhysicalDisplay
+        }
+    }
+
+    private func hasAnyPhysicalDisplayConnected() -> Bool {
+        guard let onlineDisplayIDs = onlineDisplayIDs() else {
+            // If query fails, avoid blocking user action due to uncertain environment.
+            return true
+        }
+
+        let managedVirtualDisplayIDs = Set(activeDisplaysByConfigId.values.map(\.displayID))
+        return onlineDisplayIDs.contains { !managedVirtualDisplayIDs.contains($0) }
+    }
+
+    private func onlineDisplayIDs() -> [CGDirectDisplayID]? {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success else {
+            return nil
+        }
+
+        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displayIDs, &count) == .success else {
+            return nil
+        }
+        return Array(displayIDs.prefix(Int(count)))
     }
 
     @discardableResult
