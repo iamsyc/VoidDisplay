@@ -2,6 +2,11 @@ import Foundation
 import XCTest
 
 final class RealEnvironmentE2ETests: XCTestCase {
+    private enum ShareAccessibilityState {
+        static let sharing = "sharing"
+        static let idle = "idle"
+    }
+
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -114,23 +119,23 @@ final class RealEnvironmentE2ETests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(shareActionButton.waitForExistence(timeout: 5), "Expected per-display share action button.")
 
-        if (shareActionButton.value as? String) == "sharing" {
+        if (shareActionButton.value as? String) == ShareAccessibilityState.sharing {
             shareActionButton.tap()
             XCTAssertTrue(
-                waitForAccessibilityValue(element: shareActionButton, value: "idle", timeout: 5),
+                waitForAccessibilityValue(element: shareActionButton, value: ShareAccessibilityState.idle, timeout: 5),
                 "Expected initial sharing state to become idle before lifecycle check."
             )
         }
 
         shareActionButton.tap()
         XCTAssertTrue(
-            waitForAccessibilityValue(element: shareActionButton, value: "sharing", timeout: 8),
+            waitForAccessibilityValue(element: shareActionButton, value: ShareAccessibilityState.sharing, timeout: 8),
             "Expected display sharing to start."
         )
 
         shareActionButton.tap()
         XCTAssertTrue(
-            waitForAccessibilityValue(element: shareActionButton, value: "idle", timeout: 8),
+            waitForAccessibilityValue(element: shareActionButton, value: ShareAccessibilityState.idle, timeout: 8),
             "Expected display sharing to stop."
         )
 

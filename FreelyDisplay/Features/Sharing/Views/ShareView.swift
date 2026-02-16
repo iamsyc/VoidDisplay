@@ -12,6 +12,11 @@ import Combine
 import CoreGraphics
 
 struct ShareView: View {
+    private enum ShareAccessibilityState {
+        static let sharing = "sharing"
+        static let idle = "idle"
+    }
+
     @Environment(AppHelper.self) private var appHelper: AppHelper
     @State private var viewModel = ShareViewModel()
     @State private var displayReconfigurationMonitor = DisplayReconfigurationMonitor()
@@ -438,7 +443,9 @@ struct ShareView: View {
         .buttonStyle(.borderedProminent)
         .tint(isSharingDisplay ? .red : .accentColor)
         .accessibilityIdentifier("share_action_button_\(display.displayID)")
-        .accessibilityValue(isSharingDisplay ? "sharing" : "idle")
+        .accessibilityValue(
+            Text(verbatim: isSharingDisplay ? ShareAccessibilityState.sharing : ShareAccessibilityState.idle)
+        )
     }
 
     private func displayTypeBadges(
