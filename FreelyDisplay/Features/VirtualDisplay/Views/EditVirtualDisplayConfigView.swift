@@ -29,6 +29,7 @@ struct EditVirtualDisplayConfigView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showSaveAndRebuildPrompt = false
+    @State private var showUnsafeMainDisplayRebuildPrompt = false
     @State private var pendingConfigForRebuildAction: VirtualDisplayConfig?
 
     private var isRunning: Bool {
@@ -265,6 +266,16 @@ struct EditVirtualDisplayConfigView: View {
         } message: {
             Text("Some changes require recreating the virtual display to take effect.")
         }
+        .alert("Main Display Rebuild Restricted", isPresented: $showUnsafeMainDisplayRebuildPrompt) {
+            Button("Save Only") {
+                savePendingConfigOnlyAndDismiss()
+            }
+            Button("Cancel", role: .cancel) {
+                pendingConfigForRebuildAction = nil
+            }
+        } message: {
+            Text("This display is currently the system main display. Rebuilding it while running can cause macOS to reconfigure displays. Save now, then switch main display in System Settings before rebuilding.")
+        }
         .onAppear {
             load()
         }
@@ -368,7 +379,11 @@ struct EditVirtualDisplayConfigView: View {
         )
         if requiresSaveAndRebuild {
             pendingConfigForRebuildAction = updated
-            showSaveAndRebuildPrompt = true
+            if appHelper.isMainDisplay(configId: configId) {
+                showUnsafeMainDisplayRebuildPrompt = true
+            } else {
+                showSaveAndRebuildPrompt = true
+            }
             return
         }
 

@@ -12,6 +12,8 @@ struct VirtualDisplayView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
     @State var createView = false
     @State private var editingConfig: EditingConfig?
+    @State private var primaryDisplayMonitor = PrimaryDisplayReconfigurationMonitor()
+    @State private var primaryDisplayRefreshTick: UInt64 = 0
 
     @State private var showDeleteConfirm = false
     @State private var deleteCandidate: VirtualDisplayConfig?
@@ -26,6 +28,7 @@ struct VirtualDisplayView: View {
     @State private var errorMessage = ""
     
     var body: some View {
+        let _ = primaryDisplayRefreshTick
         Group {
             if !appHelper.displayConfigs.isEmpty {
                 List(appHelper.displayConfigs) { config in
@@ -81,6 +84,12 @@ struct VirtualDisplayView: View {
             if !appHelper.restoreFailures.isEmpty {
                 showRestoreFailureAlert = true
             }
+            _ = primaryDisplayMonitor.start {
+                primaryDisplayRefreshTick &+= 1
+            }
+        }
+        .onDisappear {
+            primaryDisplayMonitor.stop()
         }
         .onChange(of: appHelper.restoreFailures) { _, newValue in
             if !newValue.isEmpty {
@@ -255,7 +264,9 @@ struct VirtualDisplayView: View {
         guard let runtimeDisplay = appHelper.runtimeDisplay(for: configID) else {
             return false
         }
-        return CGDisplayIsMain(runtimeDisplay.displayID) != 0
+        let displayID = runtimeDisplay.displayID
+        let mainID = CGMainDisplayID()
+        return displayID == mainID
     }
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {
@@ -290,4 +301,77 @@ struct VirtualDisplayView: View {
 #Preview {
     VirtualDisplayView()
         .environment(AppHelper(preview: true))
+}
+
+@MainActor
+private final class PrimaryDisplayReconfigurationMonitor {
+    private var handler: (@MainActor () -> Void)?
+    private var debounceTask: Task<Void, Never>?
+    nonisolated(unsafe) private var isRunning = false
+
+    @discardableResult
+    func start(handler: @escaping @MainActor () -> Void) -> Bool {
+        self.handler = handler
+        guard !isRunning else { return true }
+
+        let userInfo = Unmanaged.passRetained(self).toOpaque()
+        let result = CGDisplayRegisterReconfigurationCallback(
+            Self.displayReconfigurationCallback,
+            userInfo
+        )
+        guard result == .success else {
+            Unmanaged<PrimaryDisplayReconfigurationMonitor>.fromOpaque(userInfo).release()
+            return false
+        }
+        isRunning = true
+        return true
+    }
+
+    func stop() {
+        guard isRunning else {
+            handler = nil
+            debounceTask?.cancel()
+            debounceTask = nil
+            return
+        }
+
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        CGDisplayRemoveReconfigurationCallback(
+            Self.displayReconfigurationCallback,
+            userInfo
+        )
+        isRunning = false
+        handler = nil
+        debounceTask?.cancel()
+        debounceTask = nil
+        Unmanaged<PrimaryDisplayReconfigurationMonitor>.fromOpaque(userInfo).release()
+    }
+
+    deinit {
+        assert(!isRunning, "PrimaryDisplayReconfigurationMonitor must be stopped before deallocation.")
+    }
+
+    private func handleDisplayChange() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.handler?()
+        }
+    }
+
+    private nonisolated static let displayReconfigurationCallback: CGDisplayReconfigurationCallBack = {
+        _,
+        _,
+        userInfo in
+        guard let userInfo else { return }
+
+        let monitor = Unmanaged<PrimaryDisplayReconfigurationMonitor>
+            .fromOpaque(userInfo)
+            .takeUnretainedValue()
+
+        Task { @MainActor in
+            monitor.handleDisplayChange()
+        }
+    }
 }

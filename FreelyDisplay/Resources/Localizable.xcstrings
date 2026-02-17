@@ -316,6 +316,9 @@
         }
       }
     },
+    "Cannot rebuild while this display is the system main display. Switch main display first and try again." : {
+
+    },
     "Click + to start a new monitoring window." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -522,6 +525,9 @@
           }
         }
       }
+    },
+    "Display teardown timed out. Wait a moment and try rebuilding again." : {
+
     },
     "Displays" : {
       "localizations" : {
@@ -833,6 +839,9 @@
           }
         }
       }
+    },
+    "Main Display Rebuild Restricted" : {
+
     },
     "Main display share link is unavailable. Refresh displays and try again." : {
       "extractionState" : "stale",
@@ -1578,6 +1587,9 @@
           }
         }
       }
+    },
+    "This display is currently the system main display. Rebuilding it while running can cause macOS to reconfigure displays. Save now, then switch main display in System Settings before rebuilding." : {
+
     },
     "This resolution mode already exists." : {
       "localizations" : {

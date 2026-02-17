@@ -14,6 +14,8 @@ final class VirtualDisplayService {
         case invalidConfiguration(String)
         case creationFailed
         case configNotFound
+        case rebuildMainDisplayWhileRunning
+        case teardownTimedOut
 
         var errorDescription: String? {
             switch self {
@@ -25,6 +27,10 @@ final class VirtualDisplayService {
                 return String(localized: "Virtual display creation failed.")
             case .configNotFound:
                 return String(localized: "Display configuration not found.")
+            case .rebuildMainDisplayWhileRunning:
+                return String(localized: "Cannot rebuild while this display is the system main display. Switch main display first and try again.")
+            case .teardownTimedOut:
+                return String(localized: "Display teardown timed out. Wait a moment and try rebuilding again.")
             }
         }
     }
@@ -35,6 +41,8 @@ final class VirtualDisplayService {
     private var runningConfigIds: Set<UUID> = []
     private var restoreFailures: [VirtualDisplayRestoreFailure] = []
     private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
+    private var runtimeGenerationByConfigId: [UUID: UInt64] = [:]
+    private var nextRuntimeGeneration: UInt64 = 1
 
     init(persistenceService: VirtualDisplayPersistenceService? = nil) {
         self.persistenceService = persistenceService ?? VirtualDisplayPersistenceService()
@@ -76,6 +84,7 @@ final class VirtualDisplayService {
         let removedConfigCount = displayConfigs.count
 
         activeDisplaysByConfigId.removeAll()
+        runtimeGenerationByConfigId.removeAll()
         runningConfigIds.removeAll()
         displays.removeAll()
         restoreFailures.removeAll()
@@ -161,6 +170,7 @@ final class VirtualDisplayService {
         displays.removeAll { $0.serialNum == display.serialNum }
         for (configId, activeDisplay) in activeDisplaysByConfigId where activeDisplay.serialNum == display.serialNum {
             activeDisplaysByConfigId[configId] = nil
+            runtimeGenerationByConfigId[configId] = nil
             runningConfigIds.remove(configId)
         }
         persistConfigs()
@@ -175,6 +185,7 @@ final class VirtualDisplayService {
 
         let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? displayConfigs[index].serialNum
         activeDisplaysByConfigId[configId] = nil
+        runtimeGenerationByConfigId[configId] = nil
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == runtimeSerialNum }
         persistConfigs()
@@ -206,6 +217,7 @@ final class VirtualDisplayService {
 
         let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? config.serialNum
         activeDisplaysByConfigId[configId] = nil
+        runtimeGenerationByConfigId[configId] = nil
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == runtimeSerialNum }
 
@@ -219,6 +231,7 @@ final class VirtualDisplayService {
         displays.removeAll { $0.serialNum == serialNum }
         for (configId, activeDisplay) in activeDisplaysByConfigId where activeDisplay.serialNum == serialNum {
             activeDisplaysByConfigId[configId] = nil
+            runtimeGenerationByConfigId[configId] = nil
             runningConfigIds.remove(configId)
         }
 
@@ -281,10 +294,22 @@ final class VirtualDisplayService {
             throw VirtualDisplayError.configNotFound
         }
 
+        var generationToWaitFor: UInt64?
         if let running = activeDisplaysByConfigId[configId] {
+            if CGDisplayIsMain(running.displayID) != 0 {
+                throw VirtualDisplayError.rebuildMainDisplayWhileRunning
+            }
+
+            generationToWaitFor = runtimeGenerationByConfigId[configId]
             activeDisplaysByConfigId[configId] = nil
             runningConfigIds.remove(configId)
             displays.removeAll { $0.serialNum == running.serialNum }
+        }
+
+        if let generationToWaitFor,
+           !waitForTermination(configId: configId, expectedGeneration: generationToWaitFor) {
+            runtimeGenerationByConfigId[configId] = nil
+            throw VirtualDisplayError.teardownTimedOut
         }
 
         let maxAttempts = 3
@@ -359,11 +384,16 @@ final class VirtualDisplayService {
             throw VirtualDisplayError.invalidConfiguration(String(localized: "At least one resolution mode is required."))
         }
 
+        let generation = allocateRuntimeGeneration()
         let desc = CGVirtualDisplayDescriptor()
         desc.setDispatchQueue(DispatchQueue.main)
         desc.terminationHandler = { [weak self] _, _ in
             DispatchQueue.main.async {
-                self?.handleVirtualDisplayTermination(configId: config.id, serialNum: config.serialNum)
+                self?.handleVirtualDisplayTermination(
+                    configId: config.id,
+                    serialNum: config.serialNum,
+                    generation: generation
+                )
             }
         }
         desc.name = config.name
@@ -399,16 +429,44 @@ final class VirtualDisplayService {
         }
 
         activeDisplaysByConfigId[config.id] = display
+        runtimeGenerationByConfigId[config.id] = generation
         runningConfigIds.insert(config.id)
         displays.removeAll { $0.serialNum == config.serialNum }
         displays.append(display)
         return display
     }
 
-    private func handleVirtualDisplayTermination(configId: UUID, serialNum: UInt32) {
+    private func handleVirtualDisplayTermination(configId: UUID, serialNum: UInt32, generation: UInt64) {
+        guard runtimeGenerationByConfigId[configId] == generation else {
+            AppLog.virtualDisplay.debug(
+                "Ignore stale virtual display termination (serial: \(serialNum, privacy: .public), generation: \(generation, privacy: .public))."
+            )
+            return
+        }
         AppLog.virtualDisplay.notice("Virtual display terminated (serial: \(serialNum, privacy: .public)).")
         activeDisplaysByConfigId[configId] = nil
+        runtimeGenerationByConfigId[configId] = nil
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == serialNum }
+    }
+
+    private func allocateRuntimeGeneration() -> UInt64 {
+        defer { nextRuntimeGeneration &+= 1 }
+        return nextRuntimeGeneration
+    }
+
+    private func waitForTermination(
+        configId: UUID,
+        expectedGeneration: UInt64,
+        timeout: TimeInterval = 1.5
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if runtimeGenerationByConfigId[configId] != expectedGeneration {
+                return true
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        return runtimeGenerationByConfigId[configId] != expectedGeneration
     }
 }

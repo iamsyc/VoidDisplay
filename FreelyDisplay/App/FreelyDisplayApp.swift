@@ -316,6 +316,13 @@ final class AppHelper {
         virtualDisplayService.isVirtualDisplayRunning(configId: configId)
     }
 
+    func isMainDisplay(configId: UUID) -> Bool {
+        guard let runtime = virtualDisplayService.runtimeDisplay(for: configId) else {
+            return false
+        }
+        return runtime.displayID == CGMainDisplayID()
+    }
+
     func clearRestoreFailures() {
         virtualDisplayService.clearRestoreFailures()
         syncVirtualDisplayState()
