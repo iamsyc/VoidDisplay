@@ -34,7 +34,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Terminate Existing FreelyDisplay"
-               scriptText = "/usr/bin/pkill -9 -f '/FreelyDisplay.app/Contents/MacOS/FreelyDisplay' >/dev/null 2>&amp;1 || true&#10;/usr/bin/pkill -9 -f 'debugserver.*FreelyDisplay\\.app/Contents/MacOS/FreelyDisplay' >/dev/null 2>&amp;1 || true">
+               scriptText = "/usr/bin/pkill -9 -f &apos;/FreelyDisplay.app/Contents/MacOS/FreelyDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true&#10;/usr/bin/pkill -9 -f &apos;debugserver.*FreelyDisplay\\.app/Contents/MacOS/FreelyDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true">
             </ActionContent>
          </ExecutionAction>
       </PreActions>
