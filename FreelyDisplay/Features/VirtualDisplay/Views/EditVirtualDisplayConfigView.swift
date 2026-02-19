@@ -409,14 +409,16 @@ struct EditVirtualDisplayConfigView: View {
         loadedConfig = pendingConfigForRebuildAction
         self.pendingConfigForRebuildAction = nil
 
-        do {
-            try appHelper.rebuildVirtualDisplay(configId: configId)
-            appHelper.applyModes(configId: configId, modes: selectedModes)
-            dismiss()
-        } catch {
-            AppErrorMapper.logFailure("Rebuild virtual display", error: error, logger: AppLog.virtualDisplay)
-            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
-            showError = true
+        Task { @MainActor in
+            do {
+                try await appHelper.rebuildVirtualDisplay(configId: configId)
+                appHelper.applyModes(configId: configId, modes: selectedModes)
+                dismiss()
+            } catch {
+                AppErrorMapper.logFailure("Rebuild virtual display", error: error, logger: AppLog.virtualDisplay)
+                errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
+                showError = true
+            }
         }
     }
 

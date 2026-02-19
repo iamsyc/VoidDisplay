@@ -363,8 +363,8 @@ final class AppHelper {
         syncVirtualDisplayState()
     }
 
-    func enableDisplay(_ configId: UUID) throws {
-        try virtualDisplayService.enableDisplay(configId)
+    func enableDisplay(_ configId: UUID) async throws {
+        try await virtualDisplayService.enableDisplay(configId)
         syncVirtualDisplayState()
     }
 
@@ -401,11 +401,11 @@ final class AppHelper {
         syncVirtualDisplayState()
     }
 
-    func rebuildVirtualDisplay(configId: UUID) throws {
+    func rebuildVirtualDisplay(configId: UUID) async throws {
         // Release AppHelper-side references first so the old runtime display can fully tear down.
         displays.removeAll()
         defer { syncVirtualDisplayState() }
-        try virtualDisplayService.rebuildVirtualDisplay(configId: configId)
+        try await virtualDisplayService.rebuildVirtualDisplay(configId: configId)
     }
 
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {

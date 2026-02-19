@@ -14,6 +14,7 @@ struct VirtualDisplayView: View {
     @State private var editingConfig: EditingConfig?
     @State private var primaryDisplayMonitor = PrimaryDisplayReconfigurationMonitor()
     @State private var primaryDisplayRefreshTick: UInt64 = 0
+    @State private var togglingConfigIds: Set<UUID> = []
 
     @State private var showDeleteConfirm = false
     @State private var deleteCandidate: VirtualDisplayConfig?
@@ -113,6 +114,7 @@ struct VirtualDisplayView: View {
 
     private func virtualDisplayRow(_ config: VirtualDisplayConfig) -> some View {
         let isRunning = appHelper.isVirtualDisplayRunning(configId: config.id)
+        let isToggling = togglingConfigIds.contains(config.id)
         let isFirst = appHelper.displayConfigs.first?.id == config.id
         let isLast = appHelper.displayConfigs.last?.id == config.id
         let isPrimary = isPrimaryDisplay(configID: config.id)
@@ -157,6 +159,7 @@ struct VirtualDisplayView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isRunning ? .orange : .green)
+                    .disabled(isToggling)
                     .accessibilityIdentifier("virtual_display_toggle_button")
 
                     Button {
@@ -196,6 +199,7 @@ struct VirtualDisplayView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isRunning ? .orange : .green)
+                    .disabled(isToggling)
                     .accessibilityIdentifier("virtual_display_toggle_button")
 
                     AppQuickActionsMenu {
@@ -270,16 +274,23 @@ struct VirtualDisplayView: View {
     }
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {
-        if appHelper.isVirtualDisplayRunning(configId: config.id) {
-            appHelper.disableDisplayByConfig(config.id)
-            return
-        }
-        do {
-            try appHelper.enableDisplay(config.id)
-        } catch {
-            AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
-            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
-            showError = true
+        guard !togglingConfigIds.contains(config.id) else { return }
+        togglingConfigIds.insert(config.id)
+
+        Task { @MainActor in
+            defer { togglingConfigIds.remove(config.id) }
+
+            if appHelper.isVirtualDisplayRunning(configId: config.id) {
+                appHelper.disableDisplayByConfig(config.id)
+                return
+            }
+            do {
+                try await appHelper.enableDisplay(config.id)
+            } catch {
+                AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
+                errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
+                showError = true
+            }
         }
     }
 
