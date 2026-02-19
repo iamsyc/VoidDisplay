@@ -6,89 +6,6 @@ import Testing
 struct VirtualDisplayTopologyRecoveryTests {
 
     @MainActor
-    @Test func disablingMainManagedDisplayWithoutFallbackIsBlocked() throws {
-        let managedMainID: CGDirectDisplayID = 101
-        let snapshot = topologySnapshot(
-            mainDisplayID: managedMainID,
-            displays: [
-                displayInfo(id: managedMainID, serial: 1, managed: true)
-            ]
-        )
-        let inspector = FakeDisplayTopologyInspector(snapshots: [snapshot])
-        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
-        let service = makeService(inspector: inspector, repairer: repairer)
-        service.replaceDisplayConfigsForTesting([
-            config(serial: 1, desiredEnabled: true)
-        ])
-
-        do {
-            try service.validateDisableSafetyForTesting(
-                runtimeDisplayID: managedMainID,
-                treatAsMainDisplay: true
-            )
-            Issue.record("Expected disable safety to block with no fallback display.")
-        } catch let error as VirtualDisplayService.VirtualDisplayError {
-            guard case .cannotDisableCurrentMainWithoutFallback = error else {
-                Issue.record("Unexpected error: \(error.localizedDescription)")
-                return
-            }
-        } catch {
-            Issue.record("Unexpected error type: \(error)")
-        }
-    }
-
-    @MainActor
-    @Test func disablingMainManagedDisplayFailsClosedWhenTopologySamplingUnavailable() {
-        let managedMainID: CGDirectDisplayID = 111
-        let inspector = FakeDisplayTopologyInspector(snapshots: [])
-        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
-        let service = makeService(inspector: inspector, repairer: repairer)
-        service.replaceDisplayConfigsForTesting([
-            config(serial: 1, desiredEnabled: true)
-        ])
-
-        do {
-            try service.validateDisableSafetyForTesting(
-                runtimeDisplayID: managedMainID,
-                treatAsMainDisplay: true
-            )
-            Issue.record("Expected fail-closed behavior when topology sampling is unavailable.")
-        } catch let error as VirtualDisplayService.VirtualDisplayError {
-            guard case .disableSafetyCheckUnavailable = error else {
-                Issue.record("Unexpected error: \(error.localizedDescription)")
-                return
-            }
-        } catch {
-            Issue.record("Unexpected error type: \(error)")
-        }
-    }
-
-    @MainActor
-    @Test func disablingMainManagedDisplayAllowsAnotherManagedFallback() throws {
-        let managedMainID: CGDirectDisplayID = 101
-        let managedFallbackID: CGDirectDisplayID = 102
-        let snapshot = topologySnapshot(
-            mainDisplayID: managedMainID,
-            displays: [
-                displayInfo(id: managedMainID, serial: 1, managed: true),
-                displayInfo(id: managedFallbackID, serial: 2, managed: true)
-            ]
-        )
-        let inspector = FakeDisplayTopologyInspector(snapshots: [snapshot])
-        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
-        let service = makeService(inspector: inspector, repairer: repairer)
-        service.replaceDisplayConfigsForTesting([
-            config(serial: 1, desiredEnabled: true),
-            config(serial: 2, desiredEnabled: true)
-        ])
-
-        try service.validateDisableSafetyForTesting(
-            runtimeDisplayID: managedMainID,
-            treatAsMainDisplay: true
-        )
-    }
-
-    @MainActor
     @Test func postEnableMirrorCollapseTriggersRepairAndKeepsCurrentMainAsAnchor() async throws {
         let displayA: CGDirectDisplayID = 201
         let displayB: CGDirectDisplayID = 202
@@ -103,8 +20,8 @@ struct VirtualDisplayTopologyRecoveryTests {
         let expanded = topologySnapshot(
             mainDisplayID: displayB,
             displays: [
-                displayInfo(id: displayA, serial: 1, managed: true),
-                displayInfo(id: displayB, serial: 2, managed: true)
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
             ]
         )
 
@@ -125,7 +42,133 @@ struct VirtualDisplayTopologyRecoveryTests {
 
         try await service.ensureHealthyTopologyAfterEnableForTesting()
 
+        #expect(repairer.callCount == 2)
+        #expect(repairer.lastAnchorDisplayID == displayB)
+        #expect(Set(repairer.lastManagedDisplayIDs) == Set([displayA, displayB]))
+    }
+
+    @MainActor
+    @Test func postEnableOverlappingManagedDisplaysWithoutMirrorFlagsTriggersRepair() async throws {
+        let hiddenMain: CGDirectDisplayID = 290
+        let displayA: CGDirectDisplayID = 291
+        let displayB: CGDirectDisplayID = 292
+
+        let collapsed = topologySnapshot(
+            mainDisplayID: hiddenMain,
+            displays: [
+                displayInfo(
+                    id: hiddenMain,
+                    serial: 90,
+                    managed: false,
+                    bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)
+                ),
+                displayInfo(
+                    id: displayA,
+                    serial: 1,
+                    managed: true,
+                    bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+                ),
+                displayInfo(
+                    id: displayB,
+                    serial: 2,
+                    managed: true,
+                    bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+                )
+            ]
+        )
+        let recovered = topologySnapshot(
+            mainDisplayID: hiddenMain,
+            displays: [
+                displayInfo(
+                    id: hiddenMain,
+                    serial: 90,
+                    managed: false,
+                    bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)
+                ),
+                displayInfo(
+                    id: displayA,
+                    serial: 1,
+                    managed: true,
+                    bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+                ),
+                displayInfo(
+                    id: displayB,
+                    serial: 2,
+                    managed: true,
+                    bounds: CGRect(x: 3920, y: 0, width: 1920, height: 1080)
+                )
+            ]
+        )
+
+        let inspector = FakeDisplayTopologyInspector(
+            snapshots: [collapsed, collapsed, collapsed, recovered, recovered, recovered]
+        )
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
+        let service = makeService(
+            inspector: inspector,
+            repairer: repairer,
+            topologyStabilityTimeout: 0.08,
+            topologyStabilityPollInterval: 0.001
+        )
+        service.replaceDisplayConfigsForTesting([
+            config(serial: 1, desiredEnabled: true),
+            config(serial: 2, desiredEnabled: true)
+        ])
+
+        try await service.ensureHealthyTopologyAfterEnableForTesting()
         #expect(repairer.callCount == 1)
+        #expect(Set(repairer.lastManagedDisplayIDs) == Set([displayA, displayB]))
+    }
+
+    @MainActor
+    @Test func postEnableUsesPreferredManagedMainForContinuityWhenSystemMainDrifts() async throws {
+        let displayA: CGDirectDisplayID = 701
+        let displayB: CGDirectDisplayID = 702
+
+        let collapsedOnA = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, inMirrorSet: true, mirrorMasterID: nil),
+                displayInfo(id: displayB, serial: 2, managed: true, inMirrorSet: true, mirrorMasterID: displayA)
+            ]
+        )
+        let expandedButStillMainA = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
+            ]
+        )
+        let expandedRecoveredToB = topologySnapshot(
+            mainDisplayID: displayB,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        let inspector = FakeDisplayTopologyInspector(
+            snapshots: [
+                collapsedOnA, collapsedOnA, collapsedOnA,
+                expandedButStillMainA, expandedButStillMainA, expandedButStillMainA,
+                expandedButStillMainA, expandedButStillMainA, expandedButStillMainA,
+                expandedRecoveredToB, expandedRecoveredToB, expandedRecoveredToB
+            ]
+        )
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
+        let service = makeService(
+            inspector: inspector,
+            repairer: repairer,
+            topologyStabilityTimeout: 0.12,
+            topologyStabilityPollInterval: 0.001
+        )
+        service.replaceDisplayConfigsForTesting([
+            config(serial: 1, desiredEnabled: true),
+            config(serial: 2, desiredEnabled: true)
+        ])
+
+        try await service.ensureHealthyTopologyAfterEnableForTesting(preferredMainDisplayID: displayB)
+        #expect(repairer.callCount == 3)
         #expect(repairer.lastAnchorDisplayID == displayB)
         #expect(Set(repairer.lastManagedDisplayIDs) == Set([displayA, displayB]))
     }
@@ -184,8 +227,8 @@ struct VirtualDisplayTopologyRecoveryTests {
         let recoveredExpanded = topologySnapshot(
             mainDisplayID: displayB,
             displays: [
-                displayInfo(id: displayA, serial: 1, managed: true),
-                displayInfo(id: displayB, serial: 2, managed: true)
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
             ]
         )
 
@@ -212,7 +255,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         ])
 
         try await service.ensureHealthyTopologyAfterEnableForTesting()
-        #expect(repairer.callCount == 1)
+        #expect(repairer.callCount == 2)
     }
 
     @MainActor
@@ -231,8 +274,8 @@ struct VirtualDisplayTopologyRecoveryTests {
         let recovered = topologySnapshot(
             mainDisplayID: displayB,
             displays: [
-                displayInfo(id: displayA, serial: 1, managed: true),
-                displayInfo(id: displayB, serial: 2, managed: true)
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
             ]
         )
 
@@ -252,8 +295,8 @@ struct VirtualDisplayTopologyRecoveryTests {
         ])
 
         try await service.ensureHealthyTopologyAfterEnableForTesting()
-        #expect(repairer.callCount == 1)
-        #expect(repairer.lastAnchorDisplayID == nonManagedMain)
+        #expect(repairer.callCount == 2)
+        #expect(repairer.lastAnchorDisplayID == displayB)
     }
 
     @MainActor
@@ -413,6 +456,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         id: CGDirectDisplayID,
         serial: UInt32,
         managed: Bool,
+        isActive: Bool = true,
         inMirrorSet: Bool = false,
         mirrorMasterID: CGDirectDisplayID? = nil,
         bounds: CGRect = CGRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -421,6 +465,7 @@ struct VirtualDisplayTopologyRecoveryTests {
             id: id,
             serialNumber: serial,
             isManagedVirtualDisplay: managed,
+            isActive: isActive,
             isInMirrorSet: inMirrorSet,
             mirrorMasterDisplayID: mirrorMasterID,
             bounds: bounds

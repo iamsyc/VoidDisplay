@@ -7,6 +7,7 @@ struct DisplayTopologySnapshot: Equatable {
         let id: CGDirectDisplayID
         let serialNumber: UInt32
         let isManagedVirtualDisplay: Bool
+        let isActive: Bool
         let isInMirrorSet: Bool
         let mirrorMasterDisplayID: CGDirectDisplayID?
         let bounds: CGRect
@@ -76,8 +77,6 @@ final class VirtualDisplayService {
         case configNotFound
         case rebuildMainDisplayWhileRunning
         case teardownTimedOut
-        case disableSafetyCheckUnavailable
-        case cannotDisableCurrentMainWithoutFallback
         case topologyRepairFailed
         case topologyUnstableAfterEnable
 
@@ -95,10 +94,6 @@ final class VirtualDisplayService {
                 return String(localized: "Cannot rebuild while this display is the system main display. Switch main display first and try again.")
             case .teardownTimedOut:
                 return String(localized: "Display teardown timed out. Wait a moment and try rebuilding again.")
-            case .disableSafetyCheckUnavailable:
-                return String(localized: "Cannot verify display safety right now. Please try again in a moment.")
-            case .cannotDisableCurrentMainWithoutFallback:
-                return String(localized: "Cannot disable current main display because no fallback display is available.")
             case .topologyRepairFailed:
                 return String(localized: "Display topology repair failed. Open System Display Settings and recheck arrangement.")
             case .topologyUnstableAfterEnable:
@@ -316,9 +311,6 @@ final class VirtualDisplayService {
     func disableDisplayByConfig(_ configId: UUID) throws {
         guard let index = displayConfigs.firstIndex(where: { $0.id == configId }) else { return }
 
-        let runtimeDisplayID = activeDisplaysByConfigId[configId]?.displayID
-        try validateDisableSafetyIfNeeded(runtimeDisplayID: runtimeDisplayID)
-
         var updated = displayConfigs[index]
         updated.desiredEnabled = false
         displayConfigs[index] = updated
@@ -344,6 +336,7 @@ final class VirtualDisplayService {
 
         let config = displayConfigs[index]
         let enableStart = DispatchTime.now().uptimeNanoseconds
+        let preferredMainDisplayID = preferredManagedMainDisplayIDForEnable()
 
         var terminationConfirmed = true
         var offlineVerified = false
@@ -396,7 +389,7 @@ final class VirtualDisplayService {
                 terminationConfirmed: terminationConfirmed
             )
             do {
-                try await ensureHealthyTopologyAfterEnable()
+                try await ensureHealthyTopologyAfterEnable(preferredMainDisplayID: preferredMainDisplayID)
             } catch {
                 rollbackEnableRuntimeState(configId: configId, serialNum: createdDisplay.serialNum)
                 let offlineConfirmed = await waitForManagedDisplayOffline(
@@ -574,52 +567,37 @@ final class VirtualDisplayService {
     private struct TopologyHealthEvaluation {
         enum Issue {
             case managedDisplaysCollapsedIntoSingleMirrorSet
+            case managedDisplaysOverlappingInExtendedSpace
             case mainDisplayOutsideManagedSetWithoutPhysicalFallback
         }
 
         let issue: Issue?
         let managedDisplayIDs: [CGDirectDisplayID]
+        let forceNormalization: Bool
 
         var needsRepair: Bool { issue != nil }
     }
 
-    private func validateDisableSafetyIfNeeded(runtimeDisplayID: CGDirectDisplayID?) throws {
-        guard let runtimeDisplayID else { return }
-        try validateDisableSafetyIfNeeded(
-            runtimeDisplayID: runtimeDisplayID,
-            treatAsMainDisplay: runtimeDisplayID == CGMainDisplayID()
-        )
-    }
-
-    private func validateDisableSafetyIfNeeded(
-        runtimeDisplayID: CGDirectDisplayID,
-        treatAsMainDisplay: Bool
-    ) throws {
-        guard treatAsMainDisplay else { return }
-        guard let snapshot = currentTopologySnapshot() else {
-            throw VirtualDisplayError.disableSafetyCheckUnavailable
-        }
-
-        let remaining = snapshot.displays.filter { $0.id != runtimeDisplayID }
-        let hasPhysicalFallback = remaining.contains { !$0.isManagedVirtualDisplay }
-        let hasManagedFallback = remaining.contains { $0.isManagedVirtualDisplay }
-        if !hasPhysicalFallback && !hasManagedFallback {
-            throw VirtualDisplayError.cannotDisableCurrentMainWithoutFallback
-        }
-    }
-
-    private func ensureHealthyTopologyAfterEnable() async throws {
+    private func ensureHealthyTopologyAfterEnable(
+        preferredMainDisplayID: CGDirectDisplayID? = nil
+    ) async throws {
         guard let stableSnapshot = await waitForStableTopology() else {
             throw VirtualDisplayError.topologyUnstableAfterEnable
         }
 
         let evaluation = evaluateTopologyHealth(stableSnapshot)
-        guard evaluation.needsRepair else { return }
+        let shouldRepair = evaluation.needsRepair || evaluation.forceNormalization
+        guard shouldRepair else { return }
+        let repairAnchorDisplayID = selectRepairAnchorDisplayID(
+            snapshot: stableSnapshot,
+            managedDisplayIDs: evaluation.managedDisplayIDs,
+            preferredMainDisplayID: preferredMainDisplayID
+        )
 
         let repaired = topologyRepairer.repair(
             snapshot: stableSnapshot,
             managedDisplayIDs: evaluation.managedDisplayIDs,
-            anchorDisplayID: stableSnapshot.mainDisplayID
+            anchorDisplayID: repairAnchorDisplayID
         )
         guard repaired else {
             throw VirtualDisplayError.topologyRepairFailed
@@ -632,6 +610,49 @@ final class VirtualDisplayService {
         let postRepairEvaluation = evaluateTopologyHealth(stabilizedAfterRepair)
         guard !postRepairEvaluation.needsRepair else {
             throw VirtualDisplayError.topologyRepairFailed
+        }
+
+        if evaluation.forceNormalization {
+            let normalizationAnchorDisplayID = selectRepairAnchorDisplayID(
+                snapshot: stabilizedAfterRepair,
+                managedDisplayIDs: postRepairEvaluation.managedDisplayIDs,
+                preferredMainDisplayID: preferredMainDisplayID
+            )
+            let normalized = topologyRepairer.repair(
+                snapshot: stabilizedAfterRepair,
+                managedDisplayIDs: postRepairEvaluation.managedDisplayIDs,
+                anchorDisplayID: normalizationAnchorDisplayID
+            )
+            guard normalized else {
+                throw VirtualDisplayError.topologyRepairFailed
+            }
+            guard let stabilizedAfterNormalization = await waitForStableTopology() else {
+                throw VirtualDisplayError.topologyUnstableAfterEnable
+            }
+            let postNormalizationEvaluation = evaluateTopologyHealth(stabilizedAfterNormalization)
+            guard !postNormalizationEvaluation.needsRepair else {
+                throw VirtualDisplayError.topologyRepairFailed
+            }
+            if let continuityMainDisplayID = preferredMainDisplayID,
+               shouldEnforceMainContinuity(
+                   preferredMainDisplayID: continuityMainDisplayID,
+                   snapshot: stabilizedAfterNormalization,
+                   managedDisplayIDs: postNormalizationEvaluation.managedDisplayIDs
+               ) {
+                let continuityRepaired = topologyRepairer.repair(
+                    snapshot: stabilizedAfterNormalization,
+                    managedDisplayIDs: postNormalizationEvaluation.managedDisplayIDs,
+                    anchorDisplayID: continuityMainDisplayID
+                )
+                guard continuityRepaired else {
+                    throw VirtualDisplayError.topologyRepairFailed
+                }
+                guard let stabilizedAfterContinuity = await waitForStableTopology() else {
+                    throw VirtualDisplayError.topologyUnstableAfterEnable
+                }
+                _ = stabilizedAfterContinuity
+            }
+            return
         }
     }
 
@@ -679,6 +700,17 @@ final class VirtualDisplayService {
         let managedDisplayIDs = managedDisplays.map(\.id).sorted()
         let desiredManagedDisplays = managedDisplays.filter { desiredManagedSerials.contains($0.serialNumber) }
         let desiredManagedDisplayIDs = desiredManagedDisplays.map(\.id)
+        let hasPhysicalDisplay = snapshot.displays.contains {
+            !$0.isManagedVirtualDisplay &&
+                $0.isActive &&
+                $0.bounds.width > 1 &&
+                $0.bounds.height > 1
+        }
+        // In pure virtual-only topology, proactively normalize layout after enable because
+        // macOS can occasionally present mirrored content without reliable mirror flags.
+        let forceNormalization = !hasPhysicalDisplay &&
+            desiredManagedSerials.count >= 2 &&
+            desiredManagedDisplayIDs.count >= 2
 
         if desiredManagedSerials.count >= 2 &&
             desiredManagedDisplayIDs.count >= 2 &&
@@ -688,20 +720,35 @@ final class VirtualDisplayService {
             ) {
             return TopologyHealthEvaluation(
                 issue: .managedDisplaysCollapsedIntoSingleMirrorSet,
-                managedDisplayIDs: managedDisplayIDs
+                managedDisplayIDs: managedDisplayIDs,
+                forceNormalization: forceNormalization
             )
         }
 
-        let hasPhysicalDisplay = snapshot.displays.contains { !$0.isManagedVirtualDisplay }
+        if desiredManagedSerials.count >= 2 &&
+            desiredManagedDisplays.count >= 2 &&
+            areManagedDisplaysOverlappingInExtendedSpace(desiredManagedDisplays) {
+            return TopologyHealthEvaluation(
+                issue: .managedDisplaysOverlappingInExtendedSpace,
+                managedDisplayIDs: managedDisplayIDs,
+                forceNormalization: forceNormalization
+            )
+        }
+
         let mainInManagedSet = managedDisplayIDs.contains(snapshot.mainDisplayID)
         if !hasPhysicalDisplay && !mainInManagedSet {
             return TopologyHealthEvaluation(
                 issue: .mainDisplayOutsideManagedSetWithoutPhysicalFallback,
-                managedDisplayIDs: managedDisplayIDs
+                managedDisplayIDs: managedDisplayIDs,
+                forceNormalization: forceNormalization
             )
         }
 
-        return TopologyHealthEvaluation(issue: nil, managedDisplayIDs: managedDisplayIDs)
+        return TopologyHealthEvaluation(
+            issue: nil,
+            managedDisplayIDs: managedDisplayIDs,
+            forceNormalization: forceNormalization
+        )
     }
 
     private func areManagedDisplaysCollapsedIntoSingleMirrorSet(
@@ -717,6 +764,28 @@ final class VirtualDisplayService {
 
         let roots = Set(uniqueManagedIDs.map { mirrorRoot(for: $0, snapshot: snapshot) })
         return roots.count == 1
+    }
+
+    private func areManagedDisplaysOverlappingInExtendedSpace(
+        _ managedDisplays: [DisplayTopologySnapshot.DisplayInfo]
+    ) -> Bool {
+        guard managedDisplays.count >= 2 else { return false }
+        var signatures: Set<String> = []
+        for display in managedDisplays {
+            let bounds = display.bounds
+            let signature = [
+                Int(bounds.origin.x.rounded()),
+                Int(bounds.origin.y.rounded()),
+                Int(bounds.width.rounded()),
+                Int(bounds.height.rounded())
+            ]
+                .map(String.init)
+                .joined(separator: ":")
+            if !signatures.insert(signature).inserted {
+                return true
+            }
+        }
+        return false
     }
 
     private func mirrorRoot(
@@ -735,6 +804,79 @@ final class VirtualDisplayService {
         }
 
         return current
+    }
+
+    private func selectRepairAnchorDisplayID(
+        snapshot: DisplayTopologySnapshot,
+        managedDisplayIDs: [CGDirectDisplayID],
+        preferredMainDisplayID: CGDirectDisplayID? = nil
+    ) -> CGDirectDisplayID {
+        let uniqueManagedDisplayIDs = Array(Set(managedDisplayIDs)).sorted()
+        guard !uniqueManagedDisplayIDs.isEmpty else {
+            return snapshot.mainDisplayID
+        }
+        if let preferredMainDisplayID,
+           uniqueManagedDisplayIDs.contains(preferredMainDisplayID),
+           let preferredMain = snapshot.display(for: preferredMainDisplayID),
+           preferredMain.isActive,
+           preferredMain.bounds.width > 1,
+           preferredMain.bounds.height > 1 {
+            return preferredMainDisplayID
+        }
+        if uniqueManagedDisplayIDs.contains(snapshot.mainDisplayID),
+           let main = snapshot.display(for: snapshot.mainDisplayID),
+           main.isActive,
+           main.bounds.width > 1,
+           main.bounds.height > 1 {
+            return snapshot.mainDisplayID
+        }
+
+        let orderedCandidates = uniqueManagedDisplayIDs.sorted { lhs, rhs in
+            let lhsBounds = snapshot.display(for: lhs)?.bounds ?? .zero
+            let rhsBounds = snapshot.display(for: rhs)?.bounds ?? .zero
+            if lhsBounds.origin.x != rhsBounds.origin.x {
+                return lhsBounds.origin.x < rhsBounds.origin.x
+            }
+            if lhsBounds.origin.y != rhsBounds.origin.y {
+                return lhsBounds.origin.y < rhsBounds.origin.y
+            }
+            return lhs < rhs
+        }
+        return orderedCandidates.first ?? uniqueManagedDisplayIDs[0]
+    }
+
+    private func preferredManagedMainDisplayIDForEnable() -> CGDirectDisplayID? {
+        guard let snapshot = currentTopologySnapshot(),
+              let mainDisplay = snapshot.display(for: snapshot.mainDisplayID),
+              mainDisplay.isManagedVirtualDisplay,
+              mainDisplay.isActive,
+              mainDisplay.bounds.width > 1,
+              mainDisplay.bounds.height > 1 else {
+            return nil
+        }
+        return snapshot.mainDisplayID
+    }
+
+    private func shouldEnforceMainContinuity(
+        preferredMainDisplayID: CGDirectDisplayID,
+        snapshot: DisplayTopologySnapshot,
+        managedDisplayIDs: [CGDirectDisplayID]
+    ) -> Bool {
+        guard snapshot.mainDisplayID != preferredMainDisplayID else { return false }
+        guard managedDisplayIDs.contains(preferredMainDisplayID) else { return false }
+        guard let preferredMain = snapshot.display(for: preferredMainDisplayID),
+              preferredMain.isActive,
+              preferredMain.bounds.width > 1,
+              preferredMain.bounds.height > 1 else {
+            return false
+        }
+        let hasPhysicalDisplay = snapshot.displays.contains {
+            !$0.isManagedVirtualDisplay &&
+                $0.isActive &&
+                $0.bounds.width > 1 &&
+                $0.bounds.height > 1
+        }
+        return !hasPhysicalDisplay
     }
 
     private func currentTopologySnapshot() -> DisplayTopologySnapshot? {
@@ -1207,18 +1349,12 @@ final class VirtualDisplayService {
         displayConfigs = configs
     }
 
-    func validateDisableSafetyForTesting(
-        runtimeDisplayID: CGDirectDisplayID,
-        treatAsMainDisplay: Bool
-    ) throws {
-        try validateDisableSafetyIfNeeded(
-            runtimeDisplayID: runtimeDisplayID,
-            treatAsMainDisplay: treatAsMainDisplay
+    func ensureHealthyTopologyAfterEnableForTesting(
+        preferredMainDisplayID: CGDirectDisplayID? = nil
+    ) async throws {
+        try await ensureHealthyTopologyAfterEnable(
+            preferredMainDisplayID: preferredMainDisplayID
         )
-    }
-
-    func ensureHealthyTopologyAfterEnableForTesting() async throws {
-        try await ensureHealthyTopologyAfterEnable()
     }
 #endif
 }
@@ -1313,6 +1449,7 @@ struct SystemDisplayTopologyInspector: DisplayTopologyInspecting {
                 isManagedVirtualDisplay: vendorID == managedVendorID &&
                     productID == managedProductID &&
                     trackedManagedSerials.contains(serialNumber),
+                isActive: CGDisplayIsActive(displayID) != 0,
                 isInMirrorSet: CGDisplayIsInMirrorSet(displayID) != 0,
                 mirrorMasterDisplayID: mirrorMaster == kCGNullDirectDisplay ? nil : mirrorMaster,
                 bounds: CGDisplayBounds(displayID)
@@ -1341,11 +1478,13 @@ struct SystemDisplayTopologyRepairer: DisplayTopologyRepairing {
         var displayConfig: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&displayConfig) == .success,
               let displayConfig else {
+            AppLog.virtualDisplay.error("Topology repair failed: CGBeginDisplayConfiguration failed.")
             return false
         }
 
         func fail() -> Bool {
             CGCancelDisplayConfiguration(displayConfig)
+            AppLog.virtualDisplay.error("Topology repair cancelled due to intermediate failure.")
             return false
         }
 
@@ -1356,33 +1495,41 @@ struct SystemDisplayTopologyRepairer: DisplayTopologyRepairing {
                 kCGNullDirectDisplay
             )
             guard status == .success else {
+                AppLog.virtualDisplay.error(
+                    "Topology repair failed while clearing mirror (displayID: \(displayID, privacy: .public), status: \(status.rawValue, privacy: .public))."
+                )
                 return fail()
             }
         }
 
-        let anchorInfo = snapshot.display(for: anchorDisplayID)
-        var movableDisplayIDs = uniqueManagedDisplayIDs
         let placementAnchorID: CGDirectDisplayID
 
         if uniqueManagedDisplayIDs.contains(anchorDisplayID) {
             placementAnchorID = anchorDisplayID
-            movableDisplayIDs.removeAll { $0 == anchorDisplayID }
         } else if let firstManaged = uniqueManagedDisplayIDs.first {
-            placementAnchorID = anchorInfo?.id ?? firstManaged
+            placementAnchorID = firstManaged
         } else {
             return fail()
         }
+        let placementOrder = orderedDisplayIDs(
+            anchorDisplayID: placementAnchorID,
+            managedDisplayIDs: uniqueManagedDisplayIDs,
+            snapshot: snapshot
+        )
 
-        guard let placementAnchorBounds = bounds(for: placementAnchorID, snapshot: snapshot) else {
-            return fail()
-        }
-        let baselineY = toInt32(placementAnchorBounds.origin.y)
-        guard let initialX = safeAdd(toInt32(placementAnchorBounds.maxX), horizontalSpacing) else {
-            return fail()
-        }
-        var nextX = initialX
+        let baselineY: Int32 = 0
+        var nextX: Int32 = 0
 
-        for displayID in movableDisplayIDs {
+        for displayID in placementOrder {
+            if let currentMode = CGDisplayCopyDisplayMode(displayID) {
+                _ = CGConfigureDisplayWithDisplayMode(
+                    displayConfig,
+                    displayID,
+                    currentMode,
+                    nil
+                )
+            }
+
             let originStatus = CGConfigureDisplayOrigin(
                 displayConfig,
                 displayID,
@@ -1390,6 +1537,9 @@ struct SystemDisplayTopologyRepairer: DisplayTopologyRepairing {
                 baselineY
             )
             guard originStatus == .success else {
+                AppLog.virtualDisplay.error(
+                    "Topology repair failed while setting origin (displayID: \(displayID, privacy: .public), x: \(nextX, privacy: .public), y: \(baselineY, privacy: .public), status: \(originStatus.rawValue, privacy: .public))."
+                )
                 return fail()
             }
 
@@ -1403,7 +1553,35 @@ struct SystemDisplayTopologyRepairer: DisplayTopologyRepairing {
             nextX = afterSpacing
         }
 
-        return CGCompleteDisplayConfiguration(displayConfig, .forSession) == .success
+        let completeStatus = CGCompleteDisplayConfiguration(displayConfig, .forSession)
+        if completeStatus != .success {
+            AppLog.virtualDisplay.error(
+                "Topology repair commit failed (status: \(completeStatus.rawValue, privacy: .public))."
+            )
+            return false
+        }
+        return true
+    }
+
+    private func orderedDisplayIDs(
+        anchorDisplayID: CGDirectDisplayID,
+        managedDisplayIDs: [CGDirectDisplayID],
+        snapshot: DisplayTopologySnapshot
+    ) -> [CGDirectDisplayID] {
+        let trailingIDs = managedDisplayIDs
+            .filter { $0 != anchorDisplayID }
+            .sorted { lhs, rhs in
+                let lhsBounds = bounds(for: lhs, snapshot: snapshot) ?? .zero
+                let rhsBounds = bounds(for: rhs, snapshot: snapshot) ?? .zero
+                if lhsBounds.origin.x != rhsBounds.origin.x {
+                    return lhsBounds.origin.x < rhsBounds.origin.x
+                }
+                if lhsBounds.origin.y != rhsBounds.origin.y {
+                    return lhsBounds.origin.y < rhsBounds.origin.y
+                }
+                return lhs < rhs
+            }
+        return [anchorDisplayID] + trailingIDs
     }
 
     private func bounds(
