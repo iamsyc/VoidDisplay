@@ -3,6 +3,8 @@ import XCTest
 enum SmokeScenario: String {
     case baseline
     case permissionDenied = "permission_denied"
+    case virtualDisplayRebuilding = "virtual_display_rebuilding"
+    case virtualDisplayRebuildFailed = "virtual_display_rebuild_failed"
 }
 
 extension XCTestCase {

@@ -60,7 +60,7 @@ struct AppListRowCard<Trailing: View>: View {
         .onHover { hovered in
             isHovered = hovered
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(model.accessibilityIdentifier ?? "app_list_row_card")
     }
 

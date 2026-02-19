@@ -65,4 +65,23 @@ final class HomeSmokeTests: XCTestCase {
         assertExists(app, identifier: "share_request_permission_button")
         assertExists(app, identifier: "share_refresh_button")
     }
+
+    @MainActor
+    func testVirtualDisplaySmoke_rebuildingRowShowsProgress() throws {
+        let app = launchAppForSmoke(scenario: .virtualDisplayRebuilding)
+
+        assertExists(app, identifier: "sidebar_virtual_display").tap()
+        assertExists(app, identifier: "detail_virtual_display")
+        assertExists(app, identifier: "virtual_display_rebuild_progress")
+    }
+
+    @MainActor
+    func testVirtualDisplaySmoke_rebuildFailedRowShowsRetry() throws {
+        let app = launchAppForSmoke(scenario: .virtualDisplayRebuildFailed)
+
+        assertExists(app, identifier: "sidebar_virtual_display").tap()
+        assertExists(app, identifier: "detail_virtual_display")
+        let retryButton = assertExists(app, identifier: "virtual_display_rebuild_retry_button")
+        XCTAssertTrue(retryButton.isEnabled)
+    }
 }

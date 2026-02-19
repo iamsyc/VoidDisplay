@@ -22,6 +22,10 @@ struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
         switch scenario {
         case .baseline:
             return true
+        case .virtualDisplayRebuilding:
+            return true
+        case .virtualDisplayRebuildFailed:
+            return true
         case .permissionDenied:
             return false
         }

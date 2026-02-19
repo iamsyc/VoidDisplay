@@ -256,6 +256,16 @@
         }
       }
     },
+    "Applied" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已应用"
+          }
+        }
+      }
+    },
     "Apply" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1190,6 +1200,26 @@
         }
       }
     },
+    "Rebuild failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重建失败"
+          }
+        }
+      }
+    },
+    "Rebuilding" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重建中"
+          }
+        }
+      }
+    },
     "Recovery Suggestion" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1306,6 +1336,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重试"
+          }
+        }
+      }
+    },
+    "Retry Rebuild" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试重建"
           }
         }
       }

@@ -166,6 +166,10 @@ struct VirtualDisplayView: View {
     private func virtualDisplayRow(_ config: VirtualDisplayConfig) -> some View {
         let isRunning = appHelper.isVirtualDisplayRunning(configId: config.id)
         let isToggling = togglingConfigIds.contains(config.id)
+        let isRebuilding = appHelper.isRebuilding(configId: config.id)
+        let rebuildFailureMessage = appHelper.rebuildFailureMessage(configId: config.id)
+        let hasRecentApplySuccess = appHelper.hasRecentApplySuccess(configId: config.id)
+        let isRowBusy = isToggling || isRebuilding
         let isFirst = appHelper.displayConfigs.first?.id == config.id
         let isLast = appHelper.displayConfigs.last?.id == config.id
         let isPrimary = isPrimaryDisplay(configID: config.id)
@@ -174,15 +178,13 @@ struct VirtualDisplayView: View {
             title: config.name,
             subtitle: subtitleText(for: config),
             status: AppRowStatus(
-                title: displayStatusLabel(isRunning: isRunning),
-                tint: isRunning ? .green : .gray
+                title: displayStatusLabel(isRunning: isRunning, isRebuilding: isRebuilding),
+                tint: displayStatusTint(isRunning: isRunning, isRebuilding: isRebuilding)
             ),
-            metaBadges: [
-                AppBadgeModel(
-                    title: String(localized: "Virtual Display"),
-                    style: .roundedTag(tint: .blue)
-                )
-            ],
+            metaBadges: displayBadges(
+                rebuildFailureMessage: rebuildFailureMessage,
+                hasRecentApplySuccess: hasRecentApplySuccess
+            ),
             ribbon: isPrimary
                 ? AppCornerRibbonModel(
                     title: String(localized: "Primary Display"),
@@ -198,7 +200,13 @@ struct VirtualDisplayView: View {
             ViewThatFits(in: .horizontal) {
                 // Wide layout: inline Edit / Delete buttons
                 HStack(spacing: AppUI.Spacing.small) {
-                    moveButtons(config: config, isFirst: isFirst, isLast: isLast)
+                    moveButtons(config: config, isFirst: isFirst, isLast: isLast, isBusy: isRowBusy)
+                    rebuildAction(
+                        configId: config.id,
+                        isRebuilding: isRebuilding,
+                        rebuildFailureMessage: rebuildFailureMessage,
+                        isRowBusy: isRowBusy
+                    )
 
                     Button {
                         toggleDisplayState(config)
@@ -210,7 +218,7 @@ struct VirtualDisplayView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isRunning ? .orange : .green)
-                    .disabled(isToggling)
+                    .disabled(isRowBusy)
                     .accessibilityIdentifier("virtual_display_toggle_button")
 
                     Button {
@@ -221,6 +229,7 @@ struct VirtualDisplayView: View {
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(Text("Edit"))
+                    .disabled(isRowBusy)
                     .accessibilityIdentifier("virtual_display_edit_button")
 
                     Button {
@@ -233,12 +242,19 @@ struct VirtualDisplayView: View {
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(Text("Delete"))
+                    .disabled(isRowBusy)
                     .accessibilityIdentifier("virtual_display_delete_button")
                 }
 
                 // Narrow layout: Edit / Delete collapsed into menu
                 HStack(spacing: AppUI.Spacing.small) {
-                    moveButtons(config: config, isFirst: isFirst, isLast: isLast)
+                    moveButtons(config: config, isFirst: isFirst, isLast: isLast, isBusy: isRowBusy)
+                    rebuildAction(
+                        configId: config.id,
+                        isRebuilding: isRebuilding,
+                        rebuildFailureMessage: rebuildFailureMessage,
+                        isRowBusy: isRowBusy
+                    )
 
                     Button {
                         toggleDisplayState(config)
@@ -250,7 +266,7 @@ struct VirtualDisplayView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(isRunning ? .orange : .green)
-                    .disabled(isToggling)
+                    .disabled(isRowBusy)
                     .accessibilityIdentifier("virtual_display_toggle_button")
 
                     AppQuickActionsMenu {
@@ -265,6 +281,7 @@ struct VirtualDisplayView: View {
                             showDeleteConfirm = true
                         }
                     }
+                    .disabled(isRowBusy)
                 }
             }
         }
@@ -276,7 +293,7 @@ struct VirtualDisplayView: View {
     }
 
     @ViewBuilder
-    private func moveButtons(config: VirtualDisplayConfig, isFirst: Bool, isLast: Bool) -> some View {
+    private func moveButtons(config: VirtualDisplayConfig, isFirst: Bool, isLast: Bool, isBusy: Bool) -> some View {
         Button {
             _ = appHelper.moveDisplayConfig(config.id, direction: .up)
         } label: {
@@ -284,7 +301,7 @@ struct VirtualDisplayView: View {
                 .font(.body.weight(.semibold))
         }
         .buttonStyle(.borderless)
-        .disabled(isFirst)
+        .disabled(isFirst || isBusy)
         .accessibilityLabel(Text("Move up"))
         .accessibilityIdentifier("virtual_display_move_up_button")
 
@@ -295,9 +312,37 @@ struct VirtualDisplayView: View {
                 .font(.body.weight(.semibold))
         }
         .buttonStyle(.borderless)
-        .disabled(isLast)
+        .disabled(isLast || isBusy)
         .accessibilityLabel(Text("Move down"))
         .accessibilityIdentifier("virtual_display_move_down_button")
+    }
+
+    @ViewBuilder
+    private func rebuildAction(
+        configId: UUID,
+        isRebuilding: Bool,
+        rebuildFailureMessage: String?,
+        isRowBusy: Bool
+    ) -> some View {
+        if isRebuilding {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Rebuilding")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("virtual_display_rebuild_progress")
+        } else if let rebuildFailureMessage {
+            Button("Retry Rebuild") {
+                appHelper.retryRebuild(configId: configId)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .disabled(isRowBusy)
+            .help(rebuildFailureMessage)
+            .accessibilityIdentifier("virtual_display_rebuild_retry_button")
+        }
     }
 
     private func subtitleText(for config: VirtualDisplayConfig) -> String {
@@ -325,7 +370,8 @@ struct VirtualDisplayView: View {
     }
     
     private func toggleDisplayState(_ config: VirtualDisplayConfig) {
-        guard !togglingConfigIds.contains(config.id) else { return }
+        guard !togglingConfigIds.contains(config.id),
+              !appHelper.isRebuilding(configId: config.id) else { return }
         togglingConfigIds.insert(config.id)
 
         Task { @MainActor in
@@ -345,11 +391,47 @@ struct VirtualDisplayView: View {
         }
     }
 
-    private func displayStatusLabel(isRunning: Bool) -> String {
+    private func displayStatusLabel(isRunning: Bool, isRebuilding: Bool) -> String {
+        if isRebuilding {
+            return String(localized: "Rebuilding")
+        }
         if isRunning {
             return String(localized: "Enable")
         }
         return String(localized: "Disable")
+    }
+
+    private func displayStatusTint(isRunning: Bool, isRebuilding: Bool) -> Color {
+        if isRebuilding {
+            return .orange
+        }
+        return isRunning ? .green : .gray
+    }
+
+    private func displayBadges(rebuildFailureMessage: String?, hasRecentApplySuccess: Bool) -> [AppBadgeModel] {
+        var badges: [AppBadgeModel] = [
+            AppBadgeModel(
+                title: String(localized: "Virtual Display"),
+                style: .roundedTag(tint: .blue)
+            )
+        ]
+        if hasRecentApplySuccess {
+            badges.append(
+                AppBadgeModel(
+                    title: String(localized: "Applied"),
+                    style: .roundedTag(tint: .green)
+                )
+            )
+        }
+        if rebuildFailureMessage != nil {
+            badges.append(
+                AppBadgeModel(
+                    title: String(localized: "Rebuild failed"),
+                    style: .roundedTag(tint: .red)
+                )
+            )
+        }
+        return badges
     }
 
     private func toggleButtonTitle(isRunning: Bool) -> String {

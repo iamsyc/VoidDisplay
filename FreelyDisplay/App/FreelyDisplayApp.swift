@@ -78,12 +78,17 @@ final class AppHelper {
     var sharingClientCounts: [CGDirectDisplayID: Int] = [:]
     var isSharing = false
     var isWebServiceRunning = false
+    private(set) var rebuildingConfigIds: Set<UUID> = []
+    private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
+    private(set) var recentlyAppliedConfigIds: Set<UUID> = []
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
 
     @ObservationIgnored private let captureMonitoringService = CaptureMonitoringService()
     @ObservationIgnored private let sharingService = SharingService()
     @ObservationIgnored private let virtualDisplayService = VirtualDisplayService()
+    @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
 
     typealias VirtualDisplayError = VirtualDisplayService.VirtualDisplayError
 
@@ -136,12 +141,31 @@ final class AppHelper {
         isSharing = false
         isWebServiceRunning = false
         webServer = nil
+        rebuildingConfigIds = []
+        rebuildFailureMessageByConfigId = [:]
+        recentlyAppliedConfigIds = []
+        for task in rebuildTasksByConfigId.values {
+            task.cancel()
+        }
+        rebuildTasksByConfigId.removeAll()
+        for task in appliedBadgeClearTasksByConfigId.values {
+            task.cancel()
+        }
+        appliedBadgeClearTasksByConfigId.removeAll()
 
         switch UITestRuntime.scenario {
         case .baseline:
             break
         case .permissionDenied:
             break
+        case .virtualDisplayRebuilding:
+            if let firstID = fixtureConfigs.first?.id {
+                rebuildingConfigIds.insert(firstID)
+            }
+        case .virtualDisplayRebuildFailed:
+            if let firstID = fixtureConfigs.first?.id {
+                rebuildFailureMessageByConfigId[firstID] = String(localized: "Failed to rebuild virtual display.")
+            }
         }
     }
 
@@ -345,6 +369,75 @@ final class AppHelper {
         syncVirtualDisplayState()
     }
 
+    func startRebuildFromSavedConfig(configId: UUID) {
+        guard !rebuildingConfigIds.contains(configId) else { return }
+        guard let config = getConfig(configId) else {
+            clearRebuildPresentationState(configId: configId)
+            return
+        }
+
+        rebuildFailureMessageByConfigId.removeValue(forKey: configId)
+        recentlyAppliedConfigIds.remove(configId)
+        appliedBadgeClearTasksByConfigId[configId]?.cancel()
+        appliedBadgeClearTasksByConfigId[configId] = nil
+        rebuildingConfigIds.insert(configId)
+
+        let modesToApply = config.resolutionModes
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.rebuildingConfigIds.remove(configId)
+                self.rebuildTasksByConfigId[configId] = nil
+            }
+
+            do {
+                try await self.rebuildVirtualDisplay(configId: configId)
+                self.applyModes(configId: configId, modes: modesToApply)
+                self.rebuildFailureMessageByConfigId.removeValue(forKey: configId)
+                self.recentlyAppliedConfigIds.insert(configId)
+                self.scheduleAppliedBadgeClear(configId: configId)
+            } catch is CancellationError {
+                // User-initiated cancellation (delete/reset) should be silent and not treated as rebuild failure.
+                return
+            } catch {
+                if Task.isCancelled {
+                    return
+                }
+                AppErrorMapper.logFailure("Rebuild virtual display", error: error, logger: AppLog.virtualDisplay)
+                let message = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
+                self.rebuildFailureMessageByConfigId[configId] = message
+                self.recentlyAppliedConfigIds.remove(configId)
+            }
+        }
+        rebuildTasksByConfigId[configId] = task
+    }
+
+    func retryRebuild(configId: UUID) {
+        startRebuildFromSavedConfig(configId: configId)
+    }
+
+    func isRebuilding(configId: UUID) -> Bool {
+        rebuildingConfigIds.contains(configId)
+    }
+
+    func rebuildFailureMessage(configId: UUID) -> String? {
+        rebuildFailureMessageByConfigId[configId]
+    }
+
+    func hasRecentApplySuccess(configId: UUID) -> Bool {
+        recentlyAppliedConfigIds.contains(configId)
+    }
+
+    func clearRebuildPresentationState(configId: UUID) {
+        rebuildTasksByConfigId[configId]?.cancel()
+        rebuildTasksByConfigId[configId] = nil
+        appliedBadgeClearTasksByConfigId[configId]?.cancel()
+        appliedBadgeClearTasksByConfigId[configId] = nil
+        rebuildingConfigIds.remove(configId)
+        rebuildFailureMessageByConfigId.removeValue(forKey: configId)
+        recentlyAppliedConfigIds.remove(configId)
+    }
+
     @discardableResult
     func createDisplay(
         name: String,
@@ -386,11 +479,15 @@ final class AppHelper {
     }
 
     func destroyDisplay(_ configId: UUID) {
+        clearRebuildPresentationState(configId: configId)
         virtualDisplayService.destroyDisplay(configId)
         syncVirtualDisplayState()
     }
 
     func destroyDisplay(_ display: CGVirtualDisplay) {
+        if let config = virtualDisplayService.getConfig(for: display) {
+            clearRebuildPresentationState(configId: config.id)
+        }
         virtualDisplayService.destroyDisplay(display)
         syncVirtualDisplayState()
     }
@@ -440,9 +537,36 @@ final class AppHelper {
 
     @discardableResult
     func resetVirtualDisplayData() -> Int {
+        clearAllRebuildPresentationState()
         let removed = virtualDisplayService.resetAllVirtualDisplayData()
         syncVirtualDisplayState()
         return removed
+    }
+
+    private func scheduleAppliedBadgeClear(configId: UUID) {
+        appliedBadgeClearTasksByConfigId[configId]?.cancel()
+        appliedBadgeClearTasksByConfigId[configId] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 2_500_000_000)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.recentlyAppliedConfigIds.remove(configId)
+            self.appliedBadgeClearTasksByConfigId[configId] = nil
+        }
+    }
+
+    private func clearAllRebuildPresentationState() {
+        let allConfigIds = Set(rebuildingConfigIds)
+            .union(Set(rebuildFailureMessageByConfigId.keys))
+            .union(recentlyAppliedConfigIds)
+            .union(Set(rebuildTasksByConfigId.keys))
+            .union(Set(appliedBadgeClearTasksByConfigId.keys))
+
+        for configId in allConfigIds {
+            clearRebuildPresentationState(configId: configId)
+        }
     }
 }
 
