@@ -2,6 +2,18 @@ import SwiftUI
 import OSLog
 
 struct EditVirtualDisplayConfigView: View {
+    private enum RebuildCapability: Equatable {
+        case notRequired
+        case available
+        case restrictedMainDisplay
+    }
+
+    private struct SaveAnalysis {
+        let updatedConfig: VirtualDisplayConfig
+        let rebuildCapability: RebuildCapability
+        let shouldApplyModesImmediately: Bool
+    }
+
     let configId: UUID
 
     @Environment(AppHelper.self) private var appHelper: AppHelper
@@ -28,13 +40,12 @@ struct EditVirtualDisplayConfigView: View {
     @State private var showDuplicateWarning = false
     @State private var showError = false
     @State private var errorMessage = ""
-    @State private var showSaveAndRebuildPrompt = false
-    @State private var showUnsafeMainDisplayRebuildPrompt = false
-    @State private var pendingConfigForRebuildAction: VirtualDisplayConfig?
 
     private var isRunning: Bool {
-        appHelper.runtimeDisplay(for: configId) != nil
+        appHelper.isVirtualDisplayRunning(configId: configId)
     }
+
+    private var currentSaveAnalysis: SaveAnalysis? { analyzeSave() }
 
     private var physicalSizeFromInputs: (width: Int, height: Int) {
         selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
@@ -61,6 +72,7 @@ struct EditVirtualDisplayConfigView: View {
         Form {
             Section {
                 TextField("Name", text: $name)
+                    .accessibilityIdentifier("virtual_display_edit_name_field")
 
                 HStack {
                     Text("Serial Number")
@@ -68,12 +80,20 @@ struct EditVirtualDisplayConfigView: View {
                     TextField("", value: $serialNum, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 90)
+                        .accessibilityIdentifier("virtual_display_edit_serial_field")
                 }
 
                 if isRunning {
                     Text("Some changes require rebuild when the display is running.")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+
+                if currentSaveAnalysis?.rebuildCapability == .restrictedMainDisplay {
+                    Text("This display is currently the system main display. Switch main display in System Settings before rebuilding.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .accessibilityIdentifier("virtual_display_edit_main_display_rebuild_hint")
                 }
             } header: {
                 Text("Basic Info")
@@ -140,6 +160,7 @@ struct EditVirtualDisplayConfigView: View {
                                     .toggleStyle(.switch)
                                     .labelsHidden()
                                     .controlSize(.small)
+                                    .accessibilityIdentifier("virtual_display_edit_mode_hidpi_toggle")
                             }
                             Button(action: { removeMode(mode) }) {
                                 Image(systemName: "minus.circle.fill")
@@ -230,18 +251,9 @@ struct EditVirtualDisplayConfigView: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    save()
-                }
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedModes.isEmpty)
-            }
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
+        .accessibilityIdentifier("edit_virtual_display_form")
+        .safeAreaInset(edge: .bottom) {
+            editActionBar
         }
         .alert("Tip", isPresented: $showDuplicateWarning) {
             Button("OK") {}
@@ -253,32 +265,68 @@ struct EditVirtualDisplayConfigView: View {
         } message: {
             Text(errorMessage)
         }
-        .alert("Rebuild Required", isPresented: $showSaveAndRebuildPrompt) {
-            Button("Save Only") {
-                savePendingConfigOnlyAndDismiss()
-            }
-            Button("Save and Rebuild Now") {
-                savePendingConfigAndRebuildNow()
-            }
-            Button("Cancel", role: .cancel) {
-                pendingConfigForRebuildAction = nil
-            }
-        } message: {
-            Text("Some changes require recreating the virtual display to take effect.")
-        }
-        .alert("Main Display Rebuild Restricted", isPresented: $showUnsafeMainDisplayRebuildPrompt) {
-            Button("Save Only") {
-                savePendingConfigOnlyAndDismiss()
-            }
-            Button("Cancel", role: .cancel) {
-                pendingConfigForRebuildAction = nil
-            }
-        } message: {
-            Text("This display is currently the system main display. Rebuilding it while running can cause macOS to reconfigure displays. Save now, then switch main display in System Settings before rebuilding.")
-        }
         .onAppear {
             load()
         }
+    }
+
+    @ViewBuilder
+    private var editActionBar: some View {
+        HStack(spacing: 8) {
+            Spacer()
+
+            Button("Cancel") {
+                dismiss()
+            }
+            .keyboardShortcut(.cancelAction)
+            .accessibilityIdentifier("virtual_display_edit_cancel_button")
+
+            if let analysis = currentSaveAnalysis {
+                switch analysis.rebuildCapability {
+                case .notRequired:
+                    Button("Save") {
+                        performSaveOnly(analysis)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("virtual_display_edit_save_button")
+                case .available:
+                    Button("Save Only") {
+                        performSaveOnly(analysis)
+                    }
+                    .accessibilityIdentifier("virtual_display_edit_save_only_button")
+
+                    Button("Save and Rebuild Now") {
+                        performSaveAndRebuild(analysis)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
+                case .restrictedMainDisplay:
+                    Button("Save Only") {
+                        performSaveOnly(analysis)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("virtual_display_edit_save_only_button")
+
+                    Button("Save and Rebuild Now") {}
+                        .disabled(true)
+                        .help(String(localized: "This display is currently the system main display. Switch main display in System Settings before rebuilding."))
+                        .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
+                }
+            } else {
+                Button("Save") {}
+                    .buttonStyle(.borderedProminent)
+                    .disabled(true)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("virtual_display_edit_save_button")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .background(.ultraThinMaterial)
     }
 
     private func load() {
@@ -319,33 +367,37 @@ struct EditVirtualDisplayConfigView: View {
         }
     }
 
-    private func save() {
+    private func buildUpdatedConfig(reportErrors: Bool) -> VirtualDisplayConfig? {
         guard let original = loadedConfig else {
+            guard reportErrors else { return nil }
             errorMessage = String(localized: "Display configuration not found.")
             showError = true
-            return
+            return nil
         }
 
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
+        guard !trimmedName.isEmpty else { return nil }
 
         guard serialNum > 0, serialNum <= Int(UInt32.max) else {
+            guard reportErrors else { return nil }
             errorMessage = String(localized: "Please enter a valid serial number.")
             showError = true
-            return
+            return nil
         }
 
         guard screenDiagonal > 0 else {
+            guard reportErrors else { return nil }
             errorMessage = String(localized: "Please enter a valid screen size.")
             showError = true
-            return
+            return nil
         }
 
         let newSerial = UInt32(serialNum)
         if appHelper.displayConfigs.contains(where: { $0.id != configId && $0.serialNum == newSerial }) {
+            guard reportErrors else { return nil }
             errorMessage = String(localized: "Serial number \(newSerial) is already in use.")
             showError = true
-            return
+            return nil
         }
 
         var updated = original
@@ -367,6 +419,17 @@ struct EditVirtualDisplayConfigView: View {
             updated.physicalHeight = size.height
         }
 
+        return updated
+    }
+
+    private func analyzeSave() -> SaveAnalysis? {
+        analyzeSave(reportErrors: false)
+    }
+
+    private func analyzeSave(reportErrors: Bool) -> SaveAnalysis? {
+        guard let original = loadedConfig else { return nil }
+        guard let updated = buildUpdatedConfig(reportErrors: reportErrors) else { return nil }
+
         let newMaxPixels = updated.maxPixelDimensions
         let oldMaxPixels = original.maxPixelDimensions
         let requiresSaveAndRebuild = isRunning && (
@@ -377,37 +440,38 @@ struct EditVirtualDisplayConfigView: View {
             newMaxPixels.width > oldMaxPixels.width ||
             newMaxPixels.height > oldMaxPixels.height
         )
+
+        let capability: RebuildCapability
         if requiresSaveAndRebuild {
-            pendingConfigForRebuildAction = updated
-            if appHelper.isMainDisplay(configId: configId) {
-                showUnsafeMainDisplayRebuildPrompt = true
-            } else {
-                showSaveAndRebuildPrompt = true
-            }
-            return
+            capability = appHelper.isMainDisplay(configId: configId) ? .restrictedMainDisplay : .available
+        } else {
+            capability = .notRequired
         }
 
-        appHelper.updateConfig(updated)
-        loadedConfig = updated
-        if isRunning {
+        return SaveAnalysis(
+            updatedConfig: updated,
+            rebuildCapability: capability,
+            shouldApplyModesImmediately: isRunning && capability == .notRequired
+        )
+    }
+
+    private func performSaveOnly(_ analysis: SaveAnalysis) {
+        _ = analysis
+        guard let latestAnalysis = analyzeSave(reportErrors: true) else { return }
+        appHelper.updateConfig(latestAnalysis.updatedConfig)
+        loadedConfig = latestAnalysis.updatedConfig
+        if latestAnalysis.shouldApplyModesImmediately {
             appHelper.applyModes(configId: configId, modes: selectedModes)
         }
         dismiss()
     }
 
-    private func savePendingConfigOnlyAndDismiss() {
-        guard let pendingConfigForRebuildAction else { return }
-        appHelper.updateConfig(pendingConfigForRebuildAction)
-        loadedConfig = pendingConfigForRebuildAction
-        self.pendingConfigForRebuildAction = nil
-        dismiss()
-    }
-
-    private func savePendingConfigAndRebuildNow() {
-        guard let pendingConfigForRebuildAction else { return }
-        appHelper.updateConfig(pendingConfigForRebuildAction)
-        loadedConfig = pendingConfigForRebuildAction
-        self.pendingConfigForRebuildAction = nil
+    private func performSaveAndRebuild(_ analysis: SaveAnalysis) {
+        guard analysis.rebuildCapability == .available else { return }
+        guard let latestAnalysis = analyzeSave(reportErrors: true) else { return }
+        guard latestAnalysis.rebuildCapability == .available else { return }
+        appHelper.updateConfig(latestAnalysis.updatedConfig)
+        loadedConfig = latestAnalysis.updatedConfig
         dismiss()
         appHelper.startRebuildFromSavedConfig(configId: configId)
     }

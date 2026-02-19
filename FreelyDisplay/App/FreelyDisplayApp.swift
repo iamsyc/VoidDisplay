@@ -132,7 +132,7 @@ final class AppHelper {
         let fixtureConfigs = Self.uiTestVirtualDisplayConfigs()
 
         displayConfigs = fixtureConfigs
-        runningConfigIds = Set(fixtureConfigs.prefix(1).map(\.id))
+        runningConfigIds = Set(fixtureConfigs.map(\.id))
         displays = []
         restoreFailures = []
         screenCaptureSessions = []
@@ -354,7 +354,10 @@ final class AppHelper {
     }
 
     func isVirtualDisplayRunning(configId: UUID) -> Bool {
-        virtualDisplayService.isVirtualDisplayRunning(configId: configId)
+        if isUITestMode {
+            return runningConfigIds.contains(configId)
+        }
+        return virtualDisplayService.isVirtualDisplayRunning(configId: configId)
     }
 
     func isMainDisplay(configId: UUID) -> Bool {
@@ -493,10 +496,18 @@ final class AppHelper {
     }
 
     func getConfig(_ configId: UUID) -> VirtualDisplayConfig? {
-        virtualDisplayService.getConfig(configId)
+        if isUITestMode {
+            return displayConfigs.first(where: { $0.id == configId })
+        }
+        return virtualDisplayService.getConfig(configId)
     }
 
     func updateConfig(_ updated: VirtualDisplayConfig) {
+        if isUITestMode {
+            guard let index = displayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
+            displayConfigs[index] = updated
+            return
+        }
         virtualDisplayService.updateConfig(updated)
         syncVirtualDisplayState()
     }
@@ -511,6 +522,20 @@ final class AppHelper {
     }
 
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {
+        if isUITestMode {
+            guard let index = displayConfigs.firstIndex(where: { $0.id == configId }) else { return }
+            var config = displayConfigs[index]
+            config.modes = modes.map {
+                VirtualDisplayConfig.ModeConfig(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            }
+            displayConfigs[index] = config
+            return
+        }
         virtualDisplayService.applyModes(configId: configId, modes: modes)
         syncVirtualDisplayState()
     }

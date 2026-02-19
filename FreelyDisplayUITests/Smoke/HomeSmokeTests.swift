@@ -84,4 +84,29 @@ final class HomeSmokeTests: XCTestCase {
         let retryButton = assertExists(app, identifier: "virtual_display_rebuild_retry_button")
         XCTAssertTrue(retryButton.isEnabled)
     }
+
+    @MainActor
+    func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
+        let saveOnlyApp = launchAppForSmoke(scenario: .baseline)
+        assertExists(saveOnlyApp, identifier: "sidebar_virtual_display").tap()
+        assertExists(saveOnlyApp, identifier: "detail_virtual_display")
+        assertExists(saveOnlyApp, identifier: "virtual_display_edit_button").tap()
+        let saveOnlyForm = assertExists(saveOnlyApp, identifier: "edit_virtual_display_form")
+        assertExists(saveOnlyApp, identifier: "virtual_display_edit_mode_hidpi_toggle").tap()
+        let saveOnlyButton = assertExists(saveOnlyApp, identifier: "virtual_display_edit_save_only_button")
+        let saveAndRebuildButton = assertExists(saveOnlyApp, identifier: "virtual_display_edit_save_and_rebuild_button")
+        XCTAssertTrue(saveAndRebuildButton.isEnabled)
+        saveOnlyButton.tap()
+        XCTAssertFalse(saveOnlyForm.waitForExistence(timeout: 0.3))
+        saveOnlyApp.terminate()
+
+        let saveAndRebuildApp = launchAppForSmoke(scenario: .baseline)
+        assertExists(saveAndRebuildApp, identifier: "sidebar_virtual_display").tap()
+        assertExists(saveAndRebuildApp, identifier: "detail_virtual_display")
+        assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_button").tap()
+        let saveAndRebuildForm = assertExists(saveAndRebuildApp, identifier: "edit_virtual_display_form")
+        assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_mode_hidpi_toggle").tap()
+        assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_save_and_rebuild_button").tap()
+        XCTAssertFalse(saveAndRebuildForm.waitForExistence(timeout: 0.3))
+    }
 }

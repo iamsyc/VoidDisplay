@@ -1637,6 +1637,16 @@
     "This display is currently the system main display. Rebuilding it while running can cause macOS to reconfigure displays. Save now, then switch main display in System Settings before rebuilding." : {
 
     },
+    "This display is currently the system main display. Switch main display in System Settings before rebuilding." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此显示器当前是系统主显示器。请先在系统设置中切换主显示器后再重建。"
+          }
+        }
+      }
+    },
     "This resolution mode already exists." : {
       "localizations" : {
         "zh-Hans" : {
