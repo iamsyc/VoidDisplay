@@ -471,8 +471,8 @@ final class AppHelper {
         syncVirtualDisplayState()
     }
 
-    func disableDisplayByConfig(_ configId: UUID) {
-        virtualDisplayService.disableDisplayByConfig(configId)
+    func disableDisplayByConfig(_ configId: UUID) throws {
+        try virtualDisplayService.disableDisplayByConfig(configId)
         syncVirtualDisplayState()
     }
 

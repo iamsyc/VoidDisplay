@@ -612,6 +612,56 @@
         }
       }
     },
+    "Cannot verify display safety right now. Please try again in a moment." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前无法校验显示器安全性，请稍后重试。"
+          }
+        }
+      }
+    },
+    "Cannot disable current main display because no fallback display is available." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法停用当前主显示器，因为没有可用的后备显示器。"
+          }
+        }
+      }
+    },
+    "Disable failed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停用失败。"
+          }
+        }
+      }
+    },
+    "Display topology did not stabilize after enabling. Please try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用后显示拓扑未稳定，请重试。"
+          }
+        }
+      }
+    },
+    "Display topology repair failed. Open System Display Settings and recheck arrangement." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示拓扑自动修复失败。请打开系统显示设置并重新检查排列。"
+          }
+        }
+      }
+    },
     "Error" : {
       "localizations" : {
         "zh-Hans" : {

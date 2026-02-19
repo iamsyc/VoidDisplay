@@ -378,7 +378,13 @@ struct VirtualDisplayView: View {
             defer { togglingConfigIds.remove(config.id) }
 
             if appHelper.isVirtualDisplayRunning(configId: config.id) {
-                appHelper.disableDisplayByConfig(config.id)
+                do {
+                    try appHelper.disableDisplayByConfig(config.id)
+                } catch {
+                    AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
+                    errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
+                    showError = true
+                }
                 return
             }
             do {
