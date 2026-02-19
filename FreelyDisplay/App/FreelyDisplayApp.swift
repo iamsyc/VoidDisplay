@@ -132,7 +132,7 @@ final class AppHelper {
         let fixtureConfigs = Self.uiTestVirtualDisplayConfigs()
 
         displayConfigs = fixtureConfigs
-        runningConfigIds = Set(fixtureConfigs.map(\.id))
+        runningConfigIds = Set(fixtureConfigs.prefix(1).map(\.id))
         displays = []
         restoreFailures = []
         screenCaptureSessions = []

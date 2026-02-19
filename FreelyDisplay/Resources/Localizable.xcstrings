@@ -853,9 +853,6 @@
         }
       }
     },
-    "Main Display Rebuild Restricted" : {
-
-    },
     "Main display share link is unavailable. Refresh displays and try again." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1190,22 +1187,23 @@
         }
       }
     },
-    "Rebuild Required" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要重建"
-          }
-        }
-      }
-    },
     "Rebuild failed" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "重建失败"
+          }
+        }
+      }
+    },
+    "Rebuild Required" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要重建"
           }
         }
       }
@@ -1527,6 +1525,7 @@
       }
     },
     "Some changes require recreating the virtual display to take effect." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1633,9 +1632,6 @@
           }
         }
       }
-    },
-    "This display is currently the system main display. Rebuilding it while running can cause macOS to reconfigure displays. Save now, then switch main display in System Settings before rebuilding." : {
-
     },
     "This display is currently the system main display. Switch main display in System Settings before rebuilding." : {
       "localizations" : {

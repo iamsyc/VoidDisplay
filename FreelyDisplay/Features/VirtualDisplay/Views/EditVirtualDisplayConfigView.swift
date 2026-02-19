@@ -2,15 +2,8 @@ import SwiftUI
 import OSLog
 
 struct EditVirtualDisplayConfigView: View {
-    private enum RebuildCapability: Equatable {
-        case notRequired
-        case available
-        case restrictedMainDisplay
-    }
-
     private struct SaveAnalysis {
         let updatedConfig: VirtualDisplayConfig
-        let rebuildCapability: RebuildCapability
         let shouldApplyModesImmediately: Bool
     }
 
@@ -45,7 +38,17 @@ struct EditVirtualDisplayConfigView: View {
         appHelper.isVirtualDisplayRunning(configId: configId)
     }
 
-    private var currentSaveAnalysis: SaveAnalysis? { analyzeSave() }
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSaveBlockedByMissingRequiredFields: Bool {
+        trimmedName.isEmpty || selectedModes.isEmpty
+    }
+
+    private var isMainDisplayRebuildRestricted: Bool {
+        isRunning && appHelper.isMainDisplay(configId: configId)
+    }
 
     private var physicalSizeFromInputs: (width: Int, height: Int) {
         selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
@@ -89,7 +92,7 @@ struct EditVirtualDisplayConfigView: View {
                         .foregroundColor(.secondary)
                 }
 
-                if currentSaveAnalysis?.rebuildCapability == .restrictedMainDisplay {
+                if isMainDisplayRebuildRestricted {
                     Text("This display is currently the system main display. Switch main display in System Settings before rebuilding.")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -281,46 +284,41 @@ struct EditVirtualDisplayConfigView: View {
             .keyboardShortcut(.cancelAction)
             .accessibilityIdentifier("virtual_display_edit_cancel_button")
 
-            if let analysis = currentSaveAnalysis {
-                switch analysis.rebuildCapability {
-                case .notRequired:
-                    Button("Save") {
-                        performSaveOnly(analysis)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("virtual_display_edit_save_button")
-                case .available:
-                    Button("Save Only") {
-                        performSaveOnly(analysis)
-                    }
-                    .accessibilityIdentifier("virtual_display_edit_save_only_button")
-
-                    Button("Save and Rebuild Now") {
-                        performSaveAndRebuild(analysis)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
-                case .restrictedMainDisplay:
-                    Button("Save Only") {
-                        performSaveOnly(analysis)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("virtual_display_edit_save_only_button")
-
-                    Button("Save and Rebuild Now") {}
-                        .disabled(true)
-                        .help(String(localized: "This display is currently the system main display. Switch main display in System Settings before rebuilding."))
-                        .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
+            if !isRunning {
+                Button("Save") {
+                    handleSaveOnlyTapped()
                 }
-            } else {
-                Button("Save") {}
-                    .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaveBlockedByMissingRequiredFields)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("virtual_display_edit_save_button")
+            } else if isMainDisplayRebuildRestricted {
+                Button("Save Only") {
+                    handleSaveOnlyTapped()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaveBlockedByMissingRequiredFields)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("virtual_display_edit_save_only_button")
+
+                Button("Save and Rebuild Now") {}
                     .disabled(true)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("virtual_display_edit_save_button")
+                    .help(String(localized: "This display is currently the system main display. Switch main display in System Settings before rebuilding."))
+                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
+            } else {
+                Button("Save Only") {
+                    handleSaveOnlyTapped()
+                }
+                .disabled(isSaveBlockedByMissingRequiredFields)
+                .accessibilityIdentifier("virtual_display_edit_save_only_button")
+
+                Button("Save and Rebuild Now") {
+                    handleSaveAndRebuildTapped()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSaveBlockedByMissingRequiredFields)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
             }
         }
         .padding(.horizontal, 16)
@@ -375,8 +373,14 @@ struct EditVirtualDisplayConfigView: View {
             return nil
         }
 
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return nil }
+
+        guard !selectedModes.isEmpty else {
+            guard reportErrors else { return nil }
+            errorMessage = String(localized: "No resolution modes added")
+            showError = true
+            return nil
+        }
 
         guard serialNum > 0, serialNum <= Int(UInt32.max) else {
             guard reportErrors else { return nil }
@@ -422,10 +426,6 @@ struct EditVirtualDisplayConfigView: View {
         return updated
     }
 
-    private func analyzeSave() -> SaveAnalysis? {
-        analyzeSave(reportErrors: false)
-    }
-
     private func analyzeSave(reportErrors: Bool) -> SaveAnalysis? {
         guard let original = loadedConfig else { return nil }
         guard let updated = buildUpdatedConfig(reportErrors: reportErrors) else { return nil }
@@ -441,37 +441,36 @@ struct EditVirtualDisplayConfigView: View {
             newMaxPixels.height > oldMaxPixels.height
         )
 
-        let capability: RebuildCapability
-        if requiresSaveAndRebuild {
-            capability = appHelper.isMainDisplay(configId: configId) ? .restrictedMainDisplay : .available
-        } else {
-            capability = .notRequired
-        }
-
         return SaveAnalysis(
             updatedConfig: updated,
-            rebuildCapability: capability,
-            shouldApplyModesImmediately: isRunning && capability == .notRequired
+            shouldApplyModesImmediately: isRunning && !requiresSaveAndRebuild
         )
     }
 
+    private func handleSaveOnlyTapped() {
+        guard let analysis = analyzeSave(reportErrors: true) else { return }
+        performSaveOnly(analysis)
+    }
+
+    private func handleSaveAndRebuildTapped() {
+        guard isRunning else { return }
+        guard !appHelper.isMainDisplay(configId: configId) else { return }
+        guard let analysis = analyzeSave(reportErrors: true) else { return }
+        performSaveAndRebuild(analysis)
+    }
+
     private func performSaveOnly(_ analysis: SaveAnalysis) {
-        _ = analysis
-        guard let latestAnalysis = analyzeSave(reportErrors: true) else { return }
-        appHelper.updateConfig(latestAnalysis.updatedConfig)
-        loadedConfig = latestAnalysis.updatedConfig
-        if latestAnalysis.shouldApplyModesImmediately {
+        appHelper.updateConfig(analysis.updatedConfig)
+        loadedConfig = analysis.updatedConfig
+        if analysis.shouldApplyModesImmediately {
             appHelper.applyModes(configId: configId, modes: selectedModes)
         }
         dismiss()
     }
 
     private func performSaveAndRebuild(_ analysis: SaveAnalysis) {
-        guard analysis.rebuildCapability == .available else { return }
-        guard let latestAnalysis = analyzeSave(reportErrors: true) else { return }
-        guard latestAnalysis.rebuildCapability == .available else { return }
-        appHelper.updateConfig(latestAnalysis.updatedConfig)
-        loadedConfig = latestAnalysis.updatedConfig
+        appHelper.updateConfig(analysis.updatedConfig)
+        loadedConfig = analysis.updatedConfig
         dismiss()
         appHelper.startRebuildFromSavedConfig(configId: configId)
     }
