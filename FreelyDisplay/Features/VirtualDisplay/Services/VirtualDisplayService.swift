@@ -60,12 +60,29 @@ final class VirtualDisplayService {
     private var terminationWaitersByConfigId: [UUID: TerminationWaiter] = [:]
     private var offlineWaitersByToken: [UUID: OfflineWaiter] = [:]
     private var nextRuntimeGeneration: UInt64 = 1
-    private let displayReconfigurationMonitor = DisplayReconfigurationMonitor()
+    private let displayReconfigurationMonitor: any DisplayReconfigurationMonitoring
+    private let managedDisplayOnlineChecker: (UInt32) -> Bool
     private var isReconfigurationMonitorAvailable = false
     private var didLogOfflinePollingFallback = false
 
-    init(persistenceService: VirtualDisplayPersistenceService? = nil) {
+    convenience init(persistenceService: VirtualDisplayPersistenceService? = nil) {
+        self.init(
+            persistenceService: persistenceService,
+            displayReconfigurationMonitor: DisplayReconfigurationMonitor(),
+            managedDisplayOnlineChecker: { serialNum in
+                Self.systemManagedDisplayOnline(serialNum: serialNum)
+            }
+        )
+    }
+
+    init(
+        persistenceService: VirtualDisplayPersistenceService? = nil,
+        displayReconfigurationMonitor: any DisplayReconfigurationMonitoring,
+        managedDisplayOnlineChecker: @escaping (UInt32) -> Bool
+    ) {
         self.persistenceService = persistenceService ?? VirtualDisplayPersistenceService()
+        self.displayReconfigurationMonitor = displayReconfigurationMonitor
+        self.managedDisplayOnlineChecker = managedDisplayOnlineChecker
         isReconfigurationMonitorAvailable = displayReconfigurationMonitor.start { [weak self] in
             self?.completeOfflineWaitersIfPossible()
         }
@@ -702,14 +719,18 @@ final class VirtualDisplayService {
     }
 
     private func isManagedDisplayOnline(serialNum: UInt32) -> Bool {
-        onlineDisplayIDs().contains { displayID in
+        managedDisplayOnlineChecker(serialNum)
+    }
+
+    private static func systemManagedDisplayOnline(serialNum: UInt32) -> Bool {
+        systemOnlineDisplayIDs().contains { displayID in
             CGDisplayVendorNumber(displayID) == Self.managedVendorID &&
             CGDisplayModelNumber(displayID) == Self.managedProductID &&
             CGDisplaySerialNumber(displayID) == serialNum
         }
     }
 
-    private func onlineDisplayIDs() -> [CGDirectDisplayID] {
+    private static func systemOnlineDisplayIDs() -> [CGDirectDisplayID] {
         var displayCount: UInt32 = 0
         let preflight = CGGetOnlineDisplayList(0, nil, &displayCount)
         guard preflight == .success, displayCount > 0 else {
@@ -737,9 +758,24 @@ final class VirtualDisplayService {
     deinit {
         displayReconfigurationMonitor.stop()
     }
+
+#if DEBUG
+    func waitForManagedDisplayOfflineForTesting(
+        serialNum: UInt32,
+        timeout: TimeInterval
+    ) async -> Bool {
+        await waitForManagedDisplayOffline(serialNum: serialNum, timeout: timeout)
+    }
+#endif
 }
 
-private final class DisplayReconfigurationMonitor {
+protocol DisplayReconfigurationMonitoring {
+    @discardableResult
+    func start(handler: @escaping @MainActor () -> Void) -> Bool
+    func stop()
+}
+
+private final class DisplayReconfigurationMonitor: DisplayReconfigurationMonitoring {
     private var handler: (@MainActor () -> Void)?
     nonisolated(unsafe) private var isRunning = false
 
