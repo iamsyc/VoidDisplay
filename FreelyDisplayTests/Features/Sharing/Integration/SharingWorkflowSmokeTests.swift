@@ -4,14 +4,14 @@ import Testing
 
 struct SharingWorkflowSmokeTests {
 
-    @MainActor @Test func sharingServiceStartStopWorkflowSmoke() {
+    @MainActor @Test func sharingServiceStartStopWorkflowSmoke() async {
         let controller = MockWebServiceController()
         let service = SharingService(webServiceController: controller)
 
         #expect(service.isWebServiceRunning == false)
         #expect(service.hasAnyActiveSharing == false)
 
-        let started = service.startWebService()
+        let started = await service.startWebService()
         #expect(started)
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 1)
@@ -28,7 +28,7 @@ struct SharingWorkflowSmokeTests {
         #expect(controller.stopCallCount == 1)
         #expect(controller.disconnectCallCount == 1)
 
-        let startedAgain = service.startWebService()
+        let startedAgain = await service.startWebService()
         #expect(startedAgain)
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 2)

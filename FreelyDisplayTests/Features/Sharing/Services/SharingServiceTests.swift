@@ -5,11 +5,11 @@ import Testing
 
 struct SharingServiceTests {
 
-    @MainActor @Test func startWebServiceDelegatesToControllerAndCapturesProviders() {
+    @MainActor @Test func startWebServiceDelegatesToControllerAndCapturesProviders() async {
         let mock = MockWebServiceController()
         let sut = SharingService(webServiceController: mock)
 
-        let started = sut.startWebService()
+        let started = await sut.startWebService()
 
         #expect(started)
         #expect(mock.startCallCount == 1)
@@ -20,12 +20,12 @@ struct SharingServiceTests {
         #expect(mock.capturedFrameProvider?(.main) == nil)
     }
 
-    @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() {
+    @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() async {
         let mock = MockWebServiceController()
         mock.startResult = false
         let sut = SharingService(webServiceController: mock)
 
-        let started = sut.startWebService()
+        let started = await sut.startWebService()
 
         #expect(started == false)
         #expect(mock.startCallCount == 1)
@@ -60,5 +60,35 @@ struct SharingServiceTests {
         let sut = SharingService(webServiceController: mock)
 
         #expect(sut.activeStreamClientCount == 3)
+    }
+
+    @MainActor @Test func forwardsWebServiceRunningStateCallbackFromController() {
+        let mock = MockWebServiceController()
+        let sut = SharingService(webServiceController: mock)
+        var receivedStates: [Bool] = []
+
+        sut.onWebServiceRunningStateChanged = { isRunning in
+            receivedStates.append(isRunning)
+        }
+
+        mock.onRunningStateChanged?(true)
+        mock.onRunningStateChanged?(false)
+
+        #expect(receivedStates == [true, false])
+    }
+
+    @MainActor @Test func startAndStopEmitRunningStateChanges() async {
+        let mock = MockWebServiceController()
+        let sut = SharingService(webServiceController: mock)
+        var receivedStates: [Bool] = []
+
+        sut.onWebServiceRunningStateChanged = { isRunning in
+            receivedStates.append(isRunning)
+        }
+
+        #expect(await sut.startWebService())
+        sut.stopWebService()
+
+        #expect(receivedStates == [true, false])
     }
 }

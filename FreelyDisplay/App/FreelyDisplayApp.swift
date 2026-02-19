@@ -53,6 +53,11 @@ final class AppHelper {
     private static let xCTestConfigurationEnvironmentKey = "XCTestConfigurationFilePath"
 
     struct ScreenMonitoringSession: Identifiable {
+        enum State {
+            case starting
+            case active
+        }
+
         let id: UUID
         let displayID: CGDirectDisplayID
         let displayName: String
@@ -60,6 +65,7 @@ final class AppHelper {
         let isVirtualDisplay: Bool
         let stream: SCStream
         let delegate: StreamDelegate
+        var state: State
     }
 
     var displays: [CGVirtualDisplay] = []
@@ -96,6 +102,10 @@ final class AppHelper {
     }
 
     init(preview: Bool = false) {
+        sharingService.onWebServiceRunningStateChanged = { [weak self] _ in
+            self?.syncSharingState()
+        }
+
         guard !preview else { return }
 
         if isUITestMode {
@@ -105,7 +115,9 @@ final class AppHelper {
 
         guard !isRunningUnderXCTest else { return }
 
-        _ = startWebService()
+        Task { @MainActor [weak self] in
+            _ = await self?.startWebService()
+        }
         virtualDisplayService.loadPersistedConfigs()
         virtualDisplayService.restoreDesiredVirtualDisplays()
         syncVirtualDisplayState()
@@ -161,8 +173,8 @@ final class AppHelper {
     }
 
     @discardableResult
-    func startWebService() -> Bool {
-        let started = sharingService.startWebService()
+    func startWebService() async -> Bool {
+        let started = await sharingService.startWebService()
         syncSharingState()
         return started
     }
@@ -289,6 +301,11 @@ final class AppHelper {
 
     func addMonitoringSession(_ session: ScreenMonitoringSession) {
         captureMonitoringService.addMonitoringSession(session)
+        syncCaptureMonitoringState()
+    }
+
+    func markMonitoringSessionActive(id: UUID) {
+        captureMonitoringService.updateMonitoringSessionState(id: id, state: .active)
         syncCaptureMonitoringState()
     }
 

@@ -17,6 +17,14 @@ final class CaptureMonitoringService {
         sessions.append(session)
     }
 
+    func updateMonitoringSessionState(
+        id: UUID,
+        state: AppHelper.ScreenMonitoringSession.State
+    ) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[index].state = state
+    }
+
     func removeMonitoringSession(id: UUID) {
         if let session = sessions.first(where: { $0.id == id }) {
             session.stream.stopCapture()

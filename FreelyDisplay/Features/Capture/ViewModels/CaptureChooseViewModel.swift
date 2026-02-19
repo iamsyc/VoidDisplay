@@ -70,7 +70,8 @@ final class CaptureChooseViewModel {
                 resolutionText: resolutionText(for: display),
                 isVirtualDisplay: isVirtualDisplay(display, appHelper: appHelper),
                 stream: captureSession.stream,
-                delegate: captureSession.delegate
+                delegate: captureSession.delegate,
+                state: .starting
             )
             appHelper.addMonitoringSession(session)
             openWindow(session.id)

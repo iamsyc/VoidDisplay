@@ -49,12 +49,14 @@ final class ShareViewModel {
     }
 
     func startService(appHelper: AppHelper) {
-        guard appHelper.startWebService() else {
-            AppLog.sharing.error("Start service failed.")
-            presentError(String(localized: "Failed to start web service."))
-            return
+        Task { @MainActor in
+            guard await appHelper.startWebService() else {
+                AppLog.sharing.error("Start service failed.")
+                presentError(String(localized: "Failed to start web service."))
+                return
+            }
+            syncForCurrentState(appHelper: appHelper)
         }
-        syncForCurrentState(appHelper: appHelper)
     }
 
     func stopService(appHelper: AppHelper) {
@@ -172,7 +174,13 @@ final class ShareViewModel {
 
     func startSharing(display: SCDisplay, appHelper: AppHelper) async {
         _ = await withDisplayStartLock(displayID: display.displayID) {
-            guard appHelper.isWebServiceRunning || appHelper.startWebService() else {
+            let ready: Bool
+            if appHelper.isWebServiceRunning {
+                ready = true
+            } else {
+                ready = await appHelper.startWebService()
+            }
+            guard ready else {
                 presentError(String(localized: "Web service is not running."))
                 return
             }

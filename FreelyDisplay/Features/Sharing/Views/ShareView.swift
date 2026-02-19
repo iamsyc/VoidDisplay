@@ -10,6 +10,7 @@ import ScreenCaptureKit
 import Cocoa
 import Combine
 import CoreGraphics
+import OSLog
 
 struct ShareView: View {
     private enum ShareAccessibilityState {
@@ -20,6 +21,7 @@ struct ShareView: View {
     @Environment(AppHelper.self) private var appHelper: AppHelper
     @State private var viewModel = ShareViewModel()
     @State private var displayReconfigurationMonitor = DisplayReconfigurationMonitor()
+    @State private var displayRefreshFallbackTask: Task<Void, Never>?
     @State private var showToolbarRefresh = false
     @Environment(\.openURL) private var openURL
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -43,14 +45,10 @@ struct ShareView: View {
         }
         .onAppear {
             viewModel.refreshPermissionAndMaybeLoad(appHelper: appHelper)
-            let registered = displayReconfigurationMonitor.start {
-                guard viewModel.hasScreenCapturePermission == true else { return }
-                viewModel.refreshDisplays(appHelper: appHelper)
-            }
-            showToolbarRefresh = !registered
+            startDisplayReconfigurationMonitoring()
         }
         .onDisappear {
-            displayReconfigurationMonitor.stop()
+            stopDisplayReconfigurationMonitoring()
         }
         .onChange(of: appHelper.isWebServiceRunning) { _, _ in
             viewModel.syncForCurrentState(appHelper: appHelper)
@@ -70,6 +68,62 @@ struct ShareView: View {
             Text(viewModel.openPageErrorMessage)
         }
         .appScreenBackground()
+    }
+
+    private func startDisplayReconfigurationMonitoring() {
+        let registered = displayReconfigurationMonitor.start {
+            guard viewModel.hasScreenCapturePermission == true else { return }
+            viewModel.refreshDisplays(appHelper: appHelper)
+        }
+        showToolbarRefresh = !registered
+        if registered {
+            stopDisplayRefreshFallbackPolling()
+            return
+        }
+
+        AppLog.sharing.error(
+            "Display reconfiguration callback registration failed in sharing view; enabling polling fallback."
+        )
+        startDisplayRefreshFallbackPolling()
+    }
+
+    private func stopDisplayReconfigurationMonitoring() {
+        displayReconfigurationMonitor.stop()
+        stopDisplayRefreshFallbackPolling()
+    }
+
+    private func startDisplayRefreshFallbackPolling() {
+        guard displayRefreshFallbackTask == nil else { return }
+        displayRefreshFallbackTask = Task { @MainActor in
+            var cycle: Int = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { break }
+                guard viewModel.hasScreenCapturePermission == true else { continue }
+
+                viewModel.refreshDisplays(appHelper: appHelper)
+                cycle += 1
+                if cycle % 5 != 0 { continue }
+
+                let recovered = displayReconfigurationMonitor.start {
+                    guard viewModel.hasScreenCapturePermission == true else { return }
+                    viewModel.refreshDisplays(appHelper: appHelper)
+                }
+                if recovered {
+                    showToolbarRefresh = false
+                    AppLog.sharing.notice(
+                        "Display reconfiguration callback recovered in sharing view; disabling polling fallback."
+                    )
+                    stopDisplayRefreshFallbackPolling()
+                    break
+                }
+            }
+        }
+    }
+
+    private func stopDisplayRefreshFallbackPolling() {
+        displayRefreshFallbackTask?.cancel()
+        displayRefreshFallbackTask = nil
     }
 
     @ViewBuilder

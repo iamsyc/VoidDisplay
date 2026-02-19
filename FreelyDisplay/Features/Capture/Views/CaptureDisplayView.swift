@@ -62,14 +62,23 @@ struct CaptureDisplayView: View {
                 return
             }
 
-            try? session.stream.addStreamOutput(
-                captureOut,
-                type: .screen,
-                sampleHandlerQueue: captureOut.sampleHandlerQueue
-            )
             startTask?.cancel()
-            startTask = Task {
-                try? await session.stream.startCapture()
+            startTask = Task { @MainActor in
+                do {
+                    try session.stream.addStreamOutput(
+                        captureOut,
+                        type: .screen,
+                        sampleHandlerQueue: captureOut.sampleHandlerQueue
+                    )
+                    try await session.stream.startCapture()
+                    appHelper.markMonitoringSessionActive(id: sessionId)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    AppErrorMapper.logFailure("Start monitoring stream", error: error, logger: AppLog.capture)
+                    appHelper.removeMonitoringSession(id: sessionId)
+                    dismiss()
+                }
             }
         }
         .onDisappear {

@@ -14,6 +14,7 @@ struct VirtualDisplayView: View {
     @State private var editingConfig: EditingConfig?
     @State private var primaryDisplayMonitor = PrimaryDisplayReconfigurationMonitor()
     @State private var primaryDisplayRefreshTick: UInt64 = 0
+    @State private var primaryDisplayFallbackTask: Task<Void, Never>?
     @State private var togglingConfigIds: Set<UUID> = []
 
     @State private var showDeleteConfirm = false
@@ -85,12 +86,10 @@ struct VirtualDisplayView: View {
             if !appHelper.restoreFailures.isEmpty {
                 showRestoreFailureAlert = true
             }
-            _ = primaryDisplayMonitor.start {
-                primaryDisplayRefreshTick &+= 1
-            }
+            startPrimaryDisplayMonitoring()
         }
         .onDisappear {
-            primaryDisplayMonitor.stop()
+            stopPrimaryDisplayMonitoring()
         }
         .onChange(of: appHelper.restoreFailures) { _, newValue in
             if !newValue.isEmpty {
@@ -110,6 +109,58 @@ struct VirtualDisplayView: View {
             Text(summary + more)
         }
         .appScreenBackground()
+    }
+
+    private func startPrimaryDisplayMonitoring() {
+        let started = primaryDisplayMonitor.start {
+            primaryDisplayRefreshTick &+= 1
+        }
+        if started {
+            stopPrimaryDisplayFallbackPolling()
+            return
+        }
+
+        AppLog.virtualDisplay.error(
+            "Primary display monitor callback registration failed; enabling polling fallback."
+        )
+        startPrimaryDisplayFallbackPolling()
+    }
+
+    private func stopPrimaryDisplayMonitoring() {
+        primaryDisplayMonitor.stop()
+        stopPrimaryDisplayFallbackPolling()
+    }
+
+    private func startPrimaryDisplayFallbackPolling() {
+        guard primaryDisplayFallbackTask == nil else { return }
+
+        primaryDisplayFallbackTask = Task { @MainActor in
+            var cycle: Int = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { break }
+                primaryDisplayRefreshTick &+= 1
+
+                cycle += 1
+                if cycle % 10 != 0 { continue }
+
+                let recovered = primaryDisplayMonitor.start {
+                    primaryDisplayRefreshTick &+= 1
+                }
+                if recovered {
+                    AppLog.virtualDisplay.notice(
+                        "Primary display monitor callback recovered; disabling polling fallback."
+                    )
+                    stopPrimaryDisplayFallbackPolling()
+                    break
+                }
+            }
+        }
+    }
+
+    private func stopPrimaryDisplayFallbackPolling() {
+        primaryDisplayFallbackTask?.cancel()
+        primaryDisplayFallbackTask = nil
     }
 
     private func virtualDisplayRow(_ config: VirtualDisplayConfig) -> some View {

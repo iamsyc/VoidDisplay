@@ -8,6 +8,7 @@ final class MockWebServiceController: WebServiceControlling {
     var isRunning = false
     var activeStreamClientCount = 0
     var streamClientCountByTarget: [ShareTarget: Int] = [:]
+    var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
 
     var startResult = true
     var startCallCount = 0
@@ -19,17 +20,19 @@ final class MockWebServiceController: WebServiceControlling {
     func start(
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
-    ) -> Bool {
+    ) async -> Bool {
         startCallCount += 1
         capturedTargetStateProvider = targetStateProvider
         capturedFrameProvider = frameProvider
         isRunning = startResult
+        onRunningStateChanged?(isRunning)
         return startResult
     }
 
     func stop() {
         stopCallCount += 1
         isRunning = false
+        onRunningStateChanged?(isRunning)
     }
 
     func disconnectAllStreamClients() {

@@ -19,6 +19,16 @@ final class VirtualDisplayService {
         var timeoutTask: Task<Void, Never>
     }
 
+    private struct TeardownSettlement {
+        let terminationObserved: Bool
+        let offlineConfirmed: Bool
+    }
+
+    private enum TeardownSettlementEvent {
+        case termination(Bool)
+        case offline(Bool)
+    }
+
     enum ReorderDirection {
         case up
         case down
@@ -251,20 +261,41 @@ final class VirtualDisplayService {
         persistConfigs()
 
         let config = displayConfigs[index]
+        let enableStart = DispatchTime.now().uptimeNanoseconds
+
         var terminationConfirmed = true
+        var offlineVerified = false
         if activeDisplaysByConfigId[configId] == nil,
            let pendingGeneration = runtimeGenerationByConfigId[configId] {
-            terminationConfirmed = await waitForTermination(
-                configId: configId,
-                expectedGeneration: pendingGeneration
-            )
-            if !terminationConfirmed {
-                AppLog.virtualDisplay.warning(
-                    "Enable did not observe termination callback in time; continue with offline verification (config: \(config.id.uuidString, privacy: .public))."
+            let precheckOnline = isManagedDisplayOnline(serialNum: config.serialNum)
+            if !precheckOnline {
+                terminationConfirmed = true
+                offlineVerified = true
+            } else {
+                let settlement = await waitForTeardownSettlement(
+                    configId: configId,
+                    expectedGeneration: pendingGeneration,
+                    serialNum: config.serialNum,
+                    terminationTimeout: 0.3,
+                    offlineTimeout: 2.5
                 )
+
+                if !settlement.terminationObserved {
+                    AppLog.virtualDisplay.warning(
+                        "Enable did not observe termination callback before settling on offline confirmation (config: \(config.id.uuidString, privacy: .public))."
+                    )
+                }
+                if !settlement.offlineConfirmed {
+                    AppLog.virtualDisplay.error(
+                        "Enable aborted because previous display with same serial is still online after teardown settlement (serial: \(config.serialNum, privacy: .public), config: \(config.id.uuidString, privacy: .public), generation: \(pendingGeneration, privacy: .public))."
+                    )
+                    throw VirtualDisplayError.teardownTimedOut
+                }
+                terminationConfirmed = true
+                offlineVerified = true
             }
         }
-        if activeDisplaysByConfigId[configId] == nil {
+        if activeDisplaysByConfigId[configId] == nil, !offlineVerified {
             let offlineConfirmed = await waitForManagedDisplayOffline(serialNum: config.serialNum)
             if !offlineConfirmed {
                 AppLog.virtualDisplay.error(
@@ -274,6 +305,7 @@ final class VirtualDisplayService {
             }
             // After explicit offline confirmation, teardown is considered settled even if callback was missed.
             terminationConfirmed = true
+            offlineVerified = true
         }
 
         do {
@@ -283,7 +315,7 @@ final class VirtualDisplayService {
             )
         } catch {
             AppLog.virtualDisplay.error(
-                "Enable display failed (name: \(config.name, privacy: .public), serial: \(config.serialNum, privacy: .public)): \(String(describing: error), privacy: .public)"
+                "Enable display failed (name: \(config.name, privacy: .public), serial: \(config.serialNum, privacy: .public), totalElapsedMs: \(self.elapsedMilliseconds(since: enableStart), privacy: .public)): \(String(describing: error), privacy: .public)"
             )
             throw error
         }
@@ -542,33 +574,42 @@ final class VirtualDisplayService {
             return true
         }
 
-        return await withCheckedContinuation { continuation in
-            if runtimeGenerationByConfigId[configId] != expectedGeneration {
-                continuation.resume(returning: true)
-                return
-            }
-
-            cancelTerminationWaiter(configId: configId)
-
-            let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
-            let timeoutTask = Task { [weak self] in
-                do {
-                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                } catch {
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if runtimeGenerationByConfigId[configId] != expectedGeneration {
+                    continuation.resume(returning: true)
                     return
                 }
-                self?.completeTerminationWaiter(
-                    configId: configId,
+
+                cancelTerminationWaiter(configId: configId)
+
+                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
+                let timeoutTask = Task { [weak self] in
+                    do {
+                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    } catch {
+                        return
+                    }
+                    self?.completeTerminationWaiter(
+                        configId: configId,
+                        expectedGeneration: expectedGeneration,
+                        result: false
+                    )
+                }
+
+                terminationWaitersByConfigId[configId] = TerminationWaiter(
                     expectedGeneration: expectedGeneration,
-                    result: false
+                    continuation: continuation,
+                    timeoutTask: timeoutTask
                 )
             }
-
-            terminationWaitersByConfigId[configId] = TerminationWaiter(
-                expectedGeneration: expectedGeneration,
-                continuation: continuation,
-                timeoutTask: timeoutTask
-            )
+        } onCancel: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.cancelTerminationWaiter(
+                    configId: configId,
+                    expectedGeneration: expectedGeneration
+                )
+            }
         }
     }
 
@@ -593,24 +634,30 @@ final class VirtualDisplayService {
             )
         }
 
-        return await withCheckedContinuation { continuation in
-            let token = UUID()
-            let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
-            let timeoutTask = Task { [weak self] in
-                do {
-                    try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                } catch {
-                    return
+        let token = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
+                let timeoutTask = Task { [weak self] in
+                    do {
+                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    } catch {
+                        return
+                    }
+                    self?.completeOfflineWaiterAfterTimeout(token: token)
                 }
-                self?.completeOfflineWaiterAfterTimeout(token: token)
-            }
 
-            offlineWaitersByToken[token] = OfflineWaiter(
-                serialNum: serialNum,
-                continuation: continuation,
-                timeoutTask: timeoutTask
-            )
-            completeOfflineWaitersIfPossible()
+                offlineWaitersByToken[token] = OfflineWaiter(
+                    serialNum: serialNum,
+                    continuation: continuation,
+                    timeoutTask: timeoutTask
+                )
+                completeOfflineWaitersIfPossible()
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.cancelOfflineWaiter(token: token)
+            }
         }
     }
 
@@ -621,6 +668,9 @@ final class VirtualDisplayService {
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            if Task.isCancelled {
+                return false
+            }
             if !isManagedDisplayOnline(serialNum: serialNum) {
                 return true
             }
@@ -682,6 +732,12 @@ final class VirtualDisplayService {
         waiter.continuation.resume(returning: false)
     }
 
+    private func cancelTerminationWaiter(configId: UUID, expectedGeneration: UInt64) {
+        guard let waiter = terminationWaitersByConfigId[configId] else { return }
+        guard waiter.expectedGeneration == expectedGeneration else { return }
+        cancelTerminationWaiter(configId: configId)
+    }
+
     private func cancelAllTerminationWaiters() {
         let keys = terminationWaitersByConfigId.keys
         for key in keys {
@@ -709,6 +765,10 @@ final class VirtualDisplayService {
         guard let waiter = offlineWaitersByToken[token] else { return }
         let isOffline = !isManagedDisplayOnline(serialNum: waiter.serialNum)
         completeOfflineWaiter(token: token, result: isOffline)
+    }
+
+    private func cancelOfflineWaiter(token: UUID) {
+        completeOfflineWaiter(token: token, result: false)
     }
 
     private func cancelAllOfflineWaiters() {
@@ -755,7 +815,81 @@ final class VirtualDisplayService {
         }
     }
 
-    deinit {
+    private func elapsedMilliseconds(since startNanoseconds: UInt64) -> UInt64 {
+        let now = DispatchTime.now().uptimeNanoseconds
+        return now >= startNanoseconds ? (now - startNanoseconds) / 1_000_000 : 0
+    }
+
+    private func waitForTeardownSettlement(
+        configId: UUID,
+        expectedGeneration: UInt64,
+        serialNum: UInt32,
+        terminationTimeout: TimeInterval,
+        offlineTimeout: TimeInterval
+    ) async -> TeardownSettlement {
+        await withTaskGroup(of: TeardownSettlementEvent.self, returning: TeardownSettlement.self) { group in
+            group.addTask { [weak self] in
+                guard let self else { return .termination(false) }
+                return .termination(
+                    await self.waitForTermination(
+                        configId: configId,
+                        expectedGeneration: expectedGeneration,
+                        timeout: terminationTimeout
+                    )
+                )
+            }
+            group.addTask { [weak self] in
+                guard let self else { return .offline(false) }
+                return .offline(
+                    await self.waitForManagedDisplayOffline(
+                        serialNum: serialNum,
+                        timeout: offlineTimeout
+                    )
+                )
+            }
+
+            var terminationObserved: Bool?
+            var offlineConfirmed: Bool?
+
+            while let event = await group.next() {
+                switch event {
+                case .termination(let observed):
+                    terminationObserved = observed
+                    if observed {
+                        group.cancelAll()
+                        return TeardownSettlement(
+                            terminationObserved: true,
+                            offlineConfirmed: true
+                        )
+                    }
+
+                case .offline(let confirmed):
+                    offlineConfirmed = confirmed
+                    if confirmed {
+                        group.cancelAll()
+                        return TeardownSettlement(
+                            terminationObserved: terminationObserved ?? false,
+                            offlineConfirmed: true
+                        )
+                    }
+                }
+
+                if let terminationObserved, let offlineConfirmed {
+                    return TeardownSettlement(
+                        terminationObserved: terminationObserved,
+                        offlineConfirmed: offlineConfirmed
+                    )
+                }
+            }
+
+            return TeardownSettlement(
+                terminationObserved: terminationObserved ?? false,
+                offlineConfirmed: offlineConfirmed ?? false
+            )
+        }
+    }
+
+    isolated deinit {
         displayReconfigurationMonitor.stop()
     }
 

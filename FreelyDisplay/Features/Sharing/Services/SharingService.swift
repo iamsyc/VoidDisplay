@@ -20,6 +20,11 @@ final class SharingService {
         webServiceController.portValue
     }
 
+    var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? {
+        get { webServiceController.onRunningStateChanged }
+        set { webServiceController.onRunningStateChanged = newValue }
+    }
+
     var isWebServiceRunning: Bool {
         webServiceController.isRunning
     }
@@ -45,8 +50,8 @@ final class SharingService {
     }
 
     @discardableResult
-    func startWebService() -> Bool {
-        let started = webServiceController.start(
+    func startWebService() async -> Bool {
+        let started = await webServiceController.start(
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },

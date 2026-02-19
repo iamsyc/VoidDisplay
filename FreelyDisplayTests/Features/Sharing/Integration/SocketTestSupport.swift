@@ -260,7 +260,11 @@ func startServerOnRandomPort(
                 targetStateProvider: targetStateProvider,
                 frameProvider: frameProvider
             )
-            server.startListener()
+            let ready = await server.startListener()
+            guard ready else {
+                server.stopListener()
+                continue
+            }
 
             let deadline = Date().addingTimeInterval(1.5)
             while Date() < deadline {

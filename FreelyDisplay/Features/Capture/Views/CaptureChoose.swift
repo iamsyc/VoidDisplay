@@ -141,8 +141,8 @@ struct IsCapturing: View {
         let isVirtualDisplay = viewModel.isVirtualDisplay(display, appHelper: appHelper)
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let monitoringSession = appHelper.screenCaptureSessions.first(where: { $0.displayID == display.displayID })
-        let isMonitoring = monitoringSession != nil
-        let isStarting = viewModel.startingDisplayIDs.contains(display.displayID)
+        let isMonitoring = monitoringSession?.state == .active
+        let isStarting = viewModel.startingDisplayIDs.contains(display.displayID) || monitoringSession?.state == .starting
 
         let model = AppListRowModel(
             id: String(display.displayID),
@@ -215,11 +215,15 @@ struct IsCapturing: View {
     }
 
     private func monitoringSessionRow(_ session: AppHelper.ScreenMonitoringSession) -> some View {
+        let isStarting = session.state == .starting
         let model = AppListRowModel(
             id: session.id.uuidString,
             title: session.displayName,
             subtitle: session.resolutionText,
-            status: AppRowStatus(title: String(localized: "Monitoring"), tint: .green),
+            status: AppRowStatus(
+                title: isStarting ? String(localized: "Starting") : String(localized: "Monitoring"),
+                tint: isStarting ? .orange : .green
+            ),
             metaBadges: [
                 AppBadgeModel(
                     title: monitoringSessionDisplayTypeLabel(session.isVirtualDisplay),
@@ -237,7 +241,10 @@ struct IsCapturing: View {
             Button(role: .destructive) {
                 appHelper.removeMonitoringSession(id: session.id)
             } label: {
-                Label("Stop Monitoring", systemImage: "stop.fill")
+                Label(
+                    isStarting ? String(localized: "Cancel Starting") : String(localized: "Stop Monitoring"),
+                    systemImage: "stop.fill"
+                )
             }
             .buttonStyle(.bordered)
         }

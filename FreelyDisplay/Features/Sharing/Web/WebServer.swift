@@ -69,6 +69,10 @@ final class WebServer {
     private var streamTargetByConnectionKey: [ObjectIdentifier: ShareTarget] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
     private let frameProvider: @MainActor @Sendable (ShareTarget) -> Data?
+    private let onListenerStopped: (@MainActor @Sendable () -> Void)?
+    private var didNotifyListenerStopped = false
+    private var startupWaiter: CheckedContinuation<Bool, Never>?
+    private var startupTimeoutTask: Task<Void, Never>?
     nonisolated private let networkQueue = DispatchQueue(
         label: "phineas.mac.FreelyDisplay.web.network",
         qos: .userInitiated
@@ -82,14 +86,33 @@ final class WebServer {
         switch state {
         case .ready:
             AppLog.web.info("Web listener ready.")
+            completeStartupWaiter(result: true)
         case .failed(let error):
             AppErrorMapper.logFailure("Web listener failed", error: error, logger: AppLog.web)
+            completeStartupWaiter(result: false)
+            notifyListenerStoppedIfNeeded()
             stopListener()
         case .cancelled:
             AppLog.web.info("Web listener cancelled.")
+            completeStartupWaiter(result: false)
+            notifyListenerStoppedIfNeeded()
         default:
             break
         }
+    }
+
+    private func notifyListenerStoppedIfNeeded() {
+        guard !didNotifyListenerStopped else { return }
+        didNotifyListenerStopped = true
+        onListenerStopped?()
+    }
+
+    private func completeStartupWaiter(result: Bool) {
+        guard let startupWaiter else { return }
+        self.startupWaiter = nil
+        startupTimeoutTask?.cancel()
+        startupTimeoutTask = nil
+        startupWaiter.resume(returning: result)
     }
 
     private func removeStreamClient(_ connection: NWConnection, cancelConnection: Bool) {
@@ -305,10 +328,12 @@ final class WebServer {
     init(
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
+        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?,
+        onListenerStopped: (@MainActor @Sendable () -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
         self.frameProvider = frameProvider
+        self.onListenerStopped = onListenerStopped
 
         guard let displayPagePath = Bundle.main.path(forResource: "displayPage", ofType: "html") else {
             throw InitError.missingDisplayPageResource
@@ -337,8 +362,31 @@ final class WebServer {
         }
     }
 
-    func startListener() {
-        listener?.start(queue: networkQueue)
+    func startListener(timeout: TimeInterval = 1.5) async -> Bool {
+        guard listener != nil else { return false }
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                completeStartupWaiter(result: false)
+                startupWaiter = continuation
+                didNotifyListenerStopped = false
+
+                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
+                startupTimeoutTask = Task { [weak self] in
+                    do {
+                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    } catch {
+                        return
+                    }
+                    self?.completeStartupWaiter(result: false)
+                }
+                listener?.start(queue: networkQueue)
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.completeStartupWaiter(result: false)
+            }
+        }
     }
 
     func listeningPort() -> UInt16? {
@@ -363,6 +411,7 @@ final class WebServer {
     }
 
     func stopListener() {
+        completeStartupWaiter(result: false)
         disconnectAllStreamClients()
         listener?.cancel()
         listener = nil

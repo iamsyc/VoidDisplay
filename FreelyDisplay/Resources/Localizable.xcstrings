@@ -316,6 +316,9 @@
         }
       }
     },
+    "Cancel Starting" : {
+
+    },
     "Cannot rebuild while this display is the system main display. Switch main display first and try again." : {
 
     },
@@ -1503,6 +1506,9 @@
           }
         }
       }
+    },
+    "Starting" : {
+
     },
     "Status" : {
       "extractionState" : "stale",
