@@ -1,0 +1,18 @@
+{
+  "target_name": "FreelyDisplay.app",
+  "tracked_file_paths": {
+    "app_helper": "FreelyDisplay/App/FreelyDisplayApp.swift",
+    "share_view_model": "FreelyDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
+    "capture_choose_view_model": "FreelyDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
+    "virtual_display_service": "FreelyDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift"
+  },
+  "minimums": {
+    "target_line_coverage": 0.2108,
+    "tracked_files": {
+      "app_helper": 0.1065,
+      "share_view_model": 0.0588,
+      "capture_choose_view_model": 0.0745,
+      "virtual_display_service": 0.3019
+    }
+  }
+}

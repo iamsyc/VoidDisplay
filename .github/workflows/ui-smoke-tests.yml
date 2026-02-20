@@ -47,14 +47,36 @@ jobs:
 
       - name: Run UI smoke test (no signing)
         run: |
+          classify_failure() {
+            local log_file="$1"
+            if grep -Eq "Early unexpected exit, operation never finished bootstrapping|Test crashed with signal kill before establishing connection" "$log_file"; then
+              echo "runner_bootstrap_failure"
+              return
+            fi
+            if grep -Eq "XCTSkip|skip real-environment|environment not stable" "$log_file"; then
+              echo "environment_unstable"
+              return
+            fi
+            if grep -Eq "Assertion Failure|XCTAssert|Test Case '.*' failed" "$log_file"; then
+              echo "assertion_failure"
+              return
+            fi
+            echo "unknown_failure"
+          }
+
+          summary_file="ui-smoke-summary.json"
           max_attempts=2
           attempt=1
+          last_reason="not_run"
+          last_log_file=""
 
           while [ "$attempt" -le "$max_attempts" ]; do
             echo "UI smoke attempt ${attempt}/${max_attempts}"
+            log_file="ui-smoke-attempt-${attempt}.log"
             rm -rf UISmokeTests.xcresult
 
-            if xcodebuild \
+            set +e
+            xcodebuild \
               -scheme FreelyDisplay \
               -destination 'platform=macOS,arch=arm64' \
               -derivedDataPath .derivedData \
@@ -62,22 +84,67 @@ jobs:
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
               test \
-              -only-testing:FreelyDisplayUITests/HomeSmokeTests/testHomeSmoke; then
+              -only-testing:FreelyDisplayUITests/HomeSmokeTests/testHomeSmoke \
+              2>&1 | tee "$log_file"
+            status=${PIPESTATUS[0]}
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              jq -n \
+                --arg status "passed" \
+                --arg reason "none" \
+                --arg attempt "$attempt" \
+                --arg max_attempts "$max_attempts" \
+                --arg log_file "$log_file" \
+                '{
+                  status: $status,
+                  reason: $reason,
+                  attempt: ($attempt | tonumber),
+                  max_attempts: ($max_attempts | tonumber),
+                  log_file: $log_file
+                }' > "$summary_file"
               exit 0
             fi
 
+            last_reason="$(classify_failure "$log_file")"
+            last_log_file="$log_file"
             attempt=$((attempt + 1))
             if [ "$attempt" -le "$max_attempts" ]; then
-              echo "UI smoke failed, retrying once..."
+              echo "UI smoke failed (reason=${last_reason}), retrying once..."
             fi
           done
+
+          jq -n \
+            --arg status "failed" \
+            --arg reason "$last_reason" \
+            --arg attempt "$((attempt - 1))" \
+            --arg max_attempts "$max_attempts" \
+            --arg log_file "$last_log_file" \
+            '{
+              status: $status,
+              reason: $reason,
+              attempt: ($attempt | tonumber),
+              max_attempts: ($max_attempts | tonumber),
+              log_file: $log_file
+            }' > "$summary_file"
 
           echo "UI smoke failed after ${max_attempts} attempts."
           exit 1
 
       - name: Upload UI smoke test result bundle
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ui-smoke-tests-xcresult
           path: UISmokeTests.xcresult
+          if-no-files-found: warn
+
+      - name: Upload UI smoke failure summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-smoke-summary
+          path: |
+            ui-smoke-summary.json
+            ui-smoke-attempt-*.log
+          if-no-files-found: warn

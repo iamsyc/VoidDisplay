@@ -119,3 +119,8 @@ Network Trash Folder
 Temporary Items
 .apdisk
 .derivedData
+
+# Local test artifacts
+UnitTests.xcresult/
+UISmokeTests.xcresult/
+docs/testing/coverage-latest.json

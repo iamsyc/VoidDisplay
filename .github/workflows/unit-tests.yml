@@ -10,6 +10,8 @@ on:
       - 'FreelyDisplayTests/**'
       - 'FreelyDisplayUITests/**'
       - 'FreelyDisplay.xcodeproj/**'
+      - 'scripts/test/**'
+      - 'docs/testing/coverage-baseline.json'
       - '.github/workflows/unit-tests.yml'
   pull_request:
     paths:
@@ -17,6 +19,8 @@ on:
       - 'FreelyDisplayTests/**'
       - 'FreelyDisplayUITests/**'
       - 'FreelyDisplay.xcodeproj/**'
+      - 'scripts/test/**'
+      - 'docs/testing/coverage-baseline.json'
       - '.github/workflows/unit-tests.yml'
 
 concurrency:
@@ -46,20 +50,33 @@ jobs:
 
       - name: Run unit tests (no signing)
         run: |
-          xcodebuild \
-            -scheme FreelyDisplay \
-            -destination 'platform=macOS,arch=arm64' \
-            -derivedDataPath .derivedData \
-            -resultBundlePath UnitTests.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            test \
-            -only-testing:FreelyDisplayTests \
-            -skip-testing:FreelyDisplayUITests
+          chmod +x scripts/test/unit_gate.sh scripts/test/coverage_report.sh scripts/test/coverage_guard.sh
+          scripts/test/unit_gate.sh \
+            --project "$GITHUB_WORKSPACE/FreelyDisplay.xcodeproj" \
+            --destination 'platform=macOS,arch=arm64' \
+            --derived-data-path .derivedData \
+            --result-bundle-path UnitTests.xcresult \
+            --enable-code-coverage YES \
+            --only-testing FreelyDisplayTests \
+            --skip-testing FreelyDisplayUITests
+
+      - name: Enforce coverage ratchet
+        run: |
+          scripts/test/coverage_guard.sh \
+            --xcresult UnitTests.xcresult \
+            --baseline docs/testing/coverage-baseline.json \
+            --report docs/testing/coverage-latest.json
 
       - name: Upload unit test result bundle
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-tests-xcresult
           path: UnitTests.xcresult
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-coverage-report
+          path: docs/testing/coverage-latest.json
