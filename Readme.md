@@ -1,121 +1,123 @@
 <div align="center">
   <img src="./docs/imgs/AppIcon.png" width="150" height="150"/>
   <h1>FreelyDisplay</h1>
+  <p>Create virtual displays, monitor screens, and share them over LAN — all from your Mac.</p>
   <a href="./docs/Readme_cn-zh.md">简体中文</a>
 </div>
 
-FreelyDisplay is a macOS app for:
-- creating virtual displays,
-- monitoring local displays in dedicated windows,
-- sharing display frames over LAN (HTTP + MJPEG).
+## ✨ Features
 
-## Project Status
+### 🖥️ Virtual Displays
 
-The project has completed a service-oriented refactor:
-- large app state orchestration is centralized in `AppHelper`,
-- domain logic is split into dedicated services and view models,
-- unit tests can run locally without a paid Apple Developer certificate.
+Create virtual monitors with custom resolution and refresh rate.  
+Perfect for headless Mac setups, display testing, or extending your workspace without a physical monitor.
 
-## Architecture Boundaries
+### 👀 Screen Monitoring
 
-Core composition:
-- `FreelyDisplay/FreelyDisplayApp.swift`: App entry and `AppHelper` composition root.
-- `FreelyDisplay/VirtualDisplayService.swift`: virtual display lifecycle and mode application.
-- `FreelyDisplay/VirtualDisplayPersistenceService.swift`: persisted config load/save/restore boundary.
-- `FreelyDisplay/CaptureMonitoringService.swift`: screen monitoring session registry.
-- `FreelyDisplay/SharingService.swift`: sharing state machine.
-- `FreelyDisplay/WebServiceController.swift`: web service lifecycle.
-- `FreelyDisplay/WebShare/WebServer.swift`: HTTP connection and MJPEG stream transport.
-- `FreelyDisplay/ShareViewModel.swift` and `FreelyDisplay/CaptureChooseViewModel.swift`: UI orchestration.
-- `FreelyDisplay/AppObservability.swift`: unified logs and error mapping.
+Watch any connected display in its own dedicated floating window.  
+Great for keeping an eye on a secondary screen without switching desktops.
 
-High-level flow:
-- Virtual display: `VirtualDisplayView` -> `AppHelper` -> `VirtualDisplayService`.
-- Monitoring: `CaptureChoose` -> `CaptureDisplayView` -> `ScreenCaptureFunction`.
-- Sharing: `ShareView` -> `ShareViewModel` -> `SharingService` -> `WebServiceController` -> `WebServer`.
+### 📡 LAN Screen Sharing
 
-Share routes:
-- `GET /`: reserved info page.
-- `GET /display`: main display page (uses stream from `/stream`).
-- `GET /display/{id}`: target display page (uses stream from `/stream/{id}`).
-- `GET /stream`: main display MJPEG stream.
-- `GET /stream/{id}`: target display MJPEG stream.
+Share any display over your local network via HTTP + MJPEG.  
+Open the provided URL in any browser on any device — phone, tablet, or another computer — no app needed on the viewing end.
 
-## Build And Test
-
-Requirements:
-- Xcode 26+ (project currently builds with Xcode 26.3 RC),
-- macOS Apple Silicon (current local target: `platform=macOS,arch=arm64`).
-
-Run tests:
-
-```bash
-xcodebuild -scheme FreelyDisplay -project /Users/syc/Project/FreelyDisplay/FreelyDisplay.xcodeproj -configuration Debug test -destination 'platform=macOS,arch=arm64'
-```
-
-No paid developer account is required for unit tests:
-- project uses local signing (`Sign to Run Locally`) for test runs,
-- `DEVELOPMENT_TEAM` is empty and tests run with ad-hoc local signing.
-
-## Debug Entry Points
-
-UI entry:
-- `HomeView` has 4 sections: `Screen`, `Virtual Display`, `Monitor Screen`, `Screen Sharing`.
-
-Useful files for debugging:
-- virtual display creation/update issues:
-  - `FreelyDisplay/CreateVirtualDisplayObjectView.swift`
-  - `FreelyDisplay/EditVirtualDisplayConfigView.swift`
-  - `FreelyDisplay/VirtualDisplayService.swift`
-- screen capture / permission issues:
-  - `FreelyDisplay/CaptureChooseViewModel.swift`
-  - `FreelyDisplay/ScreenCaptureFunction.swift`
-- web sharing / stream issues:
-  - `FreelyDisplay/ShareViewModel.swift`
-  - `FreelyDisplay/SharingService.swift`
-  - `FreelyDisplay/WebShare/WebServer.swift`
-
-Unified logs (`Logger`):
-- subsystem: `phineas.mac.FreelyDisplay`
-- categories: `virtual_display`, `capture`, `sharing`, `web`, `persistence`
-
-Example:
-
-```bash
-log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"'
-```
-
-## Troubleshooting
-
-1. No displays in Monitor/Share views
-- Confirm Screen Recording permission in System Settings.
-- Retry in app, then fully quit/reopen if permission was changed while app was running.
-
-2. `/stream` or `/stream/{id}` returns 503
-- The target display is known but currently not sharing.
-- Start sharing that display from `Screen Sharing` view first.
-
-3. Local share page cannot be opened
-- Ensure Mac is connected to LAN (Wi-Fi or Ethernet).
-- App picks preferred interface in order: `en0`, `en1`, `en2`, `en3`, `bridge0`, `pdp_ip0`.
-
-4. Virtual display restore failed on startup
-- Check restore failures in `VirtualDisplayView` alert.
-- Corrupted config can be reset by deleting:
-  - `~/Library/Application Support/phineas.mac.FreelyDisplay/virtual-displays.json`
-
-## Test Coverage Focus
-
-Current unit tests in `FreelyDisplayTests` cover:
-- config schema migration and sanitization,
-- serial number conflict resolution,
-- sharing/web state transitions,
-- HTTP parsing + routing + response behavior,
-- LAN IPv4 selection strategy.
-
-## Screenshots
+## 📸 Screenshots
 
 ![](./docs/imgs/6.png)
 ![](./docs/imgs/1.png)
 ![](./docs/imgs/2.png)
 ![](./docs/imgs/5.png)
+
+## 💻 System Requirements
+
+- macOS on Apple Silicon (M1 or later)
+
+## 📥 Installation
+
+### Download
+
+Check the [Releases](../../releases) page for the latest build.
+
+### Build from Source
+
+1. Clone this repository.
+2. Open `FreelyDisplay.xcodeproj` in Xcode 26+.
+3. Build and run (⌘R).
+
+## 🚀 Getting Started
+
+### Create a Virtual Display
+
+1. Open FreelyDisplay and go to the **Virtual Display** tab.
+2. Click the **+** button to add a new virtual display.
+3. Choose a preset or configure a custom resolution and refresh rate.
+4. The virtual display appears immediately in your macOS display arrangement.
+
+### Monitor a Screen
+
+1. Go to the **Screen Monitoring** tab.
+2. Select the display you want to monitor.
+3. A floating window opens showing the live content of that display.
+
+### Share a Screen over LAN
+
+1. Go to the **Screen Sharing** tab.
+2. Click **Share** next to the display you want to broadcast.
+3. The app shows a local URL (e.g. `http://192.168.x.x:8080/display`).
+4. Open that URL in any browser on the same network to watch the screen in real time.
+
+## ❓ Troubleshooting
+
+**No displays appear in Screen Monitoring or Screen Sharing?**
+
+> macOS requires Screen Recording permission. Go to **System Settings → Privacy & Security → Screen Recording** and make sure FreelyDisplay is enabled. If you changed the permission while the app was running, fully quit and reopen it.
+
+**The shared screen page won't open from another device?**
+
+> Make sure your Mac and the viewing device are on the same local network (Wi-Fi or Ethernet). The URL shown in the app must be reachable from the other device.
+
+**Virtual display failed to restore on app launch?**
+
+> If a virtual display fails to restore, you'll see an alert in the Virtual Display tab. If the configuration file is corrupted, you can reset it by deleting:  
+> `~/Library/Application Support/phineas.mac.FreelyDisplay/virtual-displays.json`
+
+## �️ For Developers
+
+### Build & Test
+
+Requirements: Xcode 26+, macOS Apple Silicon.
+
+```bash
+# Run unit tests (no paid developer certificate required)
+xcodebuild -scheme FreelyDisplay \
+  -project FreelyDisplay.xcodeproj \
+  -configuration Debug test \
+  -destination 'platform=macOS,arch=arm64'
+```
+
+### Debug Entry Points
+
+UI entry: `HomeView` contains four tabs — **Displays**, **Virtual Display**, **Screen Monitoring**, **Screen Sharing**.
+
+Key files for debugging:
+
+| Area | Files |
+|------|-------|
+| Virtual Display | `VirtualDisplayService.swift`, `CreateVirtualDisplayObjectView.swift`, `EditVirtualDisplayConfigView.swift` |
+| Screen Capture | `CaptureChooseViewModel.swift`, `ScreenCaptureFunction.swift` |
+| LAN Sharing | `ShareViewModel.swift`, `SharingService.swift`, `WebShare/WebServer.swift` |
+
+Unified logs (`Logger`, subsystem `phineas.mac.FreelyDisplay`):
+
+```bash
+log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"'
+```
+
+## �📄 License
+
+[Apache License 2.0](./LICENSE)
+
+## 🙏 Acknowledgements
+
+This project uses the private `CGVirtualDisplay` framework. See [LICENSE_CGVirtualDisplay](./LICENSE_CGVirtualDisplay) for details.
