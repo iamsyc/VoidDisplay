@@ -2,7 +2,6 @@
 //  NetworkHelper.swift
 //  FreelyDisplay
 //
-//  Created by Phineas Guo on 2025/11/8.
 //
 
 import Foundation

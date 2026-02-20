@@ -2,7 +2,6 @@
 //  WebServer.swift
 //  FreelyDisplay
 //
-//  Created by Phineas Guo on 2025/10/14.
 //
 
 import Network

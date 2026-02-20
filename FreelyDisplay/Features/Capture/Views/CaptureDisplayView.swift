@@ -2,7 +2,6 @@
 //  CaptureDisplayView.swift
 //  FreelyDisplay
 //
-//  Created by Phineas Guo on 2025/10/5.
 //
 
 import SwiftUI

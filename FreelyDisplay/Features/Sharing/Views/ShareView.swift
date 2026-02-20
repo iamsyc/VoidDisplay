@@ -2,7 +2,6 @@
 //  shareView.swift
 //  FreelyDisplay
 //
-//  Created by Phineas Guo on 2025/10/16.
 //
 
 import SwiftUI

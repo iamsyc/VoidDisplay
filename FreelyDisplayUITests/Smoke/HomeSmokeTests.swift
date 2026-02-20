@@ -2,7 +2,6 @@
 //  FreelyDisplayUITests.swift
 //  FreelyDisplayUITests
 //
-//  Created by Phineas Guo on 2025/10/4.
 //
 
 import XCTest

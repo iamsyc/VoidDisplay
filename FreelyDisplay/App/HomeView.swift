@@ -2,7 +2,6 @@
 //  ContentView.swift
 //  FreelyDisplay
 //
-//  Created by Phineas Guo on 2025/10/4.
 //
 
 import SwiftUI
