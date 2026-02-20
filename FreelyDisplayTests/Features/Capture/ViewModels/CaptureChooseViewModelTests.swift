@@ -72,4 +72,65 @@ struct CaptureChooseViewModelTests {
         #expect(enteredDisplayIDs == [firstDisplayID, secondDisplayID])
         #expect(sut.startingDisplayIDs.isEmpty)
     }
+
+    @MainActor @Test func requestPermissionDeniedClearsDisplayState() {
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: false,
+                requestResult: false
+            )
+        )
+        sut.displays = []
+        sut.isLoadingDisplays = true
+
+        sut.requestScreenCapturePermission()
+
+        #expect(sut.hasScreenCapturePermission == false)
+        #expect(sut.lastRequestPermission == false)
+        #expect(sut.lastPreflightPermission == false)
+        #expect(sut.displays == nil)
+        #expect(sut.isLoadingDisplays == false)
+    }
+
+    @MainActor @Test func refreshPermissionGrantedLoadsDisplaysThroughInjectedLoader() async {
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: { [] }
+        )
+
+        sut.refreshPermissionAndMaybeLoad()
+        let loaded = await waitUntil {
+            sut.isLoadingDisplays == false && sut.displays != nil
+        }
+
+        #expect(loaded)
+        #expect(sut.hasScreenCapturePermission == true)
+        #expect(sut.lastPreflightPermission == true)
+        #expect(sut.displays?.isEmpty == true)
+    }
+
+    @MainActor @Test func loadDisplaysPersistsErrorDetailsWhenLoaderThrows() async {
+        let expected = NSError(domain: "CaptureTests", code: 99)
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: { throw expected }
+        )
+
+        sut.loadDisplays()
+        let finished = await waitUntil {
+            sut.isLoadingDisplays == false && sut.lastLoadError != nil
+        }
+
+        #expect(finished)
+        #expect(sut.loadErrorMessage != nil)
+        #expect(sut.lastLoadError?.domain == expected.domain)
+        #expect(sut.lastLoadError?.code == expected.code)
+        #expect(sut.displays == nil)
+    }
 }

@@ -2,7 +2,7 @@ import Foundation
 @testable import FreelyDisplay
 
 @MainActor
-final class MockWebServiceController: WebServiceControlling {
+final class MockWebServiceController: WebServiceControllerProtocol {
     var portValue: UInt16 = 9090
     var currentServer: WebServer?
     var isRunning = false
