@@ -4,12 +4,43 @@ import OSLog
 import CoreGraphics
 
 @MainActor
-final class SharingService {
+protocol SharingServiceProtocol: AnyObject {
+    var webServicePortValue: UInt16 { get }
+    var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? { get set }
+    var isWebServiceRunning: Bool { get }
+    var activeStreamClientCount: Int { get }
+    var currentWebServer: WebServer? { get }
+    var hasAnyActiveSharing: Bool { get }
+    var activeSharingDisplayIDs: Set<CGDirectDisplayID> { get }
+
+    @discardableResult
+    func startWebService() async -> Bool
+    func stopWebService()
+    func registerShareableDisplays(
+        _ displays: [SCDisplay],
+        virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
+    )
+    func startSharing(
+        displayID: CGDirectDisplayID,
+        stream: SCStream,
+        output: Capture,
+        delegate: StreamDelegate
+    )
+    func stopSharing(displayID: CGDirectDisplayID)
+    func stopAllSharing()
+    func isSharing(displayID: CGDirectDisplayID) -> Bool
+    func shareID(for displayID: CGDirectDisplayID) -> UInt32?
+    func shareTarget(for displayID: CGDirectDisplayID) -> ShareTarget?
+    func streamClientCount(for target: ShareTarget) -> Int
+}
+
+@MainActor
+final class SharingService: SharingServiceProtocol {
     private let sharingCoordinator: DisplaySharingCoordinator
-    private let webServiceController: any WebServiceControlling
+    private let webServiceController: any WebServiceControllerProtocol
 
     init(
-        webServiceController: (any WebServiceControlling)? = nil,
+        webServiceController: (any WebServiceControllerProtocol)? = nil,
         sharingCoordinator: DisplaySharingCoordinator? = nil
     ) {
         self.webServiceController = webServiceController ?? WebServiceController()

@@ -2,7 +2,19 @@ import Foundation
 import ScreenCaptureKit
 
 @MainActor
-final class CaptureMonitoringService {
+protocol CaptureMonitoringServiceProtocol: AnyObject {
+    var currentSessions: [AppHelper.ScreenMonitoringSession] { get }
+    func monitoringSession(for id: UUID) -> AppHelper.ScreenMonitoringSession?
+    func addMonitoringSession(_ session: AppHelper.ScreenMonitoringSession)
+    func updateMonitoringSessionState(
+        id: UUID,
+        state: AppHelper.ScreenMonitoringSession.State
+    )
+    func removeMonitoringSession(id: UUID)
+}
+
+@MainActor
+final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
     private var sessions: [AppHelper.ScreenMonitoringSession] = []
 
     var currentSessions: [AppHelper.ScreenMonitoringSession] {

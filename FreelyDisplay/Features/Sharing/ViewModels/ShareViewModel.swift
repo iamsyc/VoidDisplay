@@ -29,9 +29,25 @@ final class ShareViewModel {
     var showOpenPageError = false
     var openPageErrorMessage = ""
     private let permissionProvider: any ScreenCapturePermissionProvider
+    private let loadShareableDisplays: @Sendable () async throws -> [SCDisplay]
+    private let makeScreenCaptureSession: @MainActor @Sendable (SCDisplay) async -> ScreenCaptureSession
 
-    init(permissionProvider: (any ScreenCapturePermissionProvider)? = nil) {
+    init(
+        permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
+        loadShareableDisplays: (@Sendable () async throws -> [SCDisplay])? = nil,
+        makeScreenCaptureSession: (@MainActor @Sendable (SCDisplay) async -> ScreenCaptureSession)? = nil
+    ) {
         self.permissionProvider = permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault()
+        self.loadShareableDisplays = loadShareableDisplays ?? {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: false
+            )
+            return content.displays
+        }
+        self.makeScreenCaptureSession = makeScreenCaptureSession ?? { display in
+            await createScreenCapture(display: display)
+        }
     }
 
     func syncForCurrentState(appHelper: AppHelper) {
@@ -128,13 +144,13 @@ final class ShareViewModel {
 
         Task {
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                let shareableDisplays = try await loadShareableDisplays()
                 await MainActor.run {
-                    self.displays = content.displays
+                    self.displays = shareableDisplays
                     self.hasScreenCapturePermission = true
                     self.lastPreflightPermission = true
                     self.isLoadingDisplays = false
-                    appHelper.registerShareableDisplays(content.displays)
+                    appHelper.registerShareableDisplays(shareableDisplays)
                 }
             } catch {
                 let nsError = error as NSError
@@ -185,7 +201,7 @@ final class ShareViewModel {
                 return
             }
 
-            let captureSession = await createScreenCapture(display: display)
+            let captureSession = await makeScreenCaptureSession(display)
             let stream = Capture()
 
             do {

@@ -84,11 +84,13 @@ final class AppHelper {
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
 
-    @ObservationIgnored private let captureMonitoringService = CaptureMonitoringService()
-    @ObservationIgnored private let sharingService = SharingService()
-    @ObservationIgnored private let virtualDisplayService = VirtualDisplayService()
+    @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
+    @ObservationIgnored private let sharingService: any SharingServiceProtocol
+    @ObservationIgnored private let virtualDisplayService: any VirtualDisplayServiceProtocol
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private let isUITestModeEnabled: Bool
+    @ObservationIgnored private let isRunningUnderXCTestEnabled: Bool
 
     typealias VirtualDisplayError = VirtualDisplayService.VirtualDisplayError
 
@@ -99,15 +101,29 @@ final class AppHelper {
     }
 
     private var isUITestMode: Bool {
-        UITestRuntime.isEnabled
+        isUITestModeEnabled
     }
 
     private var isRunningUnderXCTest: Bool {
-        ProcessInfo.processInfo.environment[Self.xCTestConfigurationEnvironmentKey] != nil
+        isRunningUnderXCTestEnabled
     }
 
-    init(preview: Bool = false) {
-        sharingService.onWebServiceRunningStateChanged = { [weak self] _ in
+    init(
+        preview: Bool = false,
+        captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = nil,
+        sharingService: (any SharingServiceProtocol)? = nil,
+        virtualDisplayService: (any VirtualDisplayServiceProtocol)? = nil,
+        isUITestModeOverride: Bool? = nil,
+        isRunningUnderXCTestOverride: Bool? = nil
+    ) {
+        self.captureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
+        self.sharingService = sharingService ?? SharingService()
+        self.virtualDisplayService = virtualDisplayService ?? VirtualDisplayService()
+        self.isUITestModeEnabled = isUITestModeOverride ?? UITestRuntime.isEnabled
+        self.isRunningUnderXCTestEnabled = isRunningUnderXCTestOverride
+            ?? (ProcessInfo.processInfo.environment[Self.xCTestConfigurationEnvironmentKey] != nil)
+
+        self.sharingService.onWebServiceRunningStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }
 
@@ -123,8 +139,8 @@ final class AppHelper {
         Task { @MainActor [weak self] in
             _ = await self?.startWebService()
         }
-        virtualDisplayService.loadPersistedConfigs()
-        virtualDisplayService.restoreDesiredVirtualDisplays()
+        self.virtualDisplayService.loadPersistedConfigs()
+        self.virtualDisplayService.restoreDesiredVirtualDisplays()
         syncVirtualDisplayState()
     }
 

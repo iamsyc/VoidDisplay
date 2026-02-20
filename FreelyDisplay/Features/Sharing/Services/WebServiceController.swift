@@ -3,7 +3,7 @@ import Network
 import OSLog
 
 @MainActor
-protocol WebServiceControlling: AnyObject {
+protocol WebServiceControllerProtocol: AnyObject {
     var portValue: UInt16 { get }
     var currentServer: WebServer? { get }
     var isRunning: Bool { get }
@@ -20,8 +20,11 @@ protocol WebServiceControlling: AnyObject {
     func disconnectAllStreamClients()
 }
 
+@available(*, deprecated, renamed: "WebServiceControllerProtocol")
+typealias WebServiceControlling = WebServiceControllerProtocol
+
 @MainActor
-final class WebServiceController: WebServiceControlling {
+final class WebServiceController: WebServiceControllerProtocol {
     private let port: NWEndpoint.Port
     private var webServer: WebServer? = nil
     private var activeServerToken: UUID?
