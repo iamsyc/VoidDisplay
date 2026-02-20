@@ -17,7 +17,7 @@ struct EditDisplaySettingsView: View {
     
     // Mode input
     @State private var usePresetMode = true
-    @State private var presetResolution: Resolutions = .r_1920_1080
+    @State private var presetResolution: DisplayResolutionPreset = .w1920h1080
     @State private var customWidth: Int = 1920
     @State private var customHeight: Int = 1080
     @State private var customRefreshRate: Double = 60.0
@@ -100,8 +100,8 @@ struct EditDisplaySettingsView: View {
                     if usePresetMode {
                         HStack {
                             Picker("Preset Resolution", selection: $presetResolution) {
-                                ForEach(Resolutions.allCases) { res in
-                                    Text("\(res.resolutions.0) × \(res.resolutions.1)")
+                                ForEach(DisplayResolutionPreset.allCases) { res in
+                                    Text(res.displayText)
                                         .tag(res)
                                 }
                             }
@@ -180,7 +180,7 @@ struct EditDisplaySettingsView: View {
         // Initialize with a default mode based on current display
         // Since we can't easily read existing modes, start with a common resolution
         let isHiDPI = display.hiDPI > 0
-        selectedModes = [ResolutionSelection(preset: .r_1920_1080, enableHiDPI: isHiDPI)]
+        selectedModes = [ResolutionSelection(preset: .w1920h1080, enableHiDPI: isHiDPI)]
     }
     
     private func addPresetMode() {

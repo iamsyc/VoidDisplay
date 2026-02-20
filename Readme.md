@@ -118,6 +118,13 @@ log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"
 
 [Apache License 2.0](./LICENSE)
 
+## 🤝 Project Lineage
+
+This repository is a long-term maintained fork of the original project by Phineas Guo:
+[guoPhineas/FreelyDisplay](https://github.com/guoPhineas/FreelyDisplay).
+
+The current feature set, architecture, tests, and ongoing refactors are maintained in this fork, while preserving upstream contribution history in Git.
+
 ## 🙏 Acknowledgements
 
 This project uses the private `CGVirtualDisplay` framework. See [LICENSE_CGVirtualDisplay](./LICENSE_CGVirtualDisplay) for details.

@@ -25,7 +25,7 @@ struct CreateVirtualDisplay: View {
     
     // Mode input
     @State private var usePresetMode = true
-    @State private var presetResolution: Resolutions = .r_1920_1080
+    @State private var presetResolution: DisplayResolutionPreset = .w1920h1080
     @State private var customWidth: Int = 1920
     @State private var customHeight: Int = 1080
     @State private var customRefreshRate: Double = 60.0
@@ -213,8 +213,8 @@ struct CreateVirtualDisplay: View {
                     LabeledContent(String(localized: "Preset")) {
                         HStack(spacing: 8) {
                             Picker("Preset Resolution", selection: $presetResolution) {
-                                ForEach(Resolutions.allCases) { res in
-                                    Text(verbatim: "\(res.resolutions.0) × \(res.resolutions.1) @ 60Hz")
+                                ForEach(DisplayResolutionPreset.allCases) { res in
+                                    Text(verbatim: "\(res.displayText) @ 60Hz")
                                         .tag(res)
                                 }
                             }
@@ -326,7 +326,7 @@ struct CreateVirtualDisplay: View {
             focusedField = .name
             // Add a default mode
             if selectedModes.isEmpty {
-                selectedModes.append(ResolutionSelection(preset: .r_1920_1080))
+                selectedModes.append(ResolutionSelection(preset: .w1920h1080))
             }
         }
     }

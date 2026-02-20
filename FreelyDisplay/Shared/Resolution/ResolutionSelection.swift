@@ -17,10 +17,10 @@ struct ResolutionSelection: Identifiable, Hashable {
     
     /// Initialize from a preset resolution
     /// - Parameters:
-    ///   - preset: A preset resolution from the Resolutions enum
+    ///   - preset: A preset resolution from the DisplayResolutionPreset enum
     ///   - refreshRate: Refresh rate in Hz (default: 60.0)
     ///   - enableHiDPI: Whether to enable HiDPI for this resolution (default: true)
-    init(preset: Resolutions, refreshRate: Double = 60.0, enableHiDPI: Bool = true) {
+    init(preset: DisplayResolutionPreset, refreshRate: Double = 60.0, enableHiDPI: Bool = true) {
         let (w, h) = preset.resolutions
         self.width = w
         self.height = h

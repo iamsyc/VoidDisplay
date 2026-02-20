@@ -42,6 +42,17 @@ struct HttpHelperTests {
         #expect(body == "hello\r\nworld")
     }
 
+    @Test func parseHTTPRequestAllowsHeaderOnlyPayloadWithoutTerminator() throws {
+        let raw = "GET /display HTTP/1.1\r\nHost: localhost"
+        let data = try #require(raw.data(using: .utf8))
+
+        let request = try #require(parseHTTPRequest(from: data))
+        #expect(request.method == "GET")
+        #expect(request.path == "/display")
+        #expect(request.headers["host"] == "localhost")
+        #expect(request.body.isEmpty)
+    }
+
     @Test func parseHTTPRequestPreservesBinaryBodyBytes() throws {
         let header = "POST /upload HTTP/1.1\r\n"
             + "Content-Type: application/octet-stream\r\n"
@@ -82,6 +93,20 @@ struct HttpHelperTests {
 
         #expect(request.headers["host"] == "localhost")
         #expect(request.headers["brokenheaderline"] == nil)
+    }
+
+    @Test func parseHTTPRequestIgnoresHeaderWithEmptyKey() throws {
+        let raw = """
+        GET / HTTP/1.1\r
+        : value-with-empty-key\r
+        Host: localhost\r
+        \r
+        """
+        let data = try #require(raw.data(using: .utf8))
+        let request = try #require(parseHTTPRequest(from: data))
+
+        #expect(request.headers[""] == nil)
+        #expect(request.headers["host"] == "localhost")
     }
 
     @MainActor @Test func httpRouterRouteDecision() {

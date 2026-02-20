@@ -7,13 +7,10 @@
 
 import Foundation
 
-extension Resolutions{
-    var id: String { rawValue }
-    var resolutions: (Int,Int){
-        let temp=self.rawValue.split(separator: "_")
-        let (width,height)=(temp[1],temp[2])
-        let resolution = (Int(width)!,Int(height)!)
-        return resolution
+extension DisplayResolutionPreset {
+    // Compatibility shim for existing callers.
+    var resolutions: (Int, Int) {
+        let size = logicalSize
+        return (size.width, size.height)
     }
-    
 }

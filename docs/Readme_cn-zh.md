@@ -118,6 +118,13 @@ log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"
 
 [Apache License 2.0](../LICENSE)
 
+## 🤝 项目来源
+
+本仓库基于 Phineas Guo 的原始项目长期维护而来：
+[guoPhineas/FreelyDisplay](https://github.com/guoPhineas/FreelyDisplay)。
+
+当前版本的功能演进、架构调整、测试体系和持续重构由本 fork 持续维护，同时通过 Git 历史保留上游贡献记录。
+
 ## 🙏 致谢
 
 本项目使用了私有的 `CGVirtualDisplay` 框架，详见 [LICENSE_CGVirtualDisplay](../LICENSE_CGVirtualDisplay)。
