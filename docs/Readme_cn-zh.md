@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./imgs/AppIcon.png" width="150" height="150"/>
-  <h1>随显（VoidDisplay）</h1>
+  <h1>虚幕（VoidDisplay）</h1>
   <p>在 Mac 上创建虚拟显示器、监视屏幕、局域网共享屏幕。</p>
   <a href="../Readme.md">English</a>
 </div>
