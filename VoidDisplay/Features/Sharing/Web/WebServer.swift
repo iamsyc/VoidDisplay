@@ -73,7 +73,7 @@ final class WebServer {
     private var startupWaiter: CheckedContinuation<Bool, Never>?
     private var startupTimeoutTask: Task<Void, Never>?
     nonisolated private let networkQueue = DispatchQueue(
-        label: "com.0xyuchen.voiddisplay.web.network",
+        label: "com.developerchen.voiddisplay.web.network",
         qos: .userInitiated
     )
 

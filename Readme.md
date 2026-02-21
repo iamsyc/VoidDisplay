@@ -80,7 +80,7 @@ Check the [Releases](../../releases) page for the latest build.
 **Virtual display failed to restore on app launch?**
 
 > If a virtual display fails to restore, you'll see an alert in the Virtual Display tab. If the configuration file is corrupted, you can reset it by deleting:  
-> `~/Library/Application Support/com.0xyuchen.voiddisplay/virtual-displays.json`
+> `~/Library/Application Support/com.developerchen.voiddisplay/virtual-displays.json`
 
 ## 🛠️ For Developers
 
@@ -106,12 +106,12 @@ Key files for debugging:
 |------|-------|
 | Virtual Display | `VirtualDisplayService.swift`, `CreateVirtualDisplayObjectView.swift`, `EditVirtualDisplayConfigView.swift` |
 | Screen Capture | `CaptureChooseViewModel.swift`, `ScreenCaptureFunction.swift` |
-| LAN Sharing | `ShareViewModel.swift`, `SharingService.swift`, `WebShare/WebServer.swift` |
+| LAN Sharing | `ShareViewModel.swift`, `SharingService.swift`, `Features/Sharing/Web/WebServer.swift` |
 
-Unified logs (`Logger`, subsystem `com.0xyuchen.voiddisplay`):
+Unified logs (`Logger`, subsystem `com.developerchen.voiddisplay`):
 
 ```bash
-log stream --style compact --predicate 'subsystem == "com.0xyuchen.voiddisplay"'
+log stream --style compact --predicate 'subsystem == "com.developerchen.voiddisplay"'
 ```
 
 ## 📄 License

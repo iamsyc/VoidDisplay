@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 enum AppLog {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.0xyuchen.voiddisplay"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay"
 
     static let virtualDisplay = Logger(subsystem: subsystem, category: "virtual_display")
     static let capture = Logger(subsystem: subsystem, category: "capture")

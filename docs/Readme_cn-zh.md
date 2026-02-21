@@ -80,7 +80,7 @@
 **启动时虚拟显示器恢复失败？**
 
 > 如果虚拟显示器恢复失败，虚拟显示器标签页会弹出提示。如果配置文件损坏，可以删除以下文件来重置：  
-> `~/Library/Application Support/com.0xyuchen.voiddisplay/virtual-displays.json`
+> `~/Library/Application Support/com.developerchen.voiddisplay/virtual-displays.json`
 
 ## 🛠️ 开发者
 
@@ -106,12 +106,12 @@ UI 入口：`HomeView` 包含四个标签页 — **显示器**、**虚拟显示�
 |---------|------|
 | 虚拟显示器 | `VirtualDisplayService.swift`、`CreateVirtualDisplayObjectView.swift`、`EditVirtualDisplayConfigView.swift` |
 | 屏幕采集 | `CaptureChooseViewModel.swift`、`ScreenCaptureFunction.swift` |
-| 局域网共享 | `ShareViewModel.swift`、`SharingService.swift`、`WebShare/WebServer.swift` |
+| 局域网共享 | `ShareViewModel.swift`、`SharingService.swift`、`Features/Sharing/Web/WebServer.swift` |
 
-统一日志（`Logger`，subsystem `com.0xyuchen.voiddisplay`）：
+统一日志（`Logger`，subsystem `com.developerchen.voiddisplay`）：
 
 ```bash
-log stream --style compact --predicate 'subsystem == "com.0xyuchen.voiddisplay"'
+log stream --style compact --predicate 'subsystem == "com.developerchen.voiddisplay"'
 ```
 
 ## 📄 许可证

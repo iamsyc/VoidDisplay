@@ -75,7 +75,7 @@ private struct PendingFrame: @unchecked Sendable {
 final class Capture: NSObject, SCStreamOutput {
     // Keep callbacks on main actor and offload JPEG encoding to a serial background queue.
     @ObservationIgnored nonisolated private let encodingQueue = DispatchQueue(
-        label: "com.0xyuchen.voiddisplay.capture.jpeg",
+        label: "com.developerchen.voiddisplay.capture.jpeg",
         qos: .userInitiated
     )
     @ObservationIgnored nonisolated private let ciContext = CIContext()

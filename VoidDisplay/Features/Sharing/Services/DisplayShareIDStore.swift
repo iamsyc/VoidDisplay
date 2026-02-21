@@ -82,7 +82,7 @@ final class DisplayShareIDStore {
             appropriateFor: nil,
             create: true
         )
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.0xyuchen.voiddisplay"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay"
         return appSupport
             .appendingPathComponent(bundleID, isDirectory: true)
             .appendingPathComponent(fileName, isDirectory: false)
