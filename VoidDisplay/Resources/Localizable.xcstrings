@@ -58,6 +58,7 @@
       }
     },
     "%lld × %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -329,9 +330,6 @@
     "Cancel Starting" : {
 
     },
-    "Cannot rebuild while this display is the system main display. Switch main display first and try again." : {
-
-    },
     "Click + to start a new monitoring window." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -498,6 +496,16 @@
         }
       }
     },
+    "Disable failed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停用失败。"
+          }
+        }
+      }
+    },
     "Disabled" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -541,6 +549,26 @@
     },
     "Display teardown timed out. Wait a moment and try rebuilding again." : {
 
+    },
+    "Display topology did not stabilize after enabling. Please try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用后显示拓扑未稳定，请重试。"
+          }
+        }
+      }
+    },
+    "Display topology repair failed. Open System Display Settings and recheck arrangement." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示拓扑自动修复失败。请打开系统显示设置并重新检查排列。"
+          }
+        }
+      }
     },
     "Displays" : {
       "localizations" : {
@@ -608,36 +636,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启用失败。"
-          }
-        }
-      }
-    },
-    "Disable failed." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停用失败。"
-          }
-        }
-      }
-    },
-    "Display topology did not stabilize after enabling. Please try again." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启用后显示拓扑未稳定，请重试。"
-          }
-        }
-      }
-    },
-    "Display topology repair failed. Open System Display Settings and recheck arrangement." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示拓扑自动修复失败。请打开系统显示设置并重新检查排列。"
           }
         }
       }
@@ -1664,6 +1662,7 @@
       }
     },
     "This display is currently the system main display. Switch main display in System Settings before rebuilding." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
