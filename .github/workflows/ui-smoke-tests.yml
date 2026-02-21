@@ -6,15 +6,15 @@ on:
       - main
       - 'codex/**'
     paths:
-      - 'FreelyDisplay/**'
-      - 'FreelyDisplayUITests/**'
-      - 'FreelyDisplay.xcodeproj/**'
+      - 'VoidDisplay/**'
+      - 'VoidDisplayUITests/**'
+      - 'VoidDisplay.xcodeproj/**'
       - '.github/workflows/ui-smoke-tests.yml'
   pull_request:
     paths:
-      - 'FreelyDisplay/**'
-      - 'FreelyDisplayUITests/**'
-      - 'FreelyDisplay.xcodeproj/**'
+      - 'VoidDisplay/**'
+      - 'VoidDisplayUITests/**'
+      - 'VoidDisplay.xcodeproj/**'
       - '.github/workflows/ui-smoke-tests.yml'
   workflow_dispatch:
 
@@ -41,7 +41,7 @@ jobs:
           path: |
             .derivedData/SourcePackages
             .derivedData/ModuleCache.noindex
-          key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('FreelyDisplay.xcodeproj/**', 'FreelyDisplay/**/*.swift', 'FreelyDisplayUITests/**/*.swift') }}
+          key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', 'VoidDisplay/**/*.swift', 'VoidDisplayUITests/**/*.swift') }}
           restore-keys: |
             xcode-meta-ui-${{ runner.os }}-
 
@@ -77,14 +77,14 @@ jobs:
 
             set +e
             xcodebuild \
-              -scheme FreelyDisplay \
+              -scheme VoidDisplay \
               -destination 'platform=macOS,arch=arm64' \
               -derivedDataPath .derivedData \
               -resultBundlePath UISmokeTests.xcresult \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
               test \
-              -only-testing:FreelyDisplayUITests/HomeSmokeTests/testHomeSmoke \
+              -only-testing:VoidDisplayUITests/HomeSmokeTests/testHomeSmoke \
               2>&1 | tee "$log_file"
             status=${PIPESTATUS[0]}
             set -e

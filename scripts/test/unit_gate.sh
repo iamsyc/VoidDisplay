@@ -3,14 +3,14 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-SCHEME="${SCHEME:-FreelyDisplay}"
-PROJECT_PATH="${PROJECT_PATH:-$ROOT_DIR/FreelyDisplay.xcodeproj}"
+SCHEME="${SCHEME:-VoidDisplay}"
+PROJECT_PATH="${PROJECT_PATH:-$ROOT_DIR/VoidDisplay.xcodeproj}"
 DESTINATION="${DESTINATION:-platform=macOS,arch=arm64}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$ROOT_DIR/.derivedData}"
 RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-$ROOT_DIR/UnitTests.xcresult}"
 ENABLE_CODE_COVERAGE="${ENABLE_CODE_COVERAGE:-YES}"
-ONLY_TESTING="${ONLY_TESTING:-FreelyDisplayTests}"
-SKIP_TESTING="${SKIP_TESTING:-FreelyDisplayUITests}"
+ONLY_TESTING="${ONLY_TESTING:-VoidDisplayTests}"
+SKIP_TESTING="${SKIP_TESTING:-VoidDisplayUITests}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

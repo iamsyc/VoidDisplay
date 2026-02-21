@@ -1,10 +1,10 @@
 {
-  "target_name": "FreelyDisplay.app",
+  "target_name": "VoidDisplay.app",
   "tracked_file_paths": {
-    "app_helper": "FreelyDisplay/App/FreelyDisplayApp.swift",
-    "share_view_model": "FreelyDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
-    "capture_choose_view_model": "FreelyDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
-    "virtual_display_service": "FreelyDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift"
+    "app_helper": "VoidDisplay/App/VoidDisplayApp.swift",
+    "share_view_model": "VoidDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
+    "capture_choose_view_model": "VoidDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
+    "virtual_display_service": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift"
   },
   "minimums": {
     "target_line_coverage": 0.2108,

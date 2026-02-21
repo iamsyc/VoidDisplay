@@ -121,6 +121,7 @@ Temporary Items
 .derivedData
 
 # Local test artifacts
+*.xcresult/
 UnitTests.xcresult/
 UISmokeTests.xcresult/
 docs/testing/coverage-latest.json

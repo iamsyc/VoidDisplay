@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./imgs/AppIcon.png" width="150" height="150"/>
-  <h1>随显（FreelyDisplay）</h1>
+  <h1>随显（VoidDisplay）</h1>
   <p>在 Mac 上创建虚拟显示器、监视屏幕、局域网共享屏幕。</p>
   <a href="../Readme.md">English</a>
 </div>
@@ -42,14 +42,14 @@
 ### 从源码构建
 
 1. 克隆本仓库。
-2. 用 Xcode 26+ 打开 `FreelyDisplay.xcodeproj`。
+2. 用 Xcode 26+ 打开 `VoidDisplay.xcodeproj`。
 3. 构建并运行（⌘R）。
 
 ## 🚀 快速上手
 
 ### 创建虚拟显示器
 
-1. 打开 FreelyDisplay，进入 **虚拟显示器** 标签页。
+1. 打开 VoidDisplay，进入 **虚拟显示器** 标签页。
 2. 点击 **+** 按钮添加新的虚拟显示器。
 3. 选择预设方案，或输入自定义的分辨率和刷新率。
 4. 虚拟显示器会立即出现在 macOS 的显示器排列中。
@@ -71,7 +71,7 @@
 
 **屏幕监视或屏幕共享中没有可选的显示器？**
 
-> macOS 需要授予"屏幕录制"权限。前往 **系统设置 → 隐私与安全性 → 屏幕录制**，确保 FreelyDisplay 已启用。如果在应用运行期间更改了权限，请完全退出应用后重新打开。
+> macOS 需要授予"屏幕录制"权限。前往 **系统设置 → 隐私与安全性 → 屏幕录制**，确保 VoidDisplay 已启用。如果在应用运行期间更改了权限，请完全退出应用后重新打开。
 
 **从其他设备打不开共享页面？**
 
@@ -80,9 +80,9 @@
 **启动时虚拟显示器恢复失败？**
 
 > 如果虚拟显示器恢复失败，虚拟显示器标签页会弹出提示。如果配置文件损坏，可以删除以下文件来重置：  
-> `~/Library/Application Support/phineas.mac.FreelyDisplay/virtual-displays.json`
+> `~/Library/Application Support/com.0xyuchen.voiddisplay/virtual-displays.json`
 
-## �️ 开发者
+## 🛠️ 开发者
 
 ### 构建与测试
 
@@ -90,8 +90,8 @@
 
 ```bash
 # 运行单元测试（无需付费开发者证书）
-xcodebuild -scheme FreelyDisplay \
-  -project FreelyDisplay.xcodeproj \
+xcodebuild -scheme VoidDisplay \
+  -project VoidDisplay.xcodeproj \
   -configuration Debug test \
   -destination 'platform=macOS,arch=arm64'
 ```
@@ -108,13 +108,13 @@ UI 入口：`HomeView` 包含四个标签页 — **显示器**、**虚拟显示�
 | 屏幕采集 | `CaptureChooseViewModel.swift`、`ScreenCaptureFunction.swift` |
 | 局域网共享 | `ShareViewModel.swift`、`SharingService.swift`、`WebShare/WebServer.swift` |
 
-统一日志（`Logger`，subsystem `phineas.mac.FreelyDisplay`）：
+统一日志（`Logger`，subsystem `com.0xyuchen.voiddisplay`）：
 
 ```bash
-log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"'
+log stream --style compact --predicate 'subsystem == "com.0xyuchen.voiddisplay"'
 ```
 
-## �📄 许可证
+## 📄 许可证
 
 [Apache License 2.0](../LICENSE)
 

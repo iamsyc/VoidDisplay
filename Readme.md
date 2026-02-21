@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./docs/imgs/AppIcon.png" width="150" height="150"/>
-  <h1>FreelyDisplay</h1>
+  <h1>VoidDisplay</h1>
   <p>Create virtual displays, monitor screens, and share them over LAN — all from your Mac.</p>
   <a href="./docs/Readme_cn-zh.md">简体中文</a>
 </div>
@@ -42,14 +42,14 @@ Check the [Releases](../../releases) page for the latest build.
 ### Build from Source
 
 1. Clone this repository.
-2. Open `FreelyDisplay.xcodeproj` in Xcode 26+.
+2. Open `VoidDisplay.xcodeproj` in Xcode 26+.
 3. Build and run (⌘R).
 
 ## 🚀 Getting Started
 
 ### Create a Virtual Display
 
-1. Open FreelyDisplay and go to the **Virtual Display** tab.
+1. Open VoidDisplay and go to the **Virtual Display** tab.
 2. Click the **+** button to add a new virtual display.
 3. Choose a preset or configure a custom resolution and refresh rate.
 4. The virtual display appears immediately in your macOS display arrangement.
@@ -71,7 +71,7 @@ Check the [Releases](../../releases) page for the latest build.
 
 **No displays appear in Screen Monitoring or Screen Sharing?**
 
-> macOS requires Screen Recording permission. Go to **System Settings → Privacy & Security → Screen Recording** and make sure FreelyDisplay is enabled. If you changed the permission while the app was running, fully quit and reopen it.
+> macOS requires Screen Recording permission. Go to **System Settings → Privacy & Security → Screen Recording** and make sure VoidDisplay is enabled. If you changed the permission while the app was running, fully quit and reopen it.
 
 **The shared screen page won't open from another device?**
 
@@ -80,9 +80,9 @@ Check the [Releases](../../releases) page for the latest build.
 **Virtual display failed to restore on app launch?**
 
 > If a virtual display fails to restore, you'll see an alert in the Virtual Display tab. If the configuration file is corrupted, you can reset it by deleting:  
-> `~/Library/Application Support/phineas.mac.FreelyDisplay/virtual-displays.json`
+> `~/Library/Application Support/com.0xyuchen.voiddisplay/virtual-displays.json`
 
-## �️ For Developers
+## 🛠️ For Developers
 
 ### Build & Test
 
@@ -90,8 +90,8 @@ Requirements: Xcode 26+, macOS Apple Silicon.
 
 ```bash
 # Run unit tests (no paid developer certificate required)
-xcodebuild -scheme FreelyDisplay \
-  -project FreelyDisplay.xcodeproj \
+xcodebuild -scheme VoidDisplay \
+  -project VoidDisplay.xcodeproj \
   -configuration Debug test \
   -destination 'platform=macOS,arch=arm64'
 ```
@@ -108,13 +108,13 @@ Key files for debugging:
 | Screen Capture | `CaptureChooseViewModel.swift`, `ScreenCaptureFunction.swift` |
 | LAN Sharing | `ShareViewModel.swift`, `SharingService.swift`, `WebShare/WebServer.swift` |
 
-Unified logs (`Logger`, subsystem `phineas.mac.FreelyDisplay`):
+Unified logs (`Logger`, subsystem `com.0xyuchen.voiddisplay`):
 
 ```bash
-log stream --style compact --predicate 'subsystem == "phineas.mac.FreelyDisplay"'
+log stream --style compact --predicate 'subsystem == "com.0xyuchen.voiddisplay"'
 ```
 
-## �📄 License
+## 📄 License
 
 [Apache License 2.0](./LICENSE)
 

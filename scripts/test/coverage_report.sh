@@ -6,13 +6,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 XCRESULT_PATH=""
 OUTPUT_PATH="$ROOT_DIR/docs/testing/coverage-latest.json"
 BASELINE_PATH=""
-TARGET_NAME="${TARGET_NAME:-FreelyDisplay.app}"
+TARGET_NAME="${TARGET_NAME:-VoidDisplay.app}"
 
 DEFAULT_TRACKED_PATHS='{
-  "app_helper": "FreelyDisplay/App/FreelyDisplayApp.swift",
-  "share_view_model": "FreelyDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
-  "capture_choose_view_model": "FreelyDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
-  "virtual_display_service": "FreelyDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift"
+  "app_helper": "VoidDisplay/App/VoidDisplayApp.swift",
+  "share_view_model": "VoidDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
+  "capture_choose_view_model": "VoidDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
+  "virtual_display_service": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift"
 }'
 
 while [[ $# -gt 0 ]]; do

@@ -6,19 +6,19 @@ on:
       - main
       - 'codex/**'
     paths:
-      - 'FreelyDisplay/**'
-      - 'FreelyDisplayTests/**'
-      - 'FreelyDisplayUITests/**'
-      - 'FreelyDisplay.xcodeproj/**'
+      - 'VoidDisplay/**'
+      - 'VoidDisplayTests/**'
+      - 'VoidDisplayUITests/**'
+      - 'VoidDisplay.xcodeproj/**'
       - 'scripts/test/**'
       - 'docs/testing/coverage-baseline.json'
       - '.github/workflows/unit-tests.yml'
   pull_request:
     paths:
-      - 'FreelyDisplay/**'
-      - 'FreelyDisplayTests/**'
-      - 'FreelyDisplayUITests/**'
-      - 'FreelyDisplay.xcodeproj/**'
+      - 'VoidDisplay/**'
+      - 'VoidDisplayTests/**'
+      - 'VoidDisplayUITests/**'
+      - 'VoidDisplay.xcodeproj/**'
       - 'scripts/test/**'
       - 'docs/testing/coverage-baseline.json'
       - '.github/workflows/unit-tests.yml'
@@ -44,7 +44,7 @@ jobs:
           path: |
             .derivedData/SourcePackages
             .derivedData/ModuleCache.noindex
-          key: xcode-meta-unit-${{ runner.os }}-${{ hashFiles('FreelyDisplay.xcodeproj/**', 'FreelyDisplay/**/*.swift', 'FreelyDisplayTests/**/*.swift', 'FreelyDisplayUITests/**/*.swift') }}
+          key: xcode-meta-unit-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', 'VoidDisplay/**/*.swift', 'VoidDisplayTests/**/*.swift', 'VoidDisplayUITests/**/*.swift') }}
           restore-keys: |
             xcode-meta-unit-${{ runner.os }}-
 
@@ -52,13 +52,13 @@ jobs:
         run: |
           chmod +x scripts/test/unit_gate.sh scripts/test/coverage_report.sh scripts/test/coverage_guard.sh
           scripts/test/unit_gate.sh \
-            --project "$GITHUB_WORKSPACE/FreelyDisplay.xcodeproj" \
+            --project "$GITHUB_WORKSPACE/VoidDisplay.xcodeproj" \
             --destination 'platform=macOS,arch=arm64' \
             --derived-data-path .derivedData \
             --result-bundle-path UnitTests.xcresult \
             --enable-code-coverage YES \
-            --only-testing FreelyDisplayTests \
-            --skip-testing FreelyDisplayUITests
+            --only-testing VoidDisplayTests \
+            --skip-testing VoidDisplayUITests
 
       - name: Enforce coverage ratchet
         run: |

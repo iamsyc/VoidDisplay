@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-XCSTRINGS="$ROOT_DIR/FreelyDisplay/Resources/Localizable.xcstrings"
+XCSTRINGS="$ROOT_DIR/VoidDisplay/Resources/Localizable.xcstrings"
 OUT_FILE="$ROOT_DIR/docs/localization-audit-latest.md"
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -37,12 +37,12 @@ STALE_KEYS=$(
 UI_REGEX='Text\("[^"]+"\)|Button\("[^"]+"|Label\("[^"]+"|navigationTitle\("[^"]+"|ContentUnavailableView\("[^"]+"|alert\("[^"]+"|help\("[^"]+"'
 if command -v rg >/dev/null 2>&1; then
   HARD_CODED=$(
-    rg -n --glob '*.swift' "$UI_REGEX" "$ROOT_DIR/FreelyDisplay" \
+    rg -n --glob '*.swift' "$UI_REGEX" "$ROOT_DIR/VoidDisplay" \
       | sed "s|$ROOT_DIR/||"
   )
 else
   HARD_CODED=$(
-    grep -RInE --include='*.swift' "$UI_REGEX" "$ROOT_DIR/FreelyDisplay" \
+    grep -RInE --include='*.swift' "$UI_REGEX" "$ROOT_DIR/VoidDisplay" \
       | sed "s|$ROOT_DIR/||"
   )
 fi
