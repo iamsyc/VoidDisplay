@@ -8,6 +8,8 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
     var currentSessions: [AppHelper.ScreenMonitoringSession] = []
     var addCallCount = 0
     var removeCallCount = 0
+    var removeByDisplayCallCount = 0
+    var removedDisplayIDs: [CGDirectDisplayID] = []
     var updateStateCallCount = 0
 
     func monitoringSession(for id: UUID) -> AppHelper.ScreenMonitoringSession? {
@@ -31,6 +33,12 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
     func removeMonitoringSession(id: UUID) {
         removeCallCount += 1
         currentSessions.removeAll { $0.id == id }
+    }
+
+    func removeMonitoringSessions(displayID: CGDirectDisplayID) {
+        removeByDisplayCallCount += 1
+        removedDisplayIDs.append(displayID)
+        currentSessions.removeAll { $0.displayID == displayID }
     }
 }
 
@@ -123,6 +131,7 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var currentDisplayConfigs: [VirtualDisplayConfig] = []
     var currentRunningConfigIds: Set<UUID> = []
     var currentRestoreFailures: [VirtualDisplayRestoreFailure] = []
+    var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
 
     var loadPersistedConfigsCallCount = 0
     var restoreDesiredVirtualDisplaysCallCount = 0
@@ -134,6 +143,11 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var createDisplayFromConfigResult: Result<CGVirtualDisplay, Error> = .failure(
         NSError(domain: "MockVirtualDisplayService", code: 2)
     )
+    var applyModesCallCount = 0
+    var applyModesConfigIds: [UUID] = []
+    var rebuildVirtualDisplayCallCount = 0
+    var rebuildVirtualDisplayConfigIds: [UUID] = []
+    var rebuildVirtualDisplayError: Error?
 
     func loadPersistedConfigs() {
         loadPersistedConfigsCallCount += 1
@@ -161,6 +175,10 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
 
     func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
         nil
+    }
+
+    func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
+        runtimeDisplayIDByConfigId[configId]
     }
 
     func isVirtualDisplayRunning(configId: UUID) -> Bool {
@@ -206,9 +224,18 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         false
     }
 
-    func applyModes(configId: UUID, modes: [ResolutionSelection]) {}
+    func applyModes(configId: UUID, modes: [ResolutionSelection]) {
+        applyModesCallCount += 1
+        applyModesConfigIds.append(configId)
+    }
 
-    func rebuildVirtualDisplay(configId: UUID) async throws {}
+    func rebuildVirtualDisplay(configId: UUID) async throws {
+        rebuildVirtualDisplayCallCount += 1
+        rebuildVirtualDisplayConfigIds.append(configId)
+        if let rebuildVirtualDisplayError {
+            throw rebuildVirtualDisplayError
+        }
+    }
 
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
         currentDisplayConfigs.first(where: { $0.serialNum == display.serialNum })

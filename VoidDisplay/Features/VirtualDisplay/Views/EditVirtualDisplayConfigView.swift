@@ -46,10 +46,6 @@ struct EditVirtualDisplayConfigView: View {
         trimmedName.isEmpty || selectedModes.isEmpty
     }
 
-    private var isMainDisplayRebuildRestricted: Bool {
-        isRunning && appHelper.isMainDisplay(configId: configId)
-    }
-
     private var physicalSizeFromInputs: (width: Int, height: Int) {
         selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
     }
@@ -92,12 +88,6 @@ struct EditVirtualDisplayConfigView: View {
                         .foregroundColor(.secondary)
                 }
 
-                if isMainDisplayRebuildRestricted {
-                    Text("This display is currently the system main display. Switch main display in System Settings before rebuilding.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("virtual_display_edit_main_display_rebuild_hint")
-                }
             } header: {
                 Text("Basic Info")
             }
@@ -292,19 +282,6 @@ struct EditVirtualDisplayConfigView: View {
                 .disabled(isSaveBlockedByMissingRequiredFields)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("virtual_display_edit_save_button")
-            } else if isMainDisplayRebuildRestricted {
-                Button("Save Only") {
-                    handleSaveOnlyTapped()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isSaveBlockedByMissingRequiredFields)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier("virtual_display_edit_save_only_button")
-
-                Button("Save and Rebuild Now") {}
-                    .disabled(true)
-                    .help(String(localized: "This display is currently the system main display. Switch main display in System Settings before rebuilding."))
-                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
             } else {
                 Button("Save Only") {
                     handleSaveOnlyTapped()
@@ -454,7 +431,6 @@ struct EditVirtualDisplayConfigView: View {
 
     private func handleSaveAndRebuildTapped() {
         guard isRunning else { return }
-        guard !appHelper.isMainDisplay(configId: configId) else { return }
         guard let analysis = analyzeSave(reportErrors: true) else { return }
         performSaveAndRebuild(analysis)
     }

@@ -42,6 +42,10 @@ final class VirtualDisplayService {
     private static let managedVendorID: UInt32 = 0x3456
     private static let managedProductID: UInt32 = 0x1234
     private static let rollbackOfflineWaitTimeout: TimeInterval = 1.2
+    private static let rebuildTerminationTimeout: TimeInterval = 2.0
+    private static let rebuildOfflineTimeout: TimeInterval = 4.0
+    private static let rebuildFinalOfflineConfirmationTimeout: TimeInterval = 0.8
+    private static let rebuildFleetCreationCooldown: TimeInterval = 0.6
 
     private struct TerminationWaiter {
         let expectedGeneration: UInt64
@@ -75,7 +79,6 @@ final class VirtualDisplayService {
         case invalidConfiguration(String)
         case creationFailed
         case configNotFound
-        case rebuildMainDisplayWhileRunning
         case teardownTimedOut
         case topologyRepairFailed
         case topologyUnstableAfterEnable
@@ -90,8 +93,6 @@ final class VirtualDisplayService {
                 return String(localized: "Virtual display creation failed.")
             case .configNotFound:
                 return String(localized: "Display configuration not found.")
-            case .rebuildMainDisplayWhileRunning:
-                return String(localized: "Cannot rebuild while this display is the system main display. Switch main display first and try again.")
             case .teardownTimedOut:
                 return String(localized: "Display teardown timed out. Wait a moment and try rebuilding again.")
             case .topologyRepairFailed:
@@ -108,6 +109,7 @@ final class VirtualDisplayService {
     private var runningConfigIds: Set<UUID> = []
     private var restoreFailures: [VirtualDisplayRestoreFailure] = []
     private var activeDisplaysByConfigId: [UUID: CGVirtualDisplay] = [:]
+    private var runtimeDisplayIDHintsByConfigId: [UUID: CGDirectDisplayID] = [:]
     private var runtimeGenerationByConfigId: [UUID: UInt64] = [:]
     private var terminationWaitersByConfigId: [UUID: TerminationWaiter] = [:]
     private var offlineWaitersByToken: [UUID: OfflineWaiter] = [:]
@@ -118,6 +120,9 @@ final class VirtualDisplayService {
     private let managedDisplayOnlineChecker: (UInt32) -> Bool
     private let topologyStabilityTimeout: TimeInterval
     private let topologyStabilityPollInterval: TimeInterval
+#if DEBUG
+    private let rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)?
+#endif
     private var isReconfigurationMonitorAvailable = false
     private var didLogOfflinePollingFallback = false
 
@@ -147,7 +152,8 @@ final class VirtualDisplayService {
             topologyRepairer: SystemDisplayTopologyRepairer(),
             managedDisplayOnlineChecker: managedDisplayOnlineChecker,
             topologyStabilityTimeout: topologyStabilityTimeout,
-            topologyStabilityPollInterval: topologyStabilityPollInterval
+            topologyStabilityPollInterval: topologyStabilityPollInterval,
+            rebuildRuntimeDisplayHook: nil
         )
     }
 
@@ -158,7 +164,8 @@ final class VirtualDisplayService {
         topologyRepairer: any DisplayTopologyRepairing,
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool,
         topologyStabilityTimeout: TimeInterval,
-        topologyStabilityPollInterval: TimeInterval
+        topologyStabilityPollInterval: TimeInterval,
+        rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil
     ) {
         self.persistenceService = persistenceService ?? VirtualDisplayPersistenceService()
         self.displayReconfigurationMonitor = displayReconfigurationMonitor
@@ -167,6 +174,11 @@ final class VirtualDisplayService {
         self.managedDisplayOnlineChecker = managedDisplayOnlineChecker
         self.topologyStabilityTimeout = topologyStabilityTimeout
         self.topologyStabilityPollInterval = topologyStabilityPollInterval
+#if DEBUG
+        self.rebuildRuntimeDisplayHook = rebuildRuntimeDisplayHook
+#else
+        _ = rebuildRuntimeDisplayHook
+#endif
         isReconfigurationMonitorAvailable = displayReconfigurationMonitor.start { [weak self] in
             self?.completeOfflineWaitersIfPossible()
         }
@@ -215,6 +227,7 @@ final class VirtualDisplayService {
         cancelAllTerminationWaiters()
         cancelAllOfflineWaiters()
         activeDisplaysByConfigId.removeAll()
+        runtimeDisplayIDHintsByConfigId.removeAll()
         runtimeGenerationByConfigId.removeAll()
         runningConfigIds.removeAll()
         displays.removeAll()
@@ -227,6 +240,13 @@ final class VirtualDisplayService {
 
     func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
         activeDisplaysByConfigId[configId]
+    }
+
+    func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
+        if let runtime = activeDisplaysByConfigId[configId] {
+            return runtime.displayID
+        }
+        return runtimeDisplayIDHintsByConfigId[configId]
     }
 
     func isVirtualDisplayRunning(configId: UUID) -> Bool {
@@ -302,6 +322,7 @@ final class VirtualDisplayService {
         for (configId, activeDisplay) in activeDisplaysByConfigId where activeDisplay.serialNum == display.serialNum {
             cancelTerminationWaiter(configId: configId)
             activeDisplaysByConfigId[configId] = nil
+            runtimeDisplayIDHintsByConfigId[configId] = nil
             // Keep generation until termination callback (or timeout) so re-enable can wait safely.
             runningConfigIds.remove(configId)
         }
@@ -318,6 +339,7 @@ final class VirtualDisplayService {
         let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? displayConfigs[index].serialNum
         cancelTerminationWaiter(configId: configId)
         activeDisplaysByConfigId[configId] = nil
+        runtimeDisplayIDHintsByConfigId[configId] = nil
         // Keep generation until termination callback (or timeout) so re-enable can wait safely.
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == runtimeSerialNum }
@@ -356,7 +378,7 @@ final class VirtualDisplayService {
                 )
 
                 if !settlement.terminationObserved {
-                    AppLog.virtualDisplay.warning(
+                    AppLog.virtualDisplay.debug(
                         "Enable did not observe termination callback before settling on offline confirmation (config: \(config.id.uuidString, privacy: .public))."
                     )
                 }
@@ -417,6 +439,7 @@ final class VirtualDisplayService {
         let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? config.serialNum
         cancelTerminationWaiter(configId: configId)
         activeDisplaysByConfigId[configId] = nil
+        runtimeDisplayIDHintsByConfigId[configId] = nil
         runtimeGenerationByConfigId[configId] = nil
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == runtimeSerialNum }
@@ -432,6 +455,7 @@ final class VirtualDisplayService {
         for (configId, activeDisplay) in activeDisplaysByConfigId where activeDisplay.serialNum == serialNum {
             cancelTerminationWaiter(configId: configId)
             activeDisplaysByConfigId[configId] = nil
+            runtimeDisplayIDHintsByConfigId[configId] = nil
             runtimeGenerationByConfigId[configId] = nil
             runningConfigIds.remove(configId)
         }
@@ -494,43 +518,57 @@ final class VirtualDisplayService {
         guard let config = displayConfigs.first(where: { $0.id == configId }) else {
             throw VirtualDisplayError.configNotFound
         }
-
-        var generationToWaitFor: UInt64?
-        if let running = activeDisplaysByConfigId[configId] {
-            if CGDisplayIsMain(running.displayID) != 0 {
-                throw VirtualDisplayError.rebuildMainDisplayWhileRunning
-            }
-
-            generationToWaitFor = runtimeGenerationByConfigId[configId]
-            activeDisplaysByConfigId[configId] = nil
-            runningConfigIds.remove(configId)
-            displays.removeAll { $0.serialNum == running.serialNum }
-        }
-
-        var terminationConfirmed = true
-        if let generationToWaitFor,
-           !(await waitForTermination(configId: configId, expectedGeneration: generationToWaitFor)) {
-            terminationConfirmed = false
-            AppLog.virtualDisplay.warning(
-                "Virtual display teardown did not complete before timeout (config: \(config.id.uuidString, privacy: .public)). Continue rebuild with extended retries."
+        let snapshotBeforeRebuild = currentTopologySnapshot()
+        let preferredMainDisplayID = preferredManagedMainDisplayIDForEnable()
+        let targetRuntimeDisplayID = runtimeDisplayID(for: configId)
+        let targetWasManagedMain = managedDisplayID(
+            for: config.serialNum,
+            snapshot: snapshotBeforeRebuild
+        ) == snapshotBeforeRebuild?.mainDisplayID || targetRuntimeDisplayID == CGMainDisplayID()
+        let useCoordinatedRebuild = shouldUseCoordinatedRebuild(
+            configId: configId,
+            config: config,
+            snapshot: snapshotBeforeRebuild
+        )
+        AppLog.virtualDisplay.debug(
+            "Rebuild strategy resolved (config: \(configId.uuidString, privacy: .public), coordinated: \(useCoordinatedRebuild, privacy: .public), runtimeMainMatch: \(targetRuntimeDisplayID == CGMainDisplayID(), privacy: .public), snapshotAvailable: \(snapshotBeforeRebuild != nil, privacy: .public))."
+        )
+        if useCoordinatedRebuild {
+            try await rebuildManagedDisplayFleet(
+                prioritizing: configId,
+                fallbackPreferredMainDisplayID: preferredMainDisplayID
             )
-        }
-        if let generationToWaitFor {
-            let offlineConfirmed = await waitForManagedDisplayOffline(serialNum: config.serialNum)
-            if !offlineConfirmed {
-                AppLog.virtualDisplay.error(
-                    "Rebuild aborted because previous display with same serial is still online (serial: \(config.serialNum, privacy: .public), generation: \(generationToWaitFor, privacy: .public), config: \(config.id.uuidString, privacy: .public))."
-                )
-                throw VirtualDisplayError.teardownTimedOut
-            }
-            // After explicit offline confirmation, teardown is considered settled even if callback was missed.
-            terminationConfirmed = true
+            return
         }
 
-        _ = try await createRuntimeDisplayWithRetries(
-            from: config,
+        let runtimeSerialNum = activeDisplaysByConfigId[configId]?.serialNum ?? config.serialNum
+        let generationToWaitFor = runningConfigIds.contains(configId)
+            ? runtimeGenerationByConfigId[configId]
+            : nil
+        if runningConfigIds.contains(configId) {
+            activeDisplaysByConfigId[configId] = nil
+            runtimeDisplayIDHintsByConfigId[configId] = nil
+            runningConfigIds.remove(configId)
+            displays.removeAll { $0.serialNum == runtimeSerialNum }
+        }
+
+        let terminationConfirmed = try await settleRebuildTeardown(
+            configId: config.id,
+            serialNum: config.serialNum,
+            generationToWaitFor: generationToWaitFor
+        )
+
+        let recreatedTargetDisplayID = try await recreateRuntimeDisplayForRebuild(
+            config: config,
             terminationConfirmed: terminationConfirmed
         )
+        let preferredMainAfterRebuild: CGDirectDisplayID?
+        if targetWasManagedMain {
+            preferredMainAfterRebuild = recreatedTargetDisplayID ?? preferredMainDisplayID
+        } else {
+            preferredMainAfterRebuild = preferredMainDisplayID
+        }
+        try await ensureHealthyTopologyAfterEnable(preferredMainDisplayID: preferredMainAfterRebuild)
     }
 
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
@@ -562,6 +600,200 @@ final class VirtualDisplayService {
             next += 1
         }
         return next
+    }
+
+    private func shouldUseCoordinatedRebuild(
+        configId: UUID,
+        config: VirtualDisplayConfig,
+        snapshot: DisplayTopologySnapshot?
+    ) -> Bool {
+        guard runningConfigIds.contains(configId),
+              runningConfigIds.count >= 2 else {
+            return false
+        }
+        if let runtimeDisplayID = runtimeDisplayID(for: configId),
+           runtimeDisplayID == CGMainDisplayID() {
+            return true
+        }
+        guard let snapshot else {
+            return false
+        }
+        let managedOnlineCount = snapshot.displays.filter(\.isManagedVirtualDisplay).count
+        guard managedOnlineCount >= 2,
+              let targetDisplayID = managedDisplayID(for: config.serialNum, snapshot: snapshot) else {
+            return false
+        }
+        return snapshot.mainDisplayID == targetDisplayID
+    }
+
+    private func orderedRunningConfigIDs(prioritizing configId: UUID) -> [UUID] {
+        var ordered = displayConfigs
+            .map(\.id)
+            .filter { runningConfigIds.contains($0) }
+        if let index = ordered.firstIndex(of: configId) {
+            ordered.remove(at: index)
+            ordered.insert(configId, at: 0)
+        } else if runningConfigIds.contains(configId) {
+            ordered.insert(configId, at: 0)
+        }
+        return ordered
+    }
+
+    private func rebuildManagedDisplayFleet(
+        prioritizing prioritizedConfigID: UUID,
+        fallbackPreferredMainDisplayID: CGDirectDisplayID?
+    ) async throws {
+        let orderedConfigIDs = orderedRunningConfigIDs(prioritizing: prioritizedConfigID)
+        guard !orderedConfigIDs.isEmpty else {
+            throw VirtualDisplayError.configNotFound
+        }
+
+        var terminationConfirmedByConfigID: [UUID: Bool] = [:]
+        var rebuiltSerials: [UInt32] = []
+        for runningConfigID in orderedConfigIDs {
+            guard let runningConfig = displayConfigs.first(where: { $0.id == runningConfigID }) else { continue }
+            rebuiltSerials.append(runningConfig.serialNum)
+
+            let runtimeSerialNum = activeDisplaysByConfigId[runningConfigID]?.serialNum ?? runningConfig.serialNum
+            let generationToWaitFor = runtimeGenerationByConfigId[runningConfigID]
+
+            activeDisplaysByConfigId[runningConfigID] = nil
+            runtimeDisplayIDHintsByConfigId[runningConfigID] = nil
+            runningConfigIds.remove(runningConfigID)
+            displays.removeAll { $0.serialNum == runtimeSerialNum }
+
+            let terminationConfirmed = try await settleRebuildTeardown(
+                configId: runningConfigID,
+                serialNum: runningConfig.serialNum,
+                generationToWaitFor: generationToWaitFor
+            )
+            terminationConfirmedByConfigID[runningConfigID] = terminationConfirmed
+        }
+        let fleetOfflineConfirmed = await waitForManagedDisplaysOffline(
+            serialNumbers: rebuiltSerials,
+            timeout: Self.rebuildFinalOfflineConfirmationTimeout
+        )
+        if !fleetOfflineConfirmed {
+            AppLog.virtualDisplay.error(
+                "Coordinated rebuild aborted because at least one managed display remained online after fleet teardown (configs: \(orderedConfigIDs.map(\.uuidString).joined(separator: ","), privacy: .public))."
+            )
+            throw VirtualDisplayError.teardownTimedOut
+        }
+        if Self.rebuildFleetCreationCooldown > 0 {
+            await sleepForRetry(seconds: Self.rebuildFleetCreationCooldown)
+        }
+
+        var recreatedPreferredMainDisplayID: CGDirectDisplayID?
+        for runningConfigID in orderedConfigIDs {
+            guard let runningConfig = displayConfigs.first(where: { $0.id == runningConfigID }) else { continue }
+            let terminationConfirmed = terminationConfirmedByConfigID[runningConfigID] ?? true
+
+            let recreatedDisplayID = try await recreateRuntimeDisplayForRebuild(
+                config: runningConfig,
+                terminationConfirmed: terminationConfirmed
+            )
+            if runningConfigID == prioritizedConfigID {
+                recreatedPreferredMainDisplayID = recreatedDisplayID
+            }
+        }
+
+        try await ensureHealthyTopologyAfterEnable(
+            preferredMainDisplayID: recreatedPreferredMainDisplayID ?? fallbackPreferredMainDisplayID
+        )
+    }
+
+    private func settleRebuildTeardown(
+        configId: UUID,
+        serialNum: UInt32,
+        generationToWaitFor: UInt64?
+    ) async throws -> Bool {
+        var terminationConfirmed = true
+        if let generationToWaitFor {
+            let settlement = await waitForTeardownSettlement(
+                configId: configId,
+                expectedGeneration: generationToWaitFor,
+                serialNum: serialNum,
+                terminationTimeout: Self.rebuildTerminationTimeout,
+                offlineTimeout: Self.rebuildOfflineTimeout
+            )
+            if !settlement.terminationObserved {
+                AppLog.virtualDisplay.debug(
+                    "Virtual display teardown termination callback not observed before timeout (config: \(configId.uuidString, privacy: .public), generation: \(generationToWaitFor, privacy: .public)). Continue rebuild with extended retries after offline confirmation."
+                )
+            }
+            if !settlement.offlineConfirmed {
+                AppLog.virtualDisplay.error(
+                    "Rebuild aborted because previous display with same serial is still online after teardown settlement (serial: \(serialNum, privacy: .public), generation: \(generationToWaitFor, privacy: .public), config: \(configId.uuidString, privacy: .public))."
+                )
+                throw VirtualDisplayError.teardownTimedOut
+            }
+            terminationConfirmed = settlement.terminationObserved
+        }
+
+        let finalOfflineConfirmed = await waitForManagedDisplayOffline(
+            serialNum: serialNum,
+            timeout: Self.rebuildFinalOfflineConfirmationTimeout
+        )
+        if !finalOfflineConfirmed {
+            AppLog.virtualDisplay.error(
+                "Rebuild aborted because previous display with same serial is still online during final offline confirmation (serial: \(serialNum, privacy: .public), config: \(configId.uuidString, privacy: .public))."
+            )
+            throw VirtualDisplayError.teardownTimedOut
+        }
+        return terminationConfirmed
+    }
+
+    private func waitForManagedDisplaysOffline(
+        serialNumbers: [UInt32],
+        timeout: TimeInterval
+    ) async -> Bool {
+        for serial in Set(serialNumbers).sorted() {
+            let offline = await waitForManagedDisplayOffline(
+                serialNum: serial,
+                timeout: timeout
+            )
+            if !offline {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func recreateRuntimeDisplayForRebuild(
+        config: VirtualDisplayConfig,
+        terminationConfirmed: Bool
+    ) async throws -> CGDirectDisplayID? {
+#if DEBUG
+        if let rebuildRuntimeDisplayHook {
+            try await rebuildRuntimeDisplayHook(config, terminationConfirmed)
+            return runtimeDisplayID(for: config.id)
+        }
+#endif
+        let rebuiltDisplay = try await createRuntimeDisplayWithRetries(
+            from: config,
+            terminationConfirmed: terminationConfirmed
+        )
+        return rebuiltDisplay.displayID
+    }
+
+    private func managedDisplayID(
+        for serialNum: UInt32,
+        snapshot: DisplayTopologySnapshot?
+    ) -> CGDirectDisplayID? {
+        guard let snapshot else { return nil }
+        if let activeManagedDisplay = snapshot.displays.first(where: {
+            $0.isManagedVirtualDisplay &&
+                $0.serialNumber == serialNum &&
+                $0.isActive &&
+                $0.bounds.width > 1 &&
+                $0.bounds.height > 1
+        }) {
+            return activeManagedDisplay.id
+        }
+        return snapshot.displays.first(where: {
+            $0.isManagedVirtualDisplay &&
+                $0.serialNumber == serialNum
+        })?.id
     }
 
     private struct TopologyHealthEvaluation {
@@ -687,6 +919,7 @@ final class VirtualDisplayService {
 
     private func rollbackEnableRuntimeState(configId: UUID, serialNum: UInt32) {
         activeDisplaysByConfigId[configId] = nil
+        runtimeDisplayIDHintsByConfigId[configId] = nil
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == serialNum }
         // Keep runtime generation until termination callback/offline check settles.
@@ -899,6 +1132,7 @@ final class VirtualDisplayService {
     @discardableResult
     private func createRuntimeDisplay(from config: VirtualDisplayConfig, maxPixels: (width: UInt32, height: UInt32)? = nil) throws -> CGVirtualDisplay {
         if let existing = activeDisplaysByConfigId[config.id] {
+            runtimeDisplayIDHintsByConfigId[config.id] = existing.displayID
             return existing
         }
 
@@ -956,6 +1190,7 @@ final class VirtualDisplayService {
         }
 
         activeDisplaysByConfigId[config.id] = display
+        runtimeDisplayIDHintsByConfigId[config.id] = display.displayID
         runtimeGenerationByConfigId[config.id] = generation
         runningConfigIds.insert(config.id)
         displays.removeAll { $0.serialNum == config.serialNum }
@@ -972,6 +1207,7 @@ final class VirtualDisplayService {
         }
         AppLog.virtualDisplay.notice("Virtual display terminated (serial: \(serialNum, privacy: .public)).")
         activeDisplaysByConfigId[configId] = nil
+        runtimeDisplayIDHintsByConfigId[configId] = nil
         runtimeGenerationByConfigId[configId] = nil
         runningConfigIds.remove(configId)
         displays.removeAll { $0.serialNum == serialNum }
@@ -1321,9 +1557,11 @@ final class VirtualDisplayService {
 
     func seedRuntimeBookkeepingForTesting(
         configId: UUID,
-        generation: UInt64 = 1
+        generation: UInt64 = 1,
+        runtimeDisplayID: CGDirectDisplayID? = nil
     ) {
         runtimeGenerationByConfigId[configId] = generation
+        runtimeDisplayIDHintsByConfigId[configId] = runtimeDisplayID
         runningConfigIds.insert(configId)
     }
 
@@ -1621,6 +1859,7 @@ protocol VirtualDisplayServiceProtocol: AnyObject {
     func resetAllVirtualDisplayData() -> Int
 
     func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay?
+    func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID?
     func isVirtualDisplayRunning(configId: UUID) -> Bool
 
     @discardableResult

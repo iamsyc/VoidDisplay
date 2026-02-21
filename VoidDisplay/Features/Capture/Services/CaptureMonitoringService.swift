@@ -1,5 +1,6 @@
 import Foundation
 import ScreenCaptureKit
+import CoreGraphics
 
 @MainActor
 protocol CaptureMonitoringServiceProtocol: AnyObject {
@@ -11,6 +12,7 @@ protocol CaptureMonitoringServiceProtocol: AnyObject {
         state: AppHelper.ScreenMonitoringSession.State
     )
     func removeMonitoringSession(id: UUID)
+    func removeMonitoringSessions(displayID: CGDirectDisplayID)
 }
 
 @MainActor
@@ -42,5 +44,14 @@ final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
             session.stream.stopCapture()
         }
         sessions.removeAll { $0.id == id }
+    }
+
+    func removeMonitoringSessions(displayID: CGDirectDisplayID) {
+        let targetSessionIDs = sessions
+            .filter { $0.displayID == displayID }
+            .map(\.id)
+        for sessionID in targetSessionIDs {
+            removeMonitoringSession(id: sessionID)
+        }
     }
 }

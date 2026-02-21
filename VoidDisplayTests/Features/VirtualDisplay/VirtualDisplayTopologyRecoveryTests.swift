@@ -412,25 +412,228 @@ struct VirtualDisplayTopologyRecoveryTests {
     }
 
     @MainActor
+    @Test func rebuildInvokesTopologyRecoveryAndPreservesManagedMainContinuity() async throws {
+        let displayA: CGDirectDisplayID = 901
+        let displayB: CGDirectDisplayID = 902
+
+        let configA = config(id: UUID(), serial: 1, desiredEnabled: true)
+        let configB = config(id: UUID(), serial: 2, desiredEnabled: true)
+
+        let collapsedAfterRebuild = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, inMirrorSet: true, mirrorMasterID: nil),
+                displayInfo(id: displayB, serial: 2, managed: true, inMirrorSet: true, mirrorMasterID: displayA)
+            ]
+        )
+        let recoveredExpanded = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        var rebuildHookCallCount = 0
+        let inspector = FakeDisplayTopologyInspector(
+            snapshots: [
+                collapsedAfterRebuild, collapsedAfterRebuild, collapsedAfterRebuild,
+                recoveredExpanded, recoveredExpanded, recoveredExpanded,
+                recoveredExpanded, recoveredExpanded, recoveredExpanded
+            ]
+        )
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
+        let service = makeService(
+            inspector: inspector,
+            repairer: repairer,
+            topologyStabilityTimeout: 0.12,
+            topologyStabilityPollInterval: 0.001,
+            rebuildRuntimeDisplayHook: { rebuiltConfig, terminationConfirmed in
+                rebuildHookCallCount += 1
+                #expect(rebuiltConfig.id == configA.id)
+                #expect(terminationConfirmed)
+            }
+        )
+        service.replaceDisplayConfigsForTesting([configA, configB])
+
+        try await service.rebuildVirtualDisplay(configId: configA.id)
+
+        #expect(rebuildHookCallCount == 1)
+        #expect(repairer.callCount == 2)
+        #expect(repairer.lastAnchorDisplayID == displayA)
+    }
+
+    @MainActor
+    @Test func rebuildManagedMainWithMultipleRunningDisplaysUsesCoordinatedFleetRebuildOrder() async throws {
+        let displayA: CGDirectDisplayID = 921
+        let displayB: CGDirectDisplayID = 922
+
+        let configA = config(id: UUID(), serial: 1, desiredEnabled: true)
+        let configB = config(id: UUID(), serial: 2, desiredEnabled: true)
+        let expandedStable = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        var rebuildOrder: [UUID] = []
+        var terminationFlags: [Bool] = []
+        let inspector = FakeDisplayTopologyInspector(
+            snapshots: [
+                expandedStable, expandedStable, expandedStable, expandedStable,
+                expandedStable, expandedStable, expandedStable, expandedStable,
+                expandedStable, expandedStable, expandedStable, expandedStable
+            ]
+        )
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
+        let service = makeService(
+            inspector: inspector,
+            repairer: repairer,
+            topologyStabilityTimeout: 0.12,
+            topologyStabilityPollInterval: 0.001,
+            rebuildRuntimeDisplayHook: { rebuiltConfig, terminationConfirmed in
+                rebuildOrder.append(rebuiltConfig.id)
+                terminationFlags.append(terminationConfirmed)
+            }
+        )
+        service.replaceDisplayConfigsForTesting([configA, configB])
+        service.seedRuntimeBookkeepingForTesting(configId: configA.id, generation: 11)
+        service.seedRuntimeBookkeepingForTesting(configId: configB.id, generation: 12)
+
+        try await service.rebuildVirtualDisplay(configId: configA.id)
+
+        #expect(rebuildOrder == [configA.id, configB.id])
+        #expect(terminationFlags == [false, false])
+        #expect(repairer.callCount == 2)
+    }
+
+    @MainActor
+    @Test func rebuildManagedMainUsesCoordinatedFleetWhenInitialSnapshotUnavailable() async throws {
+        let displayA: CGDirectDisplayID = CGMainDisplayID()
+        let displayB: CGDirectDisplayID = displayA == 0 ? 1 : displayA &+ 1
+
+        let configA = config(id: UUID(), serial: 1, desiredEnabled: true)
+        let configB = config(id: UUID(), serial: 2, desiredEnabled: true)
+        let expandedStable = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        var rebuildOrder: [UUID] = []
+        let inspector = NullableDisplayTopologyInspector(
+            snapshots: [
+                nil,
+                expandedStable, expandedStable, expandedStable,
+                expandedStable, expandedStable, expandedStable
+            ]
+        )
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
+        let service = makeService(
+            inspector: inspector,
+            repairer: repairer,
+            topologyStabilityTimeout: 0.1,
+            topologyStabilityPollInterval: 0.001,
+            rebuildRuntimeDisplayHook: { rebuiltConfig, _ in
+                rebuildOrder.append(rebuiltConfig.id)
+            }
+        )
+        service.replaceDisplayConfigsForTesting([configA, configB])
+        service.seedRuntimeBookkeepingForTesting(
+            configId: configA.id,
+            generation: 21,
+            runtimeDisplayID: displayA
+        )
+        service.seedRuntimeBookkeepingForTesting(
+            configId: configB.id,
+            generation: 22,
+            runtimeDisplayID: displayB
+        )
+
+        try await service.rebuildVirtualDisplay(configId: configA.id)
+
+        #expect(rebuildOrder == [configA.id, configB.id])
+        #expect(repairer.callCount == 2)
+    }
+
+    @MainActor
+    @Test func rebuildFailsWhenDisplayRemainsOnlineDuringFinalOfflineConfirmation() async {
+        let displayA: CGDirectDisplayID = 911
+        let snapshot = topologySnapshot(
+            mainDisplayID: displayA,
+            displays: [
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        let configA = config(serial: 1, desiredEnabled: true)
+        var rebuildHookCallCount = 0
+        let service = makeService(
+            inspector: FakeDisplayTopologyInspector(snapshots: [snapshot]),
+            repairer: FakeDisplayTopologyRepairer(shouldSucceed: true),
+            managedDisplayOnlineChecker: { _ in true },
+            rebuildRuntimeDisplayHook: { _, _ in
+                rebuildHookCallCount += 1
+            }
+        )
+        service.replaceDisplayConfigsForTesting([configA])
+
+        do {
+            try await service.rebuildVirtualDisplay(configId: configA.id)
+            Issue.record("Expected rebuild to fail when display stays online.")
+        } catch let error as VirtualDisplayService.VirtualDisplayError {
+            guard case .teardownTimedOut = error else {
+                Issue.record("Unexpected error: \(error.localizedDescription)")
+                return
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        #expect(rebuildHookCallCount == 0)
+    }
+
+    @MainActor
     private func makeService(
         inspector: any DisplayTopologyInspecting,
         repairer: any DisplayTopologyRepairing,
         topologyStabilityTimeout: TimeInterval = 0.05,
-        topologyStabilityPollInterval: TimeInterval = 0.001
+        topologyStabilityPollInterval: TimeInterval = 0.001,
+        managedDisplayOnlineChecker: @escaping (UInt32) -> Bool = { _ in false },
+        rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil
     ) -> VirtualDisplayService {
+#if DEBUG
         VirtualDisplayService(
             persistenceService: nil,
             displayReconfigurationMonitor: FakeDisplayReconfigurationMonitor(),
             topologyInspector: inspector,
             topologyRepairer: repairer,
-            managedDisplayOnlineChecker: { _ in false },
+            managedDisplayOnlineChecker: managedDisplayOnlineChecker,
+            topologyStabilityTimeout: topologyStabilityTimeout,
+            topologyStabilityPollInterval: topologyStabilityPollInterval,
+            rebuildRuntimeDisplayHook: rebuildRuntimeDisplayHook
+        )
+#else
+        _ = rebuildRuntimeDisplayHook
+        return VirtualDisplayService(
+            persistenceService: nil,
+            displayReconfigurationMonitor: FakeDisplayReconfigurationMonitor(),
+            topologyInspector: inspector,
+            topologyRepairer: repairer,
+            managedDisplayOnlineChecker: managedDisplayOnlineChecker,
             topologyStabilityTimeout: topologyStabilityTimeout,
             topologyStabilityPollInterval: topologyStabilityPollInterval
         )
+#endif
     }
 
-    private func config(serial: UInt32, desiredEnabled: Bool) -> VirtualDisplayConfig {
+    private func config(id: UUID = UUID(), serial: UInt32, desiredEnabled: Bool) -> VirtualDisplayConfig {
         VirtualDisplayConfig(
+            id: id,
             name: "Managed \(serial)",
             serialNum: serial,
             physicalWidth: 300,
@@ -504,6 +707,26 @@ private final class FakeDisplayTopologyInspector: DisplayTopologyInspecting {
         case .cycle:
             index = callIndex % snapshots.count
         }
+        callIndex += 1
+        return snapshots[index]
+    }
+}
+
+private final class NullableDisplayTopologyInspector: DisplayTopologyInspecting {
+    private let snapshots: [DisplayTopologySnapshot?]
+    private var callIndex = 0
+
+    init(snapshots: [DisplayTopologySnapshot?]) {
+        self.snapshots = snapshots
+    }
+
+    func snapshot(
+        trackedManagedSerials: Set<UInt32>,
+        managedVendorID: UInt32,
+        managedProductID: UInt32
+    ) -> DisplayTopologySnapshot? {
+        guard !snapshots.isEmpty else { return nil }
+        let index = min(callIndex, snapshots.count - 1)
         callIndex += 1
         return snapshots[index]
     }

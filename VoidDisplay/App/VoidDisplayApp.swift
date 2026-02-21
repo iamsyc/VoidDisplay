@@ -353,6 +353,15 @@ final class AppHelper {
         syncCaptureMonitoringState()
     }
 
+    private func stopDependentStreamsBeforeRebuild(displayID: CGDirectDisplayID) {
+        if sharingService.isSharing(displayID: displayID) {
+            sharingService.stopSharing(displayID: displayID)
+            syncSharingState()
+        }
+        captureMonitoringService.removeMonitoringSessions(displayID: displayID)
+        syncCaptureMonitoringState()
+    }
+
     private func syncCaptureMonitoringState() {
         screenCaptureSessions = captureMonitoringService.currentSessions
     }
@@ -375,13 +384,6 @@ final class AppHelper {
         return virtualDisplayService.isVirtualDisplayRunning(configId: configId)
     }
 
-    func isMainDisplay(configId: UUID) -> Bool {
-        guard let runtime = virtualDisplayService.runtimeDisplay(for: configId) else {
-            return false
-        }
-        return runtime.displayID == CGMainDisplayID()
-    }
-
     func clearRestoreFailures() {
         virtualDisplayService.clearRestoreFailures()
         syncVirtualDisplayState()
@@ -389,9 +391,18 @@ final class AppHelper {
 
     func startRebuildFromSavedConfig(configId: UUID) {
         guard !rebuildingConfigIds.contains(configId) else { return }
-        guard let config = getConfig(configId) else {
+        guard getConfig(configId) != nil else {
             clearRebuildPresentationState(configId: configId)
             return
+        }
+        if let runtimeDisplayID = virtualDisplayService.runtimeDisplayID(for: configId) {
+            var displayIDsToStop: Set<CGDirectDisplayID> = [runtimeDisplayID]
+            if runtimeDisplayID == CGMainDisplayID(), displays.count >= 2 {
+                displayIDsToStop.formUnion(displays.map(\.displayID))
+            }
+            for displayID in displayIDsToStop {
+                stopDependentStreamsBeforeRebuild(displayID: displayID)
+            }
         }
 
         rebuildFailureMessageByConfigId.removeValue(forKey: configId)
@@ -400,7 +411,6 @@ final class AppHelper {
         appliedBadgeClearTasksByConfigId[configId] = nil
         rebuildingConfigIds.insert(configId)
 
-        let modesToApply = config.resolutionModes
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
@@ -410,7 +420,6 @@ final class AppHelper {
 
             do {
                 try await self.rebuildVirtualDisplay(configId: configId)
-                self.applyModes(configId: configId, modes: modesToApply)
                 self.rebuildFailureMessageByConfigId.removeValue(forKey: configId)
                 self.recentlyAppliedConfigIds.insert(configId)
                 self.scheduleAppliedBadgeClear(configId: configId)
