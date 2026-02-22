@@ -20,15 +20,6 @@ struct HomeView: View {
         selection ?? .screen
     }
 
-    private var windowToolbarBackgroundVisibility: Visibility {
-        switch activeSelection {
-        case .screen, .virtualDisplay:
-            return .automatic
-        case .monitorScreen, .screenSharing:
-            return .hidden
-        }
-    }
-
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -76,7 +67,7 @@ struct HomeView: View {
                 }
             }
             .id(activeSelection)
-            .toolbarBackgroundVisibility(windowToolbarBackgroundVisibility, for: .windowToolbar)
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .onAppear {
             if selection == nil {
