@@ -16,6 +16,19 @@ struct HomeView: View {
 
     @State private var selection: SidebarItem? = .screen
 
+    private var activeSelection: SidebarItem {
+        selection ?? .screen
+    }
+
+    private var windowToolbarBackgroundVisibility: Visibility {
+        switch activeSelection {
+        case .screen, .virtualDisplay:
+            return .automatic
+        case .monitorScreen, .screenSharing:
+            return .hidden
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -42,30 +55,28 @@ struct HomeView: View {
         } detail: {
             NavigationStack {
                 Group {
-                    switch selection ?? .screen {
+                    switch activeSelection {
                     case .screen:
                         DisplaysView()
                             .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
-                            .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
                     case .virtualDisplay:
                         VirtualDisplayView()
                             .navigationTitle("Virtual Displays")
                             .accessibilityIdentifier("detail_virtual_display")
-                            .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
                     case .monitorScreen:
                         IsCapturing()
                             .navigationTitle("Screen Monitoring")
                             .accessibilityIdentifier("detail_monitor_screen")
-                            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                     case .screenSharing:
                         ShareView()
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
-                            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
                     }
                 }
             }
+            .id(activeSelection)
+            .toolbarBackgroundVisibility(windowToolbarBackgroundVisibility, for: .windowToolbar)
         }
         .onAppear {
             if selection == nil {
