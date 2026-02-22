@@ -146,16 +146,16 @@ struct ShareView: View {
                         .font(.system(size: 44))
                         .foregroundStyle(.secondary)
 
-                    Text("Web 服务未运行")
+                    Text("Web service is not running.")
                         .font(.headline)
 
-                    Text("启动 Web 服务后，即可共享屏幕给其他设备。")
+                    Text("Start the Web service to share your screen with other devices.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 300)
 
-                    Button("启动服务") {
+                    Button("Start Service") {
                         viewModel.startService(appHelper: appHelper)
                     }
                     .buttonStyle(.borderedProminent)
@@ -237,7 +237,7 @@ struct ShareView: View {
                 Circle()
                     .fill(isRunning ? Color.green : Color.secondary)
                     .frame(width: 8, height: 8)
-                Text(isRunning ? String(localized: "服务运行中") : String(localized: "服务已停止"))
+                Text(isRunning ? String(localized: "Service Running") : String(localized: "Service Stopped"))
                     .foregroundStyle(isRunning ? .primary : .secondary)
             }
 
@@ -347,8 +347,8 @@ struct ShareView: View {
             subtitle: "\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))",
             status: AppRowStatus(
                 title: isSharingDisplay
-                    ? String(localized: "共享中")
-                    : String(localized: "未共享"),
+                    ? String(localized: "Sharing in Progress")
+                    : String(localized: "Not Sharing"),
                 tint: isSharingDisplay ? .green : .gray
             ),
             metaBadges: displayTypeBadges(
