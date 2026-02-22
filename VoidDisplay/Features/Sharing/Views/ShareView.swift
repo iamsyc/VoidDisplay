@@ -130,40 +130,46 @@ struct ShareView: View {
         if viewModel.hasScreenCapturePermission == false {
             screenCapturePermissionView
         } else if viewModel.hasScreenCapturePermission == nil {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Loading…")
-                    .foregroundColor(.secondary)
+            ScrollView {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading…")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 200)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("share_loading_permission")
         } else if !appHelper.isWebServiceRunning {
-            VStack(spacing: AppUI.Spacing.medium + 2) {
-                Image(systemName: "xserve")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(spacing: AppUI.Spacing.medium + 2) {
+                    Image(systemName: "xserve")
+                        .font(.system(size: 44))
+                        .foregroundStyle(.secondary)
 
-                Text("Web 服务未运行")
-                    .font(.headline)
+                    Text("Web 服务未运行")
+                        .font(.headline)
 
-                Text("启动 Web 服务后，即可共享屏幕给其他设备。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+                    Text("启动 Web 服务后，即可共享屏幕给其他设备。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
 
-                Button("启动服务") {
-                    viewModel.startService(appHelper: appHelper)
+                    Button("启动服务") {
+                        viewModel.startService(appHelper: appHelper)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("share_start_service_button")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .accessibilityIdentifier("share_start_service_button")
+                .frame(maxWidth: .infinity, minHeight: 200)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.isLoadingDisplays {
-            ProgressView("Loading displays…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("share_loading_displays")
+            ScrollView {
+                ProgressView("Loading displays…")
+                    .frame(maxWidth: .infinity, minHeight: 200)
+            }
+            .accessibilityIdentifier("share_loading_displays")
         } else if let displays = viewModel.displays {
             if displays.isEmpty {
                 VStack(spacing: AppUI.Spacing.medium) {

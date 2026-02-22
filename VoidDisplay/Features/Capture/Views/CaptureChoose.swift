@@ -39,27 +39,31 @@ struct IsCapturing: View {
                     displayList(displays)
                 }
             } else if viewModel.isLoadingDisplays || viewModel.hasScreenCapturePermission == nil {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading…")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VStack(spacing: 12) {
-                    Text("No watchable screen")
-                    if let loadErrorMessage = viewModel.loadErrorMessage {
-                        Text(loadErrorMessage)
-                            .font(.footnote)
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading…")
                             .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .textSelection(.enabled)
                     }
-                    Button("Retry") {
-                        viewModel.refreshPermissionAndMaybeLoad()
-                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Text("No watchable screen")
+                        if let loadErrorMessage = viewModel.loadErrorMessage {
+                            Text(loadErrorMessage)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .textSelection(.enabled)
+                        }
+                        Button("Retry") {
+                            viewModel.refreshPermissionAndMaybeLoad()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                }
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

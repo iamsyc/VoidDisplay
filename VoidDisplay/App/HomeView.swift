@@ -66,8 +66,6 @@ struct HomeView: View {
                     }
                 }
             }
-            .id(activeSelection)
-            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .onAppear {
             if selection == nil {
