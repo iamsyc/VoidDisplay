@@ -58,7 +58,7 @@ struct CreateVirtualDisplay: View {
     }
 
     private func defaultName(for serial: UInt32) -> String {
-        "\(baseDisplayName) \(serial)"
+        CreateVirtualDisplayInputValidator.defaultName(baseName: baseDisplayName, serialNum: serial)
     }
     
     // MARK: - Computed Properties
@@ -68,15 +68,7 @@ struct CreateVirtualDisplay: View {
     }
     
     private var maxPixelDimensions: (width: UInt32, height: UInt32) {
-        guard let maxMode = selectedModes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
-            return (1920, 1080)
-        }
-        // Check if any mode has HiDPI enabled
-        let anyHiDPI = selectedModes.contains { $0.enableHiDPI }
-        if anyHiDPI {
-            return (UInt32(maxMode.width * 2), UInt32(maxMode.height * 2))
-        }
-        return (UInt32(maxMode.width), UInt32(maxMode.height))
+        CreateVirtualDisplayInputValidator.maxPixelDimensions(for: selectedModes)
     }
     
     private var aspectPreviewRatio: CGFloat {
@@ -319,10 +311,13 @@ struct CreateVirtualDisplay: View {
             Text("This resolution mode already exists.")
         }
         .onAppear {
-            serialNum = appHelper.nextAvailableSerialNumber()
-            if name == baseDisplayName {
-                name = defaultName(for: serialNum)
-            }
+            let initial = CreateVirtualDisplayInputValidator.initializeNameAndSerial(
+                currentName: name,
+                baseName: baseDisplayName,
+                nextSerial: appHelper.nextAvailableSerialNumber()
+            )
+            serialNum = initial.serialNum
+            name = initial.name
             focusedField = .name
             // Add a default mode
             if selectedModes.isEmpty {
@@ -334,25 +329,33 @@ struct CreateVirtualDisplay: View {
     // MARK: - Actions
     
     private func addPresetMode() {
-        let newMode = ResolutionSelection(preset: presetResolution)  // HiDPI defaults to true
-        if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
+        switch CreateVirtualDisplayInputValidator.addPresetMode(
+            preset: presetResolution,
+            to: selectedModes
+        ) {
+        case .appended(let updated):
+            selectedModes = updated
+        case .duplicate:
             showDuplicateWarning = true
-        } else {
-            selectedModes.append(newMode)
+        case .invalidValues:
+            break
         }
     }
     
     private func addCustomMode() {
-        guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
+        switch CreateVirtualDisplayInputValidator.addCustomMode(
+            width: customWidth,
+            height: customHeight,
+            refreshRate: customRefreshRate,
+            to: selectedModes
+        ) {
+        case .appended(let updated):
+            selectedModes = updated
+        case .duplicate:
+            showDuplicateWarning = true
+        case .invalidValues:
             errorMessage = String(localized: "Please enter valid resolution values.")
             showError = true
-            return
-        }
-        let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)  // HiDPI defaults to true
-        if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
-            showDuplicateWarning = true
-        } else {
-            selectedModes.append(newMode)
         }
     }
     

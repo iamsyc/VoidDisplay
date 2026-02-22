@@ -1,6 +1,14 @@
 import Foundation
 import OSLog
 
+protocol VirtualDisplayStoring {
+    func load() throws -> [VirtualDisplayConfig]
+    func save(_ configs: [VirtualDisplayConfig]) throws
+    func reset() throws
+}
+
+extension VirtualDisplayStore: VirtualDisplayStoring {}
+
 struct VirtualDisplayRestoreFailure: Identifiable, Equatable {
     let id: UUID
     let name: String
@@ -10,7 +18,15 @@ struct VirtualDisplayRestoreFailure: Identifiable, Equatable {
 
 @MainActor
 final class VirtualDisplayPersistenceService {
-    private let store = VirtualDisplayStore()
+    private let store: any VirtualDisplayStoring
+
+    init(store: any VirtualDisplayStoring) {
+        self.store = store
+    }
+
+    convenience init() {
+        self.init(store: VirtualDisplayStore())
+    }
 
     func loadConfigs() -> [VirtualDisplayConfig] {
         do {

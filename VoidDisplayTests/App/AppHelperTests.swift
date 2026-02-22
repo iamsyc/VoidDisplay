@@ -181,4 +181,99 @@ struct AppHelperTests {
         #expect(capture.removeByDisplayCallCount == 1)
         #expect(capture.removedDisplayIDs == [displayID])
     }
+
+    @Test func startRebuildIgnoresConcurrentDuplicateRequests() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.rebuildDelayNanoseconds = 150_000_000
+
+        let config = VirtualDisplayConfig(
+            name: "Concurrent",
+            serialNum: 10,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [config]
+        virtualDisplay.currentRunningConfigIds = [config.id]
+
+        let sut = AppHelper(
+            preview: false,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isUITestModeOverride: false,
+            isRunningUnderXCTestOverride: true
+        )
+
+        sut.startRebuildFromSavedConfig(configId: config.id)
+        sut.startRebuildFromSavedConfig(configId: config.id)
+
+        let onlyOnceTriggered = await waitUntil {
+            virtualDisplay.rebuildVirtualDisplayCallCount == 1
+        }
+        #expect(onlyOnceTriggered)
+
+        let settled = await waitUntil {
+            !sut.isRebuilding(configId: config.id)
+        }
+        #expect(settled)
+    }
+
+    @Test func rebuildFailureRetryAndAppliedBadgeLifecycle() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+
+        let config = VirtualDisplayConfig(
+            name: "Retry",
+            serialNum: 11,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [config]
+        virtualDisplay.currentRunningConfigIds = [config.id]
+        virtualDisplay.rebuildVirtualDisplayError = NSError(domain: "test", code: 33)
+
+        let sut = AppHelper(
+            preview: false,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            appliedBadgeDisplayDurationNanoseconds: 50_000_000,
+            isUITestModeOverride: false,
+            isRunningUnderXCTestOverride: true
+        )
+
+        sut.startRebuildFromSavedConfig(configId: config.id)
+
+        let failed = await waitUntil {
+            sut.rebuildFailureMessage(configId: config.id) != nil
+        }
+        #expect(failed)
+        #expect(sut.hasRecentApplySuccess(configId: config.id) == false)
+
+        virtualDisplay.rebuildVirtualDisplayError = nil
+        sut.retryRebuild(configId: config.id)
+
+        let retried = await waitUntil {
+            virtualDisplay.rebuildVirtualDisplayCallCount == 2
+        }
+        #expect(retried)
+
+        let successPresented = await waitUntil {
+            sut.hasRecentApplySuccess(configId: config.id)
+        }
+        #expect(successPresented)
+        #expect(sut.rebuildFailureMessage(configId: config.id) == nil)
+
+        let successCleared = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            !sut.hasRecentApplySuccess(configId: config.id)
+        }
+        #expect(successCleared)
+    }
 }

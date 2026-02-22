@@ -2,11 +2,6 @@ import SwiftUI
 import OSLog
 
 struct EditVirtualDisplayConfigView: View {
-    private struct SaveAnalysis {
-        let updatedConfig: VirtualDisplayConfig
-        let shouldApplyModesImmediately: Bool
-    }
-
     let configId: UUID
 
     @Environment(AppHelper.self) private var appHelper: AppHelper
@@ -46,25 +41,29 @@ struct EditVirtualDisplayConfigView: View {
         trimmedName.isEmpty || selectedModes.isEmpty
     }
 
-    private var physicalSizeFromInputs: (width: Int, height: Int) {
-        selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
-    }
-
     private var aspectPreviewRatio: CGFloat {
         let components = selectedAspectRatio.components
         return CGFloat(components.width / components.height)
     }
 
     private var displayedPhysicalSizeText: String {
-        guard let loadedConfig else {
-            return "\(physicalSizeFromInputs.width) × \(physicalSizeFromInputs.height) mm"
-        }
-
-        let unchanged = abs(screenDiagonal - initialScreenDiagonal) < 0.0001 && selectedAspectRatio == initialAspectRatio
-        let size: (width: Int, height: Int) = unchanged
-            ? (width: loadedConfig.physicalWidth, height: loadedConfig.physicalHeight)
-            : physicalSizeFromInputs
+        let size = VirtualDisplayEditSaveAnalyzer.displayedPhysicalSize(
+            loadedConfig: loadedConfig,
+            draft: saveDraft
+        )
         return "\(size.width) × \(size.height) mm"
+    }
+
+    private var saveDraft: VirtualDisplayEditSaveAnalyzer.Draft {
+        VirtualDisplayEditSaveAnalyzer.Draft(
+            name: name,
+            serialNum: serialNum,
+            selectedModes: selectedModes,
+            screenDiagonal: screenDiagonal,
+            selectedAspectRatio: selectedAspectRatio,
+            initialScreenDiagonal: initialScreenDiagonal,
+            initialAspectRatio: initialAspectRatio
+        )
     }
 
     var body: some View {
@@ -316,23 +315,11 @@ struct EditVirtualDisplayConfigView: View {
         serialNum = Int(config.serialNum)
         selectedModes = config.resolutionModes
 
-        let physicalWidth = Double(config.physicalWidth)
-        let physicalHeight = Double(config.physicalHeight)
-        if physicalWidth > 0, physicalHeight > 0 {
-            let inferredRatio = physicalWidth / physicalHeight
-            let closestRatio = AspectRatio.allCases.min { lhs, rhs in
-                let l = abs((lhs.components.width / lhs.components.height) - inferredRatio)
-                let r = abs((rhs.components.width / rhs.components.height) - inferredRatio)
-                return l < r
-            } ?? .ratio_16_9
-
-            let diagonal = sqrt(physicalWidth * physicalWidth + physicalHeight * physicalHeight) / 25.4
-            let rounded = (diagonal * 10).rounded() / 10
-
-            selectedAspectRatio = closestRatio
-            screenDiagonal = rounded
-            initialAspectRatio = closestRatio
-            initialScreenDiagonal = rounded
+        if let inferred = VirtualDisplayEditSaveAnalyzer.inferPhysicalInputs(from: config) {
+            selectedAspectRatio = inferred.aspectRatio
+            screenDiagonal = inferred.diagonalInches
+            initialAspectRatio = inferred.aspectRatio
+            initialScreenDiagonal = inferred.diagonalInches
         }
 
         if let first = selectedModes.first {
@@ -342,86 +329,25 @@ struct EditVirtualDisplayConfigView: View {
         }
     }
 
-    private func buildUpdatedConfig(reportErrors: Bool) -> VirtualDisplayConfig? {
-        guard let original = loadedConfig else {
-            guard reportErrors else { return nil }
-            errorMessage = String(localized: "Display configuration not found.")
-            showError = true
-            return nil
-        }
-
-        guard !trimmedName.isEmpty else { return nil }
-
-        guard !selectedModes.isEmpty else {
-            guard reportErrors else { return nil }
-            errorMessage = String(localized: "No resolution modes added")
-            showError = true
-            return nil
-        }
-
-        guard serialNum > 0, serialNum <= Int(UInt32.max) else {
-            guard reportErrors else { return nil }
-            errorMessage = String(localized: "Please enter a valid serial number.")
-            showError = true
-            return nil
-        }
-
-        guard screenDiagonal > 0 else {
-            guard reportErrors else { return nil }
-            errorMessage = String(localized: "Please enter a valid screen size.")
-            showError = true
-            return nil
-        }
-
-        let newSerial = UInt32(serialNum)
-        if appHelper.displayConfigs.contains(where: { $0.id != configId && $0.serialNum == newSerial }) {
-            guard reportErrors else { return nil }
-            errorMessage = String(localized: "Serial number \(newSerial) is already in use.")
-            showError = true
-            return nil
-        }
-
-        var updated = original
-        updated.name = trimmedName
-        updated.serialNum = newSerial
-        updated.modes = selectedModes.map {
-            VirtualDisplayConfig.ModeConfig(
-                width: $0.width,
-                height: $0.height,
-                refreshRate: $0.refreshRate,
-                enableHiDPI: $0.enableHiDPI
-            )
-        }
-
-        let physicalInputsChanged = abs(screenDiagonal - initialScreenDiagonal) >= 0.0001 || selectedAspectRatio != initialAspectRatio
-        if physicalInputsChanged {
-            let size = physicalSizeFromInputs
-            updated.physicalWidth = size.width
-            updated.physicalHeight = size.height
-        }
-
-        return updated
-    }
-
-    private func analyzeSave(reportErrors: Bool) -> SaveAnalysis? {
-        guard let original = loadedConfig else { return nil }
-        guard let updated = buildUpdatedConfig(reportErrors: reportErrors) else { return nil }
-
-        let newMaxPixels = updated.maxPixelDimensions
-        let oldMaxPixels = original.maxPixelDimensions
-        let requiresSaveAndRebuild = isRunning && (
-            original.name != updated.name ||
-            original.serialNum != updated.serialNum ||
-            original.physicalWidth != updated.physicalWidth ||
-            original.physicalHeight != updated.physicalHeight ||
-            newMaxPixels.width > oldMaxPixels.width ||
-            newMaxPixels.height > oldMaxPixels.height
+    private func analyzeSave(reportErrors: Bool) -> VirtualDisplayEditSaveAnalyzer.SaveAnalysis? {
+        let result = VirtualDisplayEditSaveAnalyzer.analyze(
+            original: loadedConfig,
+            configId: configId,
+            draft: saveDraft,
+            existingConfigs: appHelper.displayConfigs,
+            isRunning: isRunning
         )
 
-        return SaveAnalysis(
-            updatedConfig: updated,
-            shouldApplyModesImmediately: isRunning && !requiresSaveAndRebuild
-        )
+        switch result {
+        case .success(let analysis):
+            return analysis
+        case .failure(let error):
+            guard reportErrors else { return nil }
+            guard let message = validationErrorMessage(error) else { return nil }
+            errorMessage = message
+            showError = true
+            return nil
+        }
     }
 
     private func handleSaveOnlyTapped() {
@@ -435,7 +361,7 @@ struct EditVirtualDisplayConfigView: View {
         performSaveAndRebuild(analysis)
     }
 
-    private func performSaveOnly(_ analysis: SaveAnalysis) {
+    private func performSaveOnly(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
         appHelper.updateConfig(analysis.updatedConfig)
         loadedConfig = analysis.updatedConfig
         if analysis.shouldApplyModesImmediately {
@@ -444,7 +370,7 @@ struct EditVirtualDisplayConfigView: View {
         dismiss()
     }
 
-    private func performSaveAndRebuild(_ analysis: SaveAnalysis) {
+    private func performSaveAndRebuild(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
         appHelper.updateConfig(analysis.updatedConfig)
         loadedConfig = analysis.updatedConfig
         dismiss()
@@ -452,30 +378,53 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     private func addPresetMode() {
-        let newMode = ResolutionSelection(preset: presetResolution)
-        if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
+        switch CreateVirtualDisplayInputValidator.addPresetMode(preset: presetResolution, to: selectedModes) {
+        case .appended(let updated):
+            selectedModes = updated
+        case .duplicate:
             showDuplicateWarning = true
-        } else {
-            selectedModes.append(newMode)
+        case .invalidValues:
+            break
         }
     }
 
     private func addCustomMode() {
-        guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
+        switch CreateVirtualDisplayInputValidator.addCustomMode(
+            width: customWidth,
+            height: customHeight,
+            refreshRate: customRefreshRate,
+            to: selectedModes
+        ) {
+        case .appended(let updated):
+            selectedModes = updated
+        case .duplicate:
+            showDuplicateWarning = true
+        case .invalidValues:
             errorMessage = String(localized: "Please enter valid resolution values.")
             showError = true
-            return
-        }
-
-        let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)
-        if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
-            showDuplicateWarning = true
-        } else {
-            selectedModes.append(newMode)
         }
     }
 
     private func removeMode(_ mode: ResolutionSelection) {
         selectedModes.removeAll { $0.id == mode.id }
+    }
+
+    private func validationErrorMessage(
+        _ error: VirtualDisplayEditSaveAnalyzer.ValidationError
+    ) -> String? {
+        switch error {
+        case .configNotFound:
+            return String(localized: "Display configuration not found.")
+        case .emptyName:
+            return nil
+        case .noResolutionModes:
+            return String(localized: "No resolution modes added")
+        case .invalidSerialNumber:
+            return String(localized: "Please enter a valid serial number.")
+        case .invalidScreenSize:
+            return String(localized: "Please enter a valid screen size.")
+        case .duplicateSerialNumber(let serial):
+            return String(localized: "Serial number \(serial) is already in use.")
+        }
     }
 }

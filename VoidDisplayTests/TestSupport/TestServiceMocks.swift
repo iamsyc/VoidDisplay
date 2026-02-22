@@ -148,6 +148,7 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var rebuildVirtualDisplayCallCount = 0
     var rebuildVirtualDisplayConfigIds: [UUID] = []
     var rebuildVirtualDisplayError: Error?
+    var rebuildDelayNanoseconds: UInt64 = 0
 
     func loadPersistedConfigs() {
         loadPersistedConfigsCallCount += 1
@@ -232,6 +233,9 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     func rebuildVirtualDisplay(configId: UUID) async throws {
         rebuildVirtualDisplayCallCount += 1
         rebuildVirtualDisplayConfigIds.append(configId)
+        if rebuildDelayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: rebuildDelayNanoseconds)
+        }
         if let rebuildVirtualDisplayError {
             throw rebuildVirtualDisplayError
         }

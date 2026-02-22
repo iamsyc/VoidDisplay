@@ -4,15 +4,23 @@
     "app_helper": "VoidDisplay/App/VoidDisplayApp.swift",
     "share_view_model": "VoidDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
     "capture_choose_view_model": "VoidDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
-    "virtual_display_service": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift"
+    "virtual_display_service": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift",
+    "virtual_display_persistence_service": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayPersistenceService.swift",
+    "virtual_display_view": "VoidDisplay/Features/VirtualDisplay/Views/VirtualDisplayView.swift",
+    "edit_virtual_display_config_view": "VoidDisplay/Features/VirtualDisplay/Views/EditVirtualDisplayConfigView.swift",
+    "create_virtual_display_object_view": "VoidDisplay/Features/VirtualDisplay/Views/CreateVirtualDisplayObjectView.swift"
   },
   "minimums": {
-    "target_line_coverage": 0.2108,
+    "target_line_coverage": 0.40,
     "tracked_files": {
-      "app_helper": 0.1065,
-      "share_view_model": 0.0588,
-      "capture_choose_view_model": 0.0745,
-      "virtual_display_service": 0.3019
+      "app_helper": 0.50,
+      "share_view_model": 0.50,
+      "capture_choose_view_model": 0.60,
+      "virtual_display_service": 0.50,
+      "virtual_display_persistence_service": 0.80,
+      "virtual_display_view": 0.70,
+      "edit_virtual_display_config_view": 0.72,
+      "create_virtual_display_object_view": 0.73
     }
   }
 }

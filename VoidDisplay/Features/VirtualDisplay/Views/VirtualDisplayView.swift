@@ -13,7 +13,7 @@ struct VirtualDisplayView: View {
     @State private var editingConfig: EditingConfig?
     @State private var primaryDisplayMonitor = PrimaryDisplayReconfigurationMonitor()
     @State private var primaryDisplayRefreshTick: UInt64 = 0
-    @State private var primaryDisplayFallbackTask: Task<Void, Never>?
+    @State private var primaryDisplayFallbackCoordinator = PrimaryDisplayFallbackCoordinator()
     @State private var togglingConfigIds: Set<UUID> = []
 
     @State private var showDeleteConfirm = false
@@ -100,12 +100,7 @@ struct VirtualDisplayView: View {
                 appHelper.clearRestoreFailures()
             }
         } message: {
-            let failures = appHelper.restoreFailures.prefix(3)
-            let summary = failures
-                .map { "\($0.name) (Serial \($0.serialNum)): \($0.message)" }
-                .joined(separator: "\n\n")
-            let more = appHelper.restoreFailures.count > 3 ? "\n\n…" : ""
-            Text(summary + more)
+            Text(VirtualDisplayRowPresentation.restoreFailureSummary(appHelper.restoreFailures))
         }
         .appScreenBackground()
     }
@@ -115,51 +110,37 @@ struct VirtualDisplayView: View {
             primaryDisplayRefreshTick &+= 1
         }
         if started {
-            stopPrimaryDisplayFallbackPolling()
+            primaryDisplayFallbackCoordinator.stop()
             return
         }
 
         AppLog.virtualDisplay.error(
             "Primary display monitor callback registration failed; enabling polling fallback."
         )
-        startPrimaryDisplayFallbackPolling()
+        startPrimaryDisplayFallback()
     }
 
     private func stopPrimaryDisplayMonitoring() {
         primaryDisplayMonitor.stop()
-        stopPrimaryDisplayFallbackPolling()
+        primaryDisplayFallbackCoordinator.stop()
     }
 
-    private func startPrimaryDisplayFallbackPolling() {
-        guard primaryDisplayFallbackTask == nil else { return }
-
-        primaryDisplayFallbackTask = Task { @MainActor in
-            var cycle: Int = 0
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                guard !Task.isCancelled else { break }
+    private func startPrimaryDisplayFallback() {
+        primaryDisplayFallbackCoordinator.startIfNeeded(
+            onTick: {
                 primaryDisplayRefreshTick &+= 1
-
-                cycle += 1
-                if cycle % 10 != 0 { continue }
-
-                let recovered = primaryDisplayMonitor.start {
+            },
+            attemptRecovery: {
+                primaryDisplayMonitor.start {
                     primaryDisplayRefreshTick &+= 1
                 }
-                if recovered {
-                    AppLog.virtualDisplay.notice(
-                        "Primary display monitor callback recovered; disabling polling fallback."
-                    )
-                    stopPrimaryDisplayFallbackPolling()
-                    break
-                }
+            },
+            onRecovered: {
+                AppLog.virtualDisplay.notice(
+                    "Primary display monitor callback recovered; disabling polling fallback."
+                )
             }
-        }
-    }
-
-    private func stopPrimaryDisplayFallbackPolling() {
-        primaryDisplayFallbackTask?.cancel()
-        primaryDisplayFallbackTask = nil
+        )
     }
 
     private func virtualDisplayRow(_ config: VirtualDisplayConfig) -> some View {
@@ -175,12 +156,12 @@ struct VirtualDisplayView: View {
         let model = AppListRowModel(
             id: config.id.uuidString,
             title: config.name,
-            subtitle: subtitleText(for: config),
+            subtitle: VirtualDisplayRowPresentation.subtitleText(for: config),
             status: AppRowStatus(
-                title: displayStatusLabel(isRunning: isRunning, isRebuilding: isRebuilding),
-                tint: displayStatusTint(isRunning: isRunning, isRebuilding: isRebuilding)
+                title: VirtualDisplayRowPresentation.statusLabel(isRunning: isRunning, isRebuilding: isRebuilding),
+                tint: VirtualDisplayRowPresentation.statusTint(isRunning: isRunning, isRebuilding: isRebuilding)
             ),
-            metaBadges: displayBadges(
+            metaBadges: VirtualDisplayRowPresentation.badges(
                 rebuildFailureMessage: rebuildFailureMessage,
                 hasRecentApplySuccess: hasRecentApplySuccess
             ),
@@ -211,7 +192,7 @@ struct VirtualDisplayView: View {
                         toggleDisplayState(config)
                     } label: {
                         Label(
-                            toggleButtonTitle(isRunning: isRunning),
+                            VirtualDisplayRowPresentation.toggleButtonTitle(isRunning: isRunning),
                             systemImage: isRunning ? "pause.fill" : "play.fill"
                         )
                     }
@@ -259,7 +240,7 @@ struct VirtualDisplayView: View {
                         toggleDisplayState(config)
                     } label: {
                         Label(
-                            toggleButtonTitle(isRunning: isRunning),
+                            VirtualDisplayRowPresentation.toggleButtonTitle(isRunning: isRunning),
                             systemImage: isRunning ? "pause.fill" : "play.fill"
                         )
                     }
@@ -344,21 +325,6 @@ struct VirtualDisplayView: View {
         }
     }
 
-    private func subtitleText(for config: VirtualDisplayConfig) -> String {
-        let serial = "\(String(localized: "Serial Number")): \(config.serialNum)"
-        guard let mode = modeSummary(config) else {
-            return serial
-        }
-        return "\(serial) • \(mode)"
-    }
-
-    private func modeSummary(_ config: VirtualDisplayConfig) -> String? {
-        guard let maxMode = config.modes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
-            return nil
-        }
-        return "\(maxMode.width) × \(maxMode.height)"
-    }
-
     private func isPrimaryDisplay(configID: UUID) -> Bool {
         guard let runtimeDisplay = appHelper.runtimeDisplay(for: configID) else {
             return false
@@ -396,55 +362,6 @@ struct VirtualDisplayView: View {
         }
     }
 
-    private func displayStatusLabel(isRunning: Bool, isRebuilding: Bool) -> String {
-        if isRebuilding {
-            return String(localized: "Rebuilding")
-        }
-        if isRunning {
-            return String(localized: "Enable")
-        }
-        return String(localized: "Disable")
-    }
-
-    private func displayStatusTint(isRunning: Bool, isRebuilding: Bool) -> Color {
-        if isRebuilding {
-            return .orange
-        }
-        return isRunning ? .green : .gray
-    }
-
-    private func displayBadges(rebuildFailureMessage: String?, hasRecentApplySuccess: Bool) -> [AppBadgeModel] {
-        var badges: [AppBadgeModel] = [
-            AppBadgeModel(
-                title: String(localized: "Virtual Display"),
-                style: .roundedTag(tint: .blue)
-            )
-        ]
-        if hasRecentApplySuccess {
-            badges.append(
-                AppBadgeModel(
-                    title: String(localized: "Applied"),
-                    style: .roundedTag(tint: .green)
-                )
-            )
-        }
-        if rebuildFailureMessage != nil {
-            badges.append(
-                AppBadgeModel(
-                    title: String(localized: "Rebuild failed"),
-                    style: .roundedTag(tint: .red)
-                )
-            )
-        }
-        return badges
-    }
-
-    private func toggleButtonTitle(isRunning: Bool) -> String {
-        if isRunning {
-            return String(localized: "Disable")
-        }
-        return String(localized: "Enable")
-    }
 }
 
 #Preview {

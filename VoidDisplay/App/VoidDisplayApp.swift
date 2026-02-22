@@ -88,8 +88,10 @@ final class AppHelper {
     @ObservationIgnored private let virtualDisplayService: any VirtualDisplayServiceProtocol
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let isUITestModeEnabled: Bool
     @ObservationIgnored private let isRunningUnderXCTestEnabled: Bool
+    @ObservationIgnored private let appliedBadgeDisplayDurationNanoseconds: UInt64
 
     typealias VirtualDisplayError = VirtualDisplayService.VirtualDisplayError
 
@@ -112,12 +114,14 @@ final class AppHelper {
         captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = nil,
         sharingService: (any SharingServiceProtocol)? = nil,
         virtualDisplayService: (any VirtualDisplayServiceProtocol)? = nil,
+        appliedBadgeDisplayDurationNanoseconds: UInt64 = 2_500_000_000,
         isUITestModeOverride: Bool? = nil,
         isRunningUnderXCTestOverride: Bool? = nil
     ) {
         self.captureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
         self.sharingService = sharingService ?? SharingService()
         self.virtualDisplayService = virtualDisplayService ?? VirtualDisplayService()
+        self.appliedBadgeDisplayDurationNanoseconds = appliedBadgeDisplayDurationNanoseconds
         self.isUITestModeEnabled = isUITestModeOverride ?? UITestRuntime.isEnabled
         self.isRunningUnderXCTestEnabled = isRunningUnderXCTestOverride
             ?? (ProcessInfo.processInfo.environment[Self.xCTestConfigurationEnvironmentKey] != nil)
@@ -156,9 +160,7 @@ final class AppHelper {
         isSharing = false
         isWebServiceRunning = false
         webServer = nil
-        rebuildingConfigIds = []
-        rebuildFailureMessageByConfigId = [:]
-        recentlyAppliedConfigIds = []
+        rebuildPresentationState = RebuildPresentationState()
         for task in rebuildTasksByConfigId.values {
             task.cancel()
         }
@@ -175,13 +177,17 @@ final class AppHelper {
             break
         case .virtualDisplayRebuilding:
             if let firstID = fixtureConfigs.first?.id {
-                rebuildingConfigIds.insert(firstID)
+                rebuildPresentationState.beginRebuild(configId: firstID)
             }
         case .virtualDisplayRebuildFailed:
             if let firstID = fixtureConfigs.first?.id {
-                rebuildFailureMessageByConfigId[firstID] = String(localized: "Failed to rebuild virtual display.")
+                rebuildPresentationState.markRebuildFailure(
+                    configId: firstID,
+                    message: String(localized: "Failed to rebuild virtual display.")
+                )
             }
         }
+        syncRebuildPresentationState()
     }
 
     private static func uiTestVirtualDisplayConfigs() -> [VirtualDisplayConfig] {
@@ -373,6 +379,12 @@ final class AppHelper {
         restoreFailures = virtualDisplayService.currentRestoreFailures
     }
 
+    private func syncRebuildPresentationState() {
+        rebuildingConfigIds = rebuildPresentationState.rebuildingConfigIds
+        rebuildFailureMessageByConfigId = rebuildPresentationState.rebuildFailureMessageByConfigId
+        recentlyAppliedConfigIds = rebuildPresentationState.recentlyAppliedConfigIds
+    }
+
     func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
         virtualDisplayService.runtimeDisplay(for: configId)
     }
@@ -405,23 +417,23 @@ final class AppHelper {
             }
         }
 
-        rebuildFailureMessageByConfigId.removeValue(forKey: configId)
-        recentlyAppliedConfigIds.remove(configId)
+        rebuildPresentationState.beginRebuild(configId: configId)
+        syncRebuildPresentationState()
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = nil
-        rebuildingConfigIds.insert(configId)
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
-                self.rebuildingConfigIds.remove(configId)
+                self.rebuildPresentationState.finishRebuild(configId: configId)
+                self.syncRebuildPresentationState()
                 self.rebuildTasksByConfigId[configId] = nil
             }
 
             do {
                 try await self.rebuildVirtualDisplay(configId: configId)
-                self.rebuildFailureMessageByConfigId.removeValue(forKey: configId)
-                self.recentlyAppliedConfigIds.insert(configId)
+                self.rebuildPresentationState.markRebuildSuccess(configId: configId)
+                self.syncRebuildPresentationState()
                 self.scheduleAppliedBadgeClear(configId: configId)
             } catch is CancellationError {
                 // User-initiated cancellation (delete/reset) should be silent and not treated as rebuild failure.
@@ -432,8 +444,8 @@ final class AppHelper {
                 }
                 AppErrorMapper.logFailure("Rebuild virtual display", error: error, logger: AppLog.virtualDisplay)
                 let message = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
-                self.rebuildFailureMessageByConfigId[configId] = message
-                self.recentlyAppliedConfigIds.remove(configId)
+                self.rebuildPresentationState.markRebuildFailure(configId: configId, message: message)
+                self.syncRebuildPresentationState()
             }
         }
         rebuildTasksByConfigId[configId] = task
@@ -460,9 +472,8 @@ final class AppHelper {
         rebuildTasksByConfigId[configId] = nil
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = nil
-        rebuildingConfigIds.remove(configId)
-        rebuildFailureMessageByConfigId.removeValue(forKey: configId)
-        recentlyAppliedConfigIds.remove(configId)
+        rebuildPresentationState.clear(configId: configId)
+        syncRebuildPresentationState()
     }
 
     @discardableResult
@@ -596,22 +607,21 @@ final class AppHelper {
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 2_500_000_000)
+                try await Task.sleep(nanoseconds: self?.appliedBadgeDisplayDurationNanoseconds ?? 2_500_000_000)
             } catch {
                 return
             }
             guard let self else { return }
-            self.recentlyAppliedConfigIds.remove(configId)
+            self.rebuildPresentationState.clearRecentApply(configId: configId)
+            self.syncRebuildPresentationState()
             self.appliedBadgeClearTasksByConfigId[configId] = nil
         }
     }
 
     private func clearAllRebuildPresentationState() {
-        let allConfigIds = Set(rebuildingConfigIds)
-            .union(Set(rebuildFailureMessageByConfigId.keys))
-            .union(recentlyAppliedConfigIds)
-            .union(Set(rebuildTasksByConfigId.keys))
-            .union(Set(appliedBadgeClearTasksByConfigId.keys))
+        let allConfigIds = rebuildPresentationState.allConfigIds(
+            extra: Set(rebuildTasksByConfigId.keys).union(Set(appliedBadgeClearTasksByConfigId.keys))
+        )
 
         for configId in allConfigIds {
             clearRebuildPresentationState(configId: configId)

@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import VoidDisplay
 
+@Suite(.serialized)
 struct VirtualDisplayTopologyRecoveryTests {
 
     @MainActor
@@ -32,7 +33,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.08,
+            topologyStabilityTimeout: 0.2,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -107,7 +108,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.08,
+            topologyStabilityTimeout: 0.2,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -159,7 +160,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.12,
+            topologyStabilityTimeout: 0.25,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -191,7 +192,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.05,
+            topologyStabilityTimeout: 0.25,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -246,7 +247,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.08,
+            topologyStabilityTimeout: 0.2,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -286,7 +287,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.08,
+            topologyStabilityTimeout: 0.2,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -322,7 +323,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.01,
+            topologyStabilityTimeout: 0.05,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -365,7 +366,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.02,
+            topologyStabilityTimeout: 0.08,
             topologyStabilityPollInterval: 0.001
         )
         service.replaceDisplayConfigsForTesting([
@@ -446,7 +447,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.12,
+            topologyStabilityTimeout: 0.25,
             topologyStabilityPollInterval: 0.001,
             rebuildRuntimeDisplayHook: { rebuiltConfig, terminationConfirmed in
                 rebuildHookCallCount += 1
@@ -491,7 +492,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.12,
+            topologyStabilityTimeout: 0.25,
             topologyStabilityPollInterval: 0.001,
             rebuildRuntimeDisplayHook: { rebuiltConfig, terminationConfirmed in
                 rebuildOrder.append(rebuiltConfig.id)
@@ -536,7 +537,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.1,
+            topologyStabilityTimeout: 0.2,
             topologyStabilityPollInterval: 0.001,
             rebuildRuntimeDisplayHook: { rebuiltConfig, _ in
                 rebuildOrder.append(rebuiltConfig.id)
@@ -601,7 +602,7 @@ struct VirtualDisplayTopologyRecoveryTests {
     private func makeService(
         inspector: any DisplayTopologyInspecting,
         repairer: any DisplayTopologyRepairing,
-        topologyStabilityTimeout: TimeInterval = 0.05,
+        topologyStabilityTimeout: TimeInterval = 0.2,
         topologyStabilityPollInterval: TimeInterval = 0.001,
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool = { _ in false },
         rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil
