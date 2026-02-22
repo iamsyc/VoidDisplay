@@ -84,7 +84,7 @@ jobs:
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
               test \
-              -only-testing:VoidDisplayUITests/HomeSmokeTests/testHomeSmoke \
+              -only-testing:VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline \
               2>&1 | tee "$log_file"
             status=${PIPESTATUS[0]}
             set -e
