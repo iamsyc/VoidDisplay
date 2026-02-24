@@ -1,0 +1,57 @@
+name: UI Smoke Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      only_testing:
+        description: xcodebuild -only-testing target (e.g. VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline)
+        required: false
+        default: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
+        type: string
+      max_attempts:
+        description: Retry attempts for runner/bootstrap flakiness
+        required: false
+        default: "2"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ui_smoke_tests:
+    name: ui-smoke-tests
+    uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
+    with:
+      only_testing: ${{ inputs.only_testing }}
+      max_attempts: ${{ inputs.max_attempts }}
+      artifact_retention_days: 7
+
+  ui_smoke_summary:
+    name: ui-smoke-summary
+    if: always()
+    needs:
+      - ui_smoke_tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Write dispatch summary
+        env:
+          UI_JOB_RESULT: ${{ needs.ui_smoke_tests.result }}
+          UI_STATUS: ${{ needs.ui_smoke_tests.outputs.ui_status || 'unknown' }}
+          UI_REASON: ${{ needs.ui_smoke_tests.outputs.ui_reason || 'not_run' }}
+          UI_ATTEMPT: ${{ needs.ui_smoke_tests.outputs.ui_attempt || '-' }}
+          UI_MAX_ATTEMPTS: ${{ needs.ui_smoke_tests.outputs.ui_max_attempts || '-' }}
+          UI_LOG_FILE: ${{ needs.ui_smoke_tests.outputs.ui_log_file || '-' }}
+        run: |
+          {
+            echo "## UI Smoke Dispatch Summary"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Job Result | ${UI_JOB_RESULT} |"
+            echo "| UI Status | ${UI_STATUS} |"
+            echo "| UI Reason | ${UI_REASON} |"
+            echo "| Attempt | ${UI_ATTEMPT}/${UI_MAX_ATTEMPTS} |"
+            echo "| Log File | ${UI_LOG_FILE} |"
+          } >> "$GITHUB_STEP_SUMMARY"

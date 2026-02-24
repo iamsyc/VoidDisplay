@@ -1,0 +1,108 @@
+name: _Reusable Unit Tests
+
+on:
+  workflow_call:
+    inputs:
+      artifact_retention_days:
+        description: Artifact retention days.
+        required: false
+        type: number
+        default: 7
+      xcode_preferred_path:
+        description: Preferred Xcode developer directory path.
+        required: false
+        type: string
+        default: /Applications/Xcode_16.2.app/Contents/Developer
+      xcode_fallback_path:
+        description: Fallback Xcode developer directory path.
+        required: false
+        type: string
+        default: /Applications/Xcode.app/Contents/Developer
+    outputs:
+      unit_status:
+        description: Final unit test job status.
+        value: ${{ jobs.unit_tests.outputs.unit_status }}
+      coverage_artifact_name:
+        description: Coverage artifact name.
+        value: ${{ jobs.unit_tests.outputs.coverage_artifact_name }}
+      xcresult_artifact_name:
+        description: xcresult artifact name.
+        value: ${{ jobs.unit_tests.outputs.xcresult_artifact_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  unit_tests:
+    runs-on: macos-15
+    timeout-minutes: 20
+    outputs:
+      unit_status: ${{ steps.finalize.outputs.unit_status }}
+      coverage_artifact_name: ${{ steps.finalize.outputs.coverage_artifact_name }}
+      xcresult_artifact_name: ${{ steps.finalize.outputs.xcresult_artifact_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        id: xcode
+        uses: ./.github/actions/xcode-select
+        with:
+          preferred_path: ${{ inputs.xcode_preferred_path }}
+          fallback_path: ${{ inputs.xcode_fallback_path }}
+
+      - name: Cache Xcode metadata
+        uses: actions/cache@v4
+        with:
+          path: |
+            .derivedData/SourcePackages
+            .derivedData/ModuleCache.noindex
+          key: xcode-meta-unit-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('VoidDisplay.xcodeproj/**', 'scripts/test/**', '**/Package.resolved') }}
+          restore-keys: |
+            xcode-meta-unit-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
+            xcode-meta-unit-${{ runner.os }}-
+
+      - name: Run unit tests (no signing)
+        run: |
+          chmod +x scripts/test/unit_gate.sh scripts/test/coverage_report.sh scripts/test/coverage_guard.sh
+          scripts/test/unit_gate.sh \
+            --project "$GITHUB_WORKSPACE/VoidDisplay.xcodeproj" \
+            --destination 'platform=macOS,arch=arm64' \
+            --derived-data-path .derivedData \
+            --result-bundle-path UnitTests.xcresult \
+            --enable-code-coverage YES \
+            --only-testing VoidDisplayTests \
+            --skip-testing VoidDisplayUITests
+
+      - name: Enforce coverage ratchet
+        run: |
+          scripts/test/coverage_guard.sh \
+            --xcresult UnitTests.xcresult \
+            --baseline docs/testing/coverage-baseline.json \
+            --report docs/testing/coverage-latest.json
+
+      - name: Upload unit test result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-xcresult
+          path: UnitTests.xcresult
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-coverage-report
+          path: docs/testing/coverage-latest.json
+          retention-days: ${{ inputs.artifact_retention_days }}
+
+      - name: Set reusable outputs
+        id: finalize
+        if: always()
+        shell: bash
+        run: |
+          echo "unit_status=${{ job.status }}" >> "$GITHUB_OUTPUT"
+          echo "coverage_artifact_name=unit-tests-coverage-report" >> "$GITHUB_OUTPUT"
+          echo "xcresult_artifact_name=unit-tests-xcresult" >> "$GITHUB_OUTPUT"
