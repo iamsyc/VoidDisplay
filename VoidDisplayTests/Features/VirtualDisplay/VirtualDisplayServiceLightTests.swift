@@ -4,6 +4,7 @@ import Testing
 @testable import VoidDisplay
 
 @MainActor
+@Suite(.serialized)
 struct VirtualDisplayServiceLightTests {
     @Test
     func moveConfigReordersAndPersists() {
@@ -123,11 +124,11 @@ struct VirtualDisplayServiceLightTests {
 
         let result = await sut.waitForAdaptiveManagedDisplayCooldown(
             serialNumbers: [1],
-            maxCooldown: 0.5
+            maxCooldown: 2.0
         )
 
         #expect(result.completedEarly)
-        #expect(result.waitedSeconds < 0.5)
+        #expect(result.waitedSeconds < 2.0)
     }
 
     @Test

@@ -1,0 +1,36 @@
+name: Select Xcode
+description: Select preferred Xcode and emit a cache suffix derived from Xcode version/build.
+
+inputs:
+  preferred_path:
+    description: Preferred DEVELOPER_DIR path.
+    required: true
+  fallback_path:
+    description: Fallback DEVELOPER_DIR path when preferred path is unavailable.
+    required: true
+
+outputs:
+  xcode_cache_suffix:
+    description: Xcode version/build suffix for cache keys.
+    value: ${{ steps.select.outputs.xcode_cache_suffix }}
+
+runs:
+  using: composite
+  steps:
+    - id: select
+      shell: bash
+      run: |
+        set -euo pipefail
+        preferred="${{ inputs.preferred_path }}"
+        fallback="${{ inputs.fallback_path }}"
+
+        if [ -d "$preferred" ]; then
+          sudo xcode-select -s "$preferred"
+        else
+          echo "Preferred Xcode not found at ${preferred}; falling back to ${fallback}"
+          sudo xcode-select -s "$fallback"
+        fi
+
+        xcode_ver="$(xcodebuild -version | awk 'NR==1{print $2}')"
+        xcode_build="$(xcodebuild -version | awk 'NR==2{print $3}')"
+        echo "xcode_cache_suffix=xcode-${xcode_ver}-${xcode_build}" >> "$GITHUB_OUTPUT"
