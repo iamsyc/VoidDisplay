@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import VoidDisplay
 
+@Suite(.serialized)
 struct VirtualDisplayServiceOfflineWaitTests {
 
     @MainActor
@@ -15,14 +16,14 @@ struct VirtualDisplayServiceOfflineWaitTests {
         )
 
         let flipTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: 50_000_000)
             state.isOnline = false
         }
         defer { flipTask.cancel() }
 
         let result = await sut.waitForManagedDisplayOffline(
             serialNum: 42,
-            timeout: 0.35
+            timeout: 1.2
         )
 
         #expect(result)

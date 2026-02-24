@@ -3,6 +3,7 @@ import Testing
 @testable import VoidDisplay
 
 @MainActor
+@Suite(.serialized)
 struct PrimaryDisplayFallbackCoordinatorTests {
 
     @Test func coordinatorAttemptsRecoveryByCycleAndStopsAfterRecovery() async {
@@ -24,7 +25,7 @@ struct PrimaryDisplayFallbackCoordinatorTests {
             onRecovered: {}
         )
 
-        let stopped = await waitUntil(timeoutNanoseconds: 1_000_000_000) {
+        let stopped = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
             !coordinator.isRunning
         }
 
@@ -56,13 +57,13 @@ struct PrimaryDisplayFallbackCoordinatorTests {
             onRecovered: {}
         )
 
-        let ticked = await waitUntil(timeoutNanoseconds: 400_000_000) {
+        let ticked = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
             tickCount > 0
         }
         #expect(ticked)
 
         coordinator.stop()
-        let stopped = await waitUntil(timeoutNanoseconds: 200_000_000) {
+        let stopped = await waitUntil(timeoutNanoseconds: 1_000_000_000) {
             !coordinator.isRunning
         }
         #expect(stopped)

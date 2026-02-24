@@ -12,15 +12,15 @@ permissions:
   contents: read
   actions: read
   issues: write
-  pull-requests: write
 
 concurrency:
-  group: ci-summary-${{ github.event.workflow_run.head_sha }}
+  group: ci-summary-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.event }}
   cancel-in-progress: true
 
 jobs:
   summary:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Collect workflow results
@@ -33,8 +33,6 @@ jobs:
           set -euo pipefail
 
           repo_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs"
-          max_attempts=18
-          attempt=1
 
           unit_status="missing"
           unit_conclusion="missing"
@@ -43,59 +41,42 @@ jobs:
           ui_conclusion="missing"
           ui_url=""
 
-          while [ "$attempt" -le "$max_attempts" ]; do
-            response="$(curl -fsSL \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${repo_api}?head_sha=${SHA}&per_page=100")"
+          response="$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${repo_api}?head_sha=${SHA}&per_page=100")"
 
-            unit_status="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
-              .workflow_runs
-              | map(select(.name == "Unit Tests" and .event == $event))
-              | sort_by(.run_number) | reverse
-              | (.[0].status // "missing")')"
-            unit_conclusion="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
-              .workflow_runs
-              | map(select(.name == "Unit Tests" and .event == $event))
-              | sort_by(.run_number) | reverse
-              | (.[0].conclusion // "missing")')"
-            unit_url="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
-              .workflow_runs
-              | map(select(.name == "Unit Tests" and .event == $event))
-              | sort_by(.run_number) | reverse
-              | (.[0].html_url // "")')"
+          unit_status="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+            .workflow_runs
+            | map(select(.name == "Unit Tests" and .event == $event))
+            | sort_by(.run_number) | reverse
+            | (.[0].status // "missing")')"
+          unit_conclusion="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+            .workflow_runs
+            | map(select(.name == "Unit Tests" and .event == $event))
+            | sort_by(.run_number) | reverse
+            | (.[0].conclusion // "missing")')"
+          unit_url="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+            .workflow_runs
+            | map(select(.name == "Unit Tests" and .event == $event))
+            | sort_by(.run_number) | reverse
+            | (.[0].html_url // "")')"
 
-            ui_status="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
-              .workflow_runs
-              | map(select(.name == "UI Smoke Tests" and .event == $event))
-              | sort_by(.run_number) | reverse
-              | (.[0].status // "missing")')"
-            ui_conclusion="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
-              .workflow_runs
-              | map(select(.name == "UI Smoke Tests" and .event == $event))
-              | sort_by(.run_number) | reverse
-              | (.[0].conclusion // "missing")')"
-            ui_url="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
-              .workflow_runs
-              | map(select(.name == "UI Smoke Tests" and .event == $event))
-              | sort_by(.run_number) | reverse
-              | (.[0].html_url // "")')"
-
-            wait_needed=0
-            if [ "$unit_status" != "missing" ] && [ "$unit_status" != "completed" ]; then
-              wait_needed=1
-            fi
-            if [ "$ui_status" != "missing" ] && [ "$ui_status" != "completed" ]; then
-              wait_needed=1
-            fi
-
-            if [ "$wait_needed" -eq 0 ]; then
-              break
-            fi
-
-            attempt=$((attempt + 1))
-            sleep 20
-          done
+          ui_status="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+            .workflow_runs
+            | map(select(.name == "UI Smoke Tests" and .event == $event))
+            | sort_by(.run_number) | reverse
+            | (.[0].status // "missing")')"
+          ui_conclusion="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+            .workflow_runs
+            | map(select(.name == "UI Smoke Tests" and .event == $event))
+            | sort_by(.run_number) | reverse
+            | (.[0].conclusion // "missing")')"
+          ui_url="$(echo "$response" | jq -r --arg event "$EVENT_NAME" '
+            .workflow_runs
+            | map(select(.name == "UI Smoke Tests" and .event == $event))
+            | sort_by(.run_number) | reverse
+            | (.[0].html_url // "")')"
 
           {
             echo "unit_status=${unit_status}"
@@ -158,29 +139,43 @@ jobs:
           if [ -n "$UNIT_URL" ]; then unit_link="[Open]($UNIT_URL)"; fi
           if [ -n "$UI_URL" ]; then ui_link="[Open]($UI_URL)"; fi
 
-          body="$(cat <<EOF
-${marker}
-## CI Summary
-
-| Workflow | Status | Conclusion | Link |
-| --- | --- | --- | --- |
-| Unit Tests | ${UNIT_STATUS} | ${UNIT_CONCLUSION} | ${unit_link} |
-| UI Smoke Tests | ${UI_STATUS} | ${UI_CONCLUSION} | ${ui_link} |
-
-Gate rule: only \`Unit Tests\` is required to pass; \`UI Smoke Tests\` is informational (non-blocking).
-EOF
+          body="$(printf '%s\n' \
+            "${marker}" \
+            "## CI Summary" \
+            "" \
+            "| Workflow | Status | Conclusion | Link |" \
+            "| --- | --- | --- | --- |" \
+            "| Unit Tests | ${UNIT_STATUS} | ${UNIT_CONCLUSION} | ${unit_link} |" \
+            "| UI Smoke Tests | ${UI_STATUS} | ${UI_CONCLUSION} | ${ui_link} |" \
+            "" \
+            "Gate rule: only \`Unit Tests\` is required to pass; \`UI Smoke Tests\` is informational (non-blocking)." \
           )"
 
           comments_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${pr_number}/comments"
-          comments_json="$(curl -fsSL \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${comments_api}?per_page=100")"
+          existing_id=""
+          existing_body=""
+          page=1
+          while :; do
+            comments_json="$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${comments_api}?per_page=100&page=${page}")"
 
-          existing_id="$(echo "$comments_json" | jq -r --arg marker "$marker" '
-            .[] | select(.user.type == "Bot" and (.body | contains($marker))) | .id' | head -n1)"
-          existing_body="$(echo "$comments_json" | jq -r --arg marker "$marker" '
-            .[] | select(.user.type == "Bot" and (.body | contains($marker))) | .body' | head -n1)"
+            page_existing_id="$(echo "$comments_json" | jq -r --arg marker "$marker" '
+              [.[] | select(.user.type == "Bot" and (.body | contains($marker))) | .id] | last // empty')"
+            page_existing_body="$(echo "$comments_json" | jq -r --arg marker "$marker" '
+              [.[] | select(.user.type == "Bot" and (.body | contains($marker))) | .body] | last // empty')"
+            if [ -n "$page_existing_id" ]; then
+              existing_id="$page_existing_id"
+              existing_body="$page_existing_body"
+            fi
+
+            page_count="$(echo "$comments_json" | jq 'length')"
+            if [ "$page_count" -lt 100 ]; then
+              break
+            fi
+            page=$((page + 1))
+          done
 
           if [ -n "$existing_id" ] && [ "$existing_body" = "$body" ]; then
             echo "CI summary unchanged; skip PR comment update."
@@ -189,14 +184,14 @@ EOF
 
           payload="$(jq -n --arg body "$body" '{body: $body}')"
           if [ -n "$existing_id" ]; then
-            curl -fsSL -X PATCH \
+            curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 -X PATCH \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               -d "$payload" \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" >/dev/null
             echo "Updated CI summary PR comment."
           else
-            curl -fsSL -X POST \
+            curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 -X POST \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               -d "$payload" \
@@ -206,11 +201,20 @@ EOF
 
       - name: Enforce unit-test gate
         env:
+          UNIT_STATUS: ${{ steps.collect.outputs.unit_status }}
           UNIT_CONCLUSION: ${{ steps.collect.outputs.unit_conclusion }}
         run: |
           set -euo pipefail
+          if [ "$UNIT_STATUS" != "missing" ] && [ "$UNIT_STATUS" != "completed" ]; then
+            echo "Unit Tests not completed yet (status=${UNIT_STATUS}); waiting for the next CI Summary run."
+            exit 0
+          fi
           case "$UNIT_CONCLUSION" in
-            success|neutral|skipped|missing)
+            success|neutral|skipped)
+              exit 0
+              ;;
+            missing)
+              echo "WARNING: Unit Tests conclusion is missing (likely skipped by path filters)."
               exit 0
               ;;
             *)
