@@ -25,6 +25,7 @@ jobs:
       only_testing: ${{ inputs.only_testing }}
       max_attempts: ${{ inputs.max_attempts }}
       artifact_retention_days: 7
+      enforce_failure: true
 
   ui_smoke_summary:
     name: ui-smoke-summary

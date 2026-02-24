@@ -18,6 +18,11 @@ on:
         required: false
         type: number
         default: 7
+      enforce_failure:
+        description: Whether deterministic UI smoke failures should fail the job.
+        required: false
+        type: boolean
+        default: true
       xcode_preferred_path:
         description: Preferred Xcode developer directory path.
         required: false
@@ -284,12 +289,17 @@ jobs:
         if: always()
         shell: bash
         env:
+          ENFORCE_FAILURE: ${{ inputs.enforce_failure }}
           UI_STATUS: ${{ steps.parse_summary.outputs.ui_status }}
           UI_REASON: ${{ steps.parse_summary.outputs.ui_reason }}
           UI_ENFORCED_EXIT_CODE: ${{ steps.parse_summary.outputs.ui_enforced_exit_code }}
         run: |
           set -euo pipefail
           echo "UI smoke summary status=${UI_STATUS} reason=${UI_REASON} enforced_exit_code=${UI_ENFORCED_EXIT_CODE}"
+          if [ "${ENFORCE_FAILURE}" != "true" ]; then
+            echo "Failure enforcement disabled by caller; leaving job successful for informational mode."
+            exit 0
+          fi
           if [ "${UI_ENFORCED_EXIT_CODE}" = "0" ]; then
             exit 0
           fi

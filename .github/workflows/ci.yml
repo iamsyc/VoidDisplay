@@ -46,10 +46,10 @@ jobs:
 
   ui_smoke_tests:
     name: ui-smoke-tests
-    continue-on-error: true
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
       artifact_retention_days: 7
+      enforce_failure: false
 
   ci_gate:
     name: ci-gate
