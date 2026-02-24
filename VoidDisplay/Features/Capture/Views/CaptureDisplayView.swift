@@ -12,7 +12,7 @@ import AppKit
 struct CaptureDisplayView: View {
     let sessionId: UUID
 
-    @Environment(AppHelper.self) private var appHelper: AppHelper
+    @Environment(CaptureController.self) private var capture
     @Environment(\.dismiss) private var dismiss
 
     @State private var captureOut = Capture()
@@ -23,8 +23,8 @@ struct CaptureDisplayView: View {
     @State private var framePixelSize: CGSize = .zero
     @State private var hasAppliedInitialSize = false
 
-    private var session: AppHelper.ScreenMonitoringSession? {
-        appHelper.monitoringSession(for: sessionId)
+    private var session: ScreenMonitoringSession? {
+        capture.monitoringSession(for: sessionId)
     }
 
     var body: some View {
@@ -41,7 +41,7 @@ struct CaptureDisplayView: View {
             }
         }
         .clipped()
-        .onChange(of: appHelper.screenCaptureSessions.map(\.id)) { _, ids in
+        .onChange(of: capture.screenCaptureSessions.map(\.id)) { _, ids in
             if !ids.contains(sessionId) {
                 startTask?.cancel()
                 startTask = nil
@@ -70,12 +70,12 @@ struct CaptureDisplayView: View {
                         sampleHandlerQueue: captureOut.sampleHandlerQueue
                     )
                     try await session.stream.startCapture()
-                    appHelper.markMonitoringSessionActive(id: sessionId)
+                    capture.markMonitoringSessionActive(id: sessionId)
                 } catch is CancellationError {
                     return
                 } catch {
                     AppErrorMapper.logFailure("Start monitoring stream", error: error, logger: AppLog.capture)
-                    appHelper.removeMonitoringSession(id: sessionId)
+                    capture.removeMonitoringSession(id: sessionId)
                     dismiss()
                 }
             }
@@ -83,7 +83,7 @@ struct CaptureDisplayView: View {
         .onDisappear {
             startTask?.cancel()
             startTask = nil
-            appHelper.removeMonitoringSession(id: sessionId)
+            capture.removeMonitoringSession(id: sessionId)
         }
         .overlay {
             WindowAccessor { currentWindow in

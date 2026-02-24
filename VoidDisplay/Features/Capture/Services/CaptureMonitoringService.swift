@@ -4,12 +4,12 @@ import CoreGraphics
 
 @MainActor
 protocol CaptureMonitoringServiceProtocol: AnyObject {
-    var currentSessions: [AppHelper.ScreenMonitoringSession] { get }
-    func monitoringSession(for id: UUID) -> AppHelper.ScreenMonitoringSession?
-    func addMonitoringSession(_ session: AppHelper.ScreenMonitoringSession)
+    var currentSessions: [ScreenMonitoringSession] { get }
+    func monitoringSession(for id: UUID) -> ScreenMonitoringSession?
+    func addMonitoringSession(_ session: ScreenMonitoringSession)
     func updateMonitoringSessionState(
         id: UUID,
-        state: AppHelper.ScreenMonitoringSession.State
+        state: ScreenMonitoringSession.State
     )
     func removeMonitoringSession(id: UUID)
     func removeMonitoringSessions(displayID: CGDirectDisplayID)
@@ -17,23 +17,23 @@ protocol CaptureMonitoringServiceProtocol: AnyObject {
 
 @MainActor
 final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
-    private var sessions: [AppHelper.ScreenMonitoringSession] = []
+    private var sessions: [ScreenMonitoringSession] = []
 
-    var currentSessions: [AppHelper.ScreenMonitoringSession] {
+    var currentSessions: [ScreenMonitoringSession] {
         sessions
     }
 
-    func monitoringSession(for id: UUID) -> AppHelper.ScreenMonitoringSession? {
+    func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
         sessions.first { $0.id == id }
     }
 
-    func addMonitoringSession(_ session: AppHelper.ScreenMonitoringSession) {
+    func addMonitoringSession(_ session: ScreenMonitoringSession) {
         sessions.append(session)
     }
 
     func updateMonitoringSessionState(
         id: UUID,
-        state: AppHelper.ScreenMonitoringSession.State
+        state: ScreenMonitoringSession.State
     ) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         sessions[index].state = state

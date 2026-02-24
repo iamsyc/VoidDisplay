@@ -3,19 +3,18 @@ import CoreGraphics
 @testable import VoidDisplay
 
 @MainActor
-struct AppHelperTests {
+struct AppBootstrapTests {
 
     @Test func initPreviewModeSkipsStartupSequence() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayService()
 
-        _ = AppHelper(
+        _ = AppBootstrap.makeEnvironment(
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: false
         )
 
@@ -27,22 +26,24 @@ struct AppHelperTests {
     @Test func initUITestModeAppliesFixtureAndSkipsServiceBoot() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = UITestVirtualDisplayService(scenario: .baseline)
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: true,
+            startupPlan: .init(
+                shouldRestoreVirtualDisplays: true,
+                shouldStartWebService: false,
+                postRestoreConfiguration: nil
+            ),
             isRunningUnderXCTestOverride: false
         )
 
-        #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 0)
         #expect(sharing.startWebServiceCallCount == 0)
-        #expect(sut.displayConfigs.count == 2)
-        #expect(sut.runningConfigIds.count == 1)
+        #expect(sut.virtualDisplay.displayConfigs.count == 2)
+        #expect(sut.virtualDisplay.runningConfigIds.count == 1)
     }
 
     @Test func initRunningUnderXCTestSkipsStartupSequence() async {
@@ -50,19 +51,18 @@ struct AppHelperTests {
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayService()
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: true
         )
 
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
         #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 0)
         #expect(sharing.startWebServiceCallCount == 0)
-        #expect(sut.displayConfigs.isEmpty)
+        #expect(sut.virtualDisplay.displayConfigs.isEmpty)
     }
 
     @Test func initNormalModeLoadsPersistedDataAndStartsWebService() async {
@@ -80,12 +80,11 @@ struct AppHelperTests {
         )
         virtualDisplay.currentDisplayConfigs = [fixtureConfig]
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: false
         )
 
@@ -96,9 +95,9 @@ struct AppHelperTests {
         #expect(didStartWebService)
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
         #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 1)
-        #expect(sut.displayConfigs.count == 1)
-        #expect(sut.displayConfigs.first?.id == fixtureConfig.id)
-        #expect(sut.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
+        #expect(sut.virtualDisplay.displayConfigs.count == 1)
+        #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
+        #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
     }
 
     @Test func rebuildFromSavedConfigDoesNotApplyModesAgainAfterRebuild() async {
@@ -117,22 +116,21 @@ struct AppHelperTests {
         virtualDisplay.currentDisplayConfigs = [config]
         virtualDisplay.currentRunningConfigIds = [config.id]
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: true
         )
 
-        sut.startRebuildFromSavedConfig(configId: config.id)
+        sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
 
         let rebuildTriggered = await waitUntil {
             virtualDisplay.rebuildVirtualDisplayCallCount == 1
         }
         let rebuildPresentationSettled = await waitUntil {
-            !sut.isRebuilding(configId: config.id)
+            !sut.virtualDisplay.isRebuilding(configId: config.id)
         }
 
         #expect(rebuildTriggered)
@@ -161,16 +159,15 @@ struct AppHelperTests {
         virtualDisplay.runtimeDisplayIDByConfigId[config.id] = displayID
         sharing.activeSharingDisplayIDs = [displayID]
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: true
         )
 
-        sut.startRebuildFromSavedConfig(configId: config.id)
+        sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
 
         let rebuildTriggered = await waitUntil {
             virtualDisplay.rebuildVirtualDisplayCallCount == 1
@@ -199,17 +196,16 @@ struct AppHelperTests {
         virtualDisplay.currentDisplayConfigs = [config]
         virtualDisplay.currentRunningConfigIds = [config.id]
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: true
         )
 
-        sut.startRebuildFromSavedConfig(configId: config.id)
-        sut.startRebuildFromSavedConfig(configId: config.id)
+        sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
+        sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
 
         let onlyOnceTriggered = await waitUntil {
             virtualDisplay.rebuildVirtualDisplayCallCount == 1
@@ -217,7 +213,7 @@ struct AppHelperTests {
         #expect(onlyOnceTriggered)
 
         let settled = await waitUntil {
-            !sut.isRebuilding(configId: config.id)
+            !sut.virtualDisplay.isRebuilding(configId: config.id)
         }
         #expect(settled)
     }
@@ -239,26 +235,25 @@ struct AppHelperTests {
         virtualDisplay.currentRunningConfigIds = [config.id]
         virtualDisplay.rebuildVirtualDisplayError = NSError(domain: "test", code: 33)
 
-        let sut = AppHelper(
+        let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayService: virtualDisplay,
             appliedBadgeDisplayDurationNanoseconds: 50_000_000,
-            isUITestModeOverride: false,
             isRunningUnderXCTestOverride: true
         )
 
-        sut.startRebuildFromSavedConfig(configId: config.id)
+        sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
 
         let failed = await waitUntil {
-            sut.rebuildFailureMessage(configId: config.id) != nil
+            sut.virtualDisplay.rebuildFailureMessage(configId: config.id) != nil
         }
         #expect(failed)
-        #expect(sut.hasRecentApplySuccess(configId: config.id) == false)
+        #expect(sut.virtualDisplay.hasRecentApplySuccess(configId: config.id) == false)
 
         virtualDisplay.rebuildVirtualDisplayError = nil
-        sut.retryRebuild(configId: config.id)
+        sut.virtualDisplay.retryRebuild(configId: config.id)
 
         let retried = await waitUntil {
             virtualDisplay.rebuildVirtualDisplayCallCount == 2
@@ -266,14 +261,83 @@ struct AppHelperTests {
         #expect(retried)
 
         let successPresented = await waitUntil {
-            sut.hasRecentApplySuccess(configId: config.id)
+            sut.virtualDisplay.hasRecentApplySuccess(configId: config.id)
         }
         #expect(successPresented)
-        #expect(sut.rebuildFailureMessage(configId: config.id) == nil)
+        #expect(sut.virtualDisplay.rebuildFailureMessage(configId: config.id) == nil)
 
         let successCleared = await waitUntil(timeoutNanoseconds: 500_000_000) {
-            !sut.hasRecentApplySuccess(configId: config.id)
+            !sut.virtualDisplay.hasRecentApplySuccess(configId: config.id)
         }
         #expect(successCleared)
+    }
+
+    @Test func sharingFacadeMethodsDelegateAndExposeState() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+
+        let displayID: CGDirectDisplayID = 7101
+        let target = ShareTarget.id(99)
+        sharing.startResult = true
+        sharing.activeStreamClientCount = 3
+        sharing.activeSharingDisplayIDs = [displayID]
+        sharing.hasAnyActiveSharing = true
+        sharing.shareIDByDisplayID[displayID] = 99
+        sharing.shareTargetByDisplayID[displayID] = target
+        sharing.streamClientCountsByTarget[target] = 3
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let started = await sut.sharing.startWebService()
+        #expect(started)
+        #expect(sut.sharing.isWebServiceRunning)
+        #expect(sut.sharing.isSharing)
+        #expect(sut.sharing.isDisplaySharing(displayID: displayID))
+        #expect(sut.sharing.sharePagePath(for: displayID) == "/display/99")
+
+        sut.sharing.refreshSharingClientCount()
+        #expect(sut.sharing.sharingClientCount == 3)
+        #expect(sut.sharing.sharingClientCounts[displayID] == 3)
+
+        // Uses facade path that should fail early when service is down.
+        sut.sharing.stopWebService()
+        let shareURLResult = sut.sharing.sharePageURLResolution(for: displayID)
+        #expect(shareURLResult == .failure(.serviceNotRunning))
+    }
+
+    @Test func virtualDisplayFacadeResetDelegatesToService() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+
+        virtualDisplay.currentDisplayConfigs = [
+            VirtualDisplayConfig(
+                name: "Cleanup",
+                serialNum: 123,
+                physicalWidth: 300,
+                physicalHeight: 200,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                desiredEnabled: true
+            )
+        ]
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let removed = sut.virtualDisplay.resetVirtualDisplayData()
+        #expect(removed == 1)
+        #expect(virtualDisplay.resetAllVirtualDisplayDataCallCount == 1)
     }
 }

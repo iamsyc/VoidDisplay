@@ -55,15 +55,26 @@ done
 
 rm -rf "$RESULT_BUNDLE_PATH"
 
-xcodebuild \
-    -scheme "$SCHEME" \
-    -project "$PROJECT_PATH" \
-    -destination "$DESTINATION" \
-    -derivedDataPath "$DERIVED_DATA_PATH" \
-    -resultBundlePath "$RESULT_BUNDLE_PATH" \
-    -enableCodeCoverage "$ENABLE_CODE_COVERAGE" \
-    CODE_SIGNING_ALLOWED=NO \
-    CODE_SIGNING_REQUIRED=NO \
-    test \
-    -only-testing:"$ONLY_TESTING" \
+XCODEBUILD_CMD=(
+    xcodebuild
+    -scheme "$SCHEME"
+    -project "$PROJECT_PATH"
+    -destination "$DESTINATION"
+    -derivedDataPath "$DERIVED_DATA_PATH"
+    -resultBundlePath "$RESULT_BUNDLE_PATH"
+    -enableCodeCoverage "$ENABLE_CODE_COVERAGE"
+    CODE_SIGNING_ALLOWED=NO
+    CODE_SIGNING_REQUIRED=NO
+)
+
+if [[ -n "${EXTRA_OTHER_SWIFT_FLAGS:-}" ]]; then
+    XCODEBUILD_CMD+=("OTHER_SWIFT_FLAGS=$(printf '%s' "$EXTRA_OTHER_SWIFT_FLAGS")")
+fi
+
+XCODEBUILD_CMD+=(
+    test
+    -only-testing:"$ONLY_TESTING"
     -skip-testing:"$SKIP_TESTING"
+)
+
+"${XCODEBUILD_CMD[@]}"

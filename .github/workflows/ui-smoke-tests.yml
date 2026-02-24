@@ -24,8 +24,7 @@ concurrency:
 
 jobs:
   ui-smoke-tests:
-    runs-on: macos-14
-    continue-on-error: true
+    runs-on: macos-15
     timeout-minutes: 20
 
     steps:
@@ -64,6 +63,26 @@ jobs:
             echo "unknown_failure"
           }
 
+          write_summary() {
+            local summary_status="$1"
+            local summary_reason="$2"
+            local summary_attempt="$3"
+            local summary_log_file="$4"
+            jq -n \
+              --arg status "$summary_status" \
+              --arg reason "$summary_reason" \
+              --arg attempt "$summary_attempt" \
+              --arg max_attempts "$max_attempts" \
+              --arg log_file "$summary_log_file" \
+              '{
+                status: $status,
+                reason: $reason,
+                attempt: ($attempt | tonumber),
+                max_attempts: ($max_attempts | tonumber),
+                log_file: $log_file
+              }' > "$summary_file"
+          }
+
           summary_file="ui-smoke-summary.json"
           max_attempts=2
           attempt=1
@@ -90,43 +109,29 @@ jobs:
             set -e
 
             if [ "$status" -eq 0 ]; then
-              jq -n \
-                --arg status "passed" \
-                --arg reason "none" \
-                --arg attempt "$attempt" \
-                --arg max_attempts "$max_attempts" \
-                --arg log_file "$log_file" \
-                '{
-                  status: $status,
-                  reason: $reason,
-                  attempt: ($attempt | tonumber),
-                  max_attempts: ($max_attempts | tonumber),
-                  log_file: $log_file
-                }' > "$summary_file"
+              write_summary "passed" "none" "$attempt" "$log_file"
               exit 0
             fi
 
             last_reason="$(classify_failure "$log_file")"
             last_log_file="$log_file"
+            if [[ "$last_reason" == "assertion_failure" || "$last_reason" == "unknown_failure" ]]; then
+              write_summary "failed" "$last_reason" "$attempt" "$log_file"
+              echo "UI smoke failed (reason=${last_reason}); deterministic failure -> no retry."
+              exit 1
+            fi
             attempt=$((attempt + 1))
             if [ "$attempt" -le "$max_attempts" ]; then
               echo "UI smoke failed (reason=${last_reason}), retrying once..."
             fi
           done
 
-          jq -n \
-            --arg status "failed" \
-            --arg reason "$last_reason" \
-            --arg attempt "$((attempt - 1))" \
-            --arg max_attempts "$max_attempts" \
-            --arg log_file "$last_log_file" \
-            '{
-              status: $status,
-              reason: $reason,
-              attempt: ($attempt | tonumber),
-              max_attempts: ($max_attempts | tonumber),
-              log_file: $log_file
-            }' > "$summary_file"
+          write_summary "failed" "$last_reason" "$((attempt - 1))" "$last_log_file"
+
+          if [[ "$last_reason" == "environment_unstable" || "$last_reason" == "runner_bootstrap_failure" ]]; then
+            echo "UI smoke marked unstable (reason=${last_reason}); allowing job to pass."
+            exit 0
+          fi
 
           echo "UI smoke failed after ${max_attempts} attempts."
           exit 1

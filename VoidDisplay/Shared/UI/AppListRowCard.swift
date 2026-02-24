@@ -2,12 +2,18 @@ import SwiftUI
 
 struct AppListRowCard<Trailing: View>: View {
     let model: AppListRowModel
+    private let pushTrailingToEdge: Bool
     private let trailing: Trailing
 
     @State private var isHovered = false
 
-    init(model: AppListRowModel, @ViewBuilder trailing: () -> Trailing) {
+    init(
+        model: AppListRowModel,
+        pushTrailingToEdge: Bool = true,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
         self.model = model
+        self.pushTrailingToEdge = pushTrailingToEdge
         self.trailing = trailing()
     }
 
@@ -20,11 +26,13 @@ struct AppListRowCard<Trailing: View>: View {
                     Text(model.title)
                         .font(.headline)
                         .foregroundStyle(model.isEmphasized ? .primary : .secondary)
+                        .allowsTightening(true)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     if let ribbon = model.ribbon {
                         AppCornerRibbon(model: ribbon)
+                            .fixedSize()
                     }
                 }
 
@@ -49,7 +57,9 @@ struct AppListRowCard<Trailing: View>: View {
                 }
             }
 
-            Spacer(minLength: 0)
+            if pushTrailingToEdge {
+                Spacer(minLength: 0)
+            }
 
             trailing
         }

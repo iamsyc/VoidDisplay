@@ -18,10 +18,19 @@ struct VirtualDisplayRestoreFailure: Identifiable, Equatable {
 
 @MainActor
 final class VirtualDisplayPersistenceService {
-    private let store: any VirtualDisplayStoring
+    typealias FailureReporter = (_ operation: String, _ error: Error) -> Void
 
-    init(store: any VirtualDisplayStoring) {
+    private let store: any VirtualDisplayStoring
+    private let reportFailure: FailureReporter
+
+    init(
+        store: any VirtualDisplayStoring,
+        reportFailure: FailureReporter? = nil
+    ) {
         self.store = store
+        self.reportFailure = reportFailure ?? { operation, error in
+            AppErrorMapper.logFailure(operation, error: error, logger: AppLog.persistence)
+        }
     }
 
     convenience init() {
@@ -32,7 +41,7 @@ final class VirtualDisplayPersistenceService {
         do {
             return try store.load()
         } catch {
-            AppErrorMapper.logFailure("Load virtual display configs", error: error, logger: AppLog.persistence)
+            reportFailure("Load virtual display configs", error)
             return []
         }
     }
@@ -41,7 +50,7 @@ final class VirtualDisplayPersistenceService {
         do {
             try store.save(configs)
         } catch {
-            AppErrorMapper.logFailure("Save virtual display configs", error: error, logger: AppLog.persistence)
+            reportFailure("Save virtual display configs", error)
         }
     }
 
@@ -49,11 +58,11 @@ final class VirtualDisplayPersistenceService {
         do {
             try store.reset()
         } catch {
-            AppErrorMapper.logFailure("Reset virtual display configs", error: error, logger: AppLog.persistence)
+            reportFailure("Reset virtual display configs", error)
             do {
                 try store.save([])
             } catch {
-                AppErrorMapper.logFailure("Reset fallback save empty configs", error: error, logger: AppLog.persistence)
+                reportFailure("Reset fallback save empty configs", error)
             }
         }
     }

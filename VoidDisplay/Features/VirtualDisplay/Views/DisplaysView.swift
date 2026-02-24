@@ -8,7 +8,7 @@ import SwiftUI
 import Cocoa
 
 struct DisplaysView: View {
-    @Environment(AppHelper.self) private var appHelper: AppHelper
+    @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(\.openURL) private var openURL
     @State private var displays: [NSScreen]?
 
@@ -132,7 +132,7 @@ struct DisplaysView: View {
         guard let displayID else {
             return String(localized: "Physical Display")
         }
-        if appHelper.isManagedVirtualDisplay(displayID: displayID) {
+        if virtualDisplay.isManagedVirtualDisplay(displayID: displayID) {
             return String(localized: "Virtual Display")
         }
         return String(localized: "Physical Display")
@@ -142,7 +142,7 @@ struct DisplaysView: View {
         guard let displayID else {
             return .roundedTag(tint: .gray)
         }
-        if appHelper.isManagedVirtualDisplay(displayID: displayID) {
+        if virtualDisplay.isManagedVirtualDisplay(displayID: displayID) {
             return .roundedTag(tint: .blue)
         }
         return .roundedTag(tint: .gray)
@@ -150,5 +150,9 @@ struct DisplaysView: View {
 }
 
 #Preview {
+    let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
     DisplaysView()
+        .environment(env.capture)
+        .environment(env.sharing)
+        .environment(env.virtualDisplay)
 }

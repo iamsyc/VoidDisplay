@@ -20,9 +20,6 @@ protocol WebServiceControllerProtocol: AnyObject {
     func disconnectAllStreamClients()
 }
 
-@available(*, deprecated, renamed: "WebServiceControllerProtocol")
-typealias WebServiceControlling = WebServiceControllerProtocol
-
 @MainActor
 final class WebServiceController: WebServiceControllerProtocol {
     private let port: NWEndpoint.Port

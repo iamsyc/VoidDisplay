@@ -27,7 +27,7 @@ struct EditDisplaySettingsView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     
-    @Environment(AppHelper.self) private var appHelper: AppHelper
+    @Environment(VirtualDisplayController.self) private var virtualDisplay
     
     var body: some View {
         Form {
@@ -240,7 +240,7 @@ struct EditDisplaySettingsView: View {
         display.apply(settings)
         
         // Update stored config with new modes
-        appHelper.updateConfig(for: display, modes: selectedModes)
+        virtualDisplay.updateConfig(for: display, modes: selectedModes)
         
         isShow = false
     }

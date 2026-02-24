@@ -20,7 +20,7 @@ struct VirtualDisplayServiceOfflineWaitTests {
         }
         defer { flipTask.cancel() }
 
-        let result = await sut.waitForManagedDisplayOfflineForTesting(
+        let result = await sut.waitForManagedDisplayOffline(
             serialNum: 42,
             timeout: 0.35
         )
@@ -45,7 +45,7 @@ struct VirtualDisplayServiceOfflineWaitTests {
         }
         defer { flipTask.cancel() }
 
-        let result = await sut.waitForManagedDisplayOfflineForTesting(
+        let result = await sut.waitForManagedDisplayOffline(
             serialNum: 99,
             timeout: 0.2
         )
@@ -65,7 +65,7 @@ struct VirtualDisplayServiceOfflineWaitTests {
             managedDisplayOnlineChecker: { _ in state.isOnline }
         )
 
-        let result = await sut.waitForManagedDisplayOfflineForTesting(
+        let result = await sut.waitForManagedDisplayOffline(
             serialNum: 7,
             timeout: 0.08
         )

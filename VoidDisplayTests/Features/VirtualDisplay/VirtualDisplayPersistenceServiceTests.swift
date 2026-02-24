@@ -8,24 +8,42 @@ struct VirtualDisplayPersistenceServiceTests {
     @Test func loadReturnsEmptyWhenStoreThrows() {
         let store = MockVirtualDisplayStore()
         store.loadError = NSError(domain: "test", code: 1)
-        let sut = VirtualDisplayPersistenceService(store: store)
+        var failures: [(operation: String, code: Int)] = []
+        let sut = VirtualDisplayPersistenceService(
+            store: store,
+            reportFailure: { operation, error in
+                failures.append((operation, (error as NSError).code))
+            }
+        )
 
         let configs = sut.loadConfigs()
 
         #expect(configs.isEmpty)
         #expect(store.loadCallCount == 1)
+        #expect(failures.count == 1)
+        #expect(failures.first?.operation == "Load virtual display configs")
+        #expect(failures.first?.code == 1)
     }
 
     @Test func resetFallsBackToSavingEmptyConfigsWhenResetFails() {
         let store = MockVirtualDisplayStore()
         store.resetError = NSError(domain: "test", code: 2)
-        let sut = VirtualDisplayPersistenceService(store: store)
+        var failures: [(operation: String, code: Int)] = []
+        let sut = VirtualDisplayPersistenceService(
+            store: store,
+            reportFailure: { operation, error in
+                failures.append((operation, (error as NSError).code))
+            }
+        )
 
         sut.resetConfigs()
 
         #expect(store.resetCallCount == 1)
         #expect(store.saveCallCount == 1)
         #expect(store.savedConfigs.last?.isEmpty == true)
+        #expect(failures.count == 1)
+        #expect(failures.first?.operation == "Reset virtual display configs")
+        #expect(failures.first?.code == 2)
     }
 
     @Test func resetDoesNotFallbackWhenResetSucceeds() {
@@ -36,6 +54,31 @@ struct VirtualDisplayPersistenceServiceTests {
 
         #expect(store.resetCallCount == 1)
         #expect(store.saveCallCount == 0)
+    }
+
+    @Test func resetFallbackSaveFailureStillCompletesWithoutCrash() {
+        let store = MockVirtualDisplayStore()
+        store.resetError = NSError(domain: "test", code: 10)
+        store.saveError = NSError(domain: "test", code: 11)
+        var failures: [(operation: String, code: Int)] = []
+        let sut = VirtualDisplayPersistenceService(
+            store: store,
+            reportFailure: { operation, error in
+                failures.append((operation, (error as NSError).code))
+            }
+        )
+
+        sut.resetConfigs()
+
+        #expect(store.resetCallCount == 1)
+        #expect(store.saveCallCount == 1)
+        #expect(store.savedConfigs.last?.isEmpty == true)
+        #expect(failures.count == 2)
+        #expect(failures.map(\.operation) == [
+            "Reset virtual display configs",
+            "Reset fallback save empty configs"
+        ])
+        #expect(failures.map(\.code) == [10, 11])
     }
 
     @Test func restoreDesiredVirtualDisplaysOnlyRestoresEnabledAndCollectsFailures() {

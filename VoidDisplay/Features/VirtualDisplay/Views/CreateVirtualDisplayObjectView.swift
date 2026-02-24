@@ -47,7 +47,7 @@ struct CreateVirtualDisplay: View {
     @FocusState private var focusedField: FocusField?
     
     @Binding var isShow: Bool
-    @Environment(AppHelper.self) private var appHelper: AppHelper
+    @Environment(VirtualDisplayController.self) private var virtualDisplay
 
     private func clearFocus() {
         focusedField = nil
@@ -80,208 +80,9 @@ struct CreateVirtualDisplay: View {
     
     var body: some View {
         Form {
-            // Basic Info Section
-            Section {
-                TextField("Name", text: $name)
-                    .focused($focusedField, equals: .name)
-                
-                HStack {
-                    Text("Serial Number")
-                    Spacer()
-                    if customSerialNum {
-                        TextField("", value: $serialNum, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 80)
-                            .focused($focusedField, equals: .serialNum)
-                    } else {
-                        Text(serialNum, format: .number)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Toggle("Custom Serial Number", isOn: $customSerialNum)
-            } header: {
-                Text("Basic Info")
-            }
-            
-            // Physical Display Section
-            Section {
-                HStack {
-                    Text("Screen Size")
-                    Spacer()
-                    TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                        .focused($focusedField, equals: .screenDiagonal)
-                    Text("inches")
-                }
-                
-                Picker("Aspect Ratio", selection: $selectedAspectRatio) {
-                    ForEach(AspectRatio.allCases) { ratio in
-                        Text(ratio.rawValue).tag(ratio)
-                    }
-                }
-                .onChange(of: selectedAspectRatio) { _, _ in
-                    clearFocus()
-                }
-                
-                HStack {
-                    Text("Physical Size")
-                    Spacer()
-                    Text(verbatim: "\(physicalSize.width) × \(physicalSize.height) mm")
-                        .foregroundColor(.secondary)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    clearFocus()
-                }
-                
-                // Aspect ratio preview
-                HStack {
-                    Spacer()
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.accentColor, lineWidth: 2)
-                        .aspectRatio(aspectPreviewRatio, contentMode: .fit)
-                        .frame(height: 60)
-                        .overlay {
-                            Text(selectedAspectRatio.rawValue)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    Spacer()
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Physical Display")
-            }
-            
-            // Resolution Modes Section
-            Section {
-                // Mode list
-                if selectedModes.isEmpty {
-                    Text("No resolution modes added")
-                        .foregroundColor(.secondary)
-                        .italic()
-                } else {
-                    ForEach($selectedModes) { $mode in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: "\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
-                            }
-                            Spacer()
-                            HStack(spacing: 6) {
-                                Text("HiDPI")
-                                    .font(.caption)
-                                    .foregroundColor($mode.enableHiDPI.wrappedValue ? .green : .secondary)
-                                Toggle("", isOn: $mode.enableHiDPI)
-                                    .toggleStyle(.switch)
-                                    .labelsHidden()
-                                    .controlSize(.small)
-                            }
-                            .onChange(of: mode.enableHiDPI) { _, _ in
-                                clearFocus()
-                            }
-                            Button(action: { removeMode(mode) }) {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundColor(.red)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                
-                Divider()
-                
-                Picker("Add Method", selection: $usePresetMode) {
-                    Text("Preset").tag(true)
-                    Text("Custom").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: usePresetMode) { _, _ in
-                    clearFocus()
-                }
-
-                if usePresetMode {
-                    LabeledContent(String(localized: "Preset")) {
-                        HStack(spacing: 8) {
-                            Picker("Preset Resolution", selection: $presetResolution) {
-                                ForEach(DisplayResolutionPreset.allCases) { res in
-                                    Text(verbatim: "\(res.displayText) @ 60Hz")
-                                        .tag(res)
-                                }
-                            }
-                            .labelsHidden()
-                            .onChange(of: presetResolution) { _, _ in
-                                clearFocus()
-                            }
-
-                            Button(action: {
-                                clearFocus()
-                                addPresetMode()
-                            }) {
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                } else {
-                    LabeledContent(String(localized: "Custom")) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            TextField("Width", value: $customWidth, format: .number)
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
-                                .multilineTextAlignment(.trailing)
-                                .focused($focusedField, equals: .customWidth)
-                                .monospacedDigit()
-                                .controlSize(.small)
-
-                            Text("×")
-                                .foregroundColor(.secondary)
-
-                            TextField("Height", value: $customHeight, format: .number)
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
-                                .multilineTextAlignment(.trailing)
-                                .focused($focusedField, equals: .customHeight)
-                                .monospacedDigit()
-                                .controlSize(.small)
-
-                            Text("@")
-                                .foregroundColor(.secondary)
-
-                            TextField("Hz", value: $customRefreshRate, format: .number)
-                                .labelsHidden()
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 44)
-                                .multilineTextAlignment(.trailing)
-                                .focused($focusedField, equals: .customRefreshRate)
-                                .monospacedDigit()
-                                .controlSize(.small)
-
-                            Text("Hz")
-                                .foregroundColor(.secondary)
-
-                            Button(action: {
-                                clearFocus()
-                                addCustomMode()
-                            }) {
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            } header: {
-                Text("Resolution Modes")
-            } footer: {
-                Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            basicInfoSection
+            physicalDisplaySection
+            resolutionModesSection
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
@@ -314,7 +115,7 @@ struct CreateVirtualDisplay: View {
             let initial = CreateVirtualDisplayInputValidator.initializeNameAndSerial(
                 currentName: name,
                 baseName: baseDisplayName,
-                nextSerial: appHelper.nextAvailableSerialNumber()
+                nextSerial: virtualDisplay.nextAvailableSerialNumber()
             )
             serialNum = initial.serialNum
             name = initial.name
@@ -323,6 +124,213 @@ struct CreateVirtualDisplay: View {
             if selectedModes.isEmpty {
                 selectedModes.append(ResolutionSelection(preset: .w1920h1080))
             }
+        }
+    }
+    
+    @ViewBuilder
+    private var basicInfoSection: some View {
+        Section {
+            TextField("Name", text: $name)
+                .focused($focusedField, equals: .name)
+            
+            HStack {
+                Text("Serial Number")
+                Spacer()
+                if customSerialNum {
+                    TextField("", value: $serialNum, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                        .focused($focusedField, equals: .serialNum)
+                } else {
+                    Text(serialNum, format: .number)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Toggle("Custom Serial Number", isOn: $customSerialNum)
+        } header: {
+            Text("Basic Info")
+        }
+    }
+    
+    @ViewBuilder
+    private var physicalDisplaySection: some View {
+        Section {
+            HStack {
+                Text("Screen Size")
+                Spacer()
+                TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                    .focused($focusedField, equals: .screenDiagonal)
+                Text("inches")
+            }
+            
+            Picker("Aspect Ratio", selection: $selectedAspectRatio) {
+                ForEach(AspectRatio.allCases) { ratio in
+                    Text(ratio.rawValue).tag(ratio)
+                }
+            }
+            .onChange(of: selectedAspectRatio) { _, _ in
+                clearFocus()
+            }
+            
+            HStack {
+                Text("Physical Size")
+                Spacer()
+                Text(verbatim: "\(physicalSize.width) × \(physicalSize.height) mm")
+                    .foregroundColor(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                clearFocus()
+            }
+            
+            HStack {
+                Spacer()
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.accentColor, lineWidth: 2)
+                    .aspectRatio(aspectPreviewRatio, contentMode: .fit)
+                    .frame(height: 60)
+                    .overlay {
+                        Text(selectedAspectRatio.rawValue)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Physical Display")
+        }
+    }
+    
+    @ViewBuilder
+    private var resolutionModesSection: some View {
+        Section {
+            if selectedModes.isEmpty {
+                Text("No resolution modes added")
+                    .foregroundColor(.secondary)
+                    .italic()
+            } else {
+                ForEach($selectedModes) { $mode in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: "\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
+                        }
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Text("HiDPI")
+                                .font(.caption)
+                                .foregroundColor($mode.enableHiDPI.wrappedValue ? .green : .secondary)
+                            Toggle("", isOn: $mode.enableHiDPI)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .controlSize(.small)
+                        }
+                        .onChange(of: mode.enableHiDPI) { _, _ in
+                            clearFocus()
+                        }
+                        Button(action: { removeMode(mode) }) {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            Divider()
+            
+            Picker("Add Method", selection: $usePresetMode) {
+                Text("Preset").tag(true)
+                Text("Custom").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: usePresetMode) { _, _ in
+                clearFocus()
+            }
+            
+            if usePresetMode {
+                LabeledContent(String(localized: "Preset")) {
+                    HStack(spacing: 8) {
+                        Picker("Preset Resolution", selection: $presetResolution) {
+                            ForEach(DisplayResolutionPreset.allCases) { res in
+                                Text(verbatim: "\(res.displayText) @ 60Hz")
+                                    .tag(res)
+                            }
+                        }
+                        .labelsHidden()
+                        .onChange(of: presetResolution) { _, _ in
+                            clearFocus()
+                        }
+                        
+                        Button(action: {
+                            clearFocus()
+                            addPresetMode()
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else {
+                LabeledContent(String(localized: "Custom")) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        TextField("Width", value: $customWidth, format: .number)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .customWidth)
+                            .monospacedDigit()
+                            .controlSize(.small)
+
+                        Text("×")
+                            .foregroundColor(.secondary)
+
+                        TextField("Height", value: $customHeight, format: .number)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .customHeight)
+                            .monospacedDigit()
+                            .controlSize(.small)
+
+                        Text("@")
+                            .foregroundColor(.secondary)
+
+                        TextField("Hz", value: $customRefreshRate, format: .number)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 44)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .customRefreshRate)
+                            .monospacedDigit()
+                            .controlSize(.small)
+
+                        Text("Hz")
+                            .foregroundColor(.secondary)
+
+                        Button(action: {
+                            clearFocus()
+                            addCustomMode()
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        } header: {
+            Text("Resolution Modes")
+        } footer: {
+            Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
     
@@ -367,7 +375,7 @@ struct CreateVirtualDisplay: View {
         let size = physicalSize
         
         do {
-            _ = try appHelper.createDisplay(
+            _ = try virtualDisplay.createDisplay(
                 name: name,
                 serialNum: serialNum,
                 physicalSize: CGSize(width: size.width, height: size.height),
@@ -375,7 +383,7 @@ struct CreateVirtualDisplay: View {
                 modes: selectedModes
             )
             isShow = false
-        } catch let error as AppHelper.VirtualDisplayError {
+        } catch let error as VirtualDisplayService.VirtualDisplayError {
             AppErrorMapper.logFailure("Create virtual display", error: error, logger: AppLog.virtualDisplay)
             errorMessage = error.localizedDescription
             showError = true

@@ -5,25 +5,25 @@ import ScreenCaptureKit
 
 @MainActor
 final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
-    var currentSessions: [AppHelper.ScreenMonitoringSession] = []
+    var currentSessions: [ScreenMonitoringSession] = []
     var addCallCount = 0
     var removeCallCount = 0
     var removeByDisplayCallCount = 0
     var removedDisplayIDs: [CGDirectDisplayID] = []
     var updateStateCallCount = 0
 
-    func monitoringSession(for id: UUID) -> AppHelper.ScreenMonitoringSession? {
+    func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
         currentSessions.first(where: { $0.id == id })
     }
 
-    func addMonitoringSession(_ session: AppHelper.ScreenMonitoringSession) {
+    func addMonitoringSession(_ session: ScreenMonitoringSession) {
         addCallCount += 1
         currentSessions.append(session)
     }
 
     func updateMonitoringSessionState(
         id: UUID,
-        state: AppHelper.ScreenMonitoringSession.State
+        state: ScreenMonitoringSession.State
     ) {
         updateStateCallCount += 1
         guard let index = currentSessions.firstIndex(where: { $0.id == id }) else { return }

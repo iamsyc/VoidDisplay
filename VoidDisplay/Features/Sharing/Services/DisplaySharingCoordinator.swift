@@ -4,6 +4,12 @@ import CoreGraphics
 
 @MainActor
 final class DisplaySharingCoordinator {
+    struct ShareableDisplayRegistrationInput {
+        let displayID: CGDirectDisplayID
+        let isMain: Bool
+        let virtualSerial: UInt32?
+    }
+
     private struct DisplayRegistration {
         let displayID: CGDirectDisplayID
         let shareID: UInt32
@@ -38,29 +44,63 @@ final class DisplaySharingCoordinator {
         _ displays: [SCDisplay],
         virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
     ) {
+        let inputs = displays.map { display in
+            let displayID = display.displayID
+            return ShareableDisplayRegistrationInput(
+                displayID: displayID,
+                isMain: CGDisplayIsMain(displayID) != 0,
+                virtualSerial: virtualSerialResolver(displayID)
+            )
+        }
+        registerShareableDisplays(inputs)
+    }
+
+    func registerShareableDisplays(_ inputs: [ShareableDisplayRegistrationInput]) {
         var nextRegistrationsByDisplayID: [CGDirectDisplayID: DisplayRegistration] = [:]
         var nextDisplayIDsByShareID: [UInt32: CGDirectDisplayID] = [:]
         var resolvedMainDisplayID: CGDirectDisplayID?
+        var reservedShareIDs = Set<UInt32>()
 
-        for display in displays {
-            let displayID = display.displayID
-            let isMain = CGDisplayIsMain(displayID) != 0
-            if isMain {
-                resolvedMainDisplayID = displayID
+        let virtualInputs = inputs
+            .filter { $0.virtualSerial != nil }
+            .sorted {
+                let lhsSerial = $0.virtualSerial ?? 0
+                let rhsSerial = $1.virtualSerial ?? 0
+                if lhsSerial != rhsSerial { return lhsSerial < rhsSerial }
+                return $0.displayID < $1.displayID
             }
-
-            let identityKey = makeIdentityKey(
-                for: displayID,
-                virtualSerialResolver: virtualSerialResolver
-            )
-            let shareID = idStore.assignID(for: identityKey)
+        for (index, input) in virtualInputs.enumerated() {
+            let shareID = input.virtualSerial ?? UInt32(index + 1)
+            reservedShareIDs.insert(shareID)
+            if input.isMain {
+                resolvedMainDisplayID = input.displayID
+            }
             let registration = DisplayRegistration(
-                displayID: displayID,
+                displayID: input.displayID,
                 shareID: shareID,
-                isMain: isMain
+                isMain: input.isMain
             )
-            nextRegistrationsByDisplayID[displayID] = registration
-            nextDisplayIDsByShareID[shareID] = displayID
+            nextRegistrationsByDisplayID[input.displayID] = registration
+            nextDisplayIDsByShareID[shareID] = input.displayID
+        }
+
+        let physicalInputs = inputs
+            .filter { $0.virtualSerial == nil }
+            .sorted { $0.displayID < $1.displayID }
+        for input in physicalInputs {
+            if input.isMain, resolvedMainDisplayID == nil {
+                resolvedMainDisplayID = input.displayID
+            }
+            let identityKey = makeIdentityKey(for: input.displayID)
+            let shareID = idStore.assignID(for: identityKey, excluding: reservedShareIDs)
+            reservedShareIDs.insert(shareID)
+            let registration = DisplayRegistration(
+                displayID: input.displayID,
+                shareID: shareID,
+                isMain: input.isMain
+            )
+            nextRegistrationsByDisplayID[input.displayID] = registration
+            nextDisplayIDsByShareID[shareID] = input.displayID
         }
 
         registrationsByDisplayID = nextRegistrationsByDisplayID
@@ -168,14 +208,7 @@ final class DisplaySharingCoordinator {
         return nil
     }
 
-    private func makeIdentityKey(
-        for displayID: CGDirectDisplayID,
-        virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
-    ) -> String {
-        if let virtualSerial = virtualSerialResolver(displayID) {
-            return "virtual:\(virtualSerial)"
-        }
-
+    private func makeIdentityKey(for displayID: CGDirectDisplayID) -> String {
         if let unmanagedUUID = CGDisplayCreateUUIDFromDisplayID(displayID) {
             let cfUUID = unmanagedUUID.takeRetainedValue()
             let uuidString = CFUUIDCreateString(nil, cfUUID) as String
