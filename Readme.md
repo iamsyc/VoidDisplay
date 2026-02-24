@@ -120,10 +120,11 @@ log stream --style compact --predicate 'subsystem == "com.developerchen.voiddisp
 
 ## 🤝 Project Lineage
 
-This repository is a long-term maintained fork of the original project by Phineas Guo:
+VoidDisplay is a long-term maintained continuation of the original project by Phineas Guo:
 [guoPhineas/FreelyDisplay](https://github.com/guoPhineas/FreelyDisplay).
 
-The current feature set, architecture, tests, and ongoing refactors are maintained in this fork, while preserving upstream contribution history in Git.
+The current repository is maintained at
+[iamsyc/VoidDisplay](https://github.com/iamsyc/VoidDisplay), with upstream contribution history preserved in Git.
 
 ## 🙏 Acknowledgements
 
