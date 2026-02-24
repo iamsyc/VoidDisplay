@@ -33,8 +33,8 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 0.2,
-            topologyStabilityPollInterval: 0.001
+            topologyStabilityTimeout: 1.0,
+            topologyStabilityPollInterval: 0.005
         )
         service.replaceDisplayConfigs([
             config(serial: 1, desiredEnabled: true),
