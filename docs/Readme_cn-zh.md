@@ -123,7 +123,8 @@ log stream --style compact --predicate 'subsystem == "com.developerchen.voiddisp
 本仓库基于 Phineas Guo 的原始项目长期维护而来：
 [guoPhineas/FreelyDisplay](https://github.com/guoPhineas/FreelyDisplay)。
 
-当前版本的功能演进、架构调整、测试体系和持续重构由本 fork 持续维护，同时通过 Git 历史保留上游贡献记录。
+当前版本维护仓库为
+[iamsyc/VoidDisplay](https://github.com/iamsyc/VoidDisplay)，功能演进、架构调整、测试体系和持续重构均在此持续进行，同时通过 Git 历史保留上游贡献记录。
 
 ## 🙏 致谢
 
