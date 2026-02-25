@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import ScreenCaptureKit
 import Testing
 @testable import VoidDisplay
 
@@ -47,6 +48,41 @@ private actor SequencedCaptureDisplayLoaderGate {
 
 @Suite(.serialized)
 struct CaptureChooseViewModelTests {
+    @MainActor @Test func displayHelpersUseDisplayMetadataAndVirtualQuery() {
+        let sut = CaptureChooseViewModel(
+            dependencies: .init(
+                captureActions: .init(
+                    monitoringSessionForDisplayID: { _ in nil },
+                    addMonitoringSession: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    isManagedVirtualDisplay: { $0 == 1234 }
+                )
+            )
+        )
+        let display = MockSCDisplay.make(displayID: 1234, width: 1920, height: 1080)
+
+        #expect(sut.isVirtualDisplay(display))
+        #expect(sut.resolutionText(for: display) == "1920 × 1080")
+        #expect(sut.displayName(for: display) == String(localized: "Monitor"))
+    }
+
+    @MainActor @Test func dependenciesLiveDelegatesToControllers() {
+        let captureService = MockCaptureMonitoringService()
+        let captureController = CaptureController(captureMonitoringService: captureService)
+        let virtualDisplayController = VirtualDisplayController(
+            virtualDisplayService: MockVirtualDisplayService(),
+            appliedBadgeDisplayDurationNanoseconds: 1,
+            stopDependentStreamsBeforeRebuild: { _ in }
+        )
+        let dependencies = CaptureChooseViewModel.Dependencies.live(
+            capture: captureController,
+            virtualDisplay: virtualDisplayController
+        )
+
+        #expect(dependencies.captureActions.monitoringSessionForDisplayID(777) == nil)
+        #expect(dependencies.virtualDisplayQueries.isManagedVirtualDisplay(777) == false)
+    }
 
     @MainActor @Test func withDisplayStartLockRejectsConcurrentStartForSameDisplay() async {
         let sut = CaptureChooseViewModel(dependencies: makeNoopCaptureDependencies())
@@ -135,6 +171,27 @@ struct CaptureChooseViewModelTests {
         #expect(sut.catalog.lastPreflightPermission == false)
         #expect(sut.catalog.displays == nil)
         #expect(sut.catalog.isLoadingDisplays == false)
+    }
+
+    @MainActor @Test func requestPermissionGrantedLoadsDisplays() async {
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: { [] },
+            dependencies: makeNoopCaptureDependencies()
+        )
+
+        sut.requestScreenCapturePermission()
+        let loaded = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
+        }
+
+        #expect(loaded)
+        #expect(sut.catalog.hasScreenCapturePermission == true)
+        #expect(sut.catalog.lastRequestPermission == true)
+        #expect(sut.catalog.displays?.isEmpty == true)
     }
 
     @MainActor @Test func refreshPermissionGrantedLoadsDisplaysThroughInjectedLoader() async {
@@ -259,6 +316,48 @@ struct CaptureChooseViewModelTests {
         #expect(lateWritePrevented)
     }
 
+    @MainActor @Test func cancelInFlightDisplayLoadPreventsLateWrite() async {
+        let gate = SequencedCaptureDisplayLoaderGate(scriptedOutcomes: [.success])
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledCaptureLoadFailure()
+                }
+            },
+            dependencies: makeNoopCaptureDependencies()
+        )
+
+        sut.loadDisplays()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        sut.cancelInFlightDisplayLoad()
+        #expect(sut.catalog.isLoadingDisplays == false)
+
+        await gate.release(call: 1)
+        let lateWritePrevented = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays == nil
+        }
+        #expect(lateWritePrevented)
+    }
+
+    @MainActor @Test func openScreenCapturePrivacySettingsProvidesURL() {
+        let sut = CaptureChooseViewModel(dependencies: makeNoopCaptureDependencies())
+        var openedURL: URL?
+
+        sut.openScreenCapturePrivacySettings { url in
+            openedURL = url
+        }
+
+        #expect(openedURL != nil)
+        #expect(openedURL?.scheme?.isEmpty == false)
+    }
+
     @MainActor
     private func waitForLoaderCall(_ gate: SequencedCaptureDisplayLoaderGate, count: Int) async -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
@@ -282,5 +381,27 @@ struct CaptureChooseViewModelTests {
                 isManagedVirtualDisplay: { _ in false }
             )
         )
+    }
+}
+
+private final class MockSCDisplayBox: NSObject {
+    @objc let displayID: CGDirectDisplayID
+    @objc let width: Int
+    @objc let height: Int
+    @objc let frame: CGRect
+
+    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
+        self.displayID = displayID
+        self.width = width
+        self.height = height
+        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        super.init()
+    }
+}
+
+private enum MockSCDisplay {
+    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
+        let box = MockSCDisplayBox(displayID: displayID, width: width, height: height)
+        return unsafeBitCast(box, to: SCDisplay.self)
     }
 }
