@@ -25,9 +25,10 @@ final class DisplayRebuildCoordinator {
         }
 
         let snapshotBeforeRebuild = service.currentTopologySnapshot()
-        let preferredMainDisplayID = TopologyHealthEvaluator.preferredManagedMainDisplayID(
-            snapshot: service.currentTopologySnapshot()
+        let mainPolicyBeforeRebuild = service.resolveMainDisplayPolicy(
+            snapshot: snapshotBeforeRebuild
         )
+        let preferredMainDisplayID = mainPolicyBeforeRebuild.preferredMainDisplayID
         let targetRuntimeDisplayID = service.runtimeDisplayID(for: configId)
         let targetWasManagedMain = TopologyHealthEvaluator.managedDisplayID(
             for: config.serialNum,
@@ -102,8 +103,14 @@ final class DisplayRebuildCoordinator {
             config: config,
             terminationConfirmed: terminationConfirmed
         )
+        let policyPreferredDisplayIDAfterRebuild = mainPolicyBeforeRebuild.targetConfigID.flatMap {
+            service.runtimeDisplayID(for: $0)
+        }
         let preferredMainAfterRebuild: CGDirectDisplayID?
-        if targetWasManagedMain {
+        if mainPolicyBeforeRebuild.applies {
+            preferredMainAfterRebuild = policyPreferredDisplayIDAfterRebuild ??
+                (targetWasManagedMain ? recreatedTargetDisplayID : preferredMainDisplayID)
+        } else if targetWasManagedMain {
             preferredMainAfterRebuild = recreatedTargetDisplayID ?? preferredMainDisplayID
         } else {
             preferredMainAfterRebuild = preferredMainDisplayID
@@ -171,6 +178,16 @@ final class DisplayRebuildCoordinator {
         guard !orderedConfigIDs.isEmpty else {
             throw VirtualDisplayService.VirtualDisplayError.configNotFound
         }
+        let mainPolicyBeforeRebuild = service.resolveMainDisplayPolicy(
+            snapshot: service.currentTopologySnapshot()
+        )
+        let continuityPreferredConfigID = fallbackPreferredMainDisplayID.flatMap { previousPreferredMainDisplayID in
+            orderedConfigIDs.first { configID in
+                service.runtimeDisplayID(for: configID) == previousPreferredMainDisplayID
+            }
+        }
+        let preferPrioritizedAsContinuityMain =
+            service.aggressiveRecoveryPendingEnableConfigIDs.contains(prioritizedConfigID)
 
         var terminationConfirmedByConfigID: [UUID: Bool] = [:]
         var rebuiltSerials: [UInt32] = []
@@ -232,7 +249,8 @@ final class DisplayRebuildCoordinator {
             )
         }
 
-        var recreatedPreferredMainDisplayID: CGDirectDisplayID?
+        var recreatedPrioritizedDisplayID: CGDirectDisplayID?
+        var recreatedContinuityPreferredDisplayID: CGDirectDisplayID?
         for runningConfigID in orderedConfigIDs {
             guard let runningConfig = service.displayConfigs.first(where: { $0.id == runningConfigID }) else { continue }
             let terminationConfirmed = terminationConfirmedByConfigID[runningConfigID] ?? true
@@ -242,12 +260,27 @@ final class DisplayRebuildCoordinator {
                 terminationConfirmed: terminationConfirmed
             )
             if runningConfigID == prioritizedConfigID {
-                recreatedPreferredMainDisplayID = recreatedDisplayID
+                recreatedPrioritizedDisplayID = recreatedDisplayID
+            }
+            if runningConfigID == continuityPreferredConfigID {
+                recreatedContinuityPreferredDisplayID = recreatedDisplayID
             }
         }
 
         try await ensureHealthyTopologyAfterEnable(
-            preferredMainDisplayID: recreatedPreferredMainDisplayID ?? fallbackPreferredMainDisplayID
+            preferredMainDisplayID: (
+                mainPolicyBeforeRebuild.applies
+                    ? (mainPolicyBeforeRebuild.targetConfigID.flatMap { service.runtimeDisplayID(for: $0) })
+                    : nil
+            ) ?? (
+                preferPrioritizedAsContinuityMain
+                    ? (recreatedPrioritizedDisplayID ??
+                        recreatedContinuityPreferredDisplayID ??
+                        fallbackPreferredMainDisplayID)
+                    : (recreatedContinuityPreferredDisplayID ??
+                        recreatedPrioritizedDisplayID ??
+                        fallbackPreferredMainDisplayID)
+            )
         )
     }
 

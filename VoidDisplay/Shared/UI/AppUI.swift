@@ -237,14 +237,15 @@ struct AppCornerRibbon: View {
     var body: some View {
         Text(model.title)
             .font(.caption2.weight(.semibold))
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall - 1)
-        .background(model.tint.opacity(colorScheme == .dark ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(model.tint.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: AppUI.Stroke.subtle)
-        )
-        .foregroundStyle(model.tint)
+            .padding(.horizontal, AppUI.Spacing.small)
+            .padding(.vertical, AppUI.Spacing.xSmall - 1)
+            .background(model.tint.opacity(colorScheme == .dark ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(model.tint.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: AppUI.Stroke.subtle)
+            )
+            .foregroundStyle(model.tint)
+            .accessibilityIdentifier(model.accessibilityIdentifier ?? "app_corner_ribbon")
     }
 }
 

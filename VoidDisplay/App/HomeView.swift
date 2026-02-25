@@ -7,6 +7,10 @@
 import SwiftUI
 
 struct HomeView: View {
+    @Environment(CaptureController.self) private var capture
+    @Environment(SharingController.self) private var sharing
+    @Environment(VirtualDisplayController.self) private var virtualDisplay
+
     private enum SidebarItem: Hashable {
         case screen
         case virtualDisplay
@@ -52,15 +56,15 @@ struct HomeView: View {
                             .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
                     case .virtualDisplay:
-                        VirtualDisplayView()
+                        VirtualDisplayView(controller: virtualDisplay)
                             .navigationTitle("Virtual Displays")
                             .accessibilityIdentifier("detail_virtual_display")
                     case .monitorScreen:
-                        IsCapturing()
+                        IsCapturing(capture: capture, virtualDisplay: virtualDisplay)
                             .navigationTitle("Screen Monitoring")
                             .accessibilityIdentifier("detail_monitor_screen")
                     case .screenSharing:
-                        ShareView()
+                        ShareView(sharing: sharing, virtualDisplay: virtualDisplay)
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
                     }

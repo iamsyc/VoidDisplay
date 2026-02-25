@@ -100,7 +100,10 @@ struct DisplaysView: View {
     }
 
     private func resolutionText(for display: NSScreen) -> String {
-        "\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))"
+        // NSScreen.frame is in points; convert to backing coordinates so the UI shows pixel
+        // resolution (aligned with SCDisplay-based screens that expose pixel dimensions directly).
+        let backingSize = display.convertRectToBacking(display.frame).size
+        return "\(Int(backingSize.width)) × \(Int(backingSize.height))"
     }
 
     private func displayBadges(for display: NSScreen) -> [AppBadgeModel] {

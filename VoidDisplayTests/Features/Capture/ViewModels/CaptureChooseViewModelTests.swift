@@ -45,10 +45,11 @@ private actor SequencedCaptureDisplayLoaderGate {
     }
 }
 
+@Suite(.serialized)
 struct CaptureChooseViewModelTests {
 
     @MainActor @Test func withDisplayStartLockRejectsConcurrentStartForSameDisplay() async {
-        let sut = CaptureChooseViewModel()
+        let sut = CaptureChooseViewModel(dependencies: makeNoopCaptureDependencies())
         let displayID = CGDirectDisplayID(301)
         var enteredCount = 0
         var firstDidEnter = false
@@ -82,7 +83,7 @@ struct CaptureChooseViewModelTests {
     }
 
     @MainActor @Test func withDisplayStartLockAllowsConcurrentStartForDifferentDisplays() async {
-        let sut = CaptureChooseViewModel()
+        let sut = CaptureChooseViewModel(dependencies: makeNoopCaptureDependencies())
         let firstDisplayID = CGDirectDisplayID(401)
         let secondDisplayID = CGDirectDisplayID(402)
         var enteredDisplayIDs: Set<CGDirectDisplayID> = []
@@ -121,18 +122,19 @@ struct CaptureChooseViewModelTests {
             permissionProvider: MockScreenCapturePermissionProvider(
                 preflightResult: false,
                 requestResult: false
-            )
+            ),
+            dependencies: makeNoopCaptureDependencies()
         )
-        sut.displays = []
-        sut.isLoadingDisplays = true
+        sut.catalog.displays = []
+        sut.catalog.isLoadingDisplays = true
 
         sut.requestScreenCapturePermission()
 
-        #expect(sut.hasScreenCapturePermission == false)
-        #expect(sut.lastRequestPermission == false)
-        #expect(sut.lastPreflightPermission == false)
-        #expect(sut.displays == nil)
-        #expect(sut.isLoadingDisplays == false)
+        #expect(sut.catalog.hasScreenCapturePermission == false)
+        #expect(sut.catalog.lastRequestPermission == false)
+        #expect(sut.catalog.lastPreflightPermission == false)
+        #expect(sut.catalog.displays == nil)
+        #expect(sut.catalog.isLoadingDisplays == false)
     }
 
     @MainActor @Test func refreshPermissionGrantedLoadsDisplaysThroughInjectedLoader() async {
@@ -141,18 +143,19 @@ struct CaptureChooseViewModelTests {
                 preflightResult: true,
                 requestResult: true
             ),
-            loadShareableDisplays: { [] }
+            loadShareableDisplays: { [] },
+            dependencies: makeNoopCaptureDependencies()
         )
 
         sut.refreshPermissionAndMaybeLoad()
         let loaded = await waitUntil {
-            sut.isLoadingDisplays == false && sut.displays != nil
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
         }
 
         #expect(loaded)
-        #expect(sut.hasScreenCapturePermission == true)
-        #expect(sut.lastPreflightPermission == true)
-        #expect(sut.displays?.isEmpty == true)
+        #expect(sut.catalog.hasScreenCapturePermission == true)
+        #expect(sut.catalog.lastPreflightPermission == true)
+        #expect(sut.catalog.displays?.isEmpty == true)
     }
 
     @MainActor @Test func loadDisplaysPersistsErrorDetailsWhenLoaderThrows() async {
@@ -162,19 +165,20 @@ struct CaptureChooseViewModelTests {
                 preflightResult: true,
                 requestResult: true
             ),
-            loadShareableDisplays: { throw expected }
+            loadShareableDisplays: { throw expected },
+            dependencies: makeNoopCaptureDependencies()
         )
 
         sut.loadDisplays()
         let finished = await waitUntil {
-            sut.isLoadingDisplays == false && sut.lastLoadError != nil
+            sut.catalog.isLoadingDisplays == false && sut.catalog.lastLoadError != nil
         }
 
         #expect(finished)
-        #expect(sut.loadErrorMessage != nil)
-        #expect(sut.lastLoadError?.domain == expected.domain)
-        #expect(sut.lastLoadError?.code == expected.code)
-        #expect(sut.displays == nil)
+        #expect(sut.catalog.loadErrorMessage != nil)
+        #expect(sut.catalog.lastLoadError?.domain == expected.domain)
+        #expect(sut.catalog.lastLoadError?.code == expected.code)
+        #expect(sut.catalog.displays == nil)
     }
 
     @MainActor @Test func loadDisplaysIgnoresLateResultFromSupersededRequest() async {
@@ -193,7 +197,8 @@ struct CaptureChooseViewModelTests {
                 case .failure:
                     throw ControlledCaptureLoadFailure()
                 }
-            }
+            },
+            dependencies: makeNoopCaptureDependencies()
         )
 
         sut.loadDisplays()
@@ -204,17 +209,17 @@ struct CaptureChooseViewModelTests {
 
         await gate.release(call: 2)
         let secondFinished = await waitUntil {
-            sut.isLoadingDisplays == false &&
-                sut.displays != nil &&
-                sut.lastLoadError == nil
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays != nil &&
+                sut.catalog.lastLoadError == nil
         }
         #expect(secondFinished)
 
         await gate.release(call: 1)
-        let staleResultIgnored = await waitUntil(timeoutNanoseconds: 500_000_000) {
-            sut.isLoadingDisplays == false &&
-                sut.displays?.isEmpty == true &&
-                sut.lastLoadError == nil
+        let staleResultIgnored = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.isEmpty == true &&
+                sut.catalog.lastLoadError == nil
         }
         #expect(staleResultIgnored)
     }
@@ -235,27 +240,28 @@ struct CaptureChooseViewModelTests {
                 case .failure:
                     throw ControlledCaptureLoadFailure()
                 }
-            }
+            },
+            dependencies: makeNoopCaptureDependencies()
         )
 
         sut.loadDisplays()
         #expect(await waitForLoaderCall(gate, count: 1))
 
         sut.refreshPermissionAndMaybeLoad()
-        #expect(sut.hasScreenCapturePermission == false)
-        #expect(sut.isLoadingDisplays == false)
-        #expect(sut.displays == nil)
+        #expect(sut.catalog.hasScreenCapturePermission == false)
+        #expect(sut.catalog.isLoadingDisplays == false)
+        #expect(sut.catalog.displays == nil)
 
         await gate.release(call: 1)
-        let lateWritePrevented = await waitUntil(timeoutNanoseconds: 500_000_000) {
-            sut.isLoadingDisplays == false && sut.displays == nil
+        let lateWritePrevented = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays == nil
         }
         #expect(lateWritePrevented)
     }
 
     @MainActor
     private func waitForLoaderCall(_ gate: SequencedCaptureDisplayLoaderGate, count: Int) async -> Bool {
-        let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
         while DispatchTime.now().uptimeNanoseconds < deadline {
             if await gate.currentCallCount() >= count {
                 return true
@@ -263,5 +269,18 @@ struct CaptureChooseViewModelTests {
             await Task.yield()
         }
         return await gate.currentCallCount() >= count
+    }
+
+    @MainActor
+    private func makeNoopCaptureDependencies() -> CaptureChooseViewModel.Dependencies {
+        .init(
+            captureActions: .init(
+                monitoringSessionForDisplayID: { _ in nil },
+                addMonitoringSession: { _ in }
+            ),
+            virtualDisplayQueries: .init(
+                isManagedVirtualDisplay: { _ in false }
+            )
+        )
     }
 }

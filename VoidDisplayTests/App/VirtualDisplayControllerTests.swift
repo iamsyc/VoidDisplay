@@ -3,6 +3,7 @@ import CoreGraphics
 @testable import VoidDisplay
 
 @MainActor
+@Suite(.serialized)
 struct AppBootstrapTests {
 
     @Test func initPreviewModeSkipsStartupSequence() async {
@@ -71,7 +72,7 @@ struct AppBootstrapTests {
         let virtualDisplay = MockVirtualDisplayService()
 
         let fixtureConfig = VirtualDisplayConfig(
-            name: "Fixture",
+            displayName: "Fixture",
             serialNum: 1,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -100,13 +101,42 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
     }
 
+    @Test func controllerExposesConfigStoreLoadFailureState() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.configStoreState = .loadFailed(
+            error: .unsupportedSchemaVersion(expected: 3, actual: 2),
+            diagnostics: .init(
+                primaryStoreURL: URL(fileURLWithPath: "/tmp/virtual-displays.json"),
+                legacyContainerStoreURL: URL(fileURLWithPath: "/tmp/legacy.json"),
+                legacyContainerFileExists: true,
+                isTestIsolatedPath: true
+            )
+        )
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: false,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+
+        #expect(env.virtualDisplay.configStorePresentation.hasLoadFailure)
+        #expect(env.virtualDisplay.configStorePresentation.loadErrorMessage?.contains("Reset") == true)
+        #expect(env.virtualDisplay.configStorePresentation.diagnosticsSummary?.contains("primary=/tmp/virtual-displays.json") == true)
+    }
+
     @Test func rebuildFromSavedConfigDoesNotApplyModesAgainAfterRebuild() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayService()
 
         let config = VirtualDisplayConfig(
-            name: "Running",
+            displayName: "Running",
             serialNum: 7,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -145,7 +175,7 @@ struct AppBootstrapTests {
         let virtualDisplay = MockVirtualDisplayService()
 
         let config = VirtualDisplayConfig(
-            name: "Main Candidate",
+            displayName: "Main Candidate",
             serialNum: 9,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -186,7 +216,7 @@ struct AppBootstrapTests {
         virtualDisplay.rebuildDelayNanoseconds = 150_000_000
 
         let config = VirtualDisplayConfig(
-            name: "Concurrent",
+            displayName: "Concurrent",
             serialNum: 10,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -224,7 +254,7 @@ struct AppBootstrapTests {
         let virtualDisplay = MockVirtualDisplayService()
 
         let config = VirtualDisplayConfig(
-            name: "Retry",
+            displayName: "Retry",
             serialNum: 11,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -270,6 +300,232 @@ struct AppBootstrapTests {
             !sut.virtualDisplay.hasRecentApplySuccess(configId: config.id)
         }
         #expect(successCleared)
+    }
+
+    @Test func moveDisplayConfigTriggersMainDisplayPolicyReconcile() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.moveConfigResult = true
+        virtualDisplay.currentDisplayConfigs = [
+            VirtualDisplayConfig(
+                displayName: "A",
+                serialNum: 1,
+                physicalWidth: 300,
+                physicalHeight: 200,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                desiredEnabled: true
+            ),
+            VirtualDisplayConfig(
+                displayName: "B",
+                serialNum: 2,
+                physicalWidth: 300,
+                physicalHeight: 200,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                desiredEnabled: true
+            )
+        ]
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let moved = sut.virtualDisplay.moveDisplayConfig(
+            virtualDisplay.currentDisplayConfigs[1].id,
+            direction: .up
+        )
+        #expect(moved)
+
+        let reconciled = await waitUntil {
+            virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 1
+        }
+        #expect(reconciled)
+    }
+
+    @Test func moveDisplayConfigSkipsReconcileWhenFirstEnabledConfigDoesNotChange() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.moveConfigResult = true
+        var configA = VirtualDisplayConfig(
+            displayName: "A",
+            serialNum: 1,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var configB = VirtualDisplayConfig(
+            displayName: "B",
+            serialNum: 2,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var configC = VirtualDisplayConfig(
+            displayName: "C",
+            serialNum: 3,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        configA.desiredEnabled = true
+        configB.desiredEnabled = true
+        configC.desiredEnabled = true
+        virtualDisplay.currentDisplayConfigs = [configA, configB, configC]
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+        sut.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+
+        let moved = sut.virtualDisplay.moveDisplayConfig(configC.id, direction: .up)
+        #expect(moved)
+
+        await drainMainActorTasks()
+        #expect(virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 0)
+    }
+
+    @Test func setPrimaryVirtualDisplayByReorderingMovesTargetToFirstEnabledAndReconciles() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.moveConfigResult = true
+        var disabled = VirtualDisplayConfig(
+            displayName: "Disabled",
+            serialNum: 9,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let configA = VirtualDisplayConfig(
+            displayName: "A",
+            serialNum: 1,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let configB = VirtualDisplayConfig(
+            displayName: "B",
+            serialNum: 2,
+            physicalWidth: 300,
+            physicalHeight: 200,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                desiredEnabled: true
+            )
+        disabled.desiredEnabled = false
+        virtualDisplay.currentDisplayConfigs = [disabled, configA, configB]
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let changed = sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configB.id)
+        #expect(changed)
+        #expect(virtualDisplay.currentDisplayConfigs.map(\.id) == [disabled.id, configB.id, configA.id])
+        #expect(virtualDisplay.moveConfigToFirstEnabledPositionCallCount == 1)
+        #expect(virtualDisplay.moveConfigToFirstEnabledPositionIDs == [configB.id])
+
+        let reconciled = await waitUntil {
+            virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 1
+        }
+        #expect(reconciled)
+    }
+
+    @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenAlreadyFirstEnabled() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.moveConfigResult = true
+        let configA = VirtualDisplayConfig(
+            displayName: "A",
+            serialNum: 1,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let configB = VirtualDisplayConfig(
+            displayName: "B",
+            serialNum: 2,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [configA, configB]
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let changed = sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configA.id)
+        #expect(changed == false)
+        #expect(virtualDisplay.moveConfigToFirstEnabledPositionCallCount == 1)
+
+        await drainMainActorTasks()
+        #expect(virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 0)
+    }
+
+    @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenTargetDisabled() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayService()
+        virtualDisplay.moveConfigResult = true
+        var disabled = VirtualDisplayConfig(
+            displayName: "Disabled",
+            serialNum: 1,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let enabled = VirtualDisplayConfig(
+            displayName: "Enabled",
+            serialNum: 2,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        disabled.desiredEnabled = false
+        virtualDisplay.currentDisplayConfigs = [disabled, enabled]
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayService: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let changed = sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(disabled.id)
+        #expect(changed == false)
+        #expect(virtualDisplay.moveConfigToFirstEnabledPositionCallCount == 1)
+        #expect(virtualDisplay.currentDisplayConfigs.map(\.id) == [disabled.id, enabled.id])
+
+        await drainMainActorTasks()
+        #expect(virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 0)
     }
 
     @Test func sharingFacadeMethodsDelegateAndExposeState() async {
@@ -319,7 +575,7 @@ struct AppBootstrapTests {
 
         virtualDisplay.currentDisplayConfigs = [
             VirtualDisplayConfig(
-                name: "Cleanup",
+                displayName: "Cleanup",
                 serialNum: 123,
                 physicalWidth: 300,
                 physicalHeight: 200,

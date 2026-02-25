@@ -8,10 +8,12 @@ struct AppRowStatus {
 struct AppCornerRibbonModel {
     let title: String
     let tint: Color
+    let accessibilityIdentifier: String?
 
-    init(title: String, tint: Color) {
+    init(title: String, tint: Color, accessibilityIdentifier: String? = nil) {
         self.title = title
         self.tint = tint
+        self.accessibilityIdentifier = accessibilityIdentifier
     }
 }
 

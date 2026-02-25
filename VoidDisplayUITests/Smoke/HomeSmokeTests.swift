@@ -85,6 +85,22 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testVirtualDisplaySmoke_primaryRibbonPersistsAfterMenuSwitch() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+
+        assertExists(app, identifier: "sidebar_virtual_display").tap()
+        assertExists(app, identifier: "detail_virtual_display")
+        assertExists(app, identifier: "virtual_display_primary_ribbon")
+
+        assertExists(app, identifier: "sidebar_screen").tap()
+        assertExists(app, identifier: "detail_screen")
+
+        assertExists(app, identifier: "sidebar_virtual_display").tap()
+        assertExists(app, identifier: "detail_virtual_display")
+        assertExists(app, identifier: "virtual_display_primary_ribbon")
+    }
+
+    @MainActor
     func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
         let saveOnlyApp = launchAppForSmoke(scenario: .baseline)
         assertExists(saveOnlyApp, identifier: "sidebar_virtual_display").tap()

@@ -8,15 +8,26 @@ import SwiftUI
 import ScreenCaptureKit
 
 struct IsCapturing: View {
-    @Environment(CaptureController.self) private var capture
-    @Environment(VirtualDisplayController.self) private var virtualDisplay
-    @State private var viewModel = CaptureChooseViewModel()
+    @Bindable private var capture: CaptureController
+    @State private var viewModel: CaptureChooseViewModel
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
 
+    init(
+        capture: CaptureController,
+        virtualDisplay: VirtualDisplayController
+    ) {
+        _capture = Bindable(capture)
+        _viewModel = State(
+            initialValue: CaptureChooseViewModel(
+                dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
+            )
+        )
+    }
+
     private var shouldShowActiveSessionFallback: Bool {
         guard !capture.screenCaptureSessions.isEmpty else { return false }
-        if viewModel.hasScreenCapturePermission == true, let displays = viewModel.displays, !displays.isEmpty {
+        if viewModel.catalog.hasScreenCapturePermission == true, let displays = viewModel.catalog.displays, !displays.isEmpty {
             return false
         }
         return true
@@ -24,9 +35,9 @@ struct IsCapturing: View {
 
     var body: some View {
         Group {
-            if viewModel.hasScreenCapturePermission == false {
+            if viewModel.catalog.hasScreenCapturePermission == false {
                 screenCapturePermissionView
-            } else if let displays = viewModel.displays {
+            } else if let displays = viewModel.catalog.displays {
                 if displays.isEmpty {
                     ContentUnavailableView(
                         "No watchable screen",
@@ -37,7 +48,7 @@ struct IsCapturing: View {
                 } else {
                     displayList(displays)
                 }
-            } else if viewModel.isLoadingDisplays || viewModel.hasScreenCapturePermission == nil {
+            } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
                 ScrollView {
                     VStack(spacing: 12) {
                         ProgressView()
@@ -50,7 +61,7 @@ struct IsCapturing: View {
                 ScrollView {
                     VStack(spacing: 12) {
                         Text("No watchable screen")
-                        if let loadErrorMessage = viewModel.loadErrorMessage {
+                        if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
                             Text(loadErrorMessage)
                                 .font(.footnote)
                                 .foregroundColor(.secondary)
@@ -138,7 +149,7 @@ struct IsCapturing: View {
     }
 
     private func captureDisplayRowComponent(_ display: SCDisplay) -> some View {
-        let isVirtualDisplay = viewModel.isVirtualDisplay(display, virtualDisplay: virtualDisplay)
+        let isVirtualDisplay = viewModel.isVirtualDisplay(display)
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let monitoringSession = capture.screenCaptureSessions.first(where: { $0.displayID == display.displayID })
         let isMonitoring = monitoringSession?.state == .active
@@ -157,11 +168,7 @@ struct IsCapturing: View {
                 capture.removeMonitoringSession(id: session.id)
             } else {
                 Task {
-                    await viewModel.startMonitoring(
-                        display: display,
-                        capture: capture,
-                        virtualDisplay: virtualDisplay
-                    ) { sessionId in
+                    await viewModel.startMonitoring(display: display) { sessionId in
                         openWindow(value: sessionId)
                     }
                 }
@@ -173,7 +180,7 @@ struct IsCapturing: View {
 
     private var screenCapturePermissionView: some View {
         ScreenCapturePermissionGuideView(
-            loadErrorMessage: viewModel.loadErrorMessage,
+            loadErrorMessage: viewModel.catalog.loadErrorMessage,
             onOpenSettings: {
                 viewModel.openScreenCapturePrivacySettings { url in
                     openURL(url)
@@ -185,10 +192,13 @@ struct IsCapturing: View {
             onRefresh: {
                 viewModel.refreshPermissionAndMaybeLoad()
             },
-            onRetry: (viewModel.loadErrorMessage != nil || viewModel.lastLoadError != nil) ? {
+            onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
                 viewModel.loadDisplays()
             } : nil,
-            isDebugInfoExpanded: $viewModel.showDebugInfo,
+            isDebugInfoExpanded: Binding(
+                get: { viewModel.catalog.showDebugInfo },
+                set: { viewModel.catalog.showDebugInfo = $0 }
+            ),
             debugItems: capturePermissionDebugItems,
             rootAccessibilityIdentifier: "capture_permission_guide",
             openSettingsButtonAccessibilityIdentifier: "capture_open_settings_button",
@@ -203,16 +213,16 @@ struct IsCapturing: View {
             (String(localized: "App Path"), Bundle.main.bundleURL.path),
             (
                 String(localized: "Preflight Permission"),
-                (viewModel.lastPreflightPermission ?? viewModel.hasScreenCapturePermission)
+                (viewModel.catalog.lastPreflightPermission ?? viewModel.catalog.hasScreenCapturePermission)
                     .map { $0 ? "true" : "false" } ?? "-"
             ),
             (
                 String(localized: "Request Permission Result"),
-                viewModel.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-"
+                viewModel.catalog.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-"
             )
         ]
 
-        if let lastLoadError = viewModel.lastLoadError {
+        if let lastLoadError = viewModel.catalog.lastLoadError {
             items.append((String(localized: "Last Error"), lastLoadError.description))
             items.append((String(localized: "Error Domain"), lastLoadError.domain))
             items.append((String(localized: "Error Code"), "\(lastLoadError.code)"))
@@ -231,7 +241,7 @@ struct IsCapturing: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    IsCapturing()
+    IsCapturing(capture: env.capture, virtualDisplay: env.virtualDisplay)
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)

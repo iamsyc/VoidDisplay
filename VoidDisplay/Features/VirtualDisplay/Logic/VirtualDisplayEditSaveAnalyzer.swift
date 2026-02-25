@@ -60,7 +60,7 @@ struct VirtualDisplayEditSaveAnalyzer {
         }
 
         var updated = original
-        updated.name = trimmedName
+        updated.displayName = trimmedName
         updated.serialNum = newSerial
         updated.modes = draft.selectedModes.map {
             VirtualDisplayConfig.ModeConfig(
@@ -80,7 +80,7 @@ struct VirtualDisplayEditSaveAnalyzer {
         let newMaxPixels = updated.maxPixelDimensions
         let oldMaxPixels = original.maxPixelDimensions
         let requiresSaveAndRebuild = isRunning && (
-            original.name != updated.name ||
+            original.displayName != updated.displayName ||
             original.serialNum != updated.serialNum ||
             original.physicalWidth != updated.physicalWidth ||
             original.physicalHeight != updated.physicalHeight ||
