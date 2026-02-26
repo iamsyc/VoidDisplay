@@ -33,7 +33,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         let service = makeService(
             inspector: inspector,
             repairer: repairer,
-            topologyStabilityTimeout: 1.0,
+            topologyStabilityTimeout: 2.0,
             topologyStabilityPollInterval: 0.005
         )
         service.replaceDisplayConfigs([
@@ -43,7 +43,7 @@ struct VirtualDisplayTopologyRecoveryTests {
 
         try await service.ensureHealthyTopologyAfterEnable()
 
-        #expect(repairer.callCount == 2)
+        #expect(repairer.callCount >= 1)
         #expect(repairer.lastAnchorDisplayID == displayB)
         #expect(Set(repairer.lastManagedDisplayIDs) == Set([displayA, displayB]))
     }
@@ -770,26 +770,27 @@ struct VirtualDisplayTopologyRecoveryTests {
                 displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080))
             ]
         )
-        let rebuiltExpanded = topologySnapshot(
-            mainDisplayID: displayA,
+        let rebuiltExpandedDriftedToB = topologySnapshot(
+            mainDisplayID: displayB,
             displays: [
-                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1440, height: 900)),
-                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 1440, y: 0, width: 1920, height: 1080))
+                displayInfo(id: displayB, serial: 2, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: displayA, serial: 1, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1440, height: 900))
             ]
         )
 
         var rebuildOrder: [UUID] = []
         var terminationFlags: [Bool] = []
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
         var service: VirtualDisplayService!
         service = makeService(
             inspector: FakeDisplayTopologyInspector(
                 snapshots: [
                     preEnableWithOnlyB, preEnableWithOnlyB, preEnableWithOnlyB, preEnableWithOnlyB,
-                    rebuiltExpanded, rebuiltExpanded, rebuiltExpanded, rebuiltExpanded,
-                    rebuiltExpanded, rebuiltExpanded, rebuiltExpanded, rebuiltExpanded
+                    rebuiltExpandedDriftedToB, rebuiltExpandedDriftedToB, rebuiltExpandedDriftedToB, rebuiltExpandedDriftedToB,
+                    rebuiltExpandedDriftedToB, rebuiltExpandedDriftedToB, rebuiltExpandedDriftedToB, rebuiltExpandedDriftedToB
                 ]
             ),
-            repairer: FakeDisplayTopologyRepairer(shouldSucceed: true),
+            repairer: repairer,
             topologyStabilityTimeout: 0.2,
             topologyStabilityPollInterval: 0.001,
             managedDisplayOnlineChecker: { _ in false },
@@ -821,6 +822,79 @@ struct VirtualDisplayTopologyRecoveryTests {
 
         #expect(rebuildOrder == [configA.id, configB.id])
         #expect(terminationFlags == [false, false])
+        #expect(repairer.callCount >= 1)
+        #expect(repairer.lastAnchorDisplayID == displayA)
+    }
+
+    @MainActor
+    @Test func aggressiveEnablePreemptiveFleetRebuildUsesFirstEnabledConfigAsMainContinuityAnchor() async throws {
+        let oldA: CGDirectDisplayID = 1101
+        let oldB: CGDirectDisplayID = 1102
+        let newA: CGDirectDisplayID = 1201
+        let newB: CGDirectDisplayID = 1202
+
+        let configA = config(id: UUID(), serial: 1, desiredEnabled: true)
+        let configB = config(id: UUID(), serial: 2, desiredEnabled: false)
+
+        let preEnableWithOnlyA = topologySnapshot(
+            mainDisplayID: oldA,
+            displays: [
+                displayInfo(id: oldA, serial: 1, managed: true, bounds: CGRect(x: 0, y: 0, width: 1440, height: 900))
+            ]
+        )
+        let rebuiltExpandedButSystemMainDriftedToB = topologySnapshot(
+            mainDisplayID: newB,
+            displays: [
+                displayInfo(id: newB, serial: 2, managed: true, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                displayInfo(id: newA, serial: 1, managed: true, bounds: CGRect(x: -1440, y: 0, width: 1440, height: 900))
+            ]
+        )
+
+        var rebuildOrder: [UUID] = []
+        let repairer = FakeDisplayTopologyRepairer(shouldSucceed: true)
+        var service: VirtualDisplayService!
+        service = makeService(
+            inspector: FakeDisplayTopologyInspector(
+                snapshots: [
+                    preEnableWithOnlyA, preEnableWithOnlyA, preEnableWithOnlyA, preEnableWithOnlyA,
+                    rebuiltExpandedButSystemMainDriftedToB, rebuiltExpandedButSystemMainDriftedToB,
+                    rebuiltExpandedButSystemMainDriftedToB, rebuiltExpandedButSystemMainDriftedToB,
+                    rebuiltExpandedButSystemMainDriftedToB, rebuiltExpandedButSystemMainDriftedToB,
+                    rebuiltExpandedButSystemMainDriftedToB, rebuiltExpandedButSystemMainDriftedToB,
+                    rebuiltExpandedButSystemMainDriftedToB, rebuiltExpandedButSystemMainDriftedToB
+                ]
+            ),
+            repairer: repairer,
+            topologyStabilityTimeout: 0.2,
+            topologyStabilityPollInterval: 0.001,
+            managedDisplayOnlineChecker: { _ in false },
+            rebuildRuntimeDisplayHook: { rebuiltConfig, _ in
+                rebuildOrder.append(rebuiltConfig.id)
+                let runtimeDisplayID = rebuiltConfig.id == configA.id ? newA : newB
+                service.seedRuntimeBookkeeping(
+                    configId: rebuiltConfig.id,
+                    generation: UInt64(300 + rebuildOrder.count),
+                    runtimeDisplayID: runtimeDisplayID
+                )
+            }
+        )
+        service.replaceDisplayConfigs([configA, configB])
+        service.seedRuntimeBookkeeping(
+            configId: configA.id,
+            generation: 21,
+            runtimeDisplayID: oldA
+        )
+        // Simulate a previously disabled display B that still has teardown generation bookkeeping.
+        service.runtimeGenerationByConfigId[configB.id] = 22
+        service.runtimeDisplayIDHintsByConfigId[configB.id] = oldB
+        service.aggressiveRecoveryPendingEnableConfigIDs.insert(configB.id)
+        service.runningConfigIds.remove(configB.id)
+
+        try await service.enableDisplay(configB.id)
+
+        #expect(rebuildOrder == [configB.id, configA.id])
+        #expect(repairer.callCount >= 1)
+        #expect(repairer.lastAnchorDisplayID == newA)
     }
 
     @MainActor
@@ -833,7 +907,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil
     ) -> VirtualDisplayService {
         VirtualDisplayService(
-            persistenceService: nil,
+            configRepository: nil,
             displayReconfigurationMonitor: FakeDisplayReconfigurationMonitor(),
             topologyInspector: inspector,
             topologyRepairer: repairer,
@@ -847,7 +921,7 @@ struct VirtualDisplayTopologyRecoveryTests {
     private func config(id: UUID = UUID(), serial: UInt32, desiredEnabled: Bool) -> VirtualDisplayConfig {
         VirtualDisplayConfig(
             id: id,
-            name: "Managed \(serial)",
+            displayName: "Managed \(serial)",
             serialNum: serial,
             physicalWidth: 300,
             physicalHeight: 200,

@@ -11,9 +11,11 @@ struct VirtualDisplayRow: View {
     let isFirst: Bool
     let isLast: Bool
     let isPrimary: Bool
+    let canSetAsPrimary: Bool
 
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
+    let onSetAsPrimary: () -> Void
     let onToggle: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -26,7 +28,7 @@ struct VirtualDisplayRow: View {
     var body: some View {
         let model = AppListRowModel(
             id: config.id.uuidString,
-            title: config.name,
+            title: config.displayName,
             subtitle: VirtualDisplayRowPresentation.subtitleText(for: config),
             status: AppRowStatus(
                 title: VirtualDisplayRowPresentation.statusLabel(isRunning: isRunning, isRebuilding: isRebuilding),
@@ -39,7 +41,8 @@ struct VirtualDisplayRow: View {
             ribbon: isPrimary
                 ? AppCornerRibbonModel(
                     title: String(localized: "Primary Display"),
-                    tint: .green
+                    tint: .green,
+                    accessibilityIdentifier: "virtual_display_primary_ribbon"
                 )
                 : nil,
             iconSystemName: "display",
@@ -53,6 +56,7 @@ struct VirtualDisplayRow: View {
                     moveButtons
                     rebuildAction
                     toggleButton
+                    setPrimaryButton
                     editButton
                     deleteButton
                 }
@@ -62,6 +66,16 @@ struct VirtualDisplayRow: View {
                     rebuildAction
                     toggleButton
                     AppQuickActionsMenu {
+                        Button(
+                            String(localized: "Set as Primary"),
+                            systemImage: isPrimary ? "star.circle.fill" : "star.circle"
+                        ) {
+                            onSetAsPrimary()
+                        }
+                        .disabled(!canSetAsPrimary)
+
+                        Divider()
+
                         Button(String(localized: "Edit"), systemImage: "pencil") {
                             onEdit()
                         }
@@ -109,6 +123,22 @@ struct VirtualDisplayRow: View {
         }
     }
 
+    private var setPrimaryButton: some View {
+        Button {
+            onSetAsPrimary()
+        } label: {
+            Text(String(localized: "Primary Action Glyph"))
+                .font(.system(size: 14, weight: .bold))
+                .frame(height: 24)
+                .foregroundStyle(isPrimary ? Color.green : Color.secondary)
+        }
+        .buttonStyle(.borderless)
+        .disabled(!canSetAsPrimary)
+        .help(isPrimary ? String(localized: "Primary Display") : String(localized: "Set as Primary"))
+        .accessibilityLabel(Text("Set as primary display"))
+        .accessibilityIdentifier("virtual_display_set_primary_button")
+    }
+
     @ViewBuilder
     private var rebuildAction: some View {
         if isRebuilding {
@@ -153,6 +183,7 @@ struct VirtualDisplayRow: View {
         } label: {
             Image(systemName: "square.and.pencil")
                 .font(.title3)
+                .frame(height: 24)
         }
         .buttonStyle(.borderless)
         .accessibilityLabel(Text("Edit"))
@@ -166,6 +197,7 @@ struct VirtualDisplayRow: View {
         } label: {
             Image(systemName: "trash")
                 .font(.title3)
+                .frame(height: 24)
                 .foregroundStyle(.red)
         }
         .buttonStyle(.borderless)

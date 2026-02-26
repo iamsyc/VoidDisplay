@@ -37,13 +37,24 @@ struct VirtualDisplayRowTests {
         render(row)
     }
 
+    @Test func rowBodyEvaluatesWhenSetPrimaryActionVisible() {
+        let row = makeRow(
+            isRunning: true,
+            isRebuilding: false,
+            rebuildFailureMessage: nil,
+            canSetAsPrimary: true
+        )
+        render(row)
+    }
+
     private func makeRow(
         isRunning: Bool,
         isRebuilding: Bool,
-        rebuildFailureMessage: String?
+        rebuildFailureMessage: String?,
+        canSetAsPrimary: Bool = false
     ) -> VirtualDisplayRow {
         let config = VirtualDisplayConfig(
-            name: "Managed Display",
+            displayName: "Managed Display",
             serialNum: 42,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -61,8 +72,10 @@ struct VirtualDisplayRowTests {
             isFirst: false,
             isLast: false,
             isPrimary: false,
+            canSetAsPrimary: canSetAsPrimary,
             onMoveUp: {},
             onMoveDown: {},
+            onSetAsPrimary: {},
             onToggle: {},
             onEdit: {},
             onDelete: {},

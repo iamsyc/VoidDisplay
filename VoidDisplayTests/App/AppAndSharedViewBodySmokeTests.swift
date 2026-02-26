@@ -22,7 +22,7 @@ struct AppAndSharedViewBodySmokeTests {
     @Test
     func shareViewBodyEvaluates() {
         let env = makeEnvironment(preview: true, uiTestMode: false)
-        let view = ShareView()
+        let view = ShareView(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
             .environment(env.capture)
             .environment(env.sharing)
             .environment(env.virtualDisplay)
@@ -33,7 +33,7 @@ struct AppAndSharedViewBodySmokeTests {
     @Test
     func captureChooseBodyEvaluates() {
         let env = makeEnvironment(preview: true, uiTestMode: false)
-        let view = IsCapturing()
+        let view = IsCapturing(capture: env.capture, virtualDisplay: env.virtualDisplay)
             .environment(env.capture)
             .environment(env.virtualDisplay)
 

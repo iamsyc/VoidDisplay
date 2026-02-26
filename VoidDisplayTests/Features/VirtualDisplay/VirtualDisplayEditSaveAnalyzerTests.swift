@@ -74,7 +74,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
     @Test func analyzeReturnsApplyImmediatelyWhenRunningWithoutRebuildChange() {
         let original = makeConfig(serial: 7)
         let draft = makeDraft(
-            name: original.name,
+            displayName: original.displayName,
             serialNum: Int(original.serialNum),
             selectedModes: original.resolutionModes,
             screenDiagonal: 14.0,
@@ -190,7 +190,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
 
     private func makeConfig(
         id: UUID = UUID(),
-        name: String = "Display",
+        displayName: String = "Display",
         serial: UInt32 = 7,
         physicalWidth: Int = 310,
         physicalHeight: Int = 174,
@@ -200,7 +200,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
     ) -> VirtualDisplayConfig {
         VirtualDisplayConfig(
             id: id,
-            name: name,
+            displayName: displayName,
             serialNum: serial,
             physicalWidth: physicalWidth,
             physicalHeight: physicalHeight,
@@ -210,7 +210,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
     }
 
     private func makeDraft(
-        name: String = "Updated",
+        displayName: String = "Updated",
         serialNum: Int = 7,
         selectedModes: [ResolutionSelection] = [
             .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
@@ -221,7 +221,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
         initialAspectRatio: AspectRatio = .ratio_16_9
     ) -> VirtualDisplayEditSaveAnalyzer.Draft {
         VirtualDisplayEditSaveAnalyzer.Draft(
-            name: name,
+            name: displayName,
             serialNum: serialNum,
             selectedModes: selectedModes,
             screenDiagonal: screenDiagonal,

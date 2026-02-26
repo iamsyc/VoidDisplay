@@ -45,10 +45,11 @@ private actor SequencedShareDisplayLoaderGate {
     }
 }
 
+@Suite(.serialized)
 struct ShareViewModelTests {
 
     @MainActor @Test func withDisplayStartLockRejectsConcurrentStartForSameDisplay() async {
-        let sut = ShareViewModel()
+        let sut = ShareViewModel(dependencies: makeNoopShareDependencies())
         let displayID = CGDirectDisplayID(101)
         var enteredCount = 0
         var firstDidEnter = false
@@ -82,7 +83,7 @@ struct ShareViewModelTests {
     }
 
     @MainActor @Test func withDisplayStartLockAllowsConcurrentStartForDifferentDisplays() async {
-        let sut = ShareViewModel()
+        let sut = ShareViewModel(dependencies: makeNoopShareDependencies())
         let firstDisplayID = CGDirectDisplayID(201)
         let secondDisplayID = CGDirectDisplayID(202)
         var enteredDisplayIDs: Set<CGDirectDisplayID> = []
@@ -117,24 +118,25 @@ struct ShareViewModelTests {
     }
 
     @MainActor @Test func requestPermissionDeniedClearsDisplaysAndSetsErrorMessage() {
+        let env = makeEnvironment()
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
                 preflightResult: false,
                 requestResult: false
-            )
+            ),
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
-        let env = makeEnvironment()
-        sut.displays = []
-        sut.isLoadingDisplays = true
+        sut.catalog.displays = []
+        sut.catalog.isLoadingDisplays = true
 
-        sut.requestScreenCapturePermission(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.requestScreenCapturePermission()
 
-        #expect(sut.hasScreenCapturePermission == false)
-        #expect(sut.lastRequestPermission == false)
-        #expect(sut.lastPreflightPermission == false)
-        #expect(sut.displays == nil)
-        #expect(sut.isLoadingDisplays == false)
-        #expect(sut.loadErrorMessage != nil)
+        #expect(sut.catalog.hasScreenCapturePermission == false)
+        #expect(sut.catalog.lastRequestPermission == false)
+        #expect(sut.catalog.lastPreflightPermission == false)
+        #expect(sut.catalog.displays == nil)
+        #expect(sut.catalog.isLoadingDisplays == false)
+        #expect(sut.catalog.loadErrorMessage != nil)
     }
 
     @MainActor @Test func loadDisplaysRegistersDisplaysThroughControllers() async {
@@ -145,16 +147,17 @@ struct ShareViewModelTests {
                 preflightResult: true,
                 requestResult: true
             ),
-            loadShareableDisplays: { [] }
+            loadShareableDisplays: { [] },
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.loadDisplays(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.loadDisplays()
         let finished = await waitUntil {
-            sut.isLoadingDisplays == false && sut.displays != nil
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
         }
 
         #expect(finished)
-        #expect(sut.displays?.isEmpty == true)
+        #expect(sut.catalog.displays?.isEmpty == true)
         #expect(sharing.registerShareableDisplaysCallCount == 1)
     }
 
@@ -166,18 +169,19 @@ struct ShareViewModelTests {
                 preflightResult: true,
                 requestResult: true
             ),
-            loadShareableDisplays: { throw expected }
+            loadShareableDisplays: { throw expected },
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.loadDisplays(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.loadDisplays()
         let finished = await waitUntil {
-            sut.isLoadingDisplays == false && sut.lastLoadError != nil
+            sut.catalog.isLoadingDisplays == false && sut.catalog.lastLoadError != nil
         }
 
         #expect(finished)
-        #expect(sut.loadErrorMessage != nil)
-        #expect(sut.lastLoadError?.domain == expected.domain)
-        #expect(sut.lastLoadError?.code == expected.code)
+        #expect(sut.catalog.loadErrorMessage != nil)
+        #expect(sut.catalog.lastLoadError?.domain == expected.domain)
+        #expect(sut.catalog.lastLoadError?.code == expected.code)
     }
 
     @MainActor @Test func startServiceFailurePresentsUserFacingError() async {
@@ -188,10 +192,11 @@ struct ShareViewModelTests {
             permissionProvider: MockScreenCapturePermissionProvider(
                 preflightResult: true,
                 requestResult: true
-            )
+            ),
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.startService(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.startService()
         let presented = await waitUntil {
             sut.showOpenPageError
         }
@@ -218,28 +223,29 @@ struct ShareViewModelTests {
                 case .failure:
                     throw ControlledLoadFailure()
                 }
-            }
+            },
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.loadDisplays(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.loadDisplays()
         #expect(await waitForLoaderCall(gate, count: 1))
 
-        sut.loadDisplays(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.loadDisplays()
         #expect(await waitForLoaderCall(gate, count: 2))
 
         await gate.release(call: 2)
         let secondFinished = await waitUntil {
-            sut.isLoadingDisplays == false &&
-                sut.displays != nil &&
-                sut.lastLoadError == nil
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays != nil &&
+                sut.catalog.lastLoadError == nil
         }
         #expect(secondFinished)
 
         await gate.release(call: 1)
-        let staleResultIgnored = await waitUntil(timeoutNanoseconds: 500_000_000) {
-            sut.isLoadingDisplays == false &&
-                sut.displays?.isEmpty == true &&
-                sut.lastLoadError == nil
+        let staleResultIgnored = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.isEmpty == true &&
+                sut.catalog.lastLoadError == nil
         }
         #expect(staleResultIgnored)
     }
@@ -263,19 +269,20 @@ struct ShareViewModelTests {
                 case .failure:
                     throw ControlledLoadFailure()
                 }
-            }
+            },
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.loadDisplays(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        sut.loadDisplays()
         #expect(await waitForLoaderCall(gate, count: 1))
 
-        sut.stopService(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
-        #expect(sut.isLoadingDisplays == false)
-        #expect(sut.displays == nil)
+        sut.stopService()
+        #expect(sut.catalog.isLoadingDisplays == false)
+        #expect(sut.catalog.displays == nil)
 
         await gate.release(call: 1)
-        let lateWritePrevented = await waitUntil(timeoutNanoseconds: 500_000_000) {
-            sut.isLoadingDisplays == false && sut.displays == nil
+        let lateWritePrevented = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays == nil
         }
         #expect(lateWritePrevented)
     }
@@ -298,7 +305,7 @@ struct ShareViewModelTests {
 
     @MainActor
     private func waitForLoaderCall(_ gate: SequencedShareDisplayLoaderGate, count: Int) async -> Bool {
-        let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
         while DispatchTime.now().uptimeNanoseconds < deadline {
             if await gate.currentCallCount() >= count {
                 return true
@@ -306,5 +313,25 @@ struct ShareViewModelTests {
             await Task.yield()
         }
         return await gate.currentCallCount() >= count
+    }
+
+    @MainActor
+    private func makeNoopShareDependencies() -> ShareViewModel.Dependencies {
+        .init(
+            sharingQueries: .init(
+                isWebServiceRunning: { false },
+                sharePageAddress: { _ in nil }
+            ),
+            sharingActions: .init(
+                startWebService: { false },
+                stopWebService: {},
+                registerShareableDisplays: { _, _ in },
+                beginSharing: { _, _, _, _ in },
+                stopSharing: { _ in }
+            ),
+            virtualDisplayQueries: .init(
+                virtualSerialForManagedDisplay: { _ in nil }
+            )
+        )
     }
 }

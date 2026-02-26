@@ -10,7 +10,7 @@ enum UITestFixture {
         [
             VirtualDisplayConfig(
                 id: UUID(uuidString: "00000000-0000-0000-0000-000000000013")!,
-                name: "虚拟显示器 13 寸",
+                displayName: "虚拟显示器 13 寸",
                 serialNum: 1,
                 physicalWidth: 286,
                 physicalHeight: 179,
@@ -21,7 +21,7 @@ enum UITestFixture {
             ),
             VirtualDisplayConfig(
                 id: UUID(uuidString: "00000000-0000-0000-0000-000000000014")!,
-                name: "虚拟显示器 14 寸",
+                displayName: "虚拟显示器 14 寸",
                 serialNum: 2,
                 physicalWidth: 309,
                 physicalHeight: 174,

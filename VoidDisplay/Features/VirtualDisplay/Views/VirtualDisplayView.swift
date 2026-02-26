@@ -8,30 +8,27 @@ import SwiftUI
 import OSLog
 
 struct VirtualDisplayView: View {
-    @Environment(VirtualDisplayController.self) private var virtualDisplay
+    @Bindable private var virtualDisplay: VirtualDisplayController
+    @State private var viewModel: VirtualDisplayListViewModel
     @State var createView = false
     @State private var editingConfig: EditingConfig?
-    @State private var primaryDisplayMonitor = DebouncingDisplayReconfigurationMonitor()
-    @State private var primaryDisplayRefreshTick: UInt64 = 0
-    @State private var primaryDisplayFallbackCoordinator = PrimaryDisplayFallbackCoordinator()
-    @State private var togglingConfigIds: Set<UUID> = []
-
-    @State private var showDeleteConfirm = false
-    @State private var deleteCandidate: VirtualDisplayConfig?
-    @State private var showRestoreFailureAlert = false
+    @State private var showConfigStoreErrorDetails = false
 
     private struct EditingConfig: Identifiable {
         let id: UUID
     }
-    
-    // Error handling
-    @State private var showError = false
-    @State private var errorMessage = ""
-    
+
+    init(controller: VirtualDisplayController) {
+        _virtualDisplay = Bindable(controller)
+        _viewModel = State(initialValue: VirtualDisplayListViewModel(controller: controller))
+    }
+
     var body: some View {
-        let _ = primaryDisplayRefreshTick
+        let _ = viewModel.primaryDisplayRefreshTick
         Group {
-            if !virtualDisplay.displayConfigs.isEmpty {
+            if virtualDisplay.configStorePresentation.hasLoadFailure {
+                configStoreErrorPanel
+            } else if !virtualDisplay.displayConfigs.isEmpty {
                 List(virtualDisplay.displayConfigs) { config in
                     virtualDisplayRow(config)
                         .appListRowStyle()
@@ -56,48 +53,44 @@ struct VirtualDisplayView: View {
                 .environment(virtualDisplay)
         }
         .toolbar {
-            Button("Add Virtual Display", systemImage: "plus") {
-                createView = true
+            if !virtualDisplay.configStorePresentation.hasLoadFailure {
+                Button("Add Virtual Display", systemImage: "plus") {
+                    createView = true
+                }
+                .accessibilityIdentifier("virtual_display_add_button")
             }
-            .accessibilityIdentifier("virtual_display_add_button")
         }
         .confirmationDialog(
             "Delete Virtual Display",
-            isPresented: $showDeleteConfirm,
-            presenting: deleteCandidate
+            isPresented: $viewModel.showDeleteConfirm,
+            presenting: viewModel.deleteCandidate
         ) { config in
             Button("Delete", role: .destructive) {
-                virtualDisplay.destroyDisplay(config.id)
-                deleteCandidate = nil
+                viewModel.confirmDelete()
             }
             Button("Cancel", role: .cancel) {
-                deleteCandidate = nil
+                viewModel.cancelDelete()
             }
         } message: { config in
-            Text("This will remove the configuration and disable the display if it is running.\n\n\(config.name) (Serial \(config.serialNum))")
+            Text("This will remove the configuration and disable the display if it is running.\n\n\(config.displayName) (Serial \(config.serialNum))")
         }
-        .alert("Enable Failed", isPresented: $showError) {
+        .alert("Enable Failed", isPresented: $viewModel.showError) {
             Button("OK") {}
         } message: {
-            Text(errorMessage)
+            Text(viewModel.errorMessage)
         }
         .onAppear {
-            if !virtualDisplay.restoreFailures.isEmpty {
-                showRestoreFailureAlert = true
-            }
-            startPrimaryDisplayMonitoring()
+            viewModel.handleAppear()
         }
         .onDisappear {
-            stopPrimaryDisplayMonitoring()
+            viewModel.handleDisappear()
         }
         .onChange(of: virtualDisplay.restoreFailures) { _, newValue in
-            if !newValue.isEmpty {
-                showRestoreFailureAlert = true
-            }
+            viewModel.handleRestoreFailuresChanged(newValue)
         }
-        .alert(String(localized: "Restore Failed"), isPresented: $showRestoreFailureAlert) {
+        .alert(String(localized: "Restore Failed"), isPresented: $viewModel.showRestoreFailureAlert) {
             Button("OK") {
-                virtualDisplay.clearRestoreFailures()
+                viewModel.acknowledgeRestoreFailures()
             }
         } message: {
             Text(VirtualDisplayRowPresentation.restoreFailureSummary(virtualDisplay.restoreFailures))
@@ -105,53 +98,61 @@ struct VirtualDisplayView: View {
         .appScreenBackground()
     }
 
-    private func startPrimaryDisplayMonitoring() {
-        let started = primaryDisplayMonitor.start {
-            primaryDisplayRefreshTick &+= 1
-        }
-        if started {
-            primaryDisplayFallbackCoordinator.stop()
-            return
-        }
+    private var configStoreErrorPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Virtual Display Config File Unavailable", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(.orange)
 
-        AppLog.virtualDisplay.error(
-            "Primary display monitor callback registration failed; enabling polling fallback."
-        )
-        startPrimaryDisplayFallback()
-    }
+            Text(
+                virtualDisplay.configStorePresentation.loadErrorMessage ??
+                String(localized: "The virtual display config file is incompatible or corrupted. Reset the config file to continue.")
+            )
+            .font(.body)
 
-    private func stopPrimaryDisplayMonitoring() {
-        primaryDisplayMonitor.stop()
-        primaryDisplayFallbackCoordinator.stop()
-    }
-
-    private func startPrimaryDisplayFallback() {
-        primaryDisplayFallbackCoordinator.startIfNeeded(
-            onTick: {
-                primaryDisplayRefreshTick &+= 1
-            },
-            attemptRecovery: {
-                primaryDisplayMonitor.start {
-                    primaryDisplayRefreshTick &+= 1
-                }
-            },
-            onRecovered: {
-                AppLog.virtualDisplay.notice(
-                    "Primary display monitor callback recovered; disabling polling fallback."
+            if let diagnostics = virtualDisplay.configStorePresentation.diagnosticsSummary {
+                DisclosureGroup(
+                    isExpanded: $showConfigStoreErrorDetails,
+                    content: {
+                        Text(diagnostics)
+                            .font(.footnote.monospaced())
+                            .textSelection(.enabled)
+                            .foregroundStyle(.secondary)
+                    },
+                    label: {
+                        Text("Details")
+                    }
                 )
             }
+
+            HStack(spacing: 12) {
+                Button("Reset Config File", role: .destructive) {
+                    _ = virtualDisplay.resetVirtualDisplayData()
+                }
+                .accessibilityIdentifier("virtual_display_reset_config_file_button")
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.08))
         )
+        .padding()
+        .accessibilityIdentifier("virtual_display_config_store_error_panel")
     }
 
     private func virtualDisplayRow(_ config: VirtualDisplayConfig) -> some View {
         let isRunning = virtualDisplay.isVirtualDisplayRunning(configId: config.id)
-        let isToggling = togglingConfigIds.contains(config.id)
+        let isToggling = viewModel.isToggling(configId: config.id)
         let isRebuilding = virtualDisplay.isRebuilding(configId: config.id)
         let rebuildFailureMessage = virtualDisplay.rebuildFailureMessage(configId: config.id)
         let hasRecentApplySuccess = virtualDisplay.hasRecentApplySuccess(configId: config.id)
         let isFirst = virtualDisplay.displayConfigs.first?.id == config.id
         let isLast = virtualDisplay.displayConfigs.last?.id == config.id
-        let isPrimary = isPrimaryDisplay(configID: config.id)
+        let isPrimary = viewModel.isPrimaryDisplay(configID: config.id)
+        let isFirstEnabled = virtualDisplay.displayConfigs.first(where: \.desiredEnabled)?.id == config.id
+        let canSetAsPrimary = config.desiredEnabled && !isFirstEnabled && !isToggling && !isRebuilding
         return VirtualDisplayRow(
             config: config,
             isRunning: isRunning,
@@ -162,60 +163,22 @@ struct VirtualDisplayView: View {
             isFirst: isFirst,
             isLast: isLast,
             isPrimary: isPrimary,
+            canSetAsPrimary: canSetAsPrimary,
             onMoveUp: { _ = virtualDisplay.moveDisplayConfig(config.id, direction: .up) },
             onMoveDown: { _ = virtualDisplay.moveDisplayConfig(config.id, direction: .down) },
-            onToggle: { toggleDisplayState(config) },
+            onSetAsPrimary: { _ = virtualDisplay.setPrimaryVirtualDisplayByReordering(config.id) },
+            onToggle: { viewModel.toggleDisplayState(config) },
             onEdit: { editingConfig = EditingConfig(id: config.id) },
-            onDelete: {
-                deleteCandidate = config
-                showDeleteConfirm = true
-            },
+            onDelete: { viewModel.requestDelete(config) },
             onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) }
         )
-    }
-
-    private func isPrimaryDisplay(configID: UUID) -> Bool {
-        guard let runtimeDisplay = virtualDisplay.runtimeDisplay(for: configID) else {
-            return false
-        }
-        let displayID = runtimeDisplay.displayID
-        let mainID = CGMainDisplayID()
-        return displayID == mainID
-        }
-    
-    private func toggleDisplayState(_ config: VirtualDisplayConfig) {
-        guard !togglingConfigIds.contains(config.id),
-              !virtualDisplay.isRebuilding(configId: config.id) else { return }
-        togglingConfigIds.insert(config.id)
-
-        Task { @MainActor in
-            defer { togglingConfigIds.remove(config.id) }
-
-            if virtualDisplay.isVirtualDisplayRunning(configId: config.id) {
-                do {
-                    try virtualDisplay.disableDisplayByConfig(config.id)
-                } catch {
-                    AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
-                    errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
-                    showError = true
-                }
-                return
-            }
-            do {
-                try await virtualDisplay.enableDisplay(config.id)
-            } catch {
-                AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
-                errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
-                showError = true
-            }
-        }
     }
 
 }
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    VirtualDisplayView()
+    VirtualDisplayView(controller: env.virtualDisplay)
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)

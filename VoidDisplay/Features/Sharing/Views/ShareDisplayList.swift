@@ -60,7 +60,7 @@ struct ShareDisplayList: View {
             ?? String(localized: "Monitor")
         let isVirtual = virtualDisplay.isManagedVirtualDisplay(displayID: display.displayID)
         let isSharingDisplay = sharing.isDisplaySharing(displayID: display.displayID)
-        let displayAddress = viewModel.sharePageAddress(for: display.displayID, sharing: sharing)
+        let displayAddress = viewModel.sharePageAddress(for: display.displayID)
         let displayURL = displayAddress.flatMap(URL.init(string:))
         let displayClientCount = sharing.sharingClientCounts[display.displayID] ?? 0
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
@@ -68,7 +68,7 @@ struct ShareDisplayList: View {
         let model = AppListRowModel(
             id: String(display.displayID),
             title: displayName,
-            subtitle: "\(String(Int(display.frame.width))) × \(String(Int(display.frame.height)))",
+            subtitle: "\(display.width) × \(display.height)",
             status: AppRowStatus(
                 title: isSharingDisplay
                     ? String(localized: "Sharing in Progress")
@@ -192,10 +192,10 @@ struct ShareDisplayList: View {
     private func shareActionButton(display: SCDisplay, isSharingDisplay: Bool) -> some View {
         Button {
             if isSharingDisplay {
-                viewModel.stopSharing(displayID: display.displayID, sharing: sharing)
+                viewModel.stopSharing(displayID: display.displayID)
             } else {
                 Task {
-                    await viewModel.startSharing(display: display, sharing: sharing)
+                    await viewModel.startSharing(display: display)
                 }
             }
         } label: {

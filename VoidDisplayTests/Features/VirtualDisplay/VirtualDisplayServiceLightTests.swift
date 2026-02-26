@@ -8,11 +8,11 @@ import Testing
 struct VirtualDisplayServiceLightTests {
     @Test
     func moveConfigReordersAndPersists() {
-        let store = InMemoryStore()
+        let store = FakeVirtualDisplayStore()
         let sut = makeService(store: store)
 
-        let configA = makeConfig(serial: 1, name: "A")
-        let configB = makeConfig(serial: 2, name: "B")
+        let configA = makeConfig(serial: 1, displayName: "A")
+        let configB = makeConfig(serial: 2, displayName: "B")
         sut.replaceDisplayConfigs([configA, configB])
 
         let moved = sut.moveConfig(configB.id, direction: .up)
@@ -25,11 +25,11 @@ struct VirtualDisplayServiceLightTests {
 
     @Test
     func moveConfigOutOfBoundsDoesNotPersist() {
-        let store = InMemoryStore()
+        let store = FakeVirtualDisplayStore()
         let sut = makeService(store: store)
 
-        let configA = makeConfig(serial: 1, name: "A")
-        let configB = makeConfig(serial: 2, name: "B")
+        let configA = makeConfig(serial: 1, displayName: "A")
+        let configB = makeConfig(serial: 2, displayName: "B")
         sut.replaceDisplayConfigs([configA, configB])
 
         let moved = sut.moveConfig(configA.id, direction: .up)
@@ -39,25 +39,94 @@ struct VirtualDisplayServiceLightTests {
     }
 
     @Test
-    func updateConfigPersistsReplacement() {
-        let store = InMemoryStore()
+    func moveConfigToFirstEnabledPositionMovesEnabledTargetToFirstEnabledSlot() {
+        let store = FakeVirtualDisplayStore()
         let sut = makeService(store: store)
-        let config = makeConfig(serial: 9, name: "Old")
+
+        var disabledA = makeConfig(serial: 11, displayName: "Disabled A")
+        var disabledB = makeConfig(serial: 12, displayName: "Disabled B")
+        let enabledC = makeConfig(serial: 13, displayName: "Enabled C")
+        let enabledD = makeConfig(serial: 14, displayName: "Enabled D")
+        disabledA.desiredEnabled = false
+        disabledB.desiredEnabled = false
+        sut.replaceDisplayConfigs([disabledA, disabledB, enabledC, enabledD])
+
+        let moved = sut.moveConfigToFirstEnabledPosition(enabledD.id)
+
+        #expect(moved)
+        #expect(sut.currentDisplayConfigs.map(\.id) == [disabledA.id, disabledB.id, enabledD.id, enabledC.id])
+        #expect(store.saves.count == 1)
+    }
+
+    @Test
+    func moveConfigToFirstEnabledPositionNoOpWhenTargetAlreadyFirstEnabled() {
+        let store = FakeVirtualDisplayStore()
+        let sut = makeService(store: store)
+
+        let enabledA = makeConfig(serial: 21, displayName: "A")
+        let enabledB = makeConfig(serial: 22, displayName: "B")
+        sut.replaceDisplayConfigs([enabledA, enabledB])
+
+        let moved = sut.moveConfigToFirstEnabledPosition(enabledA.id)
+
+        #expect(moved == false)
+        #expect(store.saves.isEmpty)
+    }
+
+    @Test
+    func moveConfigToFirstEnabledPositionRejectsDisabledTarget() {
+        let store = FakeVirtualDisplayStore()
+        let sut = makeService(store: store)
+
+        var disabledA = makeConfig(serial: 31, displayName: "A")
+        let enabledB = makeConfig(serial: 32, displayName: "B")
+        disabledA.desiredEnabled = false
+        sut.replaceDisplayConfigs([disabledA, enabledB])
+
+        let moved = sut.moveConfigToFirstEnabledPosition(disabledA.id)
+
+        #expect(moved == false)
+        #expect(sut.currentDisplayConfigs.map(\.id) == [disabledA.id, enabledB.id])
+        #expect(store.saves.isEmpty)
+    }
+
+    @Test
+    func moveConfigToFirstEnabledPositionNoOpWhenNoEnabledConfigsExist() {
+        let store = FakeVirtualDisplayStore()
+        let sut = makeService(store: store)
+
+        var configA = makeConfig(serial: 41, displayName: "A")
+        var configB = makeConfig(serial: 42, displayName: "B")
+        configA.desiredEnabled = false
+        configB.desiredEnabled = false
+        sut.replaceDisplayConfigs([configA, configB])
+
+        let moved = sut.moveConfigToFirstEnabledPosition(configB.id)
+
+        #expect(moved == false)
+        #expect(store.saves.isEmpty)
+    }
+
+    @Test
+    func updateConfigPersistsReplacement() {
+        let store = FakeVirtualDisplayStore()
+        let sut = makeService(store: store)
+        let config = makeConfig(serial: 9, displayName: "Old")
         sut.replaceDisplayConfigs([config])
 
         var updated = config
-        updated.name = "New"
+        updated.displayName = "New"
         sut.updateConfig(updated)
 
-        #expect(sut.currentDisplayConfigs.first?.name == "New")
+        #expect(sut.currentDisplayConfigs.first?.displayName == "New")
         #expect(store.saves.count == 1)
-        #expect(store.saves.last?.first?.name == "New")
+        #expect(store.saves.last?.first?.displayName == "New")
     }
 
     @Test
     func seedRuntimeBookkeepingMarksRunning() {
-        let sut = makeService(store: InMemoryStore())
-        let config = makeConfig(serial: 3, name: "Test")
+        let sut = makeService(store: FakeVirtualDisplayStore())
+        let config = makeConfig(serial: 3, displayName: "Test")
         sut.replaceDisplayConfigs([config])
 
         sut.seedRuntimeBookkeeping(
@@ -73,8 +142,8 @@ struct VirtualDisplayServiceLightTests {
 
     @Test
     func rollbackEnableKeepsGenerationButClearsRunning() {
-        let sut = makeService(store: InMemoryStore())
-        let config = makeConfig(serial: 4, name: "Rollback")
+        let sut = makeService(store: FakeVirtualDisplayStore())
+        let config = makeConfig(serial: 4, displayName: "Rollback")
         sut.replaceDisplayConfigs([config])
         sut.seedRuntimeBookkeeping(
             configId: config.id,
@@ -120,7 +189,7 @@ struct VirtualDisplayServiceLightTests {
             ]
         )
         let inspector = SequenceDisplayTopologyInspector(snapshots: [present, absent, absent])
-        let sut = makeService(store: InMemoryStore(), inspector: inspector)
+        let sut = makeService(store: FakeVirtualDisplayStore(), inspector: inspector)
 
         let result = await sut.waitForAdaptiveManagedDisplayCooldown(
             serialNumbers: [1],
@@ -133,9 +202,9 @@ struct VirtualDisplayServiceLightTests {
 
     @Test
     func disableByConfigMarksAggressiveWhenRuntimeMain() async {
-        let store = InMemoryStore()
+        let store = FakeVirtualDisplayStore()
         let sut = makeService(store: store)
-        let config = makeConfig(serial: 11, name: "Main")
+        let config = makeConfig(serial: 11, displayName: "Main")
         sut.replaceDisplayConfigs([config])
 
         // Pretend the runtime display was the system main display.
@@ -152,10 +221,158 @@ struct VirtualDisplayServiceLightTests {
     }
 
     @Test
-    func destroyDisplayClearsTrackingAndPersists() {
-        let store = InMemoryStore()
+    func disableRuntimeDisplayWithoutMatchingPersistedConfigDoesNotPersistSyntheticConfig() {
+        let store = FakeVirtualDisplayStore()
         let sut = makeService(store: store)
-        let config = makeConfig(serial: 12, name: "Destroy")
+        let existing = makeConfig(serial: 21, displayName: "用户配置 21")
+        sut.replaceDisplayConfigs([existing])
+
+        sut.disableRuntimeDisplay(
+            serialNum: 99,
+            displayID: 9_999,
+            modes: []
+        )
+
+        #expect(store.saves.isEmpty)
+        #expect(sut.currentDisplayConfigs.count == 1)
+        #expect(sut.currentDisplayConfigs.first?.serialNum == existing.serialNum)
+        #expect(sut.currentDisplayConfigs.first?.displayName == existing.displayName)
+        #expect(sut.currentDisplayConfigs.contains(where: { $0.serialNum == 99 }) == false)
+    }
+
+    @Test
+    func runtimeDisablePathPreservesDisplayNameWhenPersistingDesiredEnabledChange() {
+        let store = FakeVirtualDisplayStore()
+        let sut = makeService(store: store)
+        let config = makeConfig(serial: 25, displayName: "用户配置 25")
+        sut.replaceDisplayConfigs([config])
+
+        sut.disableRuntimeDisplay(
+            serialNum: config.serialNum,
+            displayID: 2_500,
+            modes: []
+        )
+
+        #expect(store.saves.count == 1)
+        #expect(store.saves.last?.first?.displayName == "用户配置 25")
+        #expect(sut.currentDisplayConfigs.first?.desiredEnabled == false)
+        #expect(sut.currentDisplayConfigs.first?.displayName == "用户配置 25")
+    }
+
+    @Test
+    func resolveMainDisplayPolicyUsesFirstEnabledConfigInPureVirtualMultiDisplay() {
+        let sut = makeService(store: FakeVirtualDisplayStore())
+        let configA = makeConfig(serial: 31, displayName: "A")
+        let configB = makeConfig(serial: 32, displayName: "B")
+        sut.replaceDisplayConfigs([configA, configB])
+        sut.seedRuntimeBookkeeping(configId: configA.id, generation: 1, runtimeDisplayID: 501)
+        sut.seedRuntimeBookkeeping(configId: configB.id, generation: 2, runtimeDisplayID: 502)
+
+        let snapshot = DisplayTopologySnapshot(
+            mainDisplayID: 502,
+            displays: [
+                makeDisplayInfo(id: 501, serial: 31, managed: true),
+                makeDisplayInfo(id: 502, serial: 32, managed: true, bounds: CGRect(x: 1440, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        let resolution = sut.resolveMainDisplayPolicy(snapshot: snapshot, emitLog: false)
+
+        #expect(resolution.applies)
+        #expect(resolution.source == .listOrder)
+        #expect(resolution.targetConfigID == configA.id)
+        #expect(resolution.targetDisplayID == 501)
+        #expect(resolution.preferredMainDisplayID == 501)
+    }
+
+    @Test
+    func resolveMainDisplayPolicySkipsDisabledFirstConfigAndSelectsNextEnabled() {
+        let sut = makeService(store: FakeVirtualDisplayStore())
+        var configA = makeConfig(serial: 41, displayName: "A")
+        let configB = makeConfig(serial: 42, displayName: "B")
+        let configC = makeConfig(serial: 43, displayName: "C")
+        configA.desiredEnabled = false
+        sut.replaceDisplayConfigs([configA, configB, configC])
+        sut.seedRuntimeBookkeeping(configId: configB.id, generation: 1, runtimeDisplayID: 602)
+        sut.seedRuntimeBookkeeping(configId: configC.id, generation: 2, runtimeDisplayID: 603)
+
+        let snapshot = DisplayTopologySnapshot(
+            mainDisplayID: 602,
+            displays: [
+                makeDisplayInfo(id: 602, serial: 42, managed: true),
+                makeDisplayInfo(id: 603, serial: 43, managed: true, bounds: CGRect(x: 1920, y: 0, width: 1440, height: 900))
+            ]
+        )
+
+        let resolution = sut.resolveMainDisplayPolicy(snapshot: snapshot, emitLog: false)
+
+        #expect(resolution.applies)
+        #expect(resolution.source == .listOrder)
+        #expect(resolution.targetConfigID == configB.id)
+        #expect(resolution.targetDisplayID == 602)
+    }
+
+    @Test
+    func resolveMainDisplayPolicyUsesRuntimeHintWhenTargetRuntimeObjectIsUnavailable() {
+        let sut = makeService(store: FakeVirtualDisplayStore())
+        let configA = makeConfig(serial: 51, displayName: "A")
+        let configB = makeConfig(serial: 52, displayName: "B")
+        sut.replaceDisplayConfigs([configA, configB])
+        sut.runtimeDisplayIDHintsByConfigId[configA.id] = 701
+        sut.runtimeDisplayIDHintsByConfigId[configB.id] = 702
+
+        let snapshot = DisplayTopologySnapshot(
+            mainDisplayID: 702,
+            displays: [
+                makeDisplayInfo(id: 701, serial: 51, managed: true),
+                makeDisplayInfo(id: 702, serial: 52, managed: true, bounds: CGRect(x: 1440, y: 0, width: 1920, height: 1080))
+            ]
+        )
+
+        let resolution = sut.resolveMainDisplayPolicy(snapshot: snapshot, emitLog: false)
+
+        #expect(resolution.applies)
+        #expect(resolution.targetConfigID == configA.id)
+        #expect(resolution.targetDisplayID == 701)
+    }
+
+    @Test
+    func resolveMainDisplayPolicyLeavesTargetWithoutDisplayIDDuringTransition() {
+        let sut = makeService(store: FakeVirtualDisplayStore())
+        let configA = makeConfig(serial: 61, displayName: "A")
+        let configB = makeConfig(serial: 62, displayName: "B")
+        sut.replaceDisplayConfigs([configA, configB])
+
+        let snapshot = DisplayTopologySnapshot(
+            mainDisplayID: 800,
+            displays: [
+                makeDisplayInfo(id: 800, serial: 999, managed: false),
+                makeDisplayInfo(id: 801, serial: 61, managed: true),
+                makeDisplayInfo(id: 802, serial: 62, managed: true, bounds: CGRect(x: 1440, y: 0, width: 1920, height: 1080))
+            ]
+        )
+        let resolutionWithPhysical = sut.resolveMainDisplayPolicy(snapshot: snapshot, emitLog: false)
+        #expect(resolutionWithPhysical.applies == false)
+        #expect(resolutionWithPhysical.source == .policyDisabledPhysicalPresent)
+
+        let pureVirtualSnapshot = DisplayTopologySnapshot(
+            mainDisplayID: 801,
+            displays: [
+                makeDisplayInfo(id: 801, serial: 61, managed: true),
+                makeDisplayInfo(id: 802, serial: 62, managed: true, bounds: CGRect(x: 1440, y: 0, width: 1920, height: 1080))
+            ]
+        )
+        let transitionResolution = sut.resolveMainDisplayPolicy(snapshot: pureVirtualSnapshot, emitLog: false)
+        #expect(transitionResolution.applies)
+        #expect(transitionResolution.targetConfigID == configA.id)
+        #expect(transitionResolution.targetDisplayID == nil)
+    }
+
+    @Test
+    func destroyDisplayClearsTrackingAndPersists() {
+        let store = FakeVirtualDisplayStore()
+        let sut = makeService(store: store)
+        let config = makeConfig(serial: 12, displayName: "Destroy")
         sut.replaceDisplayConfigs([config])
         sut.seedRuntimeBookkeeping(configId: config.id, generation: 5, runtimeDisplayID: 777)
         sut.aggressiveRecoveryPendingEnableConfigIDs.insert(config.id)
@@ -171,9 +388,9 @@ struct VirtualDisplayServiceLightTests {
 
     @Test
     func resetAllVirtualDisplayDataClearsStateAndResetsStore() {
-        let store = InMemoryStore()
+        let store = FakeVirtualDisplayStore()
         let sut = makeService(store: store)
-        let configs = [makeConfig(serial: 1, name: "A"), makeConfig(serial: 2, name: "B")]
+        let configs = [makeConfig(serial: 1, displayName: "A"), makeConfig(serial: 2, displayName: "B")]
         sut.replaceDisplayConfigs(configs)
         sut.seedRuntimeBookkeeping(configId: configs[0].id, generation: 3, runtimeDisplayID: 101)
         sut.seedRuntimeBookkeeping(configId: configs[1].id, generation: 4, runtimeDisplayID: 202)
@@ -190,11 +407,60 @@ struct VirtualDisplayServiceLightTests {
     }
 
     @Test
+    func loadPersistedConfigsFailureSetsStoreStateAndBlocksRestore() {
+        let store = FakeVirtualDisplayStore()
+        store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
+        let sut = makeService(store: store)
+
+        sut.loadPersistedConfigs()
+        sut.restoreDesiredVirtualDisplays()
+
+        #expect(sut.currentDisplayConfigs.isEmpty)
+        #expect(sut.currentRestoreFailures.isEmpty)
+        switch sut.configStoreState {
+        case .ready:
+            Issue.record("Expected loadFailed config store state")
+        case .loadFailed(let error, let diagnostics):
+            if case .unsupportedSchemaVersion(let expected, let actual) = error {
+                #expect(expected == 3)
+                #expect(actual == 2)
+            } else {
+                Issue.record("Expected unsupportedSchemaVersion error")
+            }
+            #expect(diagnostics.primaryStoreURL.path == store.diagnosticsValue.primaryStoreURL.path)
+        }
+    }
+
+    @Test
+    func persistIsBlockedWhenConfigStoreStateIsLoadFailed() {
+        let store = FakeVirtualDisplayStore()
+        store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
+        let sut = makeService(store: store)
+        let config = makeConfig(serial: 88, displayName: "Blocked")
+
+        sut.loadPersistedConfigs()
+        sut.replaceDisplayConfigs([config])
+
+        var updated = config
+        updated.displayName = "Blocked Rename"
+        sut.updateConfig(updated)
+
+        #expect(store.saves.isEmpty)
+        #expect(sut.currentDisplayConfigs.first?.displayName == "Blocked Rename")
+        switch sut.configStoreState {
+        case .loadFailed:
+            break
+        case .ready:
+            Issue.record("Expected loadFailed config store state")
+        }
+    }
+
+    @Test
     func nextAvailableSerialNumberSkipsExisting() {
-        let sut = makeService(store: InMemoryStore())
+        let sut = makeService(store: FakeVirtualDisplayStore())
         sut.replaceDisplayConfigs([
-            makeConfig(serial: 1, name: "One"),
-            makeConfig(serial: 3, name: "Three")
+            makeConfig(serial: 1, displayName: "One"),
+            makeConfig(serial: 3, displayName: "Three")
         ])
 
         let next = sut.nextAvailableSerialNumber()
@@ -207,12 +473,12 @@ struct VirtualDisplayServiceLightTests {
 
 private extension VirtualDisplayServiceLightTests {
     func makeService(
-        store: InMemoryStore,
+        store: FakeVirtualDisplayStore,
         inspector: any DisplayTopologyInspecting = DummyDisplayTopologyInspector()
     ) -> VirtualDisplayService {
-        let persistence = VirtualDisplayPersistenceService(store: store, reportFailure: nil)
+        let repository = VirtualDisplayConfigRepository(store: store, reportFailure: nil)
         return VirtualDisplayService(
-            persistenceService: persistence,
+            configRepository: repository,
             displayReconfigurationMonitor: DummyDisplayReconfigurationMonitor(),
             topologyInspector: inspector,
             topologyRepairer: DummyDisplayTopologyRepairer(),
@@ -223,10 +489,10 @@ private extension VirtualDisplayServiceLightTests {
         )
     }
 
-    func makeConfig(serial: UInt32, name: String) -> VirtualDisplayConfig {
+    func makeConfig(serial: UInt32, displayName: String) -> VirtualDisplayConfig {
         VirtualDisplayConfig(
             id: UUID(),
-            name: name,
+            displayName: displayName,
             serialNum: serial,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -236,25 +502,22 @@ private extension VirtualDisplayServiceLightTests {
             desiredEnabled: true
         )
     }
-}
 
-// MARK: - Test Doubles
-
-private final class InMemoryStore: VirtualDisplayStoring {
-    var saves: [[VirtualDisplayConfig]] = []
-    var resets = 0
-
-    func load() throws -> [VirtualDisplayConfig] {
-        saves.last ?? []
-    }
-
-    func save(_ configs: [VirtualDisplayConfig]) throws {
-        saves.append(configs)
-    }
-
-    func reset() throws {
-        resets += 1
-        saves.removeAll()
+    func makeDisplayInfo(
+        id: CGDirectDisplayID,
+        serial: UInt32,
+        managed: Bool,
+        bounds: CGRect = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    ) -> DisplayTopologySnapshot.DisplayInfo {
+        .init(
+            id: id,
+            serialNumber: serial,
+            isManagedVirtualDisplay: managed,
+            isActive: true,
+            isInMirrorSet: false,
+            mirrorMasterDisplayID: nil,
+            bounds: bounds
+        )
     }
 }
 

@@ -374,6 +374,9 @@
         }
       }
     },
+    "Details" : {
+
+    },
     "Disable" : {
       "localizations" : {
         "zh-Hans" : {
@@ -990,6 +993,22 @@
         }
       }
     },
+    "Primary Action Glyph" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "P"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主"
+          }
+        }
+      }
+    },
     "Primary Display" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1089,6 +1108,9 @@
           }
         }
       }
+    },
+    "Reset Config File" : {
+
     },
     "Reset Virtual Display Configurations" : {
       "localizations" : {
@@ -1276,6 +1298,26 @@
         }
       }
     },
+    "Set as Primary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设为主屏"
+          }
+        }
+      }
+    },
+    "Set as primary display" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设为主显示器"
+          }
+        }
+      }
+    },
     "Share" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1376,6 +1418,18 @@
         }
       }
     },
+    "The virtual display config file could not be accessed. Check the file path/permissions, or reset the config file." : {
+
+    },
+    "The virtual display config file format is not supported by this build. Reset the config file to continue." : {
+
+    },
+    "The virtual display config file is corrupted or invalid. Reset the config file to continue." : {
+
+    },
+    "The virtual display config file is incompatible or corrupted. Reset the config file to continue." : {
+
+    },
     "This action cannot be undone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1431,6 +1485,9 @@
           }
         }
       }
+    },
+    "Virtual Display Config File Unavailable" : {
+
     },
     "Virtual display creation failed." : {
       "localizations" : {

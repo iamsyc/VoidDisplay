@@ -23,23 +23,27 @@ final class CaptureController {
     }
 
     func addMonitoringSession(_ session: ScreenMonitoringSession) {
-        defer { syncCaptureMonitoringState() }
-        captureMonitoringService.addMonitoringSession(session)
+        mutateAndSync {
+            captureMonitoringService.addMonitoringSession(session)
+        }
     }
 
     func markMonitoringSessionActive(id: UUID) {
-        defer { syncCaptureMonitoringState() }
-        captureMonitoringService.updateMonitoringSessionState(id: id, state: .active)
+        mutateAndSync {
+            captureMonitoringService.updateMonitoringSessionState(id: id, state: .active)
+        }
     }
 
     func removeMonitoringSession(id: UUID) {
-        defer { syncCaptureMonitoringState() }
-        captureMonitoringService.removeMonitoringSession(id: id)
+        mutateAndSync {
+            captureMonitoringService.removeMonitoringSession(id: id)
+        }
     }
 
     func removeMonitoringSessions(displayID: CGDirectDisplayID) {
-        defer { syncCaptureMonitoringState() }
-        captureMonitoringService.removeMonitoringSessions(displayID: displayID)
+        mutateAndSync {
+            captureMonitoringService.removeMonitoringSessions(displayID: displayID)
+        }
     }
 
     func stopDependentStreamsBeforeRebuild(
@@ -54,5 +58,10 @@ final class CaptureController {
 
     private func syncCaptureMonitoringState() {
         screenCaptureSessions = captureMonitoringService.currentSessions
+    }
+
+    private func mutateAndSync(_ mutation: () -> Void) {
+        mutation()
+        syncCaptureMonitoringState()
     }
 }

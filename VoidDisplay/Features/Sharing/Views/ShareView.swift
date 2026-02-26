@@ -9,14 +9,25 @@ import Combine
 import OSLog
 
 struct ShareView: View {
-    @Environment(SharingController.self) private var sharing
-    @Environment(VirtualDisplayController.self) private var virtualDisplay
-    @State private var viewModel = ShareViewModel()
+    @Bindable private var sharing: SharingController
+    @State private var viewModel: ShareViewModel
     @State private var displayRefreshMonitor = DebouncingDisplayReconfigurationMonitor()
     @State private var displayRefreshFallbackTask: Task<Void, Never>?
     @State private var showToolbarRefresh = false
     @Environment(\.openURL) private var openURL
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    init(
+        sharing: SharingController,
+        virtualDisplay: VirtualDisplayController
+    ) {
+        _sharing = Bindable(sharing)
+        _viewModel = State(
+            initialValue: ShareViewModel(
+                dependencies: .live(sharing: sharing, virtualDisplay: virtualDisplay)
+            )
+        )
+    }
 
     var body: some View {
         shareContent
@@ -26,17 +37,17 @@ struct ShareView: View {
                 if sharing.isWebServiceRunning {
                     if showToolbarRefresh {
                         Button("Refresh", systemImage: "arrow.clockwise") {
-                            viewModel.refreshDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+                            viewModel.refreshDisplays()
                         }
                     }
                     Button("Stop Service") {
-                        viewModel.stopService(sharing: sharing, virtualDisplay: virtualDisplay)
+                        viewModel.stopService()
                     }
                     .accessibilityIdentifier("share_stop_service_button")
                 }
             }
             .onAppear {
-                viewModel.refreshPermissionAndMaybeLoad(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.refreshPermissionAndMaybeLoad()
                 startDisplayRefreshMonitoring()
             }
             .onDisappear {
@@ -44,10 +55,10 @@ struct ShareView: View {
                 stopDisplayRefreshMonitoring()
             }
             .onChange(of: sharing.isWebServiceRunning) { _, _ in
-                viewModel.syncForCurrentState(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.syncForCurrentState()
             }
             .onChange(of: sharing.isSharing) { _, _ in
-                viewModel.syncForCurrentState(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.syncForCurrentState()
             }
             .onReceive(sharingStatsTimer) { _ in
                 guard sharing.isWebServiceRunning else { return }
@@ -65,8 +76,8 @@ struct ShareView: View {
 
     private func startDisplayRefreshMonitoring() {
         let registered = displayRefreshMonitor.start {
-            guard viewModel.hasScreenCapturePermission == true else { return }
-            viewModel.refreshDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+            guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+            viewModel.refreshDisplays()
         }
         showToolbarRefresh = !registered
         if registered {
@@ -92,15 +103,15 @@ struct ShareView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled else { break }
-                guard viewModel.hasScreenCapturePermission == true else { continue }
+                guard viewModel.catalog.hasScreenCapturePermission == true else { continue }
 
-                viewModel.refreshDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.refreshDisplays()
                 cycle += 1
                 if cycle % 5 != 0 { continue }
 
                 let recovered = displayRefreshMonitor.start {
-                    guard viewModel.hasScreenCapturePermission == true else { return }
-                    viewModel.refreshDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+                    guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+                    viewModel.refreshDisplays()
                 }
                 if recovered {
                     showToolbarRefresh = false
@@ -121,9 +132,9 @@ struct ShareView: View {
 
     @ViewBuilder
     private var shareContent: some View {
-        if viewModel.hasScreenCapturePermission == false {
+        if viewModel.catalog.hasScreenCapturePermission == false {
             screenCapturePermissionView
-        } else if viewModel.hasScreenCapturePermission == nil {
+        } else if viewModel.catalog.hasScreenCapturePermission == nil {
             ScrollView {
                 VStack(spacing: 12) {
                     ProgressView()
@@ -150,7 +161,7 @@ struct ShareView: View {
                         .frame(maxWidth: 300)
 
                     Button("Start Service") {
-                        viewModel.startService(sharing: sharing, virtualDisplay: virtualDisplay)
+                        viewModel.startService()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -158,18 +169,18 @@ struct ShareView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
             }
-        } else if viewModel.isLoadingDisplays {
+        } else if viewModel.catalog.isLoadingDisplays {
             ScrollView {
                 ProgressView("Loading displays…")
                     .frame(maxWidth: .infinity, minHeight: 200)
             }
             .accessibilityIdentifier("share_loading_displays")
-        } else if let displays = viewModel.displays {
+        } else if let displays = viewModel.catalog.displays {
             if displays.isEmpty {
                 VStack(spacing: AppUI.Spacing.medium) {
                     Text("No screen to share")
                     Button("Refresh") {
-                        viewModel.refreshDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+                        viewModel.refreshDisplays()
                     }
                     .accessibilityIdentifier("share_empty_refresh_button")
                 }
@@ -187,7 +198,7 @@ struct ShareView: View {
             VStack(spacing: AppUI.Spacing.medium) {
                 Text("No screen to share")
                 Button("Refresh") {
-                    viewModel.refreshDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+                    viewModel.refreshDisplays()
                 }
                 .accessibilityIdentifier("share_empty_refresh_button")
             }
@@ -199,24 +210,27 @@ struct ShareView: View {
 
     private var screenCapturePermissionView: some View {
         ScreenCapturePermissionGuideView(
-            loadErrorMessage: viewModel.loadErrorMessage,
+            loadErrorMessage: viewModel.catalog.loadErrorMessage,
             onOpenSettings: {
                 viewModel.openScreenCapturePrivacySettings { url in
                     openURL(url)
                 }
             },
             onRequestPermission: {
-                viewModel.requestScreenCapturePermission(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.requestScreenCapturePermission()
             },
             onRefresh: {
-                viewModel.refreshPermissionAndMaybeLoad(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.refreshPermissionAndMaybeLoad()
             },
-            onRetry: (viewModel.loadErrorMessage != nil || viewModel.lastLoadError != nil) ? {
+            onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
                 // User-initiated retry: attempt to load the display list.
                 // If permission is still missing, macOS may prompt here (expected).
-                viewModel.loadDisplays(sharing: sharing, virtualDisplay: virtualDisplay)
+                viewModel.loadDisplays()
             } : nil,
-            isDebugInfoExpanded: $viewModel.showDebugInfo,
+            isDebugInfoExpanded: Binding(
+                get: { viewModel.catalog.showDebugInfo },
+                set: { viewModel.catalog.showDebugInfo = $0 }
+            ),
             debugItems: sharingPermissionDebugItems,
             rootAccessibilityIdentifier: "share_permission_guide",
             openSettingsButtonAccessibilityIdentifier: "share_open_settings_button",
@@ -231,16 +245,16 @@ struct ShareView: View {
             (String(localized: "App Path"), Bundle.main.bundleURL.path),
             (
                 String(localized: "Preflight Permission"),
-                (viewModel.lastPreflightPermission ?? viewModel.hasScreenCapturePermission)
+                (viewModel.catalog.lastPreflightPermission ?? viewModel.catalog.hasScreenCapturePermission)
                     .map { $0 ? "true" : "false" } ?? "-"
             ),
             (
                 String(localized: "Request Permission Result"),
-                viewModel.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-"
+                viewModel.catalog.lastRequestPermission.map { $0 ? "true" : "false" } ?? "-"
             )
         ]
 
-        if let lastLoadError = viewModel.lastLoadError {
+        if let lastLoadError = viewModel.catalog.lastLoadError {
             items.append((String(localized: "Last Error"), lastLoadError.description))
             items.append((String(localized: "Error Domain"), lastLoadError.domain))
             items.append((String(localized: "Error Code"), "\(lastLoadError.code)"))
@@ -258,7 +272,7 @@ struct ShareView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    ShareView()
+    ShareView(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)

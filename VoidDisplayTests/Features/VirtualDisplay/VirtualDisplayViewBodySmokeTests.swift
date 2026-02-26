@@ -33,7 +33,7 @@ struct VirtualDisplayViewBodySmokeTests {
 
     @Test func virtualDisplayViewBodyEvaluatesWithEmptyState() {
         let env = makeEnvironment(preview: true, uiTestMode: false)
-        let view = VirtualDisplayView()
+        let view = VirtualDisplayView(controller: env.virtualDisplay)
             .environment(env.capture)
             .environment(env.sharing)
             .environment(env.virtualDisplay)
@@ -43,10 +43,38 @@ struct VirtualDisplayViewBodySmokeTests {
 
     @Test func virtualDisplayViewBodyEvaluatesWithConfigs() {
         let env = makeEnvironment(preview: false, uiTestMode: true)
-        let view = VirtualDisplayView()
+        let view = VirtualDisplayView(controller: env.virtualDisplay)
             .environment(env.capture)
             .environment(env.sharing)
             .environment(env.virtualDisplay)
+
+        render(view)
+    }
+
+    @Test func virtualDisplayViewBodyEvaluatesWithConfigStoreLoadFailure() {
+        let mockService = MockVirtualDisplayService()
+        mockService.configStoreState = .loadFailed(
+            error: .unsupportedSchemaVersion(expected: 3, actual: 2),
+            diagnostics: .init(
+                primaryStoreURL: URL(fileURLWithPath: "/tmp/virtual-displays.json"),
+                legacyContainerStoreURL: URL(fileURLWithPath: "/tmp/legacy.json"),
+                legacyContainerFileExists: true,
+                isTestIsolatedPath: true
+            )
+        )
+        let failureEnv = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayService: mockService,
+            isRunningUnderXCTestOverride: true
+        )
+        failureEnv.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+
+        let view = VirtualDisplayView(controller: failureEnv.virtualDisplay)
+            .environment(failureEnv.capture)
+            .environment(failureEnv.sharing)
+            .environment(failureEnv.virtualDisplay)
 
         render(view)
     }
