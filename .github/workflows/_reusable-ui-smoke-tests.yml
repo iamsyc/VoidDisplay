@@ -32,7 +32,7 @@ on:
         description: Preferred Xcode developer directory path.
         required: false
         type: string
-        default: /Applications/Xcode_16.2.app/Contents/Developer
+        default: /Applications/Xcode_26.2.app/Contents/Developer
       xcode_fallback_path:
         description: Fallback Xcode developer directory path.
         required: false
@@ -93,7 +93,6 @@ jobs:
           key: xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
           restore-keys: |
             xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
-            xcode-meta-ui-${{ runner.os }}-
 
       - name: Run UI smoke test (no signing)
         id: run-ui
