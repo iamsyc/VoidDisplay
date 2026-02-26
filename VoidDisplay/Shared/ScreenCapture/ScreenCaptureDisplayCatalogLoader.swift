@@ -4,7 +4,7 @@ import ScreenCaptureKit
 
 @MainActor
 final class ScreenCaptureDisplayCatalogLoader {
-    typealias LoadShareableDisplays = @Sendable () async throws -> [SCDisplay]
+    typealias LoadShareableDisplays = @MainActor () async throws -> [SCDisplay]
     typealias OnDisplaysLoaded = @MainActor ([SCDisplay]) -> Void
 
     struct RuntimeScenarioProbe {
@@ -125,38 +125,32 @@ final class ScreenCaptureDisplayCatalogLoader {
         state.lastLoadError = nil
         state.displays = nil
 
-        let task = Task { [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let shareableDisplays = try await self.loadShareableDisplays()
-                await MainActor.run {
-                    guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }
-                    self.state.displays = shareableDisplays
-                    self.state.hasScreenCapturePermission = true
-                    self.state.lastPreflightPermission = true
-                    onLoaded(shareableDisplays)
-                    self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
-                }
+                guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }
+                self.state.displays = shareableDisplays
+                self.state.hasScreenCapturePermission = true
+                self.state.lastPreflightPermission = true
+                onLoaded(shareableDisplays)
+                self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
             } catch is CancellationError {
-                await MainActor.run {
-                    self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
-                }
+                self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
             } catch {
                 let nsError = error as NSError
-                await MainActor.run {
-                    guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }
-                    AppErrorMapper.logFailure(self.logOperation, error: error, logger: self.logger)
-                    self.state.loadErrorMessage = self.loadFailureMessage
-                    self.state.lastLoadError = .init(
-                        domain: nsError.domain,
-                        code: nsError.code,
-                        description: nsError.localizedDescription,
-                        failureReason: nsError.localizedFailureReason,
-                        recoverySuggestion: nsError.localizedRecoverySuggestion
-                    )
-                    self.state.displays = nil
-                    self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
-                }
+                guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }
+                AppErrorMapper.logFailure(self.logOperation, error: error, logger: self.logger)
+                self.state.loadErrorMessage = self.loadFailureMessage
+                self.state.lastLoadError = .init(
+                    domain: nsError.domain,
+                    code: nsError.code,
+                    description: nsError.localizedDescription,
+                    failureReason: nsError.localizedFailureReason,
+                    recoverySuggestion: nsError.localizedRecoverySuggestion
+                )
+                self.state.displays = nil
+                self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
             }
         }
         displayLoadTask = task
