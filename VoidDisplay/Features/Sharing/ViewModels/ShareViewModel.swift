@@ -66,14 +66,14 @@ final class ShareViewModel {
     var showOpenPageError = false
     var openPageErrorMessage = ""
 
-    private let makeScreenCaptureSession: @MainActor @Sendable (SCDisplay) async -> ScreenCaptureSession
+    private let makeScreenCaptureSession: @MainActor (SCDisplay) async -> ScreenCaptureSession
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
-        loadShareableDisplays: (@Sendable () async throws -> [SCDisplay])? = nil,
-        makeScreenCaptureSession: (@MainActor @Sendable (SCDisplay) async -> ScreenCaptureSession)? = nil,
+        loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
+        makeScreenCaptureSession: (@MainActor (SCDisplay) async -> ScreenCaptureSession)? = nil,
         dependencies: Dependencies
     ) {
         let catalog = ScreenCaptureDisplayCatalogState()
