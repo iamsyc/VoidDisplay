@@ -12,7 +12,7 @@ on:
         description: Preferred Xcode developer directory path.
         required: false
         type: string
-        default: /Applications/Xcode_26.3.app/Contents/Developer
+        default: /Applications/Xcode_26.2.app/Contents/Developer
       xcode_fallback_path:
         description: Fallback Xcode developer directory path.
         required: false
