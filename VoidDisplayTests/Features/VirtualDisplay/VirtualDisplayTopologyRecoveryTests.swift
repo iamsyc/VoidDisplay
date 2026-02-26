@@ -85,6 +85,7 @@ private extension VirtualDisplayTopologyRecoveryTests {
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool = { _ in false },
         rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil
     ) -> VirtualDisplayOrchestrator {
+        let clock = TestVirtualDisplayClock()
         let store = FakeVirtualDisplayStore()
         store.nextLoadConfigs = initialConfigs
         let repository = VirtualDisplayConfigRepository(store: store, reportFailure: nil)
@@ -96,7 +97,8 @@ private extension VirtualDisplayTopologyRecoveryTests {
             managedDisplayOnlineChecker: managedDisplayOnlineChecker,
             topologyStabilityTimeout: topologyStabilityTimeout,
             topologyStabilityPollInterval: topologyStabilityPollInterval,
-            rebuildRuntimeDisplayHook: rebuildRuntimeDisplayHook
+            rebuildRuntimeDisplayHook: rebuildRuntimeDisplayHook,
+            clock: clock
         )
         orchestrator.loadPersistedConfigs()
         return orchestrator
