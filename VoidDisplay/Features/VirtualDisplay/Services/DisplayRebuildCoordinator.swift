@@ -201,9 +201,8 @@ final class DisplayRebuildCoordinator {
         var rebuiltSerials: [UInt32] = []
         for runningConfigID in orderedConfigIDs {
             guard let runningConfig = configManager.allConfigs().first(where: { $0.id == runningConfigID }) else { continue }
-            rebuiltSerials.append(runningConfig.serialNum)
-
             let runtimeSerialNum = runtimeTracker.runtimeSerialNum(for: runningConfigID, fallback: runningConfig.serialNum)
+            rebuiltSerials.append(runtimeSerialNum)
             let generationToWaitFor = runtimeTracker.runtimeGeneration(for: runningConfigID)
 
             runtimeTracker.clearRuntimeTracking(configId: runningConfigID, keepGeneration: true)
@@ -213,7 +212,7 @@ final class DisplayRebuildCoordinator {
             case .perDisplaySettlement:
                 terminationConfirmed = try await teardownCoordinator.settleRebuildTeardown(
                     configId: runningConfigID,
-                    serialNum: runningConfig.serialNum,
+                    serialNum: runtimeSerialNum,
                     generationToWaitFor: generationToWaitFor,
                     rebuildTerminationTimeout: VirtualDisplayTimingPolicy.rebuildTerminationTimeout,
                     rebuildOfflineTimeout: VirtualDisplayTimingPolicy.rebuildOfflineTimeout,
@@ -222,7 +221,7 @@ final class DisplayRebuildCoordinator {
             case .fleetOfflineOnly:
                 terminationConfirmed = false
                 AppLog.virtualDisplay.debug(
-                    "Fleet rebuild skipping per-display teardown settlement; relying on fleet offline confirmation (config: \(runningConfigID.uuidString, privacy: .public), serial: \(runningConfig.serialNum, privacy: .public), generation: \(String(describing: generationToWaitFor), privacy: .public))."
+                    "Fleet rebuild skipping per-display teardown settlement; relying on fleet offline confirmation (config: \(runningConfigID.uuidString, privacy: .public), serial: \(runtimeSerialNum, privacy: .public), generation: \(String(describing: generationToWaitFor), privacy: .public))."
                 )
             }
             terminationConfirmedByConfigID[runningConfigID] = terminationConfirmed
