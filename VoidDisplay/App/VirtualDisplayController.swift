@@ -251,7 +251,7 @@ final class VirtualDisplayController {
     }
 
     @discardableResult
-    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
+    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
         let moved = virtualDisplayService.moveConfig(configId, direction: direction)
         if moved { handlePostReorderMainPolicyReconcile(firstEnabledBeforeMove: firstEnabledBeforeMove) }

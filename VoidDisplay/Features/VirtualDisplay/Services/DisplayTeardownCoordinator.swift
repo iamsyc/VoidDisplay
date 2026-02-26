@@ -8,7 +8,36 @@ struct TeardownSettlement {
 }
 
 @MainActor
-final class DisplayTeardownCoordinator {
+protocol DisplayTeardownCoordinating: AnyObject {
+    func setRuntimeGenerationProvider(_ provider: @escaping (UUID) -> UInt64?)
+    func setReconfigurationMonitorAvailable(_ isAvailable: Bool)
+    func waitForManagedDisplayOffline(serialNum: UInt32, timeout: TimeInterval) async -> Bool
+    func waitForManagedDisplaysOffline(serialNumbers: [UInt32], timeout: TimeInterval) async -> Bool
+    func waitForTeardownSettlement(
+        configId: UUID,
+        expectedGeneration: UInt64,
+        serialNum: UInt32,
+        terminationTimeout: TimeInterval,
+        offlineTimeout: TimeInterval
+    ) async -> TeardownSettlement
+    func settleRebuildTeardown(
+        configId: UUID,
+        serialNum: UInt32,
+        generationToWaitFor: UInt64?,
+        rebuildTerminationTimeout: TimeInterval,
+        rebuildOfflineTimeout: TimeInterval,
+        rebuildFinalOfflineConfirmationTimeout: TimeInterval
+    ) async throws -> Bool
+    func observeTermination(configId: UUID, generation: UInt64)
+    func cancelTerminationWaiter(configId: UUID)
+    func cancelAllTerminationWaiters()
+    func completeOfflineWaitersIfPossible()
+    func cancelAllOfflineWaiters()
+    func isManagedDisplayOnline(serialNum: UInt32) -> Bool
+}
+
+@MainActor
+final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
     private struct TerminationWaiter {
         let expectedGeneration: UInt64
         var continuation: CheckedContinuation<Bool, Never>
@@ -208,7 +237,7 @@ final class DisplayTeardownCoordinator {
                 AppLog.virtualDisplay.error(
                     "Rebuild aborted because previous display with same serial is still online after teardown settlement (serial: \(serialNum, privacy: .public), generation: \(generationToWaitFor, privacy: .public), config: \(configId.uuidString, privacy: .public))."
                 )
-                throw VirtualDisplayService.VirtualDisplayError.teardownTimedOut
+                throw VirtualDisplayOperationError.teardownTimedOut
             }
             terminationConfirmed = settlement.terminationObserved
         }
@@ -221,7 +250,7 @@ final class DisplayTeardownCoordinator {
             AppLog.virtualDisplay.error(
                 "Rebuild aborted because previous display with same serial is still online during final offline confirmation (serial: \(serialNum, privacy: .public), config: \(configId.uuidString, privacy: .public))."
             )
-            throw VirtualDisplayService.VirtualDisplayError.teardownTimedOut
+            throw VirtualDisplayOperationError.teardownTimedOut
         }
         return terminationConfirmed
     }

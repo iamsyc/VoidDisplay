@@ -48,7 +48,7 @@ protocol VirtualDisplayServiceProtocol: AnyObject {
     func destroyDisplay(_ display: CGVirtualDisplay)
     func getConfig(_ configId: UUID) -> VirtualDisplayConfig?
     func updateConfig(_ updated: VirtualDisplayConfig)
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool
     @discardableResult
     func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool
     func applyModes(configId: UUID, modes: [ResolutionSelection])

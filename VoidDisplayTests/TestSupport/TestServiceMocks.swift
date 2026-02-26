@@ -132,7 +132,7 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var currentRunningConfigIds: Set<UUID> = []
     var currentRestoreFailures: [VirtualDisplayRestoreFailure] = []
     var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
-    var configStoreState: VirtualDisplayService.ConfigStoreState = .ready(
+    var configStoreState: VirtualDisplayConfigRepositoryState = .ready(
         diagnostics: .init(
             primaryStoreURL: URL(fileURLWithPath: "/tmp/mock-virtual-displays.json"),
             legacyContainerStoreURL: nil,
@@ -276,7 +276,7 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         currentDisplayConfigs[index] = updated
     }
 
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
         guard moveConfigResult else { return false }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
             return false

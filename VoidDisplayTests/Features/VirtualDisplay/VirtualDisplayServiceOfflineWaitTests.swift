@@ -2,17 +2,16 @@ import Foundation
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 @Suite(.serialized)
 struct VirtualDisplayServiceOfflineWaitTests {
 
-    @MainActor
-    @Test func waitForOfflineFallsBackToPollingWhenMonitorUnavailable() async {
-        let monitor = FakeDisplayReconfigurationMonitor(startResult: false)
+    @Test
+    func waitForOfflineFallsBackToPollingWhenMonitorUnavailable() async {
         let state = ManagedOnlineState(isOnline: true)
-        let sut = VirtualDisplayService(
-            configRepository: nil,
-            displayReconfigurationMonitor: monitor,
-            managedDisplayOnlineChecker: { _ in state.isOnline }
+        let coordinator = DisplayTeardownCoordinator(
+            managedDisplayOnlineChecker: { _ in state.isOnline },
+            isReconfigurationMonitorAvailable: false
         )
 
         let flipTask = Task { @MainActor in
@@ -21,23 +20,20 @@ struct VirtualDisplayServiceOfflineWaitTests {
         }
         defer { flipTask.cancel() }
 
-        let result = await sut.waitForManagedDisplayOffline(
+        let result = await coordinator.waitForManagedDisplayOffline(
             serialNum: 42,
             timeout: 1.2
         )
 
         #expect(result)
-        #expect(monitor.startCallCount == 1)
     }
 
-    @MainActor
-    @Test func waitForOfflineUsesFinalRecheckWhenCallbackDoesNotArrive() async {
-        let monitor = FakeDisplayReconfigurationMonitor(startResult: true)
+    @Test
+    func waitForOfflineUsesFinalRecheckWhenCallbackDoesNotArrive() async {
         let state = ManagedOnlineState(isOnline: true)
-        let sut = VirtualDisplayService(
-            configRepository: nil,
-            displayReconfigurationMonitor: monitor,
-            managedDisplayOnlineChecker: { _ in state.isOnline }
+        let coordinator = DisplayTeardownCoordinator(
+            managedDisplayOnlineChecker: { _ in state.isOnline },
+            isReconfigurationMonitorAvailable: true
         )
 
         let flipTask = Task { @MainActor in
@@ -46,27 +42,23 @@ struct VirtualDisplayServiceOfflineWaitTests {
         }
         defer { flipTask.cancel() }
 
-        let result = await sut.waitForManagedDisplayOffline(
+        let result = await coordinator.waitForManagedDisplayOffline(
             serialNum: 99,
             timeout: 0.2
         )
 
         #expect(result)
-        #expect(monitor.startCallCount == 1)
-        #expect(monitor.handler != nil)
     }
 
-    @MainActor
-    @Test func waitForOfflineReturnsFalseWhenStillOnlineAtTimeout() async {
-        let monitor = FakeDisplayReconfigurationMonitor(startResult: true)
+    @Test
+    func waitForOfflineReturnsFalseWhenStillOnlineAtTimeout() async {
         let state = ManagedOnlineState(isOnline: true)
-        let sut = VirtualDisplayService(
-            configRepository: nil,
-            displayReconfigurationMonitor: monitor,
-            managedDisplayOnlineChecker: { _ in state.isOnline }
+        let coordinator = DisplayTeardownCoordinator(
+            managedDisplayOnlineChecker: { _ in state.isOnline },
+            isReconfigurationMonitorAvailable: true
         )
 
-        let result = await sut.waitForManagedDisplayOffline(
+        let result = await coordinator.waitForManagedDisplayOffline(
             serialNum: 7,
             timeout: 0.08
         )
@@ -81,29 +73,5 @@ private final class ManagedOnlineState {
 
     init(isOnline: Bool) {
         self.isOnline = isOnline
-    }
-}
-
-private final class FakeDisplayReconfigurationMonitor: DisplayReconfigurationMonitoring {
-    private(set) var startCallCount = 0
-    private(set) var stopCallCount = 0
-    private(set) var handler: (@MainActor () -> Void)?
-
-    private let startResult: Bool
-
-    init(startResult: Bool) {
-        self.startResult = startResult
-    }
-
-    @discardableResult
-    func start(handler: @escaping @MainActor () -> Void) -> Bool {
-        startCallCount += 1
-        self.handler = handler
-        return startResult
-    }
-
-    func stop() {
-        stopCallCount += 1
-        handler = nil
     }
 }

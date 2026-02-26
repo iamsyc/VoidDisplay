@@ -7,7 +7,7 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
     var currentDisplayConfigs: [VirtualDisplayConfig]
     var currentRunningConfigIds: Set<UUID>
     var currentRestoreFailures: [VirtualDisplayRestoreFailure] = []
-    var configStoreState: VirtualDisplayService.ConfigStoreState = .ready(
+    var configStoreState: VirtualDisplayConfigRepositoryState = .ready(
         diagnostics: .init(
             primaryStoreURL: URL(fileURLWithPath: "/tmp/ui-test-virtual-displays.json"),
             legacyContainerStoreURL: nil,
@@ -90,12 +90,12 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
     ) throws -> CGVirtualDisplay {
-        throw VirtualDisplayService.VirtualDisplayError.creationFailed
+        throw VirtualDisplayOperationError.creationFailed
     }
 
     @discardableResult
     func createDisplayFromConfig(_ config: VirtualDisplayConfig) throws -> CGVirtualDisplay {
-        throw VirtualDisplayService.VirtualDisplayError.creationFailed
+        throw VirtualDisplayOperationError.creationFailed
     }
 
     func disableDisplay(_ display: CGVirtualDisplay, modes: [ResolutionSelection]) {
@@ -107,14 +107,14 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
 
     func disableDisplayByConfig(_ configId: UUID) throws {
         guard currentDisplayConfigs.contains(where: { $0.id == configId }) else {
-            throw VirtualDisplayService.VirtualDisplayError.configNotFound
+            throw VirtualDisplayOperationError.configNotFound
         }
         disableDisplayByConfigIfPresent(configId)
     }
 
     func enableDisplay(_ configId: UUID) async throws {
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
-            throw VirtualDisplayService.VirtualDisplayError.configNotFound
+            throw VirtualDisplayOperationError.configNotFound
         }
         var updated = currentDisplayConfigs[index]
         updated.desiredEnabled = true
@@ -146,7 +146,7 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
         currentDisplayConfigs[index] = updated
     }
 
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
         guard let sourceIndex = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
             return false
         }
@@ -202,10 +202,10 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
 
     func rebuildVirtualDisplay(configId: UUID) async throws {
         guard currentDisplayConfigs.contains(where: { $0.id == configId }) else {
-            throw VirtualDisplayService.VirtualDisplayError.configNotFound
+            throw VirtualDisplayOperationError.configNotFound
         }
         if scenario == .virtualDisplayRebuildFailed {
-            throw VirtualDisplayService.VirtualDisplayError.topologyRepairFailed
+            throw VirtualDisplayOperationError.topologyRepairFailed
         }
     }
 
