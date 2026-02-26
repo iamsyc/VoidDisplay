@@ -67,14 +67,108 @@ jobs:
           git push origin "refs/tags/${TAG}"
           echo "Created and pushed tag ${TAG}. The tag-push run will publish the release."
 
+  build_dmg:
+    name: build-dmg (${{ matrix.label }})
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: arm64
+            arch: arm64
+          - label: intel64
+            arch: x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: ./.github/actions/xcode-select
+        with:
+          preferred_path: /Applications/Xcode_26.2.app/Contents/Developer
+          fallback_path: /Applications/Xcode.app/Contents/Developer
+
+      - name: Build Release app (unsigned)
+        env:
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -scheme VoidDisplay \
+            -project VoidDisplay.xcodeproj \
+            -configuration Release \
+            -destination "platform=macOS,arch=${ARCH}" \
+            -derivedDataPath ".derivedData-release-${LABEL}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            ARCHS="${ARCH}" \
+            build
+
+      - name: Create DMG and checksum
+        env:
+          LABEL: ${{ matrix.label }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          app_path=".derivedData-release-${LABEL}/Build/Products/Release/VoidDisplay.app"
+          if [ ! -d "${app_path}" ]; then
+            echo "Expected app not found: ${app_path}"
+            exit 1
+          fi
+
+          dmg_name="VoidDisplay-${TAG}-${LABEL}.dmg"
+          rm -rf release-assets
+          mkdir -p release-assets/stage
+          cp -R "${app_path}" release-assets/stage/
+
+          hdiutil create \
+            -volname "VoidDisplay ${TAG} ${LABEL}" \
+            -srcfolder release-assets/stage \
+            -ov \
+            -format UDZO \
+            "release-assets/${dmg_name}"
+
+          shasum -a 256 "release-assets/${dmg_name}" > "release-assets/${dmg_name}.sha256"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dmg-${{ matrix.label }}
+          path: |
+            release-assets/*.dmg
+            release-assets/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
   publish_release:
     name: publish-github-release
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs:
+      - build_dmg
     runs-on: ubuntu-latest
     steps:
+      - name: Download packaged DMGs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-dmg-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          ls -lah release-assets
+          test -n "$(ls -1 release-assets/*.dmg 2>/dev/null)"
+          test -n "$(ls -1 release-assets/*.sha256 2>/dev/null)"
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          files: |
+            release-assets/*.dmg
+            release-assets/*.sha256
           generate_release_notes: true
           make_latest: true
