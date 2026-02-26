@@ -258,12 +258,17 @@ private extension DisplayRebuildCoordinatorTests {
         store.nextLoadConfigs = configs
         configManager.loadPersistedConfigs()
         store.nextLoadConfigs = []
+        let clock = TestVirtualDisplayClock()
 
         let teardownCoordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { _ in false },
-            isReconfigurationMonitorAvailable: false
+            isReconfigurationMonitorAvailable: false,
+            clock: clock
         )
-        let runtimeTracker = VirtualDisplayRuntimeTracker(teardownCoordinator: teardownCoordinator)
+        let runtimeTracker = VirtualDisplayRuntimeTracker(
+            teardownCoordinator: teardownCoordinator,
+            clock: clock
+        )
         let policyResolver = MainDisplayPolicyResolver(
             enabledDesiredConfigsProvider: { configManager.enabledDesiredConfigs() },
             runtimeDisplayIDProvider: { configId in runtimeTracker.runtimeDisplayID(for: configId) },
@@ -280,6 +285,7 @@ private extension DisplayRebuildCoordinatorTests {
                 teardownCoordinator: teardownCoordinator,
                 policyResolver: policyResolver,
                 topologyRepairer: repairer,
+                clock: clock,
                 topologyStabilityTimeout: topologyStabilityTimeout,
                 topologyStabilityPollInterval: topologyStabilityPollInterval,
                 rebuildRuntimeDisplayHook: { config, terminationConfirmed in

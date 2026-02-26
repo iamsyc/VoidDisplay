@@ -9,13 +9,13 @@ struct AppBootstrapTests {
     @Test func initPreviewModeSkipsStartupSequence() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         _ = AppBootstrap.makeEnvironment(
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
 
@@ -27,16 +27,15 @@ struct AppBootstrapTests {
     @Test func initUITestModeAppliesFixtureAndSkipsServiceBoot() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = UITestVirtualDisplayService(scenario: .baseline)
+        let virtualDisplay = UITestVirtualDisplayFacade(scenario: .baseline)
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             startupPlan: .init(
                 shouldRestoreVirtualDisplays: true,
-                shouldStartWebService: false,
                 postRestoreConfiguration: nil
             ),
             isRunningUnderXCTestOverride: false
@@ -50,13 +49,13 @@ struct AppBootstrapTests {
     @Test func initRunningUnderXCTestSkipsStartupSequence() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -66,10 +65,10 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.isEmpty)
     }
 
-    @Test func initNormalModeLoadsPersistedDataAndStartsWebService() async {
+    @Test func initNormalModeLoadsPersistedDataWithoutStartingWebService() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         let fixtureConfig = VirtualDisplayConfig(
             displayName: "Fixture",
@@ -85,15 +84,11 @@ struct AppBootstrapTests {
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
 
-        let didStartWebService = await waitUntil {
-            sharing.startWebServiceCallCount == 1
-        }
-
-        #expect(didStartWebService)
+        #expect(sharing.startWebServiceCallCount == 0)
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
         #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 1)
         #expect(sut.virtualDisplay.displayConfigs.count == 1)
@@ -104,13 +99,11 @@ struct AppBootstrapTests {
     @Test func controllerExposesConfigStoreLoadFailureState() {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.configStoreState = .loadFailed(
             error: .unsupportedSchemaVersion(expected: 3, actual: 2),
             diagnostics: .init(
                 primaryStoreURL: URL(fileURLWithPath: "/tmp/virtual-displays.json"),
-                legacyContainerStoreURL: URL(fileURLWithPath: "/tmp/legacy.json"),
-                legacyContainerFileExists: true,
                 isTestIsolatedPath: true
             )
         )
@@ -119,7 +112,7 @@ struct AppBootstrapTests {
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -133,7 +126,7 @@ struct AppBootstrapTests {
     @Test func rebuildFromSavedConfigDoesNotApplyModesAgainAfterRebuild() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         let config = VirtualDisplayConfig(
             displayName: "Running",
@@ -150,7 +143,7 @@ struct AppBootstrapTests {
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -172,7 +165,7 @@ struct AppBootstrapTests {
     @Test func startRebuildStopsDependentSharingAndMonitoringForRuntimeDisplay() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         let config = VirtualDisplayConfig(
             displayName: "Main Candidate",
@@ -193,7 +186,7 @@ struct AppBootstrapTests {
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -212,7 +205,7 @@ struct AppBootstrapTests {
     @Test func startRebuildIgnoresConcurrentDuplicateRequests() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.rebuildDelayNanoseconds = 150_000_000
 
         let config = VirtualDisplayConfig(
@@ -230,7 +223,7 @@ struct AppBootstrapTests {
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -251,7 +244,7 @@ struct AppBootstrapTests {
     @Test func rebuildFailureRetryAndAppliedBadgeLifecycle() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         let config = VirtualDisplayConfig(
             displayName: "Retry",
@@ -269,7 +262,7 @@ struct AppBootstrapTests {
             preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             appliedBadgeDisplayDurationNanoseconds: 50_000_000,
             isRunningUnderXCTestOverride: true
         )
@@ -305,7 +298,7 @@ struct AppBootstrapTests {
     @Test func moveDisplayConfigTriggersMainDisplayPolicyReconcile() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         virtualDisplay.currentDisplayConfigs = [
             VirtualDisplayConfig(
@@ -330,7 +323,7 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -349,7 +342,7 @@ struct AppBootstrapTests {
     @Test func moveDisplayConfigSkipsReconcileWhenFirstEnabledConfigDoesNotChange() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         var configA = VirtualDisplayConfig(
             displayName: "A",
@@ -384,7 +377,7 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
         sut.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
@@ -399,7 +392,7 @@ struct AppBootstrapTests {
     @Test func setPrimaryVirtualDisplayByReorderingMovesTargetToFirstEnabledAndReconciles() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         var disabled = VirtualDisplayConfig(
             displayName: "Disabled",
@@ -432,7 +425,7 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -451,7 +444,7 @@ struct AppBootstrapTests {
     @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenAlreadyFirstEnabled() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         let configA = VirtualDisplayConfig(
             displayName: "A",
@@ -475,7 +468,7 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -490,7 +483,7 @@ struct AppBootstrapTests {
     @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenTargetDisabled() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         var disabled = VirtualDisplayConfig(
             displayName: "Disabled",
@@ -515,7 +508,7 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
@@ -531,11 +524,11 @@ struct AppBootstrapTests {
     @Test func sharingFacadeMethodsDelegateAndExposeState() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         let displayID: CGDirectDisplayID = 7101
         let target = ShareTarget.id(99)
-        sharing.startResult = true
+        sharing.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
         sharing.activeStreamClientCount = 3
         sharing.activeSharingDisplayIDs = [displayID]
         sharing.hasAnyActiveSharing = true
@@ -547,12 +540,12 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 
-        let started = await sut.sharing.startWebService()
-        #expect(started)
+        let started = await sut.sharing.startWebService(requestedPort: 8081)
+        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
         #expect(sut.sharing.isWebServiceRunning)
         #expect(sut.sharing.isSharing)
         #expect(sut.sharing.isDisplaySharing(displayID: displayID))
@@ -568,10 +561,10 @@ struct AppBootstrapTests {
         #expect(shareURLResult == .failure(.serviceNotRunning))
     }
 
-    @Test func virtualDisplayFacadeResetDelegatesToService() {
+    @Test func virtualDisplayFacadeResetDelegatesToOrchestrator() {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayService()
+        let virtualDisplay = MockVirtualDisplayFacade()
 
         virtualDisplay.currentDisplayConfigs = [
             VirtualDisplayConfig(
@@ -588,7 +581,7 @@ struct AppBootstrapTests {
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayService: virtualDisplay,
+            virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
 

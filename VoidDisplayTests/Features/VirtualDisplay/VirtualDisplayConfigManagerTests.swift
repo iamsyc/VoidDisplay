@@ -49,7 +49,7 @@ struct VirtualDisplayConfigManagerTests {
         manager.updateConfig(updated)
         manager.removeConfig(config.id)
 
-        #expect(store.saves.count == 3)
+        #expect(store.savedConfigs.count == 3)
         #expect(manager.allConfigs().isEmpty)
     }
 
@@ -65,7 +65,7 @@ struct VirtualDisplayConfigManagerTests {
 
         #expect(moved)
         #expect(manager.allConfigs().map(\.id) == [configB.id, configA.id])
-        #expect(store.saves.count == 1)
+        #expect(store.savedConfigs.count == 1)
     }
 
     @Test
@@ -84,7 +84,7 @@ struct VirtualDisplayConfigManagerTests {
 
         #expect(moved)
         #expect(manager.allConfigs().map(\.id) == [disabledA.id, disabledB.id, enabledD.id, enabledC.id])
-        #expect(store.saves.count == 1)
+        #expect(store.savedConfigs.count == 1)
     }
 
     @Test

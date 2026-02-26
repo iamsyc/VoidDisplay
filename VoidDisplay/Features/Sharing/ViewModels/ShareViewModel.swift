@@ -12,10 +12,11 @@ final class ShareViewModel {
     struct SharingQueries {
         var isWebServiceRunning: @MainActor () -> Bool
         var sharePageAddress: @MainActor (CGDirectDisplayID) -> String?
+        var preferredWebServicePort: @MainActor () -> UInt16
     }
 
     struct SharingActions {
-        var startWebService: @MainActor () async -> Bool
+        var startWebService: @MainActor (UInt16) async -> WebServiceStartResult
         var stopWebService: @MainActor () -> Void
         var registerShareableDisplays: @MainActor ([SCDisplay], @escaping (CGDirectDisplayID) -> UInt32?) -> Void
         var beginSharing: @MainActor (CGDirectDisplayID, SCStream, Capture, StreamDelegate) -> Void
@@ -38,10 +39,13 @@ final class ShareViewModel {
             .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { sharing.isWebServiceRunning },
-                    sharePageAddress: { displayID in sharing.sharePageAddress(for: displayID) }
+                    sharePageAddress: { displayID in sharing.sharePageAddress(for: displayID) },
+                    preferredWebServicePort: { sharing.preferredWebServicePort }
                 ),
                 sharingActions: .init(
-                    startWebService: { await sharing.startWebService() },
+                    startWebService: { requestedPort in
+                        await sharing.startWebService(requestedPort: requestedPort)
+                    },
                     stopWebService: { sharing.stopWebService() },
                     registerShareableDisplays: { displays, resolver in
                         sharing.registerShareableDisplays(displays, virtualSerialResolver: resolver)
@@ -62,6 +66,9 @@ final class ShareViewModel {
     }
 
     let catalog: ScreenCaptureDisplayCatalogState
+    var servicePortInput = ""
+    var portInputErrorMessage: String?
+    var isStartingService = false
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var showOpenPageError = false
     var openPageErrorMessage = ""
@@ -89,6 +96,7 @@ final class ShareViewModel {
             logOperation: "Load shareable displays (sharing)",
             logger: AppLog.capture
         )
+        self.servicePortInput = String(dependencies.sharingQueries.preferredWebServicePort())
     }
 
     func syncForCurrentState() {
@@ -105,11 +113,29 @@ final class ShareViewModel {
 
     func startService() {
         Task { @MainActor in
-            guard await dependencies.sharingActions.startWebService() else {
-                AppLog.sharing.error("Start service failed.")
-                presentError(String(localized: "Failed to start web service."))
+            isStartingService = true
+            defer { isStartingService = false }
+            portInputErrorMessage = nil
+
+            let requestedPort: UInt16
+            switch SharePortValidationError.parse(servicePortInput) {
+            case .success(let parsed):
+                requestedPort = parsed
+            case .failure(let validationError):
+                presentPortInputError(validationError.userMessage)
                 return
             }
+
+            let startResult = await dependencies.sharingActions.startWebService(requestedPort)
+            if case .failed(let failure) = startResult {
+                AppLog.sharing.error(
+                    "Start service failed (requestedPort: \(requestedPort, privacy: .public), reason: \(String(describing: failure), privacy: .public))."
+                )
+                presentPortInputError(failure.userMessage)
+                return
+            }
+            servicePortInput = String(requestedPort)
+            portInputErrorMessage = nil
             syncForCurrentState()
         }
     }
@@ -118,6 +144,11 @@ final class ShareViewModel {
         catalogLoader.cancelInFlightDisplayLoad()
         dependencies.sharingActions.stopWebService()
         syncForCurrentState()
+    }
+
+    func updateServicePortInput(_ value: String) {
+        servicePortInput = String(value.prefix(5))
+        portInputErrorMessage = nil
     }
 
     func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
@@ -185,7 +216,20 @@ final class ShareViewModel {
             if dependencies.sharingQueries.isWebServiceRunning() {
                 ready = true
             } else {
-                ready = await dependencies.sharingActions.startWebService()
+                let requestedPort: UInt16
+                switch SharePortValidationError.parse(servicePortInput) {
+                case .success(let parsed):
+                    requestedPort = parsed
+                case .failure(let validationError):
+                    presentPortInputError(validationError.userMessage)
+                    return
+                }
+                let result = await dependencies.sharingActions.startWebService(requestedPort)
+                if case .failed(let failure) = result {
+                    presentPortInputError(failure.userMessage)
+                    return
+                }
+                ready = true
             }
             guard ready else {
                 presentError(String(localized: "Web service is not running."))
@@ -241,5 +285,9 @@ final class ShareViewModel {
     private func presentError(_ message: String) {
         openPageErrorMessage = message
         showOpenPageError = true
+    }
+
+    private func presentPortInputError(_ message: String) {
+        portInputErrorMessage = message
     }
 }

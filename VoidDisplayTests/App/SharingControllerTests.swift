@@ -6,7 +6,7 @@ import Testing
 struct SharingControllerTests {
     @Test func startWebServiceSyncsState() async {
         let service = MockSharingService()
-        service.startResult = true
+        service.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
         service.activeStreamClientCount = 2
         let displayID: CGDirectDisplayID = 8001
         service.activeSharingDisplayIDs = [displayID]
@@ -14,13 +14,28 @@ struct SharingControllerTests {
 
         let sut = SharingController(sharingService: service)
 
-        let started = await sut.startWebService()
+        let started = await sut.startWebService(requestedPort: 8081)
 
-        #expect(started)
+        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
         #expect(sut.isWebServiceRunning)
         #expect(sut.isSharing)
         #expect(sut.sharingClientCount == 2)
         #expect(sut.activeSharingDisplayIDs.contains(displayID))
+    }
+
+    @Test func startWebServicePersistsRequestedPortOnSuccess() async {
+        let service = MockSharingService()
+        service.startResult = .started(WebServiceBinding(requestedPort: 8088, boundPort: 8088))
+        let preferences = MockSharingPortPreferences()
+        let sut = SharingController(
+            sharingService: service,
+            portPreferences: preferences
+        )
+
+        _ = await sut.startWebService(requestedPort: 8088)
+
+        #expect(preferences.savedPorts == [8088])
+        #expect(sut.preferredWebServicePort == 8088)
     }
 
     @Test func stopSharingAndStopAllSharingSyncState() {
@@ -51,5 +66,16 @@ struct SharingControllerTests {
         let result = sut.sharePageURLResolution(for: nil)
 
         #expect(result == .failure(.serviceNotRunning))
+    }
+}
+
+@MainActor
+private final class MockSharingPortPreferences: SharingPortPreferencesProtocol {
+    var preferredPort: UInt16 = 8081
+    var savedPorts: [UInt16] = []
+
+    func savePreferredPort(_ port: UInt16) {
+        savedPorts.append(port)
+        preferredPort = port
     }
 }

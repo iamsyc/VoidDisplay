@@ -1,4 +1,11 @@
 import Foundation
+import CoreGraphics
+
+struct VirtualDisplayConfigStorePresentation: Equatable {
+    var hasLoadFailure = false
+    var loadErrorMessage: String?
+    var diagnosticsSummary: String?
+}
 
 enum VirtualDisplayReorderDirection {
     case up
@@ -73,4 +80,39 @@ enum VirtualDisplayTimingPolicy {
 enum ManagedVirtualDisplayIdentity {
     static let vendorID: UInt32 = 0x3456
     static let productID: UInt32 = 0x1234
+}
+
+struct ManagedVirtualDisplayRuntimeSnapshot: Equatable {
+    let configId: UUID
+    let serialNum: UInt32
+    let displayID: CGDirectDisplayID
+    let isLiveRuntime: Bool
+}
+
+struct VirtualDisplaySnapshot: Equatable {
+    let managedDisplays: [ManagedVirtualDisplayRuntimeSnapshot]
+    let configs: [VirtualDisplayConfig]
+    let runningConfigIds: Set<UUID>
+    let restoreFailures: [VirtualDisplayRestoreFailure]
+    let configStorePresentation: VirtualDisplayConfigStorePresentation
+    let runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID]
+
+    func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
+        runtimeDisplayIDByConfigId[configId]
+    }
+
+    func isManagedDisplay(_ displayID: CGDirectDisplayID) -> Bool {
+        managedDisplays.contains(where: { $0.displayID == displayID })
+    }
+
+    func serialForManagedDisplay(_ displayID: CGDirectDisplayID) -> UInt32? {
+        managedDisplays.first(where: { $0.displayID == displayID })?.serialNum
+    }
+}
+
+struct RuntimeDisplayRecord: Equatable {
+    let configId: UUID
+    let serialNum: UInt32
+    let displayID: CGDirectDisplayID
+    let generation: UInt64
 }

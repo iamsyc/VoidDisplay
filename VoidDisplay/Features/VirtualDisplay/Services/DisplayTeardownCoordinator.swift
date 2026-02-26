@@ -58,15 +58,18 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
     private var terminationWaitersByConfigId: [UUID: TerminationWaiter] = [:]
     private var offlineWaitersByToken: [UUID: OfflineWaiter] = [:]
     private let managedDisplayOnlineChecker: (UInt32) -> Bool
+    private let clock: any VirtualDisplayClocking
     private var isReconfigurationMonitorAvailable: Bool
     private var didLogOfflinePollingFallback = false
     private var runtimeGenerationProvider: ((UUID) -> UInt64?)?
 
     init(
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool,
-        isReconfigurationMonitorAvailable: Bool
+        isReconfigurationMonitorAvailable: Bool,
+        clock: (any VirtualDisplayClocking)? = nil
     ) {
         self.managedDisplayOnlineChecker = managedDisplayOnlineChecker
+        self.clock = clock ?? SystemVirtualDisplayClock()
         self.isReconfigurationMonitorAvailable = isReconfigurationMonitorAvailable
     }
 
@@ -102,14 +105,10 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
         let token = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
                 let timeoutTask = Task { [weak self] in
-                    do {
-                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                    } catch {
-                        return
-                    }
-                    self?.completeOfflineWaiterAfterTimeout(token: token)
+                    guard let self else { return }
+                    await self.clock.sleep(seconds: timeout)
+                    self.completeOfflineWaiterAfterTimeout(token: token)
                 }
 
                 offlineWaitersByToken[token] = OfflineWaiter(
@@ -323,17 +322,13 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
                     "Register termination waiter (config: \(configId.uuidString, privacy: .public), expectedGeneration: \(expectedGeneration, privacy: .public), timeoutSec: \(timeout, privacy: .public))."
                 )
 
-                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
                 let timeoutTask = Task { [weak self] in
-                    do {
-                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                    } catch {
-                        return
-                    }
+                    guard let self else { return }
+                    await self.clock.sleep(seconds: timeout)
                     AppLog.virtualDisplay.debug(
                         "Termination waiter timed out (config: \(configId.uuidString, privacy: .public), expectedGeneration: \(expectedGeneration, privacy: .public))."
                     )
-                    self?.completeTerminationWaiter(
+                    self.completeTerminationWaiter(
                         configId: configId,
                         expectedGeneration: expectedGeneration,
                         result: false
@@ -388,15 +383,15 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
         timeout: TimeInterval,
         interval: TimeInterval = 0.1
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        let deadline = clock.now() + max(timeout, 0)
+        while clock.now() < deadline {
             if Task.isCancelled {
                 return false
             }
             if !isManagedDisplayOnline(serialNum: serialNum) {
                 return true
             }
-            await sleepForRetry(seconds: interval)
+            await clock.sleep(seconds: interval)
         }
         return !isManagedDisplayOnline(serialNum: serialNum)
     }
@@ -417,12 +412,4 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
         completeOfflineWaiter(token: token, result: false)
     }
 
-    private func sleepForRetry(seconds: TimeInterval) async {
-        let nanoseconds = UInt64(max(seconds, 0) * 1_000_000_000)
-        do {
-            try await Task.sleep(nanoseconds: nanoseconds)
-        } catch {
-            // Ignore cancellation and let retry loop exit on next check.
-        }
-    }
 }

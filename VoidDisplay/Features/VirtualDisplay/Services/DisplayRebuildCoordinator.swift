@@ -10,6 +10,7 @@ final class DisplayRebuildCoordinator {
         let teardownCoordinator: any DisplayTeardownCoordinating
         let policyResolver: MainDisplayPolicyResolver
         let topologyRepairer: any DisplayTopologyRepairing
+        let clock: any VirtualDisplayClocking
         let topologyStabilityTimeout: TimeInterval
         let topologyStabilityPollInterval: TimeInterval
         let rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)?
@@ -24,6 +25,7 @@ final class DisplayRebuildCoordinator {
     private var runtimeTracker: VirtualDisplayRuntimeTracker { dependencies.runtimeTracker }
     private var teardownCoordinator: any DisplayTeardownCoordinating { dependencies.teardownCoordinator }
     private var policyResolver: MainDisplayPolicyResolver { dependencies.policyResolver }
+    private var clock: any VirtualDisplayClocking { dependencies.clock }
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -71,7 +73,7 @@ final class DisplayRebuildCoordinator {
             ? runtimeTracker.runtimeGeneration(for: configId)
             : nil
         if targetWasRunning {
-            runtimeTracker.clearRuntimeTracking(configId: configId, serialNum: runtimeSerialNum, keepGeneration: true)
+            runtimeTracker.clearRuntimeTracking(configId: configId, keepGeneration: true)
         }
 
         let terminationConfirmed: Bool
@@ -204,7 +206,7 @@ final class DisplayRebuildCoordinator {
             let runtimeSerialNum = runtimeTracker.runtimeSerialNum(for: runningConfigID, fallback: runningConfig.serialNum)
             let generationToWaitFor = runtimeTracker.runtimeGeneration(for: runningConfigID)
 
-            runtimeTracker.clearRuntimeTracking(configId: runningConfigID, serialNum: runtimeSerialNum, keepGeneration: true)
+            runtimeTracker.clearRuntimeTracking(configId: runningConfigID, keepGeneration: true)
 
             let terminationConfirmed: Bool
             switch teardownStrategy {
@@ -295,11 +297,11 @@ final class DisplayRebuildCoordinator {
             try await hook(config, terminationConfirmed)
             return runtimeTracker.runtimeDisplayID(for: config.id)
         }
-        let rebuiltDisplay = try await runtimeTracker.createRuntimeDisplayWithRetries(
+        let rebuiltRecord = try await runtimeTracker.createRuntimeDisplayWithRetries(
             from: config,
             terminationConfirmed: terminationConfirmed
         )
-        return rebuiltDisplay.displayID
+        return rebuiltRecord.displayID
     }
 
     enum FleetRebuildTeardownStrategy {
@@ -363,7 +365,7 @@ final class DisplayRebuildCoordinator {
             VirtualDisplayTimingPolicy.deferredTopologyRecheckMinimumDelay,
             dependencies.topologyStabilityPollInterval * VirtualDisplayTimingPolicy.deferredTopologyRecheckMultiplier
         )
-        await runtimeTracker.sleepForRetry(seconds: deferredDelay)
+        await clock.sleep(seconds: deferredDelay)
 
         guard let deferredSnapshot = await waitForStableTopology() else {
             AppLog.virtualDisplay.warning(
@@ -527,7 +529,7 @@ final class DisplayRebuildCoordinator {
         minimumTimeout: TimeInterval = 0.35
     ) async -> DisplayTopologySnapshot? {
         let effectiveTimeout = max(dependencies.topologyStabilityTimeout, minimumTimeout)
-        let deadline = Date().addingTimeInterval(effectiveTimeout)
+        let deadline = clock.now() + effectiveTimeout
         var previousSnapshot: DisplayTopologySnapshot?
         var stableSampleCount = 0
         let targetStableSamples = max(requiredStableSamples, 1)
@@ -538,11 +540,11 @@ final class DisplayRebuildCoordinator {
         )
         var currentPollInterval = fastProbeInterval
 
-        while Date() < deadline {
+        while clock.now() < deadline {
             guard let currentSnapshot = dependencies.currentTopologySnapshot() else {
                 stableSampleCount = 0
                 currentPollInterval = min(basePollInterval, max(fastProbeInterval, currentPollInterval))
-                await runtimeTracker.sleepForRetry(seconds: currentPollInterval)
+                await clock.sleep(seconds: currentPollInterval)
                 continue
             }
 
@@ -552,7 +554,7 @@ final class DisplayRebuildCoordinator {
                 if targetStableSamples == 1 {
                     return currentSnapshot
                 }
-                await runtimeTracker.sleepForRetry(seconds: fastProbeInterval)
+                await clock.sleep(seconds: fastProbeInterval)
                 continue
             }
 
@@ -577,7 +579,7 @@ final class DisplayRebuildCoordinator {
             if stableSampleCount >= targetStableSamples {
                 return currentSnapshot
             }
-            await runtimeTracker.sleepForRetry(seconds: currentPollInterval)
+            await clock.sleep(seconds: currentPollInterval)
         }
 
         return nil

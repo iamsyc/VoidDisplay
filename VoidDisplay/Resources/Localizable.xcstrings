@@ -11,6 +11,9 @@
         }
       }
     },
+    "-" : {
+
+    },
     "·" : {
       "localizations" : {
         "zh-Hans" : {
@@ -153,6 +156,9 @@
           }
         }
       }
+    },
+    "8081" : {
+
     },
     "Add Method" : {
       "localizations" : {
@@ -567,6 +573,16 @@
         }
       }
     },
+    "Failed to prepare web service socket for port %u." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法为端口 %1$u 创建 Web 服务套接字。"
+          }
+        }
+      }
+    },
     "Failed to rebuild virtual display." : {
       "localizations" : {
         "zh-Hans" : {
@@ -587,7 +603,18 @@
         }
       }
     },
+    "Failed to start web service on port %u." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在端口 %1$u 启动 Web 服务。"
+          }
+        }
+      }
+    },
     "Failed to start web service." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -903,6 +930,16 @@
         }
       }
     },
+    "Permission denied for port %u. Choose another port and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口 %1$u 无权限访问，请更换端口后重试。"
+          }
+        }
+      }
+    },
     "Physical Display" : {
       "localizations" : {
         "zh-Hans" : {
@@ -959,6 +996,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请输入有效的分辨率值"
+          }
+        }
+      }
+    },
+    "Port" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口"
+          }
+        }
+      }
+    },
+    "Port %u is already in use. Choose another port and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口 %1$u 已被占用，请更换端口后重试。"
+          }
+        }
+      }
+    },
+    "Port cannot be empty." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口不能为空。"
+          }
+        }
+      }
+    },
+    "Port must be a number." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口必须是数字。"
+          }
+        }
+      }
+    },
+    "Port must be between 1024 and 65535." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口必须在 1024 到 65535 之间。"
           }
         }
       }
@@ -1509,12 +1596,42 @@
         }
       }
     },
+    "Web service controller is unavailable." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务控制器不可用。"
+          }
+        }
+      }
+    },
+    "Web service did not become ready on port %u in time." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务未能在端口 %1$u 于限定时间内就绪。"
+          }
+        }
+      }
+    },
     "Web service is not running." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 服务未运行。"
+          }
+        }
+      }
+    },
+    "Web service startup was superseded." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 服务启动请求已被新的请求替代。"
           }
         }
       }

@@ -1,5 +1,4 @@
 import Foundation
-import CoreGraphics
 import OSLog
 
 /// Owns the virtual display configuration collection — CRUD, reordering, serial allocation, and persistence.
@@ -88,10 +87,6 @@ final class VirtualDisplayConfigManager {
         configs.first { $0.id == configId }
     }
 
-    func config(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
-        configs.first { $0.serialNum == display.serialNum }
-    }
-
     func configIndex(id configId: UUID) -> Int? {
         configs.firstIndex(where: { $0.id == configId })
     }
@@ -121,21 +116,6 @@ final class VirtualDisplayConfigManager {
         guard let index = configs.firstIndex(where: { $0.id == updated.id }) else { return }
         configs[index] = updated
         persistConfigs(reason: .userEditedConfig)
-    }
-
-    func updateConfig(for display: CGVirtualDisplay, modes: [ResolutionSelection]) {
-        guard let index = configs.firstIndex(where: { $0.serialNum == display.serialNum }) else { return }
-        var updated = configs[index]
-        updated.modes = modes.map {
-            VirtualDisplayConfig.ModeConfig(
-                width: $0.width,
-                height: $0.height,
-                refreshRate: $0.refreshRate,
-                enableHiDPI: $0.enableHiDPI
-            )
-        }
-        configs[index] = updated
-        persistConfigs(reason: .runtimeRebuildRecovery)
     }
 
     // MARK: - Desired enabled state

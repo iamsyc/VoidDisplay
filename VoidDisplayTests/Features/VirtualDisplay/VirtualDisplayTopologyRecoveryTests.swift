@@ -20,7 +20,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         )
 
         var rebuildHookCallCount = 0
-        let service = makeService(
+        let orchestrator = makeOrchestrator(
             initialConfigs: [configA],
             inspector: FakeDisplayTopologyInspector(snapshots: Array(repeating: stable, count: 80)),
             repairer: FakeDisplayTopologyRepairer(shouldSucceed: true),
@@ -31,7 +31,7 @@ struct VirtualDisplayTopologyRecoveryTests {
             }
         )
 
-        try await service.rebuildVirtualDisplay(configId: configA.id)
+        try await orchestrator.rebuildVirtualDisplay(configId: configA.id)
 
         #expect(rebuildHookCallCount == 1)
     }
@@ -48,7 +48,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         )
 
         var rebuildHookCallCount = 0
-        let service = makeService(
+        let orchestrator = makeOrchestrator(
             initialConfigs: [configA],
             inspector: FakeDisplayTopologyInspector(snapshots: [stable]),
             repairer: FakeDisplayTopologyRepairer(shouldSucceed: true),
@@ -59,7 +59,7 @@ struct VirtualDisplayTopologyRecoveryTests {
         )
 
         do {
-            try await service.rebuildVirtualDisplay(configId: configA.id)
+            try await orchestrator.rebuildVirtualDisplay(configId: configA.id)
             Issue.record("Expected rebuild to fail when display stays online.")
         } catch let error as VirtualDisplayOperationError {
             guard case .teardownTimedOut = error else {
@@ -76,7 +76,7 @@ struct VirtualDisplayTopologyRecoveryTests {
 
 private extension VirtualDisplayTopologyRecoveryTests {
     @MainActor
-    func makeService(
+    func makeOrchestrator(
         initialConfigs: [VirtualDisplayConfig],
         inspector: any DisplayTopologyInspecting,
         repairer: any DisplayTopologyRepairing,
@@ -84,11 +84,11 @@ private extension VirtualDisplayTopologyRecoveryTests {
         topologyStabilityPollInterval: TimeInterval = 0.001,
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool = { _ in false },
         rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil
-    ) -> VirtualDisplayService {
+    ) -> VirtualDisplayOrchestrator {
         let store = FakeVirtualDisplayStore()
         store.nextLoadConfigs = initialConfigs
         let repository = VirtualDisplayConfigRepository(store: store, reportFailure: nil)
-        let service = VirtualDisplayService(
+        let orchestrator = VirtualDisplayOrchestrator(
             configRepository: repository,
             displayReconfigurationMonitor: FakeDisplayReconfigurationMonitor(),
             topologyInspector: inspector,
@@ -98,8 +98,8 @@ private extension VirtualDisplayTopologyRecoveryTests {
             topologyStabilityPollInterval: topologyStabilityPollInterval,
             rebuildRuntimeDisplayHook: rebuildRuntimeDisplayHook
         )
-        service.loadPersistedConfigs()
-        return service
+        orchestrator.loadPersistedConfigs()
+        return orchestrator
     }
 
     func config(id: UUID = UUID(), serial: UInt32, desiredEnabled: Bool) -> VirtualDisplayConfig {

@@ -52,13 +52,11 @@ struct VirtualDisplayViewBodySmokeTests {
     }
 
     @Test func virtualDisplayViewBodyEvaluatesWithConfigStoreLoadFailure() {
-        let mockService = MockVirtualDisplayService()
+        let mockService = MockVirtualDisplayFacade()
         mockService.configStoreState = .loadFailed(
             error: .unsupportedSchemaVersion(expected: 3, actual: 2),
             diagnostics: .init(
                 primaryStoreURL: URL(fileURLWithPath: "/tmp/virtual-displays.json"),
-                legacyContainerStoreURL: URL(fileURLWithPath: "/tmp/legacy.json"),
-                legacyContainerFileExists: true,
                 isTestIsolatedPath: true
             )
         )
@@ -66,7 +64,7 @@ struct VirtualDisplayViewBodySmokeTests {
             preview: true,
             captureMonitoringService: MockCaptureMonitoringService(),
             sharingService: MockSharingService(),
-            virtualDisplayService: mockService,
+            virtualDisplayFacade: mockService,
             isRunningUnderXCTestOverride: true
         )
         failureEnv.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
@@ -85,10 +83,9 @@ struct VirtualDisplayViewBodySmokeTests {
                 preview: preview,
                 captureMonitoringService: MockCaptureMonitoringService(),
                 sharingService: MockSharingService(),
-                virtualDisplayService: UITestVirtualDisplayService(scenario: .baseline),
+                virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: .baseline),
                 startupPlan: .init(
                     shouldRestoreVirtualDisplays: true,
-                    shouldStartWebService: false,
                     postRestoreConfiguration: nil
                 ),
                 isRunningUnderXCTestOverride: true
@@ -99,7 +96,7 @@ struct VirtualDisplayViewBodySmokeTests {
             preview: preview,
             captureMonitoringService: MockCaptureMonitoringService(),
             sharingService: MockSharingService(),
-            virtualDisplayService: MockVirtualDisplayService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
             isRunningUnderXCTestOverride: true
         )
     }

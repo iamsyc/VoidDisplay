@@ -4,18 +4,20 @@ import Testing
 
 @MainActor
 @Suite(.serialized)
-struct VirtualDisplayServiceOfflineWaitTests {
+struct DisplayTeardownCoordinatorOfflineWaitTests {
 
     @Test
     func waitForOfflineFallsBackToPollingWhenMonitorUnavailable() async {
         let state = ManagedOnlineState(isOnline: true)
+        let clock = TestVirtualDisplayClock()
         let coordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { _ in state.isOnline },
-            isReconfigurationMonitorAvailable: false
+            isReconfigurationMonitorAvailable: false,
+            clock: clock
         )
 
         let flipTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            await Task.yield()
             state.isOnline = false
         }
         defer { flipTask.cancel() }
@@ -31,13 +33,15 @@ struct VirtualDisplayServiceOfflineWaitTests {
     @Test
     func waitForOfflineUsesFinalRecheckWhenCallbackDoesNotArrive() async {
         let state = ManagedOnlineState(isOnline: true)
+        let clock = TestVirtualDisplayClock()
         let coordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { _ in state.isOnline },
-            isReconfigurationMonitorAvailable: true
+            isReconfigurationMonitorAvailable: true,
+            clock: clock
         )
 
         let flipTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 120_000_000)
+            await Task.yield()
             state.isOnline = false
         }
         defer { flipTask.cancel() }
@@ -53,9 +57,11 @@ struct VirtualDisplayServiceOfflineWaitTests {
     @Test
     func waitForOfflineReturnsFalseWhenStillOnlineAtTimeout() async {
         let state = ManagedOnlineState(isOnline: true)
+        let clock = TestVirtualDisplayClock()
         let coordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { _ in state.isOnline },
-            isReconfigurationMonitorAvailable: true
+            isReconfigurationMonitorAvailable: true,
+            clock: clock
         )
 
         let result = await coordinator.waitForManagedDisplayOffline(

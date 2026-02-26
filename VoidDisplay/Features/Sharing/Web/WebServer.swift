@@ -13,6 +13,17 @@ final class WebServer {
         case missingDisplayPageResource
     }
 
+    enum ListenerStartResult {
+        case ready(boundPort: UInt16)
+        case failed(error: Error)
+        case timedOut
+    }
+
+    private enum LifecycleError: Error {
+        case listenerCancelled
+        case listenerMissingBoundPort
+    }
+
     nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
     nonisolated private static let maxRequestBytes = 32 * 1024
     nonisolated private static let receiveChunkSize = 4096
@@ -70,7 +81,7 @@ final class WebServer {
     private let frameProvider: @MainActor @Sendable (ShareTarget) -> Data?
     private let onListenerStopped: (@MainActor @Sendable () -> Void)?
     private var didNotifyListenerStopped = false
-    private var startupWaiter: CheckedContinuation<Bool, Never>?
+    private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
     private var startupTimeoutTask: Task<Void, Never>?
     nonisolated private let networkQueue = DispatchQueue(
         label: "com.developerchen.voiddisplay.web.network",
@@ -85,15 +96,19 @@ final class WebServer {
         switch state {
         case .ready:
             AppLog.web.info("Web listener ready.")
-            completeStartupWaiter(result: true)
+            guard let boundPort = listener?.port?.rawValue else {
+                completeStartupWaiter(result: .failed(error: LifecycleError.listenerMissingBoundPort))
+                return
+            }
+            completeStartupWaiter(result: .ready(boundPort: boundPort))
         case .failed(let error):
             AppErrorMapper.logFailure("Web listener failed", error: error, logger: AppLog.web)
-            completeStartupWaiter(result: false)
+            completeStartupWaiter(result: .failed(error: error))
             notifyListenerStoppedIfNeeded()
             stopListener()
         case .cancelled:
             AppLog.web.info("Web listener cancelled.")
-            completeStartupWaiter(result: false)
+            completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
             notifyListenerStoppedIfNeeded()
         default:
             break
@@ -106,7 +121,7 @@ final class WebServer {
         onListenerStopped?()
     }
 
-    private func completeStartupWaiter(result: Bool) {
+    private func completeStartupWaiter(result: ListenerStartResult) {
         guard let startupWaiter else { return }
         self.startupWaiter = nil
         startupTimeoutTask?.cancel()
@@ -361,12 +376,14 @@ final class WebServer {
         }
     }
 
-    func startListener(timeout: TimeInterval = 1.5) async -> Bool {
-        guard listener != nil else { return false }
+    func startListener(timeout: TimeInterval = 1.5) async -> ListenerStartResult {
+        guard listener != nil else {
+            return .failed(error: LifecycleError.listenerCancelled)
+        }
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                completeStartupWaiter(result: false)
+                completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
                 startupWaiter = continuation
                 didNotifyListenerStopped = false
 
@@ -377,13 +394,13 @@ final class WebServer {
                     } catch {
                         return
                     }
-                    self?.completeStartupWaiter(result: false)
+                    self?.completeStartupWaiter(result: .timedOut)
                 }
                 listener?.start(queue: networkQueue)
             }
         } onCancel: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.completeStartupWaiter(result: false)
+                self?.completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
             }
         }
     }
@@ -410,7 +427,7 @@ final class WebServer {
     }
 
     func stopListener() {
-        completeStartupWaiter(result: false)
+        completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
         disconnectAllStreamClients()
         listener?.cancel()
         listener = nil

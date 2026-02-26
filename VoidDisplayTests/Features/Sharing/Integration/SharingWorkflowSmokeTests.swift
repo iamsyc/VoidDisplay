@@ -6,13 +6,14 @@ struct SharingWorkflowSmokeTests {
 
     @MainActor @Test func sharingServiceStartStopWorkflowSmoke() async {
         let controller = MockWebServiceController()
+        controller.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
         let service = SharingService(webServiceController: controller)
 
         #expect(service.isWebServiceRunning == false)
         #expect(service.hasAnyActiveSharing == false)
 
-        let started = await service.startWebService()
-        #expect(started)
+        let started = await service.startWebService(requestedPort: 8081)
+        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 1)
         #expect(controller.capturedTargetStateProvider?(.main) == .knownInactive)
@@ -28,8 +29,8 @@ struct SharingWorkflowSmokeTests {
         #expect(controller.stopCallCount == 1)
         #expect(controller.disconnectCallCount == 1)
 
-        let startedAgain = await service.startWebService()
-        #expect(startedAgain)
+        let startedAgain = await service.startWebService(requestedPort: 8081)
+        #expect(startedAgain == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 2)
     }

@@ -290,7 +290,7 @@ struct VirtualDisplayAndResolutionTests {
         #expect(loaded.first?.modes.first?.height == 1080)
     }
 
-    @MainActor @Test func virtualDisplayStoreDiagnosticsReportsPrimaryAndLegacyPaths() throws {
+    @MainActor @Test func virtualDisplayStoreDiagnosticsReportsPrimaryPathAndIsolationState() throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
@@ -304,7 +304,6 @@ struct VirtualDisplayAndResolutionTests {
 
         #expect(diagnostics.primaryStoreURL.path.contains("com.example.voiddisplay.tests"))
         #expect(diagnostics.isTestIsolatedPath)
-        #expect(diagnostics.legacyContainerStoreURL?.path.contains("/Library/Containers/com.example.voiddisplay/") == true)
     }
 
     @MainActor @Test func virtualDisplayStoreLoadRejectsSchemaVersion2WithStructuredError() throws {
