@@ -41,28 +41,56 @@ jobs:
       artifact_retention_days: 7
 
   ui_smoke_tests:
-    name: ui-smoke-tests
+    name: ui-smoke-tests (${{ matrix.case_name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case_name: baseline
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
+          - case_name: permissionDenied
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPermissionDeniedSmoke_captureAndShare
+          - case_name: rebuildFailed
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testVirtualDisplaySmoke_rebuildFailedRowShowsRetry
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
+      only_testing: ${{ matrix.only_testing }}
       artifact_retention_days: 7
-      enforce_failure: false
+      artifact_name_suffix: ${{ matrix.case_name }}
+      enforce_failure: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
 
   ci_gate:
     name: ci-gate
     if: always()
     needs:
       - unit_tests
+      - ui_smoke_tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Enforce unit-test gate
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
+          UI_RESULT: ${{ needs.ui_smoke_tests.result }}
         run: |
           set -euo pipefail
+          is_main_pr=false
+          if [ "${EVENT_NAME}" = "pull_request" ] && [ "${BASE_REF}" = "main" ]; then
+            is_main_pr=true
+          fi
+
           echo "Unit tests job result: ${UNIT_RESULT}"
+          echo "UI smoke matrix job result: ${UI_RESULT}"
+          echo "Main PR gate mode: ${is_main_pr}"
+
           if [ "${UNIT_RESULT}" = "success" ]; then
+            if [ "${is_main_pr}" = "true" ] && [ "${UI_RESULT}" != "success" ]; then
+              echo "Gate failed because this is a main PR and ui-smoke-tests result is ${UI_RESULT}."
+              exit 1
+            fi
             exit 0
           fi
           echo "Gate failed because unit-tests result is ${UNIT_RESULT}."
@@ -84,31 +112,29 @@ jobs:
       - name: Render summary and update PR sticky comment
         uses: actions/github-script@v7
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UI_JOB_RESULT: ${{ needs.ui_smoke_tests.result }}
-          UI_STATUS: ${{ needs.ui_smoke_tests.outputs.ui_status || 'unknown' }}
-          UI_REASON: ${{ needs.ui_smoke_tests.outputs.ui_reason || 'not_run' }}
-          UI_ATTEMPT: ${{ needs.ui_smoke_tests.outputs.ui_attempt || '-' }}
-          UI_MAX_ATTEMPTS: ${{ needs.ui_smoke_tests.outputs.ui_max_attempts || '-' }}
-          UI_LOG_FILE: ${{ needs.ui_smoke_tests.outputs.ui_log_file || '-' }}
-          UI_ENFORCED_EXIT_CODE: ${{ needs.ui_smoke_tests.outputs.ui_enforced_exit_code || '-' }}
           GATE_RESULT: ${{ needs.ci_gate.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
             const marker = '<!-- ci-summary-marker -->';
+            const eventName = process.env.EVENT_NAME || 'unknown';
+            const baseRef = process.env.BASE_REF || '';
             const unitResult = process.env.UNIT_RESULT || 'unknown';
             const uiJobResult = process.env.UI_JOB_RESULT || 'unknown';
-            const uiStatus = process.env.UI_STATUS || 'unknown';
-            const uiReason = process.env.UI_REASON || 'not_run';
-            const uiAttempt = process.env.UI_ATTEMPT || '-';
-            const uiMaxAttempts = process.env.UI_MAX_ATTEMPTS || '-';
-            const uiLogFile = process.env.UI_LOG_FILE || '-';
-            const uiEnforcedExitCode = process.env.UI_ENFORCED_EXIT_CODE || '-';
             const gateResult = process.env.GATE_RESULT || 'unknown';
             const runUrl = process.env.RUN_URL;
+            const isMainPr = eventName === 'pull_request' && baseRef === 'main';
+            const gateDetails = isMainPr
+              ? 'required; driven by Unit Tests + UI Smoke Tests'
+              : 'required; driven by Unit Tests only';
+            const gateRule = isMainPr
+              ? 'Gate rule: target `main` 的 PR 必须通过 `Unit Tests` + `UI Smoke Tests`。'
+              : 'Gate rule: 非 `main` PR / push / merge_group 仅 `Unit Tests` 必须通过；`UI Smoke Tests` 为信息展示（non-blocking）。';
 
-            const uiDetails = `reason=${uiReason}; attempts=${uiAttempt}/${uiMaxAttempts}; log=${uiLogFile}; enforced_exit=${uiEnforcedExitCode}; job_result=${uiJobResult}`;
             const summaryLines = [
               '## CI Summary',
               '',
@@ -117,10 +143,10 @@ jobs:
               '| Check | Status | Details |',
               '| --- | --- | --- |',
               `| Unit Tests | ${unitResult} | required |`,
-              `| UI Smoke Tests | ${uiStatus} | ${uiDetails} |`,
-              `| CI Gate | ${gateResult} | required; driven by Unit Tests only |`,
+              `| UI Smoke Tests (matrix: baseline + permissionDenied + rebuildFailed) | ${uiJobResult} | each case keeps its own ui_status in job summary/artifacts |`,
+              `| CI Gate | ${gateResult} | ${gateDetails} |`,
               '',
-              'Gate rule: only `Unit Tests` is required to pass; `UI Smoke Tests` is informational (non-blocking).',
+              gateRule,
             ];
             const summaryBody = summaryLines.join('\n');
             const commentBody = [marker, ...summaryLines].join('\n');
