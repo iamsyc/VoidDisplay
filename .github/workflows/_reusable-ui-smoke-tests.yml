@@ -93,7 +93,6 @@ jobs:
           key: xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
           restore-keys: |
             xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
-            xcode-meta-ui-${{ runner.os }}-
 
       - name: Run UI smoke test (no signing)
         id: run-ui

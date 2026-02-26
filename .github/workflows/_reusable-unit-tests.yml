@@ -61,7 +61,6 @@ jobs:
           key: xcode-meta-unit-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('VoidDisplay.xcodeproj/**', 'scripts/test/**', '**/Package.resolved') }}
           restore-keys: |
             xcode-meta-unit-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
-            xcode-meta-unit-${{ runner.os }}-
 
       - name: Run unit tests (no signing)
         run: |
