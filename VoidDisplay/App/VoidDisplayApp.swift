@@ -56,18 +56,15 @@ enum AppBootstrap {
 
     struct StartupPlan {
         var shouldRestoreVirtualDisplays: Bool
-        var shouldStartWebService: Bool
         var postRestoreConfiguration: (@MainActor (VirtualDisplayController) -> Void)?
 
         static let standard = StartupPlan(
             shouldRestoreVirtualDisplays: true,
-            shouldStartWebService: true,
             postRestoreConfiguration: nil
         )
 
         static let skipAll = StartupPlan(
             shouldRestoreVirtualDisplays: false,
-            shouldStartWebService: false,
             postRestoreConfiguration: nil
         )
     }
@@ -80,10 +77,9 @@ enum AppBootstrap {
         let scenario = UITestRuntime.scenario
         return makeEnvironment(
             preview: false,
-            virtualDisplayService: UITestVirtualDisplayService(scenario: scenario),
+            virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: scenario),
             startupPlan: .init(
                 shouldRestoreVirtualDisplays: true,
-                shouldStartWebService: false,
                 postRestoreConfiguration: { controller in
                     controller.applyUITestPresentationState(scenario: scenario)
                 }
@@ -95,7 +91,7 @@ enum AppBootstrap {
         preview: Bool,
         captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = nil,
         sharingService: (any SharingServiceProtocol)? = nil,
-        virtualDisplayService: (any VirtualDisplayServiceProtocol)? = nil,
+        virtualDisplayFacade: (any VirtualDisplayFacade)? = nil,
         appliedBadgeDisplayDurationNanoseconds: UInt64 = 2_500_000_000,
         startupPlan: StartupPlan? = nil,
         isRunningUnderXCTestOverride: Bool? = nil
@@ -105,12 +101,12 @@ enum AppBootstrap {
         let resolvedStartupPlan = startupPlan ?? (isRunningUnderXCTest ? .skipAll : .standard)
         let resolvedCaptureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
         let resolvedSharingService = sharingService ?? SharingService()
-        let resolvedVirtualDisplayService = virtualDisplayService ?? VirtualDisplayService()
+        let resolvedVirtualDisplayFacade = virtualDisplayFacade ?? VirtualDisplayOrchestrator()
 
         let capture = CaptureController(captureMonitoringService: resolvedCaptureMonitoringService)
         let sharing = SharingController(sharingService: resolvedSharingService)
         let virtualDisplay = VirtualDisplayController(
-            virtualDisplayService: resolvedVirtualDisplayService,
+            virtualDisplayFacade: resolvedVirtualDisplayFacade,
             appliedBadgeDisplayDurationNanoseconds: appliedBadgeDisplayDurationNanoseconds,
             stopDependentStreamsBeforeRebuild: { displayID in
                 capture.stopDependentStreamsBeforeRebuild(
@@ -127,12 +123,6 @@ enum AppBootstrap {
         )
 
         guard !preview else { return env }
-
-        if resolvedStartupPlan.shouldStartWebService {
-            Task { @MainActor in
-                _ = await sharing.startWebService()
-            }
-        }
 
         if resolvedStartupPlan.shouldRestoreVirtualDisplays {
             virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()

@@ -14,7 +14,7 @@ protocol SharingServiceProtocol: AnyObject {
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> { get }
 
     @discardableResult
-    func startWebService() async -> Bool
+    func startWebService(requestedPort: UInt16) async -> WebServiceStartResult
     func stopWebService()
     func registerShareableDisplays(
         _ displays: [SCDisplay],
@@ -81,8 +81,9 @@ final class SharingService: SharingServiceProtocol {
     }
 
     @discardableResult
-    func startWebService() async -> Bool {
-        let started = await webServiceController.start(
+    func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
+        let result = await webServiceController.start(
+            requestedPort: requestedPort,
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },
@@ -90,10 +91,12 @@ final class SharingService: SharingServiceProtocol {
                 self?.sharingCoordinator.frame(for: target)
             }
         )
-        if !started {
-            AppLog.sharing.error("Failed to start web sharing service.")
+        if case .failed(let failure) = result {
+            AppLog.sharing.error(
+                "Failed to start web sharing service (requestedPort: \(requestedPort, privacy: .public), reason: \(String(describing: failure), privacy: .public))."
+            )
         }
-        return started
+        return result
     }
 
     func stopWebService() {

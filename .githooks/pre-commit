@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+# Block build artifacts from entering commits.
+offending_paths=$(
+  git diff --cached --name-only --diff-filter=ACMRDT \
+    | grep -E '(^|/)(\.derivedData($|-)|derivedData-)' || true
+)
+
+[ -z "${offending_paths}" ] && exit 0
+
+echo "pre-commit: blocked build artifacts in staging area:"
+printf '%s\n' "${offending_paths}"
+
+# Auto-unstage offending paths to keep index clean.
+printf '%s\n' "${offending_paths}" | while IFS= read -r path; do
+  [ -z "${path}" ] && continue
+  git restore --staged -- "${path}" 2>/dev/null || git reset -q HEAD -- "${path}" || true
+done
+
+cat <<'MSG'
+pre-commit: removed the paths above from staging.
+Please commit again after checking staged files.
+MSG
+
+exit 1

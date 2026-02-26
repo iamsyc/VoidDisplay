@@ -6,9 +6,11 @@ import Testing
 struct DisplayTeardownCoordinatorTests {
 
     @Test func waitForManagedDisplayOfflineReturnsTrueImmediatelyWhenAlreadyOffline() async {
+        let clock = TestVirtualDisplayClock()
         let coordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { _ in false },
-            isReconfigurationMonitorAvailable: true
+            isReconfigurationMonitorAvailable: true,
+            clock: clock
         )
 
         let result = await coordinator.waitForManagedDisplayOffline(
@@ -22,9 +24,11 @@ struct DisplayTeardownCoordinatorTests {
     @Test func waitForTeardownSettlementTerminationObservedEarlyShortCircuitsAsSettled() async {
         let configID = UUID()
         let generation: UInt64 = 11
+        let clock = TestVirtualDisplayClock()
         let coordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { _ in true },
-            isReconfigurationMonitorAvailable: true
+            isReconfigurationMonitorAvailable: true,
+            clock: clock
         )
         coordinator.setRuntimeGenerationProvider { id in
             id == configID ? generation : nil
@@ -55,11 +59,13 @@ struct DisplayTeardownCoordinatorTests {
         let generation: UInt64 = 21
         let serial: UInt32 = 123
         var onlineSerials: Set<UInt32> = [serial]
+        let clock = TestVirtualDisplayClock()
         let coordinator = DisplayTeardownCoordinator(
             managedDisplayOnlineChecker: { queriedSerial in
                 onlineSerials.contains(queriedSerial)
             },
-            isReconfigurationMonitorAvailable: true
+            isReconfigurationMonitorAvailable: true,
+            clock: clock
         )
         coordinator.setRuntimeGenerationProvider { id in
             id == configID ? generation : nil

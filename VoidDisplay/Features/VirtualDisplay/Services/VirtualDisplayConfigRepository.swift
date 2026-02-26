@@ -162,8 +162,6 @@ final class VirtualDisplayConfigRepository {
     private static func fallbackDiagnostics() -> VirtualDisplayStoreDiagnostics {
         VirtualDisplayStoreDiagnostics(
             primaryStoreURL: URL(fileURLWithPath: "/unavailable"),
-            legacyContainerStoreURL: nil,
-            legacyContainerFileExists: false,
             isTestIsolatedPath: false
         )
     }

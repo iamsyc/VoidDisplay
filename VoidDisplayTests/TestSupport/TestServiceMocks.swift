@@ -52,7 +52,10 @@ final class MockSharingService: SharingServiceProtocol {
     var hasAnyActiveSharing = false
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
 
-    var startResult = true
+    var startResult: WebServiceStartResult = .started(
+        WebServiceBinding(requestedPort: 8081, boundPort: 8081)
+    )
+    var lastStartRequestedPort: UInt16?
     var startWebServiceCallCount = 0
     var stopWebServiceCallCount = 0
     var registerShareableDisplaysCallCount = 0
@@ -64,9 +67,16 @@ final class MockSharingService: SharingServiceProtocol {
     var shareTargetByDisplayID: [CGDirectDisplayID: ShareTarget] = [:]
 
     @discardableResult
-    func startWebService() async -> Bool {
+    func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
         startWebServiceCallCount += 1
-        isWebServiceRunning = startResult
+        lastStartRequestedPort = requestedPort
+        switch startResult {
+        case .started(let binding), .alreadyRunning(let binding):
+            isWebServiceRunning = true
+            webServicePortValue = binding.boundPort
+        case .failed:
+            isWebServiceRunning = false
+        }
         onWebServiceRunningStateChanged?(isWebServiceRunning)
         return startResult
     }
@@ -126,17 +136,14 @@ final class MockSharingService: SharingServiceProtocol {
 }
 
 @MainActor
-final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
-    var currentDisplays: [CGVirtualDisplay] = []
+final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var currentDisplayConfigs: [VirtualDisplayConfig] = []
     var currentRunningConfigIds: Set<UUID> = []
     var currentRestoreFailures: [VirtualDisplayRestoreFailure] = []
     var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
-    var configStoreState: VirtualDisplayService.ConfigStoreState = .ready(
+    var configStoreState: VirtualDisplayConfigRepositoryState = .ready(
         diagnostics: .init(
             primaryStoreURL: URL(fileURLWithPath: "/tmp/mock-virtual-displays.json"),
-            legacyContainerStoreURL: nil,
-            legacyContainerFileExists: false,
             isTestIsolatedPath: true
         )
     )
@@ -145,11 +152,8 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var restoreDesiredVirtualDisplaysCallCount = 0
     var clearRestoreFailuresCallCount = 0
     var resetAllVirtualDisplayDataCallCount = 0
-    var createDisplayResult: Result<CGVirtualDisplay, Error> = .failure(
-        NSError(domain: "MockVirtualDisplayService", code: 1)
-    )
-    var createDisplayFromConfigResult: Result<CGVirtualDisplay, Error> = .failure(
-        NSError(domain: "MockVirtualDisplayService", code: 2)
+    var createDisplayResult: Result<UUID, Error> = .failure(
+        NSError(domain: "MockVirtualDisplayFacade", code: 1)
     )
     var applyModesCallCount = 0
     var applyModesConfigIds: [UUID] = []
@@ -188,6 +192,26 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         }
     }
 
+    var snapshot: VirtualDisplaySnapshot {
+        let managedDisplays: [ManagedVirtualDisplayRuntimeSnapshot] = currentDisplayConfigs.compactMap { config in
+            guard let displayID = runtimeDisplayIDByConfigId[config.id] else { return nil }
+            return ManagedVirtualDisplayRuntimeSnapshot(
+                configId: config.id,
+                serialNum: config.serialNum,
+                displayID: displayID,
+                isLiveRuntime: currentRunningConfigIds.contains(config.id)
+            )
+        }
+        return VirtualDisplaySnapshot(
+            managedDisplays: managedDisplays,
+            configs: currentDisplayConfigs,
+            runningConfigIds: currentRunningConfigIds,
+            restoreFailures: currentRestoreFailures,
+            configStorePresentation: configStorePresentation,
+            runtimeDisplayIDByConfigId: runtimeDisplayIDByConfigId
+        )
+    }
+
     func loadPersistedConfigs() {
         loadPersistedConfigsCallCount += 1
     }
@@ -206,22 +230,10 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         resetAllVirtualDisplayDataCallCount += 1
         let removed = currentDisplayConfigs.count
         currentDisplayConfigs = []
-        currentDisplays = []
         currentRunningConfigIds = []
         currentRestoreFailures = []
+        runtimeDisplayIDByConfigId = [:]
         return removed
-    }
-
-    func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
-        nil
-    }
-
-    func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
-        runtimeDisplayIDByConfigId[configId]
-    }
-
-    func isVirtualDisplayRunning(configId: UUID) -> Bool {
-        currentRunningConfigIds.contains(configId)
     }
 
     @discardableResult
@@ -231,16 +243,9 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> CGVirtualDisplay {
+    ) throws -> UUID {
         try createDisplayResult.get()
     }
-
-    @discardableResult
-    func createDisplayFromConfig(_ config: VirtualDisplayConfig) throws -> CGVirtualDisplay {
-        try createDisplayFromConfigResult.get()
-    }
-
-    func disableDisplay(_ display: CGVirtualDisplay, modes: [ResolutionSelection]) {}
 
     func disableDisplayByConfig(_ configId: UUID) throws {
         disableDisplayByConfigCallCount += 1
@@ -263,12 +268,7 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         destroyedConfigIDs.append(configId)
         currentDisplayConfigs.removeAll { $0.id == configId }
         currentRunningConfigIds.remove(configId)
-    }
-
-    func destroyDisplay(_ display: CGVirtualDisplay) {}
-
-    func getConfig(_ configId: UUID) -> VirtualDisplayConfig? {
-        currentDisplayConfigs.first(where: { $0.id == configId })
+        runtimeDisplayIDByConfigId[configId] = nil
     }
 
     func updateConfig(_ updated: VirtualDisplayConfig) {
@@ -276,7 +276,7 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         currentDisplayConfigs[index] = updated
     }
 
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
         guard moveConfigResult else { return false }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
             return false
@@ -340,12 +340,6 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         }
     }
 
-    func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
-        currentDisplayConfigs.first(where: { $0.serialNum == display.serialNum })
-    }
-
-    func updateConfig(for display: CGVirtualDisplay, modes: [ResolutionSelection]) {}
-
     func nextAvailableSerialNumber() -> UInt32 {
         1
     }
@@ -366,21 +360,8 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
     var savedConfigs: [[VirtualDisplayConfig]] = []
     var diagnosticsValue = VirtualDisplayStoreDiagnostics(
         primaryStoreURL: URL(fileURLWithPath: "/tmp/fake-virtual-displays.json"),
-        legacyContainerStoreURL: URL(fileURLWithPath: "/tmp/legacy-virtual-displays.json"),
-        legacyContainerFileExists: false,
         isTestIsolatedPath: true
     )
-
-    // Backward-compatible aliases used by existing tests.
-    var saves: [[VirtualDisplayConfig]] {
-        get { savedConfigs }
-        set { savedConfigs = newValue }
-    }
-
-    var resets: Int {
-        get { resetCallCount }
-        set { resetCallCount = newValue }
-    }
 
     func load() throws -> [VirtualDisplayConfig] {
         loadCallCount += 1

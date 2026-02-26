@@ -9,7 +9,7 @@ import Foundation
 import CoreGraphics
 
 /// Stores the configuration of a virtual display for later restoration
-struct VirtualDisplayConfig: Identifiable, Codable {
+struct VirtualDisplayConfig: Identifiable, Codable, Equatable {
     let id: UUID
     var displayName: String
     var serialNum: UInt32

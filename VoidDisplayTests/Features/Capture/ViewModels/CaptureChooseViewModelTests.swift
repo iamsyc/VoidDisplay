@@ -71,7 +71,7 @@ struct CaptureChooseViewModelTests {
         let captureService = MockCaptureMonitoringService()
         let captureController = CaptureController(captureMonitoringService: captureService)
         let virtualDisplayController = VirtualDisplayController(
-            virtualDisplayService: MockVirtualDisplayService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
             appliedBadgeDisplayDurationNanoseconds: 1,
             stopDependentStreamsBeforeRebuild: { _ in }
         )

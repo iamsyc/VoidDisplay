@@ -383,7 +383,7 @@ struct CreateVirtualDisplay: View {
                 modes: selectedModes
             )
             isShow = false
-        } catch let error as VirtualDisplayService.VirtualDisplayError {
+        } catch let error as VirtualDisplayOperationError {
             AppErrorMapper.logFailure("Create virtual display", error: error, logger: AppLog.virtualDisplay)
             errorMessage = error.localizedDescription
             showError = true

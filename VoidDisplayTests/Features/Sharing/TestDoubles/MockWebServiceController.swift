@@ -10,7 +10,10 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var streamClientCountByTarget: [ShareTarget: Int] = [:]
     var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
 
-    var startResult = true
+    var startResult: WebServiceStartResult = .started(
+        WebServiceBinding(requestedPort: 9090, boundPort: 9090)
+    )
+    var lastRequestedPort: UInt16?
     var startCallCount = 0
     var stopCallCount = 0
     var disconnectCallCount = 0
@@ -18,13 +21,21 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var capturedFrameProvider: (@MainActor @Sendable (ShareTarget) -> Data?)?
 
     func start(
+        requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
-    ) async -> Bool {
+    ) async -> WebServiceStartResult {
         startCallCount += 1
+        lastRequestedPort = requestedPort
         capturedTargetStateProvider = targetStateProvider
         capturedFrameProvider = frameProvider
-        isRunning = startResult
+        switch startResult {
+        case .started(let binding), .alreadyRunning(let binding):
+            isRunning = true
+            portValue = binding.boundPort
+        case .failed:
+            isRunning = false
+        }
         onRunningStateChanged?(isRunning)
         return startResult
     }

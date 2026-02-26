@@ -8,7 +8,36 @@ struct TeardownSettlement {
 }
 
 @MainActor
-final class DisplayTeardownCoordinator {
+protocol DisplayTeardownCoordinating: AnyObject {
+    func setRuntimeGenerationProvider(_ provider: @escaping (UUID) -> UInt64?)
+    func setReconfigurationMonitorAvailable(_ isAvailable: Bool)
+    func waitForManagedDisplayOffline(serialNum: UInt32, timeout: TimeInterval) async -> Bool
+    func waitForManagedDisplaysOffline(serialNumbers: [UInt32], timeout: TimeInterval) async -> Bool
+    func waitForTeardownSettlement(
+        configId: UUID,
+        expectedGeneration: UInt64,
+        serialNum: UInt32,
+        terminationTimeout: TimeInterval,
+        offlineTimeout: TimeInterval
+    ) async -> TeardownSettlement
+    func settleRebuildTeardown(
+        configId: UUID,
+        serialNum: UInt32,
+        generationToWaitFor: UInt64?,
+        rebuildTerminationTimeout: TimeInterval,
+        rebuildOfflineTimeout: TimeInterval,
+        rebuildFinalOfflineConfirmationTimeout: TimeInterval
+    ) async throws -> Bool
+    func observeTermination(configId: UUID, generation: UInt64)
+    func cancelTerminationWaiter(configId: UUID)
+    func cancelAllTerminationWaiters()
+    func completeOfflineWaitersIfPossible()
+    func cancelAllOfflineWaiters()
+    func isManagedDisplayOnline(serialNum: UInt32) -> Bool
+}
+
+@MainActor
+final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
     private struct TerminationWaiter {
         let expectedGeneration: UInt64
         var continuation: CheckedContinuation<Bool, Never>
@@ -29,15 +58,18 @@ final class DisplayTeardownCoordinator {
     private var terminationWaitersByConfigId: [UUID: TerminationWaiter] = [:]
     private var offlineWaitersByToken: [UUID: OfflineWaiter] = [:]
     private let managedDisplayOnlineChecker: (UInt32) -> Bool
+    private let clock: any VirtualDisplayClocking
     private var isReconfigurationMonitorAvailable: Bool
     private var didLogOfflinePollingFallback = false
     private var runtimeGenerationProvider: ((UUID) -> UInt64?)?
 
     init(
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool,
-        isReconfigurationMonitorAvailable: Bool
+        isReconfigurationMonitorAvailable: Bool,
+        clock: (any VirtualDisplayClocking)? = nil
     ) {
         self.managedDisplayOnlineChecker = managedDisplayOnlineChecker
+        self.clock = clock ?? SystemVirtualDisplayClock()
         self.isReconfigurationMonitorAvailable = isReconfigurationMonitorAvailable
     }
 
@@ -73,14 +105,10 @@ final class DisplayTeardownCoordinator {
         let token = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
                 let timeoutTask = Task { [weak self] in
-                    do {
-                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                    } catch {
-                        return
-                    }
-                    self?.completeOfflineWaiterAfterTimeout(token: token)
+                    guard let self else { return }
+                    await self.clock.sleep(seconds: timeout)
+                    self.completeOfflineWaiterAfterTimeout(token: token)
                 }
 
                 offlineWaitersByToken[token] = OfflineWaiter(
@@ -208,7 +236,7 @@ final class DisplayTeardownCoordinator {
                 AppLog.virtualDisplay.error(
                     "Rebuild aborted because previous display with same serial is still online after teardown settlement (serial: \(serialNum, privacy: .public), generation: \(generationToWaitFor, privacy: .public), config: \(configId.uuidString, privacy: .public))."
                 )
-                throw VirtualDisplayService.VirtualDisplayError.teardownTimedOut
+                throw VirtualDisplayOperationError.teardownTimedOut
             }
             terminationConfirmed = settlement.terminationObserved
         }
@@ -221,7 +249,7 @@ final class DisplayTeardownCoordinator {
             AppLog.virtualDisplay.error(
                 "Rebuild aborted because previous display with same serial is still online during final offline confirmation (serial: \(serialNum, privacy: .public), config: \(configId.uuidString, privacy: .public))."
             )
-            throw VirtualDisplayService.VirtualDisplayError.teardownTimedOut
+            throw VirtualDisplayOperationError.teardownTimedOut
         }
         return terminationConfirmed
     }
@@ -294,17 +322,13 @@ final class DisplayTeardownCoordinator {
                     "Register termination waiter (config: \(configId.uuidString, privacy: .public), expectedGeneration: \(expectedGeneration, privacy: .public), timeoutSec: \(timeout, privacy: .public))."
                 )
 
-                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
                 let timeoutTask = Task { [weak self] in
-                    do {
-                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
-                    } catch {
-                        return
-                    }
+                    guard let self else { return }
+                    await self.clock.sleep(seconds: timeout)
                     AppLog.virtualDisplay.debug(
                         "Termination waiter timed out (config: \(configId.uuidString, privacy: .public), expectedGeneration: \(expectedGeneration, privacy: .public))."
                     )
-                    self?.completeTerminationWaiter(
+                    self.completeTerminationWaiter(
                         configId: configId,
                         expectedGeneration: expectedGeneration,
                         result: false
@@ -359,15 +383,15 @@ final class DisplayTeardownCoordinator {
         timeout: TimeInterval,
         interval: TimeInterval = 0.1
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        let deadline = clock.now() + max(timeout, 0)
+        while clock.now() < deadline {
             if Task.isCancelled {
                 return false
             }
             if !isManagedDisplayOnline(serialNum: serialNum) {
                 return true
             }
-            await sleepForRetry(seconds: interval)
+            await clock.sleep(seconds: interval)
         }
         return !isManagedDisplayOnline(serialNum: serialNum)
     }
@@ -388,12 +412,4 @@ final class DisplayTeardownCoordinator {
         completeOfflineWaiter(token: token, result: false)
     }
 
-    private func sleepForRetry(seconds: TimeInterval) async {
-        let nanoseconds = UInt64(max(seconds, 0) * 1_000_000_000)
-        do {
-            try await Task.sleep(nanoseconds: nanoseconds)
-        } catch {
-            // Ignore cancellation and let retry loop exit on next check.
-        }
-    }
 }

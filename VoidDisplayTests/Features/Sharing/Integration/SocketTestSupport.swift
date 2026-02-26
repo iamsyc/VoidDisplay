@@ -261,7 +261,7 @@ func startServerOnRandomPort(
                 frameProvider: frameProvider
             )
             let ready = await server.startListener()
-            guard ready else {
+            guard case .ready = ready else {
                 server.stopListener()
                 continue
             }

@@ -184,9 +184,9 @@ struct ShareViewModelTests {
         #expect(sut.catalog.lastLoadError?.code == expected.code)
     }
 
-    @MainActor @Test func startServiceFailurePresentsUserFacingError() async {
+    @MainActor @Test func startServiceFailureShowsInlinePortError() async {
         let sharing = MockSharingService()
-        sharing.startResult = false
+        sharing.startResult = .failed(.portInUse(port: 8081))
         let env = makeEnvironment(sharing: sharing)
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -198,12 +198,119 @@ struct ShareViewModelTests {
 
         sut.startService()
         let presented = await waitUntil {
-            sut.showOpenPageError
+            sut.portInputErrorMessage != nil
         }
 
         #expect(presented)
         #expect(sharing.startWebServiceCallCount == 1)
-        #expect(sut.openPageErrorMessage.isEmpty == false)
+        #expect(sut.showOpenPageError == false)
+    }
+
+    @MainActor @Test func initUsesPreferredPortAsInputDefault() {
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 9099 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .failed(.timedOut(port: 9099)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _, _, _, _ in },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+
+        #expect(sut.servicePortInput == "9099")
+    }
+
+    @MainActor @Test func updateServicePortInputTruncatesToFiveCharacters() {
+        let env = makeEnvironment()
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        )
+
+        sut.updateServicePortInput("1234567890")
+
+        #expect(sut.servicePortInput == "12345")
+    }
+
+    @MainActor @Test func startServiceWithInvalidPortSkipsStartCallAndShowsValidationError() async {
+        let sharing = MockSharingService()
+        let env = makeEnvironment(sharing: sharing)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        )
+        sut.servicePortInput = "abc"
+
+        sut.startService()
+        let presented = await waitUntil {
+            sut.portInputErrorMessage != nil
+        }
+
+        #expect(presented)
+        #expect(sharing.startWebServiceCallCount == 0)
+        #expect(sut.showOpenPageError == false)
+    }
+
+    @MainActor @Test func startServicePassesRequestedPortToSharingLayer() async {
+        let sharing = MockSharingService()
+        sharing.startResult = .started(WebServiceBinding(requestedPort: 8088, boundPort: 8088))
+        let env = makeEnvironment(sharing: sharing)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        )
+        sut.servicePortInput = "8088"
+
+        sut.startService()
+        let started = await waitUntil {
+            sharing.startWebServiceCallCount == 1
+        }
+
+        #expect(started)
+        #expect(sharing.lastStartRequestedPort == 8088)
+    }
+
+    @MainActor @Test func editingPortClearsInlineErrorMessage() async {
+        let sharing = MockSharingService()
+        let env = makeEnvironment(sharing: sharing)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+        )
+
+        sut.servicePortInput = "bad-port"
+        sut.startService()
+        _ = await waitUntil { sut.portInputErrorMessage != nil }
+        #expect(sut.portInputErrorMessage != nil)
+
+        sut.updateServicePortInput("8081")
+        #expect(sut.portInputErrorMessage == nil)
     }
 
     @MainActor @Test func loadDisplaysIgnoresLateResultFromSupersededRequest() async {
@@ -298,7 +405,7 @@ struct ShareViewModelTests {
             preview: true,
             captureMonitoringService: MockCaptureMonitoringService(),
             sharingService: sharing,
-            virtualDisplayService: MockVirtualDisplayService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
             isRunningUnderXCTestOverride: false
         )
     }
@@ -320,10 +427,11 @@ struct ShareViewModelTests {
         .init(
             sharingQueries: .init(
                 isWebServiceRunning: { false },
-                sharePageAddress: { _ in nil }
+                sharePageAddress: { _ in nil },
+                preferredWebServicePort: { 8081 }
             ),
             sharingActions: .init(
-                startWebService: { false },
+                startWebService: { _ in .failed(.timedOut(port: 8081)) },
                 stopWebService: {},
                 registerShareableDisplays: { _, _ in },
                 beginSharing: { _, _, _, _ in },

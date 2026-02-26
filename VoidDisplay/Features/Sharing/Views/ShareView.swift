@@ -160,11 +160,39 @@ struct ShareView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 300)
 
+                    VStack(spacing: 4) {
+                        HStack(spacing: AppUI.Spacing.small) {
+                            Text("Port")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField(
+                                "8081",
+                                text: Binding(
+                                    get: { viewModel.servicePortInput },
+                                    set: { viewModel.updateServicePortInput($0) }
+                                )
+                            )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 84)
+                                .accessibilityIdentifier("share_port_input")
+                        }
+
+                        Text(viewModel.portInputErrorMessage ?? " ")
+                            .font(.caption2)
+                            .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 360, minHeight: 14, maxHeight: 14, alignment: .center)
+                            .accessibilityIdentifier("share_port_error_text")
+                    }
+
                     Button("Start Service") {
                         viewModel.startService()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .disabled(viewModel.isStartingService)
                     .accessibilityIdentifier("share_start_service_button")
                 }
                 .frame(maxWidth: .infinity, minHeight: 200)
