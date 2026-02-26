@@ -19,10 +19,15 @@ on:
         type: number
         default: 7
       enforce_failure:
-        description: Whether deterministic UI smoke failures should fail the job.
+        description: Whether UI smoke failures (including unstable after retries) should fail the job.
         required: false
         type: boolean
         default: true
+      artifact_name_suffix:
+        description: Suffix for artifact names to avoid collisions in matrix runs.
+        required: false
+        type: string
+        default: default
       xcode_preferred_path:
         description: Preferred Xcode developer directory path.
         required: false
@@ -190,8 +195,8 @@ jobs:
           write_summary "failed" "$last_reason" "$((attempt - 1))" "$last_log_file"
 
           if [[ "$last_reason" == "environment_unstable" || "$last_reason" == "runner_bootstrap_failure" ]]; then
-            echo "UI smoke marked unstable (reason=${last_reason}); allowing job to pass."
-            exit 0
+            echo "UI smoke marked unstable (reason=${last_reason}); retries exhausted -> failing this run."
+            exit 1
           fi
 
           echo "UI smoke failed after ${max_attempts} attempts."
@@ -201,7 +206,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-smoke-tests-xcresult
+          name: ui-smoke-tests-xcresult-${{ inputs.artifact_name_suffix }}
           path: UISmokeTests.xcresult
           if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days }}
@@ -210,7 +215,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-smoke-summary
+          name: ui-smoke-summary-${{ inputs.artifact_name_suffix }}
           path: |
             ui-smoke-summary.json
             ui-smoke-attempt-*.log
@@ -250,7 +255,7 @@ jobs:
                   runner_bootstrap_failure|environment_unstable)
                     ui_status="unstable"
                     ui_reason="$raw_reason"
-                    ui_enforced_exit_code="0"
+                    ui_enforced_exit_code="1"
                     ;;
                   assertion_failure|unknown_failure)
                     ui_status="failed"
