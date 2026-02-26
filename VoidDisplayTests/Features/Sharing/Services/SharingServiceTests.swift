@@ -9,9 +9,9 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let sut = SharingService(webServiceController: mock)
 
-        let started = await sut.startWebService()
+        let started = await sut.startWebService(requestedPort: 9090)
 
-        #expect(started)
+        #expect(started == .started(WebServiceBinding(requestedPort: 9090, boundPort: 9090)))
         #expect(mock.startCallCount == 1)
         #expect(sut.webServicePortValue == 9090)
         #expect(sut.isWebServiceRunning)
@@ -22,12 +22,12 @@ struct SharingServiceTests {
 
     @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() async {
         let mock = MockWebServiceController()
-        mock.startResult = false
+        mock.startResult = .failed(.portInUse(port: 9090))
         let sut = SharingService(webServiceController: mock)
 
-        let started = await sut.startWebService()
+        let started = await sut.startWebService(requestedPort: 9090)
 
-        #expect(started == false)
+        #expect(started == .failed(.portInUse(port: 9090)))
         #expect(mock.startCallCount == 1)
         #expect(sut.isWebServiceRunning == false)
     }
@@ -86,7 +86,7 @@ struct SharingServiceTests {
             receivedStates.append(isRunning)
         }
 
-        #expect(await sut.startWebService())
+        #expect(await sut.startWebService(requestedPort: 9090) == .started(WebServiceBinding(requestedPort: 9090, boundPort: 9090)))
         sut.stopWebService()
 
         #expect(receivedStates == [true, false])

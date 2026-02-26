@@ -25,18 +25,27 @@ final class SharingController {
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
+    @ObservationIgnored private let portPreferences: any SharingPortPreferencesProtocol
 
-    init(sharingService: any SharingServiceProtocol) {
+    init(
+        sharingService: any SharingServiceProtocol,
+        portPreferences: (any SharingPortPreferencesProtocol)? = nil
+    ) {
         self.sharingService = sharingService
+        self.portPreferences = portPreferences ?? SharingPortPreferences()
         self.sharingService.onWebServiceRunningStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }
     }
 
     @discardableResult
-    func startWebService() async -> Bool {
+    func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
         await mutateAndSync {
-            await sharingService.startWebService()
+            let result = await sharingService.startWebService(requestedPort: requestedPort)
+            if let binding = result.binding {
+                portPreferences.savePreferredPort(binding.requestedPort)
+            }
+            return result
         }
     }
 
@@ -85,6 +94,10 @@ final class SharingController {
 
     var webServicePortValue: UInt16 {
         sharingService.webServicePortValue
+    }
+
+    var preferredWebServicePort: UInt16 {
+        portPreferences.preferredPort
     }
 
     func refreshSharingClientCount() {

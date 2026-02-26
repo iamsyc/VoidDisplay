@@ -8,9 +8,9 @@ struct VirtualDisplayListViewModelTests {
 
     @Test func requestDeleteAndConfirmDeletesConfigThroughController() {
         let config = sampleConfig(serial: 101)
-        let mockService = MockVirtualDisplayService()
+        let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
-        let env = makeEnvironment(virtualDisplayService: mockService)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
         env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
         let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
@@ -28,8 +28,8 @@ struct VirtualDisplayListViewModelTests {
     }
 
     @Test func acknowledgeRestoreFailuresCallsControllerClear() {
-        let mockService = MockVirtualDisplayService()
-        let env = makeEnvironment(virtualDisplayService: mockService)
+        let mockService = MockVirtualDisplayFacade()
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
         let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
 
         sut.handleRestoreFailuresChanged([
@@ -43,9 +43,9 @@ struct VirtualDisplayListViewModelTests {
 
     @Test func toggleDisplayStateEnablesWhenConfigIsStopped() async {
         let config = sampleConfig(serial: 201)
-        let mockService = MockVirtualDisplayService()
+        let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
-        let env = makeEnvironment(virtualDisplayService: mockService)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
         env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
         let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
@@ -62,11 +62,11 @@ struct VirtualDisplayListViewModelTests {
 
     @Test func toggleDisplayStateShowsErrorWhenDisableFails() async {
         let config = sampleConfig(serial: 301)
-        let mockService = MockVirtualDisplayService()
+        let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         mockService.currentRunningConfigIds = [config.id]
         mockService.disableDisplayByConfigError = NSError(domain: "VirtualDisplayListViewModelTests", code: 9)
-        let env = makeEnvironment(virtualDisplayService: mockService)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
         env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
         let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
@@ -84,11 +84,11 @@ struct VirtualDisplayListViewModelTests {
 
     @Test func isPrimaryDisplayUsesRuntimeDisplayIDHintWhenRuntimeObjectIsUnavailable() {
         let config = sampleConfig(serial: 401)
-        let mockService = MockVirtualDisplayService()
+        let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         mockService.currentRunningConfigIds = [config.id]
         mockService.runtimeDisplayIDByConfigId[config.id] = CGMainDisplayID()
-        let env = makeEnvironment(virtualDisplayService: mockService)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
         env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
         let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
@@ -97,22 +97,22 @@ struct VirtualDisplayListViewModelTests {
     }
 
     @Test func initWithControllerSupportsPrimaryDisplayCheckWithoutPostAppearBinding() {
-        let mockService = MockVirtualDisplayService()
+        let mockService = MockVirtualDisplayFacade()
         let config = sampleConfig(serial: 402)
         mockService.currentDisplayConfigs = [config]
         mockService.runtimeDisplayIDByConfigId[config.id] = CGMainDisplayID()
-        let env = makeEnvironment(virtualDisplayService: mockService)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
         let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
 
         #expect(sut.isPrimaryDisplay(configID: config.id))
     }
 
-    private func makeEnvironment(virtualDisplayService: MockVirtualDisplayService) -> AppEnvironment {
+    private func makeEnvironment(virtualDisplayFacade: MockVirtualDisplayFacade) -> AppEnvironment {
         AppBootstrap.makeEnvironment(
             preview: true,
             captureMonitoringService: MockCaptureMonitoringService(),
             sharingService: MockSharingService(),
-            virtualDisplayService: virtualDisplayService,
+            virtualDisplayFacade: virtualDisplayFacade,
             isRunningUnderXCTestOverride: true
         )
     }

@@ -2,22 +2,14 @@ import Foundation
 
 struct VirtualDisplayStoreDiagnostics {
     let primaryStoreURL: URL
-    let legacyContainerStoreURL: URL?
-    let legacyContainerFileExists: Bool
     let isTestIsolatedPath: Bool
 
     var summary: String {
-        var parts = [
+        [
             "primary=\(primaryStoreURL.path)",
             "testIsolated=\(isTestIsolatedPath)"
         ]
-        if let legacyContainerStoreURL {
-            parts.append("legacyContainer=\(legacyContainerStoreURL.path)")
-            parts.append("legacyExists=\(legacyContainerFileExists)")
-        } else {
-            parts.append("legacyContainer=nil")
-        }
-        return parts.joined(separator: " | ")
+        .joined(separator: " | ")
     }
 }
 
@@ -162,12 +154,8 @@ struct VirtualDisplayStore {
         } catch {
             throw VirtualDisplayConfigStoreError.ioFailed(operation: "resolve diagnostics path", underlying: error)
         }
-        let legacyURL = legacyContainerStoreURL()
-        let legacyExists = legacyURL.map { fileManager.fileExists(atPath: $0.path) } ?? false
         return VirtualDisplayStoreDiagnostics(
             primaryStoreURL: primaryStoreURL,
-            legacyContainerStoreURL: legacyURL,
-            legacyContainerFileExists: legacyExists,
             isTestIsolatedPath: shouldIsolateStoreForTests
         )
     }
@@ -223,19 +211,6 @@ struct VirtualDisplayStore {
     private var shouldIsolateStoreForTests: Bool {
         environment[xCTestConfigurationEnvironmentKey] != nil ||
             environment[uiTestModeEnvironmentKey] == "1"
-    }
-
-    private func legacyContainerStoreURL() -> URL? {
-        let baseBundleID = resolvedBaseBundleIdentifier()
-        return fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Containers", isDirectory: true)
-            .appendingPathComponent(baseBundleID, isDirectory: true)
-            .appendingPathComponent("Data", isDirectory: true)
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent(baseBundleID, isDirectory: true)
-            .appendingPathComponent(fileName, isDirectory: false)
     }
 
     private func sanitize(_ configs: [VirtualDisplayConfig]) -> [VirtualDisplayConfig] {

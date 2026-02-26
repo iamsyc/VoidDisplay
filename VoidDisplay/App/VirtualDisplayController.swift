@@ -11,16 +11,17 @@ import OSLog
 @MainActor
 @Observable
 final class VirtualDisplayController {
-    var displays: [CGVirtualDisplay] = []
-    var displayConfigs: [VirtualDisplayConfig] = []
+    private(set) var managedDisplays: [ManagedVirtualDisplayRuntimeSnapshot] = []
+    private(set) var displayConfigs: [VirtualDisplayConfig] = []
     private(set) var runningConfigIds: Set<UUID> = []
     private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
+    private(set) var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
     private(set) var rebuildingConfigIds: Set<UUID> = []
     private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
     private(set) var recentlyAppliedConfigIds: Set<UUID> = []
     private(set) var configStorePresentation = VirtualDisplayConfigStorePresentation()
 
-    @ObservationIgnored private let virtualDisplayService: any VirtualDisplayServiceProtocol
+    @ObservationIgnored private let virtualDisplayFacade: any VirtualDisplayFacade
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var rebuildPresentationState = RebuildPresentationState()
@@ -28,18 +29,19 @@ final class VirtualDisplayController {
     @ObservationIgnored private let stopDependentStreamsBeforeRebuild: (CGDirectDisplayID) -> Void
 
     init(
-        virtualDisplayService: any VirtualDisplayServiceProtocol,
+        virtualDisplayFacade: any VirtualDisplayFacade,
         appliedBadgeDisplayDurationNanoseconds: UInt64,
         stopDependentStreamsBeforeRebuild: @escaping (CGDirectDisplayID) -> Void
     ) {
-        self.virtualDisplayService = virtualDisplayService
+        self.virtualDisplayFacade = virtualDisplayFacade
         self.appliedBadgeDisplayDurationNanoseconds = appliedBadgeDisplayDurationNanoseconds
         self.stopDependentStreamsBeforeRebuild = stopDependentStreamsBeforeRebuild
+        syncVirtualDisplayState()
     }
 
     func loadPersistedConfigsAndRestoreDesiredVirtualDisplays() {
-        virtualDisplayService.loadPersistedConfigs()
-        virtualDisplayService.restoreDesiredVirtualDisplays()
+        virtualDisplayFacade.loadPersistedConfigs()
+        virtualDisplayFacade.restoreDesiredVirtualDisplays()
         syncVirtualDisplayState()
     }
 
@@ -77,29 +79,25 @@ final class VirtualDisplayController {
         syncRebuildPresentationState()
     }
 
-    func runtimeDisplay(for configId: UUID) -> CGVirtualDisplay? {
-        virtualDisplayService.runtimeDisplay(for: configId)
-    }
-
     func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
-        virtualDisplayService.runtimeDisplayID(for: configId)
+        runtimeDisplayIDByConfigId[configId]
     }
 
     func isManagedVirtualDisplay(displayID: CGDirectDisplayID) -> Bool {
-        displays.contains(where: { $0.displayID == displayID })
+        managedDisplays.contains(where: { $0.displayID == displayID })
     }
 
     func virtualSerialForManagedDisplay(_ displayID: CGDirectDisplayID) -> UInt32? {
-        displays.first(where: { $0.displayID == displayID })?.serialNum
+        managedDisplays.first(where: { $0.displayID == displayID })?.serialNum
     }
 
     func isVirtualDisplayRunning(configId: UUID) -> Bool {
-        virtualDisplayService.isVirtualDisplayRunning(configId: configId)
+        runningConfigIds.contains(configId)
     }
 
     func clearRestoreFailures() {
         mutateAndSync {
-            virtualDisplayService.clearRestoreFailures()
+            virtualDisplayFacade.clearRestoreFailures()
         }
     }
 
@@ -110,10 +108,10 @@ final class VirtualDisplayController {
             return
         }
 
-        if let runtimeDisplayID = virtualDisplayService.runtimeDisplayID(for: configId) {
+        if let runtimeDisplayID = runtimeDisplayIDByConfigId[configId] {
             var displayIDsToStop: Set<CGDirectDisplayID> = [runtimeDisplayID]
-            if runtimeDisplayID == CGMainDisplayID(), displays.count >= 2 {
-                displayIDsToStop.formUnion(displays.map(\.displayID))
+            if runtimeDisplayID == CGMainDisplayID(), managedDisplays.count >= 2 {
+                displayIDsToStop.formUnion(managedDisplays.map(\.displayID))
             }
             for displayID in displayIDsToStop {
                 stopDependentStreamsBeforeRebuild(displayID)
@@ -185,9 +183,9 @@ final class VirtualDisplayController {
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> CGVirtualDisplay {
+    ) throws -> UUID {
         try mutateAndSync {
-            try virtualDisplayService.createDisplay(
+            try virtualDisplayFacade.createDisplay(
                 name: name,
                 serialNum: serialNum,
                 physicalSize: physicalSize,
@@ -197,63 +195,39 @@ final class VirtualDisplayController {
         }
     }
 
-    func createDisplayFromConfig(_ config: VirtualDisplayConfig) throws -> CGVirtualDisplay {
-        try mutateAndSync {
-            try virtualDisplayService.createDisplayFromConfig(config)
-        }
-    }
-
-    func disableDisplay(_ display: CGVirtualDisplay, modes: [ResolutionSelection]) {
-        mutateAndSync {
-            virtualDisplayService.disableDisplay(display, modes: modes)
-        }
-    }
-
     func disableDisplayByConfig(_ configId: UUID) throws {
         try mutateAndSync {
-            try virtualDisplayService.disableDisplayByConfig(configId)
+            try virtualDisplayFacade.disableDisplayByConfig(configId)
         }
     }
 
     func enableDisplay(_ configId: UUID) async throws {
-        // Drop controller-held runtime display references before async enable.
-        // This allows service-level teardown/rebuild to release CGVirtualDisplay instances promptly.
-        displays.removeAll()
         try await mutateAndSync {
-            try await virtualDisplayService.enableDisplay(configId)
+            try await virtualDisplayFacade.enableDisplay(configId)
         }
     }
 
     func destroyDisplay(_ configId: UUID) {
         mutateAndSync {
             clearRebuildPresentationState(configId: configId)
-            virtualDisplayService.destroyDisplay(configId)
-        }
-    }
-
-    func destroyDisplay(_ display: CGVirtualDisplay) {
-        mutateAndSync {
-            if let config = virtualDisplayService.getConfig(for: display) {
-                clearRebuildPresentationState(configId: config.id)
-            }
-            virtualDisplayService.destroyDisplay(display)
+            virtualDisplayFacade.destroyDisplay(configId)
         }
     }
 
     func getConfig(_ configId: UUID) -> VirtualDisplayConfig? {
-        virtualDisplayService.getConfig(configId)
+        displayConfigs.first { $0.id == configId }
     }
 
     func updateConfig(_ updated: VirtualDisplayConfig) {
         mutateAndSync {
-            virtualDisplayService.updateConfig(updated)
+            virtualDisplayFacade.updateConfig(updated)
         }
     }
 
     @discardableResult
-    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
+    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
-        let moved = virtualDisplayService.moveConfig(configId, direction: direction)
+        let moved = virtualDisplayFacade.moveConfig(configId, direction: direction)
         if moved { handlePostReorderMainPolicyReconcile(firstEnabledBeforeMove: firstEnabledBeforeMove) }
         return moved
     }
@@ -261,52 +235,43 @@ final class VirtualDisplayController {
     @discardableResult
     func setPrimaryVirtualDisplayByReordering(_ configId: UUID) -> Bool {
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
-        let moved = virtualDisplayService.moveConfigToFirstEnabledPosition(configId)
+        let moved = virtualDisplayFacade.moveConfigToFirstEnabledPosition(configId)
         if moved { handlePostReorderMainPolicyReconcile(firstEnabledBeforeMove: firstEnabledBeforeMove) }
         return moved
     }
 
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {
         mutateAndSync {
-            virtualDisplayService.applyModes(configId: configId, modes: modes)
+            virtualDisplayFacade.applyModes(configId: configId, modes: modes)
         }
     }
 
     func rebuildVirtualDisplay(configId: UUID) async throws {
-        displays.removeAll()
         try await mutateAndSync {
-            try await virtualDisplayService.rebuildVirtualDisplay(configId: configId)
-        }
-    }
-
-    func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
-        virtualDisplayService.getConfig(for: display)
-    }
-
-    func updateConfig(for display: CGVirtualDisplay, modes: [ResolutionSelection]) {
-        mutateAndSync {
-            virtualDisplayService.updateConfig(for: display, modes: modes)
+            try await virtualDisplayFacade.rebuildVirtualDisplay(configId: configId)
         }
     }
 
     func nextAvailableSerialNumber() -> UInt32 {
-        virtualDisplayService.nextAvailableSerialNumber()
+        virtualDisplayFacade.nextAvailableSerialNumber()
     }
 
     @discardableResult
     func resetVirtualDisplayData() -> Int {
         clearAllRebuildPresentationState()
         return mutateAndSync {
-            virtualDisplayService.resetAllVirtualDisplayData()
+            virtualDisplayFacade.resetAllVirtualDisplayData()
         }
     }
 
     private func syncVirtualDisplayState() {
-        displays = virtualDisplayService.currentDisplays
-        displayConfigs = virtualDisplayService.currentDisplayConfigs
-        runningConfigIds = virtualDisplayService.currentRunningConfigIds
-        restoreFailures = virtualDisplayService.currentRestoreFailures
-        configStorePresentation = virtualDisplayService.configStorePresentation
+        let snapshot = virtualDisplayFacade.snapshot
+        managedDisplays = snapshot.managedDisplays
+        displayConfigs = snapshot.configs
+        runningConfigIds = snapshot.runningConfigIds
+        restoreFailures = snapshot.restoreFailures
+        runtimeDisplayIDByConfigId = snapshot.runtimeDisplayIDByConfigId
+        configStorePresentation = snapshot.configStorePresentation
     }
 
     private func syncRebuildPresentationState() {
@@ -376,7 +341,7 @@ final class VirtualDisplayController {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await self.virtualDisplayService.reconcileMainDisplayPolicyIfNeeded()
+                try await self.virtualDisplayFacade.reconcileMainDisplayPolicyIfNeeded()
             } catch {
                 AppErrorMapper.logFailure(
                     "Reconcile virtual display main policy",

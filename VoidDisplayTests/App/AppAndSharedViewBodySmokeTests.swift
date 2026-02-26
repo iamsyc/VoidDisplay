@@ -106,10 +106,9 @@ struct AppAndSharedViewBodySmokeTests {
                 preview: preview,
                 captureMonitoringService: MockCaptureMonitoringService(),
                 sharingService: MockSharingService(),
-                virtualDisplayService: UITestVirtualDisplayService(scenario: .baseline),
+                virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: .baseline),
                 startupPlan: .init(
                     shouldRestoreVirtualDisplays: true,
-                    shouldStartWebService: false,
                     postRestoreConfiguration: nil
                 ),
                 isRunningUnderXCTestOverride: true
@@ -120,7 +119,7 @@ struct AppAndSharedViewBodySmokeTests {
             preview: preview,
             captureMonitoringService: MockCaptureMonitoringService(),
             sharingService: MockSharingService(),
-            virtualDisplayService: MockVirtualDisplayService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
             isRunningUnderXCTestOverride: true
         )
     }

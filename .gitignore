@@ -125,3 +125,7 @@ Temporary Items
 UnitTests.xcresult/
 UISmokeTests.xcresult/
 docs/testing/coverage-latest.json
+
+# DerivedData variants created by local test/build runs
+.derivedData-*/
+derivedData-*/

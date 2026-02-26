@@ -47,15 +47,6 @@ struct ResolutionSelection: Identifiable, Hashable {
         return "\(width) × \(height) @ \(Int(refreshRate))Hz\(hiDPIIndicator)"
     }
     
-    /// Convert to CGVirtualDisplayMode
-    func toVirtualDisplayMode() -> CGVirtualDisplayMode {
-        CGVirtualDisplayMode(
-            width: UInt(width),
-            height: UInt(height),
-            refreshRate: CGFloat(refreshRate)
-        )
-    }
-    
     /// Generate HiDPI (2x) version of this resolution
     func hiDPIVersion() -> ResolutionSelection {
         ResolutionSelection(

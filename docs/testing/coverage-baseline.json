@@ -3,7 +3,7 @@
   "tracked_file_paths": {
     "share_view_model": "VoidDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
     "capture_choose_view_model": "VoidDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
-    "virtual_display_service": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift",
+    "virtual_display_orchestrator": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayOrchestrator.swift",
     "display_teardown_coordinator": "VoidDisplay/Features/VirtualDisplay/Services/DisplayTeardownCoordinator.swift",
     "virtual_display_view": "VoidDisplay/Features/VirtualDisplay/Views/VirtualDisplayView.swift",
     "virtual_display_row": "VoidDisplay/Features/VirtualDisplay/Views/VirtualDisplayRow.swift",
@@ -17,7 +17,7 @@
     "tracked_files": {
       "share_view_model": 0.5,
       "capture_choose_view_model": 0.6,
-      "virtual_display_service": 0.35,
+      "virtual_display_orchestrator": 0.35,
       "display_teardown_coordinator": 0.8,
       "virtual_display_view": 0.5,
       "virtual_display_row": 0.7,

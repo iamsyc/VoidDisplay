@@ -2,62 +2,55 @@
 //  EditDisplaySettingsView.swift
 //  VoidDisplay
 //
-//  Edit settings for an existing virtual display
+//  Edit settings for an existing virtual display config.
 //
 
 import SwiftUI
-import CoreGraphics
 
 struct EditDisplaySettingsView: View {
-    let display: CGVirtualDisplay
+    let configId: UUID
     @Binding var isShow: Bool
-    
-    // Editable settings - use modes with per-resolution HiDPI
+
     @State private var selectedModes: [ResolutionSelection] = []
-    
-    // Mode input
+
     @State private var usePresetMode = true
     @State private var presetResolution: DisplayResolutionPreset = .w1920h1080
     @State private var customWidth: Int = 1920
     @State private var customHeight: Int = 1080
     @State private var customRefreshRate: Double = 60.0
-    
-    // Alerts
+
     @State private var showDuplicateWarning = false
     @State private var showError = false
     @State private var errorMessage = ""
-    
+
     @Environment(VirtualDisplayController.self) private var virtualDisplay
-    
+
     var body: some View {
         Form {
-            // Display Info (Read-only)
             Section {
                 HStack {
                     Text("Name")
                     Spacer()
-                    Text(display.name)
+                    Text(currentConfig?.displayName ?? "-")
                         .foregroundColor(.secondary)
                 }
                 HStack {
                     Text("Serial Number")
                     Spacer()
-                    Text(String(display.serialNum))
+                    Text(currentConfig.map { String($0.serialNum) } ?? "-")
                         .foregroundColor(.secondary)
                 }
                 HStack {
                     Text("Physical Size")
                     Spacer()
-                    Text("\(Int(display.sizeInMillimeters.width)) × \(Int(display.sizeInMillimeters.height)) mm")
+                    Text(currentConfig.map { "\($0.physicalWidth) × \($0.physicalHeight) mm" } ?? "-")
                         .foregroundColor(.secondary)
                 }
             } header: {
                 Text("Display Info")
             }
-            
-            // Resolution Modes Section
+
             Section {
-                // Mode list
                 if selectedModes.isEmpty {
                     Text("No resolution modes added")
                         .foregroundColor(.secondary)
@@ -86,17 +79,16 @@ struct EditDisplaySettingsView: View {
                         }
                     }
                 }
-                
+
                 Divider()
-                
-                // Add mode controls
+
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Add Method", selection: $usePresetMode) {
                         Text("Preset").tag(true)
                         Text("Custom").tag(false)
                     }
                     .pickerStyle(.segmented)
-                    
+
                     if usePresetMode {
                         HStack {
                             Picker("Preset Resolution", selection: $presetResolution) {
@@ -106,7 +98,7 @@ struct EditDisplaySettingsView: View {
                                 }
                             }
                             .labelsHidden()
-                            
+
                             Button(action: addPresetMode) {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.green)
@@ -127,7 +119,7 @@ struct EditDisplaySettingsView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 50)
                             Text("Hz")
-                            
+
                             Button(action: addCustomMode) {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.green)
@@ -151,7 +143,7 @@ struct EditDisplaySettingsView: View {
                 Button("Apply") {
                     applySettings()
                 }
-                .disabled(selectedModes.isEmpty)
+                .disabled(selectedModes.isEmpty || currentConfig == nil)
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -170,19 +162,25 @@ struct EditDisplaySettingsView: View {
             Text(errorMessage)
         }
         .onAppear {
-            initializeFromDisplay()
+            initializeFromConfig()
         }
     }
-    
-    // MARK: - Actions
-    
-    private func initializeFromDisplay() {
-        // Initialize with a default mode based on current display
-        // Since we can't easily read existing modes, start with a common resolution
-        let isHiDPI = display.hiDPI > 0
-        selectedModes = [ResolutionSelection(preset: .w1920h1080, enableHiDPI: isHiDPI)]
+
+    private var currentConfig: VirtualDisplayConfig? {
+        virtualDisplay.getConfig(configId)
     }
-    
+
+    private func initializeFromConfig() {
+        guard let config = currentConfig else {
+            selectedModes = []
+            return
+        }
+        selectedModes = config.resolutionModes
+        if selectedModes.isEmpty {
+            selectedModes = [ResolutionSelection(preset: .w1920h1080)]
+        }
+    }
+
     private func addPresetMode() {
         let newMode = ResolutionSelection(preset: presetResolution)
         if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
@@ -191,7 +189,7 @@ struct EditDisplaySettingsView: View {
             selectedModes.append(newMode)
         }
     }
-    
+
     private func addCustomMode() {
         guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
             errorMessage = String(localized: "Please enter valid resolution values.")
@@ -205,43 +203,33 @@ struct EditDisplaySettingsView: View {
             selectedModes.append(newMode)
         }
     }
-    
+
     private func removeMode(_ mode: ResolutionSelection) {
         selectedModes.removeAll { $0.id == mode.id }
     }
-    
+
     private func applySettings() {
         guard !selectedModes.isEmpty else {
             errorMessage = String(localized: "At least one resolution mode is required.")
             showError = true
             return
         }
-        
-        let settings = CGVirtualDisplaySettings()
-        
-        // Enable HiDPI if any mode has HiDPI enabled
-        let anyHiDPI = selectedModes.contains { $0.enableHiDPI }
-        settings.hiDPI = anyHiDPI ? 1 : 0
-        
-        // Build modes array
-        var displayModes: [CGVirtualDisplayMode] = []
-        
-        for mode in selectedModes {
-            if mode.enableHiDPI {
-                let hiDPIMode = mode.hiDPIVersion()
-                displayModes.append(hiDPIMode.toVirtualDisplayMode())
-            }
-            displayModes.append(mode.toVirtualDisplayMode())
+        guard var config = currentConfig else {
+            errorMessage = String(localized: "Display configuration not found.")
+            showError = true
+            return
         }
-        
-        settings.modes = displayModes
-        
-        // Apply settings to existing display
-        display.apply(settings)
-        
-        // Update stored config with new modes
-        virtualDisplay.updateConfig(for: display, modes: selectedModes)
-        
+
+        config.modes = selectedModes.map {
+            .init(
+                width: $0.width,
+                height: $0.height,
+                refreshRate: $0.refreshRate,
+                enableHiDPI: $0.enableHiDPI
+            )
+        }
+        virtualDisplay.updateConfig(config)
+        virtualDisplay.applyModes(configId: config.id, modes: selectedModes)
         isShow = false
     }
 }
