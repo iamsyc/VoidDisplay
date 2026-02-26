@@ -10,7 +10,7 @@ struct VirtualDisplayServiceOfflineWaitTests {
         let monitor = FakeDisplayReconfigurationMonitor(startResult: false)
         let state = ManagedOnlineState(isOnline: true)
         let sut = VirtualDisplayService(
-            persistenceService: nil,
+            configRepository: nil,
             displayReconfigurationMonitor: monitor,
             managedDisplayOnlineChecker: { _ in state.isOnline }
         )
@@ -35,7 +35,7 @@ struct VirtualDisplayServiceOfflineWaitTests {
         let monitor = FakeDisplayReconfigurationMonitor(startResult: true)
         let state = ManagedOnlineState(isOnline: true)
         let sut = VirtualDisplayService(
-            persistenceService: nil,
+            configRepository: nil,
             displayReconfigurationMonitor: monitor,
             managedDisplayOnlineChecker: { _ in state.isOnline }
         )
@@ -61,7 +61,7 @@ struct VirtualDisplayServiceOfflineWaitTests {
         let monitor = FakeDisplayReconfigurationMonitor(startResult: true)
         let state = ManagedOnlineState(isOnline: true)
         let sut = VirtualDisplayService(
-            persistenceService: nil,
+            configRepository: nil,
             displayReconfigurationMonitor: monitor,
             managedDisplayOnlineChecker: { _ in state.isOnline }
         )

@@ -132,6 +132,14 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var currentRunningConfigIds: Set<UUID> = []
     var currentRestoreFailures: [VirtualDisplayRestoreFailure] = []
     var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
+    var configStoreState: VirtualDisplayService.ConfigStoreState = .ready(
+        diagnostics: .init(
+            primaryStoreURL: URL(fileURLWithPath: "/tmp/mock-virtual-displays.json"),
+            legacyContainerStoreURL: nil,
+            legacyContainerFileExists: false,
+            isTestIsolatedPath: true
+        )
+    )
 
     var loadPersistedConfigsCallCount = 0
     var restoreDesiredVirtualDisplaysCallCount = 0
@@ -149,6 +157,36 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     var rebuildVirtualDisplayConfigIds: [UUID] = []
     var rebuildVirtualDisplayError: Error?
     var rebuildDelayNanoseconds: UInt64 = 0
+    var disableDisplayByConfigCallCount = 0
+    var disableDisplayByConfigIDs: [UUID] = []
+    var disableDisplayByConfigError: Error?
+    var enableDisplayCallCount = 0
+    var enableDisplayConfigIDs: [UUID] = []
+    var enableDisplayError: Error?
+    var destroyDisplayByConfigCallCount = 0
+    var destroyedConfigIDs: [UUID] = []
+    var reconcileMainDisplayPolicyIfNeededCallCount = 0
+    var reconcileMainDisplayPolicyIfNeededError: Error?
+    var moveConfigResult = false
+    var moveConfigToFirstEnabledPositionCallCount = 0
+    var moveConfigToFirstEnabledPositionIDs: [UUID] = []
+
+    var configStorePresentation: VirtualDisplayConfigStorePresentation {
+        switch configStoreState {
+        case .ready(let diagnostics):
+            return .init(
+                hasLoadFailure: false,
+                loadErrorMessage: nil,
+                diagnosticsSummary: diagnostics.summary
+            )
+        case .loadFailed(let error, let diagnostics):
+            return .init(
+                hasLoadFailure: true,
+                loadErrorMessage: error.userFacingMessage,
+                diagnosticsSummary: diagnostics.summary
+            )
+        }
+    }
 
     func loadPersistedConfigs() {
         loadPersistedConfigsCallCount += 1
@@ -204,11 +242,28 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
 
     func disableDisplay(_ display: CGVirtualDisplay, modes: [ResolutionSelection]) {}
 
-    func disableDisplayByConfig(_ configId: UUID) throws {}
+    func disableDisplayByConfig(_ configId: UUID) throws {
+        disableDisplayByConfigCallCount += 1
+        disableDisplayByConfigIDs.append(configId)
+        if let disableDisplayByConfigError {
+            throw disableDisplayByConfigError
+        }
+    }
 
-    func enableDisplay(_ configId: UUID) async throws {}
+    func enableDisplay(_ configId: UUID) async throws {
+        enableDisplayCallCount += 1
+        enableDisplayConfigIDs.append(configId)
+        if let enableDisplayError {
+            throw enableDisplayError
+        }
+    }
 
-    func destroyDisplay(_ configId: UUID) {}
+    func destroyDisplay(_ configId: UUID) {
+        destroyDisplayByConfigCallCount += 1
+        destroyedConfigIDs.append(configId)
+        currentDisplayConfigs.removeAll { $0.id == configId }
+        currentRunningConfigIds.remove(configId)
+    }
 
     func destroyDisplay(_ display: CGVirtualDisplay) {}
 
@@ -222,7 +277,44 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
     }
 
     func moveConfig(_ configId: UUID, direction: VirtualDisplayService.ReorderDirection) -> Bool {
-        false
+        guard moveConfigResult else { return false }
+        guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
+            return false
+        }
+        let destinationIndex: Int
+        switch direction {
+        case .up:
+            destinationIndex = index - 1
+        case .down:
+            destinationIndex = index + 1
+        }
+        guard currentDisplayConfigs.indices.contains(destinationIndex) else {
+            return false
+        }
+        currentDisplayConfigs.swapAt(index, destinationIndex)
+        return true
+    }
+
+    @discardableResult
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool {
+        moveConfigToFirstEnabledPositionCallCount += 1
+        moveConfigToFirstEnabledPositionIDs.append(configId)
+        guard moveConfigResult else { return false }
+        guard let sourceIndex = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
+            return false
+        }
+        guard currentDisplayConfigs[sourceIndex].desiredEnabled else {
+            return false
+        }
+        guard let firstEnabledIndex = currentDisplayConfigs.firstIndex(where: \.desiredEnabled) else {
+            return false
+        }
+        guard sourceIndex != firstEnabledIndex else {
+            return false
+        }
+        let config = currentDisplayConfigs.remove(at: sourceIndex)
+        currentDisplayConfigs.insert(config, at: firstEnabledIndex)
+        return true
     }
 
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {
@@ -241,6 +333,13 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
         }
     }
 
+    func reconcileMainDisplayPolicyIfNeeded() async throws {
+        reconcileMainDisplayPolicyIfNeededCallCount += 1
+        if let reconcileMainDisplayPolicyIfNeededError {
+            throw reconcileMainDisplayPolicyIfNeededError
+        }
+    }
+
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
         currentDisplayConfigs.first(where: { $0.serialNum == display.serialNum })
     }
@@ -249,6 +348,69 @@ final class MockVirtualDisplayService: VirtualDisplayServiceProtocol {
 
     func nextAvailableSerialNumber() -> UInt32 {
         1
+    }
+}
+
+final class FakeVirtualDisplayStore: VirtualDisplayStoring {
+    var loadCallCount = 0
+    var saveCallCount = 0
+    var resetCallCount = 0
+
+    var loadError: Error?
+    var saveError: Error?
+    var resetError: Error?
+    var diagnosticsError: Error?
+
+    // If provided, load() returns this value instead of the last saved snapshot.
+    var nextLoadConfigs: [VirtualDisplayConfig]?
+    var savedConfigs: [[VirtualDisplayConfig]] = []
+    var diagnosticsValue = VirtualDisplayStoreDiagnostics(
+        primaryStoreURL: URL(fileURLWithPath: "/tmp/fake-virtual-displays.json"),
+        legacyContainerStoreURL: URL(fileURLWithPath: "/tmp/legacy-virtual-displays.json"),
+        legacyContainerFileExists: false,
+        isTestIsolatedPath: true
+    )
+
+    // Backward-compatible aliases used by existing tests.
+    var saves: [[VirtualDisplayConfig]] {
+        get { savedConfigs }
+        set { savedConfigs = newValue }
+    }
+
+    var resets: Int {
+        get { resetCallCount }
+        set { resetCallCount = newValue }
+    }
+
+    func load() throws -> [VirtualDisplayConfig] {
+        loadCallCount += 1
+        if let loadError {
+            throw loadError
+        }
+        return nextLoadConfigs ?? savedConfigs.last ?? []
+    }
+
+    func save(_ configs: [VirtualDisplayConfig]) throws {
+        saveCallCount += 1
+        savedConfigs.append(configs)
+        if let saveError {
+            throw saveError
+        }
+    }
+
+    func reset() throws {
+        resetCallCount += 1
+        if let resetError {
+            throw resetError
+        }
+        savedConfigs.removeAll()
+    }
+
+    func diagnostics() throws -> VirtualDisplayStoreDiagnostics {
+        if let diagnosticsError {
+            throw diagnosticsError
+        }
+        return diagnosticsValue
     }
 }
 

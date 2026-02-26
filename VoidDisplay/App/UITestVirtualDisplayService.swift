@@ -7,6 +7,31 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
     var currentDisplayConfigs: [VirtualDisplayConfig]
     var currentRunningConfigIds: Set<UUID>
     var currentRestoreFailures: [VirtualDisplayRestoreFailure] = []
+    var configStoreState: VirtualDisplayService.ConfigStoreState = .ready(
+        diagnostics: .init(
+            primaryStoreURL: URL(fileURLWithPath: "/tmp/ui-test-virtual-displays.json"),
+            legacyContainerStoreURL: nil,
+            legacyContainerFileExists: false,
+            isTestIsolatedPath: true
+        )
+    )
+
+    var configStorePresentation: VirtualDisplayConfigStorePresentation {
+        switch configStoreState {
+        case .ready(let diagnostics):
+            return .init(
+                hasLoadFailure: false,
+                loadErrorMessage: nil,
+                diagnosticsSummary: diagnostics.summary
+            )
+        case .loadFailed(let error, let diagnostics):
+            return .init(
+                hasLoadFailure: true,
+                loadErrorMessage: error.userFacingMessage,
+                diagnosticsSummary: diagnostics.summary
+            )
+        }
+    }
 
     private let scenario: UITestScenario
 
@@ -40,7 +65,17 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
     }
 
     func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
-        nil
+        guard currentRunningConfigIds.contains(configId) else { return nil }
+        guard let firstRunningID = currentDisplayConfigs.first(where: { currentRunningConfigIds.contains($0.id) })?.id else {
+            return nil
+        }
+        if configId == firstRunningID {
+            return CGMainDisplayID()
+        }
+        guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
+            return nil
+        }
+        return CGDirectDisplayID(10_000 + index)
     }
 
     func isVirtualDisplayRunning(configId: UUID) -> Bool {
@@ -132,6 +167,25 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
         return true
     }
 
+    @discardableResult
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool {
+        guard let sourceIndex = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
+            return false
+        }
+        guard currentDisplayConfigs[sourceIndex].desiredEnabled else {
+            return false
+        }
+        guard let firstEnabledIndex = currentDisplayConfigs.firstIndex(where: \.desiredEnabled) else {
+            return false
+        }
+        guard sourceIndex != firstEnabledIndex else {
+            return false
+        }
+        let config = currentDisplayConfigs.remove(at: sourceIndex)
+        currentDisplayConfigs.insert(config, at: firstEnabledIndex)
+        return true
+    }
+
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else { return }
         var config = currentDisplayConfigs[index]
@@ -154,6 +208,8 @@ final class UITestVirtualDisplayService: VirtualDisplayServiceProtocol {
             throw VirtualDisplayService.VirtualDisplayError.topologyRepairFailed
         }
     }
+
+    func reconcileMainDisplayPolicyIfNeeded() async throws {}
 
     func getConfig(for display: CGVirtualDisplay) -> VirtualDisplayConfig? {
         currentDisplayConfigs.first { $0.serialNum == display.serialNum }

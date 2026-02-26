@@ -5,7 +5,7 @@ struct VirtualDisplayRowPresentationTests {
 
     @Test func subtitleUsesSerialAndMaxMode() {
         let config = VirtualDisplayConfig(
-            name: "Display",
+            displayName: "Display",
             serialNum: 12,
             physicalWidth: 310,
             physicalHeight: 174,

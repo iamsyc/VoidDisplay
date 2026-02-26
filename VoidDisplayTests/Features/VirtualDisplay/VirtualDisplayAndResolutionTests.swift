@@ -45,7 +45,7 @@ struct VirtualDisplayAndResolutionTests {
 
     @Test func maxPixelDimensionsWithoutHiDPI() {
         let config = VirtualDisplayConfig(
-            name: "No HiDPI",
+            displayName: "No HiDPI",
             serialNum: 1,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -63,7 +63,7 @@ struct VirtualDisplayAndResolutionTests {
 
     @Test func maxPixelDimensionsWithHiDPI() {
         let config = VirtualDisplayConfig(
-            name: "HiDPI",
+            displayName: "HiDPI",
             serialNum: 2,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -81,7 +81,7 @@ struct VirtualDisplayAndResolutionTests {
 
     @Test func maxPixelDimensionsFallbackForEmptyModes() {
         let config = VirtualDisplayConfig(
-            name: "Fallback",
+            displayName: "Fallback",
             serialNum: 3,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -99,7 +99,7 @@ struct VirtualDisplayAndResolutionTests {
         let json = """
         {
           "id": "\(id)",
-          "name": "Strict Config",
+          "displayName": "Strict Config",
           "serialNum": 7,
           "physicalWidth": 300,
           "physicalHeight": 200,
@@ -118,7 +118,7 @@ struct VirtualDisplayAndResolutionTests {
 
     @MainActor @Test func codableRoundTripPreservesDesiredEnabled() throws {
         let original = VirtualDisplayConfig(
-            name: "Round Trip",
+            displayName: "Round Trip",
             serialNum: 9,
             physicalWidth: 310,
             physicalHeight: 174,
@@ -136,7 +136,7 @@ struct VirtualDisplayAndResolutionTests {
 
     @MainActor @Test func virtualDisplayStoreFileFormatRoundTrip() throws {
         let config = VirtualDisplayConfig(
-            name: "Stored Config",
+            displayName: "Stored Config",
             serialNum: 10,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -166,7 +166,7 @@ struct VirtualDisplayAndResolutionTests {
 
     @MainActor @Test func virtualDisplayStoreRejectsLegacyArrayFormat() throws {
         let config = VirtualDisplayConfig(
-            name: "Legacy Array",
+            displayName: "Legacy Array",
             serialNum: 42,
             physicalWidth: 300,
             physicalHeight: 200,
@@ -175,8 +175,14 @@ struct VirtualDisplayAndResolutionTests {
         )
 
         let data = try JSONEncoder().encode([config])
-        #expect(throws: DecodingError.self) {
+        do {
             _ = try VirtualDisplayStore().decodeConfigs(from: data)
+            Issue.record("Expected legacy array format decode to fail")
+        } catch let error as VirtualDisplayConfigStoreError {
+            guard case .decodingFailed = error else {
+                Issue.record("Expected decodingFailed, got \(error)")
+                return
+            }
         }
     }
 
@@ -185,7 +191,7 @@ struct VirtualDisplayAndResolutionTests {
         let configs = [
             VirtualDisplayConfig(
                 id: duplicateID,
-                name: "",
+                displayName: "",
                 serialNum: 0,
                 physicalWidth: 0,
                 physicalHeight: 0,
@@ -194,7 +200,7 @@ struct VirtualDisplayAndResolutionTests {
             ),
             VirtualDisplayConfig(
                 id: duplicateID,
-                name: "Second",
+                displayName: "Second",
                 serialNum: 0,
                 physicalWidth: 100,
                 physicalHeight: 50,
@@ -203,13 +209,13 @@ struct VirtualDisplayAndResolutionTests {
             )
         ]
 
-        let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 1, configs: configs))
+        let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: configs))
         let decoded = try VirtualDisplayStore().decodeConfigs(from: data)
 
         #expect(decoded.count == 2)
         #expect(decoded[0].serialNum == 1)
         #expect(decoded[1].serialNum == 2)
-        #expect(decoded[0].name == "Virtual Display 1")
+        #expect(decoded[0].displayName == "Virtual Display 1")
         #expect(decoded[0].physicalWidth == 310)
         #expect(decoded[0].physicalHeight == 174)
         #expect(decoded[0].modes.first?.width == 1920)
@@ -222,7 +228,7 @@ struct VirtualDisplayAndResolutionTests {
     @MainActor @Test func virtualDisplayStoreResolvesDuplicateSerialNumbers() throws {
         let configs = [
             VirtualDisplayConfig(
-                name: "Display A",
+                displayName: "Display A",
                 serialNum: 1,
                 physicalWidth: 300,
                 physicalHeight: 200,
@@ -230,7 +236,7 @@ struct VirtualDisplayAndResolutionTests {
                 desiredEnabled: true
             ),
             VirtualDisplayConfig(
-                name: "Display B",
+                displayName: "Display B",
                 serialNum: 1,
                 physicalWidth: 300,
                 physicalHeight: 200,
@@ -238,7 +244,7 @@ struct VirtualDisplayAndResolutionTests {
                 desiredEnabled: true
             ),
             VirtualDisplayConfig(
-                name: "Display C",
+                displayName: "Display C",
                 serialNum: 2,
                 physicalWidth: 300,
                 physicalHeight: 200,
@@ -247,13 +253,151 @@ struct VirtualDisplayAndResolutionTests {
             )
         ]
 
-        let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 2, configs: configs))
+        let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: configs))
         let decoded = try VirtualDisplayStore().decodeConfigs(from: data)
         let serials = decoded.map(\.serialNum)
 
         #expect(decoded.count == 3)
         #expect(Set(serials).count == 3)
         #expect(serials == [1, 2, 3])
+    }
+
+    @MainActor @Test func virtualDisplayStoreSaveDoesNotRewriteDisplayNamesHeuristically() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let store = VirtualDisplayStore(
+            appSupportDirectoryOverride: tempRoot,
+            bundleIdentifierOverride: "com.example.voiddisplay.testsandbox",
+            environment: [:]
+        )
+
+        let runtimePolluted = VirtualDisplayConfig(
+            id: UUID(),
+            displayName: "Managed 1",
+            serialNum: 1,
+            physicalWidth: 286,
+            physicalHeight: 179,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        try store.save([runtimePolluted])
+
+        let loaded = try store.load()
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.displayName == "Managed 1")
+        #expect(loaded.first?.modes.first?.width == 1920)
+        #expect(loaded.first?.modes.first?.height == 1080)
+    }
+
+    @MainActor @Test func virtualDisplayStoreDiagnosticsReportsPrimaryAndLegacyPaths() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let store = VirtualDisplayStore(
+            appSupportDirectoryOverride: tempRoot,
+            bundleIdentifierOverride: "com.example.voiddisplay",
+            environment: ["XCTestConfigurationFilePath": "/tmp/test.xctestconfiguration"]
+        )
+
+        let diagnostics = try store.diagnostics()
+
+        #expect(diagnostics.primaryStoreURL.path.contains("com.example.voiddisplay.tests"))
+        #expect(diagnostics.isTestIsolatedPath)
+        #expect(diagnostics.legacyContainerStoreURL?.path.contains("/Library/Containers/com.example.voiddisplay/") == true)
+    }
+
+    @MainActor @Test func virtualDisplayStoreLoadRejectsSchemaVersion2WithStructuredError() throws {
+        let json = """
+        {
+          "schemaVersion": 2,
+          "configs": []
+        }
+        """
+        let data = try #require(json.data(using: .utf8))
+
+        do {
+            _ = try VirtualDisplayStore().decodeConfigs(from: data)
+            Issue.record("Expected unsupported schema version error")
+        } catch let error as VirtualDisplayConfigStoreError {
+            switch error {
+            case .unsupportedSchemaVersion(let expected, let actual):
+                #expect(expected == 3)
+                #expect(actual == 2)
+            default:
+                Issue.record("Expected unsupportedSchemaVersion error")
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(String(describing: error))")
+        }
+    }
+
+    @MainActor @Test func virtualDisplayStoreRejectsLegacyNameKeySchema() throws {
+        let id = UUID().uuidString
+        let json = """
+        {
+          "schemaVersion": 3,
+          "configs": [
+            {
+              "id": "\(id)",
+              "name": "Legacy Field",
+              "serialNum": 1,
+              "physicalWidth": 300,
+              "physicalHeight": 200,
+              "modes": [
+                { "width": 1920, "height": 1080, "refreshRate": 60, "enableHiDPI": false }
+              ],
+              "desiredEnabled": true
+            }
+          ]
+        }
+        """
+        let data = try #require(json.data(using: .utf8))
+        do {
+            _ = try VirtualDisplayStore().decodeConfigs(from: data)
+            Issue.record("Expected decodingFailed store error")
+        } catch let error as VirtualDisplayConfigStoreError {
+            switch error {
+            case .decodingFailed:
+                break
+            default:
+                Issue.record("Expected decodingFailed error")
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(String(describing: error))")
+        }
+    }
+
+    @MainActor @Test func virtualDisplayStoreUsesIsolatedBundleSuffixWhenRunningUnderXCTest() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let baseBundleID = "com.example.voiddisplay"
+        let store = VirtualDisplayStore(
+            appSupportDirectoryOverride: tempRoot,
+            bundleIdentifierOverride: baseBundleID,
+            environment: ["XCTestConfigurationFilePath": "/tmp/test.xctestconfiguration"]
+        )
+
+        let config = VirtualDisplayConfig(
+            displayName: "Test",
+            serialNum: 1,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        try store.save([config])
+
+        let isolatedURL = tempRoot
+            .appendingPathComponent("\(baseBundleID).tests", isDirectory: true)
+            .appendingPathComponent("virtual-displays.json", isDirectory: false)
+        let normalURL = tempRoot
+            .appendingPathComponent(baseBundleID, isDirectory: true)
+            .appendingPathComponent("virtual-displays.json", isDirectory: false)
+
+        #expect(FileManager.default.fileExists(atPath: isolatedURL.path))
+        #expect(FileManager.default.fileExists(atPath: normalURL.path) == false)
     }
 
 }

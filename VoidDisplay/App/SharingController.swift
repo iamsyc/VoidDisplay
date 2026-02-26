@@ -35,21 +35,24 @@ final class SharingController {
 
     @discardableResult
     func startWebService() async -> Bool {
-        defer { syncSharingState() }
-        return await sharingService.startWebService()
+        await mutateAndSync {
+            await sharingService.startWebService()
+        }
     }
 
     func stopWebService() {
-        defer { syncSharingState() }
-        sharingService.stopWebService()
+        mutateAndSync {
+            sharingService.stopWebService()
+        }
     }
 
     func registerShareableDisplays(
         _ displays: [SCDisplay],
         virtualSerialResolver: @escaping (CGDirectDisplayID) -> UInt32?
     ) {
-        defer { syncSharingState() }
-        sharingService.registerShareableDisplays(displays, virtualSerialResolver: virtualSerialResolver)
+        mutateAndSync {
+            sharingService.registerShareableDisplays(displays, virtualSerialResolver: virtualSerialResolver)
+        }
     }
 
     func beginSharing(
@@ -58,23 +61,26 @@ final class SharingController {
         output: Capture,
         delegate: StreamDelegate
     ) {
-        defer { syncSharingState() }
-        sharingService.startSharing(
-            displayID: displayID,
-            stream: stream,
-            output: output,
-            delegate: delegate
-        )
+        mutateAndSync {
+            sharingService.startSharing(
+                displayID: displayID,
+                stream: stream,
+                output: output,
+                delegate: delegate
+            )
+        }
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {
-        defer { syncSharingState() }
-        sharingService.stopSharing(displayID: displayID)
+        mutateAndSync {
+            sharingService.stopSharing(displayID: displayID)
+        }
     }
 
     func stopAllSharing() {
-        defer { syncSharingState() }
-        sharingService.stopAllSharing()
+        mutateAndSync {
+            sharingService.stopAllSharing()
+        }
     }
 
     var webServicePortValue: UInt16 {
@@ -146,5 +152,20 @@ final class SharingController {
             }
         }
         sharingClientCounts = counts
+    }
+
+    private func mutateAndSync(_ mutation: () -> Void) {
+        mutation()
+        syncSharingState()
+    }
+
+    private func mutateAndSync<T>(_ mutation: () async -> T) async -> T {
+        defer { syncSharingState() }
+        return await mutation()
+    }
+
+    private func mutateAndSync<T>(_ mutation: () async throws -> T) async rethrows -> T {
+        defer { syncSharingState() }
+        return try await mutation()
     }
 }

@@ -11,7 +11,7 @@ import CoreGraphics
 /// Stores the configuration of a virtual display for later restoration
 struct VirtualDisplayConfig: Identifiable, Codable {
     let id: UUID
-    var name: String
+    var displayName: String
     var serialNum: UInt32
     var physicalWidth: Int  // in millimeters
     var physicalHeight: Int // in millimeters
@@ -38,7 +38,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
     
     init(
         id: UUID = UUID(),
-        name: String,
+        displayName: String,
         serialNum: UInt32,
         physicalWidth: Int,
         physicalHeight: Int,
@@ -46,35 +46,19 @@ struct VirtualDisplayConfig: Identifiable, Codable {
         desiredEnabled: Bool = true
     ) {
         self.id = id
-        self.name = name
+        self.displayName = displayName
         self.serialNum = serialNum
         self.physicalWidth = physicalWidth
         self.physicalHeight = physicalHeight
         self.modes = modes
         self.desiredEnabled = desiredEnabled
     }
-    
-    /// Create from a CGVirtualDisplay and its modes
-    init(from display: CGVirtualDisplay, modes: [ResolutionSelection]) {
-        self.id = UUID()
-        self.name = display.name
-        self.serialNum = display.serialNum
-        self.physicalWidth = Int(display.sizeInMillimeters.width)
-        self.physicalHeight = Int(display.sizeInMillimeters.height)
-        self.modes = modes.map { ModeConfig(
-            width: $0.width,
-            height: $0.height,
-            refreshRate: $0.refreshRate,
-            enableHiDPI: $0.enableHiDPI
-        )}
-        self.desiredEnabled = true
-    }
 
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case id
-        case name
+        case displayName
         case serialNum
         case physicalWidth
         case physicalHeight
@@ -85,7 +69,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
+        displayName = try container.decode(String.self, forKey: .displayName)
         serialNum = try container.decode(UInt32.self, forKey: .serialNum)
         physicalWidth = try container.decode(Int.self, forKey: .physicalWidth)
         physicalHeight = try container.decode(Int.self, forKey: .physicalHeight)
@@ -97,7 +81,7 @@ struct VirtualDisplayConfig: Identifiable, Codable {
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
-        try container.encode(name, forKey: .name)
+        try container.encode(displayName, forKey: .displayName)
         try container.encode(serialNum, forKey: .serialNum)
         try container.encode(physicalWidth, forKey: .physicalWidth)
         try container.encode(physicalHeight, forKey: .physicalHeight)

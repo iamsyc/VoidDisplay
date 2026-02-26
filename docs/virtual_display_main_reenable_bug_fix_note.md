@@ -136,6 +136,9 @@
 
 你最近日志中的以下特征均符合预期：
 
+- `Main display policy resolved (applies: true, source: listOrder, ...)`
+  - 在纯虚拟多屏场景下，说明已按“列表第一个启用虚拟屏”为主屏策略选锚点（而非跟随系统临时主屏）
+
 - `Disable-by-config ... disablingMain: true`
   - 说明主屏停用识别正确
 - `Enable display requested ... recoveryMode: aggressive`
@@ -162,6 +165,8 @@
 - `CALocalDisplayUpdateBlock returned NO`
 - `Unable to obtain a task name port right for pid ...`
 - `com.apple.Display.VirtualDisplayMetrics event not enabled ...`
+- `SLSTransaction decode timed out error ...`（若后续创建/拓扑恢复成功，通常可视为瞬时系统噪音）
+- `ViewBridge to RemoteViewService Terminated ... NSViewBridgeErrorCanceled`（日志中通常已标注 benign unless unexpected）
 
 只有当它们与以下错误同时出现时才需要重点排查：
 
@@ -194,6 +199,13 @@
 
 如果出现逐屏 settlement 超长等待，检查 `teardownStrategy` 是否退回了 `perDisplaySettlement`。
 
+补充说明（避免误判）：
+
+- 同一段长日志里同时出现 `fleetOfflineOnly` 与 `perDisplaySettlement` 可能是正常的
+  - 主屏/主屏连续性相关重建通常会选 `fleetOfflineOnly`
+  - 非主屏单次重建或无法协调重建时可能回退到 `perDisplaySettlement`
+  - 需要结合 `Rebuild strategy resolved (... coordinated: ..., teardownStrategy: ...)` 一起判断，而不是只看单条日志
+
 ### 4. 看是否再次出现旧强引用持有问题
 
 典型故障日志：
@@ -213,6 +225,51 @@
 
 如果稳定拓扑仍频繁 `Topology repair requested`，说明归一化/连续性判断逻辑可能回归。
 
+### 6. 看主屏连续性锚点是否符合列表顺序规则（纯虚拟多屏）
+
+应先看到：
+
+- `Main display policy resolved (applies: true, source: listOrder, targetConfig: ..., targetRuntimeDisplayID: ...)`
+
+随后若发生连续性修复，锚点应与上面的 `targetRuntimeDisplayID` 一致：
+
+- `Topology continuity repair requested (anchor: ..., preferredMain: Optional(...))`
+
+如果 `anchor` 经常跟随“当前临时主屏”漂移而不是列表第一启用虚拟屏，优先排查主屏策略解析/映射逻辑是否回退到旧启发式。
+
+## 后续行为优化（重排与设主屏）
+
+### 1. “设为主屏”按钮的语义（不是新状态）
+
+- UI 中的“设为主屏”快捷操作本质是 **重排快捷操作**
+- 点击后会将目标虚拟显示器配置移动到“第一个启用项位置”（不是强行写入独立主屏字段）
+- 底层规则仍保持单一真相：
+  - **纯虚拟多屏场景下，列表第一个启用虚拟屏 = 主屏**
+
+这保证了：
+
+- 用户可以通过排序直接控制主屏
+- “设为主屏”与“上移/下移”不会出现两套状态冲突
+
+### 2. 重排后的主屏策略收敛优化（提速）
+
+为了减少无意义拓扑恢复，当前实现已增加以下优化：
+
+- 仅当“列表第一个启用项”发生变化时，才触发主屏策略收敛
+- 不再对重排收敛做防抖（满足条件时立即触发）
+- 若拓扑已健康且主屏连续性已满足，则跳过 `fast` recovery（no-op 快速返回）
+
+### 3. 与重排行为相关的日志判据（避免误判）
+
+如果重排后“第一启用项”未变化，看到以下日志是正常优化命中，不是异常：
+
+- `Skip main display policy reconcile after reorder because first enabled config did not change ...`
+
+如果重排/“设为主屏”后第一启用项发生变化，则通常会看到：
+
+- `Main display policy resolved (applies: true, source: listOrder, ...)`
+- 随后（必要时）`Topology continuity repair requested (anchor: ..., preferredMain: Optional(...))`
+
 ## 相关实现位置（关键文件）
 
 - `/Users/syc/Project/VoidDisplay/VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift`
@@ -226,4 +283,3 @@
 - `/Users/syc/Project/VoidDisplay/scripts/test/virtual_display_regression_gate.sh`
 - `/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/VirtualDisplay/VirtualDisplayTopologyRecoveryTests.swift`
 - `/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/VirtualDisplay/VirtualDisplayServiceOfflineWaitTests.swift`
-

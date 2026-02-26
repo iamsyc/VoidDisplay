@@ -323,7 +323,7 @@ struct EditVirtualDisplayConfigView: View {
         }
 
         loadedConfig = config
-        name = config.name
+        name = config.displayName
         serialNum = Int(config.serialNum)
         selectedModes = config.resolutionModes
 
