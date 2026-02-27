@@ -39,6 +39,20 @@ Open the provided URL in any browser on any device — phone, tablet, or another
 
 Check the [Releases](../../releases) page for the latest build.
 
+### Unsigned Build Notice (First Launch)
+
+Current release builds are unsigned and not notarized yet, so macOS may block first launch with messages like:
+- "cannot be opened because Apple cannot check it for malicious software"
+- "is damaged and can't be opened"
+
+If this happens:
+1. Try Finder right-click on `VoidDisplay.app` -> **Open**.
+2. If still blocked, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
+```
+
 ### Build from Source
 
 1. Clone this repository.
