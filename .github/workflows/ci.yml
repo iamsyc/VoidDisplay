@@ -58,12 +58,43 @@ jobs:
       artifact_name_suffix: ${{ matrix.case_name }}
       enforce_failure: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
 
+  release_build_check:
+    name: release-build-check
+    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: ./.github/actions/xcode-select
+        with:
+          preferred_path: /Applications/Xcode_26.2.app/Contents/Developer
+          fallback_path: /Applications/Xcode.app/Contents/Developer
+
+      - name: Build Release app (unsigned, arm64)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -scheme VoidDisplay \
+            -project VoidDisplay.xcodeproj \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .derivedData-release-check \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
   ci_gate:
     name: ci-gate
     if: always()
     needs:
       - unit_tests
       - ui_smoke_tests
+      - release_build_check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -74,6 +105,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UI_RESULT: ${{ needs.ui_smoke_tests.result }}
+          RELEASE_RESULT: ${{ needs.release_build_check.result }}
         run: |
           set -euo pipefail
           is_main_pr=false
@@ -83,17 +115,25 @@ jobs:
 
           echo "Unit tests job result: ${UNIT_RESULT}"
           echo "UI smoke matrix job result: ${UI_RESULT}"
+          echo "Release build check job result: ${RELEASE_RESULT}"
           echo "Main PR gate mode: ${is_main_pr}"
 
-          if [ "${UNIT_RESULT}" = "success" ]; then
-            if [ "${is_main_pr}" = "true" ] && [ "${UI_RESULT}" != "success" ]; then
-              echo "Gate failed because this is a main PR and ui-smoke-tests result is ${UI_RESULT}."
-              exit 1
-            fi
-            exit 0
+          if [ "${UNIT_RESULT}" != "success" ]; then
+            echo "Gate failed because unit-tests result is ${UNIT_RESULT}."
+            exit 1
           fi
-          echo "Gate failed because unit-tests result is ${UNIT_RESULT}."
-          exit 1
+
+          if [ "${is_main_pr}" = "true" ] && [ "${UI_RESULT}" != "success" ]; then
+            echo "Gate failed because this is a main PR and ui-smoke-tests result is ${UI_RESULT}."
+            exit 1
+          fi
+
+          if [ "${is_main_pr}" = "true" ] && [ "${RELEASE_RESULT}" != "success" ]; then
+            echo "Gate failed because this is a main PR and release-build-check result is ${RELEASE_RESULT}."
+            exit 1
+          fi
+
+          exit 0
 
   ci_summary:
     name: ci-summary
@@ -101,6 +141,7 @@ jobs:
     needs:
       - unit_tests
       - ui_smoke_tests
+      - release_build_check
       - ci_gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -115,6 +156,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UI_JOB_RESULT: ${{ needs.ui_smoke_tests.result }}
+          RELEASE_RESULT: ${{ needs.release_build_check.result }}
           GATE_RESULT: ${{ needs.ci_gate.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
@@ -124,15 +166,19 @@ jobs:
             const baseRef = process.env.BASE_REF || '';
             const unitResult = process.env.UNIT_RESULT || 'unknown';
             const uiJobResult = process.env.UI_JOB_RESULT || 'unknown';
+            const releaseResult = process.env.RELEASE_RESULT || 'unknown';
             const gateResult = process.env.GATE_RESULT || 'unknown';
             const runUrl = process.env.RUN_URL;
             const isMainPr = eventName === 'pull_request' && baseRef === 'main';
             const gateDetails = isMainPr
-              ? 'required; driven by Unit Tests + UI Smoke Tests'
+              ? 'required; driven by Unit Tests + UI Smoke Tests + Release Build Check'
               : 'required; driven by Unit Tests only';
+            const releaseDetails = isMainPr
+              ? 'required; Release arm64 unsigned build'
+              : 'not required; skipped outside main PR';
             const gateRule = isMainPr
-              ? 'Gate rule: target `main` 的 PR 必须通过 `Unit Tests` + `UI Smoke Tests`。'
-              : 'Gate rule: 非 `main` PR / push / merge_group 仅 `Unit Tests` 必须通过；`UI Smoke Tests` 为信息展示（non-blocking）。';
+              ? 'Gate rule: target `main` 的 PR 必须通过 `Unit Tests` + `UI Smoke Tests` + `Release Build Check`。'
+              : 'Gate rule: 非 `main` PR / push / merge_group 仅 `Unit Tests` 必须通过；`UI Smoke Tests` 与 `Release Build Check` 为信息展示（non-blocking）。';
 
             const summaryLines = [
               '## CI Summary',
@@ -143,6 +189,7 @@ jobs:
               '| --- | --- | --- |',
               `| Unit Tests | ${unitResult} | required |`,
               `| UI Smoke Tests (matrix: baseline + permissionDenied + rebuildFailed) | ${uiJobResult} | each case keeps its own ui_status in job summary/artifacts |`,
+              `| Release Build Check (Release arm64, unsigned) | ${releaseResult} | ${releaseDetails} |`,
               `| CI Gate | ${gateResult} | ${gateDetails} |`,
               '',
               gateRule,

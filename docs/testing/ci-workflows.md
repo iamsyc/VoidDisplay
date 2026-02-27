@@ -28,14 +28,20 @@ Branch protection for `main` should require only:
 
 Gate semantics:
 
-- For `pull_request` targeting `main`: `unit-tests` and `ui-smoke-tests` (matrix aggregate) must both succeed
-- For other events (`pull_request` not targeting `main`, `push`, `merge_group`): only `unit-tests` drives `ci-gate`; `ui-smoke-tests` is informational
+- For `pull_request` targeting `main`: `unit-tests`, `ui-smoke-tests` (matrix aggregate), and `release-build-check` must all succeed
+- For other events (`pull_request` not targeting `main`, `push`, `merge_group`): only `unit-tests` drives `ci-gate`; `ui-smoke-tests` and `release-build-check` are informational
 
 UI smoke failure behavior:
 
 - `assertion_failure` and `unknown_failure` fail immediately
 - `runner_bootstrap_failure` and `environment_unstable` can retry up to `max_attempts`
 - If retries are exhausted, status is kept as `ui_status=unstable`; when enforcement is on, job result is failure
+
+Release build check behavior:
+
+- `release-build-check` runs only on PRs targeting `main`
+- It performs an unsigned `Release` build for `arm64`
+- It does not package DMG and does not publish artifacts
 
 ## Manual UI Smoke Run
 
