@@ -387,7 +387,13 @@ final class WebServer {
         // so the receive loop isn't delayed by send completion timing.
         hub.addClient(connection)
         liveTargetByConnectionKey[key] = target
-        liveReceiveBufferByConnectionKey[key] = initialBody
+        if initialBody.isEmpty {
+            liveReceiveBufferByConnectionKey[key] = Data()
+        } else {
+            // If the client pipelined frames in the same TCP receive as the HTTP upgrade,
+            // handle them immediately instead of waiting for another receive callback.
+            liveReceiveBufferByConnectionKey[key] = processLiveSocketBuffer(initialBody, for: key, connection: connection)
+        }
         receiveLiveSocketFrame(on: connection, key: key)
     }
 
