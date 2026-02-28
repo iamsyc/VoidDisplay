@@ -14,7 +14,6 @@ on:
       - '.github/workflows/**'
       - '.github/actions/**'
   pull_request:
-  merge_group:
 
 permissions:
   contents: read
@@ -87,7 +86,7 @@ jobs:
     name: ui-smoke-tests (${{ matrix.case_name }})
     needs:
       - classify_changes
-    if: ${{ github.event_name != 'pull_request' || needs.classify_changes.outputs.code_relevant == 'true' }}
+    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && needs.classify_changes.outputs.code_relevant == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -120,9 +119,6 @@ jobs:
 
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
-        with:
-          preferred_path: /Applications/Xcode_26.2.app/Contents/Developer
-          fallback_path: /Applications/Xcode.app/Contents/Developer
 
       - name: Build Release app (unsigned, arm64)
         run: |
@@ -160,14 +156,12 @@ jobs:
           RELEASE_RESULT: ${{ needs.release_build_check.result }}
         run: |
           set -euo pipefail
-          is_main_pr=false
           is_non_code_pr=false
+          is_main_pr=false
 
           if [ "${EVENT_NAME}" = "pull_request" ] && [ "${CODE_RELEVANT}" = "false" ]; then
             is_non_code_pr=true
-          fi
-
-          if [ "${EVENT_NAME}" = "pull_request" ] && [ "${BASE_REF}" = "main" ] && [ "${CODE_RELEVANT}" = "true" ]; then
+          elif [ "${EVENT_NAME}" = "pull_request" ] && [ "${BASE_REF}" = "main" ] && [ "${CODE_RELEVANT}" = "true" ]; then
             is_main_pr=true
           fi
 
@@ -247,7 +241,9 @@ jobs:
               : 'required';
             const uiDetails = isNonCodePr
               ? 'skipped; non-code pull request'
-              : 'each case keeps its own ui_status in job summary/artifacts';
+              : isMainCodePr
+              ? 'required; matrix: baseline + permissionDenied + rebuildFailed'
+              : 'not run; only main-targeting code PRs include UI smoke';
             const gateDetails = isNonCodePr
               ? 'required; non-code PR fast-path'
               : isMainCodePr
@@ -257,12 +253,12 @@ jobs:
               ? 'skipped; non-code pull request'
               : isMainCodePr
               ? 'required; Release arm64 unsigned build'
-              : 'not required; skipped outside main PR';
+              : 'not run; only main-targeting code PRs include release build check';
             const gateRule = isNonCodePr
               ? 'Gate rule: 本次 PR 仅包含非代码变更，已跳过 `Unit Tests` / `UI Smoke Tests` / `Release Build Check`，`ci-gate` 直接通过。'
               : isMainCodePr
               ? 'Gate rule: target `main` 的代码相关 PR 必须通过 `Unit Tests` + `UI Smoke Tests` + `Release Build Check`。'
-              : 'Gate rule: 非 `main` PR / push / merge_group 仅 `Unit Tests` 必须通过；`UI Smoke Tests` 与 `Release Build Check` 为信息展示（non-blocking）。';
+              : 'Gate rule: 非 `main` 的代码 PR 与 `push` 到 `main` 仅要求 `Unit Tests` 通过；`UI Smoke Tests` 与 `Release Build Check` 不属于该链路。';
 
             const summaryLines = [
               '## CI Summary',

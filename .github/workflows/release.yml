@@ -85,9 +85,6 @@ jobs:
 
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
-        with:
-          preferred_path: /Applications/Xcode_26.2.app/Contents/Developer
-          fallback_path: /Applications/Xcode.app/Contents/Developer
 
       - name: Build Release app (unsigned)
         env:

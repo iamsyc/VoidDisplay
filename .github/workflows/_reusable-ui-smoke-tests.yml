@@ -11,8 +11,8 @@ on:
       max_attempts:
         description: Retry attempts for runner/bootstrap flakiness.
         required: false
-        type: string
-        default: "2"
+        type: number
+        default: 2
       artifact_retention_days:
         description: Artifact retention days.
         required: false
@@ -28,16 +28,6 @@ on:
         required: false
         type: string
         default: default
-      xcode_preferred_path:
-        description: Preferred Xcode developer directory path.
-        required: false
-        type: string
-        default: /Applications/Xcode_26.2.app/Contents/Developer
-      xcode_fallback_path:
-        description: Fallback Xcode developer directory path.
-        required: false
-        type: string
-        default: /Applications/Xcode.app/Contents/Developer
     outputs:
       ui_status:
         description: Business-level UI smoke status (passed/failed/unstable/unknown).
@@ -80,9 +70,6 @@ jobs:
       - name: Select Xcode
         id: xcode
         uses: ./.github/actions/xcode-select
-        with:
-          preferred_path: ${{ inputs.xcode_preferred_path }}
-          fallback_path: ${{ inputs.xcode_fallback_path }}
 
       - name: Cache Xcode metadata
         uses: actions/cache@v4
@@ -232,7 +219,8 @@ jobs:
           ui_status="unknown"
           ui_reason="not_run"
           ui_attempt="0"
-          ui_max_attempts="${{ inputs.max_attempts }}"
+          default_max_attempts='${{ inputs.max_attempts }}'
+          ui_max_attempts="${default_max_attempts}"
           ui_log_file=""
           ui_enforced_exit_code="1"
 
@@ -240,7 +228,7 @@ jobs:
             raw_status="$(jq -r '.status // "unknown"' "$summary_file")"
             raw_reason="$(jq -r '.reason // "not_run"' "$summary_file")"
             ui_attempt="$(jq -r '.attempt // 0' "$summary_file")"
-            ui_max_attempts="$(jq -r '.max_attempts // "'"${{ inputs.max_attempts }}"'"' "$summary_file")"
+            ui_max_attempts="$(jq -r --argjson default_max_attempts "${default_max_attempts}" '.max_attempts // $default_max_attempts' "$summary_file")"
             ui_log_file="$(jq -r '.log_file // ""' "$summary_file")"
 
             case "$raw_status" in

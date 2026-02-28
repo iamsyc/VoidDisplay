@@ -4,10 +4,12 @@ description: Select preferred Xcode and emit a cache suffix derived from Xcode v
 inputs:
   preferred_path:
     description: Preferred DEVELOPER_DIR path.
-    required: true
+    required: false
+    default: /Applications/Xcode_26.2.app/Contents/Developer
   fallback_path:
     description: Fallback DEVELOPER_DIR path when preferred path is unavailable.
-    required: true
+    required: false
+    default: /Applications/Xcode.app/Contents/Developer
 
 outputs:
   xcode_cache_suffix:
