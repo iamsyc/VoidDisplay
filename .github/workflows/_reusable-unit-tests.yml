@@ -8,16 +8,6 @@ on:
         required: false
         type: number
         default: 7
-      xcode_preferred_path:
-        description: Preferred Xcode developer directory path.
-        required: false
-        type: string
-        default: /Applications/Xcode_26.2.app/Contents/Developer
-      xcode_fallback_path:
-        description: Fallback Xcode developer directory path.
-        required: false
-        type: string
-        default: /Applications/Xcode.app/Contents/Developer
     outputs:
       unit_status:
         description: Final unit test job status.
@@ -48,9 +38,6 @@ jobs:
       - name: Select Xcode
         id: xcode
         uses: ./.github/actions/xcode-select
-        with:
-          preferred_path: ${{ inputs.xcode_preferred_path }}
-          fallback_path: ${{ inputs.xcode_fallback_path }}
 
       - name: Cache Xcode metadata
         uses: actions/cache@v4
@@ -102,6 +89,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "unit_status=${{ job.status }}" >> "$GITHUB_OUTPUT"
-          echo "coverage_artifact_name=unit-tests-coverage-report" >> "$GITHUB_OUTPUT"
-          echo "xcresult_artifact_name=unit-tests-xcresult" >> "$GITHUB_OUTPUT"
+          {
+            echo "unit_status=${{ job.status }}"
+            echo "coverage_artifact_name=unit-tests-coverage-report"
+            echo "xcresult_artifact_name=unit-tests-xcresult"
+          } >> "$GITHUB_OUTPUT"

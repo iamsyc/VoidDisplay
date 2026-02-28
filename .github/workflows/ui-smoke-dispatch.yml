@@ -11,8 +11,8 @@ on:
       max_attempts:
         description: Retry attempts for runner/bootstrap flakiness
         required: false
-        default: "2"
-        type: string
+        default: 2
+        type: number
 
 permissions:
   contents: read
