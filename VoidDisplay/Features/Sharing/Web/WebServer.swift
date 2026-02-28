@@ -21,6 +21,7 @@ final class WebServer {
 
     nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
     nonisolated private static let maxRequestBytes = 32 * 1024
+    nonisolated private static let maxLiveSocketBufferBytes = 64 * 1024
     nonisolated private static let receiveChunkSize = 4096
 
     nonisolated private static func endpointDescription(for connection: NWConnection) -> String {
@@ -72,6 +73,7 @@ final class WebServer {
     private let requestHandler = WebRequestHandler()
     private var liveHubs: [ShareTarget: LiveSocketHub] = [:]
     private var liveTargetByConnectionKey: [ObjectIdentifier: ShareTarget] = [:]
+    private var liveReceiveBufferByConnectionKey: [ObjectIdentifier: Data] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
     private let liveHubProvider: @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
     private let onListenerStopped: (@MainActor @Sendable () -> Void)?
@@ -157,6 +159,7 @@ final class WebServer {
             hub.disconnectAllClients()
         }
         liveTargetByConnectionKey.removeAll()
+        liveReceiveBufferByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
@@ -238,6 +241,7 @@ final class WebServer {
            let hub = liveHubs[target] {
             hub.removeClient(connection)
         }
+        liveReceiveBufferByConnectionKey.removeValue(forKey: key)
         if cancelConnection {
             connection.cancel()
         }
@@ -317,7 +321,7 @@ final class WebServer {
                 )
                 return
             }
-            openLiveSocket(on: connection, target: target, headers: request.headers)
+            openLiveSocket(on: connection, target: target, headers: request.headers, initialBody: request.body)
         case .legacyStreamRemoved, .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),
@@ -342,7 +346,12 @@ final class WebServer {
         })
     }
 
-    private func openLiveSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
+    private func openLiveSocket(
+        on connection: NWConnection,
+        target: ShareTarget,
+        headers: [String: String],
+        initialBody: Data
+    ) {
         guard let hub = liveHub(for: target),
               let acceptValue = makeWebSocketAcceptValue(headers: headers) else {
             sendResponseAndClose(
@@ -371,9 +380,112 @@ final class WebServer {
                     return
                 }
                 hub.addClient(connection)
-                self.liveTargetByConnectionKey[self.connectionKey(for: connection)] = target
+                let key = self.connectionKey(for: connection)
+                self.liveTargetByConnectionKey[key] = target
+                self.liveReceiveBufferByConnectionKey[key] = initialBody
+                self.receiveLiveSocketFrame(on: connection, key: key)
             }
         })
+    }
+
+    private func receiveLiveSocketFrame(on connection: NWConnection, key: ObjectIdentifier) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { [weak self] content, _, isComplete, error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                if let error {
+                    Self.logConnectionIssue("Receive live socket frame", error: error)
+                    self.removeLiveClient(connection, cancelConnection: true)
+                    return
+                }
+
+                if let content, !content.isEmpty {
+                    var buffer = self.liveReceiveBufferByConnectionKey[key] ?? Data()
+                    buffer.append(content)
+                    if buffer.count > Self.maxLiveSocketBufferBytes {
+                        AppLog.web.debug("Disconnecting live socket client due to oversized receive buffer.")
+                        self.removeLiveClient(connection, cancelConnection: true)
+                        return
+                    }
+                    self.liveReceiveBufferByConnectionKey[key] = self.processLiveSocketBuffer(
+                        buffer,
+                        for: key,
+                        connection: connection
+                    )
+                }
+
+                if isComplete {
+                    self.removeLiveClient(connection, cancelConnection: true)
+                    return
+                }
+
+                guard self.liveTargetByConnectionKey[key] != nil else { return }
+                self.receiveLiveSocketFrame(on: connection, key: key)
+            }
+        }
+    }
+
+    private func processLiveSocketBuffer(_ buffer: Data, for key: ObjectIdentifier, connection: NWConnection) -> Data {
+        var remaining = buffer
+
+        if remaining.count >= 1 {
+            let firstByte = remaining[0]
+            let isFin = (firstByte & 0x80) != 0
+            let rsvBits = firstByte & 0x70
+            if !isFin || rsvBits != 0 {
+                AppLog.web.debug("Disconnecting live socket client due to unsupported websocket fragmentation/RSV bits.")
+                removeLiveClient(connection, cancelConnection: true)
+                return Data()
+            }
+        }
+
+        if remaining.count >= 2 {
+            let isMasked = (remaining[1] & 0x80) != 0
+            if !isMasked {
+                AppLog.web.debug("Disconnecting live socket client due to unmasked websocket frame.")
+                removeLiveClient(connection, cancelConnection: true)
+                return Data()
+            }
+        }
+
+        while let frame = parseNextClientWebSocketFrame(from: remaining) {
+            remaining.removeFirst(frame.totalLength)
+            handleLiveSocketFrame(frame, connection: connection)
+            if liveTargetByConnectionKey[key] == nil {
+                return Data()
+            }
+        }
+        return remaining
+    }
+
+    private func handleLiveSocketFrame(_ frame: ParsedClientWebSocketFrame, connection: NWConnection) {
+        switch frame.opcode {
+        case 0x8:
+            if frame.payload.count > 125 {
+                removeLiveClient(connection, cancelConnection: true)
+                return
+            }
+            connection.send(content: makeWebSocketCloseFrame(frame.payload), completion: .contentProcessed { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.removeLiveClient(connection, cancelConnection: true)
+                }
+            })
+        case 0x9:
+            if frame.payload.count > 125 {
+                removeLiveClient(connection, cancelConnection: true)
+                return
+            }
+            connection.send(content: makeWebSocketPongFrame(frame.payload), completion: .contentProcessed { [weak self] error in
+                guard let error else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    AppErrorMapper.logFailure("Send websocket pong", error: error, logger: AppLog.web)
+                    self.removeLiveClient(connection, cancelConnection: true)
+                }
+            })
+        default:
+            break
+        }
     }
 
     private func isValidWebSocketUpgrade(_ headers: [String: String]) -> Bool {
@@ -434,4 +546,53 @@ final class WebServer {
             }
         }
     }
+}
+
+private struct ParsedClientWebSocketFrame {
+    let opcode: UInt8
+    let payload: Data
+    let totalLength: Int
+}
+
+private func parseNextClientWebSocketFrame(from buffer: Data) -> ParsedClientWebSocketFrame? {
+    guard buffer.count >= 2 else { return nil }
+
+    let opcode = buffer[0] & 0x0F
+    let secondByte = buffer[1]
+    guard (secondByte & 0x80) != 0 else { return nil } // Client frames must be masked.
+
+    var cursor = 2
+    let payloadLengthMarker = Int(secondByte & 0x7F)
+    let payloadLength: Int
+    switch payloadLengthMarker {
+    case 126:
+        guard buffer.count >= cursor + 2 else { return nil }
+        payloadLength = buffer[cursor..<(cursor + 2)].reduce(0) { ($0 << 8) | Int($1) }
+        cursor += 2
+    case 127:
+        guard buffer.count >= cursor + 8 else { return nil }
+        payloadLength = buffer[cursor..<(cursor + 8)].reduce(0) { ($0 << 8) | Int($1) }
+        cursor += 8
+    default:
+        payloadLength = payloadLengthMarker
+    }
+
+    let totalLength = cursor + 4 + payloadLength
+    guard buffer.count >= totalLength else { return nil }
+
+    let maskKey = Array(buffer[cursor..<(cursor + 4)])
+    cursor += 4
+
+    var payload = Data(buffer[cursor..<totalLength])
+    if !payload.isEmpty {
+        let payloadCount = payload.count
+        payload.withUnsafeMutableBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for index in 0..<payloadCount {
+                baseAddress[index] ^= maskKey[index % maskKey.count]
+            }
+        }
+    }
+
+    return ParsedClientWebSocketFrame(opcode: opcode, payload: payload, totalLength: totalLength)
 }

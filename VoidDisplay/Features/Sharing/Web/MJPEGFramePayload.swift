@@ -31,6 +31,14 @@ func makeWebSocketBinaryFrame(_ payload: Data) -> Data {
     makeWebSocketFrame(opcode: 0x2, payload: payload)
 }
 
+func makeWebSocketPongFrame(_ payload: Data) -> Data {
+    makeWebSocketFrame(opcode: 0xA, payload: payload)
+}
+
+func makeWebSocketCloseFrame(_ payload: Data = Data()) -> Data {
+    makeWebSocketFrame(opcode: 0x8, payload: payload)
+}
+
 private func makeWebSocketFrame(opcode: UInt8, payload: Data) -> Data {
     var frame = Data()
     frame.append(0x80 | opcode)

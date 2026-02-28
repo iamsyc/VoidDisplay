@@ -10,6 +10,7 @@ enum SocketIntegrationError: Error {
     case sendFailed
     case receiveFailed
     case receiveTimeout
+    case invalidWebSocketFrame
 }
 
 func sendAll(_ fd: Int32, data: Data) throws {
@@ -143,6 +144,147 @@ func sendRequestAndReadPartialResponse(
             return response
         }
     }
+}
+
+func openWebSocketConnection(
+    path: String,
+    port: UInt16,
+    timeoutMilliseconds: Int = 3000
+) throws -> (fd: Int32, response: Data) {
+    let fd = try connectLoopbackSocket(port: port)
+    do {
+        configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
+        try sendAll(fd, data: websocketUpgradeRequest(path: path, port: port))
+
+        var response = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let terminator = Data("\r\n\r\n".utf8)
+
+        while true {
+            let readBytes = recv(fd, &buffer, buffer.count, 0)
+            if readBytes > 0 {
+                response.append(buffer, count: readBytes)
+                if let range = response.range(of: terminator) {
+                    let headerEnd = range.upperBound
+                    return (fd, Data(response.prefix(headerEnd)))
+                }
+                continue
+            }
+
+            if readBytes == 0, !response.isEmpty {
+                return (fd, response)
+            }
+
+            if errno == EWOULDBLOCK || errno == EAGAIN {
+                if !response.isEmpty {
+                    return (fd, response)
+                }
+                throw SocketIntegrationError.receiveTimeout
+            }
+
+            if !response.isEmpty {
+                return (fd, response)
+            }
+            throw SocketIntegrationError.receiveTimeout
+        }
+    } catch {
+        close(fd)
+        throw error
+    }
+}
+
+struct SocketWebSocketFrame {
+    let opcode: UInt8
+    let payload: Data
+}
+
+func readWebSocketFrame(
+    from fd: Int32,
+    timeoutMilliseconds: Int = 3000
+) throws -> SocketWebSocketFrame {
+    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
+    let header = try readExactly(from: fd, byteCount: 2)
+    guard header.count == 2 else { throw SocketIntegrationError.invalidWebSocketFrame }
+
+    let opcode = header[0] & 0x0F
+    let payloadLengthMarker = Int(header[1] & 0x7F)
+    let isMasked = (header[1] & 0x80) != 0
+    guard !isMasked else { throw SocketIntegrationError.invalidWebSocketFrame }
+
+    let payloadLength: Int
+    switch payloadLengthMarker {
+    case 126:
+        let extendedLength = try readExactly(from: fd, byteCount: 2)
+        payloadLength = extendedLength.reduce(0) { partialResult, byte in
+            (partialResult << 8) | Int(byte)
+        }
+    case 127:
+        let extendedLength = try readExactly(from: fd, byteCount: 8)
+        payloadLength = extendedLength.reduce(0) { partialResult, byte in
+            (partialResult << 8) | Int(byte)
+        }
+    default:
+        payloadLength = payloadLengthMarker
+    }
+
+    let payload = try readExactly(from: fd, byteCount: payloadLength)
+    return SocketWebSocketFrame(opcode: opcode, payload: payload)
+}
+
+func sendMaskedWebSocketFrame(
+    to fd: Int32,
+    opcode: UInt8,
+    payload: Data
+) throws {
+    var frame = Data()
+    frame.append(0x80 | (opcode & 0x0F))
+
+    let length = payload.count
+    if length <= 125 {
+        frame.append(0x80 | UInt8(length))
+    } else if length <= 65_535 {
+        frame.append(0x80 | 126)
+        var value = UInt16(length).bigEndian
+        withUnsafeBytes(of: &value) { frame.append(contentsOf: $0) }
+    } else {
+        frame.append(0x80 | 127)
+        var value = UInt64(length).bigEndian
+        withUnsafeBytes(of: &value) { frame.append(contentsOf: $0) }
+    }
+
+    // Fixed mask for determinism in tests.
+    let maskKey: [UInt8] = [0x12, 0x34, 0x56, 0x78]
+    frame.append(contentsOf: maskKey)
+
+    var maskedPayload = payload
+    if !maskedPayload.isEmpty {
+        let payloadCount = maskedPayload.count
+        maskedPayload.withUnsafeMutableBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+            for index in 0..<payloadCount {
+                baseAddress[index] ^= maskKey[index % maskKey.count]
+            }
+        }
+    }
+    frame.append(maskedPayload)
+    try sendAll(fd, data: frame)
+}
+
+private func readExactly(from fd: Int32, byteCount: Int) throws -> Data {
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: max(1, min(byteCount, 4096)))
+
+    while data.count < byteCount {
+        let remaining = byteCount - data.count
+        let readBytes = recv(fd, &buffer, min(buffer.count, remaining), 0)
+        if readBytes > 0 {
+            data.append(buffer, count: readBytes)
+            continue
+        }
+        throw SocketIntegrationError.receiveTimeout
+    }
+
+    return data
 }
 
 func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
