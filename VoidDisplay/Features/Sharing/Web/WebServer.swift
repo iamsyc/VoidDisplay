@@ -362,6 +362,7 @@ final class WebServer {
             return
         }
 
+        let key = connectionKey(for: connection)
         let response = Data(
             """
             HTTP/1.1 101 Switching Protocols\r
@@ -376,16 +377,18 @@ final class WebServer {
                 guard let self else { return }
                 if let error {
                     AppErrorMapper.logFailure("Send websocket upgrade response", error: error, logger: AppLog.web)
-                    connection.cancel()
+                    self.removeLiveClient(connection, cancelConnection: true)
                     return
                 }
-                hub.addClient(connection)
-                let key = self.connectionKey(for: connection)
-                self.liveTargetByConnectionKey[key] = target
-                self.liveReceiveBufferByConnectionKey[key] = initialBody
-                self.receiveLiveSocketFrame(on: connection, key: key)
             }
         })
+
+        // Start receiving client control frames immediately after queuing the handshake response,
+        // so the receive loop isn't delayed by send completion timing.
+        hub.addClient(connection)
+        liveTargetByConnectionKey[key] = target
+        liveReceiveBufferByConnectionKey[key] = initialBody
+        receiveLiveSocketFrame(on: connection, key: key)
     }
 
     private func receiveLiveSocketFrame(on connection: NWConnection, key: ObjectIdentifier) {
