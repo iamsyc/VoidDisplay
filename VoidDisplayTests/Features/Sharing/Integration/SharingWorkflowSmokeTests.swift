@@ -17,7 +17,7 @@ struct SharingWorkflowSmokeTests {
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 1)
         #expect(controller.capturedTargetStateProvider?(.main) == .knownInactive)
-        #expect(controller.capturedFrameProvider?(.main) == nil)
+        #expect(controller.capturedLiveHubProvider?(.main) == nil)
 
         // Stopping sharing with no active capture should still be safe and disconnect clients.
         service.stopSharing(displayID: CGDirectDisplayID(7))

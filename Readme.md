@@ -19,8 +19,8 @@ Great for keeping an eye on a secondary screen without switching desktops.
 
 ### 📡 LAN Screen Sharing
 
-Share any display over your local network via HTTP + MJPEG.  
-Open the provided URL in any browser on any device — phone, tablet, or another computer — no app needed on the viewing end.
+Share any display over your local network through the built-in low-latency live page.  
+Open the provided `/display` URL in a modern browser on any device on the same LAN. Playback now uses WebSocket + H.264 + WebCodecs instead of MJPEG polling.
 
 ## 📸 Screenshots
 
@@ -79,7 +79,12 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 1. Go to the **Screen Sharing** tab.
 2. Click **Share** next to the display you want to broadcast.
 3. The app shows a local URL (e.g. `http://192.168.x.x:8080/display`).
-4. Open that URL in any browser on the same network to watch the screen in real time.
+4. Open that URL in a modern browser on the same network to watch the screen in real time.
+
+Notes:
+- `/display` and `/display/{id}` are the supported page routes.
+- `/live` and `/live/{id}` are the underlying WebSocket transport routes.
+- Legacy `/stream` MJPEG endpoints have been removed and now return `410 Gone`.
 
 ## ❓ Troubleshooting
 
@@ -90,6 +95,10 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 **The shared screen page won't open from another device?**
 
 > Make sure your Mac and the viewing device are on the same local network (Wi-Fi or Ethernet). The URL shown in the app must be reachable from the other device.
+
+**The browser opens but playback does not start?**
+
+> The live page now requires a modern browser with `WebSocket` and `WebCodecs` support. Use a current Chromium-based browser or a recent Safari/WebKit build on the viewing device.
 
 **Virtual display failed to restore on app launch?**
 

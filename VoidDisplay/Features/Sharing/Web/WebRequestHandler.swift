@@ -4,7 +4,8 @@ enum WebRequestDecision: Equatable {
     case badRequest
     case showRootPage
     case showDisplayPage(ShareTarget)
-    case openStream(ShareTarget)
+    case openLiveSocket(ShareTarget)
+    case legacyStreamRemoved
     case sharingUnavailable
     case methodNotAllowed
     case notFound
@@ -18,7 +19,6 @@ enum ShareTargetState: Equatable {
 
 struct WebRequestHandler {
     private let router = HttpRouter()
-    static let streamBoundary = "nextFrameK9_4657"
 
     private func buildResponse(
         statusLine: String,
@@ -53,16 +53,18 @@ struct WebRequestHandler {
             case .unknown:
                 return .notFound
             }
-        case .stream(let target):
+        case .live(let target):
             let targetState = targetStateProvider(target)
             switch targetState {
             case .active:
-                return .openStream(target)
+                return .openLiveSocket(target)
             case .knownInactive:
                 return .sharingUnavailable
             case .unknown:
                 return .notFound
             }
+        case .legacyStream(_):
+            return .legacyStreamRemoved
         case .notFound:
             return .notFound
         }
@@ -103,6 +105,18 @@ struct WebRequestHandler {
                 ],
                 body: body
             )
+        case .legacyStreamRemoved:
+            let body = "Stream endpoint has been replaced by /display + WebSocket live transport."
+            return buildResponse(
+                statusLine: "HTTP/1.1 410 Gone",
+                headers: [
+                    ("Content-Type", "text/plain; charset=utf-8"),
+                    ("Content-Length", "\(body.utf8.count)"),
+                    ("Cache-Control", "no-cache"),
+                    ("Connection", "close")
+                ],
+                body: body
+            )
         case .methodNotAllowed:
             let body = "Method Not Allowed"
             return buildResponse(
@@ -126,16 +140,8 @@ struct WebRequestHandler {
                 ],
                 body: body
             )
-        case .openStream:
-            return buildResponse(
-                statusLine: "HTTP/1.1 200 OK",
-                headers: [
-                    ("Content-Type", "multipart/x-mixed-replace; boundary=\(Self.streamBoundary)"),
-                    ("Cache-Control", "no-cache, no-store, must-revalidate"),
-                    ("Pragma", "no-cache"),
-                    ("Connection", "keep-alive")
-                ]
-            )
+        case .openLiveSocket:
+            return Data()
         }
     }
 }

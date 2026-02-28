@@ -19,7 +19,7 @@ final class ShareViewModel {
         var startWebService: @MainActor (UInt16) async -> WebServiceStartResult
         var stopWebService: @MainActor () -> Void
         var registerShareableDisplays: @MainActor ([SCDisplay], @escaping (CGDirectDisplayID) -> UInt32?) -> Void
-        var beginSharing: @MainActor (CGDirectDisplayID, SCStream, Capture, StreamDelegate) -> Void
+        var beginSharing: @MainActor (SCDisplay) async throws -> Void
         var stopSharing: @MainActor (CGDirectDisplayID) -> Void
     }
 
@@ -50,8 +50,8 @@ final class ShareViewModel {
                     registerShareableDisplays: { displays, resolver in
                         sharing.registerShareableDisplays(displays, virtualSerialResolver: resolver)
                     },
-                    beginSharing: { displayID, stream, output, delegate in
-                        sharing.beginSharing(displayID: displayID, stream: stream, output: output, delegate: delegate)
+                    beginSharing: { display in
+                        try await sharing.beginSharing(display: display)
                     },
                     stopSharing: { displayID in sharing.stopSharing(displayID: displayID) }
                 ),
@@ -73,21 +73,16 @@ final class ShareViewModel {
     var showOpenPageError = false
     var openPageErrorMessage = ""
 
-    private let makeScreenCaptureSession: @MainActor (SCDisplay) async -> ScreenCaptureSession
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
-        makeScreenCaptureSession: (@MainActor (SCDisplay) async -> ScreenCaptureSession)? = nil,
         dependencies: Dependencies
     ) {
         let catalog = ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
-        self.makeScreenCaptureSession = makeScreenCaptureSession ?? { display in
-            await createScreenCapture(display: display)
-        }
         self.dependencies = dependencies
         self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
             state: catalog,
@@ -236,22 +231,8 @@ final class ShareViewModel {
                 return
             }
 
-            let captureSession = await makeScreenCaptureSession(display)
-            let stream = Capture()
-
             do {
-                try captureSession.stream.addStreamOutput(
-                    stream,
-                    type: .screen,
-                    sampleHandlerQueue: stream.sampleHandlerQueue
-                )
-                try await captureSession.stream.startCapture()
-                dependencies.sharingActions.beginSharing(
-                    display.displayID,
-                    captureSession.stream,
-                    stream,
-                    captureSession.delegate
-                )
+                try await dependencies.sharingActions.beginSharing(display)
             } catch {
                 dependencies.sharingActions.stopSharing(display.displayID)
                 AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)

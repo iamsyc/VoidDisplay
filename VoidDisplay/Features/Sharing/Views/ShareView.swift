@@ -30,9 +30,13 @@ struct ShareView: View {
     }
 
     var body: some View {
-        shareContent
-            .accessibilityIdentifier("share_content_root")
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        VStack(spacing: 0) {
+            shareContent
+                .accessibilityIdentifier("share_content_root")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("detail_screen_sharing")
             .toolbar {
                 if sharing.isWebServiceRunning {
                     if showToolbarRefresh {
@@ -265,6 +269,8 @@ struct ShareView: View {
             requestPermissionButtonAccessibilityIdentifier: "share_request_permission_button",
             refreshButtonAccessibilityIdentifier: "share_refresh_button"
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("share_permission_guide")
     }
 
     private var sharingPermissionDebugItems: [(title: String, value: String)] {

@@ -64,19 +64,9 @@ final class SharingController {
         }
     }
 
-    func beginSharing(
-        displayID: CGDirectDisplayID,
-        stream: SCStream,
-        output: Capture,
-        delegate: StreamDelegate
-    ) {
-        mutateAndSync {
-            sharingService.startSharing(
-                displayID: displayID,
-                stream: stream,
-                output: output,
-                delegate: delegate
-            )
+    func beginSharing(display: SCDisplay) async throws {
+        try await mutateAndSync {
+            try await sharingService.startSharing(display: display)
         }
     }
 

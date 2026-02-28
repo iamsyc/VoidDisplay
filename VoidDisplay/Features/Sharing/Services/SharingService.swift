@@ -20,12 +20,7 @@ protocol SharingServiceProtocol: AnyObject {
         _ displays: [SCDisplay],
         virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
     )
-    func startSharing(
-        displayID: CGDirectDisplayID,
-        stream: SCStream,
-        output: Capture,
-        delegate: StreamDelegate
-    )
+    func startSharing(display: SCDisplay) async throws
     func stopSharing(displayID: CGDirectDisplayID)
     func stopAllSharing()
     func isSharing(displayID: CGDirectDisplayID) -> Bool
@@ -87,8 +82,8 @@ final class SharingService: SharingServiceProtocol {
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },
-            frameProvider: { [weak self] target in
-                self?.sharingCoordinator.frame(for: target)
+            liveHubProvider: { [weak self] target in
+                self?.sharingCoordinator.liveHub(for: target)
             }
         )
         if case .failed(let failure) = result {
@@ -114,19 +109,9 @@ final class SharingService: SharingServiceProtocol {
         )
     }
 
-    func startSharing(
-        displayID: CGDirectDisplayID,
-        stream: SCStream,
-        output: Capture,
-        delegate: StreamDelegate
-    ) {
-        AppLog.sharing.info("Begin sharing stream for display \(displayID, privacy: .public).")
-        sharingCoordinator.startSharing(
-            displayID: displayID,
-            stream: stream,
-            capture: output,
-            delegate: delegate
-        )
+    func startSharing(display: SCDisplay) async throws {
+        AppLog.sharing.info("Begin sharing stream for display \(display.displayID, privacy: .public).")
+        try await sharingCoordinator.startSharing(display: display)
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {

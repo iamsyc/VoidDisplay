@@ -114,9 +114,10 @@ struct HttpHelperTests {
         #expect(router.route(for: "/") == .root)
         #expect(router.route(for: "/display") == .display(.main))
         #expect(router.route(for: "/display/7") == .display(.id(7)))
-        #expect(router.route(for: "/stream") == .stream(.main))
-        #expect(router.route(for: "/stream/7") == .stream(.id(7)))
-        #expect(router.route(for: "/stream/") == .stream(.main))
+        #expect(router.route(for: "/stream") == .legacyStream(.main))
+        #expect(router.route(for: "/stream/7") == .legacyStream(.id(7)))
+        #expect(router.route(for: "/stream/") == .legacyStream(.main))
+        #expect(router.route(for: "/live/7") == .live(.id(7)))
         #expect(router.route(for: "/stream/frame") == .notFound)
         #expect(router.route(for: "/display/frame") == .notFound)
         #expect(router.route(for: "/unknown") == .notFound)
@@ -135,13 +136,16 @@ struct HttpHelperTests {
             handler.decision(forMethod: "GET", path: "/display/4", targetStateProvider: { _ in .active }) == .showDisplayPage(.id(4))
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/stream", targetStateProvider: { _ in .active }) == .openStream(.main)
+            handler.decision(forMethod: "GET", path: "/live", targetStateProvider: { _ in .active }) == .openLiveSocket(.main)
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/stream/4", targetStateProvider: { _ in .knownInactive }) == .sharingUnavailable
+            handler.decision(forMethod: "GET", path: "/stream/4", targetStateProvider: { _ in .knownInactive }) == .legacyStreamRemoved
         )
         #expect(
-            handler.decision(forMethod: "POST", path: "/stream", targetStateProvider: { _ in .active }) == .methodNotAllowed
+            handler.decision(forMethod: "GET", path: "/stream", targetStateProvider: { _ in .active }) == .legacyStreamRemoved
+        )
+        #expect(
+            handler.decision(forMethod: "POST", path: "/live", targetStateProvider: { _ in .active }) == .methodNotAllowed
         )
         #expect(
             handler.decision(forMethod: "GET", path: "/404", targetStateProvider: { _ in .active }) == .notFound
@@ -171,10 +175,9 @@ struct HttpHelperTests {
         #expect(badRequestText.contains("400 Bad Request"))
         #expect(badRequestText.contains("Content-Length: \(badRequestBody.utf8.count)"))
 
-        let streamResponse = handler.responseData(for: .openStream(.main), htmlBody: page)
-        let streamText = try #require(String(data: streamResponse, encoding: .utf8))
-        #expect(streamText.contains("multipart/x-mixed-replace"))
-        #expect(streamText.contains("boundary=nextFrameK9_4657"))
+        let legacyResponse = handler.responseData(for: .legacyStreamRemoved, htmlBody: page)
+        let legacyText = try #require(String(data: legacyResponse, encoding: .utf8))
+        #expect(legacyText.contains("410 Gone"))
 
         let unavailableResponse = handler.responseData(for: .sharingUnavailable, htmlBody: page)
         let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
@@ -196,19 +199,23 @@ struct HttpHelperTests {
         #expect(missingText.contains("Content-Length: \(missingBody.utf8.count)"))
     }
 
-    @Test func streamResponseHeaderTerminatesWithCRLFCRLF() throws {
+    @Test func legacyStreamResponseHeaderTerminatesWithCRLFCRLF() throws {
         let handler = WebRequestHandler()
-        let response = handler.responseData(for: .openStream(.main), htmlBody: "<html></html>")
+        let response = handler.responseData(for: .legacyStreamRemoved, htmlBody: "<html></html>")
         let text = try #require(String(data: response, encoding: .utf8))
+        let components = text.components(separatedBy: "\r\n\r\n")
 
-        #expect(text.hasSuffix("\r\n\r\n"))
-        #expect(text.contains("Content-Type: multipart/x-mixed-replace; boundary=\(WebRequestHandler.streamBoundary)"))
+        #expect(components.count == 2)
+        #expect(components[0].contains("HTTP/1.1 410 Gone"))
+        #expect(components[1] == "Stream endpoint has been replaced by /display + WebSocket live transport.")
+        #expect(text.contains("410 Gone"))
     }
 
     @MainActor @Test func httpRouterTreatsStreamWithQueryAsStreamRoute() {
         let router = HttpRouter()
-        #expect(router.route(for: "/stream?t=123") == .stream(.main))
-        #expect(router.route(for: "/stream/?t=123") == .stream(.main))
+        #expect(router.route(for: "/stream?t=123") == .legacyStream(.main))
+        #expect(router.route(for: "/stream/?t=123") == .legacyStream(.main))
+        #expect(router.route(for: "/live/9?t=1") == .live(.id(9)))
         #expect(router.route(for: "/display/9?t=1") == .display(.id(9)))
         #expect(router.route(for: "/?v=1") == .root)
     }

@@ -2,177 +2,210 @@ import Foundation
 import Network
 import OSLog
 
-protocol StreamClientConnection: AnyObject {
-    func sendFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void)
-    func cancelStream()
+protocol LiveSocketConnection: AnyObject {
+    func sendSocketFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void)
+    func cancelSocket()
 }
 
-extension NWConnection: StreamClientConnection {
-    func sendFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void) {
+extension NWConnection: LiveSocketConnection {
+    func sendSocketFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void) {
         send(content: content, completion: .contentProcessed(completion))
     }
 
-    func cancelStream() {
+    func cancelSocket() {
         cancel()
     }
 }
 
-@MainActor
-final class StreamHub {
+enum LiveControlMessage {
+    case config(LiveVideoConfiguration)
+    case stopped
+}
+
+final class LiveSocketHub: @unchecked Sendable {
     private struct ClientState {
-        let connection: any StreamClientConnection
+        let connection: any LiveSocketConnection
         var isSending = false
         var pendingFrame: Data?
+        var needsConfiguration = true
     }
 
+    private let lock = NSLock()
     private var clients: [ObjectIdentifier: ClientState] = [:]
-    private var timer: DispatchSourceTimer?
-    private let isSharingProvider: @MainActor @Sendable () -> Bool
-    private let frameProvider: @MainActor @Sendable () -> Data?
-    private let onSendError: @MainActor (Error) -> Void
-    private let frameInterval: DispatchTimeInterval = .milliseconds(100)
-    private let automaticallyStartTimer: Bool
+    private var configuration: LiveVideoConfiguration?
+    private var onDemandChanged: @Sendable (Bool) -> Void
 
-    init(
-        isSharingProvider: @escaping @MainActor @Sendable () -> Bool,
-        frameProvider: @escaping @MainActor @Sendable () -> Data?,
-        automaticallyStartTimer: Bool = true,
-        onSendError: @escaping @MainActor (Error) -> Void
-    ) {
-        self.isSharingProvider = isSharingProvider
-        self.frameProvider = frameProvider
-        self.automaticallyStartTimer = automaticallyStartTimer
-        self.onSendError = onSendError
-    }
-
-    func addClient(_ connection: any StreamClientConnection) {
-        let key = key(for: connection)
-        clients[key] = ClientState(connection: connection)
-        AppLog.web.debug("StreamHub: added client, active=\(self.clients.count)")
-        if automaticallyStartTimer {
-            startTimerIfNeeded()
-        }
-    }
-
-    func removeClient(_ connection: any StreamClientConnection) {
-        removeClient(for: key(for: connection), cancelConnection: false)
-    }
-
-    func disconnectAllClients() {
-        let keys = Array(clients.keys)
-        for key in keys {
-            removeClient(for: key, cancelConnection: true)
-        }
-        stopTimer()
-    }
-
-    func pumpOnceForTesting() {
-        tick()
-    }
-
-    var activeClientCountForTesting: Int {
-        clients.count
+    init(onDemandChanged: @escaping @Sendable (Bool) -> Void = { _ in }) {
+        self.onDemandChanged = onDemandChanged
     }
 
     var activeClientCount: Int {
-        clients.count
+        lock.lock()
+        let count = clients.count
+        lock.unlock()
+        return count
     }
 
-    private func key(for connection: any StreamClientConnection) -> ObjectIdentifier {
-        ObjectIdentifier(connection as AnyObject)
+    var hasDemand: Bool {
+        activeClientCount > 0
     }
 
-    private func removeClient(for key: ObjectIdentifier, cancelConnection: Bool) {
-        guard let removed = clients.removeValue(forKey: key) else { return }
-        if cancelConnection {
-            removed.connection.cancelStream()
-        }
-        AppLog.web.debug("StreamHub: removed client, active=\(self.clients.count)")
-        if clients.isEmpty {
-            stopTimer()
+    func updateDemandHandler(_ onDemandChanged: @escaping @Sendable (Bool) -> Void) {
+        self.onDemandChanged = onDemandChanged
+    }
+
+    func addClient(_ connection: any LiveSocketConnection) {
+        let key = ObjectIdentifier(connection as AnyObject)
+        var shouldSignalDemand = false
+        lock.lock()
+        shouldSignalDemand = clients.isEmpty
+        clients[key] = ClientState(connection: connection, needsConfiguration: configuration != nil)
+        lock.unlock()
+        if shouldSignalDemand {
+            onDemandChanged(true)
         }
     }
 
-    private func startTimerIfNeeded() {
-        guard timer == nil else { return }
-        let source = DispatchSource.makeTimerSource(queue: .main)
-        source.schedule(deadline: .now(), repeating: frameInterval)
-        source.setEventHandler { [weak self] in
-            self?.tick()
-        }
-        timer = source
-        source.resume()
-        AppLog.web.debug("StreamHub: timer started")
+    func removeClient(_ connection: any LiveSocketConnection) {
+        removeClient(for: ObjectIdentifier(connection as AnyObject), cancelConnection: false)
     }
 
-    private func stopTimer() {
-        guard let activeTimer = timer else { return }
-        activeTimer.setEventHandler {}
-        activeTimer.cancel()
-        timer = nil
-        AppLog.web.debug("StreamHub: timer stopped")
+    func disconnectAllClients() {
+        let keys: [ObjectIdentifier]
+        lock.lock()
+        keys = Array(clients.keys)
+        lock.unlock()
+        for key in keys {
+            removeClient(for: key, cancelConnection: true)
+        }
     }
 
-    private func tick() {
-        guard !clients.isEmpty else {
-            stopTimer()
-            return
+    func updateConfiguration(_ configuration: LiveVideoConfiguration) {
+        lock.lock()
+        self.configuration = configuration
+        for key in clients.keys {
+            clients[key]?.needsConfiguration = true
         }
+        lock.unlock()
+    }
 
-        guard isSharingProvider() else {
-            AppLog.web.debug("StreamHub: sharing stopped, disconnecting all clients.")
-            disconnectAllClients()
-            return
+    func broadcastControl(_ message: LiveControlMessage) {
+        switch message {
+        case .config(let configuration):
+            updateConfiguration(configuration)
+        case .stopped:
+            let payload = makeWebSocketTextFrame(#"{"type":"stopped"}"#)
+            let keys: [ObjectIdentifier]
+            lock.lock()
+            keys = Array(clients.keys)
+            lock.unlock()
+            for key in keys {
+                enqueue(payload, to: key)
+            }
         }
+    }
 
-        guard let frame = frameProvider() else { return }
-        let frameData = makeMJPEGFramePayload(
-            frame: frame,
-            boundary: WebRequestHandler.streamBoundary
-        )
+    func broadcast(packet: EncodedVideoPacket) {
+        let snapshot: [(ObjectIdentifier, ClientState, LiveVideoConfiguration?)]
+        lock.lock()
+        snapshot = clients.map { ($0.key, $0.value, configuration) }
+        lock.unlock()
 
-        for key in Array(clients.keys) {
-            enqueue(frameData, to: key)
+        for (key, state, configuration) in snapshot {
+            var frames: [Data] = []
+            if state.needsConfiguration {
+                guard packet.isKeyframe, let configuration else { continue }
+                frames.append(makeWebSocketTextFrame(makeConfigJSON(configuration)))
+                updateNeedsConfiguration(false, for: key)
+                frames.append(makeWebSocketBinaryFrame(makeLiveVideoPacket(packet: packet, configRefresh: true)))
+            } else {
+                frames.append(makeWebSocketBinaryFrame(makeLiveVideoPacket(packet: packet, configRefresh: false)))
+            }
+
+            let payload = frames.reduce(into: Data()) { partialResult, frame in
+                partialResult.append(frame)
+            }
+            enqueue(payload, to: key)
         }
+    }
+
+    private func makeConfigJSON(_ configuration: LiveVideoConfiguration) -> String {
+        #"{"type":"config","codec":"\#(configuration.codec)","width":\#(configuration.width),"height":\#(configuration.height),"timescale":\#(configuration.timescale)}"#
+    }
+
+    private func updateNeedsConfiguration(_ value: Bool, for key: ObjectIdentifier) {
+        lock.lock()
+        clients[key]?.needsConfiguration = value
+        lock.unlock()
     }
 
     private func enqueue(_ frameData: Data, to key: ObjectIdentifier) {
-        guard var state = clients[key] else { return }
-        if state.isSending {
-            // Keep only the latest frame for slow clients to avoid backpressure cascade.
-            state.pendingFrame = frameData
-            clients[key] = state
-            return
+        var state: ClientState?
+        lock.lock()
+        if var current = clients[key] {
+            if current.isSending {
+                current.pendingFrame = frameData
+                clients[key] = current
+            } else {
+                current.isSending = true
+                clients[key] = current
+                state = current
+            }
         }
+        lock.unlock()
 
-        state.isSending = true
-        clients[key] = state
+        guard state != nil else { return }
         send(frameData, to: key)
     }
 
     private func send(_ frameData: Data, to key: ObjectIdentifier) {
-        guard let state = clients[key] else { return }
-        state.connection.sendFrame(frameData) { [weak self] error in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard var current = self.clients[key] else { return }
+        lock.lock()
+        guard let state = clients[key] else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
 
-                if let error {
-                    self.onSendError(error)
-                    self.removeClient(for: key, cancelConnection: true)
-                    return
-                }
-
-                if let pending = current.pendingFrame {
-                    current.pendingFrame = nil
-                    self.clients[key] = current
-                    self.send(pending, to: key)
-                    return
-                }
-
-                current.isSending = false
-                self.clients[key] = current
+        state.connection.sendSocketFrame(frameData) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                AppErrorMapper.logFailure("Send live socket packet", error: error, logger: AppLog.web)
+                self.removeClient(for: key, cancelConnection: true)
+                return
             }
+
+            var pending: Data?
+            self.lock.lock()
+            guard var current = self.clients[key] else {
+                self.lock.unlock()
+                return
+            }
+            pending = current.pendingFrame
+            current.pendingFrame = nil
+            current.isSending = pending != nil
+            self.clients[key] = current
+            self.lock.unlock()
+
+            if let pending {
+                self.send(pending, to: key)
+            }
+        }
+    }
+
+    private func removeClient(for key: ObjectIdentifier, cancelConnection: Bool) {
+        let removed: ClientState?
+        let shouldSignalDemandOff: Bool
+        lock.lock()
+        removed = clients.removeValue(forKey: key)
+        shouldSignalDemandOff = clients.isEmpty
+        lock.unlock()
+
+        guard let removed else { return }
+        if cancelConnection {
+            removed.connection.cancelSocket()
+        }
+        if shouldSignalDemandOff {
+            onDemandChanged(false)
         }
     }
 }

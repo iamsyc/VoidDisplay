@@ -3,7 +3,8 @@ import Foundation
 enum HttpRoute: Equatable {
     case root
     case display(ShareTarget)
-    case stream(ShareTarget)
+    case live(ShareTarget)
+    case legacyStream(ShareTarget)
     case notFound
 }
 
@@ -28,11 +29,21 @@ enum ShareTarget: Equatable, Hashable, Sendable {
             return "/stream/\(id)"
         }
     }
+
+    var livePath: String {
+        switch self {
+        case .main:
+            return "/live"
+        case .id(let id):
+            return "/live/\(id)"
+        }
+    }
 }
 
 struct HttpRouter {
     private static let rootPath = "/"
     private static let displayPath = "/display"
+    private static let livePath = "/live"
     private static let streamPath = "/stream"
 
     private func normalizedPath(from rawPath: String) -> String? {
@@ -81,8 +92,11 @@ struct HttpRouter {
         if let target = parseTarget(path: path, prefix: Self.displayPath) {
             return .display(target)
         }
+        if let target = parseTarget(path: path, prefix: Self.livePath) {
+            return .live(target)
+        }
         if let target = parseTarget(path: path, prefix: Self.streamPath) {
-            return .stream(target)
+            return .legacyStream(target)
         }
         return .notFound
     }

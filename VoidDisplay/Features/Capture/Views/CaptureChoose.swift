@@ -34,66 +34,70 @@ struct IsCapturing: View {
     }
 
     var body: some View {
-        Group {
-            if viewModel.catalog.hasScreenCapturePermission == false {
-                screenCapturePermissionView
-            } else if let displays = viewModel.catalog.displays {
-                if displays.isEmpty {
-                    ContentUnavailableView(
-                        "No watchable screen",
-                        systemImage: "display.trianglebadge.exclamationmark",
-                        description: Text("No available display can be monitored right now.")
-                    )
-                    .accessibilityIdentifier("capture_displays_empty_state")
-                } else {
-                    displayList(displays)
-                }
-            } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text("Loading…")
-                            .foregroundColor(.secondary)
+        VStack(spacing: 0) {
+            Group {
+                if viewModel.catalog.hasScreenCapturePermission == false {
+                    screenCapturePermissionView
+                } else if let displays = viewModel.catalog.displays {
+                    if displays.isEmpty {
+                        ContentUnavailableView(
+                            "No watchable screen",
+                            systemImage: "display.trianglebadge.exclamationmark",
+                            description: Text("No available display can be monitored right now.")
+                        )
+                        .accessibilityIdentifier("capture_displays_empty_state")
+                    } else {
+                        displayList(displays)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 200)
-                }
-            } else {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        Text("No watchable screen")
-                        if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
-                            Text(loadErrorMessage)
-                                .font(.footnote)
+                } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading…")
                                 .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .textSelection(.enabled)
                         }
-                        Button("Retry") {
-                            viewModel.refreshPermissionAndMaybeLoad()
-                        }
+                        .frame(maxWidth: .infinity, minHeight: 200)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 200)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            Text("No watchable screen")
+                            if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
+                                Text(loadErrorMessage)
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .textSelection(.enabled)
+                            }
+                            Button("Retry") {
+                                viewModel.refreshPermissionAndMaybeLoad()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 200)
+                    }
                 }
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if shouldShowActiveSessionFallback {
-                VStack(spacing: 0) {
-                    activeMonitoringSessionsFallback
-                    Divider()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if shouldShowActiveSessionFallback {
+                    VStack(spacing: 0) {
+                        activeMonitoringSessionsFallback
+                        Divider()
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear {
+                viewModel.refreshPermissionAndMaybeLoad()
+            }
+            .onDisappear {
+                viewModel.cancelInFlightDisplayLoad()
+            }
+            .appScreenBackground()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("capture_choose_root")
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            viewModel.refreshPermissionAndMaybeLoad()
-        }
-        .onDisappear {
-            viewModel.cancelInFlightDisplayLoad()
-        }
-        .appScreenBackground()
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("capture_choose_root")
+        .accessibilityIdentifier("detail_monitor_screen")
     }
 
     // MARK: - Display List

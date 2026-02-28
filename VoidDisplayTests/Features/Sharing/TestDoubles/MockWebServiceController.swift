@@ -18,17 +18,17 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var stopCallCount = 0
     var disconnectCallCount = 0
     var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
-    var capturedFrameProvider: (@MainActor @Sendable (ShareTarget) -> Data?)?
+    var capturedLiveHubProvider: (@MainActor @Sendable (ShareTarget) -> LiveSocketHub?)?
 
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
+        liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
     ) async -> WebServiceStartResult {
         startCallCount += 1
         lastRequestedPort = requestedPort
         capturedTargetStateProvider = targetStateProvider
-        capturedFrameProvider = frameProvider
+        capturedLiveHubProvider = liveHubProvider
         switch startResult {
         case .started(let binding), .alreadyRunning(let binding):
             isRunning = true
