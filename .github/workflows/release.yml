@@ -120,15 +120,13 @@ jobs:
 
           dmg_name="VoidDisplay-${TAG}-${LABEL}.dmg"
           rm -rf release-assets
-          mkdir -p release-assets/stage
-          cp -R "${app_path}" release-assets/stage/
-
-          hdiutil create \
-            -volname "VoidDisplay ${TAG} ${LABEL}" \
-            -srcfolder release-assets/stage \
-            -ov \
-            -format UDZO \
-            "release-assets/${dmg_name}"
+          mkdir -p release-assets
+          chmod +x scripts/release/create_dmg.sh
+          scripts/release/create_dmg.sh \
+            "${app_path}" \
+            "release-assets/${dmg_name}" \
+            "VoidDisplay" \
+            "VoidDisplay/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png"
 
           shasum -a 256 "release-assets/${dmg_name}" > "release-assets/${dmg_name}.sha256"
 
