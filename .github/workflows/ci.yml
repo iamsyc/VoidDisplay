@@ -9,20 +9,11 @@ on:
       - 'VoidDisplayTests/**'
       - 'VoidDisplayUITests/**'
       - 'VoidDisplay.xcodeproj/**'
-      - 'scripts/test/**'
+      - 'scripts/**'
       - 'docs/testing/coverage-baseline.json'
       - '.github/workflows/**'
       - '.github/actions/**'
   pull_request:
-    paths:
-      - 'VoidDisplay/**'
-      - 'VoidDisplayTests/**'
-      - 'VoidDisplayUITests/**'
-      - 'VoidDisplay.xcodeproj/**'
-      - 'scripts/test/**'
-      - 'docs/testing/coverage-baseline.json'
-      - '.github/workflows/**'
-      - '.github/actions/**'
   merge_group:
 
 permissions:
@@ -33,14 +24,70 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify_changes:
+    name: classify-changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code_relevant: ${{ steps.classify.outputs.code_relevant }}
+      change_scope: ${{ steps.classify.outputs.change_scope }}
+    steps:
+      - name: Classify changed files
+        id: classify
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const codePrefixes = [
+              'VoidDisplay/',
+              'VoidDisplayTests/',
+              'VoidDisplayUITests/',
+              'VoidDisplay.xcodeproj/',
+              'scripts/',
+              '.github/workflows/',
+              '.github/actions/',
+            ];
+            const exactMatches = new Set([
+              'docs/testing/coverage-baseline.json',
+            ]);
+
+            let codeRelevant = true;
+
+            if (context.eventName === 'pull_request') {
+              const pullNumber = context.payload.pull_request?.number;
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pullNumber,
+                per_page: 100,
+              });
+
+              const changedFiles = files.map((file) => file.filename);
+              core.info(`Changed files (${changedFiles.length}): ${changedFiles.join(', ')}`);
+
+              codeRelevant = changedFiles.some((file) =>
+                exactMatches.has(file) || codePrefixes.some((prefix) => file.startsWith(prefix))
+              );
+            }
+
+            core.setOutput('code_relevant', codeRelevant ? 'true' : 'false');
+            core.setOutput('change_scope', codeRelevant ? 'code' : 'non_code');
+
   unit_tests:
     name: unit-tests
+    needs:
+      - classify_changes
+    if: ${{ github.event_name != 'pull_request' || needs.classify_changes.outputs.code_relevant == 'true' }}
     uses: ./.github/workflows/_reusable-unit-tests.yml
     with:
       artifact_retention_days: 7
 
   ui_smoke_tests:
     name: ui-smoke-tests (${{ matrix.case_name }})
+    needs:
+      - classify_changes
+    if: ${{ github.event_name != 'pull_request' || needs.classify_changes.outputs.code_relevant == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +107,9 @@ jobs:
 
   release_build_check:
     name: release-build-check
-    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
+    needs:
+      - classify_changes
+    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && needs.classify_changes.outputs.code_relevant == 'true' }}
     runs-on: macos-15
     timeout-minutes: 20
     permissions:
@@ -92,6 +141,7 @@ jobs:
     name: ci-gate
     if: always()
     needs:
+      - classify_changes
       - unit_tests
       - ui_smoke_tests
       - release_build_check
@@ -99,24 +149,40 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Enforce unit-test gate
+      - name: Enforce CI gate
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          CHANGE_SCOPE: ${{ needs.classify_changes.outputs.change_scope }}
+          CODE_RELEVANT: ${{ needs.classify_changes.outputs.code_relevant }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UI_RESULT: ${{ needs.ui_smoke_tests.result }}
           RELEASE_RESULT: ${{ needs.release_build_check.result }}
         run: |
           set -euo pipefail
           is_main_pr=false
-          if [ "${EVENT_NAME}" = "pull_request" ] && [ "${BASE_REF}" = "main" ]; then
+          is_non_code_pr=false
+
+          if [ "${EVENT_NAME}" = "pull_request" ] && [ "${CODE_RELEVANT}" = "false" ]; then
+            is_non_code_pr=true
+          fi
+
+          if [ "${EVENT_NAME}" = "pull_request" ] && [ "${BASE_REF}" = "main" ] && [ "${CODE_RELEVANT}" = "true" ]; then
             is_main_pr=true
           fi
 
+          echo "Change scope: ${CHANGE_SCOPE}"
+          echo "Code relevant: ${CODE_RELEVANT}"
           echo "Unit tests job result: ${UNIT_RESULT}"
           echo "UI smoke matrix job result: ${UI_RESULT}"
           echo "Release build check job result: ${RELEASE_RESULT}"
+          echo "Non-code PR fast-path: ${is_non_code_pr}"
           echo "Main PR gate mode: ${is_main_pr}"
+
+          if [ "${is_non_code_pr}" = "true" ]; then
+            echo "Gate passed because this PR only contains non-code changes."
+            exit 0
+          fi
 
           if [ "${UNIT_RESULT}" != "success" ]; then
             echo "Gate failed because unit-tests result is ${UNIT_RESULT}."
@@ -139,6 +205,7 @@ jobs:
     name: ci-summary
     if: always()
     needs:
+      - classify_changes
       - unit_tests
       - ui_smoke_tests
       - release_build_check
@@ -154,6 +221,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          CHANGE_SCOPE: ${{ needs.classify_changes.outputs.change_scope }}
+          CODE_RELEVANT: ${{ needs.classify_changes.outputs.code_relevant }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UI_JOB_RESULT: ${{ needs.ui_smoke_tests.result }}
           RELEASE_RESULT: ${{ needs.release_build_check.result }}
@@ -164,20 +233,35 @@ jobs:
             const marker = '<!-- ci-summary-marker -->';
             const eventName = process.env.EVENT_NAME || 'unknown';
             const baseRef = process.env.BASE_REF || '';
+            const changeScope = process.env.CHANGE_SCOPE || 'unknown';
+            const codeRelevant = process.env.CODE_RELEVANT === 'true';
             const unitResult = process.env.UNIT_RESULT || 'unknown';
             const uiJobResult = process.env.UI_JOB_RESULT || 'unknown';
             const releaseResult = process.env.RELEASE_RESULT || 'unknown';
             const gateResult = process.env.GATE_RESULT || 'unknown';
             const runUrl = process.env.RUN_URL;
-            const isMainPr = eventName === 'pull_request' && baseRef === 'main';
-            const gateDetails = isMainPr
+            const isNonCodePr = eventName === 'pull_request' && !codeRelevant;
+            const isMainCodePr = eventName === 'pull_request' && baseRef === 'main' && codeRelevant;
+            const unitDetails = isNonCodePr
+              ? 'skipped; non-code pull request'
+              : 'required';
+            const uiDetails = isNonCodePr
+              ? 'skipped; non-code pull request'
+              : 'each case keeps its own ui_status in job summary/artifacts';
+            const gateDetails = isNonCodePr
+              ? 'required; non-code PR fast-path'
+              : isMainCodePr
               ? 'required; driven by Unit Tests + UI Smoke Tests + Release Build Check'
               : 'required; driven by Unit Tests only';
-            const releaseDetails = isMainPr
+            const releaseDetails = isNonCodePr
+              ? 'skipped; non-code pull request'
+              : isMainCodePr
               ? 'required; Release arm64 unsigned build'
               : 'not required; skipped outside main PR';
-            const gateRule = isMainPr
-              ? 'Gate rule: target `main` 的 PR 必须通过 `Unit Tests` + `UI Smoke Tests` + `Release Build Check`。'
+            const gateRule = isNonCodePr
+              ? 'Gate rule: 本次 PR 仅包含非代码变更，已跳过 `Unit Tests` / `UI Smoke Tests` / `Release Build Check`，`ci-gate` 直接通过。'
+              : isMainCodePr
+              ? 'Gate rule: target `main` 的代码相关 PR 必须通过 `Unit Tests` + `UI Smoke Tests` + `Release Build Check`。'
               : 'Gate rule: 非 `main` PR / push / merge_group 仅 `Unit Tests` 必须通过；`UI Smoke Tests` 与 `Release Build Check` 为信息展示（non-blocking）。';
 
             const summaryLines = [
@@ -187,8 +271,9 @@ jobs:
               '',
               '| Check | Status | Details |',
               '| --- | --- | --- |',
-              `| Unit Tests | ${unitResult} | required |`,
-              `| UI Smoke Tests (matrix: baseline + permissionDenied + rebuildFailed) | ${uiJobResult} | each case keeps its own ui_status in job summary/artifacts |`,
+              `| Change Scope | ${changeScope} | ${codeRelevant ? 'code-relevant change set' : 'non-code pull request fast-path'} |`,
+              `| Unit Tests | ${unitResult} | ${unitDetails} |`,
+              `| UI Smoke Tests (matrix: baseline + permissionDenied + rebuildFailed) | ${uiJobResult} | ${uiDetails} |`,
               `| Release Build Check (Release arm64, unsigned) | ${releaseResult} | ${releaseDetails} |`,
               `| CI Gate | ${gateResult} | ${gateDetails} |`,
               '',
