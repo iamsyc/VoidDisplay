@@ -15,7 +15,6 @@ struct ScreenMonitoringSession: Identifiable {
     let displayName: String
     let resolutionText: String
     let isVirtualDisplay: Bool
-    let stream: SCStream
-    let delegate: StreamDelegate
+    let previewSubscription: DisplayPreviewSubscription
     var state: State
 }

@@ -30,9 +30,9 @@ struct WebRoutingWorkflowSmokeTests {
         #expect(text.contains(html))
     }
 
-    @MainActor @Test func streamRouteWorkflowSmoke() throws {
+    @MainActor @Test func liveRouteWorkflowSmoke() throws {
         let raw = """
-        GET /stream/2 HTTP/1.1\r
+        GET /live/2 HTTP/1.1\r
         Host: 127.0.0.1:8081\r
         \r
         """
@@ -56,11 +56,20 @@ struct WebRoutingWorkflowSmokeTests {
             path: request.path,
             targetStateProvider: { _ in .active }
         )
-        #expect(streamDecision == .openStream(.id(2)))
-        let streamResponse = handler.responseData(for: streamDecision, htmlBody: "")
-        let streamText = try #require(String(data: streamResponse, encoding: .utf8))
-        #expect(streamText.contains("HTTP/1.1 200 OK"))
-        #expect(streamText.contains("multipart/x-mixed-replace"))
-        #expect(streamText.contains("boundary=\(WebRequestHandler.streamBoundary)"))
+        #expect(streamDecision == .openLiveSocket(.id(2)))
+    }
+
+    @MainActor @Test func legacyStreamRouteReturnsGone() throws {
+        let handler = WebRequestHandler()
+        let decision = handler.decision(
+            forMethod: "GET",
+            path: "/stream/2",
+            targetStateProvider: { _ in .active }
+        )
+        #expect(decision == .legacyStreamRemoved)
+
+        let response = handler.responseData(for: decision, htmlBody: "")
+        let text = try #require(String(data: response, encoding: .utf8))
+        #expect(text.contains("410 Gone"))
     }
 }

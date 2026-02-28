@@ -1,6 +1,6 @@
+import Darwin
 import Foundation
 import Network
-import Darwin
 @testable import VoidDisplay
 
 enum SocketIntegrationError: Error {
@@ -42,33 +42,13 @@ func readAll(from fd: Int32) throws -> Data {
     }
 }
 
-func countOccurrences(of needle: Data, in haystack: Data) -> Int {
-    guard !needle.isEmpty, !haystack.isEmpty else { return 0 }
-    var count = 0
-    var searchRangeStart = haystack.startIndex
-
-    while searchRangeStart < haystack.endIndex,
-          let range = haystack.range(of: needle, in: searchRangeStart..<haystack.endIndex) {
-        count += 1
-        searchRangeStart = range.upperBound
-    }
-
-    return count
-}
-
 func configureReceiveTimeout(fd: Int32, milliseconds: Int) {
     var timeout = timeval(
         tv_sec: __darwin_time_t(milliseconds / 1000),
         tv_usec: __darwin_suseconds_t((milliseconds % 1000) * 1000)
     )
     _ = withUnsafePointer(to: &timeout) { ptr in
-        setsockopt(
-            fd,
-            SOL_SOCKET,
-            SO_RCVTIMEO,
-            ptr,
-            socklen_t(MemoryLayout<timeval>.size)
-        )
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, ptr, socklen_t(MemoryLayout<timeval>.size))
     }
 }
 
@@ -108,146 +88,86 @@ func connectLoopbackSocket(port: UInt16) throws -> Int32 {
     return fd
 }
 
-func readUntilFrameBoundaries(
-    from fd: Int32,
-    boundary: String,
-    minimumCount: Int,
-    timeoutMilliseconds: Int
+func sendRequestAndReadUntilClose(
+    port: UInt16,
+    request: Data,
+    timeoutMilliseconds: Int = 3000
 ) throws -> Data {
-    let boundaryData = Data("--\(boundary)\r\n".utf8)
+    let fd = try connectLoopbackSocket(port: port)
+    defer { close(fd) }
+    configureReceiveTimeout(fd: fd, milliseconds: 300)
+    try sendAll(fd, data: request)
+    _ = shutdown(fd, SHUT_WR)
+    return try readAll(from: fd)
+}
+
+func sendRequestAndReadPartialResponse(
+    port: UInt16,
+    request: Data,
+    timeoutMilliseconds: Int = 3000
+) throws -> Data {
+    let fd = try connectLoopbackSocket(port: port)
+    defer { close(fd) }
+    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
+    try sendAll(fd, data: request)
+    _ = shutdown(fd, SHUT_WR)
+
     var response = Data()
     var buffer = [UInt8](repeating: 0, count: 4096)
-    let deadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1000.0)
+    let terminator = Data("\r\n\r\n".utf8)
 
-    while Date() < deadline {
+    while true {
         let readBytes = recv(fd, &buffer, buffer.count, 0)
         if readBytes > 0 {
             response.append(buffer, count: readBytes)
-            if countOccurrences(of: boundaryData, in: response) >= minimumCount {
+            if response.range(of: terminator) != nil {
                 return response
             }
             continue
         }
-        if readBytes == 0 {
-            break
-        }
 
-        if errno == EAGAIN || errno == EWOULDBLOCK {
-            continue
-        }
-        throw SocketIntegrationError.receiveFailed
-    }
-
-    throw SocketIntegrationError.receiveTimeout
-}
-
-func readUntilSocketClosed(from fd: Int32, timeoutMilliseconds: Int) throws -> Data {
-    var response = Data()
-    var buffer = [UInt8](repeating: 0, count: 4096)
-    let deadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1000.0)
-
-    while Date() < deadline {
-        let readBytes = recv(fd, &buffer, buffer.count, 0)
-        if readBytes > 0 {
-            response.append(buffer, count: readBytes)
-            continue
-        }
-        if readBytes == 0 {
+        if readBytes == 0, !response.isEmpty {
             return response
         }
-        if errno == EAGAIN || errno == EWOULDBLOCK {
-            continue
+
+        if errno == EWOULDBLOCK || errno == EAGAIN {
+            if !response.isEmpty {
+                return response
+            }
+            throw SocketIntegrationError.receiveTimeout
         }
-        if errno == ECONNRESET || errno == EPIPE || errno == ENOTCONN {
+
+        if response.isEmpty {
+            throw SocketIntegrationError.receiveTimeout
+        } else {
             return response
         }
-        throw SocketIntegrationError.receiveFailed
     }
-
-    throw SocketIntegrationError.receiveTimeout
 }
 
-func sendRequestAndReadUntilClose(
-    port: UInt16,
-    request: Data,
-    timeoutMilliseconds: Int = 3000,
-    ignoreSendFailure: Bool = false
-) throws -> Data {
-    let fd = try connectLoopbackSocket(port: port)
-    defer { close(fd) }
-    configureReceiveTimeout(fd: fd, milliseconds: 300)
-
-    do {
-        try sendAll(fd, data: request)
-    } catch {
-        if !ignoreSendFailure {
-            throw error
-        }
-    }
-    _ = shutdown(fd, SHUT_WR)
-    return try readUntilSocketClosed(from: fd, timeoutMilliseconds: timeoutMilliseconds)
-}
-
-func sendFragmentedRootRequestAndReadResponse(port: UInt16) throws -> Data {
-    let fd = try connectLoopbackSocket(port: port)
-    defer { close(fd) }
-
-    let fragment1 = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1".utf8)
-    let fragment2 = Data(":\(port)\r\n\r\n".utf8)
-    try sendAll(fd, data: fragment1)
-    usleep(50_000)
-    try sendAll(fd, data: fragment2)
-    _ = shutdown(fd, SHUT_WR)
-
-    return try readAll(from: fd)
-}
-
-func openStreamAndReadResponse(
-    port: UInt16,
-    path: String = "/stream",
-    boundary: String,
-    minimumFrameCount: Int,
-    fragmentedHeader: Bool = false
-) throws -> Data {
-    let fd = try openStreamSocket(
-        port: port,
-        path: path,
-        fragmentedHeader: fragmentedHeader
-    )
-    defer { close(fd) }
-    return try readUntilFrameBoundaries(
-        from: fd,
-        boundary: boundary,
-        minimumCount: minimumFrameCount,
-        timeoutMilliseconds: 3000
+func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
+    Data(
+        """
+        GET \(path) HTTP/1.1\r
+        Host: 127.0.0.1:\(port)\r
+        Upgrade: websocket\r
+        Connection: Upgrade\r
+        Sec-WebSocket-Version: 13\r
+        Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
+        \r
+        """.utf8
     )
 }
 
-func openStreamSocket(
-    port: UInt16,
-    path: String = "/stream",
-    fragmentedHeader: Bool = false
-) throws -> Int32 {
-    let fd = try connectLoopbackSocket(port: port)
-    configureReceiveTimeout(fd: fd, milliseconds: 300)
-
-    if fragmentedHeader {
-        let fragment1 = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1".utf8)
-        let fragment2 = Data(":\(port)\r\n\r\n".utf8)
-        try sendAll(fd, data: fragment1)
-        usleep(50_000)
-        try sendAll(fd, data: fragment2)
-    } else {
-        let request = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
-        try sendAll(fd, data: request)
-    }
-    return fd
+@MainActor
+private final class StaticLiveHubStore {
+    let hub = LiveSocketHub()
 }
 
 @MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-    frameProvider: @escaping @MainActor @Sendable (ShareTarget) -> Data?
+    liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
 ) async throws -> (server: WebServer, port: UInt16) {
     guard let endpointPort = NWEndpoint.Port(rawValue: 0) else {
         throw SocketIntegrationError.bindFailed
@@ -258,34 +178,22 @@ func startServerOnRandomPort(
             let server = try WebServer(
                 using: endpointPort,
                 targetStateProvider: targetStateProvider,
-                frameProvider: frameProvider
+                liveHubProvider: liveHubProvider
             )
-            let ready = await server.startListener()
-            guard case .ready = ready else {
+            let result = await server.startListener(timeout: 1.0)
+            switch result {
+            case .ready(let boundPort):
+                return (server, boundPort)
+            case .timedOut:
                 server.stopListener()
-                continue
+            case .failed(let error):
+                server.stopListener()
+                throw error
             }
-
-            let deadline = Date().addingTimeInterval(1.5)
-            while Date() < deadline {
-                if let port = server.listeningPort(),
-                   let probeSocket = try? connectLoopbackSocket(port: port) {
-                    close(probeSocket)
-                    return (server, port)
-                }
-                try await Task.sleep(nanoseconds: 20_000_000)
-            }
-
-            server.stopListener()
-            continue
-        } catch let error as NWError {
-            if case .posix(let code) = error, code == .EADDRINUSE {
-                continue
-            }
-            throw error
         } catch {
-            throw error
+            usleep(50_000)
         }
     }
+
     throw SocketIntegrationError.bindFailed
 }

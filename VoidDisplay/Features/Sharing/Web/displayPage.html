@@ -1,109 +1,310 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>__PAGE_TITLE__</title>
     <style>
-        * {
+        :root {
+            color-scheme: dark;
+            --bg: #080b11;
+            --panel: rgba(255, 255, 255, 0.08);
+            --text: #f7f9fd;
+            --muted: rgba(247, 249, 253, 0.65);
+            --accent: #8fd3ff;
+        }
+        * { box-sizing: border-box; }
+        body {
             margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+            min-height: 100vh;
+            font-family: "SF Pro Display", "Helvetica Neue", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(143, 211, 255, 0.18), transparent 32%),
+                radial-gradient(circle at bottom right, rgba(51, 101, 196, 0.18), transparent 38%),
+                linear-gradient(160deg, #080b11, #0d1728 55%, #060910);
+            color: var(--text);
+            display: grid;
+            place-items: center;
+            padding: 20px;
         }
-        .title-bar {
-            background-color: #f0f0f0;
-            padding: 1rem;
-            text-align: center;
-            border-bottom: 1px solid #ddd;
+        .shell {
+            width: min(96vw, 1600px);
+            display: grid;
+            gap: 18px;
         }
-        
-        .title-bar h1 {
-            font-size: 1.8rem;
-            color: #333;
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 18px 22px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            background: var(--panel);
+            backdrop-filter: blur(18px);
         }
-        .image-container {
-            width: 100%;
-            padding: 1rem;
-            text-align: center;
+        .eyebrow {
+            margin: 0 0 6px;
+            font-size: 12px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--muted);
         }
-        .responsive-image {
-            max-width: 100%;
-            height: auto;
-            display: inline-block;
+        h1 {
+            margin: 0;
+            font-size: clamp(22px, 2.4vw, 34px);
+            line-height: 1.05;
         }
         .status {
-            margin-top: 0.75rem;
-            color: #b03a2e;
-            font-size: 1rem;
-            display: none;
+            padding: 9px 12px;
+            border-radius: 999px;
+            font-size: 13px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--muted);
         }
-        .retry-button {
-            margin-top: 0.75rem;
-            border: 1px solid #666;
-            background: white;
-            border-radius: 8px;
-            padding: 0.45rem 0.8rem;
-            cursor: pointer;
-            display: none;
+        .stage {
+            position: relative;
+            border-radius: 28px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.32);
+            min-height: min(70vh, 900px);
+            box-shadow: 0 36px 90px rgba(0, 0, 0, 0.45);
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #000;
+        }
+        .overlay {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: linear-gradient(180deg, rgba(6, 9, 16, 0.22), rgba(6, 9, 16, 0.72));
+            text-align: center;
+        }
+        .overlay[hidden] { display: none; }
+        .card {
+            max-width: 520px;
+            padding: 24px;
+            border-radius: 22px;
+            background: rgba(8, 11, 17, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .card h2 { margin: 0 0 10px; }
+        .card p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+        .footnote {
+            font-size: 13px;
+            color: var(--muted);
+            padding: 0 8px;
         }
     </style>
 </head>
 <body>
-    <div class="title-bar">
-        <h1 id="pageTitle">__PAGE_TITLE__</h1>
+    <div class="shell">
+        <section class="hero">
+            <div>
+                <p class="eyebrow">VoidDisplay Live</p>
+                <h1>__PAGE_TITLE__</h1>
+            </div>
+            <div class="status" id="status">Connecting…</div>
+        </section>
+
+        <section class="stage">
+            <canvas id="canvas"></canvas>
+            <div class="overlay" id="overlay">
+                <div class="card">
+                    <h2 id="message-title">Connecting…</h2>
+                    <p id="message-body">Preparing the low-latency stream.</p>
+                </div>
+            </div>
+        </section>
+
+        <p class="footnote">This page requires a modern browser with WebCodecs and WebSocket support.</p>
     </div>
-    <div class="image-container">
-        <img src="__STREAM_PATH__" alt="display" class="responsive-image" id="display">
-        <p class="status" id="status">Sharing has stopped</p>
-        <button class="retry-button" id="retry" type="button">Retry connection</button>
-    </div>
+
     <script>
-        const displayImage = document.getElementById("display");
-        const pageTitle = document.getElementById("pageTitle");
-        const defaultTitle = "__PAGE_TITLE__";
-        const streamPath = "__STREAM_PATH__";
-        const status = document.getElementById("status");
-        const retry = document.getElementById("retry");
-        const lang = navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
+        const livePath = "__LIVE_PATH__";
+        const statusEl = document.getElementById("status");
+        const overlayEl = document.getElementById("overlay");
+        const messageTitleEl = document.getElementById("message-title");
+        const messageBodyEl = document.getElementById("message-body");
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
-        const i18n = {
-            en: {
-                title: "Display",
-                statusStopped: "Sharing has stopped",
-                retry: "Retry connection"
-            },
-            "zh-Hans": {
-                title: "屏幕共享",
-                statusStopped: "共享已停止",
-                retry: "重试连接"
+        let socket = null;
+        let decoder = null;
+        let reconnectIndex = 0;
+        let latestFrame = null;
+        let currentConfig = null;
+        const reconnectDelays = [100, 250, 500, 1000];
+
+        function setStatus(text) {
+            statusEl.textContent = text;
+        }
+
+        function setOverlay(title, body, visible = true) {
+            messageTitleEl.textContent = title;
+            messageBodyEl.textContent = body;
+            overlayEl.hidden = !visible;
+        }
+
+        function closeLatestFrame() {
+            if (latestFrame) {
+                latestFrame.close();
+                latestFrame = null;
             }
-        };
-
-        function applyLocale() {
-            const text = i18n[lang] || i18n.en;
-            document.documentElement.lang = lang;
-            document.title = defaultTitle;
-            pageTitle.textContent = defaultTitle;
-            status.textContent = text.statusStopped;
-            retry.textContent = text.retry;
-            displayImage.alt = defaultTitle;
         }
 
-        function updateState(stopped) {
-            status.style.display = stopped ? "block" : "none";
-            retry.style.display = stopped ? "inline-block" : "none";
-            displayImage.style.display = stopped ? "none" : "inline-block";
+        function ensureDecoder(config) {
+            if (!window.VideoDecoder) {
+                setStatus("Unsupported browser");
+                setOverlay(
+                    "WebCodecs required",
+                    "This build requires a modern browser with WebCodecs support.",
+                    true
+                );
+                return false;
+            }
+
+            if (decoder) {
+                decoder.close();
+            }
+
+            decoder = new VideoDecoder({
+                output(frame) {
+                    closeLatestFrame();
+                    latestFrame = frame;
+                    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+                        canvas.width = frame.displayWidth;
+                        canvas.height = frame.displayHeight;
+                    }
+                    overlayEl.hidden = true;
+                },
+                error(error) {
+                    setStatus("Decoder error");
+                    setOverlay("Decoder error", error.message || "Failed to decode stream.", true);
+                }
+            });
+
+            decoder.configure({
+                codec: config.codec,
+                optimizeForLatency: true
+            });
+
+            currentConfig = config;
+            return true;
         }
 
-        function reloadStream() {
-            updateState(false);
-            displayImage.src = `${streamPath}?t=${Date.now()}`;
+        function scheduleReconnect() {
+            const delay = reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)];
+            reconnectIndex += 1;
+            setStatus(`Reconnecting in ${delay}ms`);
+            setOverlay("Reconnecting…", "The stream connection dropped. Retrying automatically.", true);
+            window.setTimeout(connect, delay);
         }
 
-        displayImage.addEventListener("load", () => updateState(false));
-        displayImage.addEventListener("error", () => updateState(true));
-        retry.addEventListener("click", reloadStream);
-        applyLocale();
+        function decodePacket(data) {
+            if (!decoder || !currentConfig) {
+                return;
+            }
+
+            const view = new DataView(data);
+            const version = view.getUint8(0);
+            if (version !== 1) {
+                return;
+            }
+
+            const flags = view.getUint8(1);
+            const key = (flags & 0x1) !== 0;
+            const ptsUs = Number(view.getBigUint64(2, false));
+            const payload = new Uint8Array(data.slice(18));
+
+            decoder.decode(new EncodedVideoChunk({
+                type: key ? "key" : "delta",
+                timestamp: ptsUs,
+                data: payload
+            }));
+        }
+
+        function connect() {
+            if (!window.WebSocket) {
+                setStatus("Unsupported browser");
+                setOverlay(
+                    "WebSocket required",
+                    "This browser cannot open the live stream transport.",
+                    true
+                );
+                return;
+            }
+
+            const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+            socket = new WebSocket(`${protocol}://${window.location.host}${livePath}`);
+            socket.binaryType = "arraybuffer";
+            setStatus("Connecting…");
+            setOverlay("Connecting…", "Preparing the low-latency stream.", true);
+
+            socket.addEventListener("open", () => {
+                reconnectIndex = 0;
+                setStatus("Connected");
+            });
+
+            socket.addEventListener("message", async (event) => {
+                if (typeof event.data === "string") {
+                    const payload = JSON.parse(event.data);
+                    if (payload.type === "config") {
+                        const ready = ensureDecoder(payload);
+                        if (ready) {
+                            setStatus("Live");
+                            setOverlay("Waiting for keyframe…", "Connected. Waiting for the next IDR frame.", true);
+                        }
+                    } else if (payload.type === "stopped") {
+                        setStatus("Stopped");
+                        setOverlay("Sharing stopped", "The source stream is no longer available.", true);
+                        socket.close();
+                    }
+                    return;
+                }
+
+                const data = event.data instanceof ArrayBuffer
+                    ? event.data
+                    : await event.data.arrayBuffer();
+                decodePacket(data);
+            });
+
+            socket.addEventListener("close", () => {
+                closeLatestFrame();
+                if (decoder) {
+                    decoder.close();
+                    decoder = null;
+                }
+                currentConfig = null;
+                scheduleReconnect();
+            });
+
+            socket.addEventListener("error", () => {
+                setStatus("Connection error");
+            });
+        }
+
+        function drawLoop() {
+            if (latestFrame) {
+                context.drawImage(latestFrame, 0, 0, canvas.width, canvas.height);
+                latestFrame.close();
+                latestFrame = null;
+            }
+            window.requestAnimationFrame(drawLoop);
+        }
+
+        connect();
+        drawLoop();
     </script>
 </body>
 </html>

@@ -3,13 +3,13 @@ import Testing
 @testable import VoidDisplay
 
 @MainActor
-private final class MockStreamClientConnection: StreamClientConnection {
+private final class MockLiveSocketConnection: LiveSocketConnection {
     var sentPayloads: [Data] = []
     var cancelCallCount = 0
     var autoComplete = true
     private var pendingCompletions: [(@Sendable (Error?) -> Void)] = []
 
-    func sendFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void) {
+    func sendSocketFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void) {
         sentPayloads.append(content)
         if autoComplete {
             completion(nil)
@@ -18,7 +18,7 @@ private final class MockStreamClientConnection: StreamClientConnection {
         pendingCompletions.append(completion)
     }
 
-    func cancelStream() {
+    func cancelSocket() {
         cancelCallCount += 1
     }
 
@@ -29,73 +29,42 @@ private final class MockStreamClientConnection: StreamClientConnection {
     }
 }
 
-@MainActor
-private final class MutableFrameSource: @unchecked Sendable {
-    var frame: Data
-
-    init(frame: Data) {
-        self.frame = frame
-    }
-}
-
 struct StreamHubTests {
 
-    @MainActor @Test func broadcastsFramesToAllConnectedClients() async {
-        let frameSource = MutableFrameSource(frame: Data("frame-1".utf8))
-        let hub = StreamHub(
-            isSharingProvider: { true },
-            frameProvider: { frameSource.frame },
-            automaticallyStartTimer: false,
-            onSendError: { _ in }
+    @MainActor @Test func broadcastsConfigAndPacketsToConnectedClients() async {
+        let hub = LiveSocketHub()
+        let client = MockLiveSocketConnection()
+        hub.addClient(client)
+        hub.updateConfiguration(.init(codec: "avc1.640028", width: 1920, height: 1080, timescale: 1_000_000))
+
+        hub.broadcast(
+            packet: EncodedVideoPacket(
+                ptsUs: 123,
+                isKeyframe: true,
+                width: 1920,
+                height: 1080,
+                payload: Data([0x00, 0x00, 0x00, 0x01])
+            )
         )
-
-        let firstClient = MockStreamClientConnection()
-        let secondClient = MockStreamClientConnection()
-        hub.addClient(firstClient)
-        hub.addClient(secondClient)
-
-        hub.pumpOnceForTesting()
         await Task.yield()
-        let firstExpected = makeMJPEGFramePayload(
-            frame: frameSource.frame,
-            boundary: WebRequestHandler.streamBoundary
-        )
-        #expect(firstClient.sentPayloads == [firstExpected])
-        #expect(secondClient.sentPayloads == [firstExpected])
 
-        frameSource.frame = Data("frame-2".utf8)
-        hub.pumpOnceForTesting()
-        await Task.yield()
-        let secondExpected = makeMJPEGFramePayload(
-            frame: frameSource.frame,
-            boundary: WebRequestHandler.streamBoundary
-        )
-        #expect(firstClient.sentPayloads == [firstExpected, secondExpected])
-        #expect(secondClient.sentPayloads == [firstExpected, secondExpected])
+        #expect(client.sentPayloads.count == 1)
+        #expect(client.sentPayloads[0].contains(Data("config".utf8)))
     }
 
-    @MainActor @Test func slowClientDoesNotBlockOthersAndReceivesLatestPendingFrame() async {
-        let frameSource = MutableFrameSource(frame: Data("A".utf8))
-        let hub = StreamHub(
-            isSharingProvider: { true },
-            frameProvider: { frameSource.frame },
-            automaticallyStartTimer: false,
-            onSendError: { _ in }
-        )
+    @MainActor @Test func slowClientKeepsOnlyLatestPendingPacket() async {
+        let hub = LiveSocketHub()
+        hub.updateConfiguration(.init(codec: "avc1.640028", width: 1920, height: 1080, timescale: 1_000_000))
 
-        let slowClient = MockStreamClientConnection()
+        let slowClient = MockLiveSocketConnection()
         slowClient.autoComplete = false
-        let fastClient = MockStreamClientConnection()
+        let fastClient = MockLiveSocketConnection()
         hub.addClient(slowClient)
         hub.addClient(fastClient)
 
-        hub.pumpOnceForTesting()
-        await Task.yield()
-        frameSource.frame = Data("B".utf8)
-        hub.pumpOnceForTesting()
-        await Task.yield()
-        frameSource.frame = Data("C".utf8)
-        hub.pumpOnceForTesting()
+        hub.broadcast(packet: .init(ptsUs: 1, isKeyframe: true, width: 1920, height: 1080, payload: Data([1])))
+        hub.broadcast(packet: .init(ptsUs: 2, isKeyframe: false, width: 1920, height: 1080, payload: Data([2])))
+        hub.broadcast(packet: .init(ptsUs: 3, isKeyframe: false, width: 1920, height: 1080, payload: Data([3])))
         await Task.yield()
 
         #expect(fastClient.sentPayloads.count == 3)
@@ -105,10 +74,5 @@ struct StreamHubTests {
         await Task.yield()
 
         #expect(slowClient.sentPayloads.count == 2)
-        let latestExpected = makeMJPEGFramePayload(
-            frame: Data("C".utf8),
-            boundary: WebRequestHandler.streamBoundary
-        )
-        #expect(slowClient.sentPayloads[1] == latestExpected)
     }
 }

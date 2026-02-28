@@ -49,20 +49,20 @@ final class CaptureChooseViewModel {
     let catalog: ScreenCaptureDisplayCatalogState
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
 
-    private let makeScreenCaptureSession: @MainActor (SCDisplay) async -> ScreenCaptureSession
+    private let makePreviewSubscription: @MainActor (SCDisplay) async throws -> DisplayPreviewSubscription
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
-        makeScreenCaptureSession: (@MainActor (SCDisplay) async -> ScreenCaptureSession)? = nil,
+        makePreviewSubscription: (@MainActor (SCDisplay) async throws -> DisplayPreviewSubscription)? = nil,
         dependencies: Dependencies
     ) {
         let catalog = ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
-        self.makeScreenCaptureSession = makeScreenCaptureSession ?? { display in
-            await createScreenCapture(display: display)
+        self.makePreviewSubscription = makePreviewSubscription ?? { display in
+            try await DisplayCaptureRegistry.shared.acquirePreview(display: display)
         }
         self.dependencies = dependencies
         self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
@@ -110,19 +110,22 @@ final class CaptureChooseViewModel {
                 return
             }
 
-            let captureSession = await makeScreenCaptureSession(display)
-            let session = ScreenMonitoringSession(
-                id: UUID(),
-                displayID: display.displayID,
-                displayName: displayName(for: display),
-                resolutionText: resolutionText(for: display),
-                isVirtualDisplay: isVirtualDisplay(display),
-                stream: captureSession.stream,
-                delegate: captureSession.delegate,
-                state: .starting
-            )
-            dependencies.captureActions.addMonitoringSession(session)
-            openWindow(session.id)
+            do {
+                let previewSubscription = try await makePreviewSubscription(display)
+                let session = ScreenMonitoringSession(
+                    id: UUID(),
+                    displayID: display.displayID,
+                    displayName: displayName(for: display),
+                    resolutionText: resolutionText(for: display),
+                    isVirtualDisplay: isVirtualDisplay(display),
+                    previewSubscription: previewSubscription,
+                    state: .starting
+                )
+                dependencies.captureActions.addMonitoringSession(session)
+                openWindow(session.id)
+            } catch {
+                AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
+            }
         }
     }
 

@@ -96,14 +96,9 @@ final class MockSharingService: SharingServiceProtocol {
         _ = virtualSerialResolver(CGDirectDisplayID(0))
     }
 
-    func startSharing(
-        displayID: CGDirectDisplayID,
-        stream: SCStream,
-        output: Capture,
-        delegate: VoidDisplay.StreamDelegate
-    ) {
+    func startSharing(display: SCDisplay) async throws {
         hasAnyActiveSharing = true
-        activeSharingDisplayIDs.insert(displayID)
+        activeSharingDisplayIDs.insert(display.displayID)
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {

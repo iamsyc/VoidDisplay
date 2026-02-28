@@ -1,5 +1,4 @@
 import Foundation
-import ScreenCaptureKit
 import CoreGraphics
 
 @MainActor
@@ -41,7 +40,7 @@ final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
 
     func removeMonitoringSession(id: UUID) {
         if let session = sessions.first(where: { $0.id == id }) {
-            session.stream.stopCapture()
+            session.previewSubscription.cancel()
         }
         sessions.removeAll { $0.id == id }
     }

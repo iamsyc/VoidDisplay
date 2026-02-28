@@ -222,7 +222,7 @@ struct ShareViewModelTests {
                     startWebService: { _ in .failed(.timedOut(port: 9099)) },
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
-                    beginSharing: { _, _, _, _ in },
+                    beginSharing: { _ in },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -434,7 +434,7 @@ struct ShareViewModelTests {
                 startWebService: { _ in .failed(.timedOut(port: 8081)) },
                 stopWebService: {},
                 registerShareableDisplays: { _, _ in },
-                beginSharing: { _, _, _, _ in },
+                beginSharing: { _ in },
                 stopSharing: { _ in }
             ),
             virtualDisplayQueries: .init(

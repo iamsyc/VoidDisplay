@@ -33,7 +33,7 @@ struct WebServiceControllerTests {
         let result = await sut.start(
             requestedPort: 1000,
             targetStateProvider: { _ in .unknown },
-            frameProvider: { _ in nil }
+            liveHubProvider: { _ in nil }
         )
 
         #expect(result == .failed(.invalidPort(.outOfRange)))
