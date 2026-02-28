@@ -392,38 +392,42 @@ final class WebServer {
     }
 
     private func receiveLiveSocketFrame(on connection: NWConnection, key: ObjectIdentifier) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { [weak self] content, _, isComplete, error in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        // NWConnection delivers receive callbacks on the queue passed to `start(queue:)`.
+        // Issuing `receive` on that same queue avoids subtle cross-queue timing issues (seen on CI).
+        networkQueue.async { [weak self] in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { [weak self] content, _, isComplete, error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
 
-                if let error {
-                    Self.logConnectionIssue("Receive live socket frame", error: error)
-                    self.removeLiveClient(connection, cancelConnection: true)
-                    return
-                }
-
-                if let content, !content.isEmpty {
-                    var buffer = self.liveReceiveBufferByConnectionKey[key] ?? Data()
-                    buffer.append(content)
-                    if buffer.count > Self.maxLiveSocketBufferBytes {
-                        AppLog.web.debug("Disconnecting live socket client due to oversized receive buffer.")
+                    if let error {
+                        Self.logConnectionIssue("Receive live socket frame", error: error)
                         self.removeLiveClient(connection, cancelConnection: true)
                         return
                     }
-                    self.liveReceiveBufferByConnectionKey[key] = self.processLiveSocketBuffer(
-                        buffer,
-                        for: key,
-                        connection: connection
-                    )
-                }
 
-                if isComplete {
-                    self.removeLiveClient(connection, cancelConnection: true)
-                    return
-                }
+                    if let content, !content.isEmpty {
+                        var buffer = self.liveReceiveBufferByConnectionKey[key] ?? Data()
+                        buffer.append(content)
+                        if buffer.count > Self.maxLiveSocketBufferBytes {
+                            AppLog.web.debug("Disconnecting live socket client due to oversized receive buffer.")
+                            self.removeLiveClient(connection, cancelConnection: true)
+                            return
+                        }
+                        self.liveReceiveBufferByConnectionKey[key] = self.processLiveSocketBuffer(
+                            buffer,
+                            for: key,
+                            connection: connection
+                        )
+                    }
 
-                guard self.liveTargetByConnectionKey[key] != nil else { return }
-                self.receiveLiveSocketFrame(on: connection, key: key)
+                    if isComplete {
+                        self.removeLiveClient(connection, cancelConnection: true)
+                        return
+                    }
+
+                    guard self.liveTargetByConnectionKey[key] != nil else { return }
+                    self.receiveLiveSocketFrame(on: connection, key: key)
+                }
             }
         }
     }
