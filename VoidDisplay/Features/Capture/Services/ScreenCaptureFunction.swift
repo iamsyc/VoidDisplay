@@ -1,15 +1,15 @@
-import AppKit
 import CoreGraphics
-import CoreImage
 import CoreMedia
 import Foundation
-import Observation
 import OSLog
 import ScreenCaptureKit
+import Synchronization
 import VideoToolbox
 
+// MARK: - Public Protocols & Value Types
+
 protocol DisplayPreviewSink: AnyObject {
-    func submitFrame(_ pixelBuffer: CVPixelBuffer)
+    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer)
 }
 
 struct LiveVideoConfiguration: Equatable, Sendable {
@@ -27,17 +27,25 @@ struct EncodedVideoPacket: Sendable {
     let payload: Data
 }
 
-struct DisplayCaptureMetrics: Sendable {
-    var receivedFrameCount: UInt64 = 0
-    var droppedPreviewFrameCount: UInt64 = 0
-    var droppedEncodeFrameCount: UInt64 = 0
+// MARK: - Sendable Wrappers
+
+private struct SendablePixelBuffer: @unchecked Sendable {
+    nonisolated(unsafe) let pixelBuffer: CVPixelBuffer
 }
 
-final class DisplayPreviewSubscription: @unchecked Sendable {
+private struct SendableSampleBuffer: @unchecked Sendable {
+    nonisolated(unsafe) let sampleBuffer: CMSampleBuffer
+    nonisolated init(_ sampleBuffer: CMSampleBuffer) { self.sampleBuffer = sampleBuffer }
+}
+
+// MARK: - Preview Subscription
+
+final class DisplayPreviewSubscription: Sendable {
     let displayID: CGDirectDisplayID
     let resolutionText: String
+
     private let session: DisplayCaptureSession
-    private var cancelClosure: (() -> Void)?
+    private let cancelState = Mutex<(() -> Void)?>(nil)
 
     nonisolated init(
         displayID: CGDirectDisplayID,
@@ -48,7 +56,7 @@ final class DisplayPreviewSubscription: @unchecked Sendable {
         self.displayID = displayID
         self.resolutionText = resolutionText
         self.session = session
-        self.cancelClosure = cancelClosure
+        cancelState.withLock { $0 = cancelClosure }
     }
 
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
@@ -60,20 +68,24 @@ final class DisplayPreviewSubscription: @unchecked Sendable {
     }
 
     nonisolated func cancel() {
-        guard let cancelClosure else { return }
-        self.cancelClosure = nil
-        cancelClosure()
+        let closure = cancelState.withLock { state -> (() -> Void)? in
+            let current = state
+            state = nil
+            return current
+        }
+        closure?()
     }
 
-    deinit {
-        cancel()
-    }
+    deinit { cancel() }
 }
 
-final class DisplayShareSubscription: @unchecked Sendable {
+// MARK: - Share Subscription
+
+final class DisplayShareSubscription: Sendable {
     let displayID: CGDirectDisplayID
     let hub: LiveSocketHub
-    private var cancelClosure: (() -> Void)?
+
+    private let cancelState = Mutex<(() -> Void)?>(nil)
 
     nonisolated init(
         displayID: CGDirectDisplayID,
@@ -82,21 +94,25 @@ final class DisplayShareSubscription: @unchecked Sendable {
     ) {
         self.displayID = displayID
         self.hub = hub
-        self.cancelClosure = cancelClosure
+        cancelState.withLock { $0 = cancelClosure }
     }
 
     nonisolated func cancel() {
-        guard let cancelClosure else { return }
-        self.cancelClosure = nil
-        cancelClosure()
+        let closure = cancelState.withLock { state -> (() -> Void)? in
+            let current = state
+            state = nil
+            return current
+        }
+        closure?()
     }
 
-    deinit {
-        cancel()
-    }
+    deinit { cancel() }
 }
 
+// MARK: - Capture Registry
+
 actor DisplayCaptureRegistry {
+
     struct SessionRecord {
         let session: DisplayCaptureSession
         let resolutionText: String
@@ -108,6 +124,8 @@ actor DisplayCaptureRegistry {
 
     private var sessionsByDisplayID: [CGDirectDisplayID: SessionRecord] = [:]
 
+    // MARK: Acquire / Release
+
     func acquirePreview(display: SCDisplay) async throws -> DisplayPreviewSubscription {
         let record = try await retainSession(display: display, mode: .preview)
         let displayID = display.displayID
@@ -117,9 +135,7 @@ actor DisplayCaptureRegistry {
             session: record.session,
             cancelClosure: { [weak self] in
                 guard let self else { return }
-                Task {
-                    await self.releasePreview(displayID: displayID)
-                }
+                Task { await self.releasePreview(displayID: displayID) }
             }
         )
     }
@@ -132,17 +148,14 @@ actor DisplayCaptureRegistry {
             hub: record.session.liveSocketHub,
             cancelClosure: { [weak self] in
                 guard let self else { return }
-                Task {
-                    await self.releaseShare(displayID: displayID)
-                }
+                Task { await self.releaseShare(displayID: displayID) }
             }
         )
     }
 
-    private enum RetainMode {
-        case preview
-        case share
-    }
+    // MARK: Internal
+
+    private enum RetainMode { case preview, share }
 
     private func retainSession(
         display: SCDisplay,
@@ -151,10 +164,8 @@ actor DisplayCaptureRegistry {
         let displayID = display.displayID
         if var existing = sessionsByDisplayID[displayID] {
             switch mode {
-            case .preview:
-                existing.previewRefCount += 1
-            case .share:
-                existing.shareRefCount += 1
+            case .preview: existing.previewRefCount += 1
+            case .share:   existing.shareRefCount += 1
             }
             sessionsByDisplayID[displayID] = existing
             return existing
@@ -169,10 +180,8 @@ actor DisplayCaptureRegistry {
             shareRefCount: 0
         )
         switch mode {
-        case .preview:
-            record.previewRefCount = 1
-        case .share:
-            record.shareRefCount = 1
+        case .preview: record.previewRefCount = 1
+        case .share:   record.shareRefCount = 1
         }
         sessionsByDisplayID[displayID] = record
         return record
@@ -203,10 +212,12 @@ actor DisplayCaptureRegistry {
     }
 }
 
-private final class DisplayStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
-    weak var session: DisplayCaptureSession?
+// MARK: - Stream Output Delegate
 
-    func stream(
+private final class DisplayStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
+    nonisolated(unsafe) weak var session: DisplayCaptureSession?
+
+    nonisolated func stream(
         _ stream: SCStream,
         didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
         of type: SCStreamOutputType
@@ -214,51 +225,49 @@ private final class DisplayStreamOutput: NSObject, SCStreamOutput, SCStreamDeleg
         session?.handle(sampleBuffer: sampleBuffer, type: type)
     }
 
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
-        AppErrorMapper.logFailure("Screen capture stream stopped", error: error, logger: AppLog.capture)
-    }
-}
-
-final class DisplaySampleFanout: @unchecked Sendable {
-    private let lock = NSLock()
-    private var previewSinks: [ObjectIdentifier: any DisplayPreviewSink] = [:]
-
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        lock.lock()
-        previewSinks[ObjectIdentifier(sink as AnyObject)] = sink
-        lock.unlock()
-    }
-
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        lock.lock()
-        previewSinks.removeValue(forKey: ObjectIdentifier(sink as AnyObject))
-        lock.unlock()
-    }
-
-    nonisolated func publishPreviewFrame(_ pixelBuffer: CVPixelBuffer) {
-        lock.lock()
-        let sinks = Array(previewSinks.values)
-        lock.unlock()
-        for sink in sinks {
-            sink.submitFrame(pixelBuffer)
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        Task { @MainActor in
+            AppErrorMapper.logFailure("Screen capture stream stopped", error: error, logger: AppLog.capture)
         }
     }
 }
 
-final class DisplayCaptureSession: @unchecked Sendable {
-    let displayID: CGDirectDisplayID
-    let liveSocketHub: LiveSocketHub
+// MARK: - Sample Fanout
 
-    private let stream: SCStream
-    private let output = DisplayStreamOutput()
-    private let captureQueue: DispatchQueue
-    private let fanout = DisplaySampleFanout()
-    private let metricsLock = NSLock()
-    private var metrics = DisplayCaptureMetrics()
-    private let encoderStateQueue: DispatchQueue
-    private var encoder: DisplayVideoEncoder?
-    private let shareResolution: (width: Int, height: Int)
-    private let sourceRefreshRate: Int
+private final class DisplaySampleFanout: Sendable {
+    private let sinks = Mutex<[ObjectIdentifier: any DisplayPreviewSink]>([:])
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        sinks.withLock { $0[ObjectIdentifier(sink as AnyObject)] = sink }
+    }
+
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        sinks.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(sink as AnyObject)) }
+    }
+
+    nonisolated func publishPreviewFrame(_ sampleBuffer: CMSampleBuffer) {
+        let snapshot = sinks.withLock { Array($0.values) }
+        for sink in snapshot { sink.submitFrame(sampleBuffer) }
+    }
+}
+
+// MARK: - Display Capture Session
+
+final class DisplayCaptureSession: @unchecked Sendable {
+    nonisolated let displayID: CGDirectDisplayID
+    nonisolated let liveSocketHub: LiveSocketHub
+
+    nonisolated(unsafe) private let stream: SCStream
+    nonisolated private let output = DisplayStreamOutput()
+    nonisolated private let captureQueue: DispatchQueue
+    nonisolated private let fanout = DisplaySampleFanout()
+    nonisolated private let metrics = Mutex(DisplayCaptureMetrics())
+    nonisolated private let encoderStateQueue: DispatchQueue
+    nonisolated(unsafe) private var encoder: DisplayVideoEncoder?
+    nonisolated private let shareResolution: (width: Int, height: Int)
+    nonisolated private let sourceRefreshRate: Int
+
+    // MARK: Lifecycle
 
     nonisolated init(display: SCDisplay) async throws {
         self.displayID = display.displayID
@@ -274,13 +283,19 @@ final class DisplayCaptureSession: @unchecked Sendable {
         let config = try await Self.makeStreamConfiguration(display: display)
         let filter = try await Self.makeContentFilter(display: display)
         self.stream = SCStream(filter: filter, configuration: config, delegate: output)
-        self.shareResolution = Self.makeShareResolution(width: Int(config.width), height: Int(config.height))
-        self.sourceRefreshRate = max(60, min(Int(round(Double(config.minimumFrameInterval.timescale) / Double(config.minimumFrameInterval.value))), 120))
+        self.shareResolution = Self.makeShareResolution(
+            width: Int(config.width), height: Int(config.height)
+        )
+        let interval = config.minimumFrameInterval
+        let fps = Int(round(Double(interval.timescale) / Double(interval.value)))
+        self.sourceRefreshRate = max(60, min(fps, 120))
         self.liveSocketHub = LiveSocketHub()
+
         output.session = self
-        self.liveSocketHub.updateDemandHandler { [weak self] hasDemand in
+        liveSocketHub.updateDemandHandler { [weak self] hasDemand in
             self?.setEncodingDemand(hasDemand)
         }
+
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
         try await stream.startCapture()
     }
@@ -289,6 +304,8 @@ final class DisplayCaptureSession: @unchecked Sendable {
         stream.stopCapture()
     }
 
+    // MARK: Preview Sinks
+
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
         fanout.attachPreviewSink(sink)
     }
@@ -296,6 +313,8 @@ final class DisplayCaptureSession: @unchecked Sendable {
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
         fanout.detachPreviewSink(sink)
     }
+
+    // MARK: Sharing Control
 
     nonisolated func stopSharing() {
         liveSocketHub.broadcastControl(.stopped)
@@ -308,21 +327,23 @@ final class DisplayCaptureSession: @unchecked Sendable {
         try? await stream.stopCapture()
     }
 
+    // MARK: Frame Handling
+
     nonisolated func handle(sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
         guard type == .screen, let pixelBuffer = sampleBuffer.imageBuffer else { return }
-        metricsLock.lock()
-        metrics.receivedFrameCount &+= 1
-        metricsLock.unlock()
+        metrics.withLock { $0.receivedFrameCount &+= 1 }
 
-        fanout.publishPreviewFrame(pixelBuffer)
+        fanout.publishPreviewFrame(sampleBuffer)
 
         guard liveSocketHub.hasDemand else { return }
         let ptsUs = Self.microseconds(from: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let box = SendablePixelBuffer(pixelBuffer: pixelBuffer)
         encoderStateQueue.async { [weak self] in
-            guard let self else { return }
-            self.encoder?.enqueue(pixelBuffer: pixelBuffer, ptsUs: ptsUs)
+            self?.encoder?.enqueue(pixelBuffer: box.pixelBuffer, ptsUs: ptsUs)
         }
     }
+
+    // MARK: Encoder Demand
 
     nonisolated private func setEncodingDemand(_ hasDemand: Bool) {
         encoderStateQueue.async { [weak self] in
@@ -333,8 +354,8 @@ final class DisplayCaptureSession: @unchecked Sendable {
                         width: self.shareResolution.width,
                         height: self.shareResolution.height,
                         expectedFrameRate: min(self.sourceRefreshRate, 60),
-                        onConfiguration: { [weak self] configuration in
-                            self?.liveSocketHub.updateConfiguration(configuration)
+                        onConfiguration: { [weak self] config in
+                            self?.liveSocketHub.updateConfiguration(config)
                         },
                         onPacket: { [weak self] packet in
                             self?.liveSocketHub.broadcast(packet: packet)
@@ -348,32 +369,43 @@ final class DisplayCaptureSession: @unchecked Sendable {
             }
         }
     }
+}
 
-    private static func microseconds(from time: CMTime) -> UInt64 {
+// MARK: - DisplayCaptureSession Helpers
+
+extension DisplayCaptureSession {
+
+    nonisolated static func microseconds(from time: CMTime) -> UInt64 {
         guard time.isValid, !time.isIndefinite, time.seconds.isFinite else { return 0 }
         let scaled = CMTimeConvertScale(time, timescale: 1_000_000, method: .default)
         return scaled.value > 0 ? UInt64(scaled.value) : 0
     }
 
-    private static func makeShareResolution(width: Int, height: Int) -> (width: Int, height: Int) {
+    nonisolated static func makeShareResolution(
+        width: Int, height: Int
+    ) -> (width: Int, height: Int) {
         let maxEdge = max(width, height)
         guard maxEdge > 2560, width > 0, height > 0 else { return (width, height) }
         let scale = 2560.0 / Double(maxEdge)
-        let scaledWidth = max(2, Int((Double(width) * scale).rounded(.toNearestOrAwayFromZero)) & ~1)
-        let scaledHeight = max(2, Int((Double(height) * scale).rounded(.toNearestOrAwayFromZero)) & ~1)
-        return (scaledWidth, scaledHeight)
+        let w = max(2, Int((Double(width)  * scale).rounded(.toNearestOrAwayFromZero)) & ~1)
+        let h = max(2, Int((Double(height) * scale).rounded(.toNearestOrAwayFromZero)) & ~1)
+        return (w, h)
     }
 
-    private static func makeStreamConfiguration(display: SCDisplay) async throws -> SCStreamConfiguration {
+    private static func makeStreamConfiguration(
+        display: SCDisplay
+    ) async throws -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
         let displayMode = CGDisplayCopyDisplayMode(display.displayID)
+
         let width = displayMode.map { Int($0.pixelWidth) } ?? display.width
         let height = displayMode.map { Int($0.pixelHeight) } ?? display.height
         let refreshRate = max(60.0, min(displayMode?.refreshRate ?? 60.0, 120.0))
+        let timescale = CMTimeScale(max(1, Int32(refreshRate.rounded())))
 
         config.width = width
         config.height = height
-        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, Int32(refreshRate.rounded()))))
+        config.minimumFrameInterval = CMTime(value: 1, timescale: timescale)
         config.queueDepth = 2
         config.showsCursor = true
         config.capturesAudio = false
@@ -381,8 +413,12 @@ final class DisplayCaptureSession: @unchecked Sendable {
         return config
     }
 
-    private static func makeContentFilter(display: SCDisplay) async throws -> SCContentFilter {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+    private static func makeContentFilter(
+        display: SCDisplay
+    ) async throws -> SCContentFilter {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: false
+        )
         let excludedApps = content.applications.filter { app in
             Bundle.main.bundleIdentifier == app.bundleIdentifier
         }
@@ -394,9 +430,12 @@ final class DisplayCaptureSession: @unchecked Sendable {
     }
 }
 
+// MARK: - Display Video Encoder (H.264 / VideoToolbox)
+
 final class DisplayVideoEncoder: @unchecked Sendable {
+
     private struct PendingFrame {
-        let pixelBuffer: CVPixelBuffer
+        let pixelBuffer: SendablePixelBuffer
         let ptsUs: UInt64
     }
 
@@ -405,12 +444,18 @@ final class DisplayVideoEncoder: @unchecked Sendable {
     private let expectedFrameRate: Int
     private let onConfiguration: @Sendable (LiveVideoConfiguration) -> Void
     private let onPacket: @Sendable (EncodedVideoPacket) -> Void
-    private let queue = DispatchQueue(label: "com.developerchen.voiddisplay.video-encoder", qos: .userInitiated)
-    private var compressionSession: VTCompressionSession?
-    private var pendingFrame: PendingFrame?
-    private var encodeInFlight = false
-    private var forceNextKeyframe = true
-    private var currentConfiguration: LiveVideoConfiguration?
+
+    private let queue = DispatchQueue(
+        label: "com.developerchen.voiddisplay.video-encoder",
+        qos: .userInitiated
+    )
+    nonisolated(unsafe) private var compressionSession: VTCompressionSession?
+    nonisolated(unsafe) private var pendingFrame: PendingFrame?
+    nonisolated(unsafe) private var encodeInFlight = false
+    nonisolated(unsafe) private var forceNextKeyframe = true
+    nonisolated(unsafe) private var currentConfiguration: LiveVideoConfiguration?
+
+    // MARK: Lifecycle
 
     nonisolated init(
         width: Int,
@@ -426,18 +471,22 @@ final class DisplayVideoEncoder: @unchecked Sendable {
         self.onPacket = onPacket
     }
 
+    // MARK: Public API
+
     nonisolated func enqueue(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
-        queue.async { [weak self] in
+        let frame = PendingFrame(
+            pixelBuffer: SendablePixelBuffer(pixelBuffer: pixelBuffer),
+            ptsUs: ptsUs
+        )
+        queue.async { [weak self, frame] in
             guard let self else { return }
-            self.pendingFrame = PendingFrame(pixelBuffer: pixelBuffer, ptsUs: ptsUs)
+            self.pendingFrame = frame
             self.processNextFrameIfPossible()
         }
     }
 
     nonisolated func requestKeyframe() {
-        queue.async { [weak self] in
-            self?.forceNextKeyframe = true
-        }
+        queue.async { [weak self] in self?.forceNextKeyframe = true }
     }
 
     nonisolated func stop() {
@@ -445,7 +494,9 @@ final class DisplayVideoEncoder: @unchecked Sendable {
             pendingFrame = nil
             encodeInFlight = false
             if let compressionSession {
-                VTCompressionSessionCompleteFrames(compressionSession, untilPresentationTimeStamp: .invalid)
+                VTCompressionSessionCompleteFrames(
+                    compressionSession, untilPresentationTimeStamp: .invalid
+                )
                 VTCompressionSessionInvalidate(compressionSession)
             }
             compressionSession = nil
@@ -453,7 +504,9 @@ final class DisplayVideoEncoder: @unchecked Sendable {
         }
     }
 
-    private func processNextFrameIfPossible() {
+    // MARK: Encode Pipeline
+
+    nonisolated private func processNextFrameIfPossible() {
         guard !encodeInFlight, let pendingFrame else { return }
         do {
             let session = try prepareSessionIfNeeded()
@@ -461,189 +514,170 @@ final class DisplayVideoEncoder: @unchecked Sendable {
             encodeInFlight = true
 
             let time = CMTime(value: CMTimeValue(pendingFrame.ptsUs), timescale: 1_000_000)
-            let flags = forceNextKeyframe
+            let flags: CFDictionary? = forceNextKeyframe
                 ? [kVTEncodeFrameOptionKey_ForceKeyFrame as String: true] as CFDictionary
                 : nil
             forceNextKeyframe = false
 
-            var infoFlags = VTEncodeInfoFlags()
+            let ptsUs = pendingFrame.ptsUs
+            let w = width, h = height
+
             let status = VTCompressionSessionEncodeFrame(
                 session,
-                imageBuffer: pendingFrame.pixelBuffer,
+                imageBuffer: pendingFrame.pixelBuffer.pixelBuffer,
                 presentationTimeStamp: time,
                 duration: .invalid,
                 frameProperties: flags,
-                sourceFrameRefcon: Unmanaged.passRetained(EncodeFrameContext(
-                    ptsUs: pendingFrame.ptsUs,
-                    width: width,
-                    height: height
-                )).toOpaque(),
-                infoFlagsOut: &infoFlags
-            )
+                infoFlagsOut: nil
+            ) { [weak self] status, _, sampleBuffer in
+                self?.handleEncodedOutput(
+                    status: status, ptsUs: ptsUs,
+                    width: w, height: h,
+                    sampleBuffer: sampleBuffer
+                )
+            }
             if status != noErr {
                 encodeInFlight = false
                 processNextFrameIfPossible()
             }
         } catch {
-            AppErrorMapper.logFailure("Prepare H.264 encoder", error: error, logger: AppLog.sharing)
+            Task { @MainActor in
+                AppErrorMapper.logFailure(
+                    "Prepare H.264 encoder", error: error, logger: AppLog.sharing
+                )
+            }
             encodeInFlight = false
         }
     }
 
-    private func prepareSessionIfNeeded() throws -> VTCompressionSession {
-        if let compressionSession {
-            return compressionSession
-        }
+    // MARK: Session Setup
+
+    nonisolated private func prepareSessionIfNeeded() throws -> VTCompressionSession {
+        if let compressionSession { return compressionSession }
 
         var session: VTCompressionSession?
-        let creationStatus = VTCompressionSessionCreate(
+        let status = VTCompressionSessionCreate(
             allocator: nil,
-            width: Int32(width),
-            height: Int32(height),
+            width: Int32(width), height: Int32(height),
             codecType: kCMVideoCodecType_H264,
             encoderSpecification: nil,
             imageBufferAttributes: nil,
             compressedDataAllocator: nil,
-            outputCallback: Self.outputCallback,
-            refcon: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+            outputCallback: nil, refcon: nil,
             compressionSessionOut: &session
         )
-        guard creationStatus == noErr, let session else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(creationStatus))
+        guard status == noErr, let session else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
 
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
-        VTSessionSetProperty(
-            session,
-            key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
-            value: NSNumber(value: 1)
-        )
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_High_AutoLevel)
-        VTSessionSetProperty(
-            session,
-            key: kVTCompressionPropertyKey_ExpectedFrameRate,
-            value: NSNumber(value: expectedFrameRate)
-        )
-        VTSessionSetProperty(
-            session,
-            key: kVTCompressionPropertyKey_MaxFrameDelayCount,
-            value: NSNumber(value: 1)
-        )
-        let bitrate = (width * height) <= (1920 * 1080) ? 12_000_000 : 20_000_000
-        VTSessionSetProperty(
-            session,
-            key: kVTCompressionPropertyKey_AverageBitRate,
-            value: NSNumber(value: bitrate)
-        )
-        VTCompressionSessionPrepareToEncodeFrames(session)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime,
+                             value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering,
+                             value: kCFBooleanFalse)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
+                             value: NSNumber(value: 1))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel,
+                             value: kVTProfileLevel_H264_High_AutoLevel)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate,
+                             value: NSNumber(value: expectedFrameRate))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxFrameDelayCount,
+                             value: NSNumber(value: 1))
 
+        let bitrate = (width * height) <= (1920 * 1080) ? 12_000_000 : 20_000_000
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate,
+                             value: NSNumber(value: bitrate))
+
+        VTCompressionSessionPrepareToEncodeFrames(session)
         compressionSession = session
         forceNextKeyframe = true
         return session
     }
 
-    private final class EncodeFrameContext {
-        let ptsUs: UInt64
-        let width: Int
-        let height: Int
+    // MARK: Output Handling
 
-        init(ptsUs: UInt64, width: Int, height: Int) {
-            self.ptsUs = ptsUs
-            self.width = width
-            self.height = height
-        }
-    }
-
-    private static let outputCallback: VTCompressionOutputCallback = { refcon, sourceFrameRefcon, status, _, sampleBuffer in
-        guard let refcon else { return }
-        let encoder = Unmanaged<DisplayVideoEncoder>.fromOpaque(refcon).takeUnretainedValue()
-        let context = sourceFrameRefcon.map { Unmanaged<EncodeFrameContext>.fromOpaque($0).takeRetainedValue() }
-        encoder.handleEncodedSample(
-            status: status,
-            context: context,
-            sampleBuffer: sampleBuffer
-        )
-    }
-
-    private func handleEncodedSample(
+    nonisolated private func handleEncodedOutput(
         status: OSStatus,
-        context: EncodeFrameContext?,
+        ptsUs: UInt64,
+        width: Int,
+        height: Int,
         sampleBuffer: CMSampleBuffer?
     ) {
-        queue.async { [weak self] in
+        let box = sampleBuffer.map(SendableSampleBuffer.init)
+        queue.async { [weak self, box] in
             guard let self else { return }
             defer {
                 self.encodeInFlight = false
                 self.processNextFrameIfPossible()
             }
             guard status == noErr,
-                  let context,
-                  let sampleBuffer,
+                  let sampleBuffer = box?.sampleBuffer,
                   CMSampleBufferDataIsReady(sampleBuffer),
                   let dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer)
-            else {
-                return
-            }
+            else { return }
 
-            let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[CFString: Any]]
-            let notSync = attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false
-            let isKeyframe = !notSync
+            let attachments = CMSampleBufferGetSampleAttachmentsArray(
+                sampleBuffer, createIfNecessary: false
+            ) as? [[CFString: Any]]
+            let isKeyframe = !(attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false)
 
             guard let payload = Self.copyBlockBufferData(dataBuffer) else { return }
-            if isKeyframe, let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-               let configuration = Self.makeConfiguration(formatDescription: formatDescription, width: context.width, height: context.height) {
-                currentConfiguration = configuration
-                onConfiguration(configuration)
+
+            if isKeyframe,
+               let desc = CMSampleBufferGetFormatDescription(sampleBuffer),
+               let config = Self.makeConfiguration(
+                   formatDescription: desc, width: width, height: height
+               ) {
+                self.currentConfiguration = config
+                self.onConfiguration(config)
             }
 
-            onPacket(
-                EncodedVideoPacket(
-                    ptsUs: context.ptsUs,
-                    isKeyframe: isKeyframe,
-                    width: context.width,
-                    height: context.height,
-                    payload: payload
-                )
-            )
+            self.onPacket(EncodedVideoPacket(
+                ptsUs: ptsUs, isKeyframe: isKeyframe,
+                width: width, height: height, payload: payload
+            ))
         }
     }
 
-    private static func copyBlockBufferData(_ blockBuffer: CMBlockBuffer) -> Data? {
+    // MARK: Utilities
+
+    nonisolated private static func copyBlockBufferData(_ blockBuffer: CMBlockBuffer) -> Data? {
         let length = CMBlockBufferGetDataLength(blockBuffer)
         guard length > 0 else { return nil }
         var data = Data(count: length)
-        let status: OSStatus = data.withUnsafeMutableBytes { rawBuffer -> OSStatus in
-            guard let baseAddress = rawBuffer.baseAddress else { return -1 }
-            return CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: baseAddress)
+        let status: OSStatus = data.withUnsafeMutableBytes { buf -> OSStatus in
+            guard let base = buf.baseAddress else { return -1 }
+            return CMBlockBufferCopyDataBytes(
+                blockBuffer, atOffset: 0, dataLength: length, destination: base
+            )
         }
         return status == kCMBlockBufferNoErr ? data : nil
     }
 
-    private static func makeConfiguration(
+    nonisolated private static func makeConfiguration(
         formatDescription: CMFormatDescription,
         width: Int,
         height: Int
     ) -> LiveVideoConfiguration? {
-        var parameterSetPointer: UnsafePointer<UInt8>?
-        var parameterSetSize = 0
-        var parameterSetCount = 0
-        var nalHeaderLength: Int32 = 0
+        var ptr: UnsafePointer<UInt8>?
+        var size = 0
+        var count = 0
+        var nalLen: Int32 = 0
         let status = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-            formatDescription,
-            parameterSetIndex: 0,
-            parameterSetPointerOut: &parameterSetPointer,
-            parameterSetSizeOut: &parameterSetSize,
-            parameterSetCountOut: &parameterSetCount,
-            nalUnitHeaderLengthOut: &nalHeaderLength
+            formatDescription, parameterSetIndex: 0,
+            parameterSetPointerOut: &ptr, parameterSetSizeOut: &size,
+            parameterSetCountOut: &count, nalUnitHeaderLengthOut: &nalLen
         )
-        guard status == noErr,
-              let parameterSetPointer,
-              parameterSetSize >= 4 else {
-            return nil
-        }
-        let bytes = Array(UnsafeBufferPointer(start: parameterSetPointer, count: parameterSetSize))
+        guard status == noErr, let ptr, size >= 4 else { return nil }
+        let bytes = Array(UnsafeBufferPointer(start: ptr, count: size))
         let codec = String(format: "avc1.%02X%02X%02X", bytes[1], bytes[2], bytes[3])
-        return LiveVideoConfiguration(codec: codec, width: width, height: height, timescale: 1_000_000)
+        return LiveVideoConfiguration(
+            codec: codec, width: width, height: height, timescale: 1_000_000
+        )
     }
+}
+
+// MARK: - Internal Metrics
+
+struct DisplayCaptureMetrics: Sendable {
+    var receivedFrameCount: UInt64 = 0
 }

@@ -5,7 +5,6 @@
 //
 
 import Foundation
-import UniformTypeIdentifiers
 
 struct HTTPRequest {
     let method: String
@@ -94,26 +93,4 @@ func parseHTTPRequest(from data: Data) -> (
         headers: request.headers,
         body: request.body
     )
-}
-
-extension NSImage {
-    var jpegDataRepresentation: Data? {
-        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return nil
-        }
-        let mutableData = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            mutableData,
-            UTType.jpeg.identifier as CFString,
-            1,
-            nil
-        ) else { return nil }
-        CGImageDestinationAddImage(destination, cgImage, nil)
-        return CGImageDestinationFinalize(destination) ? mutableData as Data : nil
-    }
-
-    // Compatibility alias for existing callers.
-    var jpgRepresentation: Data? {
-        jpegDataRepresentation
-    }
 }

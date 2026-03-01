@@ -5,7 +5,6 @@ enum WebRequestDecision: Equatable {
     case showRootPage
     case showDisplayPage(ShareTarget)
     case openLiveSocket(ShareTarget)
-    case legacyStreamRemoved
     case sharingUnavailable
     case methodNotAllowed
     case notFound
@@ -63,8 +62,6 @@ struct WebRequestHandler {
             case .unknown:
                 return .notFound
             }
-        case .legacyStream(_):
-            return .legacyStreamRemoved
         case .notFound:
             return .notFound
         }
@@ -97,18 +94,6 @@ struct WebRequestHandler {
             let body = "Sharing has stopped."
             return buildResponse(
                 statusLine: "HTTP/1.1 503 Service Unavailable",
-                headers: [
-                    ("Content-Type", "text/plain; charset=utf-8"),
-                    ("Content-Length", "\(body.utf8.count)"),
-                    ("Cache-Control", "no-cache"),
-                    ("Connection", "close")
-                ],
-                body: body
-            )
-        case .legacyStreamRemoved:
-            let body = "Stream endpoint has been replaced by /display + WebSocket live transport."
-            return buildResponse(
-                statusLine: "HTTP/1.1 410 Gone",
                 headers: [
                     ("Content-Type", "text/plain; charset=utf-8"),
                     ("Content-Length", "\(body.utf8.count)"),

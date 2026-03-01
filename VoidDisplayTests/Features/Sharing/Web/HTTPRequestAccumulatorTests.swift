@@ -7,7 +7,7 @@ struct HTTPRequestAccumulatorTests {
     @Test func assemblesSplitHeaderAcrossChunks() throws {
         var accumulator = HTTPRequestAccumulator(maxBytes: 1024)
 
-        let part1 = try #require("GET /stream HTTP/1.1\r\nHost: 127.0.0.1".data(using: .utf8))
+        let part1 = try #require("GET /live HTTP/1.1\r\nHost: 127.0.0.1".data(using: .utf8))
         let result1 = accumulator.ingest(chunk: part1, isComplete: false)
         if case .waiting = result1 {
             // expected
@@ -23,7 +23,7 @@ struct HTTPRequestAccumulatorTests {
         }
 
         let text = try #require(String(data: data, encoding: .utf8))
-        #expect(text == "GET /stream HTTP/1.1\r\nHost: 127.0.0.1:8081\r\n\r\n")
+        #expect(text == "GET /live HTTP/1.1\r\nHost: 127.0.0.1:8081\r\n\r\n")
     }
 
     @Test func returnsCompleteWhenConnectionEndsWithoutTerminator() throws {

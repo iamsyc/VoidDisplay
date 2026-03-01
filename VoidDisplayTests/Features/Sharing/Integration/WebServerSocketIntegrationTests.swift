@@ -47,7 +47,7 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("Sec-WebSocket-Accept"))
     }
 
-    @Test func legacyStreamRouteReturnsGone() async throws {
+    @Test func streamRouteReturnsNotFound() async throws {
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .active },
             liveHubProvider: { _ in LiveSocketHub() }
@@ -61,6 +61,6 @@ struct WebServerSocketIntegrationTests {
             try sendRequestAndReadUntilClose(port: portValue, request: request)
         }.value
         let responseText = try #require(String(data: responseData, encoding: .utf8))
-        #expect(responseText.contains("410 Gone"))
+        #expect(responseText.contains("404 Not Found"))
     }
 }

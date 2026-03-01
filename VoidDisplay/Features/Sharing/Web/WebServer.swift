@@ -318,7 +318,7 @@ final class WebServer {
                 return
             }
             openLiveSocket(on: connection, target: target, headers: request.headers)
-        case .legacyStreamRemoved, .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
+        case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),
                 on: connection,

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 90;
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
@@ -61,24 +61,18 @@
 /* Begin PBXFrameworksBuildPhase section */
 		BA0465CD2E90E53C00012958 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BA0465DA2E90E53D00012958 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BA0465E42E90E53D00012958 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -119,14 +113,10 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			fileSystemSynchronizedGroups = (
 				BA0465D22E90E53C00012958 /* VoidDisplay */,
 			);
 			name = VoidDisplay;
-			packageProductDependencies = (
-			);
 			productName = VoidDisplay;
 			productReference = BA0465D02E90E53C00012958 /* VoidDisplay.app */;
 			productType = "com.apple.product-type.application";
@@ -148,8 +138,6 @@
 				BA0465E02E90E53D00012958 /* VoidDisplayTests */,
 			);
 			name = VoidDisplayTests;
-			packageProductDependencies = (
-			);
 			productName = VoidDisplayTests;
 			productReference = BA0465DD2E90E53D00012958 /* VoidDisplayTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -171,8 +159,6 @@
 				BA0465EA2E90E53D00012958 /* VoidDisplayUITests */,
 			);
 			name = VoidDisplayUITests;
-			packageProductDependencies = (
-			);
 			productName = VoidDisplayUITests;
 			productReference = BA0465E72E90E53D00012958 /* VoidDisplayUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -210,7 +196,7 @@
 			);
 			mainGroup = BA0465C72E90E53C00012958;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
+			preferredProjectObjectVersion = 90;
 			productRefGroup = BA0465D12E90E53C00012958 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -225,48 +211,36 @@
 /* Begin PBXResourcesBuildPhase section */
 		BA0465CE2E90E53C00012958 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BA0465DB2E90E53D00012958 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BA0465E52E90E53D00012958 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		BA0465CC2E90E53C00012958 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BA0465D92E90E53D00012958 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BA0465E32E90E53D00012958 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
@@ -284,7 +258,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		BA0465EF2E90E53D00012958 /* Debug */ = {
+		BA0465EF2E90E53D00012958 /* Debug configuration for PBXProject "VoidDisplay" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -340,6 +314,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -347,10 +322,11 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
-		BA0465F02E90E53D00012958 /* Release */ = {
+		BA0465F02E90E53D00012958 /* Release configuration for PBXProject "VoidDisplay" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -400,15 +376,17 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
-		BA0465F22E90E53D00012958 /* Debug */ = {
+		BA0465F22E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplay" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -465,7 +443,7 @@
 			};
 			name = Debug;
 		};
-		BA0465F32E90E53D00012958 /* Release */ = {
+		BA0465F32E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplay" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -522,7 +500,7 @@
 			};
 			name = Release;
 		};
-		BA0465F52E90E53D00012958 /* Debug */ = {
+		BA0465F52E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplayTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -549,7 +527,7 @@
 			};
 			name = Debug;
 		};
-		BA0465F62E90E53D00012958 /* Release */ = {
+		BA0465F62E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplayTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -576,7 +554,7 @@
 			};
 			name = Release;
 		};
-		BA0465F82E90E53D00012958 /* Debug */ = {
+		BA0465F82E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplayUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -602,7 +580,7 @@
 			};
 			name = Debug;
 		};
-		BA0465F92E90E53D00012958 /* Release */ = {
+		BA0465F92E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplayUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -634,37 +612,33 @@
 		BA0465CB2E90E53C00012958 /* Build configuration list for PBXProject "VoidDisplay" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BA0465EF2E90E53D00012958 /* Debug */,
-				BA0465F02E90E53D00012958 /* Release */,
+				BA0465EF2E90E53D00012958 /* Debug configuration for PBXProject "VoidDisplay" */,
+				BA0465F02E90E53D00012958 /* Release configuration for PBXProject "VoidDisplay" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		BA0465F12E90E53D00012958 /* Build configuration list for PBXNativeTarget "VoidDisplay" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BA0465F22E90E53D00012958 /* Debug */,
-				BA0465F32E90E53D00012958 /* Release */,
+				BA0465F22E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplay" */,
+				BA0465F32E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplay" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		BA0465F42E90E53D00012958 /* Build configuration list for PBXNativeTarget "VoidDisplayTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BA0465F52E90E53D00012958 /* Debug */,
-				BA0465F62E90E53D00012958 /* Release */,
+				BA0465F52E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplayTests" */,
+				BA0465F62E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplayTests" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		BA0465F72E90E53D00012958 /* Build configuration list for PBXNativeTarget "VoidDisplayUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BA0465F82E90E53D00012958 /* Debug */,
-				BA0465F92E90E53D00012958 /* Release */,
+				BA0465F82E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplayUITests" */,
+				BA0465F92E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplayUITests" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */

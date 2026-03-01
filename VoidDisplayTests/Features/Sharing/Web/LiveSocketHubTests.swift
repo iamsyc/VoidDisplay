@@ -1,35 +1,54 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import VoidDisplay
 
-@MainActor
-private final class MockLiveSocketConnection: LiveSocketConnection {
-    var sentPayloads: [Data] = []
-    var cancelCallCount = 0
-    var autoComplete = true
-    private var pendingCompletions: [(@Sendable (Error?) -> Void)] = []
+private final class MockLiveSocketConnection: LiveSocketConnection, Sendable {
+    private struct State {
+        var sentPayloads: [Data] = []
+        var cancelCallCount = 0
+        var autoComplete = true
+        var pendingCompletions: [(@Sendable (Error?) -> Void)] = []
+    }
+    
+    private let state = Mutex(State())
 
-    func sendSocketFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void) {
-        sentPayloads.append(content)
-        if autoComplete {
-            completion(nil)
-            return
-        }
-        pendingCompletions.append(completion)
+    var sentPayloads: [Data] { state.withLock { $0.sentPayloads } }
+    var cancelCallCount: Int { state.withLock { $0.cancelCallCount } }
+    var autoComplete: Bool {
+        get { state.withLock { $0.autoComplete } }
+        set { state.withLock { $0.autoComplete = newValue } }
     }
 
-    func cancelSocket() {
-        cancelCallCount += 1
+    nonisolated func sendSocketFrame(_ content: Data, completion: @escaping @Sendable (Error?) -> Void) {
+        let shouldComplete = state.withLock { state -> Bool in
+            state.sentPayloads.append(content)
+            if state.autoComplete {
+                return true
+            } else {
+                state.pendingCompletions.append(completion)
+                return false
+            }
+        }
+        if shouldComplete {
+            completion(nil)
+        }
+    }
+
+    nonisolated func cancelSocket() {
+        state.withLock { $0.cancelCallCount += 1 }
     }
 
     func completeNextSend(error: Error? = nil) {
-        guard !pendingCompletions.isEmpty else { return }
-        let completion = pendingCompletions.removeFirst()
-        completion(error)
+        let completion = state.withLock { state -> (@Sendable (Error?) -> Void)? in
+            guard !state.pendingCompletions.isEmpty else { return nil }
+            return state.pendingCompletions.removeFirst()
+        }
+        completion?(error)
     }
 }
 
-struct StreamHubTests {
+struct LiveSocketHubTests {
 
     @MainActor @Test func broadcastsConfigAndPacketsToConnectedClients() async {
         let hub = LiveSocketHub()

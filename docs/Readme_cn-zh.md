@@ -20,7 +20,7 @@
 ### 📡 局域网屏幕共享
 
 通过内置低延迟实时页面将任意显示器共享到局域网。  
-在同一网络的设备上，用现代浏览器打开 `/display` 链接即可观看。播放链路已改为 WebSocket + H.264 + WebCodecs，不再使用 MJPEG 轮询。
+在同一网络的设备上，用现代浏览器打开 `/display` 链接即可观看。播放链路使用 WebSocket + H.264 + WebCodecs。
 
 ## 📸 界面截图
 
@@ -84,7 +84,6 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 说明：
 - 正式页面路由是 `/display` 和 `/display/{id}`。
 - 底层实时传输路由是 `/live` 和 `/live/{id}`。
-- 旧的 `/stream` MJPEG 接口已移除，现在统一返回 `410 Gone`。
 
 ## ❓ 常见问题
 

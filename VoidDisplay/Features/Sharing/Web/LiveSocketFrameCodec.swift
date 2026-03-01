@@ -1,6 +1,10 @@
 import Foundation
 
-func makeLiveVideoPacket(packet: EncodedVideoPacket, configRefresh: Bool) -> Data {
+nonisolated func makeLiveConfigJSON(_ configuration: LiveVideoConfiguration) -> String {
+    #"{"type":"config","codec":"\#(configuration.codec)","width":\#(configuration.width),"height":\#(configuration.height),"timescale":\#(configuration.timescale)}"#
+}
+
+nonisolated func encodeLiveVideoPacket(packet: EncodedVideoPacket, configRefresh: Bool) -> Data {
     var data = Data(capacity: 18 + packet.payload.count)
     data.append(1)
 
@@ -23,15 +27,15 @@ func makeLiveVideoPacket(packet: EncodedVideoPacket, configRefresh: Bool) -> Dat
     return data
 }
 
-func makeWebSocketTextFrame(_ text: String) -> Data {
-    makeWebSocketFrame(opcode: 0x1, payload: Data(text.utf8))
+nonisolated func encodeWebSocketTextFrame(_ text: String) -> Data {
+    encodeWebSocketFrame(opcode: 0x1, payload: Data(text.utf8))
 }
 
-func makeWebSocketBinaryFrame(_ payload: Data) -> Data {
-    makeWebSocketFrame(opcode: 0x2, payload: payload)
+nonisolated func encodeWebSocketBinaryFrame(_ payload: Data) -> Data {
+    encodeWebSocketFrame(opcode: 0x2, payload: payload)
 }
 
-private func makeWebSocketFrame(opcode: UInt8, payload: Data) -> Data {
+nonisolated private func encodeWebSocketFrame(opcode: UInt8, payload: Data) -> Data {
     var frame = Data()
     frame.append(0x80 | opcode)
 

@@ -59,17 +59,17 @@ struct WebRoutingWorkflowSmokeTests {
         #expect(streamDecision == .openLiveSocket(.id(2)))
     }
 
-    @MainActor @Test func legacyStreamRouteReturnsGone() throws {
+    @MainActor @Test func streamRouteIsNotFound() throws {
         let handler = WebRequestHandler()
         let decision = handler.decision(
             forMethod: "GET",
             path: "/stream/2",
             targetStateProvider: { _ in .active }
         )
-        #expect(decision == .legacyStreamRemoved)
+        #expect(decision == .notFound)
 
         let response = handler.responseData(for: decision, htmlBody: "")
         let text = try #require(String(data: response, encoding: .utf8))
-        #expect(text.contains("410 Gone"))
+        #expect(text.contains("404 Not Found"))
     }
 }

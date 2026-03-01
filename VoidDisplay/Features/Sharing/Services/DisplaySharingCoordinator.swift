@@ -196,8 +196,7 @@ final class DisplaySharingCoordinator {
     }
 
     private func makeIdentityKey(for displayID: CGDirectDisplayID) -> String {
-        if let unmanagedUUID = CGDisplayCreateUUIDFromDisplayID(displayID) {
-            let cfUUID = unmanagedUUID.takeRetainedValue()
+        if let cfUUID = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() {
             let uuidString = CFUUIDCreateString(nil, cfUUID) as String
             return "physical:\(uuidString.lowercased())"
         }
