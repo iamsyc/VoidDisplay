@@ -35,12 +35,29 @@ final class LiveSocketHub: Sendable {
         var clients: [ObjectIdentifier: ClientState] = [:]
         var configuration: LiveVideoConfiguration?
         var onDemandChanged: @Sendable (Bool) -> Void
+        var heartbeatTask: Task<Void, Never>?
     }
 
     nonisolated private let state: Mutex<State>
 
     nonisolated init(onDemandChanged: @escaping @Sendable (Bool) -> Void = { _ in }) {
         self.state = Mutex(State(onDemandChanged: onDemandChanged))
+        let task = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard let self = self else { break }
+                let payload = encodeWebSocketTextFrame(#"{"type":"ping"}"#)
+                let keys = self.state.withLock { Array($0.clients.keys) }
+                for key in keys {
+                    self.enqueue(payload, to: key)
+                }
+            }
+        }
+        self.state.withLock { $0.heartbeatTask = task }
+    }
+    
+    deinit {
+        state.withLock { $0.heartbeatTask?.cancel() }
     }
 
     nonisolated var activeClientCount: Int {
@@ -57,6 +74,7 @@ final class LiveSocketHub: Sendable {
 
     nonisolated func addClient(_ connection: any LiveSocketConnection) {
         let key = ObjectIdentifier(connection as AnyObject)
+        AppLog.web.info("LiveSocketHub: [\(String(describing: key))] Client added.")
         let (shouldSignalDemand, callback) = state.withLock { state -> (Bool, @Sendable (Bool) -> Void) in
             let wasEmpty = state.clients.isEmpty
             state.clients[key] = ClientState(connection: connection, needsConfiguration: state.configuration != nil)
@@ -153,6 +171,7 @@ final class LiveSocketHub: Sendable {
         connection.sendSocketFrame(frameData) { [weak self] error in
             guard let self else { return }
             if let error {
+                AppLog.web.error("LiveSocketHub: [\(String(describing: key))] Send live socket packet failed: \(String(describing: error)).")
                 AppErrorMapper.logFailure("Send live socket packet", error: error, logger: AppLog.web)
                 self.removeClient(for: key, cancelConnection: true)
                 return
@@ -174,6 +193,7 @@ final class LiveSocketHub: Sendable {
     }
 
     nonisolated private func removeClient(for key: ObjectIdentifier, cancelConnection: Bool) {
+        AppLog.web.info("LiveSocketHub: [\(String(describing: key))] Client removed (cancelConnection: \(cancelConnection)).")
         let (removed, shouldSignalDemandOff, callback) = state.withLock { state -> (ClientState?, Bool, @Sendable (Bool) -> Void) in
             let removed = state.clients.removeValue(forKey: key)
             return (removed, state.clients.isEmpty, state.onDemandChanged)

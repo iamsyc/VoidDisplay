@@ -163,6 +163,15 @@
             }
         }
 
+        function decodeBase64ToUint8Array(base64) {
+            const binary = window.atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
         function ensureDecoder(config) {
             if (!window.VideoDecoder) {
                 setStatus("Unsupported browser");
@@ -180,6 +189,7 @@
 
             decoder = new VideoDecoder({
                 output(frame) {
+                    console.log("[VideoDecoder] Decoded frame: " + frame.displayWidth + "x" + frame.displayHeight);
                     closeLatestFrame();
                     latestFrame = frame;
                     if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
@@ -189,15 +199,25 @@
                     overlayEl.hidden = true;
                 },
                 error(error) {
+                    console.error("[VideoDecoder] Decoding error:", error);
                     setStatus("Decoder error");
                     setOverlay("Decoder error", error.message || "Failed to decode stream.", true);
                 }
             });
 
-            decoder.configure({
+            const decoderConfig = {
                 codec: config.codec,
                 optimizeForLatency: true
-            });
+            };
+            if (typeof config.description === "string" && config.description.length > 0) {
+                try {
+                    decoderConfig.description = decodeBase64ToUint8Array(config.description);
+                } catch (error) {
+                    console.error("[VideoDecoder] Failed to decode configuration description:", error);
+                }
+            }
+
+            decoder.configure(decoderConfig);
 
             currentConfig = config;
             return true;
@@ -213,6 +233,9 @@
 
         function decodePacket(data) {
             if (!decoder || !currentConfig) {
+                return;
+            }
+            if (data.byteLength < 18) {
                 return;
             }
 
@@ -246,18 +269,22 @@
             }
 
             const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-            socket = new WebSocket(`${protocol}://${window.location.host}${livePath}`);
+            const wsUrl = `${protocol}://${window.location.host}${livePath}`;
+            console.log(`[WebSocket] Connecting to ${wsUrl}`);
+            socket = new WebSocket(wsUrl);
             socket.binaryType = "arraybuffer";
             setStatus("Connecting…");
             setOverlay("Connecting…", "Preparing the low-latency stream.", true);
 
             socket.addEventListener("open", () => {
+                console.log("[WebSocket] Connection opened");
                 reconnectIndex = 0;
                 setStatus("Connected");
             });
 
             socket.addEventListener("message", async (event) => {
                 if (typeof event.data === "string") {
+                    console.log("[WebSocket] Text message received:", event.data);
                     const payload = JSON.parse(event.data);
                     if (payload.type === "config") {
                         const ready = ensureDecoder(payload);
@@ -266,6 +293,7 @@
                             setOverlay("Waiting for keyframe…", "Connected. Waiting for the next IDR frame.", true);
                         }
                     } else if (payload.type === "stopped") {
+                        console.log("[WebSocket] Share stopped message received.");
                         setStatus("Stopped");
                         setOverlay("Sharing stopped", "The source stream is no longer available.", true);
                         socket.close();
@@ -279,7 +307,8 @@
                 decodePacket(data);
             });
 
-            socket.addEventListener("close", () => {
+            socket.addEventListener("close", (e) => {
+                console.log(`[WebSocket] Connection closed (code: ${e.code}, reason: ${e.reason})`);
                 closeLatestFrame();
                 if (decoder) {
                     decoder.close();
@@ -289,7 +318,8 @@
                 scheduleReconnect();
             });
 
-            socket.addEventListener("error", () => {
+            socket.addEventListener("error", (e) => {
+                console.error("[WebSocket] Connection error", e);
                 setStatus("Connection error");
             });
         }

@@ -1,7 +1,11 @@
 import Foundation
 
 nonisolated func makeLiveConfigJSON(_ configuration: LiveVideoConfiguration) -> String {
-    #"{"type":"config","codec":"\#(configuration.codec)","width":\#(configuration.width),"height":\#(configuration.height),"timescale":\#(configuration.timescale)}"#
+    if let decoderDescriptionBase64 = configuration.decoderDescriptionBase64 {
+        #"{"type":"config","codec":"\#(configuration.codec)","width":\#(configuration.width),"height":\#(configuration.height),"timescale":\#(configuration.timescale),"description":"\#(decoderDescriptionBase64)"}"#
+    } else {
+        #"{"type":"config","codec":"\#(configuration.codec)","width":\#(configuration.width),"height":\#(configuration.height),"timescale":\#(configuration.timescale)}"#
+    }
 }
 
 nonisolated func encodeLiveVideoPacket(packet: EncodedVideoPacket, configRefresh: Bool) -> Data {
@@ -32,12 +36,35 @@ nonisolated func encodeWebSocketTextFrame(_ text: String) -> Data {
 }
 
 nonisolated func encodeWebSocketBinaryFrame(_ payload: Data) -> Data {
-    encodeWebSocketFrame(opcode: 0x2, payload: payload)
+    let maxChunkSize = 65_535 // 64 KB limit to accommodate WebKit restrictions
+    
+    if payload.count <= maxChunkSize {
+        return encodeWebSocketFrame(opcode: 0x2, fin: true, payload: payload)
+    }
+
+    var result = Data(capacity: payload.count + (payload.count / maxChunkSize + 1) * 4)
+    var offset = 0
+    var isFirst = true
+    
+    while offset < payload.count {
+        let chunkEnd = min(offset + maxChunkSize, payload.count)
+        let chunk = payload[offset..<chunkEnd]
+        let isLast = chunkEnd >= payload.count
+        
+        let opcode: UInt8 = isFirst ? 0x2 : 0x0
+        result.append(encodeWebSocketFrame(opcode: opcode, fin: isLast, payload: chunk))
+        
+        offset = chunkEnd
+        isFirst = false
+    }
+    
+    return result
 }
 
-nonisolated private func encodeWebSocketFrame(opcode: UInt8, payload: Data) -> Data {
+nonisolated private func encodeWebSocketFrame(opcode: UInt8, fin: Bool = true, payload: Data) -> Data {
     var frame = Data()
-    frame.append(0x80 | opcode)
+    let firstByte: UInt8 = (fin ? 0x80 : 0x00) | opcode
+    frame.append(firstByte)
 
     let length = payload.count
     if length <= 125 {

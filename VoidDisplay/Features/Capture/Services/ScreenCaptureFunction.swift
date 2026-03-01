@@ -17,6 +17,21 @@ struct LiveVideoConfiguration: Equatable, Sendable {
     let width: Int
     let height: Int
     let timescale: Int
+    let decoderDescriptionBase64: String?
+
+    nonisolated init(
+        codec: String,
+        width: Int,
+        height: Int,
+        timescale: Int,
+        decoderDescriptionBase64: String? = nil
+    ) {
+        self.codec = codec
+        self.width = width
+        self.height = height
+        self.timescale = timescale
+        self.decoderDescriptionBase64 = decoderDescriptionBase64
+    }
 }
 
 struct EncodedVideoPacket: Sendable {
@@ -298,10 +313,6 @@ final class DisplayCaptureSession: @unchecked Sendable {
 
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
         try await stream.startCapture()
-    }
-
-    deinit {
-        stream.stopCapture()
     }
 
     // MARK: Preview Sinks
@@ -670,9 +681,94 @@ final class DisplayVideoEncoder: @unchecked Sendable {
         guard status == noErr, let ptr, size >= 4 else { return nil }
         let bytes = Array(UnsafeBufferPointer(start: ptr, count: size))
         let codec = String(format: "avc1.%02X%02X%02X", bytes[1], bytes[2], bytes[3])
+
+        var sequenceParameterSets: [Data] = []
+        var pictureParameterSets: [Data] = []
+        if count > 0 {
+            for index in 0..<count {
+                var setPointer: UnsafePointer<UInt8>?
+                var setSize = 0
+                let setStatus = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+                    formatDescription,
+                    parameterSetIndex: index,
+                    parameterSetPointerOut: &setPointer,
+                    parameterSetSizeOut: &setSize,
+                    parameterSetCountOut: nil,
+                    nalUnitHeaderLengthOut: nil
+                )
+                guard setStatus == noErr,
+                      let setPointer,
+                      setSize > 0 else {
+                    continue
+                }
+                let parameterSet = Data(bytes: setPointer, count: setSize)
+                switch parameterSet.first.map({ $0 & 0x1F }) {
+                case 7:
+                    sequenceParameterSets.append(parameterSet)
+                case 8:
+                    pictureParameterSets.append(parameterSet)
+                default:
+                    continue
+                }
+            }
+        }
+
+        let decoderDescription = makeAVCDecoderConfigurationRecord(
+            sequenceParameterSets: sequenceParameterSets,
+            pictureParameterSets: pictureParameterSets,
+            nalUnitHeaderLength: Int(nalLen)
+        )?.base64EncodedString()
+
         return LiveVideoConfiguration(
-            codec: codec, width: width, height: height, timescale: 1_000_000
+            codec: codec,
+            width: width,
+            height: height,
+            timescale: 1_000_000,
+            decoderDescriptionBase64: decoderDescription
         )
+    }
+
+    nonisolated private static func makeAVCDecoderConfigurationRecord(
+        sequenceParameterSets: [Data],
+        pictureParameterSets: [Data],
+        nalUnitHeaderLength: Int
+    ) -> Data? {
+        guard let firstSPS = sequenceParameterSets.first,
+              firstSPS.count >= 4,
+              !pictureParameterSets.isEmpty else {
+            return nil
+        }
+
+        let clampedHeaderLength = min(4, max(1, nalUnitHeaderLength))
+        let lengthSizeMinusOne = UInt8(clampedHeaderLength - 1) & 0x03
+
+        var data = Data()
+        data.append(0x01)
+        data.append(firstSPS[1])
+        data.append(firstSPS[2])
+        data.append(firstSPS[3])
+        data.append(0xFC | lengthSizeMinusOne)
+
+        let spsList = Array(sequenceParameterSets.prefix(31))
+        data.append(0xE0 | UInt8(spsList.count))
+        for sps in spsList {
+            appendUInt16BE(UInt16(sps.count), to: &data)
+            data.append(sps)
+        }
+
+        let ppsList = Array(pictureParameterSets.prefix(255))
+        data.append(UInt8(ppsList.count))
+        for pps in ppsList {
+            appendUInt16BE(UInt16(pps.count), to: &data)
+            data.append(pps)
+        }
+
+        return data
+    }
+
+    nonisolated private static func appendUInt16BE(_ value: UInt16, to data: inout Data) {
+        var be = value.bigEndian
+        withUnsafeBytes(of: &be) { data.append(contentsOf: $0) }
     }
 }
 
