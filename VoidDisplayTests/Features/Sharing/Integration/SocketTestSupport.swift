@@ -12,6 +12,11 @@ enum SocketIntegrationError: Error {
     case receiveTimeout
 }
 
+struct WebSocketCloseObservation: Equatable {
+    let didClose: Bool
+    let closeCode: UInt16?
+}
+
 func sendAll(_ fd: Int32, data: Data) throws {
     try data.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.baseAddress else { return }
@@ -37,6 +42,12 @@ func readAll(from fd: Int32) throws -> Data {
         }
         if readBytes == 0 {
             return response
+        }
+        if errno == EWOULDBLOCK || errno == EAGAIN {
+            if !response.isEmpty {
+                return response
+            }
+            throw SocketIntegrationError.receiveTimeout
         }
         throw SocketIntegrationError.receiveFailed
     }
@@ -91,11 +102,11 @@ func connectLoopbackSocket(port: UInt16) throws -> Int32 {
 func sendRequestAndReadUntilClose(
     port: UInt16,
     request: Data,
-    timeoutMilliseconds: Int = 3000
+    timeoutMilliseconds: Int = 5000
 ) throws -> Data {
     let fd = try connectLoopbackSocket(port: port)
     defer { close(fd) }
-    configureReceiveTimeout(fd: fd, milliseconds: 300)
+    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
     try sendAll(fd, data: request)
     _ = shutdown(fd, SHUT_WR)
     return try readAll(from: fd)
@@ -120,8 +131,8 @@ func sendRequestAndReadPartialResponse(
         let readBytes = recv(fd, &buffer, buffer.count, 0)
         if readBytes > 0 {
             response.append(buffer, count: readBytes)
-            if response.range(of: terminator) != nil {
-                return response
+            if let range = response.range(of: terminator) {
+                return Data(response[..<range.upperBound])
             }
             continue
         }
@@ -145,18 +156,131 @@ func sendRequestAndReadPartialResponse(
     }
 }
 
-func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
-    Data(
-        """
-        GET \(path) HTTP/1.1\r
-        Host: 127.0.0.1:\(port)\r
-        Upgrade: websocket\r
-        Connection: Upgrade\r
-        Sec-WebSocket-Version: 13\r
-        Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-        \r
-        """.utf8
+func readUntilHeaderTerminator(
+    from fd: Int32,
+    timeoutMilliseconds: Int = 500,
+    deadlineSeconds: TimeInterval = 15
+) throws -> Data {
+    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
+    let deadline = Date().addingTimeInterval(deadlineSeconds)
+    let terminator = Data("\r\n\r\n".utf8)
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    var collected = Data()
+    while true {
+        let bytes = recv(fd, &buffer, buffer.count, 0)
+        if bytes > 0 {
+            collected.append(buffer, count: bytes)
+            if collected.range(of: terminator) != nil {
+                return collected
+            }
+            continue
+        }
+        if bytes == 0 {
+            return collected
+        }
+        if errno == EWOULDBLOCK || errno == EAGAIN {
+            if Date() >= deadline {
+                if !collected.isEmpty {
+                    return collected
+                }
+                throw SocketIntegrationError.receiveTimeout
+            }
+            continue
+        }
+        throw SocketIntegrationError.receiveFailed
+    }
+}
+
+func waitForCloseOrEOF(
+    from fd: Int32,
+    timeoutMilliseconds: Int = 500,
+    deadlineSeconds: TimeInterval = 10
+) throws -> Bool {
+    try waitForCloseObservation(
+        from: fd,
+        timeoutMilliseconds: timeoutMilliseconds,
+        deadlineSeconds: deadlineSeconds
+    ).didClose
+}
+
+func waitForCloseObservation(
+    from fd: Int32,
+    timeoutMilliseconds: Int = 500,
+    deadlineSeconds: TimeInterval = 10
+) throws -> WebSocketCloseObservation {
+    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
+    let deadline = Date().addingTimeInterval(deadlineSeconds)
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    let decoder = WebSocketFrameDecoder(
+        maxFramePayloadBytes: Int.max,
+        maxContinuationPayloadBytes: Int.max
     )
+    while true {
+        let bytes = recv(fd, &buffer, buffer.count, 0)
+        if bytes > 0 {
+            let output = decoder.ingest(Data(buffer.prefix(bytes)))
+            for frame in output.frames {
+                if case .close(let payload) = frame {
+                    if payload.count >= 2 {
+                        let code = payload.withUnsafeBytes { raw -> UInt16 in
+                            let high = UInt16(raw[raw.startIndex])
+                            let low = UInt16(raw[raw.startIndex + 1])
+                            return (high << 8) | low
+                        }
+                        return WebSocketCloseObservation(didClose: true, closeCode: code)
+                    }
+                    return WebSocketCloseObservation(didClose: true, closeCode: nil)
+                }
+            }
+            continue
+        }
+        if bytes == 0 {
+            return WebSocketCloseObservation(didClose: true, closeCode: nil)
+        }
+        if errno == EWOULDBLOCK || errno == EAGAIN {
+            if Date() >= deadline {
+                return WebSocketCloseObservation(didClose: false, closeCode: nil)
+            }
+            continue
+        }
+        if errno == ECONNRESET || errno == ENOTCONN {
+            return WebSocketCloseObservation(didClose: true, closeCode: nil)
+        }
+        throw SocketIntegrationError.receiveFailed
+    }
+}
+
+func makeMaskedBinaryFrame(payload: Data) -> Data {
+    let mask: [UInt8] = [0x21, 0x43, 0x65, 0x87]
+    var frame = Data([0x82])
+    if payload.count <= 125 {
+        frame.append(0x80 | UInt8(payload.count))
+    } else if payload.count <= Int(UInt16.max) {
+        frame.append(0x80 | 126)
+        var length = UInt16(payload.count).bigEndian
+        withUnsafeBytes(of: &length) { frame.append(contentsOf: $0) }
+    } else {
+        frame.append(0x80 | 127)
+        var length = UInt64(payload.count).bigEndian
+        withUnsafeBytes(of: &length) { frame.append(contentsOf: $0) }
+    }
+    frame.append(contentsOf: mask)
+    for (index, byte) in payload.enumerated() {
+        frame.append(byte ^ mask[index % 4])
+    }
+    return frame
+}
+
+func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
+    let request =
+        "GET \(path) HTTP/1.1\r\n" +
+        "Host: 127.0.0.1:\(port)\r\n" +
+        "Upgrade: websocket\r\n" +
+        "Connection: Upgrade\r\n" +
+        "Sec-WebSocket-Version: 13\r\n" +
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+        "\r\n"
+    return Data(request.utf8)
 }
 
 @MainActor

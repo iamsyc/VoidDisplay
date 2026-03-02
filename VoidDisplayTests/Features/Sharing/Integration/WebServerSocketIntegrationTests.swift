@@ -4,6 +4,7 @@ import Testing
 @testable import VoidDisplay
 
 @MainActor
+@Suite(.serialized)
 struct WebServerSocketIntegrationTests {
 
     @Test func rootRouteSupportsFragmentedSocketRequest() async throws {
@@ -78,88 +79,224 @@ struct WebServerSocketIntegrationTests {
         let server = setup.server
         let portValue = setup.port
         defer { server.stopListener() }
+        let result = try await Task.detached { try probeOversizedFrameClose(port: portValue) }.value
 
-        let socketFD = try connectLoopbackSocket(port: portValue)
-        defer { close(socketFD) }
-
-        try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: portValue))
-        let handshake = try readUntilHeaderTerminator(from: socketFD)
-        let handshakeText = try #require(String(data: handshake, encoding: .utf8))
-        #expect(handshakeText.contains("101 Switching Protocols"))
-
-        let oversizedChunk = makeIncompleteMaskedFrameChunk(
-            announcedPayloadLength: 900_000,
-            partialPayloadBytes: 180_000
-        )
-        try sendAll(socketFD, data: oversizedChunk)
-        try sendAll(socketFD, data: oversizedChunk)
-
-        #expect(try waitForCloseOrEOF(from: socketFD))
+        #expect(result.handshakeText.contains("101 Switching Protocols"))
+        #expect(result.didClose)
     }
 
-    private func readUntilHeaderTerminator(from fd: Int32) throws -> Data {
-        configureReceiveTimeout(fd: fd, milliseconds: 2_000)
-        let terminator = Data("\r\n\r\n".utf8)
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        var collected = Data()
-        while true {
-            let bytes = recv(fd, &buffer, buffer.count, 0)
-            if bytes > 0 {
-                collected.append(buffer, count: bytes)
-                if collected.range(of: terminator) != nil {
-                    return collected
-                }
-                continue
+    @Test func clientCloseFrameRemovesActiveClient() async throws {
+        let sessionHub = WebRTCSessionHub()
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                target == .main ? .active : .unknown
+            },
+            sessionHubProvider: { target in
+                target == .main ? sessionHub : nil
             }
-            if bytes == 0 {
-                return collected
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let result = try await Task.detached { try probeClientCloseFrame(port: portValue) }.value
+        #expect(result.handshakeText.contains("101 Switching Protocols"))
+        #expect(result.didClose)
+
+        let deadline = Date().addingTimeInterval(2.0)
+        var clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        while !clientCleared, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(40))
+            clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        }
+
+        #expect(clientCleared)
+    }
+
+    @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
+        let sessionHub = WebRTCSessionHub()
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                target == .main ? .active : .unknown
+            },
+            sessionHubProvider: { target in
+                target == .main ? sessionHub : nil
             }
-            if errno == EWOULDBLOCK || errno == EAGAIN {
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let result = try await Task.detached { try probeBinarySignalFrameClose(port: portValue) }.value
+        #expect(result.handshakeText.contains("101 Switching Protocols"))
+        #expect(result.closeObservation.didClose)
+        #expect(result.closeObservation.closeCode == 1003)
+
+        let deadline = Date().addingTimeInterval(2.0)
+        var clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        while !clientCleared, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(40))
+            clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        }
+
+        #expect(clientCleared)
+    }
+
+}
+
+private extension String {
+    static func orThrowUTF8(_ data: Data) throws -> String {
+        guard let value = String(data: data, encoding: .utf8) else {
+            throw SocketIntegrationError.receiveFailed
+        }
+        return value
+    }
+}
+
+private func makeIncompleteMaskedFrameChunk(
+    announcedPayloadLength: UInt64,
+    partialPayloadBytes: Int
+) -> Data {
+    var data = Data()
+    data.append(0x81)
+    data.append(0xFF)
+    var payloadLength = announcedPayloadLength.bigEndian
+    withUnsafeBytes(of: &payloadLength) { data.append(contentsOf: $0) }
+    data.append(contentsOf: [0x11, 0x22, 0x33, 0x44])
+    data.append(Data(repeating: 0x00, count: max(0, partialPayloadBytes)))
+    return data
+}
+
+private func probeOversizedFrameClose(
+    port: UInt16,
+    maxAttempts: Int = 3
+) throws -> (handshakeText: String, didClose: Bool) {
+    var lastError: Error = SocketIntegrationError.receiveFailed
+    for attempt in 1...maxAttempts {
+        do {
+            let socketFD = try connectLoopbackSocket(port: port)
+            defer { close(socketFD) }
+
+            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
+            let handshake = try readUntilHeaderTerminator(
+                from: socketFD,
+                timeoutMilliseconds: 500,
+                deadlineSeconds: 8
+            )
+            let terminator = Data("\r\n\r\n".utf8)
+            guard let headerRange = handshake.range(of: terminator) else {
                 throw SocketIntegrationError.receiveTimeout
             }
-            throw SocketIntegrationError.receiveFailed
-        }
-    }
+            let handshakeText = try String.orThrowUTF8(Data(handshake[..<headerRange.upperBound]))
 
-    private func waitForCloseOrEOF(from fd: Int32) throws -> Bool {
-        configureReceiveTimeout(fd: fd, milliseconds: 2_000)
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        var accumulated = Data()
-        while true {
-            let bytes = recv(fd, &buffer, buffer.count, 0)
-            if bytes > 0 {
-                accumulated.append(buffer, count: bytes)
-                let decoded = decodeWebSocketFrames(from: accumulated)
-                accumulated = decoded.remainder
-                if decoded.frames.contains(where: { frame in
-                    if case .close = frame { return true }
-                    return false
-                }) {
-                    return true
-                }
+            let oversizedChunk = makeIncompleteMaskedFrameChunk(
+                announcedPayloadLength: 900_000,
+                partialPayloadBytes: 180_000
+            )
+            try sendAll(socketFD, data: oversizedChunk)
+            try sendAll(socketFD, data: oversizedChunk)
+            let didClose = try waitForCloseOrEOF(from: socketFD, deadlineSeconds: 15)
+            guard didClose else {
+                throw SocketIntegrationError.receiveTimeout
+            }
+            return (handshakeText, true)
+        } catch {
+            lastError = error
+            if attempt < maxAttempts {
+                usleep(100_000)
                 continue
             }
-            if bytes == 0 {
-                return true
-            }
-            if errno == EWOULDBLOCK || errno == EAGAIN {
-                return false
-            }
-            throw SocketIntegrationError.receiveFailed
         }
     }
+    throw lastError
+}
 
-    private func makeIncompleteMaskedFrameChunk(
-        announcedPayloadLength: UInt64,
-        partialPayloadBytes: Int
-    ) -> Data {
-        var data = Data()
-        data.append(0x81)
-        data.append(0xFF)
-        var payloadLength = announcedPayloadLength.bigEndian
-        withUnsafeBytes(of: &payloadLength) { data.append(contentsOf: $0) }
-        data.append(contentsOf: [0x11, 0x22, 0x33, 0x44])
-        data.append(Data(repeating: 0x00, count: max(0, partialPayloadBytes)))
-        return data
+private func makeMaskedCloseFrame(code: UInt16 = 1000) -> Data {
+    var payloadCode = code.bigEndian
+    let payload = withUnsafeBytes(of: &payloadCode) { Data($0) }
+    let mask: [UInt8] = [0x01, 0x23, 0x45, 0x67]
+    var frame = Data([0x88, 0x80 | UInt8(payload.count)])
+    frame.append(contentsOf: mask)
+    for (index, byte) in payload.enumerated() {
+        frame.append(byte ^ mask[index % 4])
     }
+    return frame
+}
+
+private func probeClientCloseFrame(
+    port: UInt16,
+    maxAttempts: Int = 3
+) throws -> (handshakeText: String, didClose: Bool) {
+    var lastError: Error = SocketIntegrationError.receiveFailed
+    for attempt in 1...maxAttempts {
+        do {
+            let socketFD = try connectLoopbackSocket(port: port)
+            defer { close(socketFD) }
+
+            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
+            let handshake = try readUntilHeaderTerminator(
+                from: socketFD,
+                timeoutMilliseconds: 500,
+                deadlineSeconds: 8
+            )
+            let terminator = Data("\r\n\r\n".utf8)
+            guard let headerRange = handshake.range(of: terminator) else {
+                throw SocketIntegrationError.receiveTimeout
+            }
+            let handshakeText = try String.orThrowUTF8(Data(handshake[..<headerRange.upperBound]))
+
+            try sendAll(socketFD, data: makeMaskedCloseFrame())
+            let didClose = try waitForCloseOrEOF(from: socketFD, deadlineSeconds: 10)
+            guard didClose else {
+                throw SocketIntegrationError.receiveTimeout
+            }
+            return (handshakeText, didClose)
+        } catch {
+            lastError = error
+            if attempt < maxAttempts {
+                usleep(100_000)
+                continue
+            }
+        }
+    }
+    throw lastError
+}
+
+private func probeBinarySignalFrameClose(
+    port: UInt16,
+    maxAttempts: Int = 3
+) throws -> (handshakeText: String, closeObservation: WebSocketCloseObservation) {
+    var lastError: Error = SocketIntegrationError.receiveFailed
+    for attempt in 1...maxAttempts {
+        do {
+            let socketFD = try connectLoopbackSocket(port: port)
+            defer { close(socketFD) }
+
+            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
+            let handshake = try readUntilHeaderTerminator(
+                from: socketFD,
+                timeoutMilliseconds: 500,
+                deadlineSeconds: 8
+            )
+            let terminator = Data("\r\n\r\n".utf8)
+            guard let headerRange = handshake.range(of: terminator) else {
+                throw SocketIntegrationError.receiveTimeout
+            }
+            let handshakeText = try String.orThrowUTF8(Data(handshake[..<headerRange.upperBound]))
+
+            try sendAll(socketFD, data: makeMaskedBinaryFrame(payload: Data([0x01, 0x02, 0x03])))
+            let closeObservation = try waitForCloseObservation(from: socketFD, deadlineSeconds: 10)
+            guard closeObservation.didClose else {
+                throw SocketIntegrationError.receiveTimeout
+            }
+            return (handshakeText, closeObservation)
+        } catch {
+            lastError = error
+            if attempt < maxAttempts {
+                usleep(100_000)
+                continue
+            }
+        }
+    }
+    throw lastError
 }

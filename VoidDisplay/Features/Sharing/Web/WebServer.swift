@@ -8,6 +8,8 @@ final class WebServer {
         case missingDisplayPageResource
     }
 
+    private final class BundleToken {}
+
     enum ListenerStartResult {
         case ready(boundPort: UInt16)
         case failed(error: Error)
@@ -68,6 +70,28 @@ final class WebServer {
         """
     }
 
+    private static func loadDisplayPageTemplate() throws -> String {
+        let bundles: [Bundle] = [Bundle.main, Bundle(for: BundleToken.self)]
+        for bundle in bundles {
+            if let path = bundle.path(forResource: "displayPage", ofType: "html") {
+                return try String(contentsOfFile: path, encoding: .utf8)
+            }
+        }
+
+#if DEBUG
+        // Unit tests running as logic tests may not execute inside the app bundle.
+        let sourcePath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("displayPage.html")
+            .path
+        if FileManager.default.fileExists(atPath: sourcePath) {
+            return try String(contentsOfFile: sourcePath, encoding: .utf8)
+        }
+#endif
+
+        throw InitError.missingDisplayPageResource
+    }
+
     private struct ActiveConnection {
         let target: ShareTarget
         let connection: NWConnection
@@ -77,7 +101,7 @@ final class WebServer {
     private let displayPageTemplate: String
     private let requestHandler = WebRequestHandler()
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
-    private var signalBuffersByConnectionKey: [ObjectIdentifier: Data] = [:]
+    private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
     private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     private let onListenerStopped: (@MainActor @Sendable () -> Void)?
@@ -99,10 +123,7 @@ final class WebServer {
         self.sessionHubProvider = sessionHubProvider
         self.onListenerStopped = onListenerStopped
 
-        guard let displayPagePath = Bundle.main.path(forResource: "displayPage", ofType: "html") else {
-            throw InitError.missingDisplayPageResource
-        }
-        displayPageTemplate = try String(contentsOfFile: displayPagePath, encoding: .utf8)
+        displayPageTemplate = try Self.loadDisplayPageTemplate()
 
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
@@ -126,6 +147,11 @@ final class WebServer {
                 self.processRequest(content, on: connection)
             }
         }
+    }
+
+    deinit {
+        listener?.cancel()
+        listener = nil
     }
 
     func startListener(timeout: TimeInterval = 1.5) async -> ListenerStartResult {
@@ -174,7 +200,7 @@ final class WebServer {
             client.connection.cancel()
         }
         activeConnections.removeAll()
-        signalBuffersByConnectionKey.removeAll()
+        signalDecodersByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
@@ -250,7 +276,7 @@ final class WebServer {
 
     private func removeSignalClient(_ connection: NWConnection, cancelConnection: Bool) {
         let key = connectionKey(for: connection)
-        signalBuffersByConnectionKey.removeValue(forKey: key)
+        signalDecodersByConnectionKey.removeValue(forKey: key)
         if let active = activeConnections.removeValue(forKey: key) {
             if let hub = sessionHub(for: active.target) {
                 hub.removeClient(connection)
@@ -368,17 +394,20 @@ final class WebServer {
             return
         }
 
-        let wsKey = headers["sec-websocket-key"] ?? "<missing>"
-        AppLog.web.info("WebServer: [\(endpoint)] Sec-WebSocket-Key: '\(wsKey)'")
-        AppLog.web.info("WebServer: [\(endpoint)] Sec-WebSocket-Accept: '\(acceptValue)'")
+        let wsKeyLength = headers["sec-websocket-key"]?.count ?? 0
+        AppLog.web.debug(
+            "WebServer: [\(endpoint)] WebSocket headers validated (keyLength=\(wsKeyLength), acceptLength=\(acceptValue.count))."
+        )
 
         let responseString = "HTTP/1.1 101 Switching Protocols\r\n" +
                              "Upgrade: websocket\r\n" +
                              "Connection: Upgrade\r\n" +
                              "Sec-WebSocket-Accept: \(acceptValue)\r\n" +
                              "\r\n"
-        let debugStr = responseString.replacingOccurrences(of: "\r", with: "<CR>").replacingOccurrences(of: "\n", with: "<LF>\n")
-        AppLog.web.info("WebServer: [\(endpoint)] Sending response:\n\(debugStr, privacy: .public)")
+        let debugStr = responseString
+            .replacingOccurrences(of: "\r", with: "<CR>")
+            .replacingOccurrences(of: "\n", with: "<LF>\n")
+        AppLog.web.debug("WebServer: [\(endpoint)] Sending websocket upgrade response:\n\(debugStr, privacy: .public)")
         let response = Data(responseString.utf8)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             Task { @MainActor [weak self] in
@@ -393,7 +422,11 @@ final class WebServer {
                 hub.addClient(connection)
                 let key = self.connectionKey(for: connection)
                 self.activeConnections[key] = ActiveConnection(target: target, connection: connection)
-                self.signalBuffersByConnectionKey[key] = Data()
+                self.signalDecodersByConnectionKey[key] = WebSocketFrameDecoder(
+                    maxFramePayloadBytes: Self.maxSignalBufferBytes,
+                    maxContinuationPayloadBytes: Self.maxSignalBufferBytes,
+                    requiresMaskedFrames: true
+                )
                 self.startSignalReceiveLoop(on: connection, target: target)
             }
         })
@@ -416,28 +449,28 @@ final class WebServer {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let key = self.connectionKey(for: connection)
-                var accumulated = self.signalBuffersByConnectionKey[key] ?? Data()
-                if let content {
-                    accumulated.append(content)
-                }
-                if accumulated.count > Self.maxSignalBufferBytes {
-                    AppLog.web.warning(
-                        "WebServer: Closing signaling connection due to oversized buffered signal data."
-                    )
-                    self.signalBuffersByConnectionKey.removeValue(forKey: key)
-                    connection.send(
-                        content: encodeWebSocketCloseFrame(code: 1009),
-                        completion: .contentProcessed { _ in
-                            Task { @MainActor [weak self] in
-                                self?.removeSignalClient(connection, cancelConnection: true)
-                            }
-                        }
-                    )
+                guard let decoder = self.signalDecodersByConnectionKey[key] else {
+                    self.removeSignalClient(connection, cancelConnection: true)
                     return
                 }
 
-                let decoded = decodeWebSocketFrames(from: accumulated)
-                self.signalBuffersByConnectionKey[key] = decoded.remainder
+                let decoded = decoder.ingest(content)
+                if decoder.remainder.count > Self.maxSignalBufferBytes {
+                    AppLog.web.warning(
+                        "WebServer: Closing signaling connection due to oversized buffered signal data."
+                    )
+                    self.sendCloseAndRemoveSignalClient(connection, code: 1009)
+                    return
+                }
+
+                if let decodeError = decoded.errors.first {
+                    let closeCode = Self.closeCode(for: decodeError)
+                    AppLog.web.warning(
+                        "WebServer: Closing signaling connection due to websocket protocol violation: \(String(describing: decodeError), privacy: .public)"
+                    )
+                    self.sendCloseAndRemoveSignalClient(connection, code: closeCode)
+                    return
+                }
 
                 for frame in decoded.frames {
                     switch frame {
@@ -446,30 +479,63 @@ final class WebServer {
                     case .ping(let payload):
                         connection.send(
                             content: encodeWebSocketPongFrame(payload),
-                            completion: .contentProcessed { _ in }
+                            completion: .contentProcessed { error in
+                                if let error {
+                                    Task { @MainActor in
+                                        Self.logConnectionIssue("Send websocket pong frame", error: error)
+                                    }
+                                }
+                            }
                         )
                     case .close:
-                        connection.send(
-                            content: encodeWebSocketCloseFrame(),
-                            completion: .contentProcessed { _ in connection.cancel() }
-                        )
+                        self.sendCloseAndRemoveSignalClient(connection, code: 1000)
                     case .binary:
                         let errorFrame = encodeWebSocketTextFrame(
                             #"{"type":"error","reason":"binary_signal_not_allowed"}"#
                         )
-                        connection.send(content: errorFrame, completion: .contentProcessed { _ in
-                            connection.send(
-                                content: encodeWebSocketCloseFrame(),
-                                completion: .contentProcessed { _ in connection.cancel() }
-                            )
+                        connection.send(content: errorFrame, completion: .contentProcessed { [weak self] _ in
+                            Task { @MainActor [weak self] in
+                                self?.sendCloseAndRemoveSignalClient(connection, code: 1003)
+                            }
                         })
                     case .pong:
                         break
                     }
                 }
 
+                guard self.activeConnections[key] != nil else {
+                    return
+                }
                 self.startSignalReceiveLoop(on: connection, target: target)
             }
+        }
+    }
+
+    nonisolated private static func closeCode(for decodeError: WebSocketFrameDecodeError) -> UInt16 {
+        switch decodeError {
+        case .framePayloadTooLarge, .continuationPayloadTooLarge, .oversizedControlFramePayload:
+            return 1009
+        case .invalidUTF8Text:
+            return 1007
+        default:
+            return 1002
+        }
+    }
+
+    private func sendCloseAndRemoveSignalClient(_ connection: NWConnection, code: UInt16) {
+        connection.send(
+            content: encodeWebSocketCloseFrame(code: code),
+            completion: .contentProcessed { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.removeSignalClient(connection, cancelConnection: true)
+                }
+            }
+        )
+
+        // Ensure teardown still completes when NWConnection send completion is delayed or dropped.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            self?.removeSignalClient(connection, cancelConnection: true)
         }
     }
 

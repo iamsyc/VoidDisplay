@@ -7,9 +7,11 @@ import Darwin
 protocol WebServiceControllerProtocol: AnyObject {
     var portValue: UInt16 { get }
     var currentServer: WebServer? { get }
+    var lifecycleState: WebServiceLifecycleState { get }
     var isRunning: Bool { get }
     var activeStreamClientCount: Int { get }
     var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? { get set }
+    var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? { get set }
     func streamClientCount(for target: ShareTarget) -> Int
 
     @discardableResult
@@ -23,35 +25,89 @@ protocol WebServiceControllerProtocol: AnyObject {
 }
 
 @MainActor
+protocol WebServiceServerProtocol: AnyObject {
+    func startListener() async -> WebServer.ListenerStartResult
+    func stopListener()
+    func disconnectAllStreamClients()
+    var activeStreamClientCount: Int { get }
+    func streamClientCount(for target: ShareTarget) -> Int
+}
+
+@MainActor
+extension WebServer: WebServiceServerProtocol {
+    func startListener() async -> ListenerStartResult {
+        await startListener(timeout: 1.5)
+    }
+}
+
+@MainActor
 final class WebServiceController: WebServiceControllerProtocol {
-    private var webServer: WebServer? = nil
+    typealias WebServiceServerFactory = @MainActor @Sendable (
+        _ port: NWEndpoint.Port,
+        _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _ onListenerStopped: (@MainActor @Sendable () -> Void)?
+    ) throws -> any WebServiceServerProtocol
+
+    private var activeServer: (any WebServiceServerProtocol)?
+    private var webServer: WebServer?
     private var activeServerToken: UUID?
     private var startupTask: Task<WebServiceStartResult, Never>?
-    private var listenerReady = false
     private var currentBinding: WebServiceBinding?
     private var lastRequestedPort: UInt16 = 8081
-    var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
+    private var state: WebServiceLifecycleState = .stopped
+    private var lifecycleNonce: UInt64 = 0
+    private let webServiceServerFactory: WebServiceServerFactory
 
-    init() {}
+    var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
+    var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
+
+    init(
+        webServiceServerFactory: @escaping WebServiceServerFactory = {
+            port,
+            targetStateProvider,
+            sessionHubProvider,
+            onListenerStopped in
+            try WebServer(
+                using: port,
+                targetStateProvider: targetStateProvider,
+                sessionHubProvider: sessionHubProvider,
+                onListenerStopped: onListenerStopped
+            )
+        }
+    ) {
+        self.webServiceServerFactory = webServiceServerFactory
+    }
 
     var portValue: UInt16 {
-        currentBinding?.boundPort ?? lastRequestedPort
+        switch state {
+        case .running(let binding):
+            return binding.boundPort
+        case .starting(let requestedPort):
+            return requestedPort
+        default:
+            return currentBinding?.boundPort ?? lastRequestedPort
+        }
     }
 
     var currentServer: WebServer? {
         webServer
     }
 
+    var lifecycleState: WebServiceLifecycleState {
+        state
+    }
+
     var isRunning: Bool {
-        listenerReady
+        state.isRunning
     }
 
     var activeStreamClientCount: Int {
-        webServer?.activeStreamClientCount ?? 0
+        activeServer?.activeStreamClientCount ?? 0
     }
 
     func streamClientCount(for target: ShareTarget) -> Int {
-        webServer?.streamClientCount(for: target) ?? 0
+        activeServer?.streamClientCount(for: target) ?? 0
     }
 
     @discardableResult
@@ -60,38 +116,73 @@ final class WebServiceController: WebServiceControllerProtocol {
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     ) async -> WebServiceStartResult {
-        if let startupTask {
-            return await startupTask.value
-        }
-
-        if listenerReady, webServer != nil, let binding = currentBinding {
+        if case .running(let binding) = state, activeServer != nil {
             AppLog.web.debug("Start requested while web service is already running.")
             return .alreadyRunning(binding)
         }
 
-        let task: Task<WebServiceStartResult, Never> = Task { @MainActor [weak self] in
+        if let startupTask {
+            return await startupTask.value
+        }
+
+        lifecycleNonce &+= 1
+        let nonce = lifecycleNonce
+        setLifecycleState(.starting(requestedPort: requestedPort))
+
+        let task = Task<WebServiceStartResult, Never> { @MainActor [weak self] in
             guard let self else {
-                return WebServiceStartResult.failed(
+                return .failed(
                     .listenerFailed(
                         port: requestedPort,
                         message: String(localized: "Web service controller is unavailable.")
                     )
                 )
             }
+
             return await self.startInternal(
                 requestedPort: requestedPort,
+                operationNonce: nonce,
                 targetStateProvider: targetStateProvider,
                 sessionHubProvider: sessionHubProvider
             )
         }
+
         startupTask = task
         let result = await task.value
-        startupTask = nil
+        if startupTask != nil {
+            startupTask = nil
+        }
         return result
+    }
+
+    func stop() {
+        guard activeServer != nil || startupTask != nil || state != .stopped else {
+            AppLog.web.debug("Stop requested while web service is not running.")
+            return
+        }
+
+        lifecycleNonce &+= 1
+        setLifecycleState(.stopping)
+
+        let runningServer = activeServer
+        startupTask?.cancel()
+        startupTask = nil
+        activeServerToken = nil
+        activeServer = nil
+        webServer = nil
+        currentBinding = nil
+
+        runningServer?.stopListener()
+        setLifecycleState(.stopped)
+    }
+
+    func disconnectAllStreamClients() {
+        activeServer?.disconnectAllStreamClients()
     }
 
     private func startInternal(
         requestedPort: UInt16,
+        operationNonce: UInt64,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     ) async -> WebServiceStartResult {
@@ -99,98 +190,129 @@ final class WebServiceController: WebServiceControllerProtocol {
 
         guard (1024...65535).contains(Int(requestedPort)),
               let port = NWEndpoint.Port(rawValue: requestedPort) else {
-            return .failed(.invalidPort(.outOfRange))
+            let failure: WebServiceStartFailure = .invalidPort(.outOfRange)
+            if isCurrentOperation(operationNonce) {
+                setLifecycleState(.failed(failure))
+            }
+            return .failed(failure)
         }
 
         if let preflightFailure = Self.preflightBindingFailure(for: requestedPort) {
             AppLog.web.error(
                 "Web service preflight failed (requestedPort: \(requestedPort, privacy: .public), reason: \(String(describing: preflightFailure), privacy: .public))."
             )
+            if isCurrentOperation(operationNonce) {
+                setLifecycleState(.failed(preflightFailure))
+            }
             return .failed(preflightFailure)
         }
 
-        if webServer != nil {
-            AppLog.web.warning("Start requested with stale server state; resetting before restart.")
-            webServer?.stopListener()
+        if let staleServer = activeServer {
+            staleServer.stopListener()
+            activeServer = nil
             webServer = nil
             activeServerToken = nil
-            listenerReady = false
             currentBinding = nil
         }
 
         do {
             let serverToken = UUID()
-            let server = try WebServer(
-                using: port,
-                targetStateProvider: targetStateProvider,
-                sessionHubProvider: sessionHubProvider,
-                onListenerStopped: { [weak self] in
-                    guard let self else { return }
-                    guard self.activeServerToken == serverToken else { return }
-                    AppLog.web.warning("Web listener stopped unexpectedly; clearing web service running state.")
-                    self.listenerReady = false
-                    self.webServer = nil
-                    self.activeServerToken = nil
-                    self.currentBinding = nil
-                    self.onRunningStateChanged?(false)
+            let server = try webServiceServerFactory(
+                port,
+                targetStateProvider,
+                sessionHubProvider,
+                { [weak self] in
+                    self?.handleUnexpectedListenerStop(serverToken: serverToken)
                 }
             )
-            webServer = server
+            activeServer = server
+            webServer = server as? WebServer
             activeServerToken = serverToken
-            listenerReady = false
             currentBinding = nil
 
             let startResult = await server.startListener()
+            guard isCurrentOperation(operationNonce), activeServerToken == serverToken else {
+                server.stopListener()
+                return .failed(
+                    .listenerFailed(
+                        port: requestedPort,
+                        message: String(localized: "Web service startup was superseded.")
+                    )
+                )
+            }
+
             switch startResult {
             case .ready(let boundPort):
-                guard activeServerToken == serverToken else {
-                    return .failed(.listenerFailed(port: requestedPort, message: String(localized: "Web service startup was superseded.")))
-                }
-                listenerReady = true
                 let binding = WebServiceBinding(
                     requestedPort: requestedPort,
                     boundPort: boundPort
                 )
                 currentBinding = binding
-                onRunningStateChanged?(true)
+                setLifecycleState(.running(binding))
                 AppLog.web.info(
                     "Web service started (requestedPort: \(requestedPort, privacy: .public), boundPort: \(boundPort, privacy: .public))."
                 )
                 return .started(binding)
+
             case .timedOut:
+                clearRunningServerIfTokenMatches(serverToken)
+                let failure: WebServiceStartFailure = .timedOut(port: requestedPort)
+                setLifecycleState(.failed(failure))
                 AppLog.web.error(
                     "Web service failed to become ready in time (requestedPort: \(requestedPort, privacy: .public))."
                 )
-                if activeServerToken == serverToken {
-                    webServer = nil
-                    activeServerToken = nil
-                    listenerReady = false
-                    currentBinding = nil
-                }
-                onRunningStateChanged?(false)
-                return .failed(.timedOut(port: requestedPort))
+                return .failed(failure)
+
             case .failed(let error):
-                if activeServerToken == serverToken {
-                    webServer = nil
-                    activeServerToken = nil
-                    listenerReady = false
-                    currentBinding = nil
-                }
-                onRunningStateChanged?(false)
+                clearRunningServerIfTokenMatches(serverToken)
                 let failure = mapStartFailure(error: error, requestedPort: requestedPort)
+                setLifecycleState(.failed(failure))
                 AppLog.web.error(
                     "Web service listener failed (requestedPort: \(requestedPort, privacy: .public)): \(String(describing: error), privacy: .public)"
                 )
                 return .failed(failure)
             }
         } catch {
+            clearRunningServerIfTokenMatches(activeServerToken)
+            let failure = mapStartFailure(error: error, requestedPort: requestedPort)
+            setLifecycleState(.failed(failure))
             AppErrorMapper.logFailure("Start web service", error: error, logger: AppLog.web)
-            webServer = nil
-            activeServerToken = nil
-            listenerReady = false
-            currentBinding = nil
-            onRunningStateChanged?(false)
-            return .failed(mapStartFailure(error: error, requestedPort: requestedPort))
+            return .failed(failure)
+        }
+    }
+
+    private func handleUnexpectedListenerStop(serverToken: UUID) {
+        guard activeServerToken == serverToken else { return }
+
+        AppLog.web.warning("Web listener stopped unexpectedly; transitioning web service state to failed.")
+        clearRunningServerIfTokenMatches(serverToken)
+        let failure = WebServiceStartFailure.listenerFailed(
+            port: lastRequestedPort,
+            message: String(localized: "Web listener stopped unexpectedly.")
+        )
+        setLifecycleState(.failed(failure))
+    }
+
+    private func clearRunningServerIfTokenMatches(_ token: UUID?) {
+        guard let token else { return }
+        guard activeServerToken == token else { return }
+        activeServer = nil
+        webServer = nil
+        activeServerToken = nil
+        currentBinding = nil
+    }
+
+    private func isCurrentOperation(_ nonce: UInt64) -> Bool {
+        lifecycleNonce == nonce
+    }
+
+    private func setLifecycleState(_ next: WebServiceLifecycleState) {
+        guard state != next else { return }
+        let previousIsRunning = state.isRunning
+        state = next
+        onLifecycleStateChanged?(next)
+        if previousIsRunning != next.isRunning {
+            onRunningStateChanged?(next.isRunning)
         }
     }
 
@@ -272,28 +394,5 @@ final class WebServiceController: WebServiceControllerProtocol {
         }
 
         return nil
-    }
-
-    func stop() {
-        guard let runningServer = webServer else {
-            AppLog.web.debug("Stop requested while web service is not running.")
-            return
-        }
-        AppLog.web.info("Stopping web service.")
-        let previousToken = activeServerToken
-        activeServerToken = nil
-        startupTask?.cancel()
-        startupTask = nil
-        listenerReady = false
-        runningServer.stopListener()
-        webServer = nil
-        currentBinding = nil
-        if previousToken != nil {
-            onRunningStateChanged?(false)
-        }
-    }
-
-    func disconnectAllStreamClients() {
-        webServer?.disconnectAllStreamClients()
     }
 }
