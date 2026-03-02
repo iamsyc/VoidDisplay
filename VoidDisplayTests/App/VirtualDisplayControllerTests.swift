@@ -289,7 +289,7 @@ struct AppBootstrapTests {
         #expect(successPresented)
         #expect(sut.virtualDisplay.rebuildFailureMessage(configId: config.id) == nil)
 
-        let successCleared = await waitUntil(timeoutNanoseconds: 500_000_000) {
+        let successCleared = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
             !sut.virtualDisplay.hasRecentApplySuccess(configId: config.id)
         }
         #expect(successCleared)

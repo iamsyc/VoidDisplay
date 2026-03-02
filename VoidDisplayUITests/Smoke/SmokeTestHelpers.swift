@@ -18,6 +18,7 @@ extension XCTestCase {
     }
 
     @discardableResult
+    @MainActor
     func assertExists(
         _ app: XCUIApplication,
         identifier: String,
@@ -32,6 +33,7 @@ extension XCTestCase {
         return element
     }
 
+    @MainActor
     func assertAnyExists(
         _ app: XCUIApplication,
         identifiers: [String],
@@ -49,5 +51,31 @@ extension XCTestCase {
             }
         }
         XCTFail("None of identifiers exist: \(identifiers.joined(separator: ", "))", file: file, line: line)
+    }
+
+    @MainActor
+    func tapWhenHittable(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 3,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(element.waitForExistence(timeout: timeout), "Element does not exist before tap.", file: file, line: line)
+        let predicate = NSPredicate(format: "hittable == true")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        if XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed {
+            element.tap()
+            return
+        }
+
+        let hierarchySnapshot = app.debugDescription
+        XCTContext.runActivity(named: "Accessibility hierarchy snapshot before tap failure") { activity in
+            let attachment = XCTAttachment(string: hierarchySnapshot)
+            attachment.name = "accessibility-hierarchy.txt"
+            attachment.lifetime = .keepAlways
+            activity.add(attachment)
+        }
+        XCTFail("Element exists but is not hittable: \(element)", file: file, line: line)
     }
 }

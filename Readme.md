@@ -118,6 +118,18 @@ xcodebuild -scheme VoidDisplay \
   -destination 'platform=macOS,arch=arm64'
 ```
 
+Full project regression gate (recommended before opening/merging PR):
+
+```bash
+scripts/test/full_regression_gate.sh
+```
+
+This script runs end-to-end test/build gates and fails fast when:
+- tests were not actually executed (`totalTestCount == 0`)
+- any test failed
+- Debug/Release build has warnings
+- Debug/Release build failed
+
 ### Debug Entry Points
 
 UI entry: `HomeView` contains four tabs — **Displays**, **Virtual Display**, **Screen Monitoring**, **Screen Sharing**.

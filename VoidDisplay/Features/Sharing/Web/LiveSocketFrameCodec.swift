@@ -1,11 +1,233 @@
 import Foundation
 
-enum DecodedWebSocketFrame {
+nonisolated enum DecodedWebSocketFrame {
     case text(String)
     case binary(Data)
     case ping(Data)
     case pong(Data)
     case close(Data)
+}
+
+nonisolated enum WebSocketFrameDecodeError: Equatable {
+    case unexpectedContinuation
+    case invalidUTF8Text
+    case fragmentedControlFrame
+    case oversizedControlFramePayload
+    case invalidMasking
+    case unsupportedOpcode(UInt8)
+    case framePayloadTooLarge(UInt64)
+    case continuationFromUnsupportedOpcode(UInt8)
+    case continuationPayloadTooLarge
+    case unexpectedDataFrameDuringContinuation
+}
+
+nonisolated struct WebSocketFrameDecoderOutput {
+    let frames: [DecodedWebSocketFrame]
+    let errors: [WebSocketFrameDecodeError]
+}
+
+nonisolated final class WebSocketFrameDecoder {
+    private var buffer = Data()
+    private var continuationOpcode: UInt8?
+    private var continuationPayload = Data()
+
+    private let maxFramePayloadBytes: Int
+    private let maxContinuationPayloadBytes: Int
+    private let requiresMaskedFrames: Bool
+
+    init(
+        maxFramePayloadBytes: Int = 256 * 1024,
+        maxContinuationPayloadBytes: Int = 256 * 1024,
+        requiresMaskedFrames: Bool = false
+    ) {
+        self.maxFramePayloadBytes = maxFramePayloadBytes
+        self.maxContinuationPayloadBytes = maxContinuationPayloadBytes
+        self.requiresMaskedFrames = requiresMaskedFrames
+    }
+
+    var remainder: Data {
+        buffer
+    }
+
+    func ingest(_ chunk: Data?) -> WebSocketFrameDecoderOutput {
+        if let chunk, !chunk.isEmpty {
+            buffer.append(chunk)
+        }
+
+        var frames: [DecodedWebSocketFrame] = []
+        var errors: [WebSocketFrameDecodeError] = []
+        var offset = 0
+        var shouldAbort = false
+
+        while true {
+            guard buffer.count >= (offset + 2) else { break }
+
+            let first = buffer[offset]
+            let second = buffer[offset + 1]
+            let fin = (first & 0x80) != 0
+            let opcode = first & 0x0F
+            let masked = (second & 0x80) != 0
+            var payloadLength = UInt64(second & 0x7F)
+            var cursor = offset + 2
+
+            if requiresMaskedFrames && !masked {
+                errors.append(.invalidMasking)
+                shouldAbort = true
+                break
+            }
+
+            let isControlFrame = opcode >= 0x8
+            if isControlFrame && !fin {
+                errors.append(.fragmentedControlFrame)
+                shouldAbort = true
+                break
+            }
+
+            if payloadLength == 126 {
+                guard buffer.count >= (cursor + 2) else { break }
+                payloadLength = UInt64(UInt16(buffer[cursor]) << 8 | UInt16(buffer[cursor + 1]))
+                cursor += 2
+            } else if payloadLength == 127 {
+                guard buffer.count >= (cursor + 8) else { break }
+                var value: UInt64 = 0
+                for byteOffset in 0..<8 {
+                    value = (value << 8) | UInt64(buffer[cursor + byteOffset])
+                }
+                payloadLength = value
+                cursor += 8
+            }
+
+            if isControlFrame && payloadLength > 125 {
+                errors.append(.oversizedControlFramePayload)
+                shouldAbort = true
+                break
+            }
+
+            if payloadLength > UInt64(maxFramePayloadBytes) {
+                errors.append(.framePayloadTooLarge(payloadLength))
+                shouldAbort = true
+                break
+            }
+
+            let maskStart = cursor
+            if masked {
+                guard buffer.count >= (cursor + 4) else { break }
+                cursor += 4
+            }
+
+            guard payloadLength <= UInt64(Int.max),
+                  buffer.count >= (cursor + Int(payloadLength)) else {
+                break
+            }
+
+            var payload = Data(buffer[cursor..<(cursor + Int(payloadLength))])
+            cursor += Int(payloadLength)
+            offset = cursor
+
+            if masked {
+                let mask = buffer[maskStart..<(maskStart + 4)]
+                var unmasked = Data(capacity: payload.count)
+                for (index, byte) in payload.enumerated() {
+                    let maskByte = mask[mask.index(mask.startIndex, offsetBy: index % 4)]
+                    unmasked.append(byte ^ maskByte)
+                }
+                payload = unmasked
+            }
+
+            switch opcode {
+            case 0x0:
+                guard let continuationOpcode else {
+                    errors.append(.unexpectedContinuation)
+                    shouldAbort = true
+                    break
+                }
+                continuationPayload.append(payload)
+                if continuationPayload.count > maxContinuationPayloadBytes {
+                    errors.append(.continuationPayloadTooLarge)
+                    shouldAbort = true
+                    break
+                }
+                if fin {
+                    if continuationOpcode == 0x1 {
+                        guard let text = String(data: continuationPayload, encoding: .utf8) else {
+                            errors.append(.invalidUTF8Text)
+                            shouldAbort = true
+                            break
+                        }
+                        frames.append(.text(text))
+                    } else if continuationOpcode == 0x2 {
+                        frames.append(.binary(continuationPayload))
+                    } else {
+                        errors.append(.continuationFromUnsupportedOpcode(continuationOpcode))
+                        shouldAbort = true
+                        break
+                    }
+                    self.continuationOpcode = nil
+                    continuationPayload = Data()
+                }
+
+            case 0x1:
+                if continuationOpcode != nil {
+                    errors.append(.unexpectedDataFrameDuringContinuation)
+                    shouldAbort = true
+                    break
+                }
+                if fin {
+                    guard let text = String(data: payload, encoding: .utf8) else {
+                        errors.append(.invalidUTF8Text)
+                        shouldAbort = true
+                        break
+                    }
+                    frames.append(.text(text))
+                } else {
+                    continuationOpcode = opcode
+                    continuationPayload = payload
+                }
+
+            case 0x2:
+                if continuationOpcode != nil {
+                    errors.append(.unexpectedDataFrameDuringContinuation)
+                    shouldAbort = true
+                    break
+                }
+                if fin {
+                    frames.append(.binary(payload))
+                } else {
+                    continuationOpcode = opcode
+                    continuationPayload = payload
+                }
+
+            case 0x8:
+                frames.append(.close(payload))
+
+            case 0x9:
+                frames.append(.ping(payload))
+
+            case 0xA:
+                frames.append(.pong(payload))
+
+            default:
+                errors.append(.unsupportedOpcode(opcode))
+                shouldAbort = true
+            }
+
+            if shouldAbort {
+                break
+            }
+        }
+
+        if offset > 0 {
+            buffer.removeSubrange(0..<offset)
+        }
+
+        if shouldAbort {
+            buffer.removeAll(keepingCapacity: true)
+            continuationOpcode = nil
+            continuationPayload.removeAll(keepingCapacity: true)
+        }
+
+        return WebSocketFrameDecoderOutput(frames: frames, errors: errors)
+    }
 }
 
 nonisolated func encodeWebSocketTextFrame(_ text: String) -> Data {
@@ -29,80 +251,14 @@ nonisolated func encodeWebSocketCloseFrame(code: UInt16? = nil) -> Data {
     return encodeWebSocketFrame(opcode: 0x8, payload: payload)
 }
 
+@available(*, deprecated, message: "Use WebSocketFrameDecoder.ingest(_:) for incremental decoding.")
 nonisolated func decodeWebSocketFrames(from input: Data) -> (frames: [DecodedWebSocketFrame], remainder: Data) {
-    var frames: [DecodedWebSocketFrame] = []
-    var offset = 0
-
-    while true {
-        guard input.count >= (offset + 2) else { break }
-
-        let first = input[offset]
-        let second = input[offset + 1]
-        let fin = (first & 0x80) != 0
-        let opcode = first & 0x0F
-        let masked = (second & 0x80) != 0
-        var payloadLength = UInt64(second & 0x7F)
-        var cursor = offset + 2
-
-        if payloadLength == 126 {
-            guard input.count >= (cursor + 2) else { break }
-            payloadLength = UInt64(UInt16(input[cursor]) << 8 | UInt16(input[cursor + 1]))
-            cursor += 2
-        } else if payloadLength == 127 {
-            guard input.count >= (cursor + 8) else { break }
-            var value: UInt64 = 0
-            for byteOffset in 0..<8 {
-                value = (value << 8) | UInt64(input[cursor + byteOffset])
-            }
-            payloadLength = value
-            cursor += 8
-        }
-
-        let maskStart = cursor
-        if masked {
-            guard input.count >= (cursor + 4) else { break }
-            cursor += 4
-        }
-
-        guard payloadLength <= UInt64(Int.max),
-              input.count >= (cursor + Int(payloadLength)) else { break }
-
-        var payload = Data(input[cursor..<(cursor + Int(payloadLength))])
-        cursor += Int(payloadLength)
-        offset = cursor
-
-        if masked {
-            let mask = input[maskStart..<(maskStart + 4)]
-            var unmasked = Data(capacity: payload.count)
-            for (index, byte) in payload.enumerated() {
-                let maskByte = mask[mask.index(mask.startIndex, offsetBy: index % 4)]
-                unmasked.append(byte ^ maskByte)
-            }
-            payload = unmasked
-        }
-
-        guard fin else { continue } // The server doesn't support fragmented inbound signaling frames.
-
-        switch opcode {
-        case 0x1:
-            if let text = String(data: payload, encoding: .utf8) {
-                frames.append(.text(text))
-            }
-        case 0x2:
-            frames.append(.binary(payload))
-        case 0x8:
-            frames.append(.close(payload))
-        case 0x9:
-            frames.append(.ping(payload))
-        case 0xA:
-            frames.append(.pong(payload))
-        default:
-            continue
-        }
-    }
-
-    let remainder = offset < input.count ? Data(input[offset...]) : Data()
-    return (frames, remainder)
+    let decoder = WebSocketFrameDecoder(
+        maxFramePayloadBytes: Int.max,
+        maxContinuationPayloadBytes: Int.max
+    )
+    let output = decoder.ingest(input)
+    return (output.frames, decoder.remainder)
 }
 
 nonisolated private func encodeWebSocketFrame(opcode: UInt8, payload: Data) -> Data {

@@ -193,6 +193,12 @@ final class ShareViewModel {
         loadDisplays()
     }
 
+    func refreshDisplaysBackgroundSafe() {
+        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
+        guard !catalog.isLoadingDisplays else { return }
+        loadDisplays()
+    }
+
     @discardableResult
     func withDisplayStartLock(
         displayID: CGDirectDisplayID,

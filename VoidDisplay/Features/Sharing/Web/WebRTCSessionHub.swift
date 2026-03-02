@@ -28,6 +28,50 @@ private protocol WebRTCPeerSessioning: AnyObject, Sendable {
     nonisolated func close()
 }
 
+nonisolated private enum SignalingMessageType: String, Codable {
+    case viewerReady = "viewer_ready"
+    case offer
+    case answer
+    case iceCandidate = "ice_candidate"
+    case iceComplete = "ice_complete"
+    case ready
+    case stopped
+    case error
+}
+
+nonisolated private struct SignalingInboundMessage: Decodable {
+    let type: String?
+    let sdp: String?
+    let candidate: String?
+    let sdpMid: String?
+    let sdpMLineIndex: Int?
+}
+
+nonisolated private struct SignalingOutboundMessage: Encodable {
+    let type: SignalingMessageType
+    let reason: String?
+    let sdp: String?
+    let candidate: String?
+    let sdpMid: String?
+    let sdpMLineIndex: Int?
+
+    init(
+        type: SignalingMessageType,
+        reason: String? = nil,
+        sdp: String? = nil,
+        candidate: String? = nil,
+        sdpMid: String? = nil,
+        sdpMLineIndex: Int? = nil
+    ) {
+        self.type = type
+        self.reason = reason
+        self.sdp = sdp
+        self.candidate = candidate
+        self.sdpMid = sdpMid
+        self.sdpMLineIndex = sdpMLineIndex
+    }
+}
+
 final class WebRTCSessionHub: Sendable {
     private nonisolated struct QueuedSignal: Sendable {
         let text: String
@@ -81,7 +125,11 @@ final class WebRTCSessionHub: Sendable {
         }
 
         if !added {
-            send(json: ["type": "error", "reason": "too_many_viewers"], to: connection, completion: nil)
+            send(
+                message: SignalingOutboundMessage(type: .error, reason: "too_many_viewers"),
+                to: connection,
+                completion: nil
+            )
             connection.cancelSocket()
             return
         }
@@ -90,7 +138,7 @@ final class WebRTCSessionHub: Sendable {
             callback(true)
         }
 
-        send(json: ["type": "ready"], to: connection, completion: nil)
+        send(message: SignalingOutboundMessage(type: .ready), to: connection, completion: nil)
     }
 
     nonisolated func removeClient(_ connection: any SignalSocketConnection) {
@@ -108,7 +156,7 @@ final class WebRTCSessionHub: Sendable {
         let keys = state.withLock { Array($0.clients.keys) }
         for key in keys {
             enqueue(
-                json: ["type": "stopped"],
+                message: SignalingOutboundMessage(type: .stopped),
                 to: key,
                 disconnectAfterSend: true,
                 replacePending: true
@@ -119,10 +167,18 @@ final class WebRTCSessionHub: Sendable {
     nonisolated func receiveSignalText(_ text: String, from connection: any SignalSocketConnection) {
         let key = ObjectIdentifier(connection as AnyObject)
         guard let message = parseMessage(text) else {
-            send(json: ["type": "error", "reason": "invalid_signal_payload"], to: key)
+            send(message: SignalingOutboundMessage(type: .error, reason: "invalid_signal_payload"), to: key)
             return
         }
-        handle(message: message, for: key)
+        guard let typeRawValue = message.type else {
+            send(message: SignalingOutboundMessage(type: .error, reason: "missing_signal_type"), to: key)
+            return
+        }
+        guard let type = SignalingMessageType(rawValue: typeRawValue) else {
+            send(message: SignalingOutboundMessage(type: .error, reason: "unsupported_signal_type"), to: key)
+            return
+        }
+        handle(message: message, type: type, for: key)
     }
 
     nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
@@ -135,37 +191,35 @@ final class WebRTCSessionHub: Sendable {
 #endif
     }
 
-    nonisolated private func handle(message: [String: Any], for key: ObjectIdentifier) {
-        guard let type = message["type"] as? String else {
-            send(json: ["type": "error", "reason": "missing_signal_type"], to: key)
-            return
-        }
-
+    nonisolated private func handle(
+        message: SignalingInboundMessage,
+        type: SignalingMessageType,
+        for key: ObjectIdentifier
+    ) {
         switch type {
-        case "viewer_ready":
+        case .viewerReady:
             return
-        case "offer":
-            guard let sdp = message["sdp"] as? String else {
-                send(json: ["type": "error", "reason": "missing_offer_sdp"], to: key)
+        case .offer:
+            guard let sdp = message.sdp else {
+                send(message: SignalingOutboundMessage(type: .error, reason: "missing_offer_sdp"), to: key)
                 return
             }
             ensurePeer(for: key)?.handleRemoteOffer(sdp: sdp)
-        case "ice_candidate":
-            guard let candidate = message["candidate"] as? String else {
-                send(json: ["type": "error", "reason": "missing_ice_candidate"], to: key)
+        case .iceCandidate:
+            guard let candidate = message.candidate else {
+                send(message: SignalingOutboundMessage(type: .error, reason: "missing_ice_candidate"), to: key)
                 return
             }
-            let sdpMid = message["sdpMid"] as? String
-            let lineIndexValue = (message["sdpMLineIndex"] as? NSNumber)?.int32Value ?? 0
+            let lineIndexValue = Int32(message.sdpMLineIndex ?? 0)
             ensurePeer(for: key)?.addRemoteCandidate(
                 sdp: candidate,
-                sdpMid: sdpMid,
+                sdpMid: message.sdpMid,
                 sdpMLineIndex: lineIndexValue
             )
-        case "ice_complete":
+        case .iceComplete:
             return
         default:
-            send(json: ["type": "error", "reason": "unsupported_signal_type"], to: key)
+            send(message: SignalingOutboundMessage(type: .error, reason: "unsupported_signal_type"), to: key)
         }
     }
 
@@ -178,25 +232,28 @@ final class WebRTCSessionHub: Sendable {
         guard let peer = WebRTCPeerSession(
             mediaPipeline: mediaPipeline,
             onAnswer: { [weak self] sdp in
-                self?.send(json: ["type": "answer", "sdp": sdp], to: key)
+                self?.send(message: SignalingOutboundMessage(type: .answer, sdp: sdp), to: key)
             },
             onLocalCandidate: { [weak self] candidate in
-                self?.send(json: [
-                    "type": "ice_candidate",
-                    "candidate": candidate.sdp,
-                    "sdpMid": candidate.sdpMid ?? "",
-                    "sdpMLineIndex": Int(candidate.sdpMLineIndex)
-                ], to: key)
+                self?.send(
+                    message: SignalingOutboundMessage(
+                        type: .iceCandidate,
+                        candidate: candidate.sdp,
+                        sdpMid: candidate.sdpMid,
+                        sdpMLineIndex: Int(candidate.sdpMLineIndex)
+                    ),
+                    to: key
+                )
             },
             onFailure: { [weak self] reason in
-                self?.send(json: ["type": "error", "reason": reason], to: key)
+                self?.send(message: SignalingOutboundMessage(type: .error, reason: reason), to: key)
                 self?.removeClient(for: key, cancelConnection: true)
             },
             onDisconnected: { [weak self] in
                 self?.removeClient(for: key, cancelConnection: true)
             }
         ) else {
-            send(json: ["type": "error", "reason": "peer_connection_unavailable"], to: key)
+            send(message: SignalingOutboundMessage(type: .error, reason: "peer_connection_unavailable"), to: key)
             removeClient(for: key, cancelConnection: true)
             return nil
         }
@@ -208,28 +265,28 @@ final class WebRTCSessionHub: Sendable {
         }
         return peer
 #else
-        send(json: ["type": "error", "reason": "server_webrtc_unavailable"], to: key)
+        send(message: SignalingOutboundMessage(type: .error, reason: "server_webrtc_unavailable"), to: key)
         removeClient(for: key, cancelConnection: true)
         return nil
 #endif
     }
 
-    nonisolated private func parseMessage(_ text: String) -> [String: Any]? {
-        guard let data = text.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return object
+    nonisolated private func parseMessage(_ text: String) -> SignalingInboundMessage? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(SignalingInboundMessage.self, from: data)
+    }
+
+    nonisolated private func encode(_ message: SignalingOutboundMessage) -> String? {
+        guard let data = try? JSONEncoder().encode(message) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     nonisolated private func send(
-        json: [String: Any],
+        message: SignalingOutboundMessage,
         to connection: any SignalSocketConnection,
         completion: (@Sendable (Error?) -> Void)?
     ) {
-        guard JSONSerialization.isValidJSONObject(json),
-              let data = try? JSONSerialization.data(withJSONObject: json),
-              let text = String(data: data, encoding: .utf8) else {
+        guard let text = encode(message) else {
             completion?(nil)
             return
         }
@@ -238,19 +295,17 @@ final class WebRTCSessionHub: Sendable {
         }
     }
 
-    nonisolated private func send(json: [String: Any], to key: ObjectIdentifier) {
-        enqueue(json: json, to: key, disconnectAfterSend: false, replacePending: false)
+    nonisolated private func send(message: SignalingOutboundMessage, to key: ObjectIdentifier) {
+        enqueue(message: message, to: key, disconnectAfterSend: false, replacePending: false)
     }
 
     nonisolated private func enqueue(
-        json: [String: Any],
+        message: SignalingOutboundMessage,
         to key: ObjectIdentifier,
         disconnectAfterSend: Bool,
         replacePending: Bool
     ) {
-        guard JSONSerialization.isValidJSONObject(json),
-              let data = try? JSONSerialization.data(withJSONObject: json),
-              let text = String(data: data, encoding: .utf8) else {
+        guard let text = encode(message) else {
             if disconnectAfterSend {
                 removeClient(for: key, cancelConnection: true)
             }

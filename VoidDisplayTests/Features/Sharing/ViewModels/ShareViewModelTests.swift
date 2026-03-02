@@ -161,6 +161,66 @@ struct ShareViewModelTests {
         #expect(sharing.registerShareableDisplaysCallCount == 1)
     }
 
+    @MainActor @Test func refreshDisplaysBackgroundSafeStartsLoadWhenIdle() async {
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: { [] },
+            dependencies: makeAlwaysRunningShareDependencies()
+        )
+
+        sut.refreshDisplaysBackgroundSafe()
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
+        }
+
+        #expect(finished)
+        #expect(sut.catalog.displays?.isEmpty == true)
+    }
+
+    @MainActor @Test func refreshDisplaysBackgroundSafeSkipsWhenLoadInFlight() async {
+        let gate = SequencedShareDisplayLoaderGate(scriptedOutcomes: [.success])
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledLoadFailure()
+                }
+            },
+            dependencies: makeAlwaysRunningShareDependencies()
+        )
+
+        sut.loadDisplays()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(sut.catalog.isLoadingDisplays)
+
+        sut.refreshDisplaysBackgroundSafe()
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.shortStabilityWindow
+        var observedAdditionalCall = false
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await gate.currentCallCount() > 1 {
+                observedAdditionalCall = true
+                break
+            }
+            await Task.yield()
+        }
+        #expect(observedAdditionalCall == false)
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
+        }
+        #expect(finished)
+    }
+
     @MainActor @Test func loadDisplaysRecordsDetailedErrorWhenLoaderFails() async {
         let env = makeEnvironment()
         let expected = NSError(domain: "ShareTests", code: 77)
@@ -432,6 +492,27 @@ struct ShareViewModelTests {
             ),
             sharingActions: .init(
                 startWebService: { _ in .failed(.timedOut(port: 8081)) },
+                stopWebService: {},
+                registerShareableDisplays: { _, _ in },
+                beginSharing: { _ in },
+                stopSharing: { _ in }
+            ),
+            virtualDisplayQueries: .init(
+                virtualSerialForManagedDisplay: { _ in nil }
+            )
+        )
+    }
+
+    @MainActor
+    private func makeAlwaysRunningShareDependencies() -> ShareViewModel.Dependencies {
+        .init(
+            sharingQueries: .init(
+                isWebServiceRunning: { true },
+                sharePageAddress: { _ in nil },
+                preferredWebServicePort: { 8081 }
+            ),
+            sharingActions: .init(
+                startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                 stopWebService: {},
                 registerShareableDisplays: { _, _ in },
                 beginSharing: { _ in },

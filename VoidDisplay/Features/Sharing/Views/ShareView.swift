@@ -7,6 +7,8 @@ import SwiftUI
 import ScreenCaptureKit
 import Combine
 import OSLog
+import AppKit
+import CoreGraphics
 
 struct ShareView: View {
     @Bindable private var sharing: SharingController
@@ -14,6 +16,7 @@ struct ShareView: View {
     @State private var displayRefreshMonitor = DebouncingDisplayReconfigurationMonitor()
     @State private var displayRefreshFallbackTask: Task<Void, Never>?
     @State private var showToolbarRefresh = false
+    @State private var lastKnownDisplayTopologySignature: [CGDirectDisplayID] = []
     @Environment(\.openURL) private var openURL
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -79,9 +82,10 @@ struct ShareView: View {
     }
 
     private func startDisplayRefreshMonitoring() {
+        lastKnownDisplayTopologySignature = displayTopologySignature()
         let registered = displayRefreshMonitor.start {
             guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-            viewModel.refreshDisplays()
+            viewModel.refreshDisplaysBackgroundSafe()
         }
         showToolbarRefresh = !registered
         if registered {
@@ -102,6 +106,7 @@ struct ShareView: View {
 
     private func startDisplayRefreshFallbackPolling() {
         guard displayRefreshFallbackTask == nil else { return }
+        lastKnownDisplayTopologySignature = displayTopologySignature()
         displayRefreshFallbackTask = Task { @MainActor in
             var cycle: Int = 0
             while !Task.isCancelled {
@@ -109,13 +114,13 @@ struct ShareView: View {
                 guard !Task.isCancelled else { break }
                 guard viewModel.catalog.hasScreenCapturePermission == true else { continue }
 
-                viewModel.refreshDisplays()
+                refreshDisplaysIfTopologyChanged()
                 cycle += 1
                 if cycle % 5 != 0 { continue }
 
                 let recovered = displayRefreshMonitor.start {
                     guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-                    viewModel.refreshDisplays()
+                    viewModel.refreshDisplaysBackgroundSafe()
                 }
                 if recovered {
                     showToolbarRefresh = false
@@ -127,6 +132,19 @@ struct ShareView: View {
                 }
             }
         }
+    }
+
+    private func displayTopologySignature() -> [CGDirectDisplayID] {
+        NSScreen.screens
+            .compactMap(\.cgDirectDisplayID)
+            .sorted()
+    }
+
+    private func refreshDisplaysIfTopologyChanged() {
+        let signature = displayTopologySignature()
+        guard signature != lastKnownDisplayTopologySignature else { return }
+        lastKnownDisplayTopologySignature = signature
+        viewModel.refreshDisplaysBackgroundSafe()
     }
 
     private func stopDisplayRefreshFallbackPolling() {

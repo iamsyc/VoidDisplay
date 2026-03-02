@@ -210,11 +210,18 @@
         let socket = null;
         let peer = null;
         let reconnectIndex = 0;
+        let reconnectTimer = null;
+        let terminalStop = false;
+        let state = "idle";
         let originalScaleEnabled = false;
-        const reconnectDelays = [200, 500, 1000, 1500];
+        const reconnectDelays = [250, 500, 1000, 2000, 4000];
 
         function setStatus(text) {
             statusEl.textContent = text;
+        }
+
+        function transition(nextState) {
+            state = nextState;
         }
 
         function setOverlay(title, body, visible = true) {
@@ -272,12 +279,45 @@
             player.srcObject = null;
         }
 
+        function isSocketConnectingOrOpen(ws) {
+            if (!ws) return false;
+            return ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN;
+        }
+
+        function closeSocketAndClearReference() {
+            const ws = socket;
+            if (!ws) return;
+            socket = null;
+            try {
+                ws.close();
+            } catch {
+                // no-op
+            }
+        }
+
+        function clearReconnectTimer() {
+            if (reconnectTimer) {
+                window.clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+        }
+
         function scheduleReconnect() {
+            if (terminalStop || state === "stopping" || state === "closed") {
+                return;
+            }
+            if (reconnectTimer) {
+                return;
+            }
             const delay = reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)];
             reconnectIndex += 1;
             setStatus(`Reconnecting in ${delay}ms`);
             setOverlay("Reconnecting…", "The signaling channel dropped. Retrying automatically.", true);
-            window.setTimeout(connect, delay);
+            transition("handshaking");
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                connect();
+            }, delay);
         }
 
         async function sendSignal(payload) {
@@ -294,6 +334,7 @@
                     player.srcObject = event.streams[0];
                     setStatus("Live");
                     setOverlay("Live stream", "Connected and receiving frames.", false);
+                    transition("streaming");
                 }
             };
 
@@ -314,6 +355,10 @@
                 if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
                     setStatus("Connection lost");
                     setOverlay("Connection lost", "Trying to reconnect to the stream.", true);
+                    if (!terminalStop) {
+                        closeSocketAndClearReference();
+                        scheduleReconnect();
+                    }
                 }
             };
 
@@ -323,28 +368,42 @@
             });
             await peer.setLocalDescription(offer);
             await sendSignal({ type: "offer", sdp: offer.sdp });
+            transition("negotiating");
         }
 
         function connect() {
+            if (terminalStop || state === "closed") {
+                return;
+            }
+            if (isSocketConnectingOrOpen(socket)) {
+                return;
+            }
             if (!window.WebSocket) {
                 setStatus("Unsupported browser");
                 setOverlay("WebSocket required", "This browser cannot open signaling transport.", true);
+                transition("closed");
                 return;
             }
             if (!window.RTCPeerConnection) {
                 setStatus("Unsupported browser");
                 setOverlay("WebRTC required", "This browser does not support RTCPeerConnection.", true);
+                transition("closed");
                 return;
             }
 
             const protocol = window.location.protocol === "https:" ? "wss" : "ws";
             const wsUrl = `${protocol}://${window.location.host}${signalPath}`;
-            socket = new WebSocket(wsUrl);
+            const ws = new WebSocket(wsUrl);
+            socket = ws;
+            transition("handshaking");
             setStatus("Connecting…");
             setOverlay("Connecting…", "Preparing the WebRTC signaling channel.", true);
 
-            socket.addEventListener("open", async () => {
+            ws.addEventListener("open", async () => {
+                if (socket !== ws) return;
                 reconnectIndex = 0;
+                clearReconnectTimer();
+                transition("signalingReady");
                 setStatus("Signaling connected");
                 await sendSignal({ type: "viewer_ready" });
                 try {
@@ -353,10 +412,13 @@
                 } catch (error) {
                     setStatus("Negotiation failed");
                     setOverlay("Negotiation failed", error?.message || "Failed to create WebRTC offer.", true);
+                    closeSocketAndClearReference();
+                    scheduleReconnect();
                 }
             });
 
-            socket.addEventListener("message", async (event) => {
+            ws.addEventListener("message", async (event) => {
+                if (socket !== ws) return;
                 if (typeof event.data !== "string") {
                     return;
                 }
@@ -390,10 +452,14 @@
                         });
                         break;
                     case "stopped":
+                        terminalStop = true;
+                        transition("stopping");
                         setStatus("Stopped");
                         setOverlay("Sharing stopped", "The source stream is no longer available.", true);
                         closePeer();
-                        socket.close();
+                        clearReconnectTimer();
+                        closeSocketAndClearReference();
+                        transition("closed");
                         break;
                     case "error":
                         setStatus("Error");
@@ -404,15 +470,30 @@
                 }
             });
 
-            socket.addEventListener("close", () => {
+            ws.addEventListener("close", () => {
+                if (socket !== ws) return;
+                socket = null;
                 closePeer();
+                if (terminalStop || state === "closed" || state === "stopping") {
+                    setStatus("Stopped");
+                    transition("closed");
+                    return;
+                }
                 scheduleReconnect();
             });
 
-            socket.addEventListener("error", () => {
+            ws.addEventListener("error", () => {
+                if (socket !== ws) return;
                 setStatus("Connection error");
             });
         }
+
+        window.addEventListener("beforeunload", () => {
+            terminalStop = true;
+            clearReconnectTimer();
+            closePeer();
+            closeSocketAndClearReference();
+        });
 
         connect();
     </script>

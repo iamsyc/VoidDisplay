@@ -26,19 +26,27 @@ nonisolated struct SendableDisplay: @unchecked Sendable {
     }
 }
 
+protocol DisplayCaptureSessioning: AnyObject, Sendable {
+    nonisolated var sessionHub: WebRTCSessionHub { get }
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink)
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink)
+    nonisolated func stopSharing()
+    nonisolated func stop() async
+}
+
 // MARK: - Preview Subscription
 
 final class DisplayPreviewSubscription: Sendable {
     let displayID: CGDirectDisplayID
     let resolutionText: String
 
-    private let session: DisplayCaptureSession
+    private let session: any DisplayCaptureSessioning
     private let cancelState = Mutex<(@Sendable () -> Void)?>(nil)
 
     nonisolated init(
         displayID: CGDirectDisplayID,
         resolutionText: String,
-        session: DisplayCaptureSession,
+        session: any DisplayCaptureSessioning,
         cancelClosure: @escaping @Sendable () -> Void
     ) {
         self.displayID = displayID
@@ -100,103 +108,281 @@ final class DisplayShareSubscription: Sendable {
 // MARK: - Capture Registry
 
 actor DisplayCaptureRegistry {
+    enum SessionResourceState: Equatable {
+        case initializing
+        case active
+        case draining
+        case stopped
+    }
+
+    struct PreviewToken: Hashable, Sendable {
+        fileprivate let rawValue: UUID
+        let displayID: CGDirectDisplayID
+    }
+
+    struct ShareToken: Hashable, Sendable {
+        fileprivate let rawValue: UUID
+        let displayID: CGDirectDisplayID
+    }
+
+    private enum TokenKind: Sendable {
+        case preview
+        case share
+    }
+
+    private struct TokenRecord: Sendable {
+        let kind: TokenKind
+        let displayID: CGDirectDisplayID
+    }
 
     struct SessionRecord {
-        let session: DisplayCaptureSession
+        let session: any DisplayCaptureSessioning
         let resolutionText: String
-        var previewRefCount: Int
-        var shareRefCount: Int
+        var state: SessionResourceState
+        var previewTokens: Set<UUID>
+        var shareTokens: Set<UUID>
     }
+
+    private enum RegistryError: Error {
+        case sessionUnavailable
+    }
+
+    typealias CaptureSessionFactory = @Sendable (SendableDisplay) async throws -> any DisplayCaptureSessioning
 
     static let shared = DisplayCaptureRegistry()
 
+    private let captureSessionFactory: CaptureSessionFactory
     private var sessionsByDisplayID: [CGDirectDisplayID: SessionRecord] = [:]
+    private var tokenOwnership: [UUID: TokenRecord] = [:]
+    private var sessionCreationTasks: [CGDirectDisplayID: Task<SessionRecord, Error>] = [:]
+    private var sessionDrainTasksByDisplayID: [CGDirectDisplayID: Task<Void, Never>] = [:]
+    private var initializingDisplayIDs: Set<CGDirectDisplayID> = []
+
+    init(
+        captureSessionFactory: @escaping CaptureSessionFactory = { display in
+            try await DisplayCaptureSession(display: display.value)
+        }
+    ) {
+        self.captureSessionFactory = captureSessionFactory
+    }
 
     // MARK: Acquire / Release
 
     func acquirePreview(display: SendableDisplay) async throws -> DisplayPreviewSubscription {
-        let record = try await retainSession(display: display, mode: .preview)
-        let displayID = display.displayID
+        let token = try await acquirePreviewToken(display: display)
+        guard let record = sessionsByDisplayID[token.displayID] else {
+            throw RegistryError.sessionUnavailable
+        }
         return DisplayPreviewSubscription(
-            displayID: displayID,
+            displayID: token.displayID,
             resolutionText: record.resolutionText,
             session: record.session,
             cancelClosure: { [weak self] in
                 guard let self else { return }
-                Task { await self.releasePreview(displayID: displayID) }
+                Task { await self.release(token) }
             }
         )
     }
 
     func acquireShare(display: SendableDisplay) async throws -> DisplayShareSubscription {
-        let record = try await retainSession(display: display, mode: .share)
-        let displayID = display.displayID
+        let token = try await acquireShareToken(display: display)
+        guard let record = sessionsByDisplayID[token.displayID] else {
+            throw RegistryError.sessionUnavailable
+        }
         return DisplayShareSubscription(
-            displayID: displayID,
+            displayID: token.displayID,
             sessionHub: record.session.sessionHub,
             cancelClosure: { [weak self] in
                 guard let self else { return }
-                Task { await self.releaseShare(displayID: displayID) }
+                Task { await self.release(token) }
             }
         )
+    }
+
+    func acquirePreviewToken(display: SendableDisplay) async throws -> PreviewToken {
+        let tokenID = try await acquireToken(display: display, kind: .preview)
+        return PreviewToken(rawValue: tokenID, displayID: display.displayID)
+    }
+
+    func acquireShareToken(display: SendableDisplay) async throws -> ShareToken {
+        let tokenID = try await acquireToken(display: display, kind: .share)
+        return ShareToken(rawValue: tokenID, displayID: display.displayID)
+    }
+
+    func release(_ token: PreviewToken) async {
+        await releaseToken(token.rawValue, expectedKind: .preview)
+    }
+
+    func release(_ token: ShareToken) async {
+        await releaseToken(token.rawValue, expectedKind: .share)
+    }
+
+    func sessionState(for displayID: CGDirectDisplayID) -> SessionResourceState {
+        if initializingDisplayIDs.contains(displayID) {
+            return .initializing
+        }
+        return sessionsByDisplayID[displayID]?.state ?? .stopped
     }
 
     // MARK: Internal
 
-    private enum RetainMode { case preview, share }
-
-    private func retainSession(
+    private func acquireToken(
         display: SendableDisplay,
-        mode: RetainMode
-    ) async throws -> SessionRecord {
-        let displayID = display.displayID
-        if var existing = sessionsByDisplayID[displayID] {
-            switch mode {
-            case .preview: existing.previewRefCount += 1
-            case .share:   existing.shareRefCount += 1
-            }
-            sessionsByDisplayID[displayID] = existing
-            return existing
-        }
+        kind: TokenKind
+    ) async throws -> UUID {
+        try await ensureSessionExists(for: display)
+        return try registerToken(displayID: display.displayID, kind: kind)
+    }
 
-        let resolutionText = "\(display.width) × \(display.height)"
-        let session = try await DisplayCaptureSession(display: display.value)
-        var record = SessionRecord(
+#if DEBUG
+    func installSessionForTesting(
+        displayID: CGDirectDisplayID,
+        resolutionText: String,
+        session: any DisplayCaptureSessioning
+    ) {
+        sessionDrainTasksByDisplayID[displayID]?.cancel()
+        sessionDrainTasksByDisplayID[displayID] = nil
+        initializingDisplayIDs.remove(displayID)
+        sessionsByDisplayID[displayID] = SessionRecord(
             session: session,
             resolutionText: resolutionText,
-            previewRefCount: 0,
-            shareRefCount: 0
+            state: .active,
+            previewTokens: [],
+            shareTokens: []
         )
-        switch mode {
-        case .preview: record.previewRefCount = 1
-        case .share:   record.shareRefCount = 1
+    }
+
+    func acquirePreviewTokenForTesting(displayID: CGDirectDisplayID) throws -> PreviewToken {
+        let tokenID = try registerToken(displayID: displayID, kind: .preview)
+        return PreviewToken(rawValue: tokenID, displayID: displayID)
+    }
+
+    func acquireShareTokenForTesting(displayID: CGDirectDisplayID) throws -> ShareToken {
+        let tokenID = try registerToken(displayID: displayID, kind: .share)
+        return ShareToken(rawValue: tokenID, displayID: displayID)
+    }
+#endif
+
+    private func registerToken(displayID: CGDirectDisplayID, kind: TokenKind) throws -> UUID {
+        let tokenID = UUID()
+        guard var record = sessionsByDisplayID[displayID] else {
+            throw RegistryError.sessionUnavailable
+        }
+        guard record.state != .draining else {
+            throw RegistryError.sessionUnavailable
+        }
+        record.state = .active
+        switch kind {
+        case .preview:
+            record.previewTokens.insert(tokenID)
+        case .share:
+            record.shareTokens.insert(tokenID)
         }
         sessionsByDisplayID[displayID] = record
-        return record
+        tokenOwnership[tokenID] = TokenRecord(kind: kind, displayID: displayID)
+        return tokenID
     }
 
-    private func releasePreview(displayID: CGDirectDisplayID) async {
-        guard var record = sessionsByDisplayID[displayID] else { return }
-        record.previewRefCount = max(0, record.previewRefCount - 1)
+    private func ensureSessionExists(for display: SendableDisplay) async throws {
+        let displayID = display.displayID
+        if let existing = sessionsByDisplayID[displayID] {
+            if existing.state != .draining {
+                return
+            }
+            await waitForDrainCompletion(for: displayID)
+            if let afterDrain = sessionsByDisplayID[displayID], afterDrain.state != .draining {
+                return
+            }
+        }
+
+        if let existingTask = sessionCreationTasks[displayID] {
+            let record = try await existingTask.value
+            storeInitializedSessionIfAbsent(record, for: displayID)
+            return
+        }
+
+        let task = Task<SessionRecord, Error> { [captureSessionFactory] in
+            let session = try await captureSessionFactory(display)
+            return SessionRecord(
+                session: session,
+                resolutionText: "\(display.width) × \(display.height)",
+                state: .active,
+                previewTokens: [],
+                shareTokens: []
+            )
+        }
+        initializingDisplayIDs.insert(displayID)
+        sessionCreationTasks[displayID] = task
+        defer { sessionCreationTasks[displayID] = nil }
+
+        do {
+            let record = try await task.value
+            storeInitializedSessionIfAbsent(record, for: displayID)
+        } catch {
+            initializingDisplayIDs.remove(displayID)
+            throw error
+        }
+    }
+
+    private func storeInitializedSessionIfAbsent(
+        _ record: SessionRecord,
+        for displayID: CGDirectDisplayID
+    ) {
+        initializingDisplayIDs.remove(displayID)
+        guard sessionsByDisplayID[displayID] == nil else { return }
         sessionsByDisplayID[displayID] = record
-        await removeSessionIfUnused(displayID: displayID)
     }
 
-    private func releaseShare(displayID: CGDirectDisplayID) async {
-        guard var record = sessionsByDisplayID[displayID] else { return }
-        record.shareRefCount = max(0, record.shareRefCount - 1)
-        if record.shareRefCount == 0 {
+    private func releaseToken(_ tokenID: UUID, expectedKind: TokenKind) async {
+        guard let ownership = tokenOwnership.removeValue(forKey: tokenID),
+              ownership.kind == expectedKind else {
+            return
+        }
+        guard var record = sessionsByDisplayID[ownership.displayID] else { return }
+
+        switch ownership.kind {
+        case .preview:
+            record.previewTokens.remove(tokenID)
+        case .share:
+            record.shareTokens.remove(tokenID)
+        }
+
+        if ownership.kind == .share, record.shareTokens.isEmpty {
             record.session.stopSharing()
         }
-        sessionsByDisplayID[displayID] = record
-        await removeSessionIfUnused(displayID: displayID)
+
+        if record.previewTokens.isEmpty, record.shareTokens.isEmpty {
+            record.state = .draining
+            sessionsByDisplayID[ownership.displayID] = record
+            let session = record.session
+            sessionDrainTasksByDisplayID[ownership.displayID]?.cancel()
+            sessionDrainTasksByDisplayID[ownership.displayID] = Task { [session] in
+                await session.stop()
+                self.finishDrainingSession(displayID: ownership.displayID)
+            }
+            return
+        }
+
+        record.state = .active
+        sessionsByDisplayID[ownership.displayID] = record
     }
 
-    private func removeSessionIfUnused(displayID: CGDirectDisplayID) async {
+    private func waitForDrainCompletion(for displayID: CGDirectDisplayID) async {
+        guard let drainTask = sessionDrainTasksByDisplayID[displayID] else { return }
+        await drainTask.value
+    }
+
+    private func finishDrainingSession(displayID: CGDirectDisplayID) {
+        sessionDrainTasksByDisplayID[displayID] = nil
         guard let record = sessionsByDisplayID[displayID] else { return }
-        guard record.previewRefCount == 0, record.shareRefCount == 0 else { return }
+        guard record.state == .draining else { return }
+        guard record.previewTokens.isEmpty, record.shareTokens.isEmpty else {
+            var resumed = record
+            resumed.state = .active
+            sessionsByDisplayID[displayID] = resumed
+            return
+        }
         sessionsByDisplayID.removeValue(forKey: displayID)
-        await record.session.stop()
     }
 }
 
@@ -245,7 +431,7 @@ private final class DisplaySampleFanout: Sendable {
 
 // MARK: - Display Capture Session
 
-final class DisplayCaptureSession: @unchecked Sendable {
+final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
     nonisolated let displayID: CGDirectDisplayID
     nonisolated let sessionHub: WebRTCSessionHub
 

@@ -22,6 +22,7 @@ final class SharingController {
     var sharingClientCounts: [CGDirectDisplayID: Int] = [:]
     var isSharing = false
     var isWebServiceRunning = false
+    var webServiceLifecycleState: WebServiceLifecycleState = .stopped
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
@@ -33,7 +34,7 @@ final class SharingController {
     ) {
         self.sharingService = sharingService
         self.portPreferences = portPreferences ?? SharingPortPreferences()
-        self.sharingService.onWebServiceRunningStateChanged = { [weak self] _ in
+        self.sharingService.onWebServiceLifecycleStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }
     }
@@ -140,6 +141,7 @@ final class SharingController {
         activeSharingDisplayIDs = sharingService.activeSharingDisplayIDs
         isSharing = sharingService.hasAnyActiveSharing
         isWebServiceRunning = sharingService.isWebServiceRunning
+        webServiceLifecycleState = sharingService.webServiceLifecycleState
         refreshSharingClientCounts()
     }
 

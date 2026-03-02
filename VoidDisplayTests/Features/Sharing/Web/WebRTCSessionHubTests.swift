@@ -40,8 +40,12 @@ private final class MockSignalSocketConnection: SignalSocketConnection, Sendable
 
     func decodedTextPayloads() -> [String] {
         sentFrames.compactMap { frame in
-            let decoded = decodeWebSocketFrames(from: frame)
-            guard let first = decoded.frames.first,
+            let decoder = WebSocketFrameDecoder(
+                maxFramePayloadBytes: Int.max,
+                maxContinuationPayloadBytes: Int.max
+            )
+            let output = decoder.ingest(frame)
+            guard let first = output.frames.first,
                   case .text(let text) = first else {
                 return nil
             }
@@ -67,7 +71,9 @@ struct WebRTCSessionHubTests {
 
         hub.addClient(client)
 
-        #expect(client.decodedTextPayloads().contains(where: { $0.contains(#""type":"ready""#) }))
+        let payloads = client.decodedTextPayloads()
+        #expect(payloads.contains(where: { $0.contains(#""type":"ready""#) }))
+        #expect(payloads.allSatisfy { !$0.contains(#""version""#) })
     }
 
     @MainActor @Test func malformedSignalPayloadReturnsError() {
@@ -92,6 +98,18 @@ struct WebRTCSessionHubTests {
         #expect(client.cancelCallCount == 0)
         #expect(client.completeNextSend())
         #expect(client.cancelCallCount >= 1)
+    }
+
+    @MainActor @Test func viewerReadyDoesNotEmitErrorResponse() {
+        let hub = WebRTCSessionHub()
+        let client = MockSignalSocketConnection()
+        hub.addClient(client)
+        let baselinePayloadCount = client.decodedTextPayloads().count
+
+        hub.receiveSignalText(#"{"type":"viewer_ready"}"#, from: client)
+
+        let payloads = client.decodedTextPayloads()
+        #expect(payloads.count == baselinePayloadCount)
     }
 
     @MainActor @Test func queuedSignalingMessagesPreserveOrderUnderBackpressure() throws {

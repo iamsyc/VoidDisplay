@@ -77,4 +77,59 @@ XCODEBUILD_CMD+=(
     -skip-testing:"$SKIP_TESTING"
 )
 
+set +e
 "${XCODEBUILD_CMD[@]}"
+xcodebuild_exit_code=$?
+set -e
+
+if [[ ! -d "$RESULT_BUNDLE_PATH" ]]; then
+    echo "Missing test result bundle: $RESULT_BUNDLE_PATH" >&2
+    exit 1
+fi
+
+SUMMARY="$(xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE_PATH")"
+
+extract_metric() {
+    local key="$1"
+    local fallback="$2"
+    local line value
+    line="$(printf '%s\n' "$SUMMARY" | rg "\"$key\"" | tail -n 1)" || true
+    if [[ -z "$line" ]]; then
+        printf '%s' "$fallback"
+        return 0
+    fi
+    value="$(printf '%s\n' "$line" | awk -F': ' '{print $2}' | tr -d ',\"')"
+    if [[ -z "$value" ]]; then
+        printf '%s' "$fallback"
+    else
+        printf '%s' "$value"
+    fi
+}
+
+TOTAL_TESTS="$(extract_metric totalTestCount 0)"
+PASSED_TESTS="$(extract_metric passedTests 0)"
+FAILED_TESTS="$(extract_metric failedTests 0)"
+SKIPPED_TESTS="$(extract_metric skippedTests 0)"
+RESULT_STATUS="$(extract_metric result unknown)"
+
+echo "Unit test summary:"
+echo "  result: $RESULT_STATUS"
+echo "  totalTestCount: $TOTAL_TESTS"
+echo "  passedTests: $PASSED_TESTS"
+echo "  failedTests: $FAILED_TESTS"
+echo "  skippedTests: $SKIPPED_TESTS"
+
+if [[ "$TOTAL_TESTS" == "0" ]]; then
+    echo "Invalid test run: totalTestCount == 0 (possible selector mismatch)." >&2
+    exit 1
+fi
+
+if [[ "$FAILED_TESTS" != "0" ]]; then
+    echo "Unit tests reported failures in xcresult summary." >&2
+    exit 1
+fi
+
+if [[ "$xcodebuild_exit_code" != "0" ]]; then
+    echo "xcodebuild exited with non-zero status: $xcodebuild_exit_code" >&2
+    exit "$xcodebuild_exit_code"
+fi
