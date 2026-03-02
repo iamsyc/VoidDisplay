@@ -157,6 +157,9 @@
         }
       }
     },
+    "1:1" : {
+
+    },
     "8081" : {
 
     },
@@ -634,6 +637,9 @@
         }
       }
     },
+    "Fit" : {
+
+    },
     "Height" : {
       "localizations" : {
         "zh-Hans" : {
@@ -932,6 +938,9 @@
           }
         }
       }
+    },
+    "Original Size" : {
+
     },
     "Permission denied for port %u. Choose another port and try again." : {
       "localizations" : {
