@@ -8,7 +8,7 @@ struct WebServerSocketIntegrationTests {
     @Test func rootRouteSupportsFragmentedSocketRequest() async throws {
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .unknown },
-            liveHubProvider: { _ in nil }
+            sessionHubProvider: { _ in nil }
         )
         let server = setup.server
         let portValue = setup.port
@@ -25,20 +25,20 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func liveRouteUpgradesToWebSocketWhenTargetActive() async throws {
-        let liveHub = LiveSocketHub()
+        let sessionHub = WebRTCSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
-            liveHubProvider: { target in
-                target == .main ? liveHub : nil
+            sessionHubProvider: { target in
+                target == .main ? sessionHub : nil
             }
         )
         let server = setup.server
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let request = websocketUpgradeRequest(path: "/live", port: portValue)
+        let request = websocketUpgradeRequest(path: "/signal", port: portValue)
         let responseData = try await Task.detached {
             try sendRequestAndReadPartialResponse(port: portValue, request: request)
         }.value
@@ -50,7 +50,7 @@ struct WebServerSocketIntegrationTests {
     @Test func streamRouteReturnsNotFound() async throws {
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .active },
-            liveHubProvider: { _ in LiveSocketHub() }
+            sessionHubProvider: { _ in WebRTCSessionHub() }
         )
         let server = setup.server
         let portValue = setup.port

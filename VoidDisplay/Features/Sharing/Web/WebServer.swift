@@ -57,10 +57,10 @@ final class WebServer {
             <li><code>/display</code> main display page</li>
             <li><code>/display/{id}</code> display page for target id</li>
           </ul>
-          <p>Live routes:</p>
+          <p>Signal routes:</p>
           <ul>
-            <li><code>/live</code> main display websocket</li>
-            <li><code>/live/{id}</code> websocket for target id</li>
+            <li><code>/signal</code> main display websocket</li>
+            <li><code>/signal/{id}</code> websocket for target id</li>
           </ul>
         </body>
         </html>
@@ -76,8 +76,9 @@ final class WebServer {
     private let displayPageTemplate: String
     private let requestHandler = WebRequestHandler()
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
+    private var signalBuffersByConnectionKey: [ObjectIdentifier: Data] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
-    private let liveHubProvider: @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
+    private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     private let onListenerStopped: (@MainActor @Sendable () -> Void)?
     private var didNotifyListenerStopped = false
     private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
@@ -90,11 +91,11 @@ final class WebServer {
     init(
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         onListenerStopped: (@MainActor @Sendable () -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
-        self.liveHubProvider = liveHubProvider
+        self.sessionHubProvider = sessionHubProvider
         self.onListenerStopped = onListenerStopped
 
         guard let displayPagePath = Bundle.main.path(forResource: "displayPage", ofType: "html") else {
@@ -166,12 +167,13 @@ final class WebServer {
 
     func disconnectAllStreamClients() {
         for client in activeConnections.values {
-            if let hub = liveHub(for: client.target) {
+            if let hub = sessionHub(for: client.target) {
                 hub.removeClient(client.connection)
             }
             client.connection.cancel()
         }
         activeConnections.removeAll()
+        signalBuffersByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
@@ -235,20 +237,21 @@ final class WebServer {
         case .failed(let error):
             let endpoint = Self.endpointDescription(for: connection)
             Self.logConnectionIssue("Connection failed [\(endpoint)]", error: error)
-            removeLiveClient(connection, cancelConnection: true)
+            removeSignalClient(connection, cancelConnection: true)
         case .cancelled:
             let endpoint = Self.endpointDescription(for: connection)
             AppLog.web.debug("Connection cancelled [\(endpoint, privacy: .public)].")
-            removeLiveClient(connection, cancelConnection: false)
+            removeSignalClient(connection, cancelConnection: false)
         default:
             break
         }
     }
 
-    private func removeLiveClient(_ connection: NWConnection, cancelConnection: Bool) {
+    private func removeSignalClient(_ connection: NWConnection, cancelConnection: Bool) {
         let key = connectionKey(for: connection)
+        signalBuffersByConnectionKey.removeValue(forKey: key)
         if let active = activeConnections.removeValue(forKey: key) {
-            if let hub = liveHub(for: active.target) {
+            if let hub = sessionHub(for: active.target) {
                 hub.removeClient(connection)
             }
         }
@@ -257,8 +260,8 @@ final class WebServer {
         }
     }
 
-    private func liveHub(for target: ShareTarget) -> LiveSocketHub? {
-        liveHubProvider(target)
+    private func sessionHub(for target: ShareTarget) -> WebRTCSessionHub? {
+        sessionHubProvider(target)
     }
 
     private func displayPage(for target: ShareTarget) -> String {
@@ -271,7 +274,7 @@ final class WebServer {
         }
         return displayPageTemplate
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
-            .replacingOccurrences(of: "__LIVE_PATH__", with: target.livePath)
+            .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)
     }
 
     private func processRequest(_ content: Data?, on connection: NWConnection) {
@@ -317,7 +320,7 @@ final class WebServer {
                 on: connection,
                 failureContext: "Send display page response"
             )
-        case .openLiveSocket(let target):
+        case .openSignalSocket(let target):
             guard isValidWebSocketUpgrade(request.headers) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .badRequest),
@@ -326,7 +329,7 @@ final class WebServer {
                 )
                 return
             }
-            openLiveSocket(on: connection, target: target, headers: request.headers)
+            openSignalSocket(on: connection, target: target, headers: request.headers)
         case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),
@@ -351,10 +354,10 @@ final class WebServer {
         })
     }
 
-    private func openLiveSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
+    private func openSignalSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
         let endpoint = Self.endpointDescription(for: connection)
-        AppLog.web.info("WebServer: [\(endpoint)] Initiating WebSocket upgrade for target: \(String(describing: target)).")
-        guard let hub = liveHub(for: target),
+        AppLog.web.info("WebServer: [\(endpoint)] Initiating signaling WebSocket upgrade for target: \(String(describing: target)).")
+        guard let hub = sessionHub(for: target),
               let acceptValue = makeWebSocketAcceptValue(headers: headers) else {
             sendResponseAndClose(
                 requestHandler.responseData(for: .sharingUnavailable),
@@ -387,13 +390,15 @@ final class WebServer {
                 }
                 AppLog.web.info("WebServer: [\(endpoint)] WebSocket upgrade succeeded.")
                 hub.addClient(connection)
-                self.activeConnections[self.connectionKey(for: connection)] = ActiveConnection(target: target, connection: connection)
-                self.startWebSocketReceiveLoop(on: connection)
+                let key = self.connectionKey(for: connection)
+                self.activeConnections[key] = ActiveConnection(target: target, connection: connection)
+                self.signalBuffersByConnectionKey[key] = Data()
+                self.startSignalReceiveLoop(on: connection, target: target)
             }
         })
     }
 
-    nonisolated private func startWebSocketReceiveLoop(on connection: NWConnection) {
+    nonisolated private func startSignalReceiveLoop(on connection: NWConnection, target: ShareTarget) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             if let error = error {
                 AppLog.web.warning("WebServer: WebSocket receive error: \(error)")
@@ -405,8 +410,50 @@ final class WebServer {
                 connection.cancel()
                 return
             }
-            // Discard incoming frames (e.g., Pings, Pongs) to keep the connection healthy
-            self?.startWebSocketReceiveLoop(on: connection)
+            guard let self else { return }
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let key = self.connectionKey(for: connection)
+                var accumulated = self.signalBuffersByConnectionKey[key] ?? Data()
+                if let content {
+                    accumulated.append(content)
+                }
+
+                let decoded = decodeWebSocketFrames(from: accumulated)
+                self.signalBuffersByConnectionKey[key] = decoded.remainder
+
+                for frame in decoded.frames {
+                    switch frame {
+                    case .text(let text):
+                        self.sessionHub(for: target)?.receiveSignalText(text, from: connection)
+                    case .ping(let payload):
+                        connection.send(
+                            content: encodeWebSocketPongFrame(payload),
+                            completion: .contentProcessed { _ in }
+                        )
+                    case .close:
+                        connection.send(
+                            content: encodeWebSocketCloseFrame(),
+                            completion: .contentProcessed { _ in connection.cancel() }
+                        )
+                    case .binary:
+                        let errorFrame = encodeWebSocketTextFrame(
+                            #"{"type":"error","reason":"binary_signal_not_allowed"}"#
+                        )
+                        connection.send(content: errorFrame, completion: .contentProcessed { _ in
+                            connection.send(
+                                content: encodeWebSocketCloseFrame(),
+                                completion: .contentProcessed { _ in connection.cancel() }
+                            )
+                        })
+                    case .pong:
+                        break
+                    }
+                }
+
+                self.startSignalReceiveLoop(on: connection, target: target)
+            }
         }
     }
 

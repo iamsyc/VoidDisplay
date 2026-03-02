@@ -62,7 +62,7 @@ final class CaptureChooseViewModel {
         let catalog = ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
         self.makePreviewSubscription = makePreviewSubscription ?? { display in
-            try await DisplayCaptureRegistry.shared.acquirePreview(display: display)
+            try await DisplayCaptureRegistry.shared.acquirePreview(display: SendableDisplay(display))
         }
         self.dependencies = dependencies
         self.catalogLoader = ScreenCaptureDisplayCatalogLoader(

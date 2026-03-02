@@ -118,7 +118,7 @@ final class DisplaySharingCoordinator {
 
     func startSharing(display: SCDisplay) async throws {
         stopSharing(displayID: display.displayID)
-        let subscription = try await captureRegistry.acquireShare(display: display)
+        let subscription = try await captureRegistry.acquireShare(display: SendableDisplay(display))
         sessionsByDisplayID[display.displayID] = SharingSession(display: display, subscription: subscription)
         if CGDisplayIsMain(display.displayID) != 0 {
             mainDisplayID = display.displayID
@@ -152,14 +152,14 @@ final class DisplaySharingCoordinator {
         }
     }
 
-    func liveHub(for target: ShareTarget) -> LiveSocketHub? {
+    func sessionHub(for target: ShareTarget) -> WebRTCSessionHub? {
         switch target {
         case .main:
             guard let resolvedMainID = resolvedMainDisplayID() else { return nil }
-            return sessionsByDisplayID[resolvedMainID]?.subscription.hub
+            return sessionsByDisplayID[resolvedMainID]?.subscription.sessionHub
         case .id(let id):
             guard let displayID = displayIDsByShareID[id] else { return nil }
-            return sessionsByDisplayID[displayID]?.subscription.hub
+            return sessionsByDisplayID[displayID]?.subscription.sessionHub
         }
     }
 

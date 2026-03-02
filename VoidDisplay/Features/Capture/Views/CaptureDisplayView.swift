@@ -5,6 +5,11 @@ import SwiftUI
 // MARK: - Capture Display View
 
 struct CaptureDisplayView: View {
+    private enum PreviewScaleMode {
+        case fit
+        case native
+    }
+
     let sessionId: UUID
 
     @Environment(CaptureController.self) private var capture
@@ -13,24 +18,86 @@ struct CaptureDisplayView: View {
     @State private var renderer = ZeroCopyPreviewRenderer()
     @State private var window: NSWindow?
     @State private var hasAppliedInitialSize = false
+    @State private var scaleMode: PreviewScaleMode = .fit
 
     private var session: ScreenMonitoringSession? {
         capture.monitoringSession(for: sessionId)
     }
 
-    var body: some View {
-        ZStack {
-            Color.black
-            if session != nil {
-                if renderer.hasReceivedFrame {
+    private var currentScaleFactor: CGFloat {
+        max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+    }
+
+    private var nativeFrameSizeInPoints: CGSize {
+        let pixelSize = renderer.framePixelSize
+        guard pixelSize.width > 0, pixelSize.height > 0 else {
+            let fallback = preferredAspect()
+            return CGSize(width: max(1, fallback.width), height: max(1, fallback.height))
+        }
+        return CGSize(
+            width: max(1, pixelSize.width / currentScaleFactor),
+            height: max(1, pixelSize.height / currentScaleFactor)
+        )
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        if session != nil {
+            if renderer.hasReceivedFrame {
+                if scaleMode == .fit {
                     ZeroCopyPreviewLayerView(renderer: renderer)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    Text("Loading...")
-                        .foregroundStyle(.white.opacity(0.85))
+                    ScrollView([.horizontal, .vertical]) {
+                        ZeroCopyPreviewLayerView(renderer: renderer)
+                            .frame(
+                                width: nativeFrameSizeInPoints.width,
+                                height: nativeFrameSizeInPoints.height
+                            )
+                            .background(Color.black)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                Text("No Data")
+                Text("Loading...")
                     .foregroundStyle(.white.opacity(0.85))
+            }
+        } else {
+            Text("No Data")
+                .foregroundStyle(.white.opacity(0.85))
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button("Fit") {
+                    scaleMode = .fit
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(scaleMode == .fit ? .accentColor : .gray.opacity(0.4))
+                .keyboardShortcut("1", modifiers: [.command])
+
+                Button("1:1") {
+                    scaleMode = .native
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(scaleMode == .native ? .accentColor : .gray.opacity(0.4))
+                .keyboardShortcut("2", modifiers: [.command])
+
+                Spacer()
+
+                Text(scaleMode == .fit ? "Fit" : "Original Size")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+
+            ZStack {
+                Color.black
+                previewContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -92,9 +159,17 @@ extension CaptureDisplayView {
         let maxH = max(180, (visibleFrame?.height ?? 800) - chromeHeight - 16)
 
         let ratio = aspect.width / aspect.height
-        let idealH = min(maxH, (visibleFrame?.height ?? 800) * 0.6)
-        var w = idealH * ratio
-        var h = idealH
+        let scale = max(1, window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+        let pixelSize = renderer.framePixelSize
+        let defaultContentWidth = max(320, maxW * 0.85)
+        let defaultContentHeight = defaultContentWidth / ratio
+        var w = defaultContentWidth
+        var h = defaultContentHeight
+
+        if pixelSize.width > 0, pixelSize.height > 0 {
+            w = pixelSize.width / scale
+            h = pixelSize.height / scale
+        }
 
         if w > maxW { w = maxW; h = w / ratio }
         if h > maxH { h = maxH; w = h * ratio }
@@ -142,7 +217,7 @@ extension CaptureDisplayView {
 /// backed by `IOSurface`, handling YUV→RGB conversion and colour
 /// management entirely on the GPU.
 @Observable
-final class ZeroCopyPreviewRenderer: DisplayPreviewSink {
+final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreviewSink {
     var framePixelSize: CGSize = .zero
     var hasReceivedFrame = false
 
@@ -206,9 +281,11 @@ private final class ZeroCopyHostView: NSView {
 
     func hostDisplayLayer(_ layer: AVSampleBufferDisplayLayer) {
         wantsLayer = true
+        layerContentsRedrawPolicy = .duringViewResize
         layer.frame = bounds
         self.layer?.addSublayer(layer)
         displayLayer = layer
+        syncLayerScale()
     }
 
     override func layout() {
@@ -217,6 +294,23 @@ private final class ZeroCopyHostView: NSView {
         CATransaction.setDisableActions(true)
         displayLayer?.frame = bounds
         CATransaction.commit()
+        syncLayerScale()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncLayerScale()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        syncLayerScale()
+    }
+
+    private func syncLayerScale() {
+        let scale = max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+        layer?.contentsScale = scale
+        displayLayer?.contentsScale = scale
     }
 }
 

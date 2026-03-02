@@ -82,8 +82,8 @@ final class SharingService: SharingServiceProtocol {
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },
-            liveHubProvider: { [weak self] target in
-                self?.sharingCoordinator.liveHub(for: target)
+            sessionHubProvider: { [weak self] target in
+                self?.sharingCoordinator.sessionHub(for: target)
             }
         )
         if case .failed(let failure) = result {

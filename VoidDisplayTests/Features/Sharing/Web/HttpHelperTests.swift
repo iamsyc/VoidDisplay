@@ -6,7 +6,7 @@ struct HttpHelperTests {
 
     @Test func parseHTTPRequestParsesRequestLineAndHeaders() throws {
         let raw = """
-        GET /live HTTP/1.1\r
+        GET /signal HTTP/1.1\r
         Host: 127.0.0.1:8081\r
         X-Test: value\r
         \r
@@ -16,7 +16,7 @@ struct HttpHelperTests {
         let request = try #require(parseHTTPRequest(from: data))
 
         #expect(request.method == "GET")
-        #expect(request.path == "/live")
+        #expect(request.path == "/signal")
         #expect(request.version == "HTTP/1.1")
         #expect(request.headers["host"] == "127.0.0.1:8081")
         #expect(request.headers["x-test"] == "value")
@@ -68,7 +68,7 @@ struct HttpHelperTests {
 
     @Test func parseHTTPRequestRejectsInvalidRequestLine() throws {
         let raw = """
-        GET_ONLY_TWO_PARTS /live\r
+        GET_ONLY_TWO_PARTS /signal\r
         Host: localhost\r
         \r
         """
@@ -117,7 +117,7 @@ struct HttpHelperTests {
         #expect(router.route(for: "/stream") == .notFound)
         #expect(router.route(for: "/stream/7") == .notFound)
         #expect(router.route(for: "/stream/") == .notFound)
-        #expect(router.route(for: "/live/7") == .live(.id(7)))
+        #expect(router.route(for: "/signal/7") == .signal(.id(7)))
         #expect(router.route(for: "/stream/frame") == .notFound)
         #expect(router.route(for: "/display/frame") == .notFound)
         #expect(router.route(for: "/unknown") == .notFound)
@@ -136,7 +136,7 @@ struct HttpHelperTests {
             handler.decision(forMethod: "GET", path: "/display/4", targetStateProvider: { _ in .active }) == .showDisplayPage(.id(4))
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/live", targetStateProvider: { _ in .active }) == .openLiveSocket(.main)
+            handler.decision(forMethod: "GET", path: "/signal", targetStateProvider: { _ in .active }) == .openSignalSocket(.main)
         )
         #expect(
             handler.decision(forMethod: "GET", path: "/stream/4", targetStateProvider: { _ in .knownInactive }) == .notFound
@@ -145,7 +145,7 @@ struct HttpHelperTests {
             handler.decision(forMethod: "GET", path: "/stream", targetStateProvider: { _ in .active }) == .notFound
         )
         #expect(
-            handler.decision(forMethod: "POST", path: "/live", targetStateProvider: { _ in .active }) == .methodNotAllowed
+            handler.decision(forMethod: "POST", path: "/signal", targetStateProvider: { _ in .active }) == .methodNotAllowed
         )
         #expect(
             handler.decision(forMethod: "GET", path: "/404", targetStateProvider: { _ in .active }) == .notFound
@@ -211,7 +211,7 @@ struct HttpHelperTests {
         let router = HttpRouter()
         #expect(router.route(for: "/stream?t=123") == .notFound)
         #expect(router.route(for: "/stream/?t=123") == .notFound)
-        #expect(router.route(for: "/live/9?t=1") == .live(.id(9)))
+        #expect(router.route(for: "/signal/9?t=1") == .signal(.id(9)))
         #expect(router.route(for: "/display/9?t=1") == .display(.id(9)))
         #expect(router.route(for: "/?v=1") == .root)
     }

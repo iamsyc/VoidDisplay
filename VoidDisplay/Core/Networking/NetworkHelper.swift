@@ -51,7 +51,10 @@ func getLANIPv4Address() -> String? {
         var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         guard inet_ntop(AF_INET, &ipv4Addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
 
-        let ip = String(cString: buffer)
+        let ip = String(
+            decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+            as: UTF8.self
+        )
         if ip.hasPrefix("169.254.") { continue } // link-local (usually not reachable by other devices)
         candidates.append(.init(name: name, address: ip))
     }

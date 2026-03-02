@@ -161,13 +161,13 @@ func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
 
 @MainActor
 private final class StaticLiveHubStore {
-    let hub = LiveSocketHub()
+    let hub = WebRTCSessionHub()
 }
 
 @MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-    liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
+    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
 ) async throws -> (server: WebServer, port: UInt16) {
     guard let endpointPort = NWEndpoint.Port(rawValue: 0) else {
         throw SocketIntegrationError.bindFailed
@@ -178,7 +178,7 @@ func startServerOnRandomPort(
             let server = try WebServer(
                 using: endpointPort,
                 targetStateProvider: targetStateProvider,
-                liveHubProvider: liveHubProvider
+                sessionHubProvider: sessionHubProvider
             )
             let result = await server.startListener(timeout: 1.0)
             switch result {

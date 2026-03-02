@@ -4,7 +4,7 @@ enum WebRequestDecision: Equatable {
     case badRequest
     case showRootPage
     case showDisplayPage(ShareTarget)
-    case openLiveSocket(ShareTarget)
+    case openSignalSocket(ShareTarget)
     case sharingUnavailable
     case methodNotAllowed
     case notFound
@@ -52,11 +52,11 @@ struct WebRequestHandler {
             case .unknown:
                 return .notFound
             }
-        case .live(let target):
+        case .signal(let target):
             let targetState = targetStateProvider(target)
             switch targetState {
             case .active:
-                return .openLiveSocket(target)
+                return .openSignalSocket(target)
             case .knownInactive:
                 return .sharingUnavailable
             case .unknown:
@@ -125,7 +125,7 @@ struct WebRequestHandler {
                 ],
                 body: body
             )
-        case .openLiveSocket:
+        case .openSignalSocket:
             return Data()
         }
     }

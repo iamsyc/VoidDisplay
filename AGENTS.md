@@ -15,6 +15,7 @@ This repository uses a PR-first workflow by default.
 - Open a pull request targeting `main`.
 - Monitor PR checks and report the status clearly to the user.
 - Merge through the PR after required checks pass, unless the user explicitly asks to merge without waiting.
+- Do not create a commit unless the user has explicitly requested or approved committing for the current task.
 
 ## Pull Request Expectations
 
@@ -34,3 +35,15 @@ This repository uses a PR-first workflow by default.
 
 - If the user explicitly says to stay on the current branch, work on `main`, skip PR, or skip waiting for CI, follow that instruction for the current task.
 - If no repository files need to change, do not create a branch just for discussion or investigation.
+
+## Swift & SDK Baseline
+
+- Use Swift 6 language mode for all Swift targets and new code by default.
+- Keep the project development/deployment target at `15.6` unless the user explicitly requests a different version for a specific task.
+- Prefer the latest Swift syntax and the newest SDK capabilities available for target `15.6`; avoid legacy/deprecated APIs when modern equivalents are available.
+
+## Build Verification Gate
+
+- After every code change, run a local build verification before delivery.
+- Do not deliver code if there is any compile error or any compile warning.
+- Treat warning-free builds as a hard requirement for handoff.

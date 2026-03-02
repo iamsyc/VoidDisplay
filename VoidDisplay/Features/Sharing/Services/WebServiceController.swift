@@ -16,7 +16,7 @@ protocol WebServiceControllerProtocol: AnyObject {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     ) async -> WebServiceStartResult
     func stop()
     func disconnectAllStreamClients()
@@ -58,7 +58,7 @@ final class WebServiceController: WebServiceControllerProtocol {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     ) async -> WebServiceStartResult {
         if let startupTask {
             return await startupTask.value
@@ -81,7 +81,7 @@ final class WebServiceController: WebServiceControllerProtocol {
             return await self.startInternal(
                 requestedPort: requestedPort,
                 targetStateProvider: targetStateProvider,
-                liveHubProvider: liveHubProvider
+                sessionHubProvider: sessionHubProvider
             )
         }
         startupTask = task
@@ -93,7 +93,7 @@ final class WebServiceController: WebServiceControllerProtocol {
     private func startInternal(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     ) async -> WebServiceStartResult {
         lastRequestedPort = requestedPort
 
@@ -123,7 +123,7 @@ final class WebServiceController: WebServiceControllerProtocol {
             let server = try WebServer(
                 using: port,
                 targetStateProvider: targetStateProvider,
-                liveHubProvider: liveHubProvider,
+                sessionHubProvider: sessionHubProvider,
                 onListenerStopped: { [weak self] in
                     guard let self else { return }
                     guard self.activeServerToken == serverToken else { return }
