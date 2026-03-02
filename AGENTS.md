@@ -47,3 +47,10 @@ This repository uses a PR-first workflow by default.
 - After every code change, run a local build verification before delivery.
 - Do not deliver code if there is any compile error or any compile warning.
 - Treat warning-free builds as a hard requirement for handoff.
+
+## AI Agent Temporary Workspace
+
+- All AI agent-generated temporary files, debug scripts, caches, logs, and build artifacts must be placed under `.ai-tmp/`.
+- Use subdirectories under `.ai-tmp/` for isolation, for example: `.ai-tmp/codex-tmp/`, `.ai-tmp/.spm-cache/`, `.ai-tmp/.spm-clone/`.
+- Do not create ad-hoc temporary directories at repository root (for example: `.tmp-*`, `.spm-cache`, `.spm-clone`, `dist`, `.codex-tmp`) unless the user explicitly requests it.
+- Any file outside `.ai-tmp/` should be treated as potentially version-controlled by default.
