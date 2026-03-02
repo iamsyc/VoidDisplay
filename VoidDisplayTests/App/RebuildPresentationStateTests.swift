@@ -1,6 +1,7 @@
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 struct RebuildPresentationStateTests {
 
     @Test func beginAndFinishRebuildUpdatesRunningSet() {

@@ -1,6 +1,7 @@
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 struct CreateVirtualDisplayInputValidatorTests {
 
     @Test func addPresetModeAppendsOrDetectsDuplicate() {

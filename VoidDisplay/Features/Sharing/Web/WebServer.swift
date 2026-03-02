@@ -22,6 +22,7 @@ final class WebServer {
     nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
     nonisolated private static let maxRequestBytes = 32 * 1024
     nonisolated private static let receiveChunkSize = 4096
+    nonisolated private static let maxSignalBufferBytes = 256 * 1024
 
     nonisolated private static func endpointDescription(for connection: NWConnection) -> String {
         String(describing: connection.endpoint)
@@ -418,6 +419,21 @@ final class WebServer {
                 var accumulated = self.signalBuffersByConnectionKey[key] ?? Data()
                 if let content {
                     accumulated.append(content)
+                }
+                if accumulated.count > Self.maxSignalBufferBytes {
+                    AppLog.web.warning(
+                        "WebServer: Closing signaling connection due to oversized buffered signal data."
+                    )
+                    self.signalBuffersByConnectionKey.removeValue(forKey: key)
+                    connection.send(
+                        content: encodeWebSocketCloseFrame(code: 1009),
+                        completion: .contentProcessed { _ in
+                            Task { @MainActor [weak self] in
+                                self?.removeSignalClient(connection, cancelConnection: true)
+                            }
+                        }
+                    )
+                    return
                 }
 
                 let decoded = decodeWebSocketFrames(from: accumulated)

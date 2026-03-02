@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 struct HttpHelperTests {
 
     @Test func parseHTTPRequestParsesRequestLineAndHeaders() throws {

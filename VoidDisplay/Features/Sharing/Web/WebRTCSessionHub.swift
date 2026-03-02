@@ -29,10 +29,15 @@ private protocol WebRTCPeerSessioning: AnyObject, Sendable {
 }
 
 final class WebRTCSessionHub: Sendable {
+    private nonisolated struct QueuedSignal: Sendable {
+        let text: String
+        let disconnectAfterSend: Bool
+    }
+
     private nonisolated struct ClientState {
         nonisolated(unsafe) let connection: any SignalSocketConnection
         var isSending = false
-        var pendingText: String?
+        var pendingSignals: [QueuedSignal] = []
         var peer: (any WebRTCPeerSessioning)?
     }
 
@@ -102,9 +107,13 @@ final class WebRTCSessionHub: Sendable {
     nonisolated func stopSharing() {
         let keys = state.withLock { Array($0.clients.keys) }
         for key in keys {
-            send(json: ["type": "stopped"], to: key)
+            enqueue(
+                json: ["type": "stopped"],
+                to: key,
+                disconnectAfterSend: true,
+                replacePending: true
+            )
         }
-        disconnectAllClients()
     }
 
     nonisolated func receiveSignalText(_ text: String, from connection: any SignalSocketConnection) {
@@ -230,44 +239,73 @@ final class WebRTCSessionHub: Sendable {
     }
 
     nonisolated private func send(json: [String: Any], to key: ObjectIdentifier) {
-        let connection = state.withLock { $0.clients[key]?.connection }
-        guard let connection else { return }
-        enqueue(text: json, to: key, connection: connection)
+        enqueue(json: json, to: key, disconnectAfterSend: false, replacePending: false)
     }
 
     nonisolated private func enqueue(
-        text json: [String: Any],
+        json: [String: Any],
         to key: ObjectIdentifier,
-        connection: any SignalSocketConnection
+        disconnectAfterSend: Bool,
+        replacePending: Bool
     ) {
         guard JSONSerialization.isValidJSONObject(json),
               let data = try? JSONSerialization.data(withJSONObject: json),
               let text = String(data: data, encoding: .utf8) else {
+            if disconnectAfterSend {
+                removeClient(for: key, cancelConnection: true)
+            }
             return
         }
 
-        let shouldSend = state.withLock { state -> Bool in
-            guard var current = state.clients[key] else { return false }
+        let connection = state.withLock { $0.clients[key]?.connection }
+        guard let connection else { return }
+        enqueue(
+            text: text,
+            to: key,
+            connection: connection,
+            disconnectAfterSend: disconnectAfterSend,
+            replacePending: replacePending
+        )
+    }
+
+    nonisolated private func enqueue(
+        text: String,
+        to key: ObjectIdentifier,
+        connection: any SignalSocketConnection,
+        disconnectAfterSend: Bool,
+        replacePending: Bool
+    ) {
+        let queuedSignal = QueuedSignal(
+            text: text,
+            disconnectAfterSend: disconnectAfterSend
+        )
+
+        let nextToSend = state.withLock { state -> QueuedSignal? in
+            guard var current = state.clients[key] else { return nil }
             if current.isSending {
-                current.pendingText = text
+                if replacePending {
+                    current.pendingSignals = [queuedSignal]
+                } else {
+                    current.pendingSignals.append(queuedSignal)
+                }
                 state.clients[key] = current
-                return false
+                return nil
             }
             current.isSending = true
             state.clients[key] = current
-            return true
+            return queuedSignal
         }
 
-        guard shouldSend else { return }
-        send(text: text, to: key, connection: connection)
+        guard let nextToSend else { return }
+        send(signal: nextToSend, to: key, connection: connection)
     }
 
     nonisolated private func send(
-        text: String,
+        signal: QueuedSignal,
         to key: ObjectIdentifier,
         connection: any SignalSocketConnection
     ) {
-        connection.sendSocketFrame(encodeWebSocketTextFrame(text)) { [weak self] error in
+        connection.sendSocketFrame(encodeWebSocketTextFrame(signal.text)) { [weak self] error in
             guard let self else { return }
             if let error {
                 AppErrorMapper.logFailure("Send WebRTC signaling message", error: error, logger: AppLog.web)
@@ -275,18 +313,26 @@ final class WebRTCSessionHub: Sendable {
                 return
             }
 
-            let nextText = self.state.withLock { state -> String? in
+            if signal.disconnectAfterSend {
+                self.removeClient(for: key, cancelConnection: true)
+                return
+            }
+
+            let nextSignal = self.state.withLock { state -> QueuedSignal? in
                 guard var current = state.clients[key] else { return nil }
-                let pending = current.pendingText
-                current.pendingText = nil
-                current.isSending = pending != nil
+                if current.pendingSignals.isEmpty {
+                    current.isSending = false
+                    state.clients[key] = current
+                    return nil
+                }
+                let pending = current.pendingSignals.removeFirst()
                 state.clients[key] = current
                 return pending
             }
 
-            guard let nextText else { return }
+            guard let nextSignal else { return }
             guard let nextConnection = self.state.withLock({ $0.clients[key]?.connection }) else { return }
-            self.send(text: nextText, to: key, connection: nextConnection)
+            self.send(signal: nextSignal, to: key, connection: nextConnection)
         }
     }
 

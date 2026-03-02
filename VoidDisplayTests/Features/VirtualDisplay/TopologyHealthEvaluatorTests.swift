@@ -2,6 +2,7 @@ import CoreGraphics
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 struct TopologyHealthEvaluatorTests {
     @Test func evaluateDetectsCollapsedMirrorSet() {
         let snapshot = DisplayTopologySnapshot(
