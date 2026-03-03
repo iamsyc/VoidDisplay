@@ -42,6 +42,15 @@ final class DisplayPreviewSubscription: Sendable {
 
     private let session: any DisplayCaptureSessioning
     private let cancelState = Mutex<(@Sendable () -> Void)?>(nil)
+    private let attachedSinks = Mutex<[ObjectIdentifier: WeakSink]>([:])
+
+    private final class WeakSink: @unchecked Sendable {
+        nonisolated(unsafe) weak var value: (any DisplayPreviewSink)?
+
+        nonisolated init(_ value: any DisplayPreviewSink) {
+            self.value = value
+        }
+    }
 
     nonisolated init(
         displayID: CGDirectDisplayID,
@@ -56,10 +65,12 @@ final class DisplayPreviewSubscription: Sendable {
     }
 
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        attachedSinks.withLock { $0[ObjectIdentifier(sink as AnyObject)] = WeakSink(sink) }
         session.attachPreviewSink(sink)
     }
 
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        attachedSinks.withLock { _ = $0.removeValue(forKey: ObjectIdentifier(sink as AnyObject)) }
         session.detachPreviewSink(sink)
     }
 
@@ -69,7 +80,21 @@ final class DisplayPreviewSubscription: Sendable {
             state = nil
             return current
         }
-        closure?()
+        guard let closure else { return }
+
+        // Detach all sinks previously attached via this subscription to avoid
+        // leaving fanout strongly holding onto closed-window renderers when the
+        // monitoring session is removed externally.
+        let sinksToDetach: [any DisplayPreviewSink] = attachedSinks.withLock { dict in
+            let snapshot = dict.values.compactMap(\.value)
+            dict.removeAll(keepingCapacity: true)
+            return snapshot
+        }
+        for sink in sinksToDetach {
+            session.detachPreviewSink(sink)
+        }
+
+        closure()
     }
 
     deinit { cancel() }

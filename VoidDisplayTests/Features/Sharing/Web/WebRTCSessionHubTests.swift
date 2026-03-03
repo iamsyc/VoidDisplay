@@ -64,6 +64,58 @@ private final class MockSignalSocketConnection: SignalSocketConnection, Sendable
     }
 }
 
+private final class Counter: @unchecked Sendable {
+    private let state = Mutex(0)
+
+    nonisolated func increment() {
+        state.withLock { $0 += 1 }
+    }
+
+    func value() -> Int {
+        state.withLock { $0 }
+    }
+}
+
+private final class MockPeerSession: @unchecked Sendable, WebRTCPeerSessioning {
+    private let closeCalls: Counter
+
+    init(closeCalls: Counter) {
+        self.closeCalls = closeCalls
+    }
+
+    nonisolated func handleRemoteOffer(sdp: String) {
+        _ = sdp
+    }
+
+    nonisolated func addRemoteCandidate(sdp: String, sdpMid: String?, sdpMLineIndex: Int32) {
+        _ = sdp
+        _ = sdpMid
+        _ = sdpMLineIndex
+    }
+
+    nonisolated func close() {
+        closeCalls.increment()
+    }
+}
+
+private final class PeerFactoryBox: @unchecked Sendable {
+    nonisolated(unsafe) weak var hub: WebRTCSessionHub?
+    nonisolated(unsafe) weak var client: MockSignalSocketConnection?
+    let closeCalls: Counter
+
+    init(closeCalls: Counter) {
+        self.closeCalls = closeCalls
+    }
+
+    func make(callbacks: WebRTCSessionHub.PeerCallbacks) -> (any WebRTCPeerSessioning)? {
+        _ = callbacks
+        if let hub, let client {
+            hub.removeClient(client)
+        }
+        return MockPeerSession(closeCalls: closeCalls)
+    }
+}
+
 struct WebRTCSessionHubTests {
     @MainActor @Test func addClientSendsReadySignal() {
         let hub = WebRTCSessionHub()
@@ -134,4 +186,40 @@ struct WebRTCSessionHubTests {
         #expect(invalidIndex < missingTypeIndex)
         #expect(missingTypeIndex < unsupportedIndex)
     }
+
+    @MainActor @Test func removedClient_offer_doesNotCreatePeer() {
+        let peerCreateCalls = Counter()
+        let peerCloseCalls = Counter()
+        let hub = WebRTCSessionHub(peerFactory: { _ in
+            peerCreateCalls.increment()
+            return MockPeerSession(closeCalls: peerCloseCalls)
+        })
+        let client = MockSignalSocketConnection()
+        hub.addClient(client)
+        hub.removeClient(client)
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+
+        #expect(peerCreateCalls.value() == 0)
+        #expect(peerCloseCalls.value() == 0)
+    }
+
+#if canImport(WebRTC)
+    @MainActor @Test func clientRemovedDuringEnsurePeer_closesNewPeer() {
+        let peerCloseCalls = Counter()
+        let box = PeerFactoryBox(closeCalls: peerCloseCalls)
+        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+            box.make(callbacks: callbacks)
+        })
+        let client = MockSignalSocketConnection()
+        box.hub = hub
+        box.client = client
+        hub.addClient(client)
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+
+        #expect(peerCloseCalls.value() == 1)
+        #expect(hub.activeClientCount == 0)
+    }
+#endif
 }

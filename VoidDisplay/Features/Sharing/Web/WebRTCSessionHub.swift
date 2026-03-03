@@ -22,7 +22,7 @@ extension NWConnection: SignalSocketConnection {
     }
 }
 
-private protocol WebRTCPeerSessioning: AnyObject, Sendable {
+protocol WebRTCPeerSessioning: AnyObject, Sendable {
     nonisolated func handleRemoteOffer(sdp: String)
     nonisolated func addRemoteCandidate(sdp: String, sdpMid: String?, sdpMLineIndex: Int32)
     nonisolated func close()
@@ -73,6 +73,15 @@ nonisolated private struct SignalingOutboundMessage: Encodable {
 }
 
 final class WebRTCSessionHub: Sendable {
+    nonisolated struct PeerCallbacks: Sendable {
+        let onAnswer: @Sendable (String) -> Void
+        let onLocalCandidate: @Sendable (_ sdp: String, _ sdpMid: String?, _ sdpMLineIndex: Int32) -> Void
+        let onFailure: @Sendable (String) -> Void
+        let onDisconnected: @Sendable () -> Void
+    }
+
+    typealias PeerFactory = @Sendable (PeerCallbacks) -> (any WebRTCPeerSessioning)?
+
     private nonisolated struct QueuedSignal: Sendable {
         let text: String
         let disconnectAfterSend: Bool
@@ -92,13 +101,37 @@ final class WebRTCSessionHub: Sendable {
 
     nonisolated private let state: Mutex<State>
     nonisolated private let maxClients = 10
+    nonisolated private let peerFactory: PeerFactory
 
 #if canImport(WebRTC)
     nonisolated private let mediaPipeline = WebRTCMediaPipeline()
 #endif
 
-    nonisolated init(onDemandChanged: @escaping @Sendable (Bool) -> Void = { _ in }) {
+    nonisolated init(
+        onDemandChanged: @escaping @Sendable (Bool) -> Void = { _ in },
+        peerFactory: PeerFactory? = nil
+    ) {
         self.state = Mutex(State(onDemandChanged: onDemandChanged))
+#if canImport(WebRTC)
+        let defaultPeerFactory: PeerFactory = { [mediaPipeline] callbacks in
+            WebRTCPeerSession(
+                mediaPipeline: mediaPipeline,
+                onAnswer: callbacks.onAnswer,
+                onLocalCandidate: { candidate in
+                    callbacks.onLocalCandidate(
+                        candidate.sdp,
+                        candidate.sdpMid,
+                        Int32(candidate.sdpMLineIndex)
+                    )
+                },
+                onFailure: callbacks.onFailure,
+                onDisconnected: callbacks.onDisconnected
+            )
+        }
+        self.peerFactory = peerFactory ?? defaultPeerFactory
+#else
+        self.peerFactory = peerFactory ?? { _ in nil }
+#endif
     }
 
     nonisolated var activeClientCount: Int {
@@ -224,23 +257,25 @@ final class WebRTCSessionHub: Sendable {
     }
 
     nonisolated private func ensurePeer(for key: ObjectIdentifier) -> (any WebRTCPeerSessioning)? {
-        if let existing = state.withLock({ $0.clients[key]?.peer }) {
-            return existing
+        let (hasClient, existingPeer) = state.withLock { state -> (Bool, (any WebRTCPeerSessioning)?) in
+            guard let current = state.clients[key] else { return (false, nil) }
+            return (true, current.peer)
         }
+        guard hasClient else { return nil }
+        if let existingPeer { return existingPeer }
 
 #if canImport(WebRTC)
-        guard let peer = WebRTCPeerSession(
-            mediaPipeline: mediaPipeline,
+        let callbacks = PeerCallbacks(
             onAnswer: { [weak self] sdp in
                 self?.send(message: SignalingOutboundMessage(type: .answer, sdp: sdp), to: key)
             },
-            onLocalCandidate: { [weak self] candidate in
+            onLocalCandidate: { [weak self] sdp, sdpMid, sdpMLineIndex in
                 self?.send(
                     message: SignalingOutboundMessage(
                         type: .iceCandidate,
-                        candidate: candidate.sdp,
-                        sdpMid: candidate.sdpMid,
-                        sdpMLineIndex: Int(candidate.sdpMLineIndex)
+                        candidate: sdp,
+                        sdpMid: sdpMid,
+                        sdpMLineIndex: Int(sdpMLineIndex)
                     ),
                     to: key
                 )
@@ -252,16 +287,23 @@ final class WebRTCSessionHub: Sendable {
             onDisconnected: { [weak self] in
                 self?.removeClient(for: key, cancelConnection: true)
             }
-        ) else {
+        )
+
+        guard let peer = peerFactory(callbacks) else {
             send(message: SignalingOutboundMessage(type: .error, reason: "peer_connection_unavailable"), to: key)
             removeClient(for: key, cancelConnection: true)
             return nil
         }
 
-        state.withLock { state in
-            guard var current = state.clients[key] else { return }
+        let stored = state.withLock { state -> Bool in
+            guard var current = state.clients[key] else { return false }
             current.peer = peer
             state.clients[key] = current
+            return true
+        }
+        guard stored else {
+            peer.close()
+            return nil
         }
         return peer
 #else
