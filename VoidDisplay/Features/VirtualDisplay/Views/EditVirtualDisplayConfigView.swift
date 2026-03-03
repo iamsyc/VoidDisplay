@@ -75,7 +75,8 @@ struct EditVirtualDisplayConfigView: View {
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
         .accessibilityIdentifier("edit_virtual_display_form")
-        .safeAreaInset(edge: .bottom) {
+        .contentMargins(.bottom, 56, for: .scrollContent)
+        .overlay(alignment: .bottom) {
             editActionBar
         }
         .alert("Tip", isPresented: $showDuplicateWarning) {
@@ -297,6 +298,7 @@ struct EditVirtualDisplayConfigView: View {
                 Button("Save Only") {
                     handleSaveOnlyTapped()
                 }
+                .buttonStyle(.bordered)
                 .disabled(isSaveBlockedByMissingRequiredFields)
                 .accessibilityIdentifier("virtual_display_edit_save_only_button")
 
