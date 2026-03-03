@@ -1,70 +1,51 @@
-# Repository Workflow Rules
-
-This repository uses a PR-first workflow by default.
+# Repository Workflow Rules (Lean)
 
 ## Branching
-
-- Do not develop directly on `main` unless the user explicitly requests it.
-- Before making code, workflow, asset, or documentation changes, create a new branch from the latest `main`.
-- Branch names created by Codex should use the `codex/` prefix.
+- Do not develop on `main` unless explicitly requested.
+- If file changes are needed, create a branch from latest `main`.
+- Codex branch names must start with `codex/`.
 
 ## Delivery Flow
-
-- After completing changes, commit them on the working branch.
-- Push the branch to `origin`.
-- Open a pull request targeting `main`.
-- Monitor PR checks and report the status clearly to the user.
-- Merge through the PR after required checks pass, unless the user explicitly asks to merge without waiting.
-- Do not create a commit unless the user has explicitly requested or approved committing for the current task.
-
-## Pull Request Expectations
-
-- Treat requests as full delivery flow only when the user explicitly says "完成后提PR" (or equivalent wording), meaning:
-  1. create branch
-  2. make changes
-  3. validate locally when practical
-  4. commit
-  5. push
-  6. open PR
-  7. follow CI
-  8. merge to `main` when appropriate
-
-- If the user only asks a question or asks for analysis, do not create a branch unless a repository change is needed.
+- Only treat as full PR delivery when user explicitly asks (for example: "完成后提PR").
+- Full delivery means: branch -> change -> local verify -> commit -> push -> PR -> follow CI -> merge when appropriate.
+- Do not commit unless the user explicitly requests or approves commit for this task.
+- If task is analysis/question only, do not create branch or commit.
 
 ## Exceptions
-
-- If the user explicitly says to stay on the current branch, work on `main`, skip PR, or skip waiting for CI, follow that instruction for the current task.
-- If no repository files need to change, do not create a branch just for discussion or investigation.
+- If user says stay on current branch / work on `main` / skip PR / skip waiting CI, follow that instruction for this task.
 
 ## Swift & SDK Baseline
-
-- Use Swift 6 language mode for all Swift targets and new code by default.
-- Keep the project development/deployment target at `15.6` unless the user explicitly requests a different version for a specific task.
-- Prefer the latest Swift syntax and the newest SDK capabilities available for target `15.6`; avoid legacy/deprecated APIs when modern equivalents are available.
+- Use Swift 6 for all Swift targets and new code.
+- Keep deployment target at `15.6` unless user requests otherwise.
+- Prefer modern APIs compatible with target `15.6`; avoid deprecated APIs.
 
 ## Build Verification Gate
-
-- After every code change, run a local build verification before delivery.
-- Do not deliver code if there is any compile error or any compile warning.
-- Treat warning-free builds as a hard requirement for handoff.
-- The project owner has strict code cleanliness standards ("代码洁癖"), so warning-free local builds are mandatory.
+- After every code change, run local build verification.
+- Handoff requires: zero compile errors and zero compile warnings.
 
 ## Test Execution Policy
-
-- Default policy after code changes: run local build verification and targeted tests that map to the changed module/feature.
-- Do not run the full test suite by default.
-- Run full test suite when any of the following applies:
-  - Changes affect shared/common code used by multiple modules or targets.
-  - Changes update dependencies, Xcode/Swift build settings, build scripts, or test infrastructure.
-  - Changes are large refactors (for example, batch renames, API/signature changes, or broad file moves).
-  - Changes involve high-risk runtime behavior (for example, concurrency, persistence, networking protocol, permissions/security).
-  - The impact scope cannot be confidently bounded for targeted testing.
-  - The user explicitly requires full-suite validation before release/merge.
-- When practical, prefer full-suite validation in PR CI to avoid redundant local full runs.
+- Default: run targeted tests related to changed module/feature.
+- Run full suite when changes are broad/high-risk or impact cannot be bounded:
+- shared/common code changes
+- dependency/build settings/script/test infra changes
+- large refactors (batch rename/signature/file moves)
+- high-risk runtime behavior (concurrency/persistence/network/security)
+- user explicitly requests full suite
 
 ## AI Agent Temporary Workspace
+- Put all AI-generated temp files/logs/artifacts under `.ai-tmp/`.
+- Use isolated subdirectories under `.ai-tmp/`.
+- Do not create ad-hoc temp dirs at repo root unless explicitly requested.
 
-- All AI agent-generated temporary files, debug scripts, caches, logs, and build artifacts must be placed under `.ai-tmp/`.
-- Use subdirectories under `.ai-tmp/` for isolation, for example: `.ai-tmp/codex-tmp/`, `.ai-tmp/.spm-cache/`, `.ai-tmp/.spm-clone/`.
-- Do not create ad-hoc temporary directories at repository root (for example: `.tmp-*`, `.spm-cache`, `.spm-clone`, `dist`, `.codex-tmp`) unless the user explicitly requests it.
-- Any file outside `.ai-tmp/` should be treated as potentially version-controlled by default.
+## Xcode Tooling Policy (Token + Reliability First)
+- Token is money: default build/test gate is shell `xcodebuild`.
+- Write verbose logs to `.ai-tmp/` and report concise summaries only.
+- Use Xcode MCP only for high-value IDE-context tasks:
+- workspace/tab context resolution
+- project graph file operations
+- targeted diagnostics/tests
+- preview/snippet workflows hard to reproduce in shell
+- Avoid high-output calls unless necessary (full glob/full test list/full logs).
+- Scope early by path/pattern/target/test identifier.
+- If MCP shows instability (`Transport closed`, XPC/timeout), switch to shell fallback instead of repeated MCP retries.
+- Do not block delivery on MCP instability if equivalent `xcodebuild` verification is possible.
