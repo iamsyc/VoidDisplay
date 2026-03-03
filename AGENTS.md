@@ -19,7 +19,7 @@ This repository uses a PR-first workflow by default.
 
 ## Pull Request Expectations
 
-- Treat "完成这个需求" or similar implementation requests as meaning:
+- Treat requests as full delivery flow only when the user explicitly says "完成后提PR" (or equivalent wording), meaning:
   1. create branch
   2. make changes
   3. validate locally when practical
