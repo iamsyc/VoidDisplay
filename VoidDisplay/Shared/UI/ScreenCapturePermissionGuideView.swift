@@ -89,6 +89,10 @@ struct ScreenCapturePermissionGuideView: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
+            .frame(maxWidth: 760)
+            .appGlassSurface(role: .panel)
+            .padding(.horizontal, AppUI.Spacing.large)
+            .padding(.vertical, AppUI.Spacing.small)
             .accessibilityElement(children: .contain)
             .optionalAccessibilityIdentifier(rootAccessibilityIdentifier)
         }

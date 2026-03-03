@@ -42,10 +42,7 @@ struct ShareStatusPanel: View {
         .font(.caption.weight(.medium))
         .padding(.horizontal, AppUI.Spacing.medium)
         .padding(.vertical, AppUI.Spacing.small)
-        .background(
-            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                .fill(Color.secondary.opacity(0.06))
-        )
+        .appGlassBar(role: .status)
         .accessibilityIdentifier("share_status_panel")
     }
 

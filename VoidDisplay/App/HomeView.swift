@@ -45,6 +45,8 @@ struct HomeView: View {
                     
                 }
             }
+            .scrollContentBackground(.hidden)
+            .appGlassSidebarBackground()
             .accessibilityIdentifier("home_sidebar")
             .navigationSplitViewColumnWidth(min: 160, ideal: 160,max: 190)
         } detail: {
