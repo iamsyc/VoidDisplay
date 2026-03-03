@@ -81,3 +81,18 @@ enum WebServiceStartResult: Equatable {
         return nil
     }
 }
+
+enum WebServiceLifecycleState: Equatable {
+    case stopped
+    case starting(requestedPort: UInt16)
+    case running(WebServiceBinding)
+    case stopping
+    case failed(WebServiceStartFailure)
+
+    var isRunning: Bool {
+        if case .running = self {
+            return true
+        }
+        return false
+    }
+}

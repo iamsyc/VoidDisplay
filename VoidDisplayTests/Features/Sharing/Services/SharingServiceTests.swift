@@ -17,7 +17,7 @@ struct SharingServiceTests {
         #expect(sut.isWebServiceRunning)
         #expect(mock.capturedTargetStateProvider?(.main) == .knownInactive)
         #expect(mock.capturedTargetStateProvider?(.id(123)) == .unknown)
-        #expect(mock.capturedLiveHubProvider?(.main) == nil)
+        #expect(mock.capturedSessionHubProvider?(.main) == nil)
     }
 
     @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() async {
@@ -75,6 +75,27 @@ struct SharingServiceTests {
         mock.onRunningStateChanged?(false)
 
         #expect(receivedStates == [true, false])
+    }
+
+    @MainActor @Test func forwardsWebServiceLifecycleStateCallbackFromController() {
+        let mock = MockWebServiceController()
+        let sut = SharingService(webServiceController: mock)
+        var receivedStates: [WebServiceLifecycleState] = []
+
+        sut.onWebServiceLifecycleStateChanged = { state in
+            receivedStates.append(state)
+        }
+
+        let binding = WebServiceBinding(requestedPort: 9090, boundPort: 9090)
+        mock.onLifecycleStateChanged?(.starting(requestedPort: 9090))
+        mock.onLifecycleStateChanged?(.running(binding))
+        mock.onLifecycleStateChanged?(.stopped)
+
+        #expect(receivedStates == [
+            .starting(requestedPort: 9090),
+            .running(binding),
+            .stopped
+        ])
     }
 
     @MainActor @Test func startAndStopEmitRunningStateChanges() async {

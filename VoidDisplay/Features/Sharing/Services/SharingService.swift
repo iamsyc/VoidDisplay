@@ -7,6 +7,8 @@ import CoreGraphics
 protocol SharingServiceProtocol: AnyObject {
     var webServicePortValue: UInt16 { get }
     var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? { get set }
+    var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? { get set }
+    var webServiceLifecycleState: WebServiceLifecycleState { get }
     var isWebServiceRunning: Bool { get }
     var activeStreamClientCount: Int { get }
     var currentWebServer: WebServer? { get }
@@ -51,6 +53,15 @@ final class SharingService: SharingServiceProtocol {
         set { webServiceController.onRunningStateChanged = newValue }
     }
 
+    var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? {
+        get { webServiceController.onLifecycleStateChanged }
+        set { webServiceController.onLifecycleStateChanged = newValue }
+    }
+
+    var webServiceLifecycleState: WebServiceLifecycleState {
+        webServiceController.lifecycleState
+    }
+
     var isWebServiceRunning: Bool {
         webServiceController.isRunning
     }
@@ -82,8 +93,8 @@ final class SharingService: SharingServiceProtocol {
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },
-            liveHubProvider: { [weak self] target in
-                self?.sharingCoordinator.liveHub(for: target)
+            sessionHubProvider: { [weak self] target in
+                self?.sharingCoordinator.sessionHub(for: target)
             }
         )
         if case .failed(let failure) = result {

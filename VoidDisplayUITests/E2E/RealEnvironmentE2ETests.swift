@@ -38,7 +38,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
             ],
             timeout: 10
         ) else {
-            throw XCTSkip("Sharing page did not reach a stable real-environment state within timeout.")
+            throw XCTSkip("Sharing page did not reach a stable real-environment state within timeout (expected one of: start/displays/empty/loading).")
         }
 
         if state == "share_start_service_button" {
@@ -56,16 +56,16 @@ final class RealEnvironmentE2ETests: XCTestCase {
                 ],
                 timeout: 10
             ) else {
-                throw XCTSkip("Service started but display state was not resolved in time.")
+                throw XCTSkip("Service started, but display state was not resolved in time (expected displays or empty).")
             }
             if afterStartState == "share_loading_displays" {
-                throw XCTSkip("Display loading remained in-progress; environment not stable for assertion.")
+                throw XCTSkip("Display loading remained in-progress after service start; environment not stable for assertion.")
             }
             return
         }
 
         if state == "share_loading_permission" || state == "share_loading_displays" {
-            throw XCTSkip("Sharing page remained in loading state; environment not stable for assertion.")
+            throw XCTSkip("Sharing page remained in loading state (\(state)); environment not stable for assertion.")
         }
     }
 
@@ -100,7 +100,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
                     reason: "Start Service button is blocked by a system interruption."
                 )
             } else if preStartState == "share_loading_permission" || preStartState == "share_loading_displays" {
-                throw XCTSkip("Sharing page is still loading; skip real-environment lifecycle check.")
+                throw XCTSkip("Sharing page is still loading (\(preStartState)); skip real-environment lifecycle check.")
             }
         } else {
             throw XCTSkip("Could not determine sharing page state in real environment.")
@@ -154,10 +154,12 @@ final class RealEnvironmentE2ETests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func element(_ app: XCUIApplication, identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    @MainActor
     private func waitForAnyIdentifier(
         _ app: XCUIApplication,
         identifiers: [String],
@@ -175,6 +177,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
         return nil
     }
 
+    @MainActor
     private func waitForDisplayPageURL(
         _ app: XCUIApplication,
         timeout: TimeInterval
@@ -206,6 +209,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
         return nil
     }
 
+    @MainActor
     private func waitForAccessibilityValue(
         element: XCUIElement,
         value: String,
@@ -216,6 +220,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
+    @MainActor
     private func tapOrSkipIfBlocked(
         _ element: XCUIElement,
         reason: String

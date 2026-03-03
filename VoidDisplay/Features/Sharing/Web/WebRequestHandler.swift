@@ -4,8 +4,7 @@ enum WebRequestDecision: Equatable {
     case badRequest
     case showRootPage
     case showDisplayPage(ShareTarget)
-    case openLiveSocket(ShareTarget)
-    case legacyStreamRemoved
+    case openSignalSocket(ShareTarget)
     case sharingUnavailable
     case methodNotAllowed
     case notFound
@@ -53,18 +52,16 @@ struct WebRequestHandler {
             case .unknown:
                 return .notFound
             }
-        case .live(let target):
+        case .signal(let target):
             let targetState = targetStateProvider(target)
             switch targetState {
             case .active:
-                return .openLiveSocket(target)
+                return .openSignalSocket(target)
             case .knownInactive:
                 return .sharingUnavailable
             case .unknown:
                 return .notFound
             }
-        case .legacyStream(_):
-            return .legacyStreamRemoved
         case .notFound:
             return .notFound
         }
@@ -105,18 +102,6 @@ struct WebRequestHandler {
                 ],
                 body: body
             )
-        case .legacyStreamRemoved:
-            let body = "Stream endpoint has been replaced by /display + WebSocket live transport."
-            return buildResponse(
-                statusLine: "HTTP/1.1 410 Gone",
-                headers: [
-                    ("Content-Type", "text/plain; charset=utf-8"),
-                    ("Content-Length", "\(body.utf8.count)"),
-                    ("Cache-Control", "no-cache"),
-                    ("Connection", "close")
-                ],
-                body: body
-            )
         case .methodNotAllowed:
             let body = "Method Not Allowed"
             return buildResponse(
@@ -140,7 +125,7 @@ struct WebRequestHandler {
                 ],
                 body: body
             )
-        case .openLiveSocket:
+        case .openSignalSocket:
             return Data()
         }
     }

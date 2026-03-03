@@ -2,6 +2,7 @@ import CoreGraphics
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 struct DisplayTopologyTests {
     @Test func displayInfoIsViableRequiresActiveAndPositiveBounds() {
         let viable = DisplayTopologySnapshot.DisplayInfo(

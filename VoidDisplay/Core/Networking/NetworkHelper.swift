@@ -7,14 +7,15 @@
 import Foundation
 import Darwin
 
-struct LANIPv4Candidate: Equatable {
+// Project default actor isolation is MainActor; keep this helper executor-agnostic.
+nonisolated struct LANIPv4Candidate: Equatable, Sendable {
     let name: String
     let address: String
 }
 
-private let preferredLANInterfaces = ["en0", "en1", "en2", "en3", "bridge0", "pdp_ip0"]
+nonisolated private let preferredLANInterfaces = ["en0", "en1", "en2", "en3", "bridge0", "pdp_ip0"]
 
-func selectPreferredLANIPv4Address(from candidates: [LANIPv4Candidate]) -> String? {
+nonisolated func selectPreferredLANIPv4Address(from candidates: [LANIPv4Candidate]) -> String? {
     for preferred in preferredLANInterfaces {
         if let match = candidates.first(where: { $0.name == preferred }) {
             return match.address
@@ -27,7 +28,7 @@ func selectPreferredLANIPv4Address(from candidates: [LANIPv4Candidate]) -> Strin
 /// - Note: The previous implementation only looked at `en0` (often Wi‑Fi), which
 ///   can be wrong on some Macs (e.g. Ethernet may be `en0`, Wi‑Fi may be `en1`),
 ///   and it could also return IPv6 which needs special URL formatting.
-func getLANIPv4Address() -> String? {
+nonisolated func getLANIPv4Address() -> String? {
     var ifaddr: UnsafeMutablePointer<ifaddrs>? = nil
     guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
     defer { freeifaddrs(ifaddr) }
@@ -51,7 +52,10 @@ func getLANIPv4Address() -> String? {
         var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         guard inet_ntop(AF_INET, &ipv4Addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
 
-        let ip = String(cString: buffer)
+        let ip = String(
+            decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+            as: UTF8.self
+        )
         if ip.hasPrefix("169.254.") { continue } // link-local (usually not reachable by other devices)
         candidates.append(.init(name: name, address: ip))
     }

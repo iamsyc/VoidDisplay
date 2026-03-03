@@ -157,6 +157,9 @@
         }
       }
     },
+    "1:1" : {
+
+    },
     "8081" : {
 
     },
@@ -634,6 +637,9 @@
         }
       }
     },
+    "Fit" : {
+
+    },
     "Height" : {
       "localizations" : {
         "zh-Hans" : {
@@ -729,6 +735,9 @@
           }
         }
       }
+    },
+    "Loading..." : {
+
     },
     "Loading…" : {
       "localizations" : {
@@ -929,6 +938,9 @@
           }
         }
       }
+    },
+    "Original Size" : {
+
     },
     "Permission denied for port %u. Choose another port and try again." : {
       "localizations" : {
@@ -1595,6 +1607,9 @@
           }
         }
       }
+    },
+    "Web listener stopped unexpectedly." : {
+
     },
     "Web service controller is unavailable." : {
       "localizations" : {

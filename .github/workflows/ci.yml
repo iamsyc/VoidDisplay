@@ -105,12 +105,20 @@ jobs:
       enforce_failure: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
 
   release_build_check:
-    name: release-build-check
+    name: release-build-check (${{ matrix.label }})
     needs:
       - classify_changes
     if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && needs.classify_changes.outputs.code_relevant == 'true' }}
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: arm64
+            arch: arm64
+          - label: intel64
+            arch: x86_64
     permissions:
       contents: read
     steps:
@@ -120,18 +128,36 @@ jobs:
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
 
-      - name: Build Release app (unsigned, arm64)
+      - name: Build Release app (unsigned)
+        env:
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
         run: |
           set -euo pipefail
           xcodebuild \
             -scheme VoidDisplay \
             -project VoidDisplay.xcodeproj \
             -configuration Release \
-            -destination 'platform=macOS,arch=arm64' \
-            -derivedDataPath .derivedData-release-check \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath ".derivedData-release-check-${LABEL}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            ARCHS="${ARCH}" \
             build
+
+      - name: Thin/sign/verify for target arch
+        env:
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          app_path=".derivedData-release-check-${LABEL}/Build/Products/Release/VoidDisplay.app"
+          if [ ! -d "${app_path}" ]; then
+            echo "Expected app not found: ${app_path}"
+            exit 1
+          fi
+
+          bash scripts/release/thin_webrtc_and_sign.sh "${app_path}" "${ARCH}"
 
   ci_gate:
     name: ci-gate
@@ -252,8 +278,8 @@ jobs:
             const releaseDetails = isNonCodePr
               ? 'skipped; non-code pull request'
               : isMainCodePr
-              ? 'required; Release arm64 unsigned build'
-              : 'not run; only main-targeting code PRs include release build check';
+              ? 'required; Release arch smoke check (arm64 + x86_64 with thin/sign/verify)'
+              : 'not run; only main-targeting code PRs include release arch smoke check';
             const gateRule = isNonCodePr
               ? 'Gate rule: 本次 PR 仅包含非代码变更，已跳过 `Unit Tests` / `UI Smoke Tests` / `Release Build Check`，`ci-gate` 直接通过。'
               : isMainCodePr
@@ -270,7 +296,7 @@ jobs:
               `| Change Scope | ${changeScope} | ${codeRelevant ? 'code-relevant change set' : 'non-code pull request fast-path'} |`,
               `| Unit Tests | ${unitResult} | ${unitDetails} |`,
               `| UI Smoke Tests (matrix: baseline + permissionDenied + rebuildFailed) | ${uiJobResult} | ${uiDetails} |`,
-              `| Release Build Check (Release arm64, unsigned) | ${releaseResult} | ${releaseDetails} |`,
+              `| Release Build Check (Release arch smoke: arm64 + x86_64) | ${releaseResult} | ${releaseDetails} |`,
               `| CI Gate | ${gateResult} | ${gateDetails} |`,
               '',
               gateRule,

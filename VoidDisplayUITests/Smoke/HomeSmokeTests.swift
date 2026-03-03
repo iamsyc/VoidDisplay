@@ -111,7 +111,7 @@ final class HomeSmokeTests: XCTestCase {
         let saveOnlyButton = assertExists(saveOnlyApp, identifier: "virtual_display_edit_save_only_button")
         let saveAndRebuildButton = assertExists(saveOnlyApp, identifier: "virtual_display_edit_save_and_rebuild_button")
         XCTAssertTrue(saveAndRebuildButton.isEnabled)
-        saveOnlyButton.tap()
+        tapWhenHittable(saveOnlyButton, in: saveOnlyApp)
         XCTAssertFalse(saveOnlyForm.waitForExistence(timeout: 0.3))
         saveOnlyApp.terminate()
 
@@ -121,7 +121,11 @@ final class HomeSmokeTests: XCTestCase {
         assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_button").tap()
         let saveAndRebuildForm = assertExists(saveAndRebuildApp, identifier: "edit_virtual_display_form")
         assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_mode_hidpi_toggle").tap()
-        assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_save_and_rebuild_button").tap()
+        let saveAndRebuildAction = assertExists(
+            saveAndRebuildApp,
+            identifier: "virtual_display_edit_save_and_rebuild_button"
+        )
+        tapWhenHittable(saveAndRebuildAction, in: saveAndRebuildApp)
         XCTAssertFalse(saveAndRebuildForm.waitForExistence(timeout: 0.3))
     }
 }

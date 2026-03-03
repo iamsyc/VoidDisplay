@@ -8,6 +8,7 @@ import Testing
 import Foundation
 @testable import VoidDisplay
 
+@MainActor
 struct VirtualDisplayAndResolutionTests {
 
     @Test func resolutionsParsing() {

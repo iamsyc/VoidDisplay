@@ -11,12 +11,11 @@
             --panel: rgba(255, 255, 255, 0.08);
             --text: #f7f9fd;
             --muted: rgba(247, 249, 253, 0.65);
-            --accent: #8fd3ff;
         }
         * { box-sizing: border-box; }
         body {
             margin: 0;
-            min-height: 100vh;
+            height: 100vh;
             font-family: "SF Pro Display", "Helvetica Neue", sans-serif;
             background:
                 radial-gradient(circle at top left, rgba(143, 211, 255, 0.18), transparent 32%),
@@ -25,12 +24,15 @@
             color: var(--text);
             display: grid;
             place-items: center;
-            padding: 20px;
+            padding: 12px;
+            overflow: hidden;
         }
         .shell {
-            width: min(96vw, 1600px);
+            width: 98vw;
+            height: calc(100vh - 24px);
             display: grid;
-            gap: 18px;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            gap: 12px;
         }
         .hero {
             display: flex;
@@ -42,6 +44,13 @@
             border-radius: 20px;
             background: var(--panel);
             backdrop-filter: blur(18px);
+        }
+        .hero-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
         .eyebrow {
             margin: 0 0 6px;
@@ -62,19 +71,39 @@
             background: rgba(255, 255, 255, 0.08);
             color: var(--muted);
         }
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+        .control-btn {
+            appearance: none;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 999px;
+            padding: 8px 12px;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.06);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+        }
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
         .stage {
             position: relative;
             border-radius: 28px;
             overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(0, 0, 0, 0.32);
-            min-height: min(70vh, 900px);
+            background: #000;
+            min-height: 0;
             box-shadow: 0 36px 90px rgba(0, 0, 0, 0.45);
         }
-        canvas {
+        video {
             width: 100%;
             height: 100%;
             display: block;
+            object-fit: contain;
             background: #000;
         }
         .overlay {
@@ -105,6 +134,37 @@
             color: var(--muted);
             padding: 0 8px;
         }
+        body.mode-native {
+            height: auto;
+            min-height: 100vh;
+            overflow: auto;
+        }
+        body.mode-native .shell {
+            height: auto;
+            min-height: calc(100vh - 24px);
+        }
+        body.mode-native .stage {
+            overflow: auto;
+            display: block;
+        }
+        body.mode-native video {
+            width: auto;
+            height: auto;
+            max-width: none;
+            max-height: none;
+            margin: 0 auto;
+        }
+        @media (max-height: 860px) {
+            .hero {
+                padding: 12px 16px;
+            }
+            h1 {
+                font-size: clamp(18px, 2vw, 28px);
+            }
+            .footnote {
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -114,40 +174,54 @@
                 <p class="eyebrow">VoidDisplay Live</p>
                 <h1>__PAGE_TITLE__</h1>
             </div>
-            <div class="status" id="status">Connecting…</div>
-        </section>
-
-        <section class="stage">
-            <canvas id="canvas"></canvas>
-            <div class="overlay" id="overlay">
-                <div class="card">
-                    <h2 id="message-title">Connecting…</h2>
-                    <p id="message-body">Preparing the low-latency stream.</p>
+            <div class="hero-actions">
+                <div class="status" id="status">Connecting…</div>
+                <div class="controls">
+                    <button class="control-btn" id="scale-mode-btn" type="button">1:1</button>
+                    <button class="control-btn" id="fullscreen-btn" type="button">Fullscreen</button>
                 </div>
             </div>
         </section>
 
-        <p class="footnote">This page requires a modern browser with WebCodecs and WebSocket support.</p>
+        <section class="stage">
+            <video id="player" autoplay playsinline muted></video>
+            <div class="overlay" id="overlay">
+                <div class="card">
+                    <h2 id="message-title">Connecting…</h2>
+                    <p id="message-body">Preparing the WebRTC stream.</p>
+                </div>
+            </div>
+        </section>
+
+        <p class="footnote">Use `1:1` for original size and `Fullscreen` for immersive view.</p>
     </div>
 
     <script>
-        const livePath = "__LIVE_PATH__";
+        const signalPath = "__SIGNAL_PATH__";
         const statusEl = document.getElementById("status");
         const overlayEl = document.getElementById("overlay");
         const messageTitleEl = document.getElementById("message-title");
         const messageBodyEl = document.getElementById("message-body");
-        const canvas = document.getElementById("canvas");
-        const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+        const player = document.getElementById("player");
+        const stage = document.querySelector(".stage");
+        const scaleModeBtn = document.getElementById("scale-mode-btn");
+        const fullscreenBtn = document.getElementById("fullscreen-btn");
 
         let socket = null;
-        let decoder = null;
+        let peer = null;
         let reconnectIndex = 0;
-        let latestFrame = null;
-        let currentConfig = null;
-        const reconnectDelays = [100, 250, 500, 1000];
+        let reconnectTimer = null;
+        let terminalStop = false;
+        let state = "idle";
+        let originalScaleEnabled = false;
+        const reconnectDelays = [250, 500, 1000, 2000, 4000];
 
         function setStatus(text) {
             statusEl.textContent = text;
+        }
+
+        function transition(nextState) {
+            state = nextState;
         }
 
         function setOverlay(title, body, visible = true) {
@@ -156,155 +230,272 @@
             overlayEl.hidden = !visible;
         }
 
-        function closeLatestFrame() {
-            if (latestFrame) {
-                latestFrame.close();
-                latestFrame = null;
+        function applyScaleMode() {
+            document.body.classList.toggle("mode-native", originalScaleEnabled);
+            if (scaleModeBtn) {
+                scaleModeBtn.textContent = originalScaleEnabled ? "Fit" : "1:1";
             }
         }
 
-        function ensureDecoder(config) {
-            if (!window.VideoDecoder) {
-                setStatus("Unsupported browser");
-                setOverlay(
-                    "WebCodecs required",
-                    "This build requires a modern browser with WebCodecs support.",
-                    true
-                );
-                return false;
-            }
+        function syncFullscreenButtonLabel() {
+            if (!fullscreenBtn) return;
+            fullscreenBtn.textContent = document.fullscreenElement ? "Exit Fullscreen" : "Fullscreen";
+        }
 
-            if (decoder) {
-                decoder.close();
-            }
-
-            decoder = new VideoDecoder({
-                output(frame) {
-                    closeLatestFrame();
-                    latestFrame = frame;
-                    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-                        canvas.width = frame.displayWidth;
-                        canvas.height = frame.displayHeight;
-                    }
-                    overlayEl.hidden = true;
-                },
-                error(error) {
-                    setStatus("Decoder error");
-                    setOverlay("Decoder error", error.message || "Failed to decode stream.", true);
+        async function toggleFullscreen() {
+            if (!document.fullscreenEnabled || !stage) return;
+            try {
+                if (document.fullscreenElement) {
+                    await document.exitFullscreen();
+                } else {
+                    await stage.requestFullscreen();
                 }
-            });
+            } catch {
+                // no-op: button state will remain unchanged
+            }
+        }
 
-            decoder.configure({
-                codec: config.codec,
-                optimizeForLatency: true
-            });
+        scaleModeBtn?.addEventListener("click", () => {
+            originalScaleEnabled = !originalScaleEnabled;
+            applyScaleMode();
+        });
 
-            currentConfig = config;
-            return true;
+        fullscreenBtn?.addEventListener("click", () => {
+            toggleFullscreen();
+        });
+
+        document.addEventListener("fullscreenchange", syncFullscreenButtonLabel);
+        applyScaleMode();
+        syncFullscreenButtonLabel();
+
+        function closePeer() {
+            if (peer) {
+                peer.ontrack = null;
+                peer.onicecandidate = null;
+                peer.onconnectionstatechange = null;
+                peer.close();
+                peer = null;
+            }
+            player.srcObject = null;
+        }
+
+        function isSocketConnectingOrOpen(ws) {
+            if (!ws) return false;
+            return ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN;
+        }
+
+        function closeSocketAndClearReference() {
+            const ws = socket;
+            if (!ws) return;
+            socket = null;
+            try {
+                ws.close();
+            } catch {
+                // no-op
+            }
+        }
+
+        function clearReconnectTimer() {
+            if (reconnectTimer) {
+                window.clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
         }
 
         function scheduleReconnect() {
+            if (terminalStop || state === "stopping" || state === "closed") {
+                return;
+            }
+            if (reconnectTimer) {
+                return;
+            }
             const delay = reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)];
             reconnectIndex += 1;
             setStatus(`Reconnecting in ${delay}ms`);
-            setOverlay("Reconnecting…", "The stream connection dropped. Retrying automatically.", true);
-            window.setTimeout(connect, delay);
+            setOverlay("Reconnecting…", "The signaling channel dropped. Retrying automatically.", true);
+            transition("handshaking");
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                connect();
+            }, delay);
         }
 
-        function decodePacket(data) {
-            if (!decoder || !currentConfig) {
-                return;
-            }
+        async function sendSignal(payload) {
+            if (!socket || socket.readyState !== WebSocket.OPEN) return;
+            socket.send(JSON.stringify(payload));
+        }
 
-            const view = new DataView(data);
-            const version = view.getUint8(0);
-            if (version !== 1) {
-                return;
-            }
+        async function startPeerConnection() {
+            closePeer();
+            peer = new RTCPeerConnection({ iceServers: [] });
 
-            const flags = view.getUint8(1);
-            const key = (flags & 0x1) !== 0;
-            const ptsUs = Number(view.getBigUint64(2, false));
-            const payload = new Uint8Array(data.slice(18));
+            peer.ontrack = (event) => {
+                if (event.streams && event.streams[0]) {
+                    player.srcObject = event.streams[0];
+                    setStatus("Live");
+                    setOverlay("Live stream", "Connected and receiving frames.", false);
+                    transition("streaming");
+                }
+            };
 
-            decoder.decode(new EncodedVideoChunk({
-                type: key ? "key" : "delta",
-                timestamp: ptsUs,
-                data: payload
-            }));
+            peer.onicecandidate = (event) => {
+                if (!event.candidate) {
+                    sendSignal({ type: "ice_complete" });
+                    return;
+                }
+                sendSignal({
+                    type: "ice_candidate",
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex
+                });
+            };
+
+            peer.onconnectionstatechange = () => {
+                if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
+                    setStatus("Connection lost");
+                    setOverlay("Connection lost", "Trying to reconnect to the stream.", true);
+                    if (!terminalStop) {
+                        closeSocketAndClearReference();
+                        scheduleReconnect();
+                    }
+                }
+            };
+
+            const offer = await peer.createOffer({
+                offerToReceiveAudio: false,
+                offerToReceiveVideo: true
+            });
+            await peer.setLocalDescription(offer);
+            await sendSignal({ type: "offer", sdp: offer.sdp });
+            transition("negotiating");
         }
 
         function connect() {
+            if (terminalStop || state === "closed") {
+                return;
+            }
+            if (isSocketConnectingOrOpen(socket)) {
+                return;
+            }
             if (!window.WebSocket) {
                 setStatus("Unsupported browser");
-                setOverlay(
-                    "WebSocket required",
-                    "This browser cannot open the live stream transport.",
-                    true
-                );
+                setOverlay("WebSocket required", "This browser cannot open signaling transport.", true);
+                transition("closed");
+                return;
+            }
+            if (!window.RTCPeerConnection) {
+                setStatus("Unsupported browser");
+                setOverlay("WebRTC required", "This browser does not support RTCPeerConnection.", true);
+                transition("closed");
                 return;
             }
 
             const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-            socket = new WebSocket(`${protocol}://${window.location.host}${livePath}`);
-            socket.binaryType = "arraybuffer";
+            const wsUrl = `${protocol}://${window.location.host}${signalPath}`;
+            const ws = new WebSocket(wsUrl);
+            socket = ws;
+            transition("handshaking");
             setStatus("Connecting…");
-            setOverlay("Connecting…", "Preparing the low-latency stream.", true);
+            setOverlay("Connecting…", "Preparing the WebRTC signaling channel.", true);
 
-            socket.addEventListener("open", () => {
+            ws.addEventListener("open", async () => {
+                if (socket !== ws) return;
                 reconnectIndex = 0;
-                setStatus("Connected");
+                clearReconnectTimer();
+                transition("signalingReady");
+                setStatus("Signaling connected");
+                await sendSignal({ type: "viewer_ready" });
+                try {
+                    await startPeerConnection();
+                    setOverlay("Negotiating…", "Exchanging offer/answer and ICE candidates.", true);
+                } catch (error) {
+                    setStatus("Negotiation failed");
+                    setOverlay("Negotiation failed", error?.message || "Failed to create WebRTC offer.", true);
+                    closeSocketAndClearReference();
+                    scheduleReconnect();
+                }
             });
 
-            socket.addEventListener("message", async (event) => {
-                if (typeof event.data === "string") {
-                    const payload = JSON.parse(event.data);
-                    if (payload.type === "config") {
-                        const ready = ensureDecoder(payload);
-                        if (ready) {
-                            setStatus("Live");
-                            setOverlay("Waiting for keyframe…", "Connected. Waiting for the next IDR frame.", true);
-                        }
-                    } else if (payload.type === "stopped") {
-                        setStatus("Stopped");
-                        setOverlay("Sharing stopped", "The source stream is no longer available.", true);
-                        socket.close();
-                    }
+            ws.addEventListener("message", async (event) => {
+                if (socket !== ws) return;
+                if (typeof event.data !== "string") {
                     return;
                 }
 
-                const data = event.data instanceof ArrayBuffer
-                    ? event.data
-                    : await event.data.arrayBuffer();
-                decodePacket(data);
+                let payload;
+                try {
+                    payload = JSON.parse(event.data);
+                } catch {
+                    return;
+                }
+
+                if (!payload || typeof payload.type !== "string") {
+                    return;
+                }
+
+                switch (payload.type) {
+                    case "answer":
+                        if (!peer || typeof payload.sdp !== "string") return;
+                        await peer.setRemoteDescription({
+                            type: "answer",
+                            sdp: payload.sdp
+                        });
+                        setStatus("Connected");
+                        break;
+                    case "ice_candidate":
+                        if (!peer || typeof payload.candidate !== "string") return;
+                        await peer.addIceCandidate({
+                            candidate: payload.candidate,
+                            sdpMid: payload.sdpMid || null,
+                            sdpMLineIndex: Number.isInteger(payload.sdpMLineIndex) ? payload.sdpMLineIndex : 0
+                        });
+                        break;
+                    case "stopped":
+                        terminalStop = true;
+                        transition("stopping");
+                        setStatus("Stopped");
+                        setOverlay("Sharing stopped", "The source stream is no longer available.", true);
+                        closePeer();
+                        clearReconnectTimer();
+                        closeSocketAndClearReference();
+                        transition("closed");
+                        break;
+                    case "error":
+                        setStatus("Error");
+                        setOverlay("Stream error", payload.reason || "Unknown signaling error.", true);
+                        break;
+                    default:
+                        break;
+                }
             });
 
-            socket.addEventListener("close", () => {
-                closeLatestFrame();
-                if (decoder) {
-                    decoder.close();
-                    decoder = null;
+            ws.addEventListener("close", () => {
+                if (socket !== ws) return;
+                socket = null;
+                closePeer();
+                if (terminalStop || state === "closed" || state === "stopping") {
+                    setStatus("Stopped");
+                    transition("closed");
+                    return;
                 }
-                currentConfig = null;
                 scheduleReconnect();
             });
 
-            socket.addEventListener("error", () => {
+            ws.addEventListener("error", () => {
+                if (socket !== ws) return;
                 setStatus("Connection error");
             });
         }
 
-        function drawLoop() {
-            if (latestFrame) {
-                context.drawImage(latestFrame, 0, 0, canvas.width, canvas.height);
-                latestFrame.close();
-                latestFrame = null;
-            }
-            window.requestAnimationFrame(drawLoop);
-        }
+        window.addEventListener("beforeunload", () => {
+            terminalStop = true;
+            clearReconnectTimer();
+            closePeer();
+            closeSocketAndClearReference();
+        });
 
         connect();
-        drawLoop();
     </script>
 </body>
 </html>

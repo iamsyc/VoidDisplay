@@ -96,12 +96,26 @@ jobs:
             -scheme VoidDisplay \
             -project VoidDisplay.xcodeproj \
             -configuration Release \
-            -destination "platform=macOS,arch=${ARCH}" \
+            -destination 'generic/platform=macOS' \
             -derivedDataPath ".derivedData-release-${LABEL}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             ARCHS="${ARCH}" \
             build
+
+      - name: Thin/sign/verify for target arch
+        env:
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          app_path=".derivedData-release-${LABEL}/Build/Products/Release/VoidDisplay.app"
+          if [ ! -d "${app_path}" ]; then
+            echo "Expected app not found: ${app_path}"
+            exit 1
+          fi
+
+          bash scripts/release/thin_webrtc_and_sign.sh "${app_path}" "${ARCH}"
 
       - name: Create DMG and checksum
         env:

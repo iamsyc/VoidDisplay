@@ -8,6 +8,8 @@ final class WebServer {
         case missingDisplayPageResource
     }
 
+    private final class BundleToken {}
+
     enum ListenerStartResult {
         case ready(boundPort: UInt16)
         case failed(error: Error)
@@ -22,6 +24,7 @@ final class WebServer {
     nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
     nonisolated private static let maxRequestBytes = 32 * 1024
     nonisolated private static let receiveChunkSize = 4096
+    nonisolated private static let maxSignalBufferBytes = 256 * 1024
 
     nonisolated private static func endpointDescription(for connection: NWConnection) -> String {
         String(describing: connection.endpoint)
@@ -57,23 +60,50 @@ final class WebServer {
             <li><code>/display</code> main display page</li>
             <li><code>/display/{id}</code> display page for target id</li>
           </ul>
-          <p>Live routes:</p>
+          <p>Signal routes:</p>
           <ul>
-            <li><code>/live</code> main display websocket</li>
-            <li><code>/live/{id}</code> websocket for target id</li>
+            <li><code>/signal</code> main display websocket</li>
+            <li><code>/signal/{id}</code> websocket for target id</li>
           </ul>
         </body>
         </html>
         """
     }
 
+    private static func loadDisplayPageTemplate() throws -> String {
+        let bundles: [Bundle] = [Bundle.main, Bundle(for: BundleToken.self)]
+        for bundle in bundles {
+            if let path = bundle.path(forResource: "displayPage", ofType: "html") {
+                return try String(contentsOfFile: path, encoding: .utf8)
+            }
+        }
+
+#if DEBUG
+        // Unit tests running as logic tests may not execute inside the app bundle.
+        let sourcePath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("displayPage.html")
+            .path
+        if FileManager.default.fileExists(atPath: sourcePath) {
+            return try String(contentsOfFile: sourcePath, encoding: .utf8)
+        }
+#endif
+
+        throw InitError.missingDisplayPageResource
+    }
+
+    private struct ActiveConnection {
+        let target: ShareTarget
+        let connection: NWConnection
+    }
+
     private var listener: NWListener?
     private let displayPageTemplate: String
     private let requestHandler = WebRequestHandler()
-    private var liveHubs: [ShareTarget: LiveSocketHub] = [:]
-    private var liveTargetByConnectionKey: [ObjectIdentifier: ShareTarget] = [:]
+    private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
+    private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
-    private let liveHubProvider: @MainActor @Sendable (ShareTarget) -> LiveSocketHub?
+    private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     private let onListenerStopped: (@MainActor @Sendable () -> Void)?
     private var didNotifyListenerStopped = false
     private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
@@ -86,19 +116,19 @@ final class WebServer {
     init(
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        liveHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> LiveSocketHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         onListenerStopped: (@MainActor @Sendable () -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
-        self.liveHubProvider = liveHubProvider
+        self.sessionHubProvider = sessionHubProvider
         self.onListenerStopped = onListenerStopped
 
-        guard let displayPagePath = Bundle.main.path(forResource: "displayPage", ofType: "html") else {
-            throw InitError.missingDisplayPageResource
-        }
-        displayPageTemplate = try String(contentsOfFile: displayPagePath, encoding: .utf8)
+        displayPageTemplate = try Self.loadDisplayPageTemplate()
 
-        listener = try NWListener(using: .tcp, on: port)
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
+        let params = NWParameters(tls: nil, tcp: tcpOptions)
+        listener = try NWListener(using: params, on: port)
         listener?.stateUpdateHandler = { [weak self] state in
             Task { @MainActor [weak self] in
                 self?.handleListenerState(state)
@@ -119,8 +149,17 @@ final class WebServer {
         }
     }
 
+    deinit {
+        listener?.cancel()
+        listener = nil
+    }
+
     func startListener(timeout: TimeInterval = 1.5) async -> ListenerStartResult {
         guard listener != nil else {
+            return .failed(error: LifecycleError.listenerCancelled)
+        }
+
+        guard startupWaiter == nil else {
             return .failed(error: LifecycleError.listenerCancelled)
         }
 
@@ -144,6 +183,7 @@ final class WebServer {
         } onCancel: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
+                self?.stopListener()
             }
         }
     }
@@ -153,20 +193,22 @@ final class WebServer {
     }
 
     func disconnectAllStreamClients() {
-        for hub in liveHubs.values {
-            hub.disconnectAllClients()
+        for client in activeConnections.values {
+            if let hub = sessionHub(for: client.target) {
+                hub.removeClient(client.connection)
+            }
+            client.connection.cancel()
         }
-        liveTargetByConnectionKey.removeAll()
+        activeConnections.removeAll()
+        signalDecodersByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
-        liveHubs.values.reduce(0) { partialResult, hub in
-            partialResult + hub.activeClientCount
-        }
+        activeConnections.count
     }
 
     func streamClientCount(for target: ShareTarget) -> Int {
-        liveHubs[target]?.activeClientCount ?? 0
+        activeConnections.values.filter { $0.target == target }.count
     }
 
     func stopListener() {
@@ -222,34 +264,31 @@ final class WebServer {
         case .failed(let error):
             let endpoint = Self.endpointDescription(for: connection)
             Self.logConnectionIssue("Connection failed [\(endpoint)]", error: error)
-            removeLiveClient(connection, cancelConnection: true)
+            removeSignalClient(connection, cancelConnection: true)
         case .cancelled:
             let endpoint = Self.endpointDescription(for: connection)
             AppLog.web.debug("Connection cancelled [\(endpoint, privacy: .public)].")
-            removeLiveClient(connection, cancelConnection: false)
+            removeSignalClient(connection, cancelConnection: false)
         default:
             break
         }
     }
 
-    private func removeLiveClient(_ connection: NWConnection, cancelConnection: Bool) {
+    private func removeSignalClient(_ connection: NWConnection, cancelConnection: Bool) {
         let key = connectionKey(for: connection)
-        if let target = liveTargetByConnectionKey.removeValue(forKey: key),
-           let hub = liveHubs[target] {
-            hub.removeClient(connection)
+        signalDecodersByConnectionKey.removeValue(forKey: key)
+        if let active = activeConnections.removeValue(forKey: key) {
+            if let hub = sessionHub(for: active.target) {
+                hub.removeClient(connection)
+            }
         }
         if cancelConnection {
             connection.cancel()
         }
     }
 
-    private func liveHub(for target: ShareTarget) -> LiveSocketHub? {
-        if let existing = liveHubs[target] {
-            return existing
-        }
-        guard let hub = liveHubProvider(target) else { return nil }
-        liveHubs[target] = hub
-        return hub
+    private func sessionHub(for target: ShareTarget) -> WebRTCSessionHub? {
+        sessionHubProvider(target)
     }
 
     private func displayPage(for target: ShareTarget) -> String {
@@ -262,7 +301,7 @@ final class WebServer {
         }
         return displayPageTemplate
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
-            .replacingOccurrences(of: "__LIVE_PATH__", with: target.livePath)
+            .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)
     }
 
     private func processRequest(_ content: Data?, on connection: NWConnection) {
@@ -308,7 +347,7 @@ final class WebServer {
                 on: connection,
                 failureContext: "Send display page response"
             )
-        case .openLiveSocket(let target):
+        case .openSignalSocket(let target):
             guard isValidWebSocketUpgrade(request.headers) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .badRequest),
@@ -317,8 +356,8 @@ final class WebServer {
                 )
                 return
             }
-            openLiveSocket(on: connection, target: target, headers: request.headers)
-        case .legacyStreamRemoved, .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
+            openSignalSocket(on: connection, target: target, headers: request.headers)
+        case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),
                 on: connection,
@@ -342,8 +381,10 @@ final class WebServer {
         })
     }
 
-    private func openLiveSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
-        guard let hub = liveHub(for: target),
+    private func openSignalSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
+        let endpoint = Self.endpointDescription(for: connection)
+        AppLog.web.info("WebServer: [\(endpoint)] Initiating signaling WebSocket upgrade for target: \(String(describing: target)).")
+        guard let hub = sessionHub(for: target),
               let acceptValue = makeWebSocketAcceptValue(headers: headers) else {
             sendResponseAndClose(
                 requestHandler.responseData(for: .sharingUnavailable),
@@ -353,27 +394,149 @@ final class WebServer {
             return
         }
 
-        let response = Data(
-            """
-            HTTP/1.1 101 Switching Protocols\r
-            Upgrade: websocket\r
-            Connection: Upgrade\r
-            Sec-WebSocket-Accept: \(acceptValue)\r
-            \r
-            """.utf8
+        let wsKeyLength = headers["sec-websocket-key"]?.count ?? 0
+        AppLog.web.debug(
+            "WebServer: [\(endpoint)] WebSocket headers validated (keyLength=\(wsKeyLength), acceptLength=\(acceptValue.count))."
         )
+
+        let responseString = "HTTP/1.1 101 Switching Protocols\r\n" +
+                             "Upgrade: websocket\r\n" +
+                             "Connection: Upgrade\r\n" +
+                             "Sec-WebSocket-Accept: \(acceptValue)\r\n" +
+                             "\r\n"
+        let debugStr = responseString
+            .replacingOccurrences(of: "\r", with: "<CR>")
+            .replacingOccurrences(of: "\n", with: "<LF>\n")
+        AppLog.web.debug("WebServer: [\(endpoint)] Sending websocket upgrade response:\n\(debugStr, privacy: .public)")
+        let response = Data(responseString.utf8)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let error {
+                    AppLog.web.error("WebServer: [\(endpoint)] WebSocket upgrade response failed: \(String(describing: error)).")
                     AppErrorMapper.logFailure("Send websocket upgrade response", error: error, logger: AppLog.web)
                     connection.cancel()
                     return
                 }
+                AppLog.web.info("WebServer: [\(endpoint)] WebSocket upgrade succeeded.")
                 hub.addClient(connection)
-                self.liveTargetByConnectionKey[self.connectionKey(for: connection)] = target
+                let key = self.connectionKey(for: connection)
+                self.activeConnections[key] = ActiveConnection(target: target, connection: connection)
+                self.signalDecodersByConnectionKey[key] = WebSocketFrameDecoder(
+                    maxFramePayloadBytes: Self.maxSignalBufferBytes,
+                    maxContinuationPayloadBytes: Self.maxSignalBufferBytes,
+                    requiresMaskedFrames: true
+                )
+                self.startSignalReceiveLoop(on: connection, target: target)
             }
         })
+    }
+
+    nonisolated private func startSignalReceiveLoop(on connection: NWConnection, target: ShareTarget) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
+            if let error = error {
+                AppLog.web.warning("WebServer: WebSocket receive error: \(error)")
+                connection.cancel()
+                return
+            }
+            if isComplete {
+                AppLog.web.info("WebServer: WebSocket client closed connection")
+                connection.cancel()
+                return
+            }
+            guard let self else { return }
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let key = self.connectionKey(for: connection)
+                guard let decoder = self.signalDecodersByConnectionKey[key] else {
+                    self.removeSignalClient(connection, cancelConnection: true)
+                    return
+                }
+
+                let decoded = decoder.ingest(content)
+                if decoder.remainder.count > Self.maxSignalBufferBytes {
+                    AppLog.web.warning(
+                        "WebServer: Closing signaling connection due to oversized buffered signal data."
+                    )
+                    self.sendCloseAndRemoveSignalClient(connection, code: 1009)
+                    return
+                }
+
+                if let decodeError = decoded.errors.first {
+                    let closeCode = Self.closeCode(for: decodeError)
+                    AppLog.web.warning(
+                        "WebServer: Closing signaling connection due to websocket protocol violation: \(String(describing: decodeError), privacy: .public)"
+                    )
+                    self.sendCloseAndRemoveSignalClient(connection, code: closeCode)
+                    return
+                }
+
+                for frame in decoded.frames {
+                    switch frame {
+                    case .text(let text):
+                        self.sessionHub(for: target)?.receiveSignalText(text, from: connection)
+                    case .ping(let payload):
+                        connection.send(
+                            content: encodeWebSocketPongFrame(payload),
+                            completion: .contentProcessed { error in
+                                if let error {
+                                    Task { @MainActor in
+                                        Self.logConnectionIssue("Send websocket pong frame", error: error)
+                                    }
+                                }
+                            }
+                        )
+                    case .close:
+                        self.sendCloseAndRemoveSignalClient(connection, code: 1000)
+                    case .binary:
+                        let errorFrame = encodeWebSocketTextFrame(
+                            #"{"type":"error","reason":"binary_signal_not_allowed"}"#
+                        )
+                        connection.send(content: errorFrame, completion: .contentProcessed { [weak self] _ in
+                            Task { @MainActor [weak self] in
+                                self?.sendCloseAndRemoveSignalClient(connection, code: 1003)
+                            }
+                        })
+                    case .pong:
+                        break
+                    }
+                }
+
+                guard self.activeConnections[key] != nil else {
+                    return
+                }
+                self.startSignalReceiveLoop(on: connection, target: target)
+            }
+        }
+    }
+
+    nonisolated private static func closeCode(for decodeError: WebSocketFrameDecodeError) -> UInt16 {
+        switch decodeError {
+        case .framePayloadTooLarge, .continuationPayloadTooLarge, .oversizedControlFramePayload:
+            return 1009
+        case .invalidUTF8Text:
+            return 1007
+        default:
+            return 1002
+        }
+    }
+
+    private func sendCloseAndRemoveSignalClient(_ connection: NWConnection, code: UInt16) {
+        connection.send(
+            content: encodeWebSocketCloseFrame(code: code),
+            completion: .contentProcessed { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.removeSignalClient(connection, cancelConnection: true)
+                }
+            }
+        )
+
+        // Ensure teardown still completes when NWConnection send completion is delayed or dropped.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            self?.removeSignalClient(connection, cancelConnection: true)
+        }
     }
 
     private func isValidWebSocketUpgrade(_ headers: [String: String]) -> Bool {

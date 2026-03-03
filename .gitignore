@@ -129,3 +129,6 @@ docs/testing/coverage-latest.json
 # DerivedData variants created by local test/build runs
 .derivedData-*/
 derivedData-*/
+
+# AI temporary workspace
+.ai-tmp/

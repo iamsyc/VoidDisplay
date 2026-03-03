@@ -2,13 +2,13 @@ import Foundation
 import OSLog
 
 enum AppLog {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay"
+    private nonisolated static let subsystem = Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay"
 
-    static let virtualDisplay = Logger(subsystem: subsystem, category: "virtual_display")
-    static let capture = Logger(subsystem: subsystem, category: "capture")
-    static let sharing = Logger(subsystem: subsystem, category: "sharing")
-    static let web = Logger(subsystem: subsystem, category: "web")
-    static let persistence = Logger(subsystem: subsystem, category: "persistence")
+    nonisolated static let virtualDisplay = Logger(subsystem: subsystem, category: "virtual_display")
+    nonisolated static let capture = Logger(subsystem: subsystem, category: "capture")
+    nonisolated static let sharing = Logger(subsystem: subsystem, category: "sharing")
+    nonisolated static let web = Logger(subsystem: subsystem, category: "web")
+    nonisolated static let persistence = Logger(subsystem: subsystem, category: "persistence")
 }
 
 enum AppErrorMapper {
@@ -21,7 +21,7 @@ enum AppErrorMapper {
         return fallback
     }
 
-    static func logFailure(
+    nonisolated static func logFailure(
         _ operation: String,
         error: Error,
         logger: Logger

@@ -1,6 +1,7 @@
 import Testing
 @testable import VoidDisplay
 
+@MainActor
 struct VirtualDisplayRowPresentationTests {
 
     @Test func subtitleUsesSerialAndMaxMode() {

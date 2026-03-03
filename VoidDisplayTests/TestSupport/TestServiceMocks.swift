@@ -46,6 +46,8 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
 final class MockSharingService: SharingServiceProtocol {
     var webServicePortValue: UInt16 = 8081
     var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
+    var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
+    var webServiceLifecycleState: WebServiceLifecycleState = .stopped
     var isWebServiceRunning = false
     var activeStreamClientCount = 0
     var currentWebServer: WebServer?
@@ -74,17 +76,22 @@ final class MockSharingService: SharingServiceProtocol {
         case .started(let binding), .alreadyRunning(let binding):
             isWebServiceRunning = true
             webServicePortValue = binding.boundPort
+            webServiceLifecycleState = .running(binding)
         case .failed:
             isWebServiceRunning = false
+            webServiceLifecycleState = .failed(startResult.failure ?? .listenerFailed(port: requestedPort, message: "mock_failure"))
         }
         onWebServiceRunningStateChanged?(isWebServiceRunning)
+        onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
         return startResult
     }
 
     func stopWebService() {
         stopWebServiceCallCount += 1
         isWebServiceRunning = false
+        webServiceLifecycleState = .stopped
         onWebServiceRunningStateChanged?(false)
+        onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
     }
 
     func registerShareableDisplays(

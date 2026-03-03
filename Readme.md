@@ -20,7 +20,7 @@ Great for keeping an eye on a secondary screen without switching desktops.
 ### 📡 LAN Screen Sharing
 
 Share any display over your local network through the built-in low-latency live page.  
-Open the provided `/display` URL in a modern browser on any device on the same LAN. Playback now uses WebSocket + H.264 + WebCodecs instead of MJPEG polling.
+Open the provided `/display` URL in a modern browser on any device on the same LAN. Playback uses WebSocket + H.264 + WebCodecs.
 
 ## 📸 Screenshots
 
@@ -84,7 +84,6 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 Notes:
 - `/display` and `/display/{id}` are the supported page routes.
 - `/live` and `/live/{id}` are the underlying WebSocket transport routes.
-- Legacy `/stream` MJPEG endpoints have been removed and now return `410 Gone`.
 
 ## ❓ Troubleshooting
 
@@ -118,6 +117,18 @@ xcodebuild -scheme VoidDisplay \
   -configuration Debug test \
   -destination 'platform=macOS,arch=arm64'
 ```
+
+Full project regression gate (recommended before opening/merging PR):
+
+```bash
+scripts/test/full_regression_gate.sh
+```
+
+This script runs end-to-end test/build gates and fails fast when:
+- tests were not actually executed (`totalTestCount == 0`)
+- any test failed
+- Debug/Release build has warnings
+- Debug/Release build failed
 
 ### Debug Entry Points
 

@@ -3,8 +3,7 @@ import Foundation
 enum HttpRoute: Equatable {
     case root
     case display(ShareTarget)
-    case live(ShareTarget)
-    case legacyStream(ShareTarget)
+    case signal(ShareTarget)
     case notFound
 }
 
@@ -21,21 +20,12 @@ enum ShareTarget: Equatable, Hashable, Sendable {
         }
     }
 
-    var streamPath: String {
+    var signalPath: String {
         switch self {
         case .main:
-            return "/stream"
+            return "/signal"
         case .id(let id):
-            return "/stream/\(id)"
-        }
-    }
-
-    var livePath: String {
-        switch self {
-        case .main:
-            return "/live"
-        case .id(let id):
-            return "/live/\(id)"
+            return "/signal/\(id)"
         }
     }
 }
@@ -43,8 +33,7 @@ enum ShareTarget: Equatable, Hashable, Sendable {
 struct HttpRouter {
     private static let rootPath = "/"
     private static let displayPath = "/display"
-    private static let livePath = "/live"
-    private static let streamPath = "/stream"
+    private static let signalPath = "/signal"
 
     private func normalizedPath(from rawPath: String) -> String? {
         guard !rawPath.isEmpty else { return nil }
@@ -92,11 +81,8 @@ struct HttpRouter {
         if let target = parseTarget(path: path, prefix: Self.displayPath) {
             return .display(target)
         }
-        if let target = parseTarget(path: path, prefix: Self.livePath) {
-            return .live(target)
-        }
-        if let target = parseTarget(path: path, prefix: Self.streamPath) {
-            return .legacyStream(target)
+        if let target = parseTarget(path: path, prefix: Self.signalPath) {
+            return .signal(target)
         }
         return .notFound
     }

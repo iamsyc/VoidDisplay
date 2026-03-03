@@ -30,9 +30,9 @@ struct WebRoutingWorkflowSmokeTests {
         #expect(text.contains(html))
     }
 
-    @MainActor @Test func liveRouteWorkflowSmoke() throws {
+    @MainActor @Test func signalRouteWorkflowSmoke() throws {
         let raw = """
-        GET /live/2 HTTP/1.1\r
+        GET /signal/2 HTTP/1.1\r
         Host: 127.0.0.1:8081\r
         \r
         """
@@ -51,25 +51,25 @@ struct WebRoutingWorkflowSmokeTests {
         let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
         #expect(unavailableText.contains("503 Service Unavailable"))
 
-        let streamDecision = handler.decision(
+        let signalDecision = handler.decision(
             forMethod: request.method,
             path: request.path,
             targetStateProvider: { _ in .active }
         )
-        #expect(streamDecision == .openLiveSocket(.id(2)))
+        #expect(signalDecision == .openSignalSocket(.id(2)))
     }
 
-    @MainActor @Test func legacyStreamRouteReturnsGone() throws {
+    @MainActor @Test func streamRouteIsNotFound() throws {
         let handler = WebRequestHandler()
         let decision = handler.decision(
             forMethod: "GET",
             path: "/stream/2",
             targetStateProvider: { _ in .active }
         )
-        #expect(decision == .legacyStreamRemoved)
+        #expect(decision == .notFound)
 
         let response = handler.responseData(for: decision, htmlBody: "")
         let text = try #require(String(data: response, encoding: .utf8))
-        #expect(text.contains("410 Gone"))
+        #expect(text.contains("404 Not Found"))
     }
 }
