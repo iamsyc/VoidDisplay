@@ -314,7 +314,7 @@ struct EditVirtualDisplayConfigView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 12)
-        .background(.ultraThinMaterial)
+        .appGlassBar(role: .toolbar)
     }
 
     private func load() {
