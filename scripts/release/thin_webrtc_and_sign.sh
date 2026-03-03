@@ -15,6 +15,8 @@ fi
 app_path="$1"
 target_arch="$2"
 webrtc_framework="${app_path}/Contents/Frameworks/WebRTC.framework"
+root_webrtc_binary="${webrtc_framework}/WebRTC"
+root_webrtc_was_symlink=false
 
 if [ ! -d "${app_path}" ]; then
   echo "Expected app not found: ${app_path}" >&2
@@ -26,13 +28,18 @@ if [ ! -d "${webrtc_framework}" ]; then
   exit 1
 fi
 
+if [ -L "${root_webrtc_binary}" ]; then
+  root_webrtc_was_symlink=true
+fi
+
 resolve_webrtc_binary() {
   local framework_path="$1"
   local candidate=""
 
   for candidate in \
-    "${framework_path}/WebRTC" \
-    "${framework_path}/Versions/A/WebRTC"; do
+    "${framework_path}/Versions/Current/WebRTC" \
+    "${framework_path}/Versions/A/WebRTC" \
+    "${framework_path}/WebRTC"; do
     if [ -f "${candidate}" ]; then
       printf '%s\n' "${candidate}"
       return 0
@@ -48,14 +55,39 @@ if [ -z "${webrtc_binary}" ] || [ ! -f "${webrtc_binary}" ]; then
   exit 1
 fi
 
-echo "WebRTC binary before thin: ${webrtc_binary}"
-lipo -archs "${webrtc_binary}"
-temp_binary="${webrtc_binary}.thin"
-lipo -thin "${target_arch}" "${webrtc_binary}" -output "${temp_binary}"
-mv "${temp_binary}" "${webrtc_binary}"
-chmod +x "${webrtc_binary}"
+webrtc_binary_real="${webrtc_binary}"
+if [ -L "${webrtc_binary}" ]; then
+  link_target="$(readlink "${webrtc_binary}")"
+  if [ -z "${link_target}" ]; then
+    echo "Failed to resolve symlink target: ${webrtc_binary}" >&2
+    exit 1
+  fi
+
+  if [[ "${link_target}" = /* ]]; then
+    webrtc_binary_real="${link_target}"
+  else
+    webrtc_binary_real="$(cd "$(dirname "${webrtc_binary}")" && pwd)/${link_target}"
+  fi
+fi
+
+if [ ! -f "${webrtc_binary_real}" ]; then
+  echo "Resolved WebRTC binary does not exist: ${webrtc_binary_real}" >&2
+  exit 1
+fi
+
+echo "WebRTC binary before thin: ${webrtc_binary_real}"
+lipo -archs "${webrtc_binary_real}"
+temp_binary="${webrtc_binary_real}.thin"
+lipo -thin "${target_arch}" "${webrtc_binary_real}" -output "${temp_binary}"
+mv "${temp_binary}" "${webrtc_binary_real}"
+chmod +x "${webrtc_binary_real}"
 echo "WebRTC binary after thin:"
-lipo -archs "${webrtc_binary}"
+lipo -archs "${webrtc_binary_real}"
+
+if [ "${root_webrtc_was_symlink}" = true ] && [ ! -L "${root_webrtc_binary}" ]; then
+  echo "Expected ${root_webrtc_binary} to remain a symlink after thinning." >&2
+  exit 1
+fi
 
 codesign --force --sign - --timestamp=none "${webrtc_framework}"
 codesign --force --sign - --timestamp=none --deep "${app_path}"
@@ -85,7 +117,7 @@ if [ ! -f "${app_binary}" ]; then
 fi
 
 app_archs="$(lipo -archs "${app_binary}")"
-webrtc_archs="$(lipo -archs "${webrtc_binary}")"
+webrtc_archs="$(lipo -archs "${webrtc_binary_real}")"
 echo "App binary archs: ${app_archs}"
 echo "WebRTC binary archs: ${webrtc_archs}"
 

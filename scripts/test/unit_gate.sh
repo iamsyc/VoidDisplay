@@ -93,7 +93,11 @@ extract_metric() {
     local key="$1"
     local fallback="$2"
     local line value
-    line="$(printf '%s\n' "$SUMMARY" | rg "\"$key\"" | tail -n 1)" || true
+    if command -v rg >/dev/null 2>&1; then
+        line="$(printf '%s\n' "$SUMMARY" | rg "\"$key\"" | tail -n 1)" || true
+    else
+        line="$(printf '%s\n' "$SUMMARY" | grep "\"$key\"" | tail -n 1)" || true
+    fi
     if [[ -z "$line" ]]; then
         printf '%s' "$fallback"
         return 0
