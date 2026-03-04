@@ -37,7 +37,9 @@ struct ShareView: View {
             shareContent
                 .accessibilityIdentifier("share_content_root")
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .appDebugLayoutBorder()
         }
+            .appDebugLayoutBorder()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("detail_screen_sharing")
             .toolbar {
@@ -157,17 +159,16 @@ struct ShareView: View {
         if viewModel.catalog.hasScreenCapturePermission == false {
             screenCapturePermissionView
         } else if viewModel.catalog.hasScreenCapturePermission == nil {
-            ScrollView {
+            stateContainer {
                 VStack(spacing: 12) {
                     ProgressView()
                     Text("Loading…")
                         .foregroundColor(.secondary)
                 }
-                .frame(maxWidth: .infinity, minHeight: 200)
             }
             .accessibilityIdentifier("share_loading_permission")
         } else if !sharing.isWebServiceRunning {
-            ScrollView {
+            stateContainer {
                 VStack(spacing: AppUI.Spacing.medium + 2) {
                     Image(systemName: "xserve")
                         .font(.system(size: 44))
@@ -217,31 +218,15 @@ struct ShareView: View {
                     .disabled(viewModel.isStartingService)
                     .accessibilityIdentifier("share_start_service_button")
                 }
-                .padding(.horizontal, AppUI.Spacing.large)
-                .padding(.vertical, AppUI.Spacing.large + 2)
-                .frame(maxWidth: .infinity, minHeight: 220)
-                .padding(.horizontal, AppUI.Spacing.large)
-                .padding(.top, AppUI.Spacing.small)
             }
         } else if viewModel.catalog.isLoadingDisplays {
-            ScrollView {
+            stateContainer {
                 ProgressView("Loading displays…")
-                    .frame(maxWidth: .infinity, minHeight: 200)
             }
             .accessibilityIdentifier("share_loading_displays")
         } else if let displays = viewModel.catalog.displays {
             if displays.isEmpty {
-                VStack(spacing: AppUI.Spacing.medium) {
-                    Text("No screen to share")
-                    Button("Refresh") {
-                        viewModel.refreshDisplays()
-                    }
-                    .appActionButtonStyle(variant: .default)
-                    .accessibilityIdentifier("share_empty_refresh_button")
-                }
-                .padding(.horizontal, AppUI.Spacing.large)
-                .padding(.top, 6)
-                .accessibilityIdentifier("share_displays_empty_state")
+                shareEmptyState
             } else {
                 ShareDisplayList(
                     displays: displays,
@@ -250,17 +235,7 @@ struct ShareView: View {
                 )
             }
         } else {
-            VStack(spacing: AppUI.Spacing.medium) {
-                Text("No screen to share")
-                Button("Refresh") {
-                    viewModel.refreshDisplays()
-                }
-                .appActionButtonStyle(variant: .default)
-                .accessibilityIdentifier("share_empty_refresh_button")
-            }
-            .padding(.horizontal, AppUI.Spacing.large)
-            .padding(.top, 6)
-            .accessibilityIdentifier("share_displays_empty_state")
+            shareEmptyState
         }
     }
 
@@ -295,6 +270,32 @@ struct ShareView: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("share_permission_guide")
+    }
+
+    private var shareEmptyState: some View {
+        stateContainer {
+            VStack(spacing: AppUI.Spacing.medium) {
+                Text("No screen to share")
+                Button("Refresh") {
+                    viewModel.refreshDisplays()
+                }
+                .appActionButtonStyle(variant: .default)
+                .accessibilityIdentifier("share_empty_refresh_button")
+            }
+            .accessibilityIdentifier("share_displays_empty_state")
+        }
+    }
+
+    private func stateContainer<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ScrollView {
+            content()
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+                .appDebugLayoutBorder()
+        }
+        .appDebugLayoutBorder()
     }
 
     private var sharingPermissionDebugItems: [(title: String, value: String)] {

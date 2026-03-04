@@ -41,26 +41,27 @@ struct IsCapturing: View {
                     screenCapturePermissionView
                 } else if let displays = viewModel.catalog.displays {
                     if displays.isEmpty {
-                        ContentUnavailableView(
-                            "No watchable screen",
-                            systemImage: "display.trianglebadge.exclamationmark",
-                            description: Text("No available display can be monitored right now.")
-                        )
-                        .accessibilityIdentifier("capture_displays_empty_state")
+                        stateContainer {
+                            ContentUnavailableView(
+                                "No watchable screen",
+                                systemImage: "display.trianglebadge.exclamationmark",
+                                description: Text("No available display can be monitored right now.")
+                            )
+                            .accessibilityIdentifier("capture_displays_empty_state")
+                        }
                     } else {
                         displayList(displays)
                     }
                 } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
-                    ScrollView {
+                    stateContainer {
                         VStack(spacing: 12) {
                             ProgressView()
                             Text("Loading…")
                                 .foregroundColor(.secondary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 200)
                     }
                 } else {
-                    ScrollView {
+                    stateContainer {
                         VStack(spacing: 12) {
                             Text("No watchable screen")
                             if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
@@ -74,7 +75,6 @@ struct IsCapturing: View {
                                 viewModel.refreshPermissionAndMaybeLoad()
                             }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 200)
                     }
                 }
             }
@@ -86,6 +86,7 @@ struct IsCapturing: View {
                     }
                 }
             }
+            .appDebugLayoutBorder()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 viewModel.refreshPermissionAndMaybeLoad()
@@ -104,7 +105,7 @@ struct IsCapturing: View {
     // MARK: - Display List
 
     private func displayList(_ displays: [SCDisplay]) -> some View {
-        let gridSpacing = AppUI.Spacing.small
+        let gridSpacing = AppUI.List.sectionSpacing
         // Let SwiftUI choose column count from a per-card minimum width instead of a hard cutoff.
         let minimumAdaptiveCardWidth: CGFloat = 380
         return ScrollView {
@@ -118,9 +119,10 @@ struct IsCapturing: View {
                     captureDisplayRowComponent(display)
                 }
             }
-            .padding(.horizontal, AppUI.List.listHorizontalInset)
-            .padding(.top, AppUI.Spacing.small + 2)
+            .appListContentInsets()
+            .appDebugLayoutBorder()
         }
+        .appDebugLayoutBorder()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
                 Divider()
@@ -138,7 +140,7 @@ struct IsCapturing: View {
 
     private var activeMonitoringSessionsFallback: some View {
         ScrollView {
-            LazyVStack(spacing: AppUI.Spacing.small) {
+            LazyVStack(spacing: AppUI.List.sectionSpacing) {
                 ForEach(capture.screenCaptureSessions) { session in
                     MonitoringSessionRow(
                         session: session,
@@ -148,10 +150,10 @@ struct IsCapturing: View {
                     }
                 }
             }
-            .padding(.horizontal, AppUI.List.listHorizontalInset)
-            .padding(.top, AppUI.Spacing.small + 2)
-            .padding(.bottom, AppUI.Spacing.small)
+            .appListContentInsets()
+            .appDebugLayoutBorder()
         }
+        .appDebugLayoutBorder()
         .frame(maxHeight: 260)
         .accessibilityIdentifier("capture_active_sessions_fallback")
     }
@@ -244,6 +246,18 @@ struct IsCapturing: View {
             }
         }
         return items
+    }
+
+    private func stateContainer<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ScrollView {
+            content()
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+                .appDebugLayoutBorder()
+        }
+        .appDebugLayoutBorder()
     }
 
 }

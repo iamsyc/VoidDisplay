@@ -41,17 +41,18 @@ struct DisplaysView: View {
         if let displays = displays, !displays.isEmpty {
             displayList(displays)
         } else {
-            ContentUnavailableView(
-                "No display",
-                systemImage: "display.trianglebadge.exclamationmark",
-                description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
-            )
-            .padding(.horizontal, AppUI.Spacing.large)
-            .padding(.vertical, AppUI.Spacing.large + 2)
-            .frame(maxWidth: 620)
-            .appGlassSurface(role: .panel)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityIdentifier("displays_empty_state")
+            ScrollView {
+                ContentUnavailableView(
+                    "No display",
+                    systemImage: "display.trianglebadge.exclamationmark",
+                    description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+                .appDebugLayoutBorder()
+                .accessibilityIdentifier("displays_empty_state")
+            }
+            .appDebugLayoutBorder()
         }
     }
 
@@ -60,26 +61,26 @@ struct DisplaysView: View {
             let useGrid = geometry.size.width > 680
             ScrollView {
                 if useGrid {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.List.sectionSpacing) {
                         ForEach(displays, id: \.self) { display in
                             displayRow(display)
                         }
                     }
-                    .padding(.horizontal, AppUI.List.listHorizontalInset)
-                    .padding(.top, AppUI.Spacing.small + 2)
-                    .padding(.bottom, AppUI.Spacing.small)
+                    .appListContentInsets()
+                    .appDebugLayoutBorder()
                 } else {
-                    LazyVStack(spacing: AppUI.List.listVerticalInset * 2) {
+                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
                         ForEach(displays, id: \.self) { display in
                             displayRow(display)
                         }
                     }
-                    .padding(.horizontal, AppUI.List.listHorizontalInset)
-                    .padding(.top, AppUI.Spacing.small + 2)
-                    .padding(.bottom, AppUI.Spacing.small)
+                    .appListContentInsets()
+                    .appDebugLayoutBorder()
                 }
             }
+            .appDebugLayoutBorder()
         }
+        .appDebugLayoutBorder()
         .accessibilityIdentifier("displays_list")
     }
 

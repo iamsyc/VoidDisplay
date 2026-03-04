@@ -29,22 +29,37 @@ struct VirtualDisplayView: View {
         let _ = viewModel.primaryDisplayRefreshTick
         Group {
             if virtualDisplay.configStorePresentation.hasLoadFailure {
-                configStoreErrorPanel
-            } else if !virtualDisplay.displayConfigs.isEmpty {
-                List(virtualDisplay.displayConfigs) { config in
-                    virtualDisplayRow(config)
-                        .appListRowStyle()
+                ScrollView {
+                    configStoreErrorPanel
+                        .appListContentInsets()
+                        .appDebugLayoutBorder()
                 }
+                .appDebugLayoutBorder()
+            } else if !virtualDisplay.displayConfigs.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                        ForEach(virtualDisplay.displayConfigs) { config in
+                            virtualDisplayRow(config)
+                        }
+                    }
+                    .appListContentInsets()
+                    .appDebugLayoutBorder()
+                }
+                .appDebugLayoutBorder()
                 .accessibilityIdentifier("virtual_displays_list")
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             } else {
-                ContentUnavailableView(
-                    "No Virtual Displays",
-                    systemImage: "display.trianglebadge.exclamationmark",
-                    description: Text("Click the + button in the top right to create a virtual display.")
-                )
-                .accessibilityIdentifier("virtual_displays_empty_state")
+                ScrollView {
+                    ContentUnavailableView(
+                        "No Virtual Displays",
+                        systemImage: "display.trianglebadge.exclamationmark",
+                        description: Text("Click the + button in the top right to create a virtual display.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 200)
+                    .appListContentInsets()
+                    .appDebugLayoutBorder()
+                    .accessibilityIdentifier("virtual_displays_empty_state")
+                }
+                .appDebugLayoutBorder()
             }
         }
         .sheet(isPresented: $createView) {
@@ -135,12 +150,11 @@ struct VirtualDisplayView: View {
             }
         }
         .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.orange.opacity(0.08))
         )
-        .padding()
         .accessibilityIdentifier("virtual_display_config_store_error_panel")
     }
 

@@ -68,6 +68,7 @@ struct AppListRowCard<Trailing: View>: View {
         .padding(.horizontal, AppUI.List.rowHorizontalInset)
         .padding(.vertical, AppUI.List.rowVerticalInset + 1)
         .appInteractiveCardStyle(isHovered: isHovered)
+        .appDebugLayoutBorder()
         .onHover { hovered in
             isHovered = hovered
         }

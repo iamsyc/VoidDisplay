@@ -34,8 +34,19 @@ enum AppUI {
         static let iconBoxHeight: CGFloat = 42
         static let rowHorizontalInset: CGFloat = 12
         static let rowVerticalInset: CGFloat = 6
+        static let contentInsetTop: CGFloat = 3
+        static let contentInsetLeading: CGFloat = 20
+        static let contentInsetTrailing: CGFloat = 20
+        static let contentInsetBottom: CGFloat = 3
+        static let sectionSpacing: CGFloat = 8
         static let listHorizontalInset: CGFloat = 12
         static let listVerticalInset: CGFloat = 3
+    }
+
+    enum DebugLayout {
+        static let showBorders: Bool = false
+        static let borderColor: Color = .red
+        static let borderWidth: CGFloat = 1
     }
 
     // Kept for call-site compat (appActionButtonStyle `state:` parameter).
@@ -317,14 +328,38 @@ extension View {
         modifier(AppInteractiveCard(isHovered: isHovered))
     }
 
+    func appListContentInsets(top: Bool = true, bottom: Bool = true) -> some View {
+        self
+            .padding(.leading, AppUI.List.contentInsetLeading)
+            .padding(.trailing, AppUI.List.contentInsetTrailing)
+            .padding(.top, top ? AppUI.List.contentInsetTop : 0)
+            .padding(.bottom, bottom ? AppUI.List.contentInsetBottom : 0)
+            .appDebugLayoutBorder()
+    }
+
+    @ViewBuilder
+    func appDebugLayoutBorder() -> some View {
+        if AppUI.DebugLayout.showBorders {
+            self.overlay {
+                Rectangle()
+                    .stroke(
+                        AppUI.DebugLayout.borderColor,
+                        lineWidth: AppUI.DebugLayout.borderWidth
+                    )
+            }
+        } else {
+            self
+        }
+    }
+
     func appListRowStyle() -> some View {
         self
             .listRowInsets(
                 EdgeInsets(
                     top: AppUI.List.listVerticalInset,
-                    leading: AppUI.List.listHorizontalInset,
+                    leading: AppUI.List.contentInsetLeading,
                     bottom: AppUI.List.listVerticalInset,
-                    trailing: AppUI.List.listHorizontalInset
+                    trailing: AppUI.List.contentInsetTrailing
                 )
             )
             .listRowSeparator(.hidden)

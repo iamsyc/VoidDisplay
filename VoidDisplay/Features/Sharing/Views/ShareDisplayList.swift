@@ -20,27 +20,28 @@ struct ShareDisplayList: View {
     @Environment(VirtualDisplayController.self) private var virtualDisplay
 
     var body: some View {
-        VStack(spacing: AppUI.Spacing.small) {
+        VStack(spacing: AppUI.List.sectionSpacing) {
             ShareStatusPanel(
                 displayCount: displays.count,
                 sharingDisplayCount: sharing.activeSharingDisplayIDs.count,
                 clientsCount: sharing.sharingClientCount,
                 isRunning: sharing.isWebServiceRunning
             )
-            .padding(.horizontal, AppUI.List.listHorizontalInset)
-            .padding(.top, AppUI.Spacing.small + 2)
+            .appListContentInsets(bottom: false)
+            .appDebugLayoutBorder()
 
             ScrollView {
-                LazyVStack(spacing: AppUI.Spacing.small) {
+                LazyVStack(spacing: AppUI.List.sectionSpacing) {
                     ForEach(displays, id: \.self) { display in
                         shareableDisplayRow(display)
                     }
                 }
-                .padding(.horizontal, AppUI.List.listHorizontalInset)
-                .padding(.bottom, AppUI.Spacing.small)
-                .padding(.top, 2)
+                .appListContentInsets(top: false)
+                .appDebugLayoutBorder()
             }
+            .appDebugLayoutBorder()
         }
+        .appDebugLayoutBorder()
         .accessibilityIdentifier("share_displays_list")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
