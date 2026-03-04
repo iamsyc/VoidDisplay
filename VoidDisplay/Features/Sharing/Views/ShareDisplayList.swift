@@ -16,6 +16,7 @@ struct ShareDisplayList: View {
     let openURLAction: OpenURLAction
 
     @Environment(SharingController.self) private var sharing
+    @Environment(CaptureController.self) private var capture
     @Environment(VirtualDisplayController.self) private var virtualDisplay
 
     var body: some View {
@@ -65,6 +66,8 @@ struct ShareDisplayList: View {
         let displayClientCount = sharing.sharingClientCounts[display.displayID] ?? 0
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
 
+        let isMonitoring = capture.screenCaptureSessions.contains { $0.displayID == display.displayID }
+
         let model = AppListRowModel(
             id: String(display.displayID),
             title: displayName,
@@ -92,6 +95,7 @@ struct ShareDisplayList: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharingDisplay),
             isEmphasized: true,
             accessibilityIdentifier: nil
         )

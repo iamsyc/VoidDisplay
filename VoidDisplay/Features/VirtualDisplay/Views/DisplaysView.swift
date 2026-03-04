@@ -9,6 +9,8 @@ import Cocoa
 
 struct DisplaysView: View {
     @Environment(VirtualDisplayController.self) private var virtualDisplay
+    @Environment(CaptureController.self) private var capture
+    @Environment(SharingController.self) private var sharing
     @Environment(\.openURL) private var openURL
     @State private var displays: [NSScreen]?
 
@@ -84,6 +86,15 @@ struct DisplaysView: View {
     private func displayRow(_ display: NSScreen) -> some View {
         let displayID = display.cgDirectDisplayID
         let isPrimary = isPrimaryDisplay(displayID)
+
+        let isMonitoring: Bool = displayID.map { did in
+            capture.screenCaptureSessions.contains { $0.displayID == did }
+        } ?? false
+        let isSharing: Bool = displayID.map { did in
+            sharing.isDisplaySharing(displayID: did)
+        } ?? false
+        let iconScreenTint = DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharing)
+
         let model = AppListRowModel(
             id: displayID.map(String.init) ?? display.localizedName,
             title: display.localizedName,
@@ -97,6 +108,7 @@ struct DisplaysView: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: iconScreenTint,
             isEmphasized: true,
             accessibilityIdentifier: "display_row_card"
         )

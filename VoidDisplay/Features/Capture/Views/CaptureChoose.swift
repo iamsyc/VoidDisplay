@@ -10,6 +10,7 @@ import ScreenCaptureKit
 struct IsCapturing: View {
     @Bindable private var capture: CaptureController
     @State private var viewModel: CaptureChooseViewModel
+    @Environment(SharingController.self) private var sharing
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
 
@@ -139,7 +140,10 @@ struct IsCapturing: View {
         ScrollView {
             LazyVStack(spacing: AppUI.Spacing.small) {
                 ForEach(capture.screenCaptureSessions) { session in
-                    MonitoringSessionRow(session: session) {
+                    MonitoringSessionRow(
+                        session: session,
+                        isSharing: sharing.isDisplaySharing(displayID: session.displayID)
+                    ) {
                         capture.removeMonitoringSession(id: session.id)
                     }
                 }
@@ -166,7 +170,8 @@ struct IsCapturing: View {
             isVirtualDisplay: isVirtualDisplay,
             isPrimaryDisplay: isPrimaryDisplay,
             isMonitoring: isMonitoring,
-            isStarting: isStarting
+            isStarting: isStarting,
+            isSharing: sharing.isDisplaySharing(displayID: display.displayID)
         ) {
             if isMonitoring, let session = monitoringSession {
                 capture.removeMonitoringSession(id: session.id)

@@ -20,6 +20,7 @@ struct VirtualDisplayRow: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onRetryRebuild: () -> Void
+    let iconScreenTint: Color?
 
     private var isRowBusy: Bool {
         isToggling || isRebuilding
@@ -46,6 +47,7 @@ struct VirtualDisplayRow: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: iconScreenTint,
             isEmphasized: isRunning,
             accessibilityIdentifier: "virtual_display_row_card"
         )

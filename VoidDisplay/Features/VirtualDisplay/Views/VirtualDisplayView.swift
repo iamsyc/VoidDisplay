@@ -9,6 +9,8 @@ import OSLog
 
 struct VirtualDisplayView: View {
     @Bindable private var virtualDisplay: VirtualDisplayController
+    @Environment(CaptureController.self) private var capture
+    @Environment(SharingController.self) private var sharing
     @State private var viewModel: VirtualDisplayListViewModel
     @State var createView = false
     @State private var editingConfig: EditingConfig?
@@ -153,6 +155,16 @@ struct VirtualDisplayView: View {
         let isPrimary = viewModel.isPrimaryDisplay(configID: config.id)
         let isFirstEnabled = virtualDisplay.displayConfigs.first(where: \.desiredEnabled)?.id == config.id
         let canSetAsPrimary = config.desiredEnabled && !isFirstEnabled && !isToggling && !isRebuilding
+
+        let displayID = virtualDisplay.runtimeDisplayID(for: config.id)
+        let isMonitoring = displayID.map { did in
+            capture.screenCaptureSessions.contains { $0.displayID == did }
+        } ?? false
+        let isSharing = displayID.map { did in
+            sharing.isDisplaySharing(displayID: did)
+        } ?? false
+        let iconScreenTint = DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharing)
+
         return VirtualDisplayRow(
             config: config,
             isRunning: isRunning,
@@ -170,7 +182,8 @@ struct VirtualDisplayView: View {
             onToggle: { viewModel.toggleDisplayState(config) },
             onEdit: { editingConfig = EditingConfig(id: config.id) },
             onDelete: { viewModel.requestDelete(config) },
-            onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) }
+            onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) },
+            iconScreenTint: iconScreenTint
         )
     }
 
