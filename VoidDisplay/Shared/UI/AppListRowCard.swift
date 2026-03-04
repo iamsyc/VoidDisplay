@@ -77,7 +77,7 @@ struct AppListRowCard<Trailing: View>: View {
 
     private var iconTile: some View {
         Image(systemName: model.iconSystemName)
-            .font(.system(size: 24, weight: .semibold))
+            .font(.system(size: 28, weight: .regular))
             .foregroundStyle(model.isEmphasized ? AnyShapeStyle(.primary.opacity(0.88)) : AnyShapeStyle(.secondary))
             .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
             .appTileStyle()
