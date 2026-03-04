@@ -13,9 +13,8 @@ on run argv
             set toolbar visible of container window to false
             set statusbar visible of container window to false
             set pathbar visible of container window to false
-            -- Finder title/tool area still consumes vertical space even after hiding bars,
-            -- so the window height must exceed the background height.
-            set bounds of container window to {120, 120, 780, 620}
+            -- Keep window height aligned with background rendering to avoid a blank strip at bottom.
+            set bounds of container window to {120, 120, 780, 600}
 
             set viewOptions to the icon view options of container window
             set arrangement of viewOptions to not arranged
