@@ -212,12 +212,16 @@ struct ShareView: View {
                     Button("Start Service") {
                         viewModel.startService()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appActionButtonStyle(variant: .primary)
                     .controlSize(.large)
                     .disabled(viewModel.isStartingService)
                     .accessibilityIdentifier("share_start_service_button")
                 }
-                .frame(maxWidth: .infinity, minHeight: 200)
+                .padding(.horizontal, AppUI.Spacing.large)
+                .padding(.vertical, AppUI.Spacing.large + 2)
+                .frame(maxWidth: .infinity, minHeight: 220)
+                .padding(.horizontal, AppUI.Spacing.large)
+                .padding(.top, AppUI.Spacing.small)
             }
         } else if viewModel.catalog.isLoadingDisplays {
             ScrollView {
@@ -232,6 +236,7 @@ struct ShareView: View {
                     Button("Refresh") {
                         viewModel.refreshDisplays()
                     }
+                    .appActionButtonStyle(variant: .default)
                     .accessibilityIdentifier("share_empty_refresh_button")
                 }
                 .padding(.horizontal, AppUI.Spacing.large)
@@ -250,6 +255,7 @@ struct ShareView: View {
                 Button("Refresh") {
                     viewModel.refreshDisplays()
                 }
+                .appActionButtonStyle(variant: .default)
                 .accessibilityIdentifier("share_empty_refresh_button")
             }
             .padding(.horizontal, AppUI.Spacing.large)

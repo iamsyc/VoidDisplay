@@ -20,14 +20,10 @@ struct HomeView: View {
 
     @State private var selection: SidebarItem? = .screen
 
-    private var activeSelection: SidebarItem {
-        selection ?? .screen
-    }
-
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Section("Display"){
+                Section("Display") {
                     Label("Displays", systemImage: "display")
                         .tag(SidebarItem.screen)
                         .accessibilityIdentifier("sidebar_screen")
@@ -38,21 +34,20 @@ struct HomeView: View {
                         .tag(SidebarItem.monitorScreen)
                         .accessibilityIdentifier("sidebar_monitor_screen")
                 }
-                Section("Sharing"){
+
+                Section("Sharing") {
                     Label("Screen Sharing", systemImage: "display")
                         .tag(SidebarItem.screenSharing)
                         .accessibilityIdentifier("sidebar_screen_sharing")
-                    
                 }
             }
-            .scrollContentBackground(.hidden)
-            .appGlassSidebarBackground()
+            .listStyle(.sidebar)
             .accessibilityIdentifier("home_sidebar")
-            .navigationSplitViewColumnWidth(min: 160, ideal: 160,max: 190)
+            .navigationSplitViewColumnWidth(min: 160, ideal: 160, max: 190)
         } detail: {
             NavigationStack {
                 Group {
-                    switch activeSelection {
+                    switch selection ?? .screen {
                     case .screen:
                         DisplaysView()
                             .navigationTitle("Displays")
@@ -73,12 +68,6 @@ struct HomeView: View {
                 }
             }
         }
-        .onAppear {
-            if selection == nil {
-                selection = .screen
-            }
-        }
-        
     }
 }
 

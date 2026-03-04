@@ -16,7 +16,7 @@ struct ShareStatusPanel: View {
                     .foregroundStyle(isRunning ? .primary : .secondary)
             }
 
-            Text("·").foregroundStyle(.quaternary)
+            dividerDot
 
             HStack(spacing: AppUI.Spacing.xSmall) {
                 Text(String(localized: "Sharing"))
@@ -25,7 +25,7 @@ struct ShareStatusPanel: View {
                     .foregroundStyle(sharingDisplayCount > 0 ? Color.green : .secondary)
             }
 
-            Text("·").foregroundStyle(.quaternary)
+            dividerDot
 
             HStack(spacing: AppUI.Spacing.xSmall) {
                 Image(systemName: "person.2")
@@ -44,6 +44,11 @@ struct ShareStatusPanel: View {
         .padding(.vertical, AppUI.Spacing.small)
         .appGlassBar(role: .status)
         .accessibilityIdentifier("share_status_panel")
+    }
+
+    private var dividerDot: some View {
+        Text("·")
+            .foregroundStyle(.quaternary)
     }
 
     private func localizedDisplayCount(_ count: Int) -> String {

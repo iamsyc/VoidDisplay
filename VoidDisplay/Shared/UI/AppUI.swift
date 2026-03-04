@@ -1,27 +1,16 @@
 import SwiftUI
 
+// MARK: - Action button variant
+
+enum AppActionVariant {
+    case `default`
+    case primary
+    case danger
+}
+
+// MARK: - Design tokens
+
 enum AppUI {
-    enum GlassRole {
-        case sidebar
-        case panel
-        case interactiveCard
-        case toolbar
-        case status
-    }
-
-    struct GlassTokens {
-        let material: Material
-        let strokeOpacityDark: Double
-        let strokeOpacityLight: Double
-        let highlightOpacityDark: Double
-        let highlightOpacityLight: Double
-        let shadowOpacityDark: Double
-        let shadowOpacityLight: Double
-        let shadowRadius: CGFloat
-        let shadowYOffset: CGFloat
-        let cornerRadius: CGFloat
-    }
-
     enum Spacing {
         static let xSmall: CGFloat = 4
         static let small: CGFloat = 8
@@ -41,24 +30,49 @@ enum AppUI {
 
     enum List {
         static let rowMinHeight: CGFloat = 56
-        static let iconBoxWidth: CGFloat = 42 // Increased from 36
-        static let iconBoxHeight: CGFloat = 42 // Increased from 30
+        static let iconBoxWidth: CGFloat = 42
+        static let iconBoxHeight: CGFloat = 42
         static let rowHorizontalInset: CGFloat = 12
         static let rowVerticalInset: CGFloat = 6
         static let listHorizontalInset: CGFloat = 12
         static let listVerticalInset: CGFloat = 3
-        static let hoverLift: CGFloat = 1
     }
 
+    // Kept for call-site compat (appActionButtonStyle `state:` parameter).
+    enum InteractionState {
+        case normal, hover, active, disabled
+    }
+
+    // MARK: - Surface helpers
+
     enum Surface {
+        // -- Panel (standalone container: empty-state, start-service panel)
         static func panelFill(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.06) : .white.opacity(0.94)
+            colorScheme == .dark ? .white.opacity(0.06) : .white
         }
 
         static func panelStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.16) : .black.opacity(0.10)
+            colorScheme == .dark ? .white.opacity(0.16) : .black.opacity(0.08)
         }
 
+        // -- Interactive card (list row cards)
+        static func cardFill(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark
+                ? .white.opacity(0.06)
+                : Color(nsColor: .controlBackgroundColor).opacity(0.90)
+        }
+
+        static func cardStroke(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.08)
+        }
+
+        static func cardHoverStroke(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark
+                ? Color.accentColor.opacity(0.55)
+                : Color.accentColor.opacity(0.40)
+        }
+
+        // -- Tile (icon boxes inside cards)
         static func tileFill(for colorScheme: ColorScheme) -> Color {
             colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.03)
         }
@@ -67,290 +81,58 @@ enum AppUI {
             colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.12)
         }
 
-        static func screenBackground(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark
-                ? Color(nsColor: .windowBackgroundColor)
-                : Color(nsColor: .windowBackgroundColor)
+        // -- Status bar
+        static func statusStroke(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.09)
+        }
+
+        // -- Sidebar selection pill
+        static func sidebarSelectionFill(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark ? .white.opacity(0.10) : .white.opacity(0.28)
+        }
+
+        static func sidebarSelectionStroke(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.08)
+        }
+
+        // -- Screen background
+        static func screenBackground(for _: ColorScheme) -> Color {
+            Color(nsColor: .windowBackgroundColor)
         }
 
         static func screenBackgroundGradient(for colorScheme: ColorScheme) -> LinearGradient {
-            if colorScheme == .dark {
-                return LinearGradient(
-                    colors: [
-                        .white.opacity(0.06),
-                        .white.opacity(0.02),
-                        .clear
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
+            let topOpacity: Double = colorScheme == .dark ? 0.03 : 0
             return LinearGradient(
                 colors: [
-                    .white.opacity(0.24),
-                    .white.opacity(0.10),
-                    .clear
+                    .white.opacity(topOpacity),
+                    .clear,
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         }
 
-        static func glassTokens(for role: GlassRole) -> GlassTokens {
-            switch role {
-            case .sidebar:
-                return GlassTokens(
-                    material: .thinMaterial,
-                    strokeOpacityDark: 0.10,
-                    strokeOpacityLight: 0.08,
-                    highlightOpacityDark: 0.02,
-                    highlightOpacityLight: 0.04,
-                    shadowOpacityDark: 0.00,
-                    shadowOpacityLight: 0.00,
-                    shadowRadius: 0,
-                    shadowYOffset: 0,
-                    cornerRadius: 0
-                )
-            case .panel:
-                return GlassTokens(
-                    material: .thickMaterial,
-                    strokeOpacityDark: 0.22,
-                    strokeOpacityLight: 0.12,
-                    highlightOpacityDark: 0.04,
-                    highlightOpacityLight: 0.08,
-                    shadowOpacityDark: 0.00,
-                    shadowOpacityLight: 0.07,
-                    shadowRadius: 8,
-                    shadowYOffset: 3,
-                    cornerRadius: AppUI.Corner.medium
-                )
-            case .interactiveCard:
-                return GlassTokens(
-                    material: .regularMaterial,
-                    strokeOpacityDark: 0.18,
-                    strokeOpacityLight: 0.10,
-                    highlightOpacityDark: 0.04,
-                    highlightOpacityLight: 0.06,
-                    shadowOpacityDark: 0.00,
-                    shadowOpacityLight: 0.05,
-                    shadowRadius: 6,
-                    shadowYOffset: 2,
-                    cornerRadius: AppUI.Corner.medium
-                )
-            case .toolbar:
-                return GlassTokens(
-                    material: .ultraThinMaterial,
-                    strokeOpacityDark: 0.14,
-                    strokeOpacityLight: 0.08,
-                    highlightOpacityDark: 0.02,
-                    highlightOpacityLight: 0.03,
-                    shadowOpacityDark: 0.00,
-                    shadowOpacityLight: 0.00,
-                    shadowRadius: 0,
-                    shadowYOffset: 0,
-                    cornerRadius: 0
-                )
-            case .status:
-                return GlassTokens(
-                    material: .thinMaterial,
-                    strokeOpacityDark: 0.20,
-                    strokeOpacityLight: 0.10,
-                    highlightOpacityDark: 0.03,
-                    highlightOpacityLight: 0.06,
-                    shadowOpacityDark: 0.00,
-                    shadowOpacityLight: 0.05,
-                    shadowRadius: 5,
-                    shadowYOffset: 2,
-                    cornerRadius: AppUI.Corner.medium
-                )
-            }
+        // -- Reduce-transparency fallbacks
+        static func fallbackBarFill(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.90)
         }
 
-        static func glassCornerRadius(for role: GlassRole) -> CGFloat {
-            glassTokens(for: role).cornerRadius
-        }
-
-        static func glassFallbackFill(for role: GlassRole, colorScheme: ColorScheme) -> Color {
-            switch role {
-            case .panel:
-                return panelFill(for: colorScheme)
-            case .interactiveCard:
-                return colorScheme == .dark
-                    ? .white.opacity(0.08)
-                    : Color(nsColor: .controlBackgroundColor).opacity(0.90)
-            case .toolbar:
-                return colorScheme == .dark ? .white.opacity(0.07) : .white.opacity(0.92)
-            case .status:
-                return colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.04)
-            case .sidebar:
-                return colorScheme == .dark
-                    ? .white.opacity(0.04)
-                    : Color(nsColor: .windowBackgroundColor).opacity(0.96)
-            }
-        }
-
-        static func glassStroke(for role: GlassRole, colorScheme: ColorScheme) -> Color {
-            let tokens = glassTokens(for: role)
-            let strokeOpacity = colorScheme == .dark ? tokens.strokeOpacityDark : tokens.strokeOpacityLight
-            return (colorScheme == .dark ? Color.white : Color.black).opacity(strokeOpacity)
-        }
-
-        static func glassFallbackStroke(for role: GlassRole, colorScheme: ColorScheme) -> Color {
-            switch role {
-            case .panel:
-                return panelStroke(for: colorScheme)
-            case .interactiveCard:
-                return colorScheme == .dark ? .white.opacity(0.20) : .black.opacity(0.10)
-            case .toolbar, .status, .sidebar:
-                return glassStroke(for: role, colorScheme: colorScheme)
-            }
-        }
-
-        static func glassHighlightTint(for role: GlassRole, colorScheme: ColorScheme) -> Color {
-            let tokens = glassTokens(for: role)
-            let opacity = colorScheme == .dark ? tokens.highlightOpacityDark : tokens.highlightOpacityLight
-            return .white.opacity(opacity)
-        }
-
-        static func glassShadow(
-            for role: GlassRole,
-            colorScheme: ColorScheme,
-            reduceTransparency: Bool
-        ) -> (color: Color, radius: CGFloat, y: CGFloat) {
-            let tokens = glassTokens(for: role)
-            let opacity = colorScheme == .dark ? tokens.shadowOpacityDark : tokens.shadowOpacityLight
-            if reduceTransparency || opacity == 0 {
-                return (.clear, 0, 0)
-            }
-            return (.black.opacity(opacity), tokens.shadowRadius, tokens.shadowYOffset)
-        }
-
-        static func sidebarDivider(for colorScheme: ColorScheme, reduceTransparency: Bool) -> Color {
-            if reduceTransparency {
-                return colorScheme == .dark ? .white.opacity(0.16) : .black.opacity(0.10)
-            }
-            return glassStroke(for: .sidebar, colorScheme: colorScheme)
-        }
-
-        static func interactivePanelStroke(for colorScheme: ColorScheme, isHovered: Bool) -> Color {
-            guard isHovered else {
-                return .clear
-            }
-            if colorScheme == .dark {
-                return Color.accentColor.opacity(0.55)
-            }
-            return Color.accentColor.opacity(0.40)
+        static func fallbackBarStroke(for colorScheme: ColorScheme) -> Color {
+            colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.10)
         }
     }
 }
 
-struct AppGlassSurface: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    let role: AppUI.GlassRole
+// MARK: - Role enum (call-site compat)
 
-    private var cornerRadius: CGFloat {
-        AppUI.Surface.glassCornerRadius(for: role)
-    }
-
-    private var fillStyle: AnyShapeStyle {
-        if reduceTransparency {
-            return AnyShapeStyle(AppUI.Surface.glassFallbackFill(for: role, colorScheme: colorScheme))
-        }
-        return AnyShapeStyle(AppUI.Surface.glassTokens(for: role).material)
-    }
-
-    private var strokeColor: Color {
-        if reduceTransparency {
-            return AppUI.Surface.glassFallbackStroke(for: role, colorScheme: colorScheme)
-        }
-        return AppUI.Surface.glassStroke(for: role, colorScheme: colorScheme)
-    }
-
-    func body(content: Content) -> some View {
-        let shadow = AppUI.Surface.glassShadow(
-            for: role,
-            colorScheme: colorScheme,
-            reduceTransparency: reduceTransparency
-        )
-
-        content
-            .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(fillStyle)
-                    if !reduceTransparency {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(AppUI.Surface.glassHighlightTint(for: role, colorScheme: colorScheme))
-                    }
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(strokeColor, lineWidth: AppUI.Stroke.subtle)
-            }
-            .shadow(color: shadow.color, radius: shadow.radius, x: 0, y: shadow.y)
-    }
+/// Kept so `appGlassBar(role:)` / `appGlassSurface(role:)` call sites compile.
+enum AppGlassBarRole {
+    case sidebar, panel, interactiveCard, toolbar, status
 }
 
-struct AppGlassBar: ViewModifier {
-    let role: AppUI.GlassRole
+// MARK: ─── View Modifiers ───
 
-    func body(content: Content) -> some View {
-        content
-            .modifier(AppGlassSurface(role: role))
-    }
-}
-
-struct AppGlassSidebarBackground: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                if reduceTransparency {
-                    AppUI.Surface.glassFallbackFill(for: .sidebar, colorScheme: colorScheme)
-                } else {
-                    ZStack {
-                        Rectangle()
-                            .fill(AppUI.Surface.glassTokens(for: .sidebar).material)
-                        Rectangle()
-                            .fill(AppUI.Surface.glassHighlightTint(for: .sidebar, colorScheme: colorScheme))
-                    }
-                }
-            }
-            .overlay(alignment: .trailing) {
-                Rectangle()
-                    .fill(AppUI.Surface.sidebarDivider(for: colorScheme, reduceTransparency: reduceTransparency))
-                    .frame(width: AppUI.Stroke.subtle)
-            }
-    }
-}
-
-struct AppPanel: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .appGlassSurface(role: .panel)
-    }
-}
-
-struct AppTile: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                    .fill(AppUI.Surface.tileFill(for: colorScheme))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                    .stroke(AppUI.Surface.tileStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
-            )
-    }
-}
-
+/// Screen background: window color + subtle gradient overlay.
 struct AppScreenBackground: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -365,37 +147,162 @@ struct AppScreenBackground: ViewModifier {
     }
 }
 
+/// Standalone panel: solid fill + border + shadow.
+struct AppPanel: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                    .fill(AppUI.Surface.panelFill(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                    .stroke(AppUI.Surface.panelStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
+            )
+            .shadow(
+                color: colorScheme == .dark ? .clear : .black.opacity(0.08),
+                radius: colorScheme == .dark ? 0 : 8,
+                x: 0,
+                y: 2
+            )
+    }
+}
+
+/// Tile: small icon container inside cards — subtle fill, no border.
+struct AppTile: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
+                    .fill(AppUI.Surface.tileFill(for: colorScheme))
+            )
+    }
+}
+
+/// Interactive card: solid fill with always-visible border + hover accent stroke.
 struct AppInteractiveCard: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     let isHovered: Bool
 
     func body(content: Content) -> some View {
+        let strokeColor = isHovered
+            ? AppUI.Surface.cardHoverStroke(for: colorScheme)
+            : AppUI.Surface.cardStroke(for: colorScheme)
+
         content
-            .appGlassSurface(role: .interactiveCard)
+            .background(
+                RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                    .fill(AppUI.Surface.cardFill(for: colorScheme))
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .stroke(
-                        AppUI.Surface.interactivePanelStroke(
-                            for: colorScheme,
-                            isHovered: isHovered
-                        ),
-                        lineWidth: AppUI.Stroke.subtle
-                    )
+                    .stroke(strokeColor, lineWidth: AppUI.Stroke.subtle)
             )
     }
 }
 
+/// Toolbar / bottom action bar: native `.ultraThinMaterial` with reduce-transparency fallback.
+struct AppToolbarBar: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(AppUI.Surface.fallbackBarFill(for: colorScheme))
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(AppUI.Surface.fallbackBarStroke(for: colorScheme))
+                        .frame(height: AppUI.Stroke.subtle)
+                }
+        } else {
+            content
+                .background(.ultraThinMaterial)
+        }
+    }
+}
+
+/// Status panel: `.thinMaterial` with rounded corners + fine border.
+struct AppStatusBar: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                        .fill(AppUI.Surface.fallbackBarFill(for: colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                        .stroke(AppUI.Surface.fallbackBarStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
+                )
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                        .fill(.thinMaterial)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
+                        .stroke(AppUI.Surface.statusStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
+                )
+        }
+    }
+}
+
+/// Sidebar selection pill: translucent highlight + fine border + soft shadow.
+struct AppSidebarSelectionPill: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let isSelected: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, AppUI.Spacing.small - 1)
+            .padding(.vertical, AppUI.Spacing.xSmall + 2)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
+                        .fill(AppUI.Surface.sidebarSelectionFill(for: colorScheme))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
+                                .stroke(
+                                    AppUI.Surface.sidebarSelectionStroke(for: colorScheme),
+                                    lineWidth: AppUI.Stroke.subtle
+                                )
+                        }
+                        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
+                }
+            }
+    }
+}
+
+/// Action button using native SwiftUI styles.
+struct AppActionButton: ViewModifier {
+    let variant: AppActionVariant
+
+    func body(content: Content) -> some View {
+        switch variant {
+        case .primary:
+            content.buttonStyle(.borderedProminent)
+        case .danger:
+            content.buttonStyle(.borderedProminent).tint(.red)
+        case .default:
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+// MARK: ─── View Extensions ───
+
 extension View {
-    func appGlassSurface(role: AppUI.GlassRole) -> some View {
-        modifier(AppGlassSurface(role: role))
-    }
-
-    func appGlassBar(role: AppUI.GlassRole) -> some View {
-        modifier(AppGlassBar(role: role))
-    }
-
-    func appGlassSidebarBackground() -> some View {
-        modifier(AppGlassSidebarBackground())
+    func appScreenBackground() -> some View {
+        modifier(AppScreenBackground())
     }
 
     func appPanelStyle() -> some View {
@@ -404,10 +311,6 @@ extension View {
 
     func appTileStyle() -> some View {
         modifier(AppTile())
-    }
-
-    func appScreenBackground() -> some View {
-        modifier(AppScreenBackground())
     }
 
     func appInteractiveCardStyle(isHovered: Bool) -> some View {
@@ -427,7 +330,42 @@ extension View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
     }
+
+    func appSidebarSelectionPill(isSelected: Bool) -> some View {
+        modifier(AppSidebarSelectionPill(isSelected: isSelected))
+    }
+
+    func appActionButtonStyle(
+        variant: AppActionVariant = .default,
+        state _: AppUI.InteractionState = .normal
+    ) -> some View {
+        modifier(AppActionButton(variant: variant))
+    }
+
+    // MARK: Compat shims
+
+    /// Toolbar / bottom bar — uses `.ultraThinMaterial`.
+    func appGlassBar(role: AppGlassBarRole) -> some View {
+        switch role {
+        case .status:
+            return AnyView(modifier(AppStatusBar()))
+        default:
+            return AnyView(modifier(AppToolbarBar()))
+        }
+    }
+
+    /// Panel surface — uses solid fill.
+    func appGlassSurface(role _: AppGlassBarRole) -> some View {
+        modifier(AppPanel())
+    }
+
+    /// Sidebar background — system handles it; no-op.
+    func appGlassSidebarBackground() -> some View {
+        self
+    }
 }
+
+// MARK: ─── Shared Components ───
 
 struct AppStatusBadge: View {
     enum Style {
@@ -454,31 +392,24 @@ struct AppStatusBadge: View {
                 )
                 .foregroundStyle(tint)
         default:
-            let presentation = badgePresentation
-
+            let p = badgePresentation
             Text(title)
                 .font(.caption2.weight(.semibold))
                 .padding(.horizontal, AppUI.Spacing.small - 1)
                 .padding(.vertical, AppUI.Spacing.xSmall - 1)
-                .background(presentation.background, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(presentation.stroke, lineWidth: AppUI.Stroke.subtle)
-                )
-                .foregroundStyle(presentation.foreground)
+                .background(p.background, in: Capsule())
+                .overlay(Capsule().stroke(p.stroke, lineWidth: AppUI.Stroke.subtle))
+                .foregroundStyle(p.foreground)
         }
     }
 
     private var badgePresentation: (foreground: Color, background: Color, stroke: Color) {
         switch style {
         case .neutral:
-            if colorScheme == .dark {
-                return (.white.opacity(0.92), .white.opacity(0.14), .white.opacity(0.20))
-            }
-            return (.black.opacity(0.70), .black.opacity(0.06), .black.opacity(0.12))
-        case .accent(let tint):
-            return (tint, tint.opacity(colorScheme == .dark ? 0.24 : 0.16), tint.opacity(colorScheme == .dark ? 0.32 : 0.28))
-        case .roundedTag(let tint):
+            return colorScheme == .dark
+                ? (.white.opacity(0.92), .white.opacity(0.14), .white.opacity(0.20))
+                : (.black.opacity(0.70), .black.opacity(0.06), .black.opacity(0.12))
+        case .accent(let tint), .roundedTag(let tint):
             return (tint, tint.opacity(colorScheme == .dark ? 0.24 : 0.16), tint.opacity(colorScheme == .dark ? 0.32 : 0.28))
         }
     }
@@ -512,7 +443,6 @@ struct AppStatusDotLabel: View {
             Circle()
                 .fill(tint)
                 .frame(width: 8, height: 8)
-
             Text(title)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)

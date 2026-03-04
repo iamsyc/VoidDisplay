@@ -90,11 +90,6 @@ struct VirtualDisplayRow: View {
                 }
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                .stroke(isRunning ? Color.green.opacity(0.35) : .clear, lineWidth: AppUI.Stroke.subtle)
-        }
-        .opacity(isRunning ? 1.0 : 0.82)
     }
 
     private var moveButtons: some View {
@@ -155,7 +150,7 @@ struct VirtualDisplayRow: View {
                 onRetryRebuild()
             }
             .buttonStyle(.bordered)
-            .tint(.red)
+            .tint(.orange)
             .disabled(isRowBusy)
             .help(rebuildFailureMessage)
             .accessibilityIdentifier("virtual_display_rebuild_retry_button")

@@ -115,7 +115,7 @@ struct ShareDisplayList: View {
         displayClientCount: Int,
         isSharingDisplay: Bool
     ) -> some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.small + 2) {
             if let displayAddress {
                 displayAddressInline(
                     displayID: display.displayID,
@@ -130,10 +130,17 @@ struct ShareDisplayList: View {
                     .font(.caption)
                     .foregroundStyle(displayClientCount > 0 ? Color.accentColor : .secondary)
                 Text("\(displayClientCount)")
-                    .font(.system(.caption, design: .monospaced))
-                    .fontWeight(.semibold)
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, AppUI.Spacing.small)
+            .padding(.vertical, AppUI.Spacing.xSmall)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(.primary.opacity(0.10), lineWidth: AppUI.Stroke.subtle)
+            )
             .accessibilityLabel(connectedClientsAccessibilityLabel(displayClientCount))
 
             shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
@@ -181,6 +188,13 @@ struct ShareDisplayList: View {
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: "Copy display address"))
         }
+        .padding(.horizontal, AppUI.Spacing.small)
+        .padding(.vertical, AppUI.Spacing.xSmall)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
+                .stroke(.primary.opacity(0.09), lineWidth: AppUI.Stroke.subtle)
+        )
     }
 
     private func connectedClientsAccessibilityLabel(_ count: Int) -> String {
@@ -210,8 +224,7 @@ struct ShareDisplayList: View {
                 }
             }
         }
-        .buttonStyle(.borderedProminent)
-        .tint(isSharingDisplay ? .red : .accentColor)
+        .appActionButtonStyle(variant: isSharingDisplay ? .danger : .primary)
         .accessibilityIdentifier("share_action_button_\(display.displayID)")
         .accessibilityValue(
             Text(verbatim: isSharingDisplay ? ShareAccessibilityState.sharing : ShareAccessibilityState.idle)
