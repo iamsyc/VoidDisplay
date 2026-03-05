@@ -15,11 +15,9 @@ struct ScreenCapturePermissionGuideView: View {
 
     var body: some View {
         ScrollView {
-            VStack {
-                permissionPanel
-            }
-            .frame(maxWidth: .infinity)
-            .appListContentInsets()
+            permissionPanel
+                .frame(maxWidth: .infinity, minHeight: 200, alignment: .top)
+                .appListContentInsets()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -98,9 +96,8 @@ struct ScreenCapturePermissionGuideView: View {
             .frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity)
-        .padding()
+        .padding(.vertical, AppUI.Spacing.large)
         .frame(maxWidth: 760)
-        .appGlassSurface(role: .panel)
         .accessibilityElement(children: .contain)
         .optionalAccessibilityIdentifier(rootAccessibilityIdentifier)
     }
