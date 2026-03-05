@@ -4,6 +4,7 @@
 //
 //
 
+import Foundation
 import SwiftUI
 
 @MainActor
@@ -100,11 +101,39 @@ enum AppBootstrap {
             ?? (ProcessInfo.processInfo.environment[xCTestConfigurationEnvironmentKey] != nil)
         let resolvedStartupPlan = startupPlan ?? (isRunningUnderXCTest ? .skipAll : .standard)
         let resolvedCaptureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
-        let resolvedSharingService = sharingService ?? SharingService()
-        let resolvedVirtualDisplayFacade = virtualDisplayFacade ?? VirtualDisplayOrchestrator()
+
+        var persistenceEnvironment = ProcessInfo.processInfo.environment
+        if preview {
+            persistenceEnvironment[PersistenceContext.uiTestModeEnvironmentKey] = "1"
+        }
+        let persistenceContext = PersistenceContext.resolve(environment: persistenceEnvironment)
+
+        let resolvedSharingService: any SharingServiceProtocol
+        if let sharingService {
+            resolvedSharingService = sharingService
+        } else {
+            let idStore = DisplayShareIDStore(storeURL: persistenceContext.displayShareIDMappingsURL)
+            let sharingCoordinator = DisplaySharingCoordinator(idStore: idStore)
+            resolvedSharingService = SharingService(sharingCoordinator: sharingCoordinator)
+        }
+
+        let resolvedVirtualDisplayFacade: any VirtualDisplayFacade
+        if let virtualDisplayFacade {
+            resolvedVirtualDisplayFacade = virtualDisplayFacade
+        } else {
+            let virtualDisplayStore = VirtualDisplayStore(
+                storeURL: persistenceContext.virtualDisplayConfigsURL,
+                mode: persistenceContext.mode
+            )
+            let configRepository = VirtualDisplayConfigRepository(store: virtualDisplayStore)
+            resolvedVirtualDisplayFacade = VirtualDisplayOrchestrator(configRepository: configRepository)
+        }
 
         let capture = CaptureController(captureMonitoringService: resolvedCaptureMonitoringService)
-        let sharing = SharingController(sharingService: resolvedSharingService)
+        let sharing = SharingController(
+            sharingService: resolvedSharingService,
+            portPreferences: SharingPortPreferences(defaults: persistenceContext.userDefaults)
+        )
         let virtualDisplay = VirtualDisplayController(
             virtualDisplayFacade: resolvedVirtualDisplayFacade,
             appliedBadgeDisplayDurationNanoseconds: appliedBadgeDisplayDurationNanoseconds,

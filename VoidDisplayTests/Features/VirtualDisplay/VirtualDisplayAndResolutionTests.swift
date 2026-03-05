@@ -177,7 +177,7 @@ struct VirtualDisplayAndResolutionTests {
 
         let data = try JSONEncoder().encode([config])
         do {
-            _ = try VirtualDisplayStore().decodeConfigs(from: data)
+            _ = try makeStore().decodeConfigs(from: data)
             Issue.record("Expected legacy array format decode to fail")
         } catch let error as VirtualDisplayConfigStoreError {
             guard case .decodingFailed = error else {
@@ -211,7 +211,7 @@ struct VirtualDisplayAndResolutionTests {
         ]
 
         let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: configs))
-        let decoded = try VirtualDisplayStore().decodeConfigs(from: data)
+        let decoded = try makeStore().decodeConfigs(from: data)
 
         #expect(decoded.count == 2)
         #expect(decoded[0].serialNum == 1)
@@ -255,7 +255,7 @@ struct VirtualDisplayAndResolutionTests {
         ]
 
         let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: configs))
-        let decoded = try VirtualDisplayStore().decodeConfigs(from: data)
+        let decoded = try makeStore().decodeConfigs(from: data)
         let serials = decoded.map(\.serialNum)
 
         #expect(decoded.count == 3)
@@ -267,11 +267,8 @@ struct VirtualDisplayAndResolutionTests {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-        let store = VirtualDisplayStore(
-            appSupportDirectoryOverride: tempRoot,
-            bundleIdentifierOverride: "com.example.voiddisplay.testsandbox",
-            environment: [:]
-        )
+        let storeURL = tempRoot.appendingPathComponent("virtual-displays.json", isDirectory: false)
+        let store = makeStore(storeURL: storeURL)
 
         let runtimePolluted = VirtualDisplayConfig(
             id: UUID(),
@@ -295,15 +292,12 @@ struct VirtualDisplayAndResolutionTests {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-        let store = VirtualDisplayStore(
-            appSupportDirectoryOverride: tempRoot,
-            bundleIdentifierOverride: "com.example.voiddisplay",
-            environment: ["XCTestConfigurationFilePath": "/tmp/test.xctestconfiguration"]
-        )
+        let storeURL = tempRoot.appendingPathComponent("virtual-displays.json", isDirectory: false)
+        let store = makeStore(storeURL: storeURL, mode: .testIsolatedWritable)
 
         let diagnostics = try store.diagnostics()
 
-        #expect(diagnostics.primaryStoreURL.path.contains("com.example.voiddisplay.tests"))
+        #expect(diagnostics.primaryStoreURL == storeURL)
         #expect(diagnostics.isTestIsolatedPath)
     }
 
@@ -317,7 +311,7 @@ struct VirtualDisplayAndResolutionTests {
         let data = try #require(json.data(using: .utf8))
 
         do {
-            _ = try VirtualDisplayStore().decodeConfigs(from: data)
+            _ = try makeStore().decodeConfigs(from: data)
             Issue.record("Expected unsupported schema version error")
         } catch let error as VirtualDisplayConfigStoreError {
             switch error {
@@ -354,7 +348,7 @@ struct VirtualDisplayAndResolutionTests {
         """
         let data = try #require(json.data(using: .utf8))
         do {
-            _ = try VirtualDisplayStore().decodeConfigs(from: data)
+            _ = try makeStore().decodeConfigs(from: data)
             Issue.record("Expected decodingFailed store error")
         } catch let error as VirtualDisplayConfigStoreError {
             switch error {
@@ -368,16 +362,14 @@ struct VirtualDisplayAndResolutionTests {
         }
     }
 
-    @MainActor @Test func virtualDisplayStoreUsesIsolatedBundleSuffixWhenRunningUnderXCTest() throws {
+    @MainActor @Test func virtualDisplayStoreWritesOnlyToInjectedStoreURL() throws {
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-        let baseBundleID = "com.example.voiddisplay"
-        let store = VirtualDisplayStore(
-            appSupportDirectoryOverride: tempRoot,
-            bundleIdentifierOverride: baseBundleID,
-            environment: ["XCTestConfigurationFilePath": "/tmp/test.xctestconfiguration"]
-        )
+        let storeURL = tempRoot
+            .appendingPathComponent("sandbox", isDirectory: true)
+            .appendingPathComponent("virtual-displays.json", isDirectory: false)
+        let store = makeStore(storeURL: storeURL, mode: .testIsolatedWritable)
 
         let config = VirtualDisplayConfig(
             displayName: "Test",
@@ -389,15 +381,20 @@ struct VirtualDisplayAndResolutionTests {
         )
         try store.save([config])
 
-        let isolatedURL = tempRoot
-            .appendingPathComponent("\(baseBundleID).tests", isDirectory: true)
-            .appendingPathComponent("virtual-displays.json", isDirectory: false)
-        let normalURL = tempRoot
-            .appendingPathComponent(baseBundleID, isDirectory: true)
+        let siblingURL = tempRoot
             .appendingPathComponent("virtual-displays.json", isDirectory: false)
 
-        #expect(FileManager.default.fileExists(atPath: isolatedURL.path))
-        #expect(FileManager.default.fileExists(atPath: normalURL.path) == false)
+        #expect(FileManager.default.fileExists(atPath: storeURL.path))
+        #expect(FileManager.default.fileExists(atPath: siblingURL.path) == false)
     }
 
+    private func makeStore(
+        storeURL: URL? = nil,
+        mode: PersistenceMode = .testIsolatedWritable
+    ) -> VirtualDisplayStore {
+        let url = storeURL ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("virtual-displays.json", isDirectory: false)
+        return VirtualDisplayStore(storeURL: url, mode: mode)
+    }
 }

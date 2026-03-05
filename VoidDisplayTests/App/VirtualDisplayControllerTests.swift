@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import CoreGraphics
 @testable import VoidDisplay
@@ -5,6 +6,44 @@ import CoreGraphics
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
+    @Test func previewEnvironmentDoesNotPersistPreferredPortToStandardDefaults() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
+
+        let defaults = UserDefaults.standard
+        let key = "sharing.preferredPort"
+        let previousValue = defaults.object(forKey: key)
+        defer {
+            if let previousValue {
+                defaults.set(previousValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: false
+        )
+
+        _ = await env.sharing.startWebService(requestedPort: requestedPort)
+
+        let currentValue = defaults.object(forKey: key)
+        let valuesMatch: Bool
+        if let previousObject = previousValue as? NSObject,
+           let currentObject = currentValue as? NSObject {
+            valuesMatch = previousObject.isEqual(currentObject)
+        } else {
+            valuesMatch = previousValue == nil && currentValue == nil
+        }
+        #expect(valuesMatch)
+    }
 
     @Test func initPreviewModeSkipsStartupSequence() async {
         let sharing = MockSharingService()
@@ -528,7 +567,8 @@ struct AppBootstrapTests {
 
         let displayID: CGDirectDisplayID = 7101
         let target = ShareTarget.id(99)
-        sharing.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
         sharing.activeStreamClientCount = 3
         sharing.activeSharingDisplayIDs = [displayID]
         sharing.hasAnyActiveSharing = true
@@ -544,8 +584,8 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let started = await sut.sharing.startWebService(requestedPort: 8081)
-        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
+        let started = await sut.sharing.startWebService(requestedPort: requestedPort)
+        #expect(started == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(sut.sharing.isWebServiceRunning)
         #expect(sut.sharing.isSharing)
         #expect(sut.sharing.isDisplaySharing(displayID: displayID))

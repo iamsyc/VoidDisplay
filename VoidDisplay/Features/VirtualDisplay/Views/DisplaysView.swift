@@ -49,10 +49,8 @@ struct DisplaysView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 200)
                 .appListContentInsets()
-                .appDebugLayoutBorder()
                 .accessibilityIdentifier("displays_empty_state")
             }
-            .appDebugLayoutBorder()
         }
     }
 
@@ -60,28 +58,28 @@ struct DisplaysView: View {
         GeometryReader { geometry in
             let useGrid = geometry.size.width > 680
             ScrollView {
-                if useGrid {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.List.sectionSpacing) {
-                        ForEach(displays, id: \.self) { display in
-                            displayRow(display)
-                        }
-                    }
+                displayRows(displays: displays, useGrid: useGrid)
                     .appListContentInsets()
-                    .appDebugLayoutBorder()
-                } else {
-                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                        ForEach(displays, id: \.self) { display in
-                            displayRow(display)
-                        }
-                    }
-                    .appListContentInsets()
-                    .appDebugLayoutBorder()
+            }
+        }
+        .accessibilityIdentifier("displays_list")
+    }
+
+    @ViewBuilder
+    private func displayRows(displays: [NSScreen], useGrid: Bool) -> some View {
+        if useGrid {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.List.sectionSpacing) {
+                ForEach(displays, id: \.self) { display in
+                    displayRow(display)
                 }
             }
-            .appDebugLayoutBorder()
+        } else {
+            LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                ForEach(displays, id: \.self) { display in
+                    displayRow(display)
+                }
+            }
         }
-        .appDebugLayoutBorder()
-        .accessibilityIdentifier("displays_list")
     }
 
     private func displayRow(_ display: NSScreen) -> some View {

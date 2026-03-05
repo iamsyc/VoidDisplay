@@ -32,6 +32,11 @@
 - high-risk runtime behavior (concurrency/persistence/network/security)
 - user explicitly requests full suite
 
+## UI Test Port Injection
+- Preferred port key is `SharingPortPreferenceKeys.preferredPort` (`sharing.preferredPort`).
+- For UI tests, inject with launch arguments: `-sharing.preferredPort <port>`.
+- Do not write port value through hard-coded suite names in UI tests.
+
 ## AI Agent Temporary Workspace
 - Put all AI-generated temp files/logs/artifacts under `.ai-tmp/`.
 - Use isolated subdirectories under `.ai-tmp/`.

@@ -48,7 +48,7 @@ final class VirtualDisplayOrchestrator {
         )
     )
 
-    convenience init(configRepository: VirtualDisplayConfigRepository? = nil) {
+    convenience init(configRepository: VirtualDisplayConfigRepository) {
         self.init(
             configRepository: configRepository,
             displayReconfigurationMonitor: VirtualDisplayReconfigurationMonitor(),
@@ -63,7 +63,7 @@ final class VirtualDisplayOrchestrator {
     }
 
     convenience init(
-        configRepository: VirtualDisplayConfigRepository? = nil,
+        configRepository: VirtualDisplayConfigRepository,
         displayReconfigurationMonitor: any DisplayReconfigurationMonitoring,
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool,
         topologyStabilityTimeout: TimeInterval = 3.0,
@@ -84,7 +84,7 @@ final class VirtualDisplayOrchestrator {
     }
 
     init(
-        configRepository: VirtualDisplayConfigRepository? = nil,
+        configRepository: VirtualDisplayConfigRepository,
         displayReconfigurationMonitor: any DisplayReconfigurationMonitoring,
         topologyInspector: any DisplayTopologyInspecting,
         topologyRepairer: any DisplayTopologyRepairing,
@@ -107,7 +107,7 @@ final class VirtualDisplayOrchestrator {
         )
 
         let manager = VirtualDisplayConfigManager(
-            configRepository: configRepository ?? VirtualDisplayConfigRepository(),
+            configRepository: configRepository,
             activeSerialNumbersProvider: { [weak tracker] in
                 tracker?.activeSerialNumbers ?? []
             }

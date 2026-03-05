@@ -42,15 +42,14 @@ final class VirtualDisplayConfigRepository {
     private(set) var state: VirtualDisplayConfigRepositoryState
 
     init(
-        store: (any VirtualDisplayStoring)? = nil,
+        store: any VirtualDisplayStoring,
         reportFailure: FailureReporter? = nil
     ) {
-        let resolvedStore = store ?? VirtualDisplayStore()
-        self.store = resolvedStore
+        self.store = store
         self.reportFailure = reportFailure ?? { operation, error in
             AppErrorMapper.logFailure(operation, error: error, logger: AppLog.persistence)
         }
-        self.state = .ready(diagnostics: Self.resolveDiagnostics(from: resolvedStore))
+        self.state = .ready(diagnostics: Self.resolveDiagnostics(from: store))
     }
 
     var loadFailureMessage: String? {

@@ -1,5 +1,4 @@
 import CoreGraphics
-import Darwin
 import Foundation
 import ScreenCaptureKit
 import Testing
@@ -45,6 +44,11 @@ private enum EndToEndMockSCDisplay {
 
 @Suite(.serialized)
 struct SharingEndToEndIntegrationTests {
+    private let maxStartPortAttempts = 8
+    private enum DynamicStartError: Error {
+        case message(String)
+    }
+
     @MainActor
     @Test
     func sharingLifecycleRoutesRemainConsistent() async throws {
@@ -66,14 +70,13 @@ struct SharingEndToEndIntegrationTests {
         let display = EndToEndMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         service.registerShareableDisplays([display], virtualSerialResolver: { _ in nil })
 
-        let requestedPort = try availablePort()
-        let startResult = await service.startWebService(requestedPort: requestedPort)
+        let startOutcome = await startWebServiceWithDynamicPorts(service: service)
         let binding: WebServiceBinding
-        switch startResult {
-        case .started(let value), .alreadyRunning(let value):
+        switch startOutcome {
+        case .success(let value):
             binding = value
-        case .failed(let failure):
-            Issue.record("Expected web service start success but got failure: \(String(describing: failure))")
+        case .failure(let error):
+            Issue.record("Web service start failed: \(String(describing: error))")
             return
         }
         defer {
@@ -147,44 +150,40 @@ struct SharingEndToEndIntegrationTests {
     private func temporaryStoreURL() -> URL {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("sharing-e2e-\(UUID().uuidString)", isDirectory: true)
-        return base.appendingPathComponent("shared-display-ids.json", isDirectory: false)
+        return base.appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
     }
 
-    private func availablePort() throws -> UInt16 {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else {
-            throw POSIXError(.ENOTSOCK)
-        }
-        defer { close(descriptor) }
+    @MainActor
+    private func startWebServiceWithDynamicPorts(
+        service: SharingService
+    ) async -> Result<WebServiceBinding, DynamicStartError> {
+        let candidatePorts = TestPortAllocator.randomPortCandidates(count: maxStartPortAttempts)
+        var attemptedPorts: [UInt16] = []
 
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = in_port_t(0).bigEndian
-        address.sin_addr = in_addr(s_addr: INADDR_ANY.bigEndian)
-
-        let bindResult = withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                bind(descriptor, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+        for requestedPort in candidatePorts {
+            attemptedPorts.append(requestedPort)
+            let startResult = await service.startWebService(requestedPort: requestedPort)
+            switch startResult {
+            case .started(let binding), .alreadyRunning(let binding):
+                print(
+                    "[SharingEndToEndIntegrationTests] start success requested=\(requestedPort) bound=\(binding.boundPort) attempted=\(attemptedPorts)"
+                )
+                return .success(binding)
+            case .failed(.portInUse):
+                print(
+                    "[SharingEndToEndIntegrationTests] start portInUse requested=\(requestedPort) attempted=\(attemptedPorts)"
+                )
+                continue
+            case .failed(let failure):
+                let message =
+                    "Web service start failed with non-retryable failure \(String(describing: failure)). attemptedPorts=\(attemptedPorts)"
+                print("[SharingEndToEndIntegrationTests] \(message)")
+                return .failure(.message(message))
             }
         }
-        guard bindResult == 0 else {
-            let errnoValue = POSIXErrorCode(rawValue: errno) ?? .EFAULT
-            throw POSIXError(errnoValue)
-        }
 
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        var boundAddress = sockaddr_in()
-        let nameResult = withUnsafeMutablePointer(to: &boundAddress) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                getsockname(descriptor, sockaddrPointer, &length)
-            }
-        }
-        guard nameResult == 0 else {
-            let errnoValue = POSIXErrorCode(rawValue: errno) ?? .EFAULT
-            throw POSIXError(errnoValue)
-        }
-
-        return UInt16(bigEndian: boundAddress.sin_port)
+        let message = "Web service start exhausted retry budget. attemptedPorts=\(attemptedPorts)"
+        print("[SharingEndToEndIntegrationTests] \(message)")
+        return .failure(.message(message))
     }
 }

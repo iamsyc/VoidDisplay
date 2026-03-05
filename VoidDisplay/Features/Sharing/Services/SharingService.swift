@@ -38,10 +38,10 @@ final class SharingService: SharingServiceProtocol {
 
     init(
         webServiceController: (any WebServiceControllerProtocol)? = nil,
-        sharingCoordinator: DisplaySharingCoordinator? = nil
+        sharingCoordinator: DisplaySharingCoordinator
     ) {
         self.webServiceController = webServiceController ?? WebServiceController()
-        self.sharingCoordinator = sharingCoordinator ?? DisplaySharingCoordinator()
+        self.sharingCoordinator = sharingCoordinator
     }
 
     var webServicePortValue: UInt16 {

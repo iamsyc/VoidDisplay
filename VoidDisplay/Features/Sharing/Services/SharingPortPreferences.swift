@@ -1,5 +1,13 @@
 import Foundation
 
+private let defaultSharingPort: UInt16 = 8089
+
+/// Shared key used by persistence and launch-argument injection:
+/// `-sharing.preferredPort <port>`
+public enum SharingPortPreferenceKeys {
+    public static let preferredPort = "sharing.preferredPort"
+}
+
 @MainActor
 protocol SharingPortPreferencesProtocol: AnyObject {
     var preferredPort: UInt16 { get }
@@ -8,23 +16,19 @@ protocol SharingPortPreferencesProtocol: AnyObject {
 
 @MainActor
 final class SharingPortPreferences: SharingPortPreferencesProtocol {
-    private enum Keys {
-        static let preferredPort = "sharing.preferredPort"
-    }
-
     private let defaults: UserDefaults
     private let defaultPort: UInt16
 
     init(
-        defaults: UserDefaults = .standard,
-        defaultPort: UInt16 = 8081
+        defaults: UserDefaults,
+        defaultPort: UInt16 = defaultSharingPort
     ) {
         self.defaults = defaults
         self.defaultPort = defaultPort
     }
 
     var preferredPort: UInt16 {
-        let value = defaults.integer(forKey: Keys.preferredPort)
+        let value = defaults.integer(forKey: SharingPortPreferenceKeys.preferredPort)
         guard value != 0,
               let port = UInt16(exactly: value),
               (1024...65535).contains(Int(port)) else {
@@ -34,6 +38,6 @@ final class SharingPortPreferences: SharingPortPreferencesProtocol {
     }
 
     func savePreferredPort(_ port: UInt16) {
-        defaults.set(Int(port), forKey: Keys.preferredPort)
+        defaults.set(Int(port), forKey: SharingPortPreferenceKeys.preferredPort)
     }
 }

@@ -13,10 +13,10 @@ final class VirtualDisplayConfigManager {
     private let activeSerialNumbersProvider: () -> Set<UInt32>
 
     init(
-        configRepository: VirtualDisplayConfigRepository? = nil,
+        configRepository: VirtualDisplayConfigRepository,
         activeSerialNumbersProvider: @escaping () -> Set<UInt32> = { [] }
     ) {
-        self.configRepository = configRepository ?? VirtualDisplayConfigRepository()
+        self.configRepository = configRepository
         self.activeSerialNumbersProvider = activeSerialNumbersProvider
     }
 

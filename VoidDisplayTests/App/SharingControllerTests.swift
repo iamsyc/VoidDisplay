@@ -5,18 +5,22 @@ import Testing
 @MainActor
 struct SharingControllerTests {
     @Test func startWebServiceSyncsState() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let service = MockSharingService()
-        service.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
+        service.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
         service.activeStreamClientCount = 2
         let displayID: CGDirectDisplayID = 8001
         service.activeSharingDisplayIDs = [displayID]
         service.hasAnyActiveSharing = true
 
-        let sut = SharingController(sharingService: service)
+        let sut = SharingController(
+            sharingService: service,
+            portPreferences: MockSharingPortPreferences()
+        )
 
-        let started = await sut.startWebService(requestedPort: 8081)
+        let started = await sut.startWebService(requestedPort: requestedPort)
 
-        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
+        #expect(started == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(sut.isWebServiceRunning)
         #expect(sut.isSharing)
         #expect(sut.sharingClientCount == 2)
@@ -24,18 +28,19 @@ struct SharingControllerTests {
     }
 
     @Test func startWebServicePersistsRequestedPortOnSuccess() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let service = MockSharingService()
-        service.startResult = .started(WebServiceBinding(requestedPort: 8088, boundPort: 8088))
+        service.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
         let preferences = MockSharingPortPreferences()
         let sut = SharingController(
             sharingService: service,
             portPreferences: preferences
         )
 
-        _ = await sut.startWebService(requestedPort: 8088)
+        _ = await sut.startWebService(requestedPort: requestedPort)
 
-        #expect(preferences.savedPorts == [8088])
-        #expect(sut.preferredWebServicePort == 8088)
+        #expect(preferences.savedPorts == [requestedPort])
+        #expect(sut.preferredWebServicePort == requestedPort)
     }
 
     @Test func stopSharingAndStopAllSharingSyncState() {
@@ -46,7 +51,10 @@ struct SharingControllerTests {
         service.activeSharingDisplayIDs = [first, second]
         service.hasAnyActiveSharing = true
 
-        let sut = SharingController(sharingService: service)
+        let sut = SharingController(
+            sharingService: service,
+            portPreferences: MockSharingPortPreferences()
+        )
 
         sut.stopSharing(displayID: first)
         #expect(!sut.activeSharingDisplayIDs.contains(first))
@@ -61,7 +69,10 @@ struct SharingControllerTests {
     @Test func sharePageURLResolutionReturnsServiceNotRunningWhenStopped() {
         let service = MockSharingService()
         service.isWebServiceRunning = false
-        let sut = SharingController(sharingService: service)
+        let sut = SharingController(
+            sharingService: service,
+            portPreferences: MockSharingPortPreferences()
+        )
 
         let result = sut.sharePageURLResolution(for: nil)
 

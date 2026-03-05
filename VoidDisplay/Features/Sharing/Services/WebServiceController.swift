@@ -54,7 +54,7 @@ final class WebServiceController: WebServiceControllerProtocol {
     private var activeServerToken: UUID?
     private var startupTask: Task<WebServiceStartResult, Never>?
     private var currentBinding: WebServiceBinding?
-    private var lastRequestedPort: UInt16 = 8081
+    private var lastRequestedPort: UInt16 = 8089
     private var state: WebServiceLifecycleState = .stopped
     private var lifecycleNonce: UInt64 = 0
     private let webServiceServerFactory: WebServiceServerFactory

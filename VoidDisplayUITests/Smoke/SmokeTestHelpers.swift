@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 enum SmokeScenario: String {
@@ -12,6 +13,7 @@ extension XCTestCase {
     func launchAppForSmoke(scenario: SmokeScenario) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["VOIDDISPLAY_TEST_ISOLATION_ID"] = UUID().uuidString
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = scenario.rawValue
         app.launch()
         return app

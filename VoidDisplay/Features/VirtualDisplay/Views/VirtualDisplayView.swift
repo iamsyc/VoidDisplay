@@ -27,41 +27,7 @@ struct VirtualDisplayView: View {
 
     var body: some View {
         let _ = viewModel.primaryDisplayRefreshTick
-        Group {
-            if virtualDisplay.configStorePresentation.hasLoadFailure {
-                ScrollView {
-                    configStoreErrorPanel
-                        .appListContentInsets()
-                        .appDebugLayoutBorder()
-                }
-                .appDebugLayoutBorder()
-            } else if !virtualDisplay.displayConfigs.isEmpty {
-                ScrollView {
-                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                        ForEach(virtualDisplay.displayConfigs) { config in
-                            virtualDisplayRow(config)
-                        }
-                    }
-                    .appListContentInsets()
-                    .appDebugLayoutBorder()
-                }
-                .appDebugLayoutBorder()
-                .accessibilityIdentifier("virtual_displays_list")
-            } else {
-                ScrollView {
-                    ContentUnavailableView(
-                        "No Virtual Displays",
-                        systemImage: "display.trianglebadge.exclamationmark",
-                        description: Text("Click the + button in the top right to create a virtual display.")
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 200)
-                    .appListContentInsets()
-                    .appDebugLayoutBorder()
-                    .accessibilityIdentifier("virtual_displays_empty_state")
-                }
-                .appDebugLayoutBorder()
-            }
-        }
+        content
         .sheet(isPresented: $createView) {
             CreateVirtualDisplay(isShow: $createView)
         }
@@ -113,6 +79,37 @@ struct VirtualDisplayView: View {
             Text(VirtualDisplayRowPresentation.restoreFailureSummary(virtualDisplay.restoreFailures))
         }
         .appScreenBackground()
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if virtualDisplay.configStorePresentation.hasLoadFailure {
+            ScrollView {
+                configStoreErrorPanel
+                    .appListContentInsets()
+            }
+        } else if !virtualDisplay.displayConfigs.isEmpty {
+            ScrollView {
+                LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                    ForEach(virtualDisplay.displayConfigs) { config in
+                        virtualDisplayRow(config)
+                    }
+                }
+                .appListContentInsets()
+            }
+            .accessibilityIdentifier("virtual_displays_list")
+        } else {
+            ScrollView {
+                ContentUnavailableView(
+                    "No Virtual Displays",
+                    systemImage: "display.trianglebadge.exclamationmark",
+                    description: Text("Click the + button in the top right to create a virtual display.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+                .accessibilityIdentifier("virtual_displays_empty_state")
+            }
+        }
     }
 
     private var configStoreErrorPanel: some View {

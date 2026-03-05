@@ -30,10 +30,10 @@ final class SharingController {
 
     init(
         sharingService: any SharingServiceProtocol,
-        portPreferences: (any SharingPortPreferencesProtocol)? = nil
+        portPreferences: any SharingPortPreferencesProtocol
     ) {
         self.sharingService = sharingService
-        self.portPreferences = portPreferences ?? SharingPortPreferences()
+        self.portPreferences = portPreferences
         self.sharingService.onWebServiceLifecycleStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }

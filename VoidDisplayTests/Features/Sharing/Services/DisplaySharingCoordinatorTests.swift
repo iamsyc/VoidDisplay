@@ -34,6 +34,6 @@ struct DisplaySharingCoordinatorTests {
     private func temporaryStoreURL() -> URL {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("display-sharing-coordinator-tests-\(UUID().uuidString)", isDirectory: true)
-        return base.appendingPathComponent("shared-display-ids.json", isDirectory: false)
+        return base.appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
     }
 }

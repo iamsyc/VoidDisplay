@@ -12,22 +12,25 @@ final class DisplayShareIDStore {
         }
     }
 
-    private let fileName = "shared-display-ids.json"
     private let fileManager: FileManager
-    private let overrideStoreURL: URL?
+    private let storeURL: URL
+    private let persistenceContext: PersistenceContext
     private var mappings: [String: UInt32] = [:]
 
     init(
         fileManager: FileManager = .default,
-        storeURL: URL? = nil
+        storeURL: URL
     ) {
         self.fileManager = fileManager
-        self.overrideStoreURL = storeURL
+        self.storeURL = storeURL
+        self.persistenceContext = PersistenceContext.resolve(
+            environment: ProcessInfo.processInfo.environment,
+            fileManager: fileManager
+        )
 
         do {
-            let url = try resolvedStoreURL()
-            guard fileManager.fileExists(atPath: url.path) else { return }
-            let data = try Data(contentsOf: url)
+            guard fileManager.fileExists(atPath: storeURL.path) else { return }
+            let data = try Data(contentsOf: storeURL)
             let file = try JSONDecoder().decode(FileFormat.self, from: data)
             mappings = file.mappings
         } catch {
@@ -68,34 +71,22 @@ final class DisplayShareIDStore {
     }
 
     private func persist() {
+        guard persistenceContext.guardWriteAllowed(
+            targetURL: storeURL,
+            operation: "Persist display share id mappings"
+        ) else {
+            return
+        }
         do {
-            let url = try resolvedStoreURL()
             try fileManager.createDirectory(
-                at: url.deletingLastPathComponent(),
+                at: storeURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
                 attributes: nil
             )
             let data = try JSONEncoder().encode(FileFormat(mappings: mappings))
-            try data.write(to: url, options: [.atomic])
+            try data.write(to: storeURL, options: [.atomic])
         } catch {
             AppErrorMapper.logFailure("Persist shared display id store", error: error, logger: AppLog.persistence)
         }
-    }
-
-    private func resolvedStoreURL() throws -> URL {
-        if let overrideStoreURL {
-            return overrideStoreURL
-        }
-
-        let appSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay"
-        return appSupport
-            .appendingPathComponent(bundleID, isDirectory: true)
-            .appendingPathComponent(fileName, isDirectory: false)
     }
 }

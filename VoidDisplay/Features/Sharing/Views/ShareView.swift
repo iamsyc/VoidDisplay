@@ -37,50 +37,48 @@ struct ShareView: View {
             shareContent
                 .accessibilityIdentifier("share_content_root")
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .appDebugLayoutBorder()
         }
-            .appDebugLayoutBorder()
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("detail_screen_sharing")
-            .toolbar {
-                if sharing.isWebServiceRunning {
-                    if showToolbarRefresh {
-                        Button("Refresh", systemImage: "arrow.clockwise") {
-                            viewModel.refreshDisplays()
-                        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("detail_screen_sharing")
+        .toolbar {
+            if sharing.isWebServiceRunning {
+                if showToolbarRefresh {
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        viewModel.refreshDisplays()
                     }
-                    Button("Stop Service") {
-                        viewModel.stopService()
-                    }
-                    .accessibilityIdentifier("share_stop_service_button")
                 }
-            }
-            .onAppear {
-                viewModel.refreshPermissionAndMaybeLoad()
-                startDisplayRefreshMonitoring()
-            }
-            .onDisappear {
-                viewModel.cancelInFlightDisplayLoad()
-                stopDisplayRefreshMonitoring()
-            }
-            .onChange(of: sharing.isWebServiceRunning) { _, _ in
-                viewModel.syncForCurrentState()
-            }
-            .onChange(of: sharing.isSharing) { _, _ in
-                viewModel.syncForCurrentState()
-            }
-            .onReceive(sharingStatsTimer) { _ in
-                guard sharing.isWebServiceRunning else { return }
-                sharing.refreshSharingClientCount()
-            }
-            .alert("Error", isPresented: $viewModel.showOpenPageError) {
-                Button("OK") {
-                    viewModel.clearError()
+                Button("Stop Service") {
+                    viewModel.stopService()
                 }
-            } message: {
-                Text(viewModel.openPageErrorMessage)
+                .accessibilityIdentifier("share_stop_service_button")
             }
-            .appScreenBackground()
+        }
+        .onAppear {
+            viewModel.refreshPermissionAndMaybeLoad()
+            startDisplayRefreshMonitoring()
+        }
+        .onDisappear {
+            viewModel.cancelInFlightDisplayLoad()
+            stopDisplayRefreshMonitoring()
+        }
+        .onChange(of: sharing.isWebServiceRunning) { _, _ in
+            viewModel.syncForCurrentState()
+        }
+        .onChange(of: sharing.isSharing) { _, _ in
+            viewModel.syncForCurrentState()
+        }
+        .onReceive(sharingStatsTimer) { _ in
+            guard sharing.isWebServiceRunning else { return }
+            sharing.refreshSharingClientCount()
+        }
+        .alert("Error", isPresented: $viewModel.showOpenPageError) {
+            Button("OK") {
+                viewModel.clearError()
+            }
+        } message: {
+            Text(viewModel.openPageErrorMessage)
+        }
+        .appScreenBackground()
     }
 
     private func startDisplayRefreshMonitoring() {
@@ -159,71 +157,11 @@ struct ShareView: View {
         if viewModel.catalog.hasScreenCapturePermission == false {
             screenCapturePermissionView
         } else if viewModel.catalog.hasScreenCapturePermission == nil {
-            stateContainer {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading…")
-                        .foregroundColor(.secondary)
-                }
-            }
-            .accessibilityIdentifier("share_loading_permission")
+            permissionLoadingState
         } else if !sharing.isWebServiceRunning {
-            stateContainer {
-                VStack(spacing: AppUI.Spacing.medium + 2) {
-                    Image(systemName: "xserve")
-                        .font(.system(size: 44))
-                        .foregroundStyle(.secondary)
-
-                    Text("Web service is not running.")
-                        .font(.headline)
-
-                    Text("Start the Web service to share your screen with other devices.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 300)
-
-                    VStack(spacing: 4) {
-                        HStack(spacing: AppUI.Spacing.small) {
-                            Text("Port")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            TextField(
-                                "8081",
-                                text: Binding(
-                                    get: { viewModel.servicePortInput },
-                                    set: { viewModel.updateServicePortInput($0) }
-                                )
-                            )
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 84)
-                                .accessibilityIdentifier("share_port_input")
-                        }
-
-                        Text(viewModel.portInputErrorMessage ?? " ")
-                            .font(.caption2)
-                            .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 360, minHeight: 14, maxHeight: 14, alignment: .center)
-                            .accessibilityIdentifier("share_port_error_text")
-                    }
-
-                    Button("Start Service") {
-                        viewModel.startService()
-                    }
-                    .appActionButtonStyle(variant: .primary)
-                    .controlSize(.large)
-                    .disabled(viewModel.isStartingService)
-                    .accessibilityIdentifier("share_start_service_button")
-                }
-            }
+            serviceStoppedState
         } else if viewModel.catalog.isLoadingDisplays {
-            stateContainer {
-                ProgressView("Loading displays…")
-            }
-            .accessibilityIdentifier("share_loading_displays")
+            displaysLoadingState
         } else if let displays = viewModel.catalog.displays {
             if displays.isEmpty {
                 shareEmptyState
@@ -237,6 +175,78 @@ struct ShareView: View {
         } else {
             shareEmptyState
         }
+    }
+
+    private var permissionLoadingState: some View {
+        stateContainer {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading…")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .accessibilityIdentifier("share_loading_permission")
+    }
+
+    private var serviceStoppedState: some View {
+        stateContainer {
+            VStack(spacing: AppUI.Spacing.medium + 2) {
+                Image(systemName: "xserve")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.secondary)
+
+                Text("Web service is not running.")
+                    .font(.headline)
+
+                Text("Start the Web service to share your screen with other devices.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
+
+                VStack(spacing: 4) {
+                    HStack(spacing: AppUI.Spacing.small) {
+                        Text("Port")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField(
+                            "8089",
+                            text: Binding(
+                                get: { viewModel.servicePortInput },
+                                set: { viewModel.updateServicePortInput($0) }
+                            )
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 84)
+                        .accessibilityIdentifier("share_port_input")
+                    }
+
+                    Text(viewModel.portInputErrorMessage ?? " ")
+                        .font(.caption2)
+                        .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360, minHeight: 14, maxHeight: 14, alignment: .center)
+                        .accessibilityIdentifier("share_port_error_text")
+                }
+
+                Button("Start Service") {
+                    viewModel.startService()
+                }
+                .appActionButtonStyle(variant: .primary)
+                .controlSize(.large)
+                .disabled(viewModel.isStartingService)
+                .accessibilityIdentifier("share_start_service_button")
+            }
+        }
+    }
+
+    private var displaysLoadingState: some View {
+        stateContainer {
+            ProgressView("Loading displays…")
+        }
+        .accessibilityIdentifier("share_loading_displays")
     }
 
     private var screenCapturePermissionView: some View {
@@ -293,9 +303,7 @@ struct ShareView: View {
             content()
                 .frame(maxWidth: .infinity, minHeight: 200)
                 .appListContentInsets()
-                .appDebugLayoutBorder()
         }
-        .appDebugLayoutBorder()
     }
 
     private var sharingPermissionDebugItems: [(title: String, value: String)] {

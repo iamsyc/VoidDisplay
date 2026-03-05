@@ -1,19 +1,29 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import VoidDisplay
 
 struct SharingWorkflowSmokeTests {
 
     @MainActor @Test func sharingServiceStartStopWorkflowSmoke() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let controller = MockWebServiceController()
-        controller.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
-        let service = SharingService(webServiceController: controller)
+        controller.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
+        let idStore = DisplayShareIDStore(storeURL: storeURL)
+        let coordinator = DisplaySharingCoordinator(idStore: idStore)
+        let service = SharingService(
+            webServiceController: controller,
+            sharingCoordinator: coordinator
+        )
 
         #expect(service.isWebServiceRunning == false)
         #expect(service.hasAnyActiveSharing == false)
 
-        let started = await service.startWebService(requestedPort: 8081)
-        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
+        let started = await service.startWebService(requestedPort: requestedPort)
+        #expect(started == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 1)
         #expect(controller.capturedTargetStateProvider?(.main) == .knownInactive)
@@ -29,8 +39,8 @@ struct SharingWorkflowSmokeTests {
         #expect(controller.stopCallCount == 1)
         #expect(controller.disconnectCallCount == 1)
 
-        let startedAgain = await service.startWebService(requestedPort: 8081)
-        #expect(startedAgain == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
+        let startedAgain = await service.startWebService(requestedPort: requestedPort)
+        #expect(startedAgain == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(service.isWebServiceRunning)
         #expect(controller.startCallCount == 2)
     }

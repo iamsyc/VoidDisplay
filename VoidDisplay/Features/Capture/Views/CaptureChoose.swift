@@ -36,48 +36,7 @@ struct IsCapturing: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Group {
-                if viewModel.catalog.hasScreenCapturePermission == false {
-                    screenCapturePermissionView
-                } else if let displays = viewModel.catalog.displays {
-                    if displays.isEmpty {
-                        stateContainer {
-                            ContentUnavailableView(
-                                "No watchable screen",
-                                systemImage: "display.trianglebadge.exclamationmark",
-                                description: Text("No available display can be monitored right now.")
-                            )
-                            .accessibilityIdentifier("capture_displays_empty_state")
-                        }
-                    } else {
-                        displayList(displays)
-                    }
-                } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
-                    stateContainer {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("Loading…")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                } else {
-                    stateContainer {
-                        VStack(spacing: 12) {
-                            Text("No watchable screen")
-                            if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
-                                Text(loadErrorMessage)
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .textSelection(.enabled)
-                            }
-                            Button("Retry") {
-                                viewModel.refreshPermissionAndMaybeLoad()
-                            }
-                        }
-                    }
-                }
-            }
+            catalogContent
             .safeAreaInset(edge: .top, spacing: 0) {
                 if shouldShowActiveSessionFallback {
                     VStack(spacing: 0) {
@@ -86,7 +45,6 @@ struct IsCapturing: View {
                     }
                 }
             }
-            .appDebugLayoutBorder()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 viewModel.refreshPermissionAndMaybeLoad()
@@ -100,6 +58,62 @@ struct IsCapturing: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("detail_monitor_screen")
+    }
+
+    @ViewBuilder
+    private var catalogContent: some View {
+        if viewModel.catalog.hasScreenCapturePermission == false {
+            screenCapturePermissionView
+        } else if let displays = viewModel.catalog.displays {
+            if displays.isEmpty {
+                emptyDisplaysState
+            } else {
+                displayList(displays)
+            }
+        } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
+            loadingState
+        } else {
+            loadFailedState
+        }
+    }
+
+    private var emptyDisplaysState: some View {
+        stateContainer {
+            ContentUnavailableView(
+                "No watchable screen",
+                systemImage: "display.trianglebadge.exclamationmark",
+                description: Text("No available display can be monitored right now.")
+            )
+            .accessibilityIdentifier("capture_displays_empty_state")
+        }
+    }
+
+    private var loadingState: some View {
+        stateContainer {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading…")
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var loadFailedState: some View {
+        stateContainer {
+            VStack(spacing: 12) {
+                Text("No watchable screen")
+                if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
+                    Text(loadErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                }
+                Button("Retry") {
+                    viewModel.refreshPermissionAndMaybeLoad()
+                }
+            }
+        }
     }
 
     // MARK: - Display List
@@ -120,9 +134,7 @@ struct IsCapturing: View {
                 }
             }
             .appListContentInsets()
-            .appDebugLayoutBorder()
         }
-        .appDebugLayoutBorder()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
                 Divider()
@@ -151,9 +163,7 @@ struct IsCapturing: View {
                 }
             }
             .appListContentInsets()
-            .appDebugLayoutBorder()
         }
-        .appDebugLayoutBorder()
         .frame(maxHeight: 260)
         .accessibilityIdentifier("capture_active_sessions_fallback")
     }
@@ -255,9 +265,7 @@ struct IsCapturing: View {
             content()
                 .frame(maxWidth: .infinity, minHeight: 200)
                 .appListContentInsets()
-                .appDebugLayoutBorder()
         }
-        .appDebugLayoutBorder()
     }
 
 }

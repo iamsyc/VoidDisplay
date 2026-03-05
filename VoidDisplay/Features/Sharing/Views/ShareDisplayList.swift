@@ -28,7 +28,6 @@ struct ShareDisplayList: View {
                 isRunning: sharing.isWebServiceRunning
             )
             .appListContentInsets(bottom: false)
-            .appDebugLayoutBorder()
 
             ScrollView {
                 LazyVStack(spacing: AppUI.List.sectionSpacing) {
@@ -37,11 +36,8 @@ struct ShareDisplayList: View {
                     }
                 }
                 .appListContentInsets(top: false)
-                .appDebugLayoutBorder()
             }
-            .appDebugLayoutBorder()
         }
-        .appDebugLayoutBorder()
         .accessibilityIdentifier("share_displays_list")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {

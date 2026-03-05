@@ -332,8 +332,9 @@ struct ShareViewModelTests {
     }
 
     @MainActor @Test func startServicePassesRequestedPortToSharingLayer() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let sharing = MockSharingService()
-        sharing.startResult = .started(WebServiceBinding(requestedPort: 8088, boundPort: 8088))
+        sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
         let env = makeEnvironment(sharing: sharing)
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -342,7 +343,7 @@ struct ShareViewModelTests {
             ),
             dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
-        sut.servicePortInput = "8088"
+        sut.servicePortInput = String(requestedPort)
 
         sut.startService()
         let started = await waitUntil {
@@ -350,7 +351,7 @@ struct ShareViewModelTests {
         }
 
         #expect(started)
-        #expect(sharing.lastStartRequestedPort == 8088)
+        #expect(sharing.lastStartRequestedPort == requestedPort)
     }
 
     @MainActor @Test func editingPortClearsInlineErrorMessage() async {
