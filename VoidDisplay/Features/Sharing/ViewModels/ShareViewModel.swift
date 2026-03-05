@@ -1,6 +1,7 @@
 import Foundation
 import ScreenCaptureKit
 import CoreGraphics
+import AppKit
 import Observation
 import OSLog
 
@@ -73,16 +74,25 @@ final class ShareViewModel {
     var showOpenPageError = false
     var openPageErrorMessage = ""
 
+    private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
+        catalogState: ScreenCaptureDisplayCatalogState? = nil,
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
+        activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
+            Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
+        },
         dependencies: Dependencies
     ) {
-        let catalog = ScreenCaptureDisplayCatalogState()
+        let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
+        self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
+            state: catalog,
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
         self.dependencies = dependencies
         self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
             state: catalog,
@@ -94,16 +104,27 @@ final class ShareViewModel {
         self.servicePortInput = String(dependencies.sharingQueries.preferredWebServicePort())
     }
 
-    func syncForCurrentState() {
+    func syncForCurrentState(
+        clearDisplaysWhenPermissionDenied: Bool = true,
+        clearDisplaysWhenServiceStopped: Bool = true
+    ) {
         guard catalog.hasScreenCapturePermission == true else {
-            catalogLoader.clearDisplaysAndCancel()
+            if clearDisplaysWhenPermissionDenied {
+                catalogLoader.clearDisplaysAndCancel()
+            } else {
+                catalogLoader.cancelInFlightDisplayLoad()
+            }
             return
         }
         guard dependencies.sharingQueries.isWebServiceRunning() else {
-            catalogLoader.clearDisplaysAndCancel()
+            if clearDisplaysWhenServiceStopped {
+                catalogLoader.clearDisplaysAndCancel()
+            } else {
+                catalogLoader.cancelInFlightDisplayLoad()
+            }
             return
         }
-        loadDisplaysIfNeeded()
+        refreshDisplaysForCurrentTopologyIfNeeded()
     }
 
     func startService() {
@@ -172,31 +193,44 @@ final class ShareViewModel {
             catalogLoader.clearDisplaysAndCancel()
             return
         }
-        syncForCurrentState()
+        syncForCurrentState(clearDisplaysWhenServiceStopped: false)
     }
 
     func loadDisplaysIfNeeded() {
         guard dependencies.sharingQueries.isWebServiceRunning() else { return }
         catalogLoader.loadDisplaysIfNeeded { [weak self] displays in
-            self?.registerShareableDisplays(displays)
+            self?.handleDisplaysLoaded(displays)
         }
     }
 
     func loadDisplays() {
         catalogLoader.loadDisplays { [weak self] displays in
-            self?.registerShareableDisplays(displays)
+            self?.handleDisplaysLoaded(displays)
         }
     }
 
     func refreshDisplays() {
         guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        loadDisplays()
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
+            self?.handleDisplaysLoaded(displays)
+        }
     }
 
     func refreshDisplaysBackgroundSafe() {
         guard dependencies.sharingQueries.isWebServiceRunning() else { return }
         guard !catalog.isLoadingDisplays else { return }
-        loadDisplays()
+        guard topologyCoordinator.needsRefresh() else { return }
+        if catalog.displays == nil {
+            loadDisplaysIfNeeded()
+            return
+        }
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
+            self?.handleDisplaysLoaded(displays)
+        }
+    }
+
+    func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
+        topologyCoordinator.visibleDisplays(from: displays)
     }
 
     @discardableResult
@@ -261,6 +295,22 @@ final class ShareViewModel {
 
     func cancelInFlightDisplayLoad() {
         catalogLoader.cancelInFlightDisplayLoad()
+    }
+
+    private func refreshDisplaysForCurrentTopologyIfNeeded() {
+        guard topologyCoordinator.needsRefresh() else { return }
+        if catalog.displays == nil {
+            loadDisplaysIfNeeded()
+            return
+        }
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
+            self?.handleDisplaysLoaded(displays)
+        }
+    }
+
+    private func handleDisplaysLoaded(_ displays: [SCDisplay]) {
+        topologyCoordinator.commitLoadedTopologySignature()
+        registerShareableDisplays(displays)
     }
 
     private func registerShareableDisplays(_ displays: [SCDisplay]) {

@@ -213,6 +213,178 @@ struct CaptureChooseViewModelTests {
         #expect(sut.catalog.hasScreenCapturePermission == true)
         #expect(sut.catalog.lastPreflightPermission == true)
         #expect(sut.catalog.displays?.isEmpty == true)
+        #expect(sut.catalog.lastLoadedActiveDisplayTopologySignature != nil)
+    }
+
+    @MainActor @Test func refreshPermissionSkipsReloadWhenDisplaysAreAlreadyCached() async {
+        let gate = SequencedCaptureDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 2222, width: 1280, height: 720)
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledCaptureLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([2222]) },
+            dependencies: makeNoopCaptureDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = [2222]
+
+        sut.refreshPermissionAndMaybeLoad()
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.shortStabilityWindow
+        var observedUnexpectedLoad = false
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await gate.currentCallCount() > 0 {
+                observedUnexpectedLoad = true
+                break
+            }
+            await Task.yield()
+        }
+
+        #expect(observedUnexpectedLoad == false)
+        #expect(sut.catalog.isLoadingDisplays == false)
+        #expect(sut.catalog.displays?.count == 1)
+    }
+
+    @MainActor @Test func refreshPermissionReloadsWhenCachedDisplaysExistButLoadedTopologySignatureIsMissing() async {
+        let gate = SequencedCaptureDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 2222, width: 1280, height: 720)
+        let rebuiltDisplay = MockSCDisplay.make(displayID: 3333, width: 2560, height: 1440)
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [rebuiltDisplay]
+                case .failure:
+                    throw ControlledCaptureLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([3333]) },
+            dependencies: makeNoopCaptureDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = nil
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(sut.catalog.isLoadingDisplays == true)
+        #expect(sut.catalog.displays?.map(\.displayID) == [2222])
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.map(\.displayID) == [3333] &&
+                sut.catalog.lastLoadedActiveDisplayTopologySignature == [3333]
+        }
+        #expect(finished)
+    }
+
+    @MainActor @Test func refreshPermissionReloadsWhenTopologyChangesWithCachedDisplays() async {
+        let gate = SequencedCaptureDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 2222, width: 1280, height: 720)
+        let rebuiltDisplay = MockSCDisplay.make(displayID: 3333, width: 2560, height: 1440)
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [rebuiltDisplay]
+                case .failure:
+                    throw ControlledCaptureLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([3333]) },
+            dependencies: makeNoopCaptureDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = [2222]
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(sut.catalog.isLoadingDisplays == true)
+        #expect(sut.catalog.displays?.map(\.displayID) == [2222])
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.map(\.displayID) == [3333] &&
+                sut.catalog.lastLoadedActiveDisplayTopologySignature == [3333]
+        }
+        #expect(finished)
+    }
+
+    @MainActor @Test func refreshPermissionFailureDoesNotCommitLoadedTopologySignatureAndNextRefreshRetries() async {
+        let gate = SequencedCaptureDisplayLoaderGate(scriptedOutcomes: [.failure, .success])
+        let existingDisplay = MockSCDisplay.make(displayID: 2222, width: 1280, height: 720)
+        let rebuiltDisplay = MockSCDisplay.make(displayID: 3333, width: 2560, height: 1440)
+        let sut = CaptureChooseViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [rebuiltDisplay]
+                case .failure:
+                    throw ControlledCaptureLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([3333]) },
+            dependencies: makeNoopCaptureDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = [2222]
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 1))
+
+        await gate.release(call: 1)
+        let firstFinished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.lastLoadError != nil
+        }
+        #expect(firstFinished)
+        #expect(sut.catalog.displays?.map(\.displayID) == [2222])
+        #expect(sut.catalog.lastLoadedActiveDisplayTopologySignature == [2222])
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 2))
+
+        await gate.release(call: 2)
+        let secondFinished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.lastLoadError == nil &&
+                sut.catalog.displays?.map(\.displayID) == [3333] &&
+                sut.catalog.lastLoadedActiveDisplayTopologySignature == [3333]
+        }
+        #expect(secondFinished)
+    }
+
+    @MainActor @Test func visibleDisplaysFiltersDisplaysMissingFromCurrentTopology() {
+        let displayA = MockSCDisplay.make(displayID: 1111, width: 1920, height: 1080)
+        let displayB = MockSCDisplay.make(displayID: 2222, width: 1920, height: 1080)
+        let sut = CaptureChooseViewModel(
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([1111]) },
+            dependencies: makeNoopCaptureDependencies()
+        )
+
+        let visible = sut.visibleDisplays(from: [displayA, displayB])
+        #expect(visible.map(\.displayID) == [1111])
     }
 
     @MainActor @Test func loadDisplaysPersistsErrorDetailsWhenLoaderThrows() async {

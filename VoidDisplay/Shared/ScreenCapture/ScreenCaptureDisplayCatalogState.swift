@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ScreenCaptureKit
+import CoreGraphics
 
 struct ScreenCaptureDisplayCatalogLoadErrorInfo: Equatable {
     var domain: String
@@ -17,6 +18,7 @@ final class ScreenCaptureDisplayCatalogState {
     var hasScreenCapturePermission: Bool?
     var lastPreflightPermission: Bool?
     var lastRequestPermission: Bool?
+    var lastLoadedActiveDisplayTopologySignature: [CGDirectDisplayID]?
     var isLoadingDisplays = false
     var loadErrorMessage: String?
     var lastLoadError: ScreenCaptureDisplayCatalogLoadErrorInfo?

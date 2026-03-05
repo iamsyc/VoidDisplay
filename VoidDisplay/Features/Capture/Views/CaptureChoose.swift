@@ -6,6 +6,7 @@
 
 import SwiftUI
 import ScreenCaptureKit
+import AppKit
 
 struct IsCapturing: View {
     @Bindable private var capture: CaptureController
@@ -21,6 +22,7 @@ struct IsCapturing: View {
         _capture = Bindable(capture)
         _viewModel = State(
             initialValue: CaptureChooseViewModel(
+                catalogState: capture.displayCatalogState,
                 dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
             )
         )
@@ -28,7 +30,9 @@ struct IsCapturing: View {
 
     private var shouldShowActiveSessionFallback: Bool {
         guard !capture.screenCaptureSessions.isEmpty else { return false }
-        if viewModel.catalog.hasScreenCapturePermission == true, let displays = viewModel.catalog.displays, !displays.isEmpty {
+        if viewModel.catalog.hasScreenCapturePermission == true,
+           let displays = viewModel.catalog.displays,
+           !viewModel.visibleDisplays(from: displays).isEmpty {
             return false
         }
         return true
@@ -52,6 +56,9 @@ struct IsCapturing: View {
             .onDisappear {
                 viewModel.cancelInFlightDisplayLoad()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+                viewModel.refreshDisplaysBackgroundSafe()
+            }
             .appScreenBackground()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("capture_choose_root")
@@ -65,10 +72,11 @@ struct IsCapturing: View {
         if viewModel.catalog.hasScreenCapturePermission == false {
             screenCapturePermissionView
         } else if let displays = viewModel.catalog.displays {
-            if displays.isEmpty {
+            let visibleDisplays = viewModel.visibleDisplays(from: displays)
+            if visibleDisplays.isEmpty {
                 emptyDisplaysState
             } else {
-                displayList(displays)
+                displayList(visibleDisplays)
             }
         } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
             loadingState
@@ -90,11 +98,8 @@ struct IsCapturing: View {
 
     private var loadingState: some View {
         stateContainer {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Loading…")
-                    .foregroundColor(.secondary)
-            }
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: 200)
         }
     }
 

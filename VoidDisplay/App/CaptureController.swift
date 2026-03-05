@@ -11,6 +11,7 @@ import Observation
 @Observable
 final class CaptureController {
     var screenCaptureSessions: [ScreenMonitoringSession] = []
+    @ObservationIgnored let displayCatalogState = ScreenCaptureDisplayCatalogState()
 
     @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
 

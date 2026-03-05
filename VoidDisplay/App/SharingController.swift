@@ -23,6 +23,7 @@ final class SharingController {
     var isSharing = false
     var isWebServiceRunning = false
     var webServiceLifecycleState: WebServiceLifecycleState = .stopped
+    @ObservationIgnored let displayCatalogState = ScreenCaptureDisplayCatalogState()
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored private let sharingService: any SharingServiceProtocol

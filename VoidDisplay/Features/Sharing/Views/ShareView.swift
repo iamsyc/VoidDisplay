@@ -27,6 +27,7 @@ struct ShareView: View {
         _sharing = Bindable(sharing)
         _viewModel = State(
             initialValue: ShareViewModel(
+                catalogState: sharing.displayCatalogState,
                 dependencies: .live(sharing: sharing, virtualDisplay: virtualDisplay)
             )
         )
@@ -160,18 +161,19 @@ struct ShareView: View {
             permissionLoadingState
         } else if !sharing.isWebServiceRunning {
             serviceStoppedState
-        } else if viewModel.catalog.isLoadingDisplays {
-            displaysLoadingState
         } else if let displays = viewModel.catalog.displays {
-            if displays.isEmpty {
+            let visibleDisplays = viewModel.visibleDisplays(from: displays)
+            if visibleDisplays.isEmpty {
                 shareEmptyState
             } else {
                 ShareDisplayList(
-                    displays: displays,
+                    displays: visibleDisplays,
                     viewModel: viewModel,
                     openURLAction: openURL
                 )
             }
+        } else if viewModel.catalog.isLoadingDisplays {
+            displaysLoadingState
         } else {
             shareEmptyState
         }
@@ -244,7 +246,8 @@ struct ShareView: View {
 
     private var displaysLoadingState: some View {
         stateContainer {
-            ProgressView("Loading displays…")
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: 200)
         }
         .accessibilityIdentifier("share_loading_displays")
     }

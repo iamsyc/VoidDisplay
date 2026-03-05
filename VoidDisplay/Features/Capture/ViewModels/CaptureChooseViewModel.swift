@@ -50,20 +50,29 @@ final class CaptureChooseViewModel {
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
 
     private let makePreviewSubscription: @MainActor (SCDisplay) async throws -> DisplayPreviewSubscription
+    private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
+        catalogState: ScreenCaptureDisplayCatalogState? = nil,
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
         makePreviewSubscription: (@MainActor (SCDisplay) async throws -> DisplayPreviewSubscription)? = nil,
+        activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
+            Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
+        },
         dependencies: Dependencies
     ) {
-        let catalog = ScreenCaptureDisplayCatalogState()
+        let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
         self.makePreviewSubscription = makePreviewSubscription ?? { display in
             try await DisplayCaptureRegistry.shared.acquirePreview(display: SendableDisplay(display))
         }
+        self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
+            state: catalog,
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
         self.dependencies = dependencies
         self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
             state: catalog,
@@ -86,6 +95,10 @@ final class CaptureChooseViewModel {
         // SCDisplay already reports pixel dimensions, so this matches the UI's "pixel resolution"
         // presentation used elsewhere even though other screens may derive it from NSScreen backing.
         "\(display.width) × \(display.height)"
+    }
+
+    func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
+        topologyCoordinator.visibleDisplays(from: displays)
     }
 
     @discardableResult
@@ -148,17 +161,46 @@ final class CaptureChooseViewModel {
         if !granted {
             catalogLoader.cancelInFlightDisplayLoad()
             AppLog.capture.notice("Screen capture permission preflight denied.")
+            return
         }
-        if granted {
-            loadDisplays()
+        guard topologyCoordinator.needsRefresh() else { return }
+        if catalog.displays == nil {
+            loadDisplaysIfNeeded()
+            return
         }
+        loadDisplaysPreservingExisting()
     }
 
     func loadDisplays() {
-        catalogLoader.loadDisplays()
+        catalogLoader.loadDisplays { [weak self] _ in
+            self?.topologyCoordinator.commitLoadedTopologySignature()
+        }
+    }
+
+    func refreshDisplaysBackgroundSafe() {
+        guard catalog.hasScreenCapturePermission == true else { return }
+        guard !catalog.isLoadingDisplays else { return }
+        guard topologyCoordinator.needsRefresh() else { return }
+        if catalog.displays == nil {
+            loadDisplaysIfNeeded()
+            return
+        }
+        loadDisplaysPreservingExisting()
     }
 
     func cancelInFlightDisplayLoad() {
         catalogLoader.cancelInFlightDisplayLoad()
+    }
+
+    private func loadDisplaysIfNeeded() {
+        catalogLoader.loadDisplaysIfNeeded { [weak self] _ in
+            self?.topologyCoordinator.commitLoadedTopologySignature()
+        }
+    }
+
+    private func loadDisplaysPreservingExisting() {
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] _ in
+            self?.topologyCoordinator.commitLoadedTopologySignature()
+        }
     }
 }

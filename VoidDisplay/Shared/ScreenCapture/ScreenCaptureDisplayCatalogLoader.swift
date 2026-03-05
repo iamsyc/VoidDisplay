@@ -106,7 +106,10 @@ final class ScreenCaptureDisplayCatalogLoader {
         loadDisplays(onLoaded: onLoaded)
     }
 
-    func loadDisplays(onLoaded: @escaping OnDisplaysLoaded = { _ in }) {
+    func loadDisplays(
+        preserveExistingDisplays: Bool = false,
+        onLoaded: @escaping OnDisplaysLoaded = { _ in }
+    ) {
         if runtimeScenarioProbe.shouldShortCircuitDisplayLoadAsPermissionDenied() {
             cancelInFlightDisplayLoad()
             state.hasScreenCapturePermission = false
@@ -123,7 +126,9 @@ final class ScreenCaptureDisplayCatalogLoader {
         state.isLoadingDisplays = true
         state.loadErrorMessage = nil
         state.lastLoadError = nil
-        state.displays = nil
+        if !preserveExistingDisplays {
+            state.displays = nil
+        }
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -149,7 +154,9 @@ final class ScreenCaptureDisplayCatalogLoader {
                     failureReason: nsError.localizedFailureReason,
                     recoverySuggestion: nsError.localizedRecoverySuggestion
                 )
-                self.state.displays = nil
+                if !preserveExistingDisplays {
+                    self.state.displays = nil
+                }
                 self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
             }
         }

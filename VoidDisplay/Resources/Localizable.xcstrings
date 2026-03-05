@@ -727,6 +727,7 @@
       }
     },
     "Loading displays…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -761,10 +762,16 @@
     },
     "Monitor Display" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monitor"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "监听显示器"
+            "value" : "监听"
           }
         }
       }
@@ -1499,10 +1506,16 @@
     },
     "Stop Monitoring" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "停止监听"
+            "value" : "停止"
           }
         }
       }
