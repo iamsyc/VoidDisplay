@@ -34,6 +34,15 @@ struct PersistenceContextTests {
         #expect(context.bundleIdentifier.contains(".tests"))
     }
 
+    @Test func resolveTestModeWhenExplicitIsolationIdentifierExists() {
+        let context = PersistenceContext.resolve(
+            environment: [PersistenceContext.testIsolationIDEnvironmentKey: "suite-B"]
+        )
+
+        #expect(context.mode == .testIsolatedWritable)
+        #expect(context.bundleIdentifier.hasSuffix(".tests.suite-B"))
+    }
+
     @Test func resolveUsesExplicitIsolationIdentifierForTestMode() {
         let context = PersistenceContext.resolve(
             environment: [

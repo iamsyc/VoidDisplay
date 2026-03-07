@@ -388,7 +388,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
                         lastPortError: lastPortError
                     )
                 }
-                guard isRetryablePortInUseError(lastPortError) else {
+                guard isRetryableStartError(lastPortError) else {
                     throw failure(
                         "Service returned to start state with non-retryable error. attemptedPorts=\(attemptedPorts), " +
                         "lastPortError=\(lastPortError ?? "none"), \(shareStartDiagnostics(app))"
@@ -414,6 +414,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
         isolationID: String,
         preferredPort: UInt16?
     ) {
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_MODE"] = "1"
         app.launchEnvironment["VOIDDISPLAY_TEST_ISOLATION_ID"] = isolationID
         var launchArguments: [String] = []
         if let preferredPort {
@@ -553,7 +554,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
         center.tap()
     }
 
-    private func isRetryablePortInUseError(_ message: String?) -> Bool {
+    private func isRetryableStartError(_ message: String?) -> Bool {
         guard let normalizedMessage = message?.lowercased(), !normalizedMessage.isEmpty else {
             return false
         }
@@ -565,7 +566,10 @@ final class RealEnvironmentE2ETests: XCTestCase {
             "已被占用",
             "被占用",
             "端口",
-            "occupied"
+            "occupied",
+            "superseded",
+            "新的请求替代",
+            "请求已被新的请求替代"
         ]
 
         return markers.contains { normalizedMessage.contains($0) }

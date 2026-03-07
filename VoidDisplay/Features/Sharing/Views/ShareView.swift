@@ -186,8 +186,8 @@ struct ShareView: View {
                 Text("Loading…")
                     .foregroundColor(.secondary)
             }
+            .accessibilityIdentifier("share_loading_permission")
         }
-        .accessibilityIdentifier("share_loading_permission")
     }
 
     private var serviceStoppedState: some View {
@@ -246,10 +246,10 @@ struct ShareView: View {
 
     private var displaysLoadingState: some View {
         stateContainer {
-            Color.clear
+            ProgressView("Loading displays…")
                 .frame(maxWidth: .infinity, minHeight: 200)
+                .accessibilityIdentifier("share_loading_displays")
         }
-        .accessibilityIdentifier("share_loading_displays")
     }
 
     private var screenCapturePermissionView: some View {

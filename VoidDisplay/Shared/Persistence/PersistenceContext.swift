@@ -78,6 +78,9 @@ struct PersistenceContext {
         if environment[xCTestConfigurationEnvironmentKey] != nil {
             return .testIsolatedWritable
         }
+        if normalizedIsolationID(from: environment[testIsolationIDEnvironmentKey]) != nil {
+            return .testIsolatedWritable
+        }
         if environment[uiTestModeEnvironmentKey] == "1" {
             return .testIsolatedWritable
         }
