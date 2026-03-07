@@ -9,10 +9,22 @@ final class ScreenCaptureDisplayCatalogLoader {
 
     struct RuntimeScenarioProbe {
         var shouldShortCircuitDisplayLoadAsPermissionDenied: @MainActor () -> Bool
+        var shouldDelayDisplayLoadForUITest: @MainActor () -> Bool
+
+        init(
+            shouldShortCircuitDisplayLoadAsPermissionDenied: @escaping @MainActor () -> Bool,
+            shouldDelayDisplayLoadForUITest: @escaping @MainActor () -> Bool = { false }
+        ) {
+            self.shouldShortCircuitDisplayLoadAsPermissionDenied = shouldShortCircuitDisplayLoadAsPermissionDenied
+            self.shouldDelayDisplayLoadForUITest = shouldDelayDisplayLoadForUITest
+        }
 
         static let live = Self(
             shouldShortCircuitDisplayLoadAsPermissionDenied: {
                 UITestRuntime.isEnabled && UITestRuntime.scenario == .permissionDenied
+            },
+            shouldDelayDisplayLoadForUITest: {
+                UITestRuntime.isEnabled && UITestRuntime.scenario == .displayCatalogLoading
             }
         )
     }
@@ -133,6 +145,9 @@ final class ScreenCaptureDisplayCatalogLoader {
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
+                if self.runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() {
+                    try await Task.sleep(nanoseconds: 3_000_000_000)
+                }
                 let shareableDisplays = try await self.loadShareableDisplays()
                 guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }
                 self.state.displays = shareableDisplays

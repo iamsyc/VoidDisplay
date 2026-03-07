@@ -260,6 +260,34 @@ struct ScreenCaptureDisplayCatalogLoaderTests {
         #expect(state.isLoadingDisplays == false)
     }
 
+    @Test func uiTestDisplayCatalogLoadingScenarioKeepsVisibleLoadingStateBeforeLoaderRuns() async {
+        let state = ScreenCaptureDisplayCatalogState()
+        let callFlag = AsyncCallFlag()
+        let sut = ScreenCaptureDisplayCatalogLoader(
+            state: state,
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                await callFlag.markCalled()
+                return []
+            },
+            logOperation: "catalog load",
+            logger: AppLog.capture,
+            runtimeScenarioProbe: .init(
+                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
+                shouldDelayDisplayLoadForUITest: { true }
+            )
+        )
+
+        sut.loadDisplays()
+
+        #expect(state.isLoadingDisplays == true)
+        try? await Task.sleep(nanoseconds: AsyncTestTimeouts.shortStabilityWindow)
+        #expect(await callFlag.wasCalled() == false)
+
+        sut.cancelInFlightDisplayLoad()
+        #expect(state.isLoadingDisplays == false)
+    }
+
     private func waitForLoaderCall(_ gate: SequencedCatalogDisplayLoaderGate, count: Int) async -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
         while DispatchTime.now().uptimeNanoseconds < deadline {

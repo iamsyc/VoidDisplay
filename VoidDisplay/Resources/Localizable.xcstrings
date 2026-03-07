@@ -727,7 +727,6 @@
       }
     },
     "Loading displays…" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

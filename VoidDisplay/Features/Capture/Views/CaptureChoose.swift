@@ -98,8 +98,12 @@ struct IsCapturing: View {
 
     private var loadingState: some View {
         stateContainer {
-            Color.clear
-                .frame(maxWidth: .infinity, minHeight: 200)
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading…")
+                    .foregroundColor(.secondary)
+            }
+            .accessibilityIdentifier("capture_loading_displays")
         }
     }
 
