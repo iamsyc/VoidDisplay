@@ -116,91 +116,34 @@ struct ShareDisplayList: View {
         displayClientCount: Int,
         isSharingDisplay: Bool
     ) -> some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.small + 2) {
-            if let displayAddress {
-                displayAddressInline(
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                ShareDisplayMetaBar(
                     displayID: display.displayID,
                     displayAddress: displayAddress,
                     displayURL: displayURL,
-                    isSharingDisplay: isSharingDisplay
+                    displayClientCount: displayClientCount,
+                    isSharingDisplay: isSharingDisplay,
+                    openURLAction: openURLAction
                 )
+
+                shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
             }
 
-            HStack(spacing: AppUI.Spacing.xSmall) {
-                Image(systemName: "person.2")
-                    .font(.caption)
-                    .foregroundStyle(displayClientCount > 0 ? Color.accentColor : .secondary)
-                Text("\(displayClientCount)")
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, AppUI.Spacing.small)
-            .padding(.vertical, AppUI.Spacing.xSmall)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(.primary.opacity(0.10), lineWidth: AppUI.Stroke.subtle)
-            )
-            .accessibilityLabel(connectedClientsAccessibilityLabel(displayClientCount))
+            VStack(alignment: .trailing, spacing: AppUI.Spacing.small) {
+                ShareDisplayMetaBar(
+                    displayID: display.displayID,
+                    displayAddress: displayAddress,
+                    displayURL: displayURL,
+                    displayClientCount: displayClientCount,
+                    isSharingDisplay: isSharingDisplay,
+                    openURLAction: openURLAction
+                )
 
-            shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
+                shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
+            }
         }
-        .frame(maxWidth: 520, alignment: .trailing)
-    }
-
-    private func displayAddressInline(
-        displayID: CGDirectDisplayID,
-        displayAddress: String,
-        displayURL: URL?,
-        isSharingDisplay: Bool
-    ) -> some View {
-        HStack(spacing: AppUI.Spacing.xSmall) {
-            if let displayURL {
-                Button {
-                    openURLAction(displayURL)
-                } label: {
-                    Image(systemName: "link")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(isSharingDisplay ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .disabled(!isSharingDisplay)
-                .help(String(localized: "Open Share Page"))
-                .accessibilityLabel(String(localized: "Open Share Page"))
-            }
-
-            Text(displayAddress)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .accessibilityIdentifier("share_display_address_\(displayID)")
-
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(displayAddress, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "Copy display address"))
-        }
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                .stroke(.primary.opacity(0.09), lineWidth: AppUI.Stroke.subtle)
-        )
-    }
-
-    private func connectedClientsAccessibilityLabel(_ count: Int) -> String {
-        let format = String(localized: "%lld connected")
-        return String.localizedStringWithFormat(format, Int64(count))
+        .frame(maxWidth: 560, alignment: .trailing)
     }
 
     @ViewBuilder
