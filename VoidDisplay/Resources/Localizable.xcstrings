@@ -316,6 +316,9 @@
     "Create Failed" : {
 
     },
+    "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file." : {
+
+    },
     "Create failed." : {
       "localizations" : {
         "zh-Hans" : {
