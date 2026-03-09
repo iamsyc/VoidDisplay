@@ -176,13 +176,6 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
                 switch event {
                 case .termination(let observed):
                     terminationObserved = observed
-                    if observed {
-                        group.cancelAll()
-                        return TeardownSettlement(
-                            terminationObserved: true,
-                            offlineConfirmed: true
-                        )
-                    }
 
                 case .offline(let confirmed):
                     offlineConfirmed = confirmed

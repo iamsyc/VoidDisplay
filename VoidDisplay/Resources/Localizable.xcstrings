@@ -313,6 +313,9 @@
         }
       }
     },
+    "Create Failed" : {
+
+    },
     "Create failed." : {
       "localizations" : {
         "zh-Hans" : {
@@ -362,6 +365,9 @@
           }
         }
       }
+    },
+    "Delete failed." : {
+
     },
     "Delete Virtual Display" : {
       "localizations" : {
@@ -415,6 +421,9 @@
           }
         }
       }
+    },
+    "Display configuration update is inconsistent with the requested operation." : {
+
     },
     "Display Info" : {
       "localizations" : {
@@ -585,6 +594,15 @@
           }
         }
       }
+    },
+    "Failed to reset virtual display configurations." : {
+
+    },
+    "Failed to save display settings." : {
+
+    },
+    "Failed to save virtual display changes." : {
+
     },
     "Failed to start sharing." : {
       "localizations" : {
@@ -1207,6 +1225,9 @@
     "Reset Config File" : {
 
     },
+    "Reset Failed" : {
+
+    },
     "Reset Virtual Display Configurations" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1296,6 +1317,9 @@
           }
         }
       }
+    },
+    "Save Failed" : {
+
     },
     "Save Only" : {
       "localizations" : {
@@ -1611,6 +1635,9 @@
       }
     },
     "Web listener stopped unexpectedly." : {
+
+    },
+    "Web listener was cancelled unexpectedly." : {
 
     },
     "Web service controller is unavailable." : {

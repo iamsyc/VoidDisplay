@@ -30,9 +30,9 @@ struct VirtualDisplayConfigRepositoryTests {
 
         var renamed = config
         renamed.displayName = "Runtime Rename"
-        let saved = sut.save([renamed], reason: .runtimeDisableCleanup)
-
-        #expect(saved == false)
+        #expect(throws: Error.self) {
+            try sut.save([renamed], reason: .runtimeDisableCleanup)
+        }
         #expect(store.saveCallCount == 0)
     }
 
@@ -81,9 +81,9 @@ struct VirtualDisplayConfigRepositoryTests {
         let sut = VirtualDisplayConfigRepository(store: store, reportFailure: nil)
         _ = sut.load()
 
-        let saved = sut.save([makeConfig(serial: 1, displayName: "Blocked")], reason: .userEditedConfig)
-
-        #expect(saved == false)
+        #expect(throws: Error.self) {
+            try sut.save([makeConfig(serial: 1, displayName: "Blocked")], reason: .userEditedConfig)
+        }
         #expect(store.saveCallCount == 0)
     }
 
@@ -98,14 +98,14 @@ struct VirtualDisplayConfigRepositoryTests {
         var renamed = config
         renamed.displayName = "Managed 2"
 
-        let saved = sut.save([renamed], reason: .runtimeRebuildRecovery)
-
-        #expect(saved == false)
+        #expect(throws: Error.self) {
+            try sut.save([renamed], reason: .runtimeRebuildRecovery)
+        }
         #expect(store.saveCallCount == 0)
     }
 
     @Test
-    func saveAllowsDisplayNameMutationForUserEditReason() {
+    func saveAllowsDisplayNameMutationForUserEditReason() throws {
         let store = FakeVirtualDisplayStore()
         let config = makeConfig(serial: 3, displayName: "Before")
         store.nextLoadConfigs = [config]
@@ -115,23 +115,19 @@ struct VirtualDisplayConfigRepositoryTests {
         var renamed = config
         renamed.displayName = "After"
 
-        let saved = sut.save([renamed], reason: .userEditedConfig)
-
-        #expect(saved == true)
+        try sut.save([renamed], reason: .userEditedConfig)
         #expect(store.saveCallCount == 1)
         #expect(store.savedConfigs.last?.first?.displayName == "After")
     }
 
     @Test
-    func resetClearsLoadFailedStateAndSnapshots() {
+    func resetClearsLoadFailedStateAndSnapshots() throws {
         let store = FakeVirtualDisplayStore()
         store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
         let sut = VirtualDisplayConfigRepository(store: store, reportFailure: nil)
         _ = sut.load()
 
-        let reset = sut.reset()
-
-        #expect(reset == true)
+        try sut.reset()
         #expect(store.resetCallCount == 1)
         switch sut.state {
         case .ready(let diagnostics):
@@ -141,8 +137,7 @@ struct VirtualDisplayConfigRepositoryTests {
         }
 
         let config = makeConfig(serial: 4, displayName: "Fresh")
-        let saved = sut.save([config], reason: .userCreatedConfig)
-        #expect(saved == true)
+        try sut.save([config], reason: .userCreatedConfig)
         #expect(store.saveCallCount == 1)
     }
 
@@ -155,9 +150,9 @@ struct VirtualDisplayConfigRepositoryTests {
             failures.append((operation, (error as NSError).code))
         }
 
-        let reset = sut.reset()
-
-        #expect(reset == false)
+        #expect(throws: Error.self) {
+            try sut.reset()
+        }
         #expect(store.resetCallCount == 1)
         #expect(store.saveCallCount == 0)
         #expect(failures.map(\.0) == ["Reset virtual display configs"])

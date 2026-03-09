@@ -75,10 +75,10 @@ final class VirtualDisplayConfigManager {
         restoreFailures = failures
     }
 
-    func resetAll() {
+    func resetAll() throws {
+        try configRepository.reset()
         configs.removeAll()
         restoreFailures.removeAll()
-        _ = configRepository.reset()
     }
 
     // MARK: - CRUD
@@ -91,31 +91,37 @@ final class VirtualDisplayConfigManager {
         configs.firstIndex(where: { $0.id == configId })
     }
 
-    func appendConfig(_ config: VirtualDisplayConfig) {
-        configs.append(config)
-        persistConfigs(reason: .userCreatedConfig)
+    func appendConfig(_ config: VirtualDisplayConfig) throws {
+        try mutateConfigs(reason: .userCreatedConfig) { candidate in
+            candidate.append(config)
+        }
     }
 
-    func removeConfig(_ configId: UUID) {
-        configs.removeAll { $0.id == configId }
-        persistConfigs(reason: .userDeletedConfig)
+    func removeConfig(_ configId: UUID) throws {
+        guard configs.contains(where: { $0.id == configId }) else { return }
+        try mutateConfigs(reason: .userDeletedConfig) { candidate in
+            candidate.removeAll { $0.id == configId }
+        }
     }
 
-    func removeConfig(serialNum: UInt32) {
-        configs.removeAll { $0.serialNum == serialNum }
-        persistConfigs(reason: .userDeletedConfig)
+    func removeConfig(serialNum: UInt32) throws {
+        guard configs.contains(where: { $0.serialNum == serialNum }) else { return }
+        try mutateConfigs(reason: .userDeletedConfig) { candidate in
+            candidate.removeAll { $0.serialNum == serialNum }
+        }
     }
 
     /// Removes the config that was just appended on creation failure rollback.
-    func rollbackAppendedConfig(_ configId: UUID) {
-        configs.removeAll { $0.id == configId }
-        persistConfigs(reason: .userDeletedConfig)
+    func rollbackAppendedConfig(_ configId: UUID) throws {
+        try removeConfig(configId)
     }
 
-    func updateConfig(_ updated: VirtualDisplayConfig) {
-        guard let index = configs.firstIndex(where: { $0.id == updated.id }) else { return }
-        configs[index] = updated
-        persistConfigs(reason: .userEditedConfig)
+    func updateConfig(_ updated: VirtualDisplayConfig) throws {
+        guard configs.contains(where: { $0.id == updated.id }) else { return }
+        try mutateConfigs(reason: .userEditedConfig) { candidate in
+            guard let index = candidate.firstIndex(where: { $0.id == updated.id }) else { return }
+            candidate[index] = updated
+        }
     }
 
     // MARK: - Desired enabled state
@@ -124,12 +130,14 @@ final class VirtualDisplayConfigManager {
         _ configId: UUID,
         enabled: Bool,
         reason: VirtualDisplayConfigRepository.PersistReason
-    ) {
-        guard let index = configs.firstIndex(where: { $0.id == configId }) else { return }
-        var updated = configs[index]
-        updated.desiredEnabled = enabled
-        configs[index] = updated
-        persistConfigs(reason: reason)
+    ) throws {
+        guard configs.contains(where: { $0.id == configId }) else { return }
+        try mutateConfigs(reason: reason) { candidate in
+            guard let index = candidate.firstIndex(where: { $0.id == configId }) else { return }
+            var updated = candidate[index]
+            updated.desiredEnabled = enabled
+            candidate[index] = updated
+        }
     }
 
     func markDesiredDisabledBySerial(_ serialNum: UInt32) -> Bool {
@@ -145,7 +153,7 @@ final class VirtualDisplayConfigManager {
     // MARK: - Reorder
 
     @discardableResult
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
         guard let sourceIndex = configs.firstIndex(where: { $0.id == configId }) else { return false }
 
         let destinationIndex: Int
@@ -158,13 +166,14 @@ final class VirtualDisplayConfigManager {
 
         guard configs.indices.contains(destinationIndex) else { return false }
 
-        configs.swapAt(sourceIndex, destinationIndex)
-        persistConfigs(reason: .userReorderedConfigs)
+        try mutateConfigs(reason: .userReorderedConfigs) { candidate in
+            candidate.swapAt(sourceIndex, destinationIndex)
+        }
         return true
     }
 
     @discardableResult
-    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool {
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool {
         guard let sourceIndex = configs.firstIndex(where: { $0.id == configId }) else {
             return false
         }
@@ -178,9 +187,10 @@ final class VirtualDisplayConfigManager {
             return false
         }
 
-        let config = configs.remove(at: sourceIndex)
-        configs.insert(config, at: firstEnabledIndex)
-        persistConfigs(reason: .userReorderedConfigs)
+        try mutateConfigs(reason: .userReorderedConfigs) { candidate in
+            let config = candidate.remove(at: sourceIndex)
+            candidate.insert(config, at: firstEnabledIndex)
+        }
         return true
     }
 
@@ -200,8 +210,18 @@ final class VirtualDisplayConfigManager {
 
     // MARK: - Persistence
 
-    func persistConfigs(reason: VirtualDisplayConfigRepository.PersistReason) {
-        _ = configRepository.save(configs, reason: reason)
+    func persistConfigs(reason: VirtualDisplayConfigRepository.PersistReason) throws {
+        try configRepository.save(configs, reason: reason)
+    }
+
+    private func mutateConfigs(
+        reason: VirtualDisplayConfigRepository.PersistReason,
+        _ mutation: (inout [VirtualDisplayConfig]) throws -> Void
+    ) throws {
+        var candidate = configs
+        try mutation(&candidate)
+        try configRepository.save(candidate, reason: reason)
+        configs = candidate
     }
 
 }

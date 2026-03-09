@@ -58,6 +58,7 @@ final class VirtualDisplayOrchestrator {
             ),
             topologyStabilityTimeout: 3.0,
             topologyStabilityPollInterval: 0.3,
+            runtimeDriver: nil,
             clock: nil
         )
     }
@@ -68,6 +69,7 @@ final class VirtualDisplayOrchestrator {
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool,
         topologyStabilityTimeout: TimeInterval = 3.0,
         topologyStabilityPollInterval: TimeInterval = 0.3,
+        runtimeDriver: (any VirtualDisplayRuntimeDriving)? = nil,
         clock: (any VirtualDisplayClocking)? = nil
     ) {
         self.init(
@@ -79,6 +81,7 @@ final class VirtualDisplayOrchestrator {
             topologyStabilityTimeout: topologyStabilityTimeout,
             topologyStabilityPollInterval: topologyStabilityPollInterval,
             rebuildRuntimeDisplayHook: nil,
+            runtimeDriver: runtimeDriver,
             clock: clock
         )
     }
@@ -92,6 +95,7 @@ final class VirtualDisplayOrchestrator {
         topologyStabilityTimeout: TimeInterval,
         topologyStabilityPollInterval: TimeInterval,
         rebuildRuntimeDisplayHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)? = nil,
+        runtimeDriver: (any VirtualDisplayRuntimeDriving)? = nil,
         clock: (any VirtualDisplayClocking)? = nil
     ) {
         let resolvedClock = clock ?? SystemVirtualDisplayClock()
@@ -103,6 +107,7 @@ final class VirtualDisplayOrchestrator {
 
         let tracker = VirtualDisplayRuntimeTracker(
             teardownCoordinator: teardownCoordinator,
+            runtimeDriver: runtimeDriver,
             clock: resolvedClock
         )
 
@@ -203,11 +208,11 @@ final class VirtualDisplayOrchestrator {
     }
 
     @discardableResult
-    func resetAllVirtualDisplayData() -> Int {
+    func resetAllVirtualDisplayData() throws -> Int {
         let removedConfigCount = configManager.allConfigs().count
+        try configManager.resetAll()
         runtimeTracker.resetAll()
         policyResolver.resetAll()
-        configManager.resetAll()
         return removedConfigCount
     }
 
@@ -268,17 +273,31 @@ final class VirtualDisplayOrchestrator {
             desiredEnabled: true
         )
 
-        configManager.appendConfig(config)
+        try configManager.appendConfig(config)
 
         do {
             _ = try runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
             return config.id
         } catch {
-            configManager.rollbackAppendedConfig(config.id)
+            let creationError = error
             AppLog.virtualDisplay.error(
-                "Create display failed (displayName: \(name, privacy: .public), serial: \(serialNum, privacy: .public)): \(String(describing: error), privacy: .public)"
+                "Create display failed (displayName: \(name, privacy: .public), serial: \(serialNum, privacy: .public)): \(String(describing: creationError), privacy: .public)"
             )
-            throw error
+            do {
+                try configManager.rollbackAppendedConfig(config.id)
+            } catch let rollbackError {
+                AppErrorMapper.logFailure(
+                    "Rollback appended virtual display config",
+                    error: rollbackError,
+                    logger: AppLog.persistence
+                )
+                throw VirtualDisplayOperationError.persistenceRecoveryFailed(
+                    String(
+                        localized: "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
+                    )
+                )
+            }
+            throw creationError
         }
     }
 
@@ -287,7 +306,7 @@ final class VirtualDisplayOrchestrator {
     func disableDisplayByConfig(_ configId: UUID) throws {
         guard configManager.configIndex(id: configId) != nil else { return }
 
-        configManager.setDesiredEnabled(configId, enabled: false, reason: .userToggledDesiredEnabled)
+        try configManager.setDesiredEnabled(configId, enabled: false, reason: .userToggledDesiredEnabled)
         guard let config = configManager.config(id: configId) else { return }
 
         let runtimeSerialNum = runtimeTracker.runtimeSerialNum(
@@ -313,7 +332,7 @@ final class VirtualDisplayOrchestrator {
             throw VirtualDisplayOperationError.configNotFound
         }
 
-        configManager.setDesiredEnabled(configId, enabled: true, reason: .userToggledDesiredEnabled)
+        try configManager.setDesiredEnabled(configId, enabled: true, reason: .userToggledDesiredEnabled)
         guard let config = configManager.config(id: configId) else {
             throw VirtualDisplayOperationError.configNotFound
         }
@@ -367,8 +386,8 @@ final class VirtualDisplayOrchestrator {
                     throw VirtualDisplayOperationError.teardownTimedOut
                 }
                 terminationConfirmed = settlement.terminationObserved
+                offlineVerified = settlement.offlineConfirmed
             }
-            offlineVerified = true
         }
         if !runtimeTracker.hasActiveRuntimeDisplay(configId: configId), !offlineVerified {
             let offlineConfirmed = await runtimeTracker.waitForManagedDisplayOffline(serialNum: config.serialNum)
@@ -468,27 +487,27 @@ final class VirtualDisplayOrchestrator {
 
     // MARK: - Destroy
 
-    func destroyDisplay(_ configId: UUID) {
+    func destroyDisplay(_ configId: UUID) throws {
         guard configManager.config(id: configId) != nil else { return }
+        try configManager.removeConfig(configId)
         policyResolver.clearAggressiveRecoveryPending(configId: configId)
         runtimeTracker.clearRuntimeTracking(configId: configId, keepGeneration: false)
-        configManager.removeConfig(configId)
     }
 
     // MARK: - Config operations (delegated)
 
-    func updateConfig(_ updated: VirtualDisplayConfig) {
-        configManager.updateConfig(updated)
+    func updateConfig(_ updated: VirtualDisplayConfig) throws {
+        try configManager.updateConfig(updated)
     }
 
     @discardableResult
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
-        configManager.moveConfig(configId, direction: direction)
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
+        try configManager.moveConfig(configId, direction: direction)
     }
 
     @discardableResult
-    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool {
-        configManager.moveConfigToFirstEnabledPosition(configId)
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool {
+        try configManager.moveConfigToFirstEnabledPosition(configId)
     }
 
     func applyModes(configId: UUID, modes: [ResolutionSelection]) {

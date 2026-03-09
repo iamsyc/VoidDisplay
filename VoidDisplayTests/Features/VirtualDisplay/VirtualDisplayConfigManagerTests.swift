@@ -37,31 +37,31 @@ struct VirtualDisplayConfigManagerTests {
     }
 
     @Test
-    func appendUpdateAndRemovePersistConfigChanges() {
+    func appendUpdateAndRemovePersistConfigChanges() throws {
         let store = FakeVirtualDisplayStore()
         let manager = makeManager(store: store)
         let config = makeConfig(serial: 10, name: "Original")
 
-        manager.appendConfig(config)
+        try manager.appendConfig(config)
 
         var updated = config
         updated.displayName = "Updated"
-        manager.updateConfig(updated)
-        manager.removeConfig(config.id)
+        try manager.updateConfig(updated)
+        try manager.removeConfig(config.id)
 
         #expect(store.savedConfigs.count == 3)
         #expect(manager.allConfigs().isEmpty)
     }
 
     @Test
-    func moveConfigSwapsAndPersists() {
+    func moveConfigSwapsAndPersists() throws {
         let store = FakeVirtualDisplayStore()
         let manager = makeManager(store: store)
         let configA = makeConfig(serial: 21, name: "A")
         let configB = makeConfig(serial: 22, name: "B")
 
         load(manager: manager, store: store, configs: [configA, configB])
-        let moved = manager.moveConfig(configB.id, direction: .up)
+        let moved = try manager.moveConfig(configB.id, direction: .up)
 
         #expect(moved)
         #expect(manager.allConfigs().map(\.id) == [configB.id, configA.id])
@@ -69,7 +69,7 @@ struct VirtualDisplayConfigManagerTests {
     }
 
     @Test
-    func moveConfigToFirstEnabledPositionMovesWithinEnabledSegment() {
+    func moveConfigToFirstEnabledPositionMovesWithinEnabledSegment() throws {
         let store = FakeVirtualDisplayStore()
         let manager = makeManager(store: store)
         var disabledA = makeConfig(serial: 31, name: "A")
@@ -80,7 +80,7 @@ struct VirtualDisplayConfigManagerTests {
         disabledB.desiredEnabled = false
 
         load(manager: manager, store: store, configs: [disabledA, disabledB, enabledC, enabledD])
-        let moved = manager.moveConfigToFirstEnabledPosition(enabledD.id)
+        let moved = try manager.moveConfigToFirstEnabledPosition(enabledD.id)
 
         #expect(moved)
         #expect(manager.allConfigs().map(\.id) == [disabledA.id, disabledB.id, enabledD.id, enabledC.id])
@@ -121,7 +121,7 @@ struct VirtualDisplayConfigManagerTests {
     }
 
     @Test
-    func resetAllClearsConfigsAndResetsStore() {
+    func resetAllClearsConfigsAndResetsStore() throws {
         let store = FakeVirtualDisplayStore()
         let manager = makeManager(store: store)
         load(manager: manager, store: store, configs: [makeConfig(serial: 50, name: "Reset")])
@@ -129,11 +129,150 @@ struct VirtualDisplayConfigManagerTests {
             .init(id: UUID(), name: "X", serialNum: 50, message: "failure")
         ])
 
-        manager.resetAll()
+        try manager.resetAll()
 
         #expect(manager.allConfigs().isEmpty)
         #expect(manager.restoreFailureList().isEmpty)
         #expect(store.resetCallCount == 1)
+    }
+
+    @Test
+    func appendConfigSaveFailureLeavesMemoryUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "save",
+            underlying: NSError(domain: "test", code: 1)
+        )
+        let manager = makeManager(store: store)
+
+        #expect(throws: Error.self) {
+            try manager.appendConfig(makeConfig(serial: 60, name: "Broken"))
+        }
+        #expect(manager.allConfigs().isEmpty)
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
+    func updateConfigSaveFailureLeavesMemoryUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        let config = makeConfig(serial: 61, name: "Original")
+        let manager = makeManager(store: store)
+        load(manager: manager, store: store, configs: [config])
+
+        var updated = config
+        updated.displayName = "Updated"
+        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "save",
+            underlying: NSError(domain: "test", code: 2)
+        )
+
+        #expect(throws: Error.self) {
+            try manager.updateConfig(updated)
+        }
+        #expect(manager.allConfigs().first?.displayName == "Original")
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
+    func removeConfigSaveFailureLeavesMemoryUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        let config = makeConfig(serial: 62, name: "Keep")
+        let manager = makeManager(store: store)
+        load(manager: manager, store: store, configs: [config])
+        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "save",
+            underlying: NSError(domain: "test", code: 3)
+        )
+
+        #expect(throws: Error.self) {
+            try manager.removeConfig(config.id)
+        }
+        #expect(manager.allConfigs().map(\.id) == [config.id])
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
+    func setDesiredEnabledSaveFailureLeavesMemoryUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        var config = makeConfig(serial: 63, name: "Toggle")
+        config.desiredEnabled = false
+        let manager = makeManager(store: store)
+        load(manager: manager, store: store, configs: [config])
+        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "save",
+            underlying: NSError(domain: "test", code: 4)
+        )
+
+        #expect(throws: Error.self) {
+            try manager.setDesiredEnabled(
+                config.id,
+                enabled: true,
+                reason: .userToggledDesiredEnabled
+            )
+        }
+        #expect(manager.allConfigs().first?.desiredEnabled == false)
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
+    func moveConfigSaveFailureLeavesMemoryOrderUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        let configA = makeConfig(serial: 64, name: "A")
+        let configB = makeConfig(serial: 65, name: "B")
+        let manager = makeManager(store: store)
+        load(manager: manager, store: store, configs: [configA, configB])
+        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "save",
+            underlying: NSError(domain: "test", code: 5)
+        )
+
+        #expect(throws: Error.self) {
+            _ = try manager.moveConfig(configB.id, direction: .up)
+        }
+        #expect(manager.allConfigs().map(\.id) == [configA.id, configB.id])
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
+    func moveConfigToFirstEnabledPositionSaveFailureLeavesMemoryOrderUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        var disabled = makeConfig(serial: 66, name: "Disabled")
+        let enabledA = makeConfig(serial: 67, name: "Enabled A")
+        let enabledB = makeConfig(serial: 68, name: "Enabled B")
+        disabled.desiredEnabled = false
+        let manager = makeManager(store: store)
+        load(manager: manager, store: store, configs: [disabled, enabledA, enabledB])
+        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "save",
+            underlying: NSError(domain: "test", code: 6)
+        )
+
+        #expect(throws: Error.self) {
+            _ = try manager.moveConfigToFirstEnabledPosition(enabledB.id)
+        }
+        #expect(manager.allConfigs().map(\.id) == [disabled.id, enabledA.id, enabledB.id])
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
+    func resetAllFailureLeavesMemoryUnchanged() {
+        let store = FakeVirtualDisplayStore()
+        let config = makeConfig(serial: 69, name: "Reset")
+        let manager = makeManager(store: store)
+        load(manager: manager, store: store, configs: [config])
+        manager.setRestoreFailures([
+            .init(id: UUID(), name: "X", serialNum: 69, message: "failure")
+        ])
+        store.resetError = VirtualDisplayConfigStoreError.ioFailed(
+            operation: "reset",
+            underlying: NSError(domain: "test", code: 7)
+        )
+
+        #expect(throws: Error.self) {
+            try manager.resetAll()
+        }
+        #expect(manager.allConfigs().map(\.id) == [config.id])
+        #expect(manager.restoreFailureList().count == 1)
     }
 }
 

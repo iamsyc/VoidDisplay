@@ -14,7 +14,7 @@ protocol VirtualDisplayCommanding: AnyObject {
     func clearRestoreFailures()
 
     @discardableResult
-    func resetAllVirtualDisplayData() -> Int
+    func resetAllVirtualDisplayData() throws -> Int
 
     @discardableResult
     func createDisplay(
@@ -27,11 +27,11 @@ protocol VirtualDisplayCommanding: AnyObject {
 
     func disableDisplayByConfig(_ configId: UUID) throws
     func enableDisplay(_ configId: UUID) async throws
-    func destroyDisplay(_ configId: UUID)
-    func updateConfig(_ updated: VirtualDisplayConfig)
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool
+    func destroyDisplay(_ configId: UUID) throws
+    func updateConfig(_ updated: VirtualDisplayConfig) throws
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool
     @discardableResult
-    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool
     func applyModes(configId: UUID, modes: [ResolutionSelection])
     func rebuildVirtualDisplay(configId: UUID) async throws
     func reconcileMainDisplayPolicyIfNeeded() async throws

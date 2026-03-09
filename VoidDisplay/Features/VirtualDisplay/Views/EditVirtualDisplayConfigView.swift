@@ -1,5 +1,4 @@
 import SwiftUI
-import OSLog
 
 struct EditVirtualDisplayConfigView: View {
     let configId: UUID
@@ -88,6 +87,13 @@ struct EditVirtualDisplayConfigView: View {
             Button("OK") {}
         } message: {
             Text(errorMessage)
+        }
+        .alert("Save Failed", isPresented: persistenceErrorBinding) {
+            Button("OK") {
+                virtualDisplay.clearPersistenceError()
+            }
+        } message: {
+            Text(virtualDisplay.persistenceErrorMessage)
         }
         .onAppear {
             load()
@@ -376,7 +382,9 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     private func performSaveOnly(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
-        virtualDisplay.updateConfig(analysis.updatedConfig)
+        do {
+            try virtualDisplay.updateConfig(analysis.updatedConfig)
+        } catch { return }
         loadedConfig = analysis.updatedConfig
         if analysis.shouldApplyModesImmediately {
             virtualDisplay.applyModes(configId: configId, modes: selectedModes)
@@ -385,10 +393,23 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     private func performSaveAndRebuild(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
-        virtualDisplay.updateConfig(analysis.updatedConfig)
+        do {
+            try virtualDisplay.updateConfig(analysis.updatedConfig)
+        } catch { return }
         loadedConfig = analysis.updatedConfig
         dismiss()
         virtualDisplay.startRebuildFromSavedConfig(configId: configId)
+    }
+
+    private var persistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { virtualDisplay.showPersistenceError },
+            set: { isPresented in
+                if !isPresented {
+                    virtualDisplay.clearPersistenceError()
+                }
+            }
+        )
     }
 
     private func addPresetMode() {

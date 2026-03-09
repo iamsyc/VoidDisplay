@@ -161,6 +161,13 @@ struct EditDisplaySettingsView: View {
         } message: {
             Text(errorMessage)
         }
+        .alert("Save Failed", isPresented: persistenceErrorBinding) {
+            Button("OK") {
+                virtualDisplay.clearPersistenceError()
+            }
+        } message: {
+            Text(virtualDisplay.persistenceErrorMessage)
+        }
         .onAppear {
             initializeFromConfig()
         }
@@ -228,8 +235,21 @@ struct EditDisplaySettingsView: View {
                 enableHiDPI: $0.enableHiDPI
             )
         }
-        virtualDisplay.updateConfig(config)
+        do {
+            try virtualDisplay.updateConfig(config)
+        } catch { return }
         virtualDisplay.applyModes(configId: config.id, modes: selectedModes)
         isShow = false
+    }
+
+    private var persistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { virtualDisplay.showPersistenceError },
+            set: { isPresented in
+                if !isPresented {
+                    virtualDisplay.clearPersistenceError()
+                }
+            }
+        )
     }
 }

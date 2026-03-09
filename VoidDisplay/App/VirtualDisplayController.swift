@@ -15,6 +15,8 @@ final class VirtualDisplayController {
     private(set) var displayConfigs: [VirtualDisplayConfig] = []
     private(set) var runningConfigIds: Set<UUID> = []
     private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
+    private(set) var showPersistenceError = false
+    private(set) var persistenceErrorMessage = ""
     private(set) var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
     private(set) var rebuildingConfigIds: Set<UUID> = []
     private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
@@ -103,6 +105,11 @@ final class VirtualDisplayController {
         }
     }
 
+    func clearPersistenceError() {
+        showPersistenceError = false
+        persistenceErrorMessage = ""
+    }
+
     func startRebuildFromSavedConfig(configId: UUID) {
         guard !rebuildingConfigIds.contains(configId) else { return }
         guard getConfig(configId) != nil else {
@@ -186,14 +193,19 @@ final class VirtualDisplayController {
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
     ) throws -> UUID {
-        try mutateAndSync {
-            try virtualDisplayFacade.createDisplay(
-                name: name,
-                serialNum: serialNum,
-                physicalSize: physicalSize,
-                maxPixels: maxPixels,
-                modes: modes
-            )
+        try performPersistenceAction(
+            operation: "Create virtual display",
+            fallback: String(localized: "Create failed.")
+        ) {
+            try mutateAndSync {
+                try virtualDisplayFacade.createDisplay(
+                    name: name,
+                    serialNum: serialNum,
+                    physicalSize: physicalSize,
+                    maxPixels: maxPixels,
+                    modes: modes
+                )
+            }
         }
     }
 
@@ -209,10 +221,15 @@ final class VirtualDisplayController {
         }
     }
 
-    func destroyDisplay(_ configId: UUID) {
-        mutateAndSync {
-            clearRebuildPresentationState(configId: configId)
-            virtualDisplayFacade.destroyDisplay(configId)
+    func destroyDisplay(_ configId: UUID) throws {
+        try performPersistenceAction(
+            operation: "Delete virtual display",
+            fallback: String(localized: "Delete failed.")
+        ) {
+            try mutateAndSync {
+                try virtualDisplayFacade.destroyDisplay(configId)
+                clearRebuildPresentationState(configId: configId)
+            }
         }
     }
 
@@ -220,24 +237,60 @@ final class VirtualDisplayController {
         displayConfigs.first { $0.id == configId }
     }
 
-    func updateConfig(_ updated: VirtualDisplayConfig) {
-        mutateAndSync {
-            virtualDisplayFacade.updateConfig(updated)
+    func updateConfig(_ updated: VirtualDisplayConfig) throws {
+        try performPersistenceAction(
+            operation: "Update virtual display config",
+            fallback: String(localized: "Failed to save display settings.")
+        ) {
+            try mutateAndSync {
+                try virtualDisplayFacade.updateConfig(updated)
+            }
         }
     }
 
     @discardableResult
-    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
+    func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
+        clearPersistenceError()
+        defer { syncVirtualDisplayState() }
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
-        let moved = virtualDisplayFacade.moveConfig(configId, direction: direction)
+        let moved: Bool
+        do {
+            moved = try virtualDisplayFacade.moveConfig(configId, direction: direction)
+        } catch {
+            let operation: String
+            switch direction {
+            case .up:
+                operation = "Move virtual display up"
+            case .down:
+                operation = "Move virtual display down"
+            }
+            recordPersistenceFailure(
+                operation: operation,
+                error: error,
+                fallback: String(localized: "Failed to save virtual display changes.")
+            )
+            throw error
+        }
         if moved { handlePostReorderMainPolicyReconcile(firstEnabledBeforeMove: firstEnabledBeforeMove) }
         return moved
     }
 
     @discardableResult
-    func setPrimaryVirtualDisplayByReordering(_ configId: UUID) -> Bool {
+    func setPrimaryVirtualDisplayByReordering(_ configId: UUID) throws -> Bool {
+        clearPersistenceError()
+        defer { syncVirtualDisplayState() }
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
-        let moved = virtualDisplayFacade.moveConfigToFirstEnabledPosition(configId)
+        let moved: Bool
+        do {
+            moved = try virtualDisplayFacade.moveConfigToFirstEnabledPosition(configId)
+        } catch {
+            recordPersistenceFailure(
+                operation: "Set primary virtual display",
+                error: error,
+                fallback: String(localized: "Failed to save virtual display changes.")
+            )
+            throw error
+        }
         if moved { handlePostReorderMainPolicyReconcile(firstEnabledBeforeMove: firstEnabledBeforeMove) }
         return moved
     }
@@ -259,10 +312,16 @@ final class VirtualDisplayController {
     }
 
     @discardableResult
-    func resetVirtualDisplayData() -> Int {
-        clearAllRebuildPresentationState()
-        return mutateAndSync {
-            virtualDisplayFacade.resetAllVirtualDisplayData()
+    func resetVirtualDisplayData() throws -> Int {
+        try performPersistenceAction(
+            operation: "Reset virtual display configurations",
+            fallback: String(localized: "Failed to reset virtual display configurations.")
+        ) {
+            let removed = try mutateAndSync {
+                try virtualDisplayFacade.resetAllVirtualDisplayData()
+            }
+            clearAllRebuildPresentationState()
+            return removed
         }
     }
 
@@ -300,6 +359,30 @@ final class VirtualDisplayController {
     private func mutateAndSync<T>(_ mutation: () async throws -> T) async rethrows -> T {
         defer { syncVirtualDisplayState() }
         return try await mutation()
+    }
+
+    private func performPersistenceAction<T>(
+        operation: String,
+        fallback: String,
+        mutation: () throws -> T
+    ) throws -> T {
+        clearPersistenceError()
+        do {
+            return try mutation()
+        } catch {
+            recordPersistenceFailure(operation: operation, error: error, fallback: fallback)
+            throw error
+        }
+    }
+
+    private func recordPersistenceFailure(
+        operation: String,
+        error: Error,
+        fallback: String
+    ) {
+        AppErrorMapper.logFailure(operation, error: error, logger: AppLog.virtualDisplay)
+        persistenceErrorMessage = AppErrorMapper.userMessage(for: error, fallback: fallback)
+        showPersistenceError = true
     }
 
     private func scheduleAppliedBadgeClear(configId: UUID) {

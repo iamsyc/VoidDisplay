@@ -39,12 +39,32 @@ struct AppSettingsView: View {
             isPresented: $showResetConfirmation
         ) {
             Button("Reset", role: .destructive) {
-                _ = virtualDisplay.resetVirtualDisplayData()
-                resetCompleted = true
+                do {
+                    _ = try virtualDisplay.resetVirtualDisplayData()
+                    resetCompleted = true
+                } catch {}
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This action cannot be undone.")
         }
+        .alert("Reset Failed", isPresented: persistenceErrorBinding) {
+            Button("OK") {
+                virtualDisplay.clearPersistenceError()
+            }
+        } message: {
+            Text(virtualDisplay.persistenceErrorMessage)
+        }
+    }
+
+    private var persistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { virtualDisplay.showPersistenceError },
+            set: { isPresented in
+                if !isPresented {
+                    virtualDisplay.clearPersistenceError()
+                }
+            }
+        )
     }
 }

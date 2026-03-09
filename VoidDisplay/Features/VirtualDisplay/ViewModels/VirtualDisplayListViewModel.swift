@@ -9,7 +9,7 @@ final class VirtualDisplayListViewModel {
     struct Dependencies {
         var restoreFailures: @MainActor () -> [VirtualDisplayRestoreFailure]
         var clearRestoreFailures: @MainActor () -> Void
-        var destroyDisplay: @MainActor (UUID) -> Void
+        var destroyDisplay: @MainActor (UUID) throws -> Void
         var runtimeDisplayID: @MainActor (UUID) -> CGDirectDisplayID?
         var isRebuilding: @MainActor (UUID) -> Bool
         var isVirtualDisplayRunning: @MainActor (UUID) -> Bool
@@ -20,7 +20,7 @@ final class VirtualDisplayListViewModel {
             Self(
                 restoreFailures: { controller.restoreFailures },
                 clearRestoreFailures: { controller.clearRestoreFailures() },
-                destroyDisplay: { controller.destroyDisplay($0) },
+                destroyDisplay: { try controller.destroyDisplay($0) },
                 runtimeDisplayID: { controller.runtimeDisplayID(for: $0) },
                 isRebuilding: { controller.isRebuilding(configId: $0) },
                 isVirtualDisplayRunning: { controller.isVirtualDisplayRunning(configId: $0) },
@@ -82,7 +82,14 @@ final class VirtualDisplayListViewModel {
             deleteCandidate = nil
             return
         }
-        dependencies.destroyDisplay(candidate.id)
+        do {
+            try dependencies.destroyDisplay(candidate.id)
+        } catch {
+            AppErrorMapper.logFailure("Delete virtual display", error: error, logger: AppLog.virtualDisplay)
+            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
+            showError = true
+            return
+        }
         deleteCandidate = nil
         showDeleteConfirm = false
     }

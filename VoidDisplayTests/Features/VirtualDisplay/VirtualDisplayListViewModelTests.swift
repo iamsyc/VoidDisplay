@@ -27,6 +27,27 @@ struct VirtualDisplayListViewModelTests {
         #expect(mockService.destroyedConfigIDs == [config.id])
     }
 
+    @Test func confirmDeleteShowsErrorWhenDestroyFails() {
+        let config = sampleConfig(serial: 102)
+        let mockService = MockVirtualDisplayFacade()
+        mockService.currentDisplayConfigs = [config]
+        mockService.destroyDisplayError = NSError(domain: "VirtualDisplayListViewModelTests", code: 12)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
+        env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+
+        let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
+
+        sut.requestDelete(config)
+        sut.confirmDelete()
+
+        #expect(sut.showDeleteConfirm)
+        #expect(sut.deleteCandidate?.id == config.id)
+        #expect(sut.showError)
+        #expect(sut.errorMessage.isEmpty == false)
+        #expect(mockService.destroyDisplayByConfigCallCount == 1)
+        #expect(mockService.destroyedConfigIDs == [config.id])
+    }
+
     @Test func acknowledgeRestoreFailuresCallsControllerClear() {
         let mockService = MockVirtualDisplayFacade()
         let env = makeEnvironment(virtualDisplayFacade: mockService)

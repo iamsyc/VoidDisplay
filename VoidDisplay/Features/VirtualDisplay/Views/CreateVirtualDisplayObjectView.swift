@@ -6,7 +6,6 @@
 
 import SwiftUI
 import CoreGraphics
-import OSLog
 
 struct CreateVirtualDisplay: View {
     // MARK: - State Properties
@@ -105,6 +104,13 @@ struct CreateVirtualDisplay: View {
             Button("OK") {}
         } message: {
             Text(errorMessage)
+        }
+        .alert("Create Failed", isPresented: persistenceErrorBinding) {
+            Button("OK") {
+                virtualDisplay.clearPersistenceError()
+            }
+        } message: {
+            Text(virtualDisplay.persistenceErrorMessage)
         }
         .alert("Tip", isPresented: $showDuplicateWarning) {
             Button("OK") {}
@@ -383,15 +389,18 @@ struct CreateVirtualDisplay: View {
                 modes: selectedModes
             )
             isShow = false
-        } catch let error as VirtualDisplayOperationError {
-            AppErrorMapper.logFailure("Create virtual display", error: error, logger: AppLog.virtualDisplay)
-            errorMessage = error.localizedDescription
-            showError = true
-        } catch {
-            AppErrorMapper.logFailure("Create virtual display", error: error, logger: AppLog.virtualDisplay)
-            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Create failed."))
-            showError = true
-        }
+        } catch {}
+    }
+
+    private var persistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { virtualDisplay.showPersistenceError },
+            set: { isPresented in
+                if !isPresented {
+                    virtualDisplay.clearPersistenceError()
+                }
+            }
+        )
     }
 }
 

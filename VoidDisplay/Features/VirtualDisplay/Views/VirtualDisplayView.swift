@@ -5,7 +5,6 @@
 //
 
 import SwiftUI
-import OSLog
 
 struct VirtualDisplayView: View {
     @Bindable private var virtualDisplay: VirtualDisplayController
@@ -61,6 +60,13 @@ struct VirtualDisplayView: View {
             Button("OK") {}
         } message: {
             Text(viewModel.errorMessage)
+        }
+        .alert("Save Failed", isPresented: persistenceErrorBinding) {
+            Button("OK") {
+                virtualDisplay.clearPersistenceError()
+            }
+        } message: {
+            Text(virtualDisplay.persistenceErrorMessage)
         }
         .onAppear {
             viewModel.handleAppear()
@@ -141,7 +147,9 @@ struct VirtualDisplayView: View {
 
             HStack(spacing: 12) {
                 Button("Reset Config File", role: .destructive) {
-                    _ = virtualDisplay.resetVirtualDisplayData()
+                    do {
+                        _ = try virtualDisplay.resetVirtualDisplayData()
+                    } catch {}
                 }
                 .accessibilityIdentifier("virtual_display_reset_config_file_button")
             }
@@ -187,14 +195,31 @@ struct VirtualDisplayView: View {
             isLast: isLast,
             isPrimary: isPrimary,
             canSetAsPrimary: canSetAsPrimary,
-            onMoveUp: { _ = virtualDisplay.moveDisplayConfig(config.id, direction: .up) },
-            onMoveDown: { _ = virtualDisplay.moveDisplayConfig(config.id, direction: .down) },
-            onSetAsPrimary: { _ = virtualDisplay.setPrimaryVirtualDisplayByReordering(config.id) },
+            onMoveUp: { performPersistenceAction { _ = try virtualDisplay.moveDisplayConfig(config.id, direction: .up) } },
+            onMoveDown: { performPersistenceAction { _ = try virtualDisplay.moveDisplayConfig(config.id, direction: .down) } },
+            onSetAsPrimary: { performPersistenceAction { _ = try virtualDisplay.setPrimaryVirtualDisplayByReordering(config.id) } },
             onToggle: { viewModel.toggleDisplayState(config) },
             onEdit: { editingConfig = EditingConfig(id: config.id) },
             onDelete: { viewModel.requestDelete(config) },
             onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) },
             iconScreenTint: iconScreenTint
+        )
+    }
+
+    private func performPersistenceAction(action: () throws -> Void) {
+        do {
+            try action()
+        } catch {}
+    }
+
+    private var persistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { virtualDisplay.showPersistenceError },
+            set: { isPresented in
+                if !isPresented {
+                    virtualDisplay.clearPersistenceError()
+                }
+            }
         )
     }
 

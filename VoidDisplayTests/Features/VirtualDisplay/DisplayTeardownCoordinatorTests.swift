@@ -21,7 +21,7 @@ struct DisplayTeardownCoordinatorTests {
         #expect(result)
     }
 
-    @Test func waitForTeardownSettlementTerminationObservedEarlyShortCircuitsAsSettled() async {
+    @Test func waitForTeardownSettlementTerminationObservedEarlyDoesNotPretendOffline() async {
         let configID = UUID()
         let generation: UInt64 = 11
         let clock = TestVirtualDisplayClock()
@@ -51,7 +51,7 @@ struct DisplayTeardownCoordinatorTests {
 
         let settlement = await task.value
         #expect(settlement.terminationObserved)
-        #expect(settlement.offlineConfirmed)
+        #expect(settlement.offlineConfirmed == false)
     }
 
     @Test func waitForTeardownSettlementOfflineConfirmedEarlyReturnsWithoutTermination() async {

@@ -93,55 +93,52 @@ final class VirtualDisplayConfigRepository {
         }
     }
 
-    @discardableResult
-    func save(_ configs: [VirtualDisplayConfig], reason: PersistReason) -> Bool {
-        guard isWritable(for: reason) else { return false }
-        guard validateDisplayNameMutation(in: configs, for: reason) else { return false }
+    func save(_ configs: [VirtualDisplayConfig], reason: PersistReason) throws {
+        try ensureWritable(for: reason)
+        try validateDisplayNameMutation(in: configs, for: reason)
         do {
             try store.save(configs)
         } catch {
             reportFailure("Save virtual display configs", error)
-            return false
+            throw error
         }
         lastPersistedDisplayNamesByConfigId = Dictionary(
             uniqueKeysWithValues: configs.map { ($0.id, $0.displayName) }
         )
         state = .ready(diagnostics: Self.resolveDiagnostics(from: store))
-        return true
     }
 
-    @discardableResult
-    func reset() -> Bool {
+    func reset() throws {
         do {
             try store.reset()
             lastPersistedDisplayNamesByConfigId.removeAll()
             state = .ready(diagnostics: Self.resolveDiagnostics(from: store))
-            return true
         } catch {
             reportFailure("Reset virtual display configs", error)
-            return false
+            throw error
         }
     }
 
-    private func isWritable(for reason: PersistReason) -> Bool {
-        guard case .loadFailed(let error, let diagnostics) = state else { return true }
+    private func ensureWritable(for reason: PersistReason) throws {
+        guard case .loadFailed(let error, let diagnostics) = state else { return }
         AppLog.virtualDisplay.error(
             "Blocked virtual display config persistence due to config store load failure (reason: \(reason.rawValue, privacy: .public), \(diagnostics.summary, privacy: .public)): \(String(describing: error), privacy: .public)"
         )
-        return false
+        throw error
     }
 
-    private func validateDisplayNameMutation(in configs: [VirtualDisplayConfig], for reason: PersistReason) -> Bool {
-        guard !reasonAllowsDisplayNameMutation(reason) else { return true }
+    private func validateDisplayNameMutation(in configs: [VirtualDisplayConfig], for reason: PersistReason) throws {
+        guard !reasonAllowsDisplayNameMutation(reason) else { return }
         for config in configs {
             guard let previousName = lastPersistedDisplayNamesByConfigId[config.id] else { continue }
             guard previousName != config.displayName else { continue }
             AppLog.virtualDisplay.error(
                 "Blocked disallowed displayName mutation (reason: \(reason.rawValue, privacy: .public), config: \(config.id.uuidString, privacy: .public), previous: \(previousName, privacy: .public), current: \(config.displayName, privacy: .public))."
             )
-            return false
+            throw VirtualDisplayOperationError.invalidConfiguration(
+                String(localized: "Display configuration update is inconsistent with the requested operation.")
+            )
         }
-        return true
     }
 
     private func reasonAllowsDisplayNameMutation(_ reason: PersistReason) -> Bool {
