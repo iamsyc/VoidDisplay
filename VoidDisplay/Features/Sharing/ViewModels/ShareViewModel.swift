@@ -1,6 +1,7 @@
 import Foundation
 import ScreenCaptureKit
 import CoreGraphics
+import AppKit
 import Observation
 import OSLog
 
@@ -66,23 +67,42 @@ final class ShareViewModel {
     }
 
     let catalog: ScreenCaptureDisplayCatalogState
-    var servicePortInput = ""
+    var servicePortInput = "" {
+        didSet {
+            let sanitized = String(servicePortInput.prefix(5))
+            if servicePortInput != sanitized {
+                servicePortInput = sanitized
+                return
+            }
+            if oldValue != servicePortInput {
+                portInputErrorMessage = nil
+            }
+        }
+    }
     var portInputErrorMessage: String?
     var isStartingService = false
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
-    var showOpenPageError = false
-    var openPageErrorMessage = ""
+    var userFacingAlert: UserFacingAlertState?
 
+    private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
+        catalogState: ScreenCaptureDisplayCatalogState? = nil,
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
+        activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
+            Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
+        },
         dependencies: Dependencies
     ) {
-        let catalog = ScreenCaptureDisplayCatalogState()
+        let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
+        self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
+            state: catalog,
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
         self.dependencies = dependencies
         self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
             state: catalog,
@@ -94,16 +114,27 @@ final class ShareViewModel {
         self.servicePortInput = String(dependencies.sharingQueries.preferredWebServicePort())
     }
 
-    func syncForCurrentState() {
+    func syncForCurrentState(
+        clearDisplaysWhenPermissionDenied: Bool = true,
+        clearDisplaysWhenServiceStopped: Bool = true
+    ) {
         guard catalog.hasScreenCapturePermission == true else {
-            catalogLoader.clearDisplaysAndCancel()
+            if clearDisplaysWhenPermissionDenied {
+                catalogLoader.clearDisplaysAndCancel()
+            } else {
+                catalogLoader.cancelInFlightDisplayLoad()
+            }
             return
         }
         guard dependencies.sharingQueries.isWebServiceRunning() else {
-            catalogLoader.clearDisplaysAndCancel()
+            if clearDisplaysWhenServiceStopped {
+                catalogLoader.clearDisplaysAndCancel()
+            } else {
+                catalogLoader.cancelInFlightDisplayLoad()
+            }
             return
         }
-        loadDisplaysIfNeeded()
+        refreshDisplaysForCurrentTopologyIfNeeded()
     }
 
     func startService() {
@@ -141,11 +172,6 @@ final class ShareViewModel {
         syncForCurrentState()
     }
 
-    func updateServicePortInput(_ value: String) {
-        servicePortInput = String(value.prefix(5))
-        portInputErrorMessage = nil
-    }
-
     func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
         catalogLoader.openScreenCapturePrivacySettings(openURL: openURL)
     }
@@ -172,31 +198,44 @@ final class ShareViewModel {
             catalogLoader.clearDisplaysAndCancel()
             return
         }
-        syncForCurrentState()
+        syncForCurrentState(clearDisplaysWhenServiceStopped: false)
     }
 
     func loadDisplaysIfNeeded() {
         guard dependencies.sharingQueries.isWebServiceRunning() else { return }
         catalogLoader.loadDisplaysIfNeeded { [weak self] displays in
-            self?.registerShareableDisplays(displays)
+            self?.handleDisplaysLoaded(displays)
         }
     }
 
     func loadDisplays() {
         catalogLoader.loadDisplays { [weak self] displays in
-            self?.registerShareableDisplays(displays)
+            self?.handleDisplaysLoaded(displays)
         }
     }
 
     func refreshDisplays() {
         guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        loadDisplays()
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
+            self?.handleDisplaysLoaded(displays)
+        }
     }
 
     func refreshDisplaysBackgroundSafe() {
         guard dependencies.sharingQueries.isWebServiceRunning() else { return }
         guard !catalog.isLoadingDisplays else { return }
-        loadDisplays()
+        guard topologyCoordinator.needsRefresh() else { return }
+        if catalog.displays == nil {
+            loadDisplaysIfNeeded()
+            return
+        }
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
+            self?.handleDisplaysLoaded(displays)
+        }
+    }
+
+    func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
+        topologyCoordinator.visibleDisplays(from: displays)
     }
 
     @discardableResult
@@ -233,7 +272,10 @@ final class ShareViewModel {
                 ready = true
             }
             guard ready else {
-                presentError(String(localized: "Web service is not running."))
+                presentError(
+                    title: String(localized: "Share Failed"),
+                    message: String(localized: "Web service is not running.")
+                )
                 return
             }
 
@@ -242,7 +284,10 @@ final class ShareViewModel {
             } catch {
                 dependencies.sharingActions.stopSharing(display.displayID)
                 AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
-                presentError(AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing.")))
+                presentError(
+                    title: String(localized: "Share Failed"),
+                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing."))
+                )
             }
         }
     }
@@ -255,12 +300,28 @@ final class ShareViewModel {
         dependencies.sharingQueries.sharePageAddress(displayID)
     }
 
-    func clearError() {
-        showOpenPageError = false
+    func dismissAlert() {
+        userFacingAlert = nil
     }
 
     func cancelInFlightDisplayLoad() {
         catalogLoader.cancelInFlightDisplayLoad()
+    }
+
+    private func refreshDisplaysForCurrentTopologyIfNeeded() {
+        guard topologyCoordinator.needsRefresh() else { return }
+        if catalog.displays == nil {
+            loadDisplaysIfNeeded()
+            return
+        }
+        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
+            self?.handleDisplaysLoaded(displays)
+        }
+    }
+
+    private func handleDisplaysLoaded(_ displays: [SCDisplay]) {
+        topologyCoordinator.commitLoadedTopologySignature()
+        registerShareableDisplays(displays)
     }
 
     private func registerShareableDisplays(_ displays: [SCDisplay]) {
@@ -269,9 +330,8 @@ final class ShareViewModel {
         }
     }
 
-    private func presentError(_ message: String) {
-        openPageErrorMessage = message
-        showOpenPageError = true
+    private func presentError(title: String, message: String) {
+        userFacingAlert = UserFacingAlertState(title: title, message: message)
     }
 
     private func presentPortInputError(_ message: String) {

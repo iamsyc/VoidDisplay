@@ -11,6 +11,8 @@ struct AppSettingsView: View {
     @State private var resetCompleted = false
 
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+
         VStack(alignment: .leading, spacing: 12) {
             Text("Virtual Displays")
                 .font(.headline)
@@ -39,12 +41,23 @@ struct AppSettingsView: View {
             isPresented: $showResetConfirmation
         ) {
             Button("Reset", role: .destructive) {
-                _ = virtualDisplay.resetVirtualDisplayData()
-                resetCompleted = true
+                do {
+                    _ = try virtualDisplay.resetVirtualDisplayData()
+                    resetCompleted = true
+                } catch {}
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This action cannot be undone.")
+        }
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
         }
     }
 }

@@ -16,28 +16,26 @@ struct ShareDisplayList: View {
     let openURLAction: OpenURLAction
 
     @Environment(SharingController.self) private var sharing
+    @Environment(CaptureController.self) private var capture
     @Environment(VirtualDisplayController.self) private var virtualDisplay
 
     var body: some View {
-        VStack(spacing: AppUI.Spacing.small) {
+        VStack(spacing: AppUI.List.sectionSpacing) {
             ShareStatusPanel(
                 displayCount: displays.count,
                 sharingDisplayCount: sharing.activeSharingDisplayIDs.count,
                 clientsCount: sharing.sharingClientCount,
                 isRunning: sharing.isWebServiceRunning
             )
-            .padding(.horizontal, AppUI.List.listHorizontalInset)
-            .padding(.top, AppUI.Spacing.small + 2)
+            .appListContentInsets(bottom: false)
 
             ScrollView {
-                LazyVStack(spacing: AppUI.Spacing.small) {
+                LazyVStack(spacing: AppUI.List.sectionSpacing) {
                     ForEach(displays, id: \.self) { display in
                         shareableDisplayRow(display)
                     }
                 }
-                .padding(.horizontal, AppUI.List.listHorizontalInset)
-                .padding(.bottom, AppUI.Spacing.small)
-                .padding(.top, 2)
+                .appListContentInsets(top: false)
             }
         }
         .accessibilityIdentifier("share_displays_list")
@@ -64,6 +62,8 @@ struct ShareDisplayList: View {
         let displayURL = displayAddress.flatMap(URL.init(string:))
         let displayClientCount = sharing.sharingClientCounts[display.displayID] ?? 0
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
+
+        let isMonitoring = capture.screenCaptureSessions.contains { $0.displayID == display.displayID }
 
         let model = AppListRowModel(
             id: String(display.displayID),
@@ -92,6 +92,7 @@ struct ShareDisplayList: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharingDisplay),
             isEmphasized: true,
             accessibilityIdentifier: nil
         )
@@ -115,77 +116,34 @@ struct ShareDisplayList: View {
         displayClientCount: Int,
         isSharingDisplay: Bool
     ) -> some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-            if let displayAddress {
-                displayAddressInline(
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                ShareDisplayMetaBar(
                     displayID: display.displayID,
                     displayAddress: displayAddress,
                     displayURL: displayURL,
-                    isSharingDisplay: isSharingDisplay
+                    displayClientCount: displayClientCount,
+                    isSharingDisplay: isSharingDisplay,
+                    openURLAction: openURLAction
                 )
+
+                shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
             }
 
-            HStack(spacing: AppUI.Spacing.xSmall) {
-                Image(systemName: "person.2")
-                    .font(.caption)
-                    .foregroundStyle(displayClientCount > 0 ? Color.accentColor : .secondary)
-                Text("\(displayClientCount)")
-                    .font(.system(.caption, design: .monospaced))
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityLabel(connectedClientsAccessibilityLabel(displayClientCount))
+            VStack(alignment: .trailing, spacing: AppUI.Spacing.small) {
+                ShareDisplayMetaBar(
+                    displayID: display.displayID,
+                    displayAddress: displayAddress,
+                    displayURL: displayURL,
+                    displayClientCount: displayClientCount,
+                    isSharingDisplay: isSharingDisplay,
+                    openURLAction: openURLAction
+                )
 
-            shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
+                shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
+            }
         }
-        .frame(maxWidth: 520, alignment: .trailing)
-    }
-
-    private func displayAddressInline(
-        displayID: CGDirectDisplayID,
-        displayAddress: String,
-        displayURL: URL?,
-        isSharingDisplay: Bool
-    ) -> some View {
-        HStack(spacing: AppUI.Spacing.xSmall) {
-            if let displayURL {
-                Button {
-                    openURLAction(displayURL)
-                } label: {
-                    Image(systemName: "link")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(isSharingDisplay ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .disabled(!isSharingDisplay)
-                .help(String(localized: "Open Share Page"))
-                .accessibilityLabel(String(localized: "Open Share Page"))
-            }
-
-            Text(displayAddress)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .accessibilityIdentifier("share_display_address_\(displayID)")
-
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(displayAddress, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "Copy display address"))
-        }
-    }
-
-    private func connectedClientsAccessibilityLabel(_ count: Int) -> String {
-        let format = String(localized: "%lld connected")
-        return String.localizedStringWithFormat(format, Int64(count))
+        .frame(maxWidth: 560, alignment: .trailing)
     }
 
     @ViewBuilder
@@ -210,8 +168,7 @@ struct ShareDisplayList: View {
                 }
             }
         }
-        .buttonStyle(.borderedProminent)
-        .tint(isSharingDisplay ? .red : .accentColor)
+        .appActionButtonStyle(variant: isSharingDisplay ? .danger : .primary)
         .accessibilityIdentifier("share_action_button_\(display.displayID)")
         .accessibilityValue(
             Text(verbatim: isSharingDisplay ? ShareAccessibilityState.sharing : ShareAccessibilityState.idle)

@@ -79,7 +79,8 @@ struct VirtualDisplayRowTests {
             onToggle: {},
             onEdit: {},
             onDelete: {},
-            onRetryRebuild: {}
+            onRetryRebuild: {},
+            iconScreenTint: nil
         )
     }
 

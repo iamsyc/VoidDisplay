@@ -230,7 +230,7 @@ final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreviewSink {
 
     nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
         let box = UncheckedSendableBuffer(sampleBuffer)
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             let renderer = self.displayLayer.sampleBufferRenderer
 
@@ -323,14 +323,14 @@ private struct WindowAccessor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if let window = view.window { onResolve(window) }
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if let window = nsView.window { onResolve(window) }
         }
     }

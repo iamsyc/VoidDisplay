@@ -29,10 +29,10 @@ final class DisplaySharingCoordinator {
     private let captureRegistry: DisplayCaptureRegistry
 
     init(
-        idStore: DisplayShareIDStore? = nil,
+        idStore: DisplayShareIDStore,
         captureRegistry: DisplayCaptureRegistry = .shared
     ) {
-        self.idStore = idStore ?? DisplayShareIDStore()
+        self.idStore = idStore
         self.captureRegistry = captureRegistry
     }
 

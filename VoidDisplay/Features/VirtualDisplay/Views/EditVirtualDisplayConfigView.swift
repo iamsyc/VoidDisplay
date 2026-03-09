@@ -1,5 +1,4 @@
 import SwiftUI
-import OSLog
 
 struct EditVirtualDisplayConfigView: View {
     let configId: UUID
@@ -25,9 +24,7 @@ struct EditVirtualDisplayConfigView: View {
     @State private var customHeight: Int = 1080
     @State private var customRefreshRate: Double = 60.0
 
-    @State private var showDuplicateWarning = false
-    @State private var showError = false
-    @State private var errorMessage = ""
+    @State private var localAlert: UserFacingAlertState?
 
     private var isRunning: Bool {
         virtualDisplay.isVirtualDisplayRunning(configId: configId)
@@ -67,6 +64,8 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+
         Form {
             basicInfoSection
             physicalDisplaySection
@@ -79,15 +78,20 @@ struct EditVirtualDisplayConfigView: View {
         .overlay(alignment: .bottom) {
             editActionBar
         }
-        .alert("Tip", isPresented: $showDuplicateWarning) {
-            Button("OK") {}
-        } message: {
-            Text("This resolution mode already exists.")
+        .alert(item: $localAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message)
+            )
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage)
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
         }
         .onAppear {
             load()
@@ -112,7 +116,7 @@ struct EditVirtualDisplayConfigView: View {
             if isRunning {
                 Text("Some changes require rebuild when the display is running.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         } header: {
             Text("Basic Info")
@@ -141,7 +145,7 @@ struct EditVirtualDisplayConfigView: View {
                 Text("Physical Size")
                 Spacer()
                 Text(verbatim: displayedPhysicalSizeText)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -153,7 +157,7 @@ struct EditVirtualDisplayConfigView: View {
                     .overlay {
                         Text(selectedAspectRatio.rawValue)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 Spacer()
             }
@@ -168,7 +172,7 @@ struct EditVirtualDisplayConfigView: View {
         Section {
             if selectedModes.isEmpty {
                 Text("No resolution modes added")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .italic()
             } else {
                 ForEach($selectedModes) { $mode in
@@ -180,18 +184,20 @@ struct EditVirtualDisplayConfigView: View {
                         HStack(spacing: 6) {
                             Text("HiDPI")
                                 .font(.caption)
-                                .foregroundColor($mode.enableHiDPI.wrappedValue ? .green : .secondary)
+                                .foregroundStyle($mode.enableHiDPI.wrappedValue ? .green : .secondary)
                             Toggle("", isOn: $mode.enableHiDPI)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
                                 .controlSize(.small)
                                 .accessibilityIdentifier("virtual_display_edit_mode_hidpi_toggle")
                         }
-                        Button(action: { removeMode(mode) }) {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundColor(.red)
+                        ResolutionModeActionButton(
+                            "Delete Resolution Mode",
+                            systemImage: "minus.circle.fill",
+                            tint: .red
+                        ) {
+                            removeMode(mode)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -215,11 +221,12 @@ struct EditVirtualDisplayConfigView: View {
                         }
                         .labelsHidden()
 
-                        Button(action: addPresetMode) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.green)
-                        }
-                        .buttonStyle(.plain)
+                        ResolutionModeActionButton(
+                            "Add Preset Resolution",
+                            systemImage: "plus.circle.fill",
+                            tint: .green,
+                            action: addPresetMode
+                        )
                     }
                 }
             } else {
@@ -234,7 +241,7 @@ struct EditVirtualDisplayConfigView: View {
                             .controlSize(.small)
 
                         Text("×")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         TextField("Height", value: $customHeight, format: .number)
                             .labelsHidden()
@@ -245,7 +252,7 @@ struct EditVirtualDisplayConfigView: View {
                             .controlSize(.small)
 
                         Text("@")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         TextField("Hz", value: $customRefreshRate, format: .number)
                             .labelsHidden()
@@ -256,13 +263,14 @@ struct EditVirtualDisplayConfigView: View {
                             .controlSize(.small)
 
                         Text("Hz")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
-                        Button(action: addCustomMode) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.green)
-                        }
-                        .buttonStyle(.plain)
+                        ResolutionModeActionButton(
+                            "Add Custom Resolution",
+                            systemImage: "plus.circle.fill",
+                            tint: .green,
+                            action: addCustomMode
+                        )
                     }
                 }
             }
@@ -271,7 +279,7 @@ struct EditVirtualDisplayConfigView: View {
         } footer: {
             Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -319,8 +327,10 @@ struct EditVirtualDisplayConfigView: View {
 
     private func load() {
         guard let config = virtualDisplay.getConfig(configId) else {
-            errorMessage = String(localized: "Display configuration not found.")
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Display configuration not found.")
+            )
             return
         }
 
@@ -358,8 +368,10 @@ struct EditVirtualDisplayConfigView: View {
         case .failure(let error):
             guard reportErrors else { return nil }
             guard let message = validationErrorMessage(error) else { return nil }
-            errorMessage = message
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: message
+            )
             return nil
         }
     }
@@ -376,7 +388,9 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     private func performSaveOnly(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
-        virtualDisplay.updateConfig(analysis.updatedConfig)
+        do {
+            try virtualDisplay.updateConfig(analysis.updatedConfig)
+        } catch { return }
         loadedConfig = analysis.updatedConfig
         if analysis.shouldApplyModesImmediately {
             virtualDisplay.applyModes(configId: configId, modes: selectedModes)
@@ -385,7 +399,9 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     private func performSaveAndRebuild(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
-        virtualDisplay.updateConfig(analysis.updatedConfig)
+        do {
+            try virtualDisplay.updateConfig(analysis.updatedConfig)
+        } catch { return }
         loadedConfig = analysis.updatedConfig
         dismiss()
         virtualDisplay.startRebuildFromSavedConfig(configId: configId)
@@ -396,7 +412,10 @@ struct EditVirtualDisplayConfigView: View {
         case .appended(let updated):
             selectedModes = updated
         case .duplicate:
-            showDuplicateWarning = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
         case .invalidValues:
             break
         }
@@ -412,10 +431,15 @@ struct EditVirtualDisplayConfigView: View {
         case .appended(let updated):
             selectedModes = updated
         case .duplicate:
-            showDuplicateWarning = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
         case .invalidValues:
-            errorMessage = String(localized: "Please enter valid resolution values.")
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Please enter valid resolution values.")
+            )
         }
     }
 

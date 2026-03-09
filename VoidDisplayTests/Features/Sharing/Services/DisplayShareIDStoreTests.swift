@@ -10,7 +10,7 @@ struct DisplayShareIDStoreTests {
 
         let storeURL = root
             .appendingPathComponent("state", isDirectory: true)
-            .appendingPathComponent("shared-display-ids.json", isDirectory: false)
+            .appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
 
         let firstStore = DisplayShareIDStore(storeURL: storeURL)
         let mainID = firstStore.assignID(for: "physical:main")

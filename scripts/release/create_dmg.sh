@@ -112,8 +112,10 @@ if [ -z "${device}" ] || [ -z "${mount_path}" ]; then
   exit 1
 fi
 
+mounted_volume_name="$(basename "${mount_path}")"
+
 layout_exit_code=0
-run_with_timeout 45 osascript "${script_dir}/apply_dmg_layout.applescript" "${volume_name}" "${app_name}" || layout_exit_code="$?"
+run_with_timeout 45 osascript "${script_dir}/apply_dmg_layout.applescript" "${mounted_volume_name}" "${app_name}" || layout_exit_code="$?"
 if [ "${layout_exit_code}" -ne 0 ]; then
   if [ "${layout_exit_code}" -eq 124 ]; then
     echo "DMG layout timed out after 45 seconds." >&2

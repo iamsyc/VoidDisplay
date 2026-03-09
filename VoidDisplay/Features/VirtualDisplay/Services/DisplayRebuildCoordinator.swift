@@ -364,7 +364,7 @@ final class DisplayRebuildCoordinator {
             VirtualDisplayTimingPolicy.deferredTopologyRecheckMinimumDelay,
             dependencies.topologyStabilityPollInterval * VirtualDisplayTimingPolicy.deferredTopologyRecheckMultiplier
         )
-        await clock.sleep(seconds: deferredDelay)
+        await clock.sleep(for: .seconds(deferredDelay))
 
         guard let deferredSnapshot = await waitForStableTopology() else {
             AppLog.virtualDisplay.warning(
@@ -543,7 +543,7 @@ final class DisplayRebuildCoordinator {
             guard let currentSnapshot = dependencies.currentTopologySnapshot() else {
                 stableSampleCount = 0
                 currentPollInterval = min(basePollInterval, max(fastProbeInterval, currentPollInterval))
-                await clock.sleep(seconds: currentPollInterval)
+                await clock.sleep(for: .seconds(currentPollInterval))
                 continue
             }
 
@@ -553,7 +553,7 @@ final class DisplayRebuildCoordinator {
                 if targetStableSamples == 1 {
                     return currentSnapshot
                 }
-                await clock.sleep(seconds: fastProbeInterval)
+                await clock.sleep(for: .seconds(fastProbeInterval))
                 continue
             }
 
@@ -578,7 +578,7 @@ final class DisplayRebuildCoordinator {
             if stableSampleCount >= targetStableSamples {
                 return currentSnapshot
             }
-            await clock.sleep(seconds: currentPollInterval)
+            await clock.sleep(for: .seconds(currentPollInterval))
         }
 
         return nil

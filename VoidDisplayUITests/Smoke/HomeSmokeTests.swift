@@ -7,6 +7,7 @@
 import XCTest
 
 final class HomeSmokeTests: XCTestCase {
+    private let maxLoadingSmokePortAttempts = 5
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -63,6 +64,58 @@ final class HomeSmokeTests: XCTestCase {
         assertExists(app, identifier: "share_open_settings_button")
         assertExists(app, identifier: "share_request_permission_button")
         assertExists(app, identifier: "share_refresh_button")
+    }
+
+    @MainActor
+    func testLoadingSmoke_captureAndShareShowVisibleLoadingState() throws {
+        let candidatePorts = UITestPortAllocator.randomPortCandidates(count: maxLoadingSmokePortAttempts)
+        var attemptedPorts: [UInt16] = []
+        var lastPortError: String?
+
+        for candidatePort in candidatePorts {
+            attemptedPorts.append(candidatePort)
+            let app = launchAppForSmoke(
+                scenario: .displayCatalogLoading,
+                preferredPort: candidatePort
+            )
+
+            assertExists(app, identifier: "sidebar_monitor_screen").tap()
+            assertExists(app, identifier: "detail_monitor_screen")
+            assertExists(app, identifier: "capture_loading_displays")
+
+            assertExists(app, identifier: "sidebar_screen_sharing").tap()
+            assertExists(app, identifier: "detail_screen_sharing")
+            assertExists(app, identifier: "share_start_service_button").tap()
+
+            if waitForIdentifierByPolling(
+                app,
+                identifier: "share_loading_displays",
+                timeout: 3
+            ) {
+                app.terminate()
+                return
+            }
+
+            lastPortError = inlinePortErrorText(app)
+            if isRetryablePortInUseError(lastPortError) {
+                app.terminate()
+                continue
+            }
+
+            let visibleStates = sharePageVisibleStates(app)
+            app.terminate()
+            XCTFail(
+                "Sharing loading state did not appear. attemptedPorts=\(attemptedPorts), " +
+                "lastPortError=\(lastPortError ?? "none"), " +
+                "visibleStates=\(visibleStates)"
+            )
+            return
+        }
+
+        XCTFail(
+            "Failed to start sharing service for loading smoke after retrying candidate ports. " +
+            "attemptedPorts=\(attemptedPorts), lastPortError=\(lastPortError ?? "none")"
+        )
     }
 
     @MainActor
@@ -127,5 +180,60 @@ final class HomeSmokeTests: XCTestCase {
         )
         tapWhenHittable(saveAndRebuildAction, in: saveAndRebuildApp)
         XCTAssertFalse(saveAndRebuildForm.waitForExistence(timeout: 0.3))
+    }
+
+    @MainActor
+    private func inlinePortErrorText(_ app: XCUIApplication) -> String? {
+        let errorText = app.descendants(matching: .any)
+            .matching(identifier: "share_port_error_text")
+            .firstMatch
+        guard errorText.exists else { return nil }
+
+        let labelText = errorText.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !labelText.isEmpty { return labelText }
+
+        if let valueText = (errorText.value as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !valueText.isEmpty {
+            return valueText
+        }
+        return nil
+    }
+
+    private func isRetryablePortInUseError(_ message: String?) -> Bool {
+        guard let normalizedMessage = message?.lowercased(), !normalizedMessage.isEmpty else {
+            return false
+        }
+
+        let markers = [
+            "port in use",
+            "address already in use",
+            "eaddrinuse",
+            "已被占用",
+            "被占用",
+            "端口",
+            "occupied"
+        ]
+
+        return markers.contains { normalizedMessage.contains($0) }
+    }
+
+    @MainActor
+    private func sharePageVisibleStates(_ app: XCUIApplication) -> [String] {
+        let identifiers = [
+            "share_permission_guide",
+            "share_loading_permission",
+            "share_start_service_button",
+            "share_loading_displays",
+            "share_displays_list",
+            "share_displays_empty_state"
+        ]
+
+        return identifiers.filter { identifier in
+            app.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+                .exists
+        }
     }
 }

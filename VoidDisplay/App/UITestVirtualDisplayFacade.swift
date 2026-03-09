@@ -69,7 +69,7 @@ final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     @discardableResult
-    func resetAllVirtualDisplayData() -> Int {
+    func resetAllVirtualDisplayData() throws -> Int {
         let removed = configs.count
         configs = []
         runningConfigIds = []
@@ -105,17 +105,17 @@ final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         runningConfigIds.insert(configId)
     }
 
-    func destroyDisplay(_ configId: UUID) {
+    func destroyDisplay(_ configId: UUID) throws {
         configs.removeAll { $0.id == configId }
         runningConfigIds.remove(configId)
     }
 
-    func updateConfig(_ updated: VirtualDisplayConfig) {
+    func updateConfig(_ updated: VirtualDisplayConfig) throws {
         guard let index = configs.firstIndex(where: { $0.id == updated.id }) else { return }
         configs[index] = updated
     }
 
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
         guard let sourceIndex = configs.firstIndex(where: { $0.id == configId }) else {
             return false
         }
@@ -137,7 +137,7 @@ final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     @discardableResult
-    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool {
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool {
         guard let sourceIndex = configs.firstIndex(where: { $0.id == configId }) else {
             return false
         }

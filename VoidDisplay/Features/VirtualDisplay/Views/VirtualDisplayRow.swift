@@ -20,6 +20,7 @@ struct VirtualDisplayRow: View {
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onRetryRebuild: () -> Void
+    let iconScreenTint: Color?
 
     private var isRowBusy: Bool {
         isToggling || isRebuilding
@@ -46,6 +47,7 @@ struct VirtualDisplayRow: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: iconScreenTint,
             isEmphasized: isRunning,
             accessibilityIdentifier: "virtual_display_row_card"
         )
@@ -90,11 +92,6 @@ struct VirtualDisplayRow: View {
                 }
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                .stroke(isRunning ? Color.green.opacity(0.35) : .clear, lineWidth: AppUI.Stroke.subtle)
-        }
-        .opacity(isRunning ? 1.0 : 0.82)
     }
 
     private var moveButtons: some View {
@@ -155,7 +152,7 @@ struct VirtualDisplayRow: View {
                 onRetryRebuild()
             }
             .buttonStyle(.bordered)
-            .tint(.red)
+            .tint(.orange)
             .disabled(isRowBusy)
             .help(rebuildFailureMessage)
             .accessibilityIdentifier("virtual_display_rebuild_retry_button")

@@ -171,6 +171,11 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var enableDisplayError: Error?
     var destroyDisplayByConfigCallCount = 0
     var destroyedConfigIDs: [UUID] = []
+    var destroyDisplayError: Error?
+    var updateConfigError: Error?
+    var moveConfigError: Error?
+    var moveConfigToFirstEnabledPositionError: Error?
+    var resetAllVirtualDisplayDataError: Error?
     var reconcileMainDisplayPolicyIfNeededCallCount = 0
     var reconcileMainDisplayPolicyIfNeededError: Error?
     var moveConfigResult = false
@@ -228,8 +233,11 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     @discardableResult
-    func resetAllVirtualDisplayData() -> Int {
+    func resetAllVirtualDisplayData() throws -> Int {
         resetAllVirtualDisplayDataCallCount += 1
+        if let resetAllVirtualDisplayDataError {
+            throw resetAllVirtualDisplayDataError
+        }
         let removed = currentDisplayConfigs.count
         currentDisplayConfigs = []
         currentRunningConfigIds = []
@@ -265,20 +273,29 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         }
     }
 
-    func destroyDisplay(_ configId: UUID) {
+    func destroyDisplay(_ configId: UUID) throws {
         destroyDisplayByConfigCallCount += 1
         destroyedConfigIDs.append(configId)
+        if let destroyDisplayError {
+            throw destroyDisplayError
+        }
         currentDisplayConfigs.removeAll { $0.id == configId }
         currentRunningConfigIds.remove(configId)
         runtimeDisplayIDByConfigId[configId] = nil
     }
 
-    func updateConfig(_ updated: VirtualDisplayConfig) {
+    func updateConfig(_ updated: VirtualDisplayConfig) throws {
+        if let updateConfigError {
+            throw updateConfigError
+        }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
         currentDisplayConfigs[index] = updated
     }
 
-    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) -> Bool {
+    func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
+        if let moveConfigError {
+            throw moveConfigError
+        }
         guard moveConfigResult else { return false }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
             return false
@@ -298,9 +315,12 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     @discardableResult
-    func moveConfigToFirstEnabledPosition(_ configId: UUID) -> Bool {
+    func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool {
         moveConfigToFirstEnabledPositionCallCount += 1
         moveConfigToFirstEnabledPositionIDs.append(configId)
+        if let moveConfigToFirstEnabledPositionError {
+            throw moveConfigToFirstEnabledPositionError
+        }
         guard moveConfigResult else { return false }
         guard let sourceIndex = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
             return false
@@ -354,6 +374,7 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
 
     var loadError: Error?
     var saveError: Error?
+    var scriptedSaveErrors: [Error?] = []
     var resetError: Error?
     var diagnosticsError: Error?
 
@@ -375,10 +396,18 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
 
     func save(_ configs: [VirtualDisplayConfig]) throws {
         saveCallCount += 1
-        savedConfigs.append(configs)
+        if !scriptedSaveErrors.isEmpty {
+            let scriptedError = scriptedSaveErrors.removeFirst()
+            if let scriptedError {
+                throw scriptedError
+            }
+            savedConfigs.append(configs)
+            return
+        }
         if let saveError {
             throw saveError
         }
+        savedConfigs.append(configs)
     }
 
     func reset() throws {

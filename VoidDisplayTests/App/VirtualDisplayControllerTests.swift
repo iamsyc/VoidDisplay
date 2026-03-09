@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import CoreGraphics
 @testable import VoidDisplay
@@ -5,6 +6,44 @@ import CoreGraphics
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
+    @Test func previewEnvironmentDoesNotPersistPreferredPortToStandardDefaults() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
+
+        let defaults = UserDefaults.standard
+        let key = "sharing.preferredPort"
+        let previousValue = defaults.object(forKey: key)
+        defer {
+            if let previousValue {
+                defaults.set(previousValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: false
+        )
+
+        _ = await env.sharing.startWebService(requestedPort: requestedPort)
+
+        let currentValue = defaults.object(forKey: key)
+        let valuesMatch: Bool
+        if let previousObject = previousValue as? NSObject,
+           let currentObject = currentValue as? NSObject {
+            valuesMatch = previousObject.isEqual(currentObject)
+        } else {
+            valuesMatch = previousValue == nil && currentValue == nil
+        }
+        #expect(valuesMatch)
+    }
 
     @Test func initPreviewModeSkipsStartupSequence() async {
         let sharing = MockSharingService()
@@ -263,7 +302,7 @@ struct AppBootstrapTests {
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
-            appliedBadgeDisplayDurationNanoseconds: 50_000_000,
+            appliedBadgeDisplayDuration: .milliseconds(50),
             isRunningUnderXCTestOverride: true
         )
 
@@ -295,7 +334,7 @@ struct AppBootstrapTests {
         #expect(successCleared)
     }
 
-    @Test func moveDisplayConfigTriggersMainDisplayPolicyReconcile() async {
+    @Test func moveDisplayConfigTriggersMainDisplayPolicyReconcile() async throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -327,7 +366,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let moved = sut.virtualDisplay.moveDisplayConfig(
+        let moved = try sut.virtualDisplay.moveDisplayConfig(
             virtualDisplay.currentDisplayConfigs[1].id,
             direction: .up
         )
@@ -339,7 +378,7 @@ struct AppBootstrapTests {
         #expect(reconciled)
     }
 
-    @Test func moveDisplayConfigSkipsReconcileWhenFirstEnabledConfigDoesNotChange() async {
+    @Test func moveDisplayConfigSkipsReconcileWhenFirstEnabledConfigDoesNotChange() async throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -382,14 +421,14 @@ struct AppBootstrapTests {
         )
         sut.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
-        let moved = sut.virtualDisplay.moveDisplayConfig(configC.id, direction: .up)
+        let moved = try sut.virtualDisplay.moveDisplayConfig(configC.id, direction: .up)
         #expect(moved)
 
         await drainMainActorTasks()
         #expect(virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 0)
     }
 
-    @Test func setPrimaryVirtualDisplayByReorderingMovesTargetToFirstEnabledAndReconciles() async {
+    @Test func setPrimaryVirtualDisplayByReorderingMovesTargetToFirstEnabledAndReconciles() async throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -429,7 +468,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let changed = sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configB.id)
+        let changed = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configB.id)
         #expect(changed)
         #expect(virtualDisplay.currentDisplayConfigs.map(\.id) == [disabled.id, configB.id, configA.id])
         #expect(virtualDisplay.moveConfigToFirstEnabledPositionCallCount == 1)
@@ -441,7 +480,7 @@ struct AppBootstrapTests {
         #expect(reconciled)
     }
 
-    @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenAlreadyFirstEnabled() async {
+    @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenAlreadyFirstEnabled() async throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -472,7 +511,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let changed = sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configA.id)
+        let changed = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configA.id)
         #expect(changed == false)
         #expect(virtualDisplay.moveConfigToFirstEnabledPositionCallCount == 1)
 
@@ -480,7 +519,7 @@ struct AppBootstrapTests {
         #expect(virtualDisplay.reconcileMainDisplayPolicyIfNeededCallCount == 0)
     }
 
-    @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenTargetDisabled() async {
+    @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenTargetDisabled() async throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -512,7 +551,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let changed = sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(disabled.id)
+        let changed = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(disabled.id)
         #expect(changed == false)
         #expect(virtualDisplay.moveConfigToFirstEnabledPositionCallCount == 1)
         #expect(virtualDisplay.currentDisplayConfigs.map(\.id) == [disabled.id, enabled.id])
@@ -528,7 +567,8 @@ struct AppBootstrapTests {
 
         let displayID: CGDirectDisplayID = 7101
         let target = ShareTarget.id(99)
-        sharing.startResult = .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
         sharing.activeStreamClientCount = 3
         sharing.activeSharingDisplayIDs = [displayID]
         sharing.hasAnyActiveSharing = true
@@ -544,8 +584,8 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let started = await sut.sharing.startWebService(requestedPort: 8081)
-        #expect(started == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
+        let started = await sut.sharing.startWebService(requestedPort: requestedPort)
+        #expect(started == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(sut.sharing.isWebServiceRunning)
         #expect(sut.sharing.isSharing)
         #expect(sut.sharing.isDisplaySharing(displayID: displayID))
@@ -561,7 +601,7 @@ struct AppBootstrapTests {
         #expect(shareURLResult == .failure(.serviceNotRunning))
     }
 
-    @Test func virtualDisplayFacadeResetDelegatesToOrchestrator() {
+    @Test func virtualDisplayFacadeResetDelegatesToOrchestrator() throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -585,8 +625,325 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let removed = sut.virtualDisplay.resetVirtualDisplayData()
+        let removed = try sut.virtualDisplay.resetVirtualDisplayData()
         #expect(removed == 1)
         #expect(virtualDisplay.resetAllVirtualDisplayDataCallCount == 1)
+    }
+
+    @Test func virtualDisplayFacadeResetPropagatesFailureWithoutClearingControllerState() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let config = VirtualDisplayConfig(
+            displayName: "Keep State",
+            serialNum: 124,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [config]
+        virtualDisplay.resetAllVirtualDisplayDataError = NSError(domain: "VirtualDisplayControllerTests", code: 70)
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(throws: Error.self) {
+            _ = try sut.virtualDisplay.resetVirtualDisplayData()
+        }
+        #expect(virtualDisplay.resetAllVirtualDisplayDataCallCount == 1)
+        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [config.id])
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
+    }
+
+    @Test func updateConfigPropagatesFacadeFailureWithoutMutatingControllerState() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let config = VirtualDisplayConfig(
+            displayName: "Original",
+            serialNum: 125,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [config]
+        virtualDisplay.updateConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 71)
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        var updated = config
+        updated.displayName = "Updated"
+
+        #expect(throws: Error.self) {
+            try sut.virtualDisplay.updateConfig(updated)
+        }
+        #expect(sut.virtualDisplay.displayConfigs.first?.displayName == "Original")
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
+    }
+
+    @Test func createDisplayPropagatesFailureAndSetsPersistencePresentation() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let existing = VirtualDisplayConfig(
+            displayName: "Existing",
+            serialNum: 126,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [existing]
+        virtualDisplay.createDisplayResult = .failure(
+            NSError(domain: "VirtualDisplayControllerTests", code: 72)
+        )
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(throws: Error.self) {
+            _ = try sut.virtualDisplay.createDisplay(
+                name: "New",
+                serialNum: 127,
+                physicalSize: CGSize(width: 300, height: 200),
+                maxPixels: (width: 1920, height: 1080),
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+            )
+        }
+        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [existing.id])
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
+    }
+
+    @Test func createDisplayRollbackFailureUsesLocalizedPersistenceRecoveryErrorMessage() {
+        let store = FakeVirtualDisplayStore()
+        store.scriptedSaveErrors = [
+            nil,
+            VirtualDisplayConfigStoreError.ioFailed(
+                operation: "save",
+                underlying: NSError(domain: "VirtualDisplayControllerTests", code: 76)
+            )
+        ]
+        let orchestrator = VirtualDisplayOrchestrator(
+            configRepository: VirtualDisplayConfigRepository(store: store, reportFailure: nil),
+            displayReconfigurationMonitor: FakeDisplayReconfigurationMonitor(),
+            managedDisplayOnlineChecker: { _ in false },
+            runtimeDriver: ControllerTestRuntimeDriver(
+                scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
+            ),
+            clock: nil
+        )
+
+        let sut = VirtualDisplayController(
+            virtualDisplayFacade: orchestrator,
+            appliedBadgeDisplayDuration: .nanoseconds(1),
+            stopDependentStreamsBeforeRebuild: { _ in }
+        )
+
+        #expect(throws: Error.self) {
+            _ = try sut.createDisplay(
+                name: "New",
+                serialNum: 200,
+                physicalSize: CGSize(width: 300, height: 200),
+                maxPixels: (width: 1920, height: 1080),
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+            )
+        }
+        #expect(sut.persistenceAlert != nil)
+        #expect(
+            sut.persistenceAlert?.message ==
+                "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
+        )
+        #expect(sut.displayConfigs.count == 1)
+    }
+
+    @Test func moveDisplayConfigPropagatesFailureAndSetsPersistencePresentation() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let configA = VirtualDisplayConfig(
+            displayName: "A",
+            serialNum: 127,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let configB = VirtualDisplayConfig(
+            displayName: "B",
+            serialNum: 128,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [configA, configB]
+        virtualDisplay.moveConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 73)
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(throws: Error.self) {
+            _ = try sut.virtualDisplay.moveDisplayConfig(configB.id, direction: .up)
+        }
+        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [configA.id, configB.id])
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
+    }
+
+    @Test func setPrimaryVirtualDisplayByReorderingPropagatesFailureAndSetsPersistencePresentation() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        var disabled = VirtualDisplayConfig(
+            displayName: "Disabled",
+            serialNum: 129,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let enabled = VirtualDisplayConfig(
+            displayName: "Enabled",
+            serialNum: 130,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        disabled.desiredEnabled = false
+        virtualDisplay.currentDisplayConfigs = [disabled, enabled]
+        virtualDisplay.moveConfigToFirstEnabledPositionError = NSError(
+            domain: "VirtualDisplayControllerTests",
+            code: 74
+        )
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(throws: Error.self) {
+            _ = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(enabled.id)
+        }
+        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [disabled.id, enabled.id])
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
+    }
+
+    @Test func dismissPersistenceAlertResetsControllerPresentationState() {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.resetAllVirtualDisplayDataError = NSError(domain: "VirtualDisplayControllerTests", code: 75)
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(throws: Error.self) {
+            _ = try sut.virtualDisplay.resetVirtualDisplayData()
+        }
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+
+        sut.virtualDisplay.dismissPersistenceAlert()
+
+        #expect(sut.virtualDisplay.persistenceAlert == nil)
+    }
+}
+
+@MainActor
+private final class FakeDisplayReconfigurationMonitor: DisplayReconfigurationMonitoring {
+    @discardableResult
+    func start(handler: @escaping @MainActor () -> Void) -> Bool {
+        handler()
+        return true
+    }
+
+    func stop() {}
+}
+
+@MainActor
+private final class ControllerTestRuntimeDriver: VirtualDisplayRuntimeDriving {
+    enum CreateResult {
+        case success(serialNum: UInt32, displayID: CGDirectDisplayID)
+        case failure(Error)
+    }
+
+    private let scriptedResults: [CreateResult]
+    private var nextIndex = 0
+
+    init(scriptedResults: [CreateResult]) {
+        self.scriptedResults = scriptedResults
+    }
+
+    func createRuntimeDisplay(
+        from config: VirtualDisplayConfig,
+        maxPixels: (width: UInt32, height: UInt32)?,
+        onTermination: @escaping @MainActor () -> Void
+    ) throws -> any VirtualDisplayRuntimeHandling {
+        _ = maxPixels
+        _ = onTermination
+        let result: CreateResult
+        if scriptedResults.indices.contains(nextIndex) {
+            result = scriptedResults[nextIndex]
+        } else {
+            result = .success(serialNum: config.serialNum, displayID: 20_000)
+        }
+        nextIndex += 1
+
+        switch result {
+        case .success(let serialNum, let displayID):
+            return ControllerTestRuntimeHandle(serialNum: serialNum, displayID: displayID)
+        case .failure(let error):
+            throw error
+        }
+    }
+}
+
+@MainActor
+private final class ControllerTestRuntimeHandle: VirtualDisplayRuntimeHandling {
+    let serialNum: UInt32
+    let displayID: CGDirectDisplayID
+
+    init(serialNum: UInt32, displayID: CGDirectDisplayID) {
+        self.serialNum = serialNum
+        self.displayID = displayID
+    }
+
+    func applyModes(_ modes: [ResolutionSelection]) -> Bool {
+        !modes.isEmpty
     }
 }

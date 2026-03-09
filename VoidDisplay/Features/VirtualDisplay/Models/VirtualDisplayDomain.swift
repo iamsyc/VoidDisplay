@@ -35,6 +35,7 @@ enum VirtualDisplayOperationError: LocalizedError {
     case duplicateSerialNumber(UInt32)
     case invalidConfiguration(String)
     case creationFailed
+    case persistenceRecoveryFailed(String)
     case configNotFound
     case teardownTimedOut
     case topologyRepairFailed
@@ -48,6 +49,8 @@ enum VirtualDisplayOperationError: LocalizedError {
             return String(localized: "Invalid configuration: \(reason)")
         case .creationFailed:
             return String(localized: "Virtual display creation failed.")
+        case .persistenceRecoveryFailed(let message):
+            return message
         case .configNotFound:
             return String(localized: "Display configuration not found.")
         case .teardownTimedOut:

@@ -35,6 +35,7 @@ struct AppAndSharedViewBodySmokeTests {
         let env = makeEnvironment(preview: true, uiTestMode: false)
         let view = IsCapturing(capture: env.capture, virtualDisplay: env.virtualDisplay)
             .environment(env.capture)
+            .environment(env.sharing)
             .environment(env.virtualDisplay)
 
         render(view)

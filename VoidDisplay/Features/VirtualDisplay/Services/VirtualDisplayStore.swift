@@ -59,11 +59,8 @@ struct VirtualDisplayStore {
         }
     }
 
-    private let fileName = "virtual-displays.json"
     private let defaultPhysicalWidth = 310
     private let defaultPhysicalHeight = 174
-    private let xCTestConfigurationEnvironmentKey = "XCTestConfigurationFilePath"
-    private let uiTestModeEnvironmentKey = "VOIDDISPLAY_UI_TEST_MODE"
     private let defaultMode = VirtualDisplayConfig.ModeConfig(
         width: 1920,
         height: 1080,
@@ -71,34 +68,30 @@ struct VirtualDisplayStore {
         enableHiDPI: true
     )
     private let fileManager: FileManager
-    private let appSupportDirectoryOverride: URL?
-    private let bundleIdentifierOverride: String?
-    private let environment: [String: String]
+    private let storeURL: URL
+    private let mode: PersistenceMode
+    private let writeGuardContext: PersistenceContext
 
     init(
         fileManager: FileManager = .default,
-        appSupportDirectoryOverride: URL? = nil,
-        bundleIdentifierOverride: String? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        storeURL: URL,
+        mode: PersistenceMode
     ) {
         self.fileManager = fileManager
-        self.appSupportDirectoryOverride = appSupportDirectoryOverride
-        self.bundleIdentifierOverride = bundleIdentifierOverride
-        self.environment = environment
+        self.storeURL = storeURL
+        self.mode = mode
+        self.writeGuardContext = PersistenceContext.resolve(
+            environment: ProcessInfo.processInfo.environment,
+            fileManager: fileManager
+        )
     }
 
     func load() throws -> [VirtualDisplayConfig] {
-        let url: URL
-        do {
-            url = try storeURL()
-        } catch {
-            throw VirtualDisplayConfigStoreError.ioFailed(operation: "resolve load path", underlying: error)
-        }
-        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        guard fileManager.fileExists(atPath: storeURL.path) else { return [] }
 
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try Data(contentsOf: storeURL)
         } catch {
             throw VirtualDisplayConfigStoreError.ioFailed(operation: "load", underlying: error)
         }
@@ -106,15 +99,10 @@ struct VirtualDisplayStore {
     }
 
     func save(_ configs: [VirtualDisplayConfig]) throws {
-        let url: URL
-        do {
-            url = try storeURL()
-        } catch {
-            throw VirtualDisplayConfigStoreError.ioFailed(operation: "resolve save path", underlying: error)
-        }
+        try ensureWriteAllowed(operation: "save")
         do {
             try fileManager.createDirectory(
-                at: url.deletingLastPathComponent(),
+                at: storeURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
                 attributes: nil
             )
@@ -126,37 +114,26 @@ struct VirtualDisplayStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(FileFormat(configs: sanitize(configs)))
         do {
-            try data.write(to: url, options: [.atomic])
+            try data.write(to: storeURL, options: [.atomic])
         } catch {
             throw VirtualDisplayConfigStoreError.ioFailed(operation: "save", underlying: error)
         }
     }
 
     func reset() throws {
-        let url: URL
+        try ensureWriteAllowed(operation: "reset")
+        guard fileManager.fileExists(atPath: storeURL.path) else { return }
         do {
-            url = try storeURL()
-        } catch {
-            throw VirtualDisplayConfigStoreError.ioFailed(operation: "resolve reset path", underlying: error)
-        }
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        do {
-            try fileManager.removeItem(at: url)
+            try fileManager.removeItem(at: storeURL)
         } catch {
             throw VirtualDisplayConfigStoreError.ioFailed(operation: "reset", underlying: error)
         }
     }
 
     func diagnostics() throws -> VirtualDisplayStoreDiagnostics {
-        let primaryStoreURL: URL
-        do {
-            primaryStoreURL = try storeURL()
-        } catch {
-            throw VirtualDisplayConfigStoreError.ioFailed(operation: "resolve diagnostics path", underlying: error)
-        }
         return VirtualDisplayStoreDiagnostics(
-            primaryStoreURL: primaryStoreURL,
-            isTestIsolatedPath: shouldIsolateStoreForTests
+            primaryStoreURL: storeURL,
+            isTestIsolatedPath: mode == .testIsolatedWritable
         )
     }
 
@@ -179,38 +156,17 @@ struct VirtualDisplayStore {
         return sanitize(wrapped.configs)
     }
 
-    private func storeURL() throws -> URL {
-        let appSupport: URL
-        if let appSupportDirectoryOverride {
-            appSupport = appSupportDirectoryOverride
-        } else {
-            appSupport = try fileManager.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
+    private func ensureWriteAllowed(operation: String) throws {
+        guard writeGuardContext.guardWriteAllowed(
+            targetURL: storeURL,
+            mode: mode,
+            operation: operation
+        ) else {
+            throw PersistenceWriteViolation.blockedProductionWrite(
+                path: storeURL.path,
+                operation: operation
             )
         }
-        let bundleID = resolvedBundleIdentifier()
-        return appSupport
-            .appendingPathComponent(bundleID, isDirectory: true)
-            .appendingPathComponent(fileName, isDirectory: false)
-    }
-
-    private func resolvedBaseBundleIdentifier() -> String {
-        bundleIdentifierOverride ?? Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay"
-    }
-
-    private func resolvedBundleIdentifier() -> String {
-        let baseBundleID = resolvedBaseBundleIdentifier()
-        guard shouldIsolateStoreForTests else { return baseBundleID }
-        guard !baseBundleID.hasSuffix(".tests") else { return baseBundleID }
-        return "\(baseBundleID).tests"
-    }
-
-    private var shouldIsolateStoreForTests: Bool {
-        environment[xCTestConfigurationEnvironmentKey] != nil ||
-            environment[uiTestModeEnvironmentKey] == "1"
     }
 
     private func sanitize(_ configs: [VirtualDisplayConfig]) -> [VirtualDisplayConfig] {

@@ -9,6 +9,8 @@ import Cocoa
 
 struct DisplaysView: View {
     @Environment(VirtualDisplayController.self) private var virtualDisplay
+    @Environment(CaptureController.self) private var capture
+    @Environment(SharingController.self) private var sharing
     @Environment(\.openURL) private var openURL
     @State private var displays: [NSScreen]?
 
@@ -39,37 +41,32 @@ struct DisplaysView: View {
         if let displays = displays, !displays.isEmpty {
             displayList(displays)
         } else {
-            ContentUnavailableView(
-                "No display",
-                systemImage: "display.trianglebadge.exclamationmark",
-                description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
-            )
-            .accessibilityIdentifier("displays_empty_state")
+            ScrollView {
+                ContentUnavailableView(
+                    "No display",
+                    systemImage: "display.trianglebadge.exclamationmark",
+                    description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+                .accessibilityIdentifier("displays_empty_state")
+            }
         }
     }
 
     private func displayList(_ displays: [NSScreen]) -> some View {
-        GeometryReader { geometry in
-            let useGrid = geometry.size.width > 680
-            ScrollView {
-                if useGrid {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.Spacing.small) {
-                        ForEach(displays, id: \.self) { display in
-                            displayRow(display)
-                        }
-                    }
-                    .padding(.horizontal, AppUI.List.listHorizontalInset)
-                    .padding(.top, AppUI.Spacing.small + 2)
-                } else {
-                    LazyVStack(spacing: AppUI.List.listVerticalInset * 2) {
-                        ForEach(displays, id: \.self) { display in
-                            displayRow(display)
-                        }
-                    }
-                    .padding(.horizontal, AppUI.List.listHorizontalInset)
-                    .padding(.top, AppUI.Spacing.small + 2)
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 320), spacing: AppUI.List.sectionSpacing, alignment: .top)
+                ],
+                spacing: AppUI.List.sectionSpacing
+            ) {
+                ForEach(displays, id: \.self) { display in
+                    displayRow(display)
                 }
             }
+            .appListContentInsets()
         }
         .accessibilityIdentifier("displays_list")
     }
@@ -77,6 +74,15 @@ struct DisplaysView: View {
     private func displayRow(_ display: NSScreen) -> some View {
         let displayID = display.cgDirectDisplayID
         let isPrimary = isPrimaryDisplay(displayID)
+
+        let isMonitoring: Bool = displayID.map { did in
+            capture.screenCaptureSessions.contains { $0.displayID == did }
+        } ?? false
+        let isSharing: Bool = displayID.map { did in
+            sharing.isDisplaySharing(displayID: did)
+        } ?? false
+        let iconScreenTint = DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharing)
+
         let model = AppListRowModel(
             id: displayID.map(String.init) ?? display.localizedName,
             title: display.localizedName,
@@ -90,6 +96,7 @@ struct DisplaysView: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: iconScreenTint,
             isEmphasized: true,
             accessibilityIdentifier: "display_row_card"
         )

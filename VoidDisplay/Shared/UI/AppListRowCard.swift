@@ -18,10 +18,10 @@ struct AppListRowCard<Trailing: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: AppUI.Spacing.small) {
+        HStack(spacing: AppUI.Spacing.medium) {
             iconTile
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: AppUI.Spacing.xSmall + 2) {
                     Text(model.title)
                         .font(.headline)
@@ -54,6 +54,7 @@ struct AppListRowCard<Trailing: View>: View {
                                 .accessibilityHidden(!badge.isVisible)
                         }
                     }
+                    .padding(.top, 1)
                 }
             }
 
@@ -63,9 +64,9 @@ struct AppListRowCard<Trailing: View>: View {
 
             trailing
         }
-        .frame(minHeight: AppUI.List.rowMinHeight)
+        .frame(minHeight: AppUI.List.rowMinHeight + 8)
         .padding(.horizontal, AppUI.List.rowHorizontalInset)
-        .padding(.vertical, AppUI.List.rowVerticalInset)
+        .padding(.vertical, AppUI.List.rowVerticalInset + 1)
         .appInteractiveCardStyle(isHovered: isHovered)
         .onHover { hovered in
             isHovered = hovered
@@ -74,10 +75,24 @@ struct AppListRowCard<Trailing: View>: View {
         .accessibilityIdentifier(model.accessibilityIdentifier ?? "app_list_row_card")
     }
 
+    @ViewBuilder
     private var iconTile: some View {
-        Image(systemName: model.iconSystemName)
-            .font(.system(size: 28, weight: .semibold))
-            .foregroundStyle(model.isEmphasized ? AnyShapeStyle(.primary.opacity(0.85)) : AnyShapeStyle(.secondary))
-            .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
+        let screenTint = model.iconScreenTint
+            ?? (model.isEmphasized ? DisplayIconTintResolver.enabledIdle : nil)
+
+        if let screenTint {
+            Image(systemName: model.iconSystemName)
+                .font(.system(size: 28, weight: .regular))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.primary.opacity(0.88), screenTint)
+                .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
+                .appTileStyle()
+        } else {
+            Image(systemName: model.iconSystemName)
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
+                .appTileStyle()
+        }
     }
 }

@@ -27,6 +27,27 @@ struct VirtualDisplayListViewModelTests {
         #expect(mockService.destroyedConfigIDs == [config.id])
     }
 
+    @Test func confirmDeleteShowsErrorWhenDestroyFails() {
+        let config = sampleConfig(serial: 102)
+        let mockService = MockVirtualDisplayFacade()
+        mockService.currentDisplayConfigs = [config]
+        mockService.destroyDisplayError = NSError(domain: "VirtualDisplayListViewModelTests", code: 12)
+        let env = makeEnvironment(virtualDisplayFacade: mockService)
+        env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+
+        let sut = VirtualDisplayListViewModel(controller: env.virtualDisplay)
+
+        sut.requestDelete(config)
+        sut.confirmDelete()
+
+        #expect(sut.showDeleteConfirm)
+        #expect(sut.deleteCandidate?.id == config.id)
+        #expect(sut.userFacingAlert != nil)
+        #expect(sut.userFacingAlert?.message.isEmpty == false)
+        #expect(mockService.destroyDisplayByConfigCallCount == 1)
+        #expect(mockService.destroyedConfigIDs == [config.id])
+    }
+
     @Test func acknowledgeRestoreFailuresCallsControllerClear() {
         let mockService = MockVirtualDisplayFacade()
         let env = makeEnvironment(virtualDisplayFacade: mockService)
@@ -57,7 +78,7 @@ struct VirtualDisplayListViewModelTests {
 
         #expect(finished)
         #expect(mockService.enableDisplayConfigIDs == [config.id])
-        #expect(sut.showError == false)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @Test func toggleDisplayStateShowsErrorWhenDisableFails() async {
@@ -73,13 +94,13 @@ struct VirtualDisplayListViewModelTests {
 
         sut.toggleDisplayState(config)
         let finished = await waitUntil {
-            sut.showError && sut.togglingConfigIds.isEmpty
+            sut.userFacingAlert != nil && sut.togglingConfigIds.isEmpty
         }
 
         #expect(finished)
         #expect(mockService.disableDisplayByConfigCallCount == 1)
         #expect(mockService.disableDisplayByConfigIDs == [config.id])
-        #expect(sut.errorMessage.isEmpty == false)
+        #expect(sut.userFacingAlert?.message.isEmpty == false)
     }
 
     @Test func isPrimaryDisplayUsesRuntimeDisplayIDHintWhenRuntimeObjectIsUnavailable() {

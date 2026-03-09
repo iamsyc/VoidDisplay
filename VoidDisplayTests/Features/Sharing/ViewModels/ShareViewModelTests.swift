@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import ScreenCaptureKit
 import Testing
 @testable import VoidDisplay
 
@@ -159,6 +160,212 @@ struct ShareViewModelTests {
         #expect(finished)
         #expect(sut.catalog.displays?.isEmpty == true)
         #expect(sharing.registerShareableDisplaysCallCount == 1)
+        #expect(sut.catalog.lastLoadedActiveDisplayTopologySignature != nil)
+    }
+
+    @MainActor @Test func refreshPermissionAndMaybeLoadKeepsCachedDisplaysWhenServiceAppearsStopped() {
+        let existingDisplay = MockSCDisplay.make(displayID: 9021, width: 1920, height: 1080)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+        sut.catalog.displays = [existingDisplay]
+
+        sut.refreshPermissionAndMaybeLoad()
+
+        #expect(sut.catalog.hasScreenCapturePermission == true)
+        #expect(sut.catalog.displays?.map(\.displayID) == [existingDisplay.displayID])
+        #expect(sut.catalog.isLoadingDisplays == false)
+    }
+
+    @MainActor @Test func refreshPermissionAndMaybeLoadReloadsWhenTopologyChangesWithCachedDisplays() async {
+        let gate = SequencedShareDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 4444, width: 1920, height: 1080)
+        let rebuiltDisplay = MockSCDisplay.make(displayID: 5555, width: 2560, height: 1440)
+        var registerShareableDisplaysCallCount = 0
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [rebuiltDisplay]
+                case .failure:
+                    throw ControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([5555]) },
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { true },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in
+                        registerShareableDisplaysCallCount += 1
+                    },
+                    beginSharing: { _ in },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = [4444]
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(sut.catalog.isLoadingDisplays == true)
+        #expect(sut.catalog.displays?.map(\.displayID) == [4444])
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.map(\.displayID) == [5555] &&
+                sut.catalog.lastLoadedActiveDisplayTopologySignature == [5555]
+        }
+        #expect(finished)
+        #expect(registerShareableDisplaysCallCount == 1)
+    }
+
+    @MainActor @Test func refreshPermissionAndMaybeLoadReloadsWhenCachedDisplaysExistButLoadedTopologySignatureIsMissing() async {
+        let gate = SequencedShareDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 4444, width: 1920, height: 1080)
+        let rebuiltDisplay = MockSCDisplay.make(displayID: 5555, width: 2560, height: 1440)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [rebuiltDisplay]
+                case .failure:
+                    throw ControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([5555]) },
+            dependencies: makeAlwaysRunningShareDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = nil
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(sut.catalog.isLoadingDisplays == true)
+        #expect(sut.catalog.displays?.map(\.displayID) == [4444])
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.map(\.displayID) == [5555] &&
+                sut.catalog.lastLoadedActiveDisplayTopologySignature == [5555]
+        }
+        #expect(finished)
+    }
+
+    @MainActor @Test func refreshPermissionFailureDoesNotCommitLoadedTopologySignatureAndNextRefreshRetries() async {
+        let gate = SequencedShareDisplayLoaderGate(scriptedOutcomes: [.failure, .success])
+        let existingDisplay = MockSCDisplay.make(displayID: 4444, width: 1920, height: 1080)
+        let rebuiltDisplay = MockSCDisplay.make(displayID: 5555, width: 2560, height: 1440)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [rebuiltDisplay]
+                case .failure:
+                    throw ControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([5555]) },
+            dependencies: makeAlwaysRunningShareDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = [4444]
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 1))
+
+        await gate.release(call: 1)
+        let firstFinished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.lastLoadError != nil
+        }
+        #expect(firstFinished)
+        #expect(sut.catalog.displays?.map(\.displayID) == [4444])
+        #expect(sut.catalog.lastLoadedActiveDisplayTopologySignature == [4444])
+
+        sut.refreshPermissionAndMaybeLoad()
+        #expect(await waitForLoaderCall(gate, count: 2))
+
+        await gate.release(call: 2)
+        let secondFinished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.lastLoadError == nil &&
+                sut.catalog.displays?.map(\.displayID) == [5555] &&
+                sut.catalog.lastLoadedActiveDisplayTopologySignature == [5555]
+        }
+        #expect(secondFinished)
+    }
+
+    @MainActor @Test func syncForCurrentStateClearsDisplaysWhenServiceIsStopped() {
+        let existingDisplay = MockSCDisplay.make(displayID: 9022, width: 1920, height: 1080)
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+        sut.catalog.hasScreenCapturePermission = true
+        sut.catalog.displays = [existingDisplay]
+
+        sut.syncForCurrentState()
+
+        #expect(sut.catalog.displays == nil)
+        #expect(sut.catalog.isLoadingDisplays == false)
     }
 
     @MainActor @Test func refreshDisplaysBackgroundSafeStartsLoadWhenIdle() async {
@@ -178,6 +385,50 @@ struct ShareViewModelTests {
 
         #expect(finished)
         #expect(sut.catalog.displays?.isEmpty == true)
+    }
+
+    @MainActor @Test func refreshDisplaysBackgroundSafePreserveModeKeepsExistingDisplaysWhileReloading() async {
+        let gate = SequencedShareDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 3333, width: 1920, height: 1080)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledLoadFailure()
+                }
+            },
+            dependencies: makeAlwaysRunningShareDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+
+        sut.refreshDisplaysBackgroundSafe()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(sut.catalog.isLoadingDisplays == true)
+        #expect(sut.catalog.displays?.count == 1)
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
+        }
+        #expect(finished)
+    }
+
+    @MainActor @Test func visibleDisplaysFiltersDisplaysMissingFromCurrentTopology() {
+        let displayA = MockSCDisplay.make(displayID: 1234, width: 1920, height: 1080)
+        let displayB = MockSCDisplay.make(displayID: 5678, width: 1920, height: 1080)
+        let sut = ShareViewModel(
+            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([1234]) },
+            dependencies: makeAlwaysRunningShareDependencies()
+        )
+
+        let visible = sut.visibleDisplays(from: [displayA, displayB])
+        #expect(visible.map(\.displayID) == [1234])
     }
 
     @MainActor @Test func refreshDisplaysBackgroundSafeSkipsWhenLoadInFlight() async {
@@ -263,7 +514,7 @@ struct ShareViewModelTests {
 
         #expect(presented)
         #expect(sharing.startWebServiceCallCount == 1)
-        #expect(sut.showOpenPageError == false)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @MainActor @Test func initUsesPreferredPortAsInputDefault() {
@@ -294,7 +545,7 @@ struct ShareViewModelTests {
         #expect(sut.servicePortInput == "9099")
     }
 
-    @MainActor @Test func updateServicePortInputTruncatesToFiveCharacters() {
+    @MainActor @Test func servicePortInputTruncatesToFiveCharacters() {
         let env = makeEnvironment()
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -304,7 +555,7 @@ struct ShareViewModelTests {
             dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.updateServicePortInput("1234567890")
+        sut.servicePortInput = "1234567890"
 
         #expect(sut.servicePortInput == "12345")
     }
@@ -328,12 +579,13 @@ struct ShareViewModelTests {
 
         #expect(presented)
         #expect(sharing.startWebServiceCallCount == 0)
-        #expect(sut.showOpenPageError == false)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @MainActor @Test func startServicePassesRequestedPortToSharingLayer() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let sharing = MockSharingService()
-        sharing.startResult = .started(WebServiceBinding(requestedPort: 8088, boundPort: 8088))
+        sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
         let env = makeEnvironment(sharing: sharing)
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -342,7 +594,7 @@ struct ShareViewModelTests {
             ),
             dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
-        sut.servicePortInput = "8088"
+        sut.servicePortInput = String(requestedPort)
 
         sut.startService()
         let started = await waitUntil {
@@ -350,7 +602,7 @@ struct ShareViewModelTests {
         }
 
         #expect(started)
-        #expect(sharing.lastStartRequestedPort == 8088)
+        #expect(sharing.lastStartRequestedPort == requestedPort)
     }
 
     @MainActor @Test func editingPortClearsInlineErrorMessage() async {
@@ -369,7 +621,7 @@ struct ShareViewModelTests {
         _ = await waitUntil { sut.portInputErrorMessage != nil }
         #expect(sut.portInputErrorMessage != nil)
 
-        sut.updateServicePortInput("8081")
+        sut.servicePortInput = "8081"
         #expect(sut.portInputErrorMessage == nil)
     }
 
@@ -522,5 +774,27 @@ struct ShareViewModelTests {
                 virtualSerialForManagedDisplay: { _ in nil }
             )
         )
+    }
+}
+
+private final class MockSCDisplayBox: NSObject {
+    @objc let displayID: CGDirectDisplayID
+    @objc let width: Int
+    @objc let height: Int
+    @objc let frame: CGRect
+
+    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
+        self.displayID = displayID
+        self.width = width
+        self.height = height
+        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        super.init()
+    }
+}
+
+private enum MockSCDisplay {
+    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
+        let box = MockSCDisplayBox(displayID: displayID, width: width, height: height)
+        return unsafeBitCast(box, to: SCDisplay.self)
     }
 }

@@ -1,7 +1,9 @@
+import Foundation
 import XCTest
 
 enum SmokeScenario: String {
     case baseline
+    case displayCatalogLoading = "display_catalog_loading"
     case permissionDenied = "permission_denied"
     case virtualDisplayRebuilding = "virtual_display_rebuilding"
     case virtualDisplayRebuildFailed = "virtual_display_rebuild_failed"
@@ -9,10 +11,20 @@ enum SmokeScenario: String {
 
 extension XCTestCase {
     @MainActor
-    func launchAppForSmoke(scenario: SmokeScenario) -> XCUIApplication {
+    func launchAppForSmoke(
+        scenario: SmokeScenario,
+        preferredPort: UInt16? = nil
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["VOIDDISPLAY_TEST_ISOLATION_ID"] = UUID().uuidString
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = scenario.rawValue
+        if let preferredPort {
+            app.launchArguments = [
+                "-sharing.preferredPort",
+                String(preferredPort)
+            ]
+        }
         app.launch()
         return app
     }
@@ -77,5 +89,26 @@ extension XCTestCase {
             activity.add(attachment)
         }
         XCTFail("Element exists but is not hittable: \(element)", file: file, line: line)
+    }
+
+    @MainActor
+    func waitForIdentifierByPolling(
+        _ app: XCUIApplication,
+        identifier: String,
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.1
+    ) -> Bool {
+        let element = app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            app.activate()
+            if element.exists {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+        return element.exists
     }
 }

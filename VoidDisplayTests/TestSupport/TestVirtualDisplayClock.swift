@@ -13,7 +13,11 @@ final class TestVirtualDisplayClock: VirtualDisplayClocking {
         currentTime
     }
 
-    func sleep(seconds: TimeInterval) async {
+    func sleep(for duration: Duration) async {
+        let components = duration.components
+        let seconds =
+            Double(components.seconds) +
+            (Double(components.attoseconds) / 1_000_000_000_000_000_000)
         var remaining = max(seconds, 0)
         if remaining == 0 {
             await Task.yield()

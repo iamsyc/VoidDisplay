@@ -19,32 +19,32 @@ struct EditDisplaySettingsView: View {
     @State private var customHeight: Int = 1080
     @State private var customRefreshRate: Double = 60.0
 
-    @State private var showDuplicateWarning = false
-    @State private var showError = false
-    @State private var errorMessage = ""
+    @State private var localAlert: UserFacingAlertState?
 
     @Environment(VirtualDisplayController.self) private var virtualDisplay
 
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+
         Form {
             Section {
                 HStack {
                     Text("Name")
                     Spacer()
                     Text(currentConfig?.displayName ?? "-")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 HStack {
                     Text("Serial Number")
                     Spacer()
                     Text(currentConfig.map { String($0.serialNum) } ?? "-")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
                 HStack {
                     Text("Physical Size")
                     Spacer()
                     Text(currentConfig.map { "\($0.physicalWidth) × \($0.physicalHeight) mm" } ?? "-")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Display Info")
@@ -53,7 +53,7 @@ struct EditDisplaySettingsView: View {
             Section {
                 if selectedModes.isEmpty {
                     Text("No resolution modes added")
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .italic()
                 } else {
                     ForEach($selectedModes) { $mode in
@@ -65,17 +65,19 @@ struct EditDisplaySettingsView: View {
                             HStack(spacing: 6) {
                                 Text("HiDPI")
                                     .font(.caption)
-                                    .foregroundColor($mode.enableHiDPI.wrappedValue ? .green : .secondary)
+                                    .foregroundStyle($mode.enableHiDPI.wrappedValue ? .green : .secondary)
                                 Toggle("", isOn: $mode.enableHiDPI)
                                     .toggleStyle(.switch)
                                     .labelsHidden()
                                     .controlSize(.small)
                             }
-                            Button(action: { removeMode(mode) }) {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundColor(.red)
+                            ResolutionModeActionButton(
+                                "Delete Resolution Mode",
+                                systemImage: "minus.circle.fill",
+                                tint: .red
+                            ) {
+                                removeMode(mode)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -99,11 +101,12 @@ struct EditDisplaySettingsView: View {
                             }
                             .labelsHidden()
 
-                            Button(action: addPresetMode) {
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                            .buttonStyle(.plain)
+                            ResolutionModeActionButton(
+                                "Add Preset Resolution",
+                                systemImage: "plus.circle.fill",
+                                tint: .green,
+                                action: addPresetMode
+                            )
                         }
                     } else {
                         HStack {
@@ -120,11 +123,12 @@ struct EditDisplaySettingsView: View {
                                 .frame(width: 50)
                             Text("Hz")
 
-                            Button(action: addCustomMode) {
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                            .buttonStyle(.plain)
+                            ResolutionModeActionButton(
+                                "Add Custom Resolution",
+                                systemImage: "plus.circle.fill",
+                                tint: .green,
+                                action: addCustomMode
+                            )
                         }
                     }
                 }
@@ -133,7 +137,7 @@ struct EditDisplaySettingsView: View {
             } footer: {
                 Text("Each resolution can enable HiDPI.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -151,15 +155,20 @@ struct EditDisplaySettingsView: View {
                 }
             }
         }
-        .alert("Tip", isPresented: $showDuplicateWarning) {
-            Button("OK") {}
-        } message: {
-            Text("This resolution mode already exists.")
+        .alert(item: $localAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message)
+            )
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage)
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
         }
         .onAppear {
             initializeFromConfig()
@@ -184,7 +193,10 @@ struct EditDisplaySettingsView: View {
     private func addPresetMode() {
         let newMode = ResolutionSelection(preset: presetResolution)
         if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
-            showDuplicateWarning = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
         } else {
             selectedModes.append(newMode)
         }
@@ -192,13 +204,18 @@ struct EditDisplaySettingsView: View {
 
     private func addCustomMode() {
         guard customWidth > 0, customHeight > 0, customRefreshRate > 0 else {
-            errorMessage = String(localized: "Please enter valid resolution values.")
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Please enter valid resolution values.")
+            )
             return
         }
         let newMode = ResolutionSelection(width: customWidth, height: customHeight, refreshRate: customRefreshRate)
         if selectedModes.contains(where: { $0.matchesResolution(of: newMode) }) {
-            showDuplicateWarning = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
         } else {
             selectedModes.append(newMode)
         }
@@ -210,13 +227,17 @@ struct EditDisplaySettingsView: View {
 
     private func applySettings() {
         guard !selectedModes.isEmpty else {
-            errorMessage = String(localized: "At least one resolution mode is required.")
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "At least one resolution mode is required.")
+            )
             return
         }
         guard var config = currentConfig else {
-            errorMessage = String(localized: "Display configuration not found.")
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Display configuration not found.")
+            )
             return
         }
 
@@ -228,7 +249,9 @@ struct EditDisplaySettingsView: View {
                 enableHiDPI: $0.enableHiDPI
             )
         }
-        virtualDisplay.updateConfig(config)
+        do {
+            try virtualDisplay.updateConfig(config)
+        } catch { return }
         virtualDisplay.applyModes(configId: config.id, modes: selectedModes)
         isShow = false
     }

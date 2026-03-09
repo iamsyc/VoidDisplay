@@ -6,10 +6,12 @@
 
 import SwiftUI
 import ScreenCaptureKit
+import AppKit
 
 struct IsCapturing: View {
     @Bindable private var capture: CaptureController
     @State private var viewModel: CaptureChooseViewModel
+    @Environment(SharingController.self) private var sharing
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
 
@@ -20,6 +22,7 @@ struct IsCapturing: View {
         _capture = Bindable(capture)
         _viewModel = State(
             initialValue: CaptureChooseViewModel(
+                catalogState: capture.displayCatalogState,
                 dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
             )
         )
@@ -27,56 +30,19 @@ struct IsCapturing: View {
 
     private var shouldShowActiveSessionFallback: Bool {
         guard !capture.screenCaptureSessions.isEmpty else { return false }
-        if viewModel.catalog.hasScreenCapturePermission == true, let displays = viewModel.catalog.displays, !displays.isEmpty {
+        if viewModel.catalog.hasScreenCapturePermission == true,
+           let displays = viewModel.catalog.displays,
+           !viewModel.visibleDisplays(from: displays).isEmpty {
             return false
         }
         return true
     }
 
     var body: some View {
+        @Bindable var bindableViewModel = viewModel
+
         VStack(spacing: 0) {
-            Group {
-                if viewModel.catalog.hasScreenCapturePermission == false {
-                    screenCapturePermissionView
-                } else if let displays = viewModel.catalog.displays {
-                    if displays.isEmpty {
-                        ContentUnavailableView(
-                            "No watchable screen",
-                            systemImage: "display.trianglebadge.exclamationmark",
-                            description: Text("No available display can be monitored right now.")
-                        )
-                        .accessibilityIdentifier("capture_displays_empty_state")
-                    } else {
-                        displayList(displays)
-                    }
-                } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                            Text("Loading…")
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 200)
-                    }
-                } else {
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            Text("No watchable screen")
-                            if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
-                                Text(loadErrorMessage)
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .textSelection(.enabled)
-                            }
-                            Button("Retry") {
-                                viewModel.refreshPermissionAndMaybeLoad()
-                            }
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 200)
-                    }
-                }
-            }
+            catalogContent
             .safeAreaInset(edge: .top, spacing: 0) {
                 if shouldShowActiveSessionFallback {
                     VStack(spacing: 0) {
@@ -92,18 +58,88 @@ struct IsCapturing: View {
             .onDisappear {
                 viewModel.cancelInFlightDisplayLoad()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+                viewModel.refreshDisplaysBackgroundSafe()
+            }
             .appScreenBackground()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("capture_choose_root")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("detail_monitor_screen")
+        .alert(item: $bindableViewModel.userFacingAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    viewModel.dismissAlert()
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var catalogContent: some View {
+        if viewModel.catalog.hasScreenCapturePermission == false {
+            screenCapturePermissionView
+        } else if let displays = viewModel.catalog.displays {
+            let visibleDisplays = viewModel.visibleDisplays(from: displays)
+            if visibleDisplays.isEmpty {
+                emptyDisplaysState
+            } else {
+                displayList(visibleDisplays)
+            }
+        } else if viewModel.catalog.isLoadingDisplays || viewModel.catalog.hasScreenCapturePermission == nil {
+            loadingState
+        } else {
+            loadFailedState
+        }
+    }
+
+    private var emptyDisplaysState: some View {
+        stateContainer {
+            ContentUnavailableView(
+                "No watchable screen",
+                systemImage: "display.trianglebadge.exclamationmark",
+                description: Text("No available display can be monitored right now.")
+            )
+            .accessibilityIdentifier("capture_displays_empty_state")
+        }
+    }
+
+    private var loadingState: some View {
+        stateContainer {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Loading…")
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("capture_loading_displays")
+        }
+    }
+
+    private var loadFailedState: some View {
+        stateContainer {
+            VStack(spacing: 12) {
+                Text("No watchable screen")
+                if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
+                    Text(loadErrorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                }
+                Button("Retry") {
+                    viewModel.refreshPermissionAndMaybeLoad()
+                }
+            }
+        }
     }
 
     // MARK: - Display List
 
     private func displayList(_ displays: [SCDisplay]) -> some View {
-        let gridSpacing = AppUI.Spacing.small
+        let gridSpacing = AppUI.List.sectionSpacing
         // Let SwiftUI choose column count from a per-card minimum width instead of a hard cutoff.
         let minimumAdaptiveCardWidth: CGFloat = 380
         return ScrollView {
@@ -117,8 +153,7 @@ struct IsCapturing: View {
                     captureDisplayRowComponent(display)
                 }
             }
-            .padding(.horizontal, AppUI.List.listHorizontalInset)
-            .padding(.top, AppUI.Spacing.small + 2)
+            .appListContentInsets()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
@@ -137,16 +172,17 @@ struct IsCapturing: View {
 
     private var activeMonitoringSessionsFallback: some View {
         ScrollView {
-            LazyVStack(spacing: AppUI.Spacing.small) {
+            LazyVStack(spacing: AppUI.List.sectionSpacing) {
                 ForEach(capture.screenCaptureSessions) { session in
-                    MonitoringSessionRow(session: session) {
+                    MonitoringSessionRow(
+                        session: session,
+                        isSharing: sharing.isDisplaySharing(displayID: session.displayID)
+                    ) {
                         capture.removeMonitoringSession(id: session.id)
                     }
                 }
             }
-            .padding(.horizontal, AppUI.List.listHorizontalInset)
-            .padding(.top, AppUI.Spacing.small + 2)
-            .padding(.bottom, AppUI.Spacing.small)
+            .appListContentInsets()
         }
         .frame(maxHeight: 260)
         .accessibilityIdentifier("capture_active_sessions_fallback")
@@ -166,7 +202,8 @@ struct IsCapturing: View {
             isVirtualDisplay: isVirtualDisplay,
             isPrimaryDisplay: isPrimaryDisplay,
             isMonitoring: isMonitoring,
-            isStarting: isStarting
+            isStarting: isStarting,
+            isSharing: sharing.isDisplaySharing(displayID: display.displayID)
         ) {
             if isMonitoring, let session = monitoringSession {
                 capture.removeMonitoringSession(id: session.id)
@@ -183,7 +220,9 @@ struct IsCapturing: View {
     // MARK: - Permission View
 
     private var screenCapturePermissionView: some View {
-        ScreenCapturePermissionGuideView(
+        @Bindable var bindableCatalog = viewModel.catalog
+
+        return ScreenCapturePermissionGuideView(
             loadErrorMessage: viewModel.catalog.loadErrorMessage,
             onOpenSettings: {
                 viewModel.openScreenCapturePrivacySettings { url in
@@ -199,10 +238,7 @@ struct IsCapturing: View {
             onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
                 viewModel.loadDisplays()
             } : nil,
-            isDebugInfoExpanded: Binding(
-                get: { viewModel.catalog.showDebugInfo },
-                set: { viewModel.catalog.showDebugInfo = $0 }
-            ),
+            isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
             debugItems: capturePermissionDebugItems,
             rootAccessibilityIdentifier: "capture_permission_guide",
             openSettingsButtonAccessibilityIdentifier: "capture_open_settings_button",
@@ -239,6 +275,16 @@ struct IsCapturing: View {
             }
         }
         return items
+    }
+
+    private func stateContainer<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ScrollView {
+            content()
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+        }
     }
 
 }

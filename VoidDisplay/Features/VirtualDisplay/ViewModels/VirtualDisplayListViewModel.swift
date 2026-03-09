@@ -9,7 +9,7 @@ final class VirtualDisplayListViewModel {
     struct Dependencies {
         var restoreFailures: @MainActor () -> [VirtualDisplayRestoreFailure]
         var clearRestoreFailures: @MainActor () -> Void
-        var destroyDisplay: @MainActor (UUID) -> Void
+        var destroyDisplay: @MainActor (UUID) throws -> Void
         var runtimeDisplayID: @MainActor (UUID) -> CGDirectDisplayID?
         var isRebuilding: @MainActor (UUID) -> Bool
         var isVirtualDisplayRunning: @MainActor (UUID) -> Bool
@@ -20,7 +20,7 @@ final class VirtualDisplayListViewModel {
             Self(
                 restoreFailures: { controller.restoreFailures },
                 clearRestoreFailures: { controller.clearRestoreFailures() },
-                destroyDisplay: { controller.destroyDisplay($0) },
+                destroyDisplay: { try controller.destroyDisplay($0) },
                 runtimeDisplayID: { controller.runtimeDisplayID(for: $0) },
                 isRebuilding: { controller.isRebuilding(configId: $0) },
                 isVirtualDisplayRunning: { controller.isVirtualDisplayRunning(configId: $0) },
@@ -35,8 +35,7 @@ final class VirtualDisplayListViewModel {
     var showDeleteConfirm = false
     var deleteCandidate: VirtualDisplayConfig?
     var showRestoreFailureAlert = false
-    var showError = false
-    var errorMessage = ""
+    var userFacingAlert: UserFacingAlertState?
 
     @ObservationIgnored private var primaryDisplayMonitor = DebouncingDisplayReconfigurationMonitor()
     @ObservationIgnored private var primaryDisplayFallbackCoordinator = PrimaryDisplayFallbackCoordinator()
@@ -82,7 +81,16 @@ final class VirtualDisplayListViewModel {
             deleteCandidate = nil
             return
         }
-        dependencies.destroyDisplay(candidate.id)
+        do {
+            try dependencies.destroyDisplay(candidate.id)
+        } catch {
+            AppErrorMapper.logFailure("Delete virtual display", error: error, logger: AppLog.virtualDisplay)
+            userFacingAlert = UserFacingAlertState(
+                title: String(localized: "Delete Failed"),
+                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
+            )
+            return
+        }
         deleteCandidate = nil
         showDeleteConfirm = false
     }
@@ -117,8 +125,10 @@ final class VirtualDisplayListViewModel {
                     try dependencies.disableDisplayByConfig(config.id)
                 } catch {
                     AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
-                    self.errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
-                    self.showError = true
+                    self.userFacingAlert = UserFacingAlertState(
+                        title: String(localized: "Disable Failed"),
+                        message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
+                    )
                 }
                 return
             }
@@ -126,10 +136,16 @@ final class VirtualDisplayListViewModel {
                 try await dependencies.enableDisplay(config.id)
             } catch {
                 AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
-                self.errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
-                self.showError = true
+                self.userFacingAlert = UserFacingAlertState(
+                    title: String(localized: "Enable Failed"),
+                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
+                )
             }
         }
+    }
+
+    func dismissAlert() {
+        userFacingAlert = nil
     }
 
     private func startPrimaryDisplayMonitoring() {

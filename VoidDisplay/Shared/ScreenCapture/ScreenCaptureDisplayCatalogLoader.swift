@@ -9,10 +9,22 @@ final class ScreenCaptureDisplayCatalogLoader {
 
     struct RuntimeScenarioProbe {
         var shouldShortCircuitDisplayLoadAsPermissionDenied: @MainActor () -> Bool
+        var shouldDelayDisplayLoadForUITest: @MainActor () -> Bool
+
+        init(
+            shouldShortCircuitDisplayLoadAsPermissionDenied: @escaping @MainActor () -> Bool,
+            shouldDelayDisplayLoadForUITest: @escaping @MainActor () -> Bool = { false }
+        ) {
+            self.shouldShortCircuitDisplayLoadAsPermissionDenied = shouldShortCircuitDisplayLoadAsPermissionDenied
+            self.shouldDelayDisplayLoadForUITest = shouldDelayDisplayLoadForUITest
+        }
 
         static let live = Self(
             shouldShortCircuitDisplayLoadAsPermissionDenied: {
                 UITestRuntime.isEnabled && UITestRuntime.scenario == .permissionDenied
+            },
+            shouldDelayDisplayLoadForUITest: {
+                UITestRuntime.isEnabled && UITestRuntime.scenario == .displayCatalogLoading
             }
         )
     }
@@ -106,7 +118,10 @@ final class ScreenCaptureDisplayCatalogLoader {
         loadDisplays(onLoaded: onLoaded)
     }
 
-    func loadDisplays(onLoaded: @escaping OnDisplaysLoaded = { _ in }) {
+    func loadDisplays(
+        preserveExistingDisplays: Bool = false,
+        onLoaded: @escaping OnDisplaysLoaded = { _ in }
+    ) {
         if runtimeScenarioProbe.shouldShortCircuitDisplayLoadAsPermissionDenied() {
             cancelInFlightDisplayLoad()
             state.hasScreenCapturePermission = false
@@ -123,11 +138,16 @@ final class ScreenCaptureDisplayCatalogLoader {
         state.isLoadingDisplays = true
         state.loadErrorMessage = nil
         state.lastLoadError = nil
-        state.displays = nil
+        if !preserveExistingDisplays {
+            state.displays = nil
+        }
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
+                if self.runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() {
+                    try await Task.sleep(for: .seconds(3))
+                }
                 let shareableDisplays = try await self.loadShareableDisplays()
                 guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }
                 self.state.displays = shareableDisplays
@@ -149,7 +169,9 @@ final class ScreenCaptureDisplayCatalogLoader {
                     failureReason: nsError.localizedFailureReason,
                     recoverySuggestion: nsError.localizedRecoverySuggestion
                 )
-                self.state.displays = nil
+                if !preserveExistingDisplays {
+                    self.state.displays = nil
+                }
                 self.finishDisplayLoadRequestIfCurrent(requestID: requestID)
             }
         }

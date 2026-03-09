@@ -38,6 +38,7 @@ struct AppListRowModel: Identifiable {
     let metaBadges: [AppBadgeModel]
     let ribbon: AppCornerRibbonModel?
     let iconSystemName: String
+    let iconScreenTint: Color?
     let isEmphasized: Bool
     let accessibilityIdentifier: String?
 
@@ -49,6 +50,7 @@ struct AppListRowModel: Identifiable {
         metaBadges: [AppBadgeModel],
         ribbon: AppCornerRibbonModel? = nil,
         iconSystemName: String,
+        iconScreenTint: Color? = nil,
         isEmphasized: Bool,
         accessibilityIdentifier: String?
     ) {
@@ -59,6 +61,7 @@ struct AppListRowModel: Identifiable {
         self.metaBadges = metaBadges
         self.ribbon = ribbon
         self.iconSystemName = iconSystemName
+        self.iconScreenTint = iconScreenTint
         self.isEmphasized = isEmphasized
         self.accessibilityIdentifier = accessibilityIdentifier
     }

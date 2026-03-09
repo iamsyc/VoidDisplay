@@ -23,6 +23,7 @@ final class SharingController {
     var isSharing = false
     var isWebServiceRunning = false
     var webServiceLifecycleState: WebServiceLifecycleState = .stopped
+    @ObservationIgnored let displayCatalogState = ScreenCaptureDisplayCatalogState()
 
     @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
@@ -30,10 +31,10 @@ final class SharingController {
 
     init(
         sharingService: any SharingServiceProtocol,
-        portPreferences: (any SharingPortPreferencesProtocol)? = nil
+        portPreferences: any SharingPortPreferencesProtocol
     ) {
         self.sharingService = sharingService
-        self.portPreferences = portPreferences ?? SharingPortPreferences()
+        self.portPreferences = portPreferences
         self.sharingService.onWebServiceLifecycleStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }

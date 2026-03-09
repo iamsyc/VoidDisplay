@@ -101,6 +101,70 @@ struct ScreenCaptureDisplayCatalogLoaderTests {
         #expect(state.displays == nil)
     }
 
+    @Test func loadDisplaysPreserveModeKeepsExistingDisplaysDuringRefreshAndFailure() async {
+        let gate = SequencedCatalogDisplayLoaderGate(scriptedOutcomes: [.failure])
+        let state = ScreenCaptureDisplayCatalogState()
+        state.displays = []
+
+        let sut = ScreenCaptureDisplayCatalogLoader(
+            state: state,
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledCatalogLoadFailure()
+                }
+            },
+            logOperation: "catalog load",
+            logger: AppLog.capture
+        )
+
+        sut.loadDisplays(preserveExistingDisplays: true)
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(state.isLoadingDisplays == true)
+        #expect(state.displays != nil)
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            state.isLoadingDisplays == false && state.lastLoadError != nil
+        }
+        #expect(finished)
+        #expect(state.displays != nil)
+    }
+
+    @Test func loadDisplaysDefaultModeClearsExistingDisplaysAtLoadStart() async {
+        let gate = SequencedCatalogDisplayLoaderGate(scriptedOutcomes: [.success])
+        let state = ScreenCaptureDisplayCatalogState()
+        state.displays = []
+
+        let sut = ScreenCaptureDisplayCatalogLoader(
+            state: state,
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledCatalogLoadFailure()
+                }
+            },
+            logOperation: "catalog load",
+            logger: AppLog.capture
+        )
+
+        sut.loadDisplays()
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(state.displays == nil)
+
+        await gate.release(call: 1)
+        let finished = await waitUntil {
+            state.isLoadingDisplays == false && state.displays != nil
+        }
+        #expect(finished)
+    }
+
     @Test func loadDisplaysIgnoresLateResultFromSupersededRequest() async {
         let gate = SequencedCatalogDisplayLoaderGate(scriptedOutcomes: [.failure, .success])
         let state = ScreenCaptureDisplayCatalogState()
@@ -193,6 +257,34 @@ struct ScreenCaptureDisplayCatalogLoaderTests {
         #expect(state.hasScreenCapturePermission == false)
         #expect(state.lastPreflightPermission == false)
         #expect(state.displays == nil)
+        #expect(state.isLoadingDisplays == false)
+    }
+
+    @Test func uiTestDisplayCatalogLoadingScenarioKeepsVisibleLoadingStateBeforeLoaderRuns() async {
+        let state = ScreenCaptureDisplayCatalogState()
+        let callFlag = AsyncCallFlag()
+        let sut = ScreenCaptureDisplayCatalogLoader(
+            state: state,
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                await callFlag.markCalled()
+                return []
+            },
+            logOperation: "catalog load",
+            logger: AppLog.capture,
+            runtimeScenarioProbe: .init(
+                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
+                shouldDelayDisplayLoadForUITest: { true }
+            )
+        )
+
+        sut.loadDisplays()
+
+        #expect(state.isLoadingDisplays == true)
+        try? await Task.sleep(nanoseconds: AsyncTestTimeouts.shortStabilityWindow)
+        #expect(await callFlag.wasCalled() == false)
+
+        sut.cancelInFlightDisplayLoad()
         #expect(state.isLoadingDisplays == false)
     }
 

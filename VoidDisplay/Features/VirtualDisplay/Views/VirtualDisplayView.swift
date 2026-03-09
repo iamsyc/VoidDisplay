@@ -5,10 +5,11 @@
 //
 
 import SwiftUI
-import OSLog
 
 struct VirtualDisplayView: View {
     @Bindable private var virtualDisplay: VirtualDisplayController
+    @Environment(CaptureController.self) private var capture
+    @Environment(SharingController.self) private var sharing
     @State private var viewModel: VirtualDisplayListViewModel
     @State var createView = false
     @State private var editingConfig: EditingConfig?
@@ -24,27 +25,11 @@ struct VirtualDisplayView: View {
     }
 
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+        @Bindable var bindableViewModel = viewModel
+
         let _ = viewModel.primaryDisplayRefreshTick
-        Group {
-            if virtualDisplay.configStorePresentation.hasLoadFailure {
-                configStoreErrorPanel
-            } else if !virtualDisplay.displayConfigs.isEmpty {
-                List(virtualDisplay.displayConfigs) { config in
-                    virtualDisplayRow(config)
-                        .appListRowStyle()
-                }
-                .accessibilityIdentifier("virtual_displays_list")
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            } else {
-                ContentUnavailableView(
-                    "No Virtual Displays",
-                    systemImage: "display.trianglebadge.exclamationmark",
-                    description: Text("Click the + button in the top right to create a virtual display.")
-                )
-                .accessibilityIdentifier("virtual_displays_empty_state")
-            }
-        }
+        content
         .sheet(isPresented: $createView) {
             CreateVirtualDisplay(isShow: $createView)
         }
@@ -74,10 +59,23 @@ struct VirtualDisplayView: View {
         } message: { config in
             Text("This will remove the configuration and disable the display if it is running.\n\n\(config.displayName) (Serial \(config.serialNum))")
         }
-        .alert("Enable Failed", isPresented: $viewModel.showError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.errorMessage)
+        .alert(item: $bindableViewModel.userFacingAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    viewModel.dismissAlert()
+                }
+            )
+        }
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
         }
         .onAppear {
             viewModel.handleAppear()
@@ -96,6 +94,37 @@ struct VirtualDisplayView: View {
             Text(VirtualDisplayRowPresentation.restoreFailureSummary(virtualDisplay.restoreFailures))
         }
         .appScreenBackground()
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if virtualDisplay.configStorePresentation.hasLoadFailure {
+            ScrollView {
+                configStoreErrorPanel
+                    .appListContentInsets()
+            }
+        } else if !virtualDisplay.displayConfigs.isEmpty {
+            ScrollView {
+                LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                    ForEach(virtualDisplay.displayConfigs) { config in
+                        virtualDisplayRow(config)
+                    }
+                }
+                .appListContentInsets()
+            }
+            .accessibilityIdentifier("virtual_displays_list")
+        } else {
+            ScrollView {
+                ContentUnavailableView(
+                    "No Virtual Displays",
+                    systemImage: "display.trianglebadge.exclamationmark",
+                    description: Text("Click the + button in the top right to create a virtual display.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 200)
+                .appListContentInsets()
+                .accessibilityIdentifier("virtual_displays_empty_state")
+            }
+        }
     }
 
     private var configStoreErrorPanel: some View {
@@ -127,18 +156,19 @@ struct VirtualDisplayView: View {
 
             HStack(spacing: 12) {
                 Button("Reset Config File", role: .destructive) {
-                    _ = virtualDisplay.resetVirtualDisplayData()
+                    do {
+                        _ = try virtualDisplay.resetVirtualDisplayData()
+                    } catch {}
                 }
                 .accessibilityIdentifier("virtual_display_reset_config_file_button")
             }
         }
         .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.orange.opacity(0.08))
         )
-        .padding()
         .accessibilityIdentifier("virtual_display_config_store_error_panel")
     }
 
@@ -153,6 +183,16 @@ struct VirtualDisplayView: View {
         let isPrimary = viewModel.isPrimaryDisplay(configID: config.id)
         let isFirstEnabled = virtualDisplay.displayConfigs.first(where: \.desiredEnabled)?.id == config.id
         let canSetAsPrimary = config.desiredEnabled && !isFirstEnabled && !isToggling && !isRebuilding
+
+        let displayID = virtualDisplay.runtimeDisplayID(for: config.id)
+        let isMonitoring = displayID.map { did in
+            capture.screenCaptureSessions.contains { $0.displayID == did }
+        } ?? false
+        let isSharing = displayID.map { did in
+            sharing.isDisplaySharing(displayID: did)
+        } ?? false
+        let iconScreenTint = DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharing)
+
         return VirtualDisplayRow(
             config: config,
             isRunning: isRunning,
@@ -164,16 +204,22 @@ struct VirtualDisplayView: View {
             isLast: isLast,
             isPrimary: isPrimary,
             canSetAsPrimary: canSetAsPrimary,
-            onMoveUp: { _ = virtualDisplay.moveDisplayConfig(config.id, direction: .up) },
-            onMoveDown: { _ = virtualDisplay.moveDisplayConfig(config.id, direction: .down) },
-            onSetAsPrimary: { _ = virtualDisplay.setPrimaryVirtualDisplayByReordering(config.id) },
+            onMoveUp: { performPersistenceAction { _ = try virtualDisplay.moveDisplayConfig(config.id, direction: .up) } },
+            onMoveDown: { performPersistenceAction { _ = try virtualDisplay.moveDisplayConfig(config.id, direction: .down) } },
+            onSetAsPrimary: { performPersistenceAction { _ = try virtualDisplay.setPrimaryVirtualDisplayByReordering(config.id) } },
             onToggle: { viewModel.toggleDisplayState(config) },
             onEdit: { editingConfig = EditingConfig(id: config.id) },
             onDelete: { viewModel.requestDelete(config) },
-            onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) }
+            onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) },
+            iconScreenTint: iconScreenTint
         )
     }
 
+    private func performPersistenceAction(action: () throws -> Void) {
+        do {
+            try action()
+        } catch {}
+    }
 }
 
 #Preview {

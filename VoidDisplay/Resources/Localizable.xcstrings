@@ -14,16 +14,6 @@
     "-" : {
 
     },
-    "·" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "·"
-          }
-        }
-      }
-    },
     "@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -160,7 +150,10 @@
     "1:1" : {
 
     },
-    "8081" : {
+    "8089" : {
+
+    },
+    "Add Custom Resolution" : {
 
     },
     "Add Method" : {
@@ -172,6 +165,9 @@
           }
         }
       }
+    },
+    "Add Preset Resolution" : {
+
     },
     "Add Virtual Display" : {
       "localizations" : {
@@ -323,6 +319,12 @@
         }
       }
     },
+    "Create Failed" : {
+
+    },
+    "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file." : {
+
+    },
     "Create failed." : {
       "localizations" : {
         "zh-Hans" : {
@@ -373,6 +375,15 @@
         }
       }
     },
+    "Delete Failed" : {
+
+    },
+    "Delete failed." : {
+
+    },
+    "Delete Resolution Mode" : {
+
+    },
     "Delete Virtual Display" : {
       "localizations" : {
         "zh-Hans" : {
@@ -395,6 +406,9 @@
           }
         }
       }
+    },
+    "Disable Failed" : {
+
     },
     "Disable failed." : {
       "localizations" : {
@@ -425,6 +439,9 @@
           }
         }
       }
+    },
+    "Display configuration update is inconsistent with the requested operation." : {
+
     },
     "Display Info" : {
       "localizations" : {
@@ -596,6 +613,18 @@
         }
       }
     },
+    "Failed to reset virtual display configurations." : {
+
+    },
+    "Failed to save display settings." : {
+
+    },
+    "Failed to save virtual display changes." : {
+
+    },
+    "Failed to start monitoring." : {
+
+    },
     "Failed to start sharing." : {
       "localizations" : {
         "zh-Hans" : {
@@ -761,10 +790,16 @@
     },
     "Monitor Display" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monitor"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "监听显示器"
+            "value" : "监听"
           }
         }
       }
@@ -1211,6 +1246,9 @@
     "Reset Config File" : {
 
     },
+    "Reset Failed" : {
+
+    },
     "Reset Virtual Display Configurations" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1300,6 +1338,9 @@
           }
         }
       }
+    },
+    "Save Failed" : {
+
     },
     "Save Only" : {
       "localizations" : {
@@ -1427,6 +1468,9 @@
         }
       }
     },
+    "Share Failed" : {
+
+    },
     "Sharing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1456,6 +1500,9 @@
           }
         }
       }
+    },
+    "Start Monitoring Failed" : {
+
     },
     "Start Service" : {
       "localizations" : {
@@ -1499,10 +1546,16 @@
     },
     "Stop Monitoring" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "停止监听"
+            "value" : "停止"
           }
         }
       }
@@ -1609,6 +1662,9 @@
       }
     },
     "Web listener stopped unexpectedly." : {
+
+    },
+    "Web listener was cancelled unexpectedly." : {
 
     },
     "Web service controller is unavailable." : {

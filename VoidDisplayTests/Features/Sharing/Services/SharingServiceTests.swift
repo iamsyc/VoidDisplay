@@ -6,14 +6,18 @@ import Testing
 struct SharingServiceTests {
 
     @MainActor @Test func startWebServiceDelegatesToControllerAndCapturesProviders() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
-        let sut = SharingService(webServiceController: mock)
+        mock.startResult = .started(
+            WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)
+        )
+        let sut = makeService(webServiceController: mock)
 
-        let started = await sut.startWebService(requestedPort: 9090)
+        let started = await sut.startWebService(requestedPort: requestedPort)
 
-        #expect(started == .started(WebServiceBinding(requestedPort: 9090, boundPort: 9090)))
+        #expect(started == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(mock.startCallCount == 1)
-        #expect(sut.webServicePortValue == 9090)
+        #expect(sut.webServicePortValue == requestedPort)
         #expect(sut.isWebServiceRunning)
         #expect(mock.capturedTargetStateProvider?(.main) == .knownInactive)
         #expect(mock.capturedTargetStateProvider?(.id(123)) == .unknown)
@@ -21,20 +25,21 @@ struct SharingServiceTests {
     }
 
     @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
-        mock.startResult = .failed(.portInUse(port: 9090))
-        let sut = SharingService(webServiceController: mock)
+        mock.startResult = .failed(.portInUse(port: requestedPort))
+        let sut = makeService(webServiceController: mock)
 
-        let started = await sut.startWebService(requestedPort: 9090)
+        let started = await sut.startWebService(requestedPort: requestedPort)
 
-        #expect(started == .failed(.portInUse(port: 9090)))
+        #expect(started == .failed(.portInUse(port: requestedPort)))
         #expect(mock.startCallCount == 1)
         #expect(sut.isWebServiceRunning == false)
     }
 
     @MainActor @Test func stopSingleSharingKeepsConnectionManagementInTargetHub() {
         let mock = MockWebServiceController()
-        let sut = SharingService(webServiceController: mock)
+        let sut = makeService(webServiceController: mock)
 
         sut.stopSharing(displayID: CGDirectDisplayID(11))
         sut.stopSharing(displayID: CGDirectDisplayID(11))
@@ -45,7 +50,7 @@ struct SharingServiceTests {
 
     @MainActor @Test func stopWebServiceStopsControllerAndDisconnectsAllStreamClients() {
         let mock = MockWebServiceController()
-        let sut = SharingService(webServiceController: mock)
+        let sut = makeService(webServiceController: mock)
 
         sut.stopWebService()
 
@@ -57,14 +62,14 @@ struct SharingServiceTests {
     @MainActor @Test func activeStreamClientCountReflectsControllerValue() {
         let mock = MockWebServiceController()
         mock.activeStreamClientCount = 3
-        let sut = SharingService(webServiceController: mock)
+        let sut = makeService(webServiceController: mock)
 
         #expect(sut.activeStreamClientCount == 3)
     }
 
     @MainActor @Test func forwardsWebServiceRunningStateCallbackFromController() {
         let mock = MockWebServiceController()
-        let sut = SharingService(webServiceController: mock)
+        let sut = makeService(webServiceController: mock)
         var receivedStates: [Bool] = []
 
         sut.onWebServiceRunningStateChanged = { isRunning in
@@ -78,38 +83,56 @@ struct SharingServiceTests {
     }
 
     @MainActor @Test func forwardsWebServiceLifecycleStateCallbackFromController() {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
-        let sut = SharingService(webServiceController: mock)
+        let sut = makeService(webServiceController: mock)
         var receivedStates: [WebServiceLifecycleState] = []
 
         sut.onWebServiceLifecycleStateChanged = { state in
             receivedStates.append(state)
         }
 
-        let binding = WebServiceBinding(requestedPort: 9090, boundPort: 9090)
-        mock.onLifecycleStateChanged?(.starting(requestedPort: 9090))
+        let binding = WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)
+        mock.onLifecycleStateChanged?(.starting(requestedPort: requestedPort))
         mock.onLifecycleStateChanged?(.running(binding))
         mock.onLifecycleStateChanged?(.stopped)
 
         #expect(receivedStates == [
-            .starting(requestedPort: 9090),
+            .starting(requestedPort: requestedPort),
             .running(binding),
             .stopped
         ])
     }
 
     @MainActor @Test func startAndStopEmitRunningStateChanges() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
-        let sut = SharingService(webServiceController: mock)
+        mock.startResult = .started(
+            WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)
+        )
+        let sut = makeService(webServiceController: mock)
         var receivedStates: [Bool] = []
 
         sut.onWebServiceRunningStateChanged = { isRunning in
             receivedStates.append(isRunning)
         }
 
-        #expect(await sut.startWebService(requestedPort: 9090) == .started(WebServiceBinding(requestedPort: 9090, boundPort: 9090)))
+        #expect(await sut.startWebService(requestedPort: requestedPort) == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         sut.stopWebService()
 
         #expect(receivedStates == [true, false])
+    }
+
+    @MainActor
+    private func makeService(webServiceController: MockWebServiceController) -> SharingService {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
+        let idStore = DisplayShareIDStore(storeURL: storeURL)
+        let coordinator = DisplaySharingCoordinator(idStore: idStore)
+        return SharingService(
+            webServiceController: webServiceController,
+            sharingCoordinator: coordinator
+        )
     }
 }

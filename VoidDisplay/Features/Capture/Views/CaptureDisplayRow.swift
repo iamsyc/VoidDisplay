@@ -10,6 +10,7 @@ struct CaptureDisplayRow: View {
     let isPrimaryDisplay: Bool
     let isMonitoring: Bool
     let isStarting: Bool
+    let isSharing: Bool
     let onToggle: () -> Void
 
     var body: some View {
@@ -40,6 +41,7 @@ struct CaptureDisplayRow: View {
                 )
                 : nil,
             iconSystemName: "display",
+            iconScreenTint: DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharing),
             isEmphasized: true,
             accessibilityIdentifier: nil
         )
@@ -71,6 +73,7 @@ struct CaptureDisplayRow: View {
 @MainActor
 struct MonitoringSessionRow: View {
     let session: ScreenMonitoringSession
+    let isSharing: Bool
     let onStop: () -> Void
 
     var body: some View {
@@ -94,6 +97,7 @@ struct MonitoringSessionRow: View {
                 )
             ],
             iconSystemName: "display",
+            iconScreenTint: DisplayIconTintResolver.resolve(isMonitoring: true, isSharing: isSharing),
             isEmphasized: true,
             accessibilityIdentifier: nil
         )
