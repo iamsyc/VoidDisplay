@@ -20,9 +20,59 @@ struct VirtualDisplayViewBodySmokeTests {
         render(view)
     }
 
+    @Test func createVirtualDisplayBodyEvaluatesWithPersistenceAlert() {
+        let env = makeEnvironment(preview: true, uiTestMode: false)
+        env.virtualDisplay.persistenceAlert = UserFacingAlertState(
+            title: "Create Failed",
+            message: "Could not save display."
+        )
+        let view = CreateVirtualDisplay(isShow: .constant(true))
+            .environment(env.capture)
+            .environment(env.sharing)
+            .environment(env.virtualDisplay)
+
+        render(view)
+    }
+
     @Test func editVirtualDisplayBodyEvaluates() {
         let env = makeEnvironment(preview: false, uiTestMode: true)
         let configID = env.virtualDisplay.displayConfigs.first?.id ?? UUID()
+        let view = EditVirtualDisplayConfigView(configId: configID)
+            .environment(env.capture)
+            .environment(env.sharing)
+            .environment(env.virtualDisplay)
+
+        render(view)
+    }
+
+    @Test func editVirtualDisplayBodyEvaluatesForStoppedConfig() {
+        let env = makeEnvironment(preview: false, uiTestMode: true)
+        let configID = env.virtualDisplay.displayConfigs.dropFirst().first?.id ?? UUID()
+        let view = EditVirtualDisplayConfigView(configId: configID)
+            .environment(env.capture)
+            .environment(env.sharing)
+            .environment(env.virtualDisplay)
+
+        render(view)
+    }
+
+    @Test func editVirtualDisplayBodyEvaluatesWithMissingConfigAlert() {
+        let env = makeEnvironment(preview: true, uiTestMode: false)
+        let view = EditVirtualDisplayConfigView(configId: UUID())
+            .environment(env.capture)
+            .environment(env.sharing)
+            .environment(env.virtualDisplay)
+
+        render(view)
+    }
+
+    @Test func editVirtualDisplayBodyEvaluatesWithPersistenceAlert() {
+        let env = makeEnvironment(preview: false, uiTestMode: true)
+        let configID = env.virtualDisplay.displayConfigs.first?.id ?? UUID()
+        env.virtualDisplay.persistenceAlert = UserFacingAlertState(
+            title: "Save Failed",
+            message: "Could not persist the updated display."
+        )
         let view = EditVirtualDisplayConfigView(configId: configID)
             .environment(env.capture)
             .environment(env.sharing)
