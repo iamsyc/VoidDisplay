@@ -104,7 +104,7 @@ final class WebServer {
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
     private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
-    private let onListenerStopped: (@MainActor @Sendable () -> Void)?
+    private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     private var didNotifyListenerStopped = false
     private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
     private var startupTimeoutTask: Task<Void, Never>?
@@ -117,7 +117,7 @@ final class WebServer {
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
-        onListenerStopped: (@MainActor @Sendable () -> Void)? = nil
+        onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
         self.sessionHubProvider = sessionHubProvider
@@ -182,8 +182,7 @@ final class WebServer {
             }
         } onCancel: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
-                self?.stopListener()
+                self?.stopListener(reason: .startupCancelled)
             }
         }
     }
@@ -211,8 +210,13 @@ final class WebServer {
         activeConnections.values.filter { $0.target == target }.count
     }
 
-    func stopListener() {
+    func stopListener(reason: WebServiceServerStopReason = .requested) {
+        notifyListenerStoppedIfNeeded(reason: reason)
         completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
+        teardownListener()
+    }
+
+    private func teardownListener() {
         disconnectAllStreamClients()
         listener?.cancel()
         listener = nil
@@ -234,21 +238,22 @@ final class WebServer {
         case .failed(let error):
             AppErrorMapper.logFailure("Web listener failed", error: error, logger: AppLog.web)
             completeStartupWaiter(result: .failed(error: error))
-            notifyListenerStoppedIfNeeded()
-            stopListener()
+            notifyListenerStoppedIfNeeded(reason: .listenerFailed)
+            teardownListener()
         case .cancelled:
             AppLog.web.info("Web listener cancelled.")
             completeStartupWaiter(result: .failed(error: LifecycleError.listenerCancelled))
-            notifyListenerStoppedIfNeeded()
+            notifyListenerStoppedIfNeeded(reason: .listenerCancelled)
+            teardownListener()
         default:
             break
         }
     }
 
-    private func notifyListenerStoppedIfNeeded() {
+    private func notifyListenerStoppedIfNeeded(reason: WebServiceServerStopReason) {
         guard !didNotifyListenerStopped else { return }
         didNotifyListenerStopped = true
-        onListenerStopped?()
+        onListenerStopped?(reason)
     }
 
     private func completeStartupWaiter(result: ListenerStartResult) {

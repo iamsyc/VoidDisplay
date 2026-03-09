@@ -120,26 +120,36 @@ struct WebServiceControllerTests {
 
     @Test
     func unexpectedListenerStopTransitionsLifecycleToFailed() async throws {
-        let sut = WebServiceController()
+        let harness = WebServiceServerHarness()
+        let sut = WebServiceController(
+            webServiceServerFactory: harness.makeServer
+        )
         var states: [WebServiceLifecycleState] = []
         sut.onLifecycleStateChanged = { state in
             states.append(state)
         }
 
-        let port = try availablePort()
-        let result = await sut.start(
+        let port: UInt16 = 18082
+        guard let startup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
             requestedPort: port,
             targetStateProvider: { _ in .active },
             sessionHubProvider: { _ in WebRTCSessionHub() }
-        )
+        ) else {
+            return
+        }
+        startup.server.finishStart(with: .ready(boundPort: port))
+
+        let result = await startup.startTask.value
         guard case .started = result else {
             Issue.record("Expected web service start to succeed for unexpected-stop test.")
             return
         }
 
-        sut.currentServer?.stopListener()
+        startup.server.emitStop(.listenerFailed)
 
-        let failedObserved = await waitUntil(timeout: .seconds(2)) {
+        let failedObserved = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
             if case .failed = sut.lifecycleState {
                 return true
             }
@@ -158,35 +168,26 @@ struct WebServiceControllerTests {
 
     @Test
     func startupSupersededByStopReturnsSupersededFailureWithoutRunningTransition() async {
-        let fakeServer = ControlledWebServiceServer()
-        let sut = WebServiceController(
-            webServiceServerFactory: { _, _, _, _ in
-                fakeServer
-            }
-        )
+        let harness = WebServiceServerHarness()
+        let sut = WebServiceController(webServiceServerFactory: harness.makeServer)
         var lifecycleStates: [WebServiceLifecycleState] = []
         var runningStates: [Bool] = []
         sut.onLifecycleStateChanged = { lifecycleStates.append($0) }
         sut.onRunningStateChanged = { runningStates.append($0) }
 
         let requestedPort: UInt16 = 18081
-        let startTask = Task {
-            await sut.start(
-                requestedPort: requestedPort,
-                targetStateProvider: { _ in .unknown },
-                sessionHubProvider: { _ in nil }
-            )
+        guard let startup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
+            requestedPort: requestedPort
+        ) else {
+            return
         }
-
-        let startInvoked = await waitUntil {
-            fakeServer.startCallCount == 1
-        }
-        #expect(startInvoked)
 
         sut.stop()
-        fakeServer.finishStart(with: .ready(boundPort: requestedPort))
+        startup.server.finishStart(with: .ready(boundPort: requestedPort))
 
-        let result = await startTask.value
+        let result = await startup.startTask.value
         guard case .failed(.listenerFailed(let failedPort, let message)) = result else {
             Issue.record("Expected superseded startup failure.")
             return
@@ -199,27 +200,109 @@ struct WebServiceControllerTests {
             .stopped
         ])
         #expect(runningStates.isEmpty)
+        #expect(startup.server.stopReasons == [.requested])
+    }
+
+    @Test
+    func staleCancelledCallbackAfterStopDoesNotChangeStoppedState() async {
+        let harness = WebServiceServerHarness()
+        let sut = WebServiceController(webServiceServerFactory: harness.makeServer)
+
+        let requestedPort: UInt16 = 18083
+        guard let startup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
+            requestedPort: requestedPort
+        ) else {
+            return
+        }
+
+        sut.stop()
+        startup.server.emitStop(.listenerCancelled)
+        startup.server.finishStart(with: .failed(error: NSError(domain: "test", code: 1)))
+
+        _ = await startup.startTask.value
+        #expect(sut.lifecycleState == .stopped)
+    }
+
+    @Test
+    func staleStopFromPriorServerDoesNotPolluteReplacementRun() async {
+        let harness = WebServiceServerHarness()
+        let sut = WebServiceController(webServiceServerFactory: harness.makeServer)
+
+        let firstPort: UInt16 = 18084
+        let secondPort: UInt16 = 18085
+
+        guard let firstStartup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
+            requestedPort: firstPort
+        ) else {
+            return
+        }
+
+        sut.stop()
+        firstStartup.server.finishStart(with: .ready(boundPort: firstPort))
+        _ = await firstStartup.startTask.value
+
+        guard let secondStartup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
+            requestedPort: secondPort,
+            targetStateProvider: { _ in .active },
+            sessionHubProvider: { _ in WebRTCSessionHub() }
+        ) else {
+            return
+        }
+
+        firstStartup.server.emitStop(.listenerFailed)
+        secondStartup.server.finishStart(with: .ready(boundPort: secondPort))
+
+        let result = await secondStartup.startTask.value
+        #expect(result == .started(.init(requestedPort: secondPort, boundPort: secondPort)))
+        #expect(sut.lifecycleState == .running(.init(requestedPort: secondPort, boundPort: secondPort)))
+    }
+
+    private func beginControlledStartup(
+        harness: WebServiceServerHarness,
+        sut: WebServiceController,
+        requestedPort: UInt16,
+        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState = { _ in .unknown },
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub? = { _ in nil }
+    ) async -> (startTask: Task<WebServiceStartResult, Never>, server: ControlledWebServiceServer)? {
+        let existingServerCount = harness.createdServers.count
+        let startTask = Task {
+            await sut.start(
+                requestedPort: requestedPort,
+                targetStateProvider: targetStateProvider,
+                sessionHubProvider: sessionHubProvider
+            )
+        }
+
+        let startInvoked = await waitUntil {
+            guard harness.createdServers.count > existingServerCount,
+                  let server = harness.createdServers.last else {
+                return false
+            }
+            return server.startCallCount == 1
+        }
+        #expect(startInvoked)
+
+        guard startInvoked,
+              harness.createdServers.count > existingServerCount,
+              let server = harness.createdServers.last else {
+            Issue.record("Expected controlled web service server to enter startListener().")
+            startTask.cancel()
+            return nil
+        }
+
+        return (startTask, server)
     }
 
     private func availablePort() throws -> UInt16 {
         let (descriptor, port) = try openBoundSocket()
         close(descriptor)
         return port
-    }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        condition: @escaping @MainActor () -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now + timeout
-        while clock.now < deadline {
-            if condition() {
-                return true
-            }
-            await Task.yield()
-        }
-        return condition()
     }
 
     private func openBoundSocket() throws -> (Int32, UInt16) {
@@ -263,12 +346,44 @@ struct WebServiceControllerTests {
 }
 
 @MainActor
+private final class WebServiceServerHarness {
+    private(set) var createdServers: [ControlledWebServiceServer] = []
+
+    func makeServer(
+        _ port: NWEndpoint.Port,
+        _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
+    ) throws -> any WebServiceServerProtocol {
+        _ = port
+        _ = targetStateProvider
+        _ = sessionHubProvider
+        let server = ControlledWebServiceServer(onListenerStopped: onListenerStopped)
+        createdServers.append(server)
+        return server
+    }
+}
+
+@MainActor
 private final class ControlledWebServiceServer: WebServiceServerProtocol {
     private var startContinuation: CheckedContinuation<WebServer.ListenerStartResult, Never>?
+    private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     var startCallCount = 0
     private(set) var stopCallCount = 0
+    private(set) var stopReasons: [WebServiceServerStopReason] = []
     private(set) var disconnectCallCount = 0
     var activeStreamClientCount: Int = 0
+
+    init(onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?) {
+        self.onListenerStopped = onListenerStopped
+    }
+
+    deinit {
+        let hasPendingStartContinuation = startContinuation != nil
+        if hasPendingStartContinuation {
+            assertionFailure("ControlledWebServiceServer deinitialized with an unresolved startContinuation. Tests must finish or fail startup explicitly.")
+        }
+    }
 
     func startListener() async -> WebServer.ListenerStartResult {
         startCallCount += 1
@@ -283,8 +398,13 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
         continuation?.resume(returning: result)
     }
 
-    func stopListener() {
+    func emitStop(_ reason: WebServiceServerStopReason) {
+        onListenerStopped?(reason)
+    }
+
+    func stopListener(reason: WebServiceServerStopReason) {
         stopCallCount += 1
+        stopReasons.append(reason)
     }
 
     func disconnectAllStreamClients() {
