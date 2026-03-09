@@ -2,7 +2,7 @@
 
 ## Branching
 - Do not develop on `main` unless explicitly requested.
-- If file changes are needed, create a branch from latest `main`.
+- For code changes, if the user does not specify a base branch, create a `codex/*` branch from the current branch.
 - Codex branch names must start with `codex/`.
 
 ## Delivery Flow
