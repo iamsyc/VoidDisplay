@@ -25,6 +25,9 @@ struct VirtualDisplayView: View {
     }
 
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+        @Bindable var bindableViewModel = viewModel
+
         let _ = viewModel.primaryDisplayRefreshTick
         content
         .sheet(isPresented: $createView) {
@@ -56,17 +59,23 @@ struct VirtualDisplayView: View {
         } message: { config in
             Text("This will remove the configuration and disable the display if it is running.\n\n\(config.displayName) (Serial \(config.serialNum))")
         }
-        .alert("Enable Failed", isPresented: $viewModel.showError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.errorMessage)
+        .alert(item: $bindableViewModel.userFacingAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    viewModel.dismissAlert()
+                }
+            )
         }
-        .alert("Save Failed", isPresented: persistenceErrorBinding) {
-            Button("OK") {
-                virtualDisplay.clearPersistenceError()
-            }
-        } message: {
-            Text(virtualDisplay.persistenceErrorMessage)
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
         }
         .onAppear {
             viewModel.handleAppear()
@@ -211,18 +220,6 @@ struct VirtualDisplayView: View {
             try action()
         } catch {}
     }
-
-    private var persistenceErrorBinding: Binding<Bool> {
-        Binding(
-            get: { virtualDisplay.showPersistenceError },
-            set: { isPresented in
-                if !isPresented {
-                    virtualDisplay.clearPersistenceError()
-                }
-            }
-        )
-    }
-
 }
 
 #Preview {

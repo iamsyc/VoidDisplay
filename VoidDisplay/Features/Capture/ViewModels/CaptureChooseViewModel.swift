@@ -48,6 +48,7 @@ final class CaptureChooseViewModel {
 
     let catalog: ScreenCaptureDisplayCatalogState
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
+    var userFacingAlert: UserFacingAlertState?
 
     private let makePreviewSubscription: @MainActor (SCDisplay) async throws -> DisplayPreviewSubscription
     private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
@@ -138,8 +139,19 @@ final class CaptureChooseViewModel {
                 openWindow(session.id)
             } catch {
                 AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
+                userFacingAlert = UserFacingAlertState(
+                    title: String(localized: "Start Monitoring Failed"),
+                    message: AppErrorMapper.userMessage(
+                        for: error,
+                        fallback: String(localized: "Failed to start monitoring.")
+                    )
+                )
             }
         }
+    }
+
+    func dismissAlert() {
+        userFacingAlert = nil
     }
 
     func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {

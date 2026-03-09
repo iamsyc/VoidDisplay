@@ -15,8 +15,7 @@ final class VirtualDisplayController {
     private(set) var displayConfigs: [VirtualDisplayConfig] = []
     private(set) var runningConfigIds: Set<UUID> = []
     private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
-    private(set) var showPersistenceError = false
-    private(set) var persistenceErrorMessage = ""
+    var persistenceAlert: UserFacingAlertState?
     private(set) var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
     private(set) var rebuildingConfigIds: Set<UUID> = []
     private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
@@ -27,16 +26,16 @@ final class VirtualDisplayController {
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var rebuildPresentationState = RebuildPresentationState()
-    @ObservationIgnored private let appliedBadgeDisplayDurationNanoseconds: UInt64
+    @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
     @ObservationIgnored private let stopDependentStreamsBeforeRebuild: (CGDirectDisplayID) -> Void
 
     init(
         virtualDisplayFacade: any VirtualDisplayFacade,
-        appliedBadgeDisplayDurationNanoseconds: UInt64,
+        appliedBadgeDisplayDuration: Duration,
         stopDependentStreamsBeforeRebuild: @escaping (CGDirectDisplayID) -> Void
     ) {
         self.virtualDisplayFacade = virtualDisplayFacade
-        self.appliedBadgeDisplayDurationNanoseconds = appliedBadgeDisplayDurationNanoseconds
+        self.appliedBadgeDisplayDuration = appliedBadgeDisplayDuration
         self.stopDependentStreamsBeforeRebuild = stopDependentStreamsBeforeRebuild
         syncVirtualDisplayState()
     }
@@ -105,9 +104,8 @@ final class VirtualDisplayController {
         }
     }
 
-    func clearPersistenceError() {
-        showPersistenceError = false
-        persistenceErrorMessage = ""
+    func dismissPersistenceAlert() {
+        persistenceAlert = nil
     }
 
     func startRebuildFromSavedConfig(configId: UUID) {
@@ -194,6 +192,7 @@ final class VirtualDisplayController {
         modes: [ResolutionSelection]
     ) throws -> UUID {
         try performPersistenceAction(
+            title: String(localized: "Create Failed"),
             operation: "Create virtual display",
             fallback: String(localized: "Create failed.")
         ) {
@@ -223,6 +222,7 @@ final class VirtualDisplayController {
 
     func destroyDisplay(_ configId: UUID) throws {
         try performPersistenceAction(
+            title: String(localized: "Delete Failed"),
             operation: "Delete virtual display",
             fallback: String(localized: "Delete failed.")
         ) {
@@ -239,6 +239,7 @@ final class VirtualDisplayController {
 
     func updateConfig(_ updated: VirtualDisplayConfig) throws {
         try performPersistenceAction(
+            title: String(localized: "Save Failed"),
             operation: "Update virtual display config",
             fallback: String(localized: "Failed to save display settings.")
         ) {
@@ -250,7 +251,7 @@ final class VirtualDisplayController {
 
     @discardableResult
     func moveDisplayConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
-        clearPersistenceError()
+        dismissPersistenceAlert()
         defer { syncVirtualDisplayState() }
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
         let moved: Bool
@@ -265,6 +266,7 @@ final class VirtualDisplayController {
                 operation = "Move virtual display down"
             }
             recordPersistenceFailure(
+                title: String(localized: "Save Failed"),
                 operation: operation,
                 error: error,
                 fallback: String(localized: "Failed to save virtual display changes.")
@@ -277,7 +279,7 @@ final class VirtualDisplayController {
 
     @discardableResult
     func setPrimaryVirtualDisplayByReordering(_ configId: UUID) throws -> Bool {
-        clearPersistenceError()
+        dismissPersistenceAlert()
         defer { syncVirtualDisplayState() }
         let firstEnabledBeforeMove = firstEnabledDesiredConfigID(in: displayConfigs)
         let moved: Bool
@@ -285,6 +287,7 @@ final class VirtualDisplayController {
             moved = try virtualDisplayFacade.moveConfigToFirstEnabledPosition(configId)
         } catch {
             recordPersistenceFailure(
+                title: String(localized: "Save Failed"),
                 operation: "Set primary virtual display",
                 error: error,
                 fallback: String(localized: "Failed to save virtual display changes.")
@@ -314,6 +317,7 @@ final class VirtualDisplayController {
     @discardableResult
     func resetVirtualDisplayData() throws -> Int {
         try performPersistenceAction(
+            title: String(localized: "Reset Failed"),
             operation: "Reset virtual display configurations",
             fallback: String(localized: "Failed to reset virtual display configurations.")
         ) {
@@ -362,34 +366,38 @@ final class VirtualDisplayController {
     }
 
     private func performPersistenceAction<T>(
+        title: String,
         operation: String,
         fallback: String,
         mutation: () throws -> T
     ) throws -> T {
-        clearPersistenceError()
+        dismissPersistenceAlert()
         do {
             return try mutation()
         } catch {
-            recordPersistenceFailure(operation: operation, error: error, fallback: fallback)
+            recordPersistenceFailure(title: title, operation: operation, error: error, fallback: fallback)
             throw error
         }
     }
 
     private func recordPersistenceFailure(
+        title: String,
         operation: String,
         error: Error,
         fallback: String
     ) {
         AppErrorMapper.logFailure(operation, error: error, logger: AppLog.virtualDisplay)
-        persistenceErrorMessage = AppErrorMapper.userMessage(for: error, fallback: fallback)
-        showPersistenceError = true
+        persistenceAlert = UserFacingAlertState(
+            title: title,
+            message: AppErrorMapper.userMessage(for: error, fallback: fallback)
+        )
     }
 
     private func scheduleAppliedBadgeClear(configId: UUID) {
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(nanoseconds: self?.appliedBadgeDisplayDurationNanoseconds ?? 2_500_000_000)
+                try await Task.sleep(for: self?.appliedBadgeDisplayDuration ?? .seconds(2.5))
             } catch {
                 return
             }

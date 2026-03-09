@@ -5,11 +5,11 @@ import Foundation
 final class DebouncingDisplayReconfigurationMonitor {
     private var handler: (@MainActor () -> Void)?
     private var debounceTask: Task<Void, Never>?
-    private let debounceNanoseconds: UInt64
+    private let debounceDuration: Duration
     nonisolated(unsafe) private var isRunning = false
 
-    init(debounceNanoseconds: UInt64 = 300_000_000) {
-        self.debounceNanoseconds = debounceNanoseconds
+    init(debounceDuration: Duration = .milliseconds(300)) {
+        self.debounceDuration = debounceDuration
     }
 
     @discardableResult
@@ -56,13 +56,12 @@ final class DebouncingDisplayReconfigurationMonitor {
 
     private func handleDisplayChange() {
         debounceTask?.cancel()
-        let ns = debounceNanoseconds
-        if ns == 0 {
+        if debounceDuration <= .zero {
             handler?()
             return
         }
         debounceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: ns)
+            try? await Task.sleep(for: self?.debounceDuration ?? .zero)
             guard let self, !Task.isCancelled else { return }
             self.handler?()
         }

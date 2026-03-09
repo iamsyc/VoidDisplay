@@ -169,10 +169,10 @@ final class WebServer {
                 startupWaiter = continuation
                 didNotifyListenerStopped = false
 
-                let timeoutNanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
+                let timeoutDuration = Duration.seconds(max(timeout, 0))
                 startupTimeoutTask = Task { [weak self] in
                     do {
-                        try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                        try await Task.sleep(for: timeoutDuration)
                     } catch {
                         return
                     }

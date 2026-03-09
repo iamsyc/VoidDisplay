@@ -146,7 +146,7 @@ final class ScreenCaptureDisplayCatalogLoader {
             guard let self else { return }
             do {
                 if self.runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() {
-                    try await Task.sleep(nanoseconds: 3_000_000_000)
+                    try await Task.sleep(for: .seconds(3))
                 }
                 let shareableDisplays = try await self.loadShareableDisplays()
                 guard self.canCommitDisplayLoadResult(requestID: requestID) else { return }

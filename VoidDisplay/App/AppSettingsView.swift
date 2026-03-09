@@ -11,6 +11,8 @@ struct AppSettingsView: View {
     @State private var resetCompleted = false
 
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+
         VStack(alignment: .leading, spacing: 12) {
             Text("Virtual Displays")
                 .font(.headline)
@@ -48,23 +50,14 @@ struct AppSettingsView: View {
         } message: {
             Text("This action cannot be undone.")
         }
-        .alert("Reset Failed", isPresented: persistenceErrorBinding) {
-            Button("OK") {
-                virtualDisplay.clearPersistenceError()
-            }
-        } message: {
-            Text(virtualDisplay.persistenceErrorMessage)
-        }
-    }
-
-    private var persistenceErrorBinding: Binding<Bool> {
-        Binding(
-            get: { virtualDisplay.showPersistenceError },
-            set: { isPresented in
-                if !isPresented {
-                    virtualDisplay.clearPersistenceError()
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
                 }
-            }
-        )
+            )
+        }
     }
 }

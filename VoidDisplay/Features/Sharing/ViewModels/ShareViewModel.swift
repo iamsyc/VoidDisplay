@@ -67,12 +67,22 @@ final class ShareViewModel {
     }
 
     let catalog: ScreenCaptureDisplayCatalogState
-    var servicePortInput = ""
+    var servicePortInput = "" {
+        didSet {
+            let sanitized = String(servicePortInput.prefix(5))
+            if servicePortInput != sanitized {
+                servicePortInput = sanitized
+                return
+            }
+            if oldValue != servicePortInput {
+                portInputErrorMessage = nil
+            }
+        }
+    }
     var portInputErrorMessage: String?
     var isStartingService = false
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
-    var showOpenPageError = false
-    var openPageErrorMessage = ""
+    var userFacingAlert: UserFacingAlertState?
 
     private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
     @ObservationIgnored private let dependencies: Dependencies
@@ -160,11 +170,6 @@ final class ShareViewModel {
         catalogLoader.cancelInFlightDisplayLoad()
         dependencies.sharingActions.stopWebService()
         syncForCurrentState()
-    }
-
-    func updateServicePortInput(_ value: String) {
-        servicePortInput = String(value.prefix(5))
-        portInputErrorMessage = nil
     }
 
     func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
@@ -267,7 +272,10 @@ final class ShareViewModel {
                 ready = true
             }
             guard ready else {
-                presentError(String(localized: "Web service is not running."))
+                presentError(
+                    title: String(localized: "Share Failed"),
+                    message: String(localized: "Web service is not running.")
+                )
                 return
             }
 
@@ -276,7 +284,10 @@ final class ShareViewModel {
             } catch {
                 dependencies.sharingActions.stopSharing(display.displayID)
                 AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
-                presentError(AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing.")))
+                presentError(
+                    title: String(localized: "Share Failed"),
+                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing."))
+                )
             }
         }
     }
@@ -289,8 +300,8 @@ final class ShareViewModel {
         dependencies.sharingQueries.sharePageAddress(displayID)
     }
 
-    func clearError() {
-        showOpenPageError = false
+    func dismissAlert() {
+        userFacingAlert = nil
     }
 
     func cancelInFlightDisplayLoad() {
@@ -319,9 +330,8 @@ final class ShareViewModel {
         }
     }
 
-    private func presentError(_ message: String) {
-        openPageErrorMessage = message
-        showOpenPageError = true
+    private func presentError(title: String, message: String) {
+        userFacingAlert = UserFacingAlertState(title: title, message: message)
     }
 
     private func presentPortInputError(_ message: String) {

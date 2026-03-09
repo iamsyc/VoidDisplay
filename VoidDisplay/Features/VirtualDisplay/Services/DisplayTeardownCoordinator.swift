@@ -107,7 +107,7 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
             await withCheckedContinuation { continuation in
                 let timeoutTask = Task { [weak self] in
                     guard let self else { return }
-                    await self.clock.sleep(seconds: timeout)
+                    await self.clock.sleep(for: .seconds(timeout))
                     self.completeOfflineWaiterAfterTimeout(token: token)
                 }
 
@@ -317,7 +317,7 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
 
                 let timeoutTask = Task { [weak self] in
                     guard let self else { return }
-                    await self.clock.sleep(seconds: timeout)
+                    await self.clock.sleep(for: .seconds(timeout))
                     AppLog.virtualDisplay.debug(
                         "Termination waiter timed out (config: \(configId.uuidString, privacy: .public), expectedGeneration: \(expectedGeneration, privacy: .public))."
                     )
@@ -384,7 +384,7 @@ final class DisplayTeardownCoordinator: DisplayTeardownCoordinating {
             if !isManagedDisplayOnline(serialNum: serialNum) {
                 return true
             }
-            await clock.sleep(seconds: interval)
+            await clock.sleep(for: .seconds(interval))
         }
         return !isManagedDisplayOnline(serialNum: serialNum)
     }

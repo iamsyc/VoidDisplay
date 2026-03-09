@@ -42,8 +42,8 @@ struct VirtualDisplayListViewModelTests {
 
         #expect(sut.showDeleteConfirm)
         #expect(sut.deleteCandidate?.id == config.id)
-        #expect(sut.showError)
-        #expect(sut.errorMessage.isEmpty == false)
+        #expect(sut.userFacingAlert != nil)
+        #expect(sut.userFacingAlert?.message.isEmpty == false)
         #expect(mockService.destroyDisplayByConfigCallCount == 1)
         #expect(mockService.destroyedConfigIDs == [config.id])
     }
@@ -78,7 +78,7 @@ struct VirtualDisplayListViewModelTests {
 
         #expect(finished)
         #expect(mockService.enableDisplayConfigIDs == [config.id])
-        #expect(sut.showError == false)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @Test func toggleDisplayStateShowsErrorWhenDisableFails() async {
@@ -94,13 +94,13 @@ struct VirtualDisplayListViewModelTests {
 
         sut.toggleDisplayState(config)
         let finished = await waitUntil {
-            sut.showError && sut.togglingConfigIds.isEmpty
+            sut.userFacingAlert != nil && sut.togglingConfigIds.isEmpty
         }
 
         #expect(finished)
         #expect(mockService.disableDisplayByConfigCallCount == 1)
         #expect(mockService.disableDisplayByConfigIDs == [config.id])
-        #expect(sut.errorMessage.isEmpty == false)
+        #expect(sut.userFacingAlert?.message.isEmpty == false)
     }
 
     @Test func isPrimaryDisplayUsesRuntimeDisplayIDHintWhenRuntimeObjectIsUnavailable() {

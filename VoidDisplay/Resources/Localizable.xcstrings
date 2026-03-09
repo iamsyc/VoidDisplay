@@ -153,6 +153,9 @@
     "8089" : {
 
     },
+    "Add Custom Resolution" : {
+
+    },
     "Add Method" : {
       "localizations" : {
         "zh-Hans" : {
@@ -162,6 +165,9 @@
           }
         }
       }
+    },
+    "Add Preset Resolution" : {
+
     },
     "Add Virtual Display" : {
       "localizations" : {
@@ -369,7 +375,13 @@
         }
       }
     },
+    "Delete Failed" : {
+
+    },
     "Delete failed." : {
+
+    },
+    "Delete Resolution Mode" : {
 
     },
     "Delete Virtual Display" : {
@@ -394,6 +406,9 @@
           }
         }
       }
+    },
+    "Disable Failed" : {
+
     },
     "Disable failed." : {
       "localizations" : {
@@ -605,6 +620,9 @@
 
     },
     "Failed to save virtual display changes." : {
+
+    },
+    "Failed to start monitoring." : {
 
     },
     "Failed to start sharing." : {
@@ -1450,6 +1468,9 @@
         }
       }
     },
+    "Share Failed" : {
+
+    },
     "Sharing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1479,6 +1500,9 @@
           }
         }
       }
+    },
+    "Start Monitoring Failed" : {
+
     },
     "Start Service" : {
       "localizations" : {

@@ -34,6 +34,8 @@ struct ShareView: View {
     }
 
     var body: some View {
+        @Bindable var bindableViewModel = viewModel
+
         VStack(spacing: 0) {
             shareContent
                 .accessibilityIdentifier("share_content_root")
@@ -72,12 +74,14 @@ struct ShareView: View {
             guard sharing.isWebServiceRunning else { return }
             sharing.refreshSharingClientCount()
         }
-        .alert("Error", isPresented: $viewModel.showOpenPageError) {
-            Button("OK") {
-                viewModel.clearError()
-            }
-        } message: {
-            Text(viewModel.openPageErrorMessage)
+        .alert(item: $bindableViewModel.userFacingAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    viewModel.dismissAlert()
+                }
+            )
         }
         .appScreenBackground()
     }
@@ -111,7 +115,7 @@ struct ShareView: View {
         displayRefreshFallbackTask = Task { @MainActor in
             var cycle: Int = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { break }
                 guard viewModel.catalog.hasScreenCapturePermission == true else { continue }
 
@@ -184,14 +188,16 @@ struct ShareView: View {
             VStack(spacing: 12) {
                 ProgressView()
                 Text("Loading…")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .accessibilityIdentifier("share_loading_permission")
         }
     }
 
     private var serviceStoppedState: some View {
-        stateContainer {
+        @Bindable var bindableViewModel = viewModel
+
+        return stateContainer {
             VStack(spacing: AppUI.Spacing.medium + 2) {
                 Image(systemName: "xserve")
                     .font(.system(size: 44))
@@ -211,20 +217,14 @@ struct ShareView: View {
                         Text("Port")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField(
-                            "8089",
-                            text: Binding(
-                                get: { viewModel.servicePortInput },
-                                set: { viewModel.updateServicePortInput($0) }
-                            )
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 84)
-                        .accessibilityIdentifier("share_port_input")
+                        TextField("8089", text: $bindableViewModel.servicePortInput)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 84)
+                            .accessibilityIdentifier("share_port_input")
                     }
 
                     Text(viewModel.portInputErrorMessage ?? " ")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -253,7 +253,9 @@ struct ShareView: View {
     }
 
     private var screenCapturePermissionView: some View {
-        ScreenCapturePermissionGuideView(
+        @Bindable var bindableCatalog = viewModel.catalog
+
+        return ScreenCapturePermissionGuideView(
             loadErrorMessage: viewModel.catalog.loadErrorMessage,
             onOpenSettings: {
                 viewModel.openScreenCapturePrivacySettings { url in
@@ -271,10 +273,7 @@ struct ShareView: View {
                 // If permission is still missing, macOS may prompt here (expected).
                 viewModel.loadDisplays()
             } : nil,
-            isDebugInfoExpanded: Binding(
-                get: { viewModel.catalog.showDebugInfo },
-                set: { viewModel.catalog.showDebugInfo = $0 }
-            ),
+            isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
             debugItems: sharingPermissionDebugItems,
             rootAccessibilityIdentifier: "share_permission_guide",
             openSettingsButtonAccessibilityIdentifier: "share_open_settings_button",

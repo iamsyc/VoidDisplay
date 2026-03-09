@@ -253,7 +253,7 @@ final class VirtualDisplayRuntimeTracker {
     // MARK: - Sleep utility
 
     func sleepForRetry(seconds: TimeInterval) async {
-        await clock.sleep(seconds: seconds)
+        await clock.sleep(for: .seconds(seconds))
     }
 
     // MARK: - Termination

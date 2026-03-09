@@ -39,6 +39,8 @@ struct IsCapturing: View {
     }
 
     var body: some View {
+        @Bindable var bindableViewModel = viewModel
+
         VStack(spacing: 0) {
             catalogContent
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -65,6 +67,15 @@ struct IsCapturing: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("detail_monitor_screen")
+        .alert(item: $bindableViewModel.userFacingAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    viewModel.dismissAlert()
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -101,7 +112,7 @@ struct IsCapturing: View {
             VStack(spacing: 12) {
                 ProgressView()
                 Text("Loading…")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .accessibilityIdentifier("capture_loading_displays")
         }
@@ -114,7 +125,7 @@ struct IsCapturing: View {
                 if let loadErrorMessage = viewModel.catalog.loadErrorMessage {
                     Text(loadErrorMessage)
                         .font(.footnote)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)
                 }
@@ -209,7 +220,9 @@ struct IsCapturing: View {
     // MARK: - Permission View
 
     private var screenCapturePermissionView: some View {
-        ScreenCapturePermissionGuideView(
+        @Bindable var bindableCatalog = viewModel.catalog
+
+        return ScreenCapturePermissionGuideView(
             loadErrorMessage: viewModel.catalog.loadErrorMessage,
             onOpenSettings: {
                 viewModel.openScreenCapturePrivacySettings { url in
@@ -225,10 +238,7 @@ struct IsCapturing: View {
             onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
                 viewModel.loadDisplays()
             } : nil,
-            isDebugInfoExpanded: Binding(
-                get: { viewModel.catalog.showDebugInfo },
-                set: { viewModel.catalog.showDebugInfo = $0 }
-            ),
+            isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
             debugItems: capturePermissionDebugItems,
             rootAccessibilityIdentifier: "capture_permission_guide",
             openSettingsButtonAccessibilityIdentifier: "capture_open_settings_button",

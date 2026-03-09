@@ -26,12 +26,12 @@ struct ScreenCapturePermissionGuideView: View {
         VStack(spacing: AppUI.Spacing.medium + 2) {
             Image(systemName: "lock.circle")
                 .font(.system(size: 44))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             Text("Screen Recording Permission Required")
                 .font(.headline)
             Text("Allow screen recording in System Settings to monitor displays.")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
 
@@ -65,7 +65,7 @@ struct ScreenCapturePermissionGuideView: View {
             if let loadErrorMessage {
                 Text(loadErrorMessage)
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
@@ -75,7 +75,7 @@ struct ScreenCapturePermissionGuideView: View {
                 Text("If System Settings shows permission is ON but this page still says it is OFF, the change has not been applied to this running app process. Quit (⌘Q) and reopen, or remove and re-add the app in the permission list.")
             }
             .font(.footnote)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 360)
 
@@ -89,7 +89,7 @@ struct ScreenCapturePermissionGuideView: View {
                     }
                 }
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: 420, alignment: .leading)
             }

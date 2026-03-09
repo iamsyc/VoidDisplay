@@ -35,8 +35,7 @@ final class VirtualDisplayListViewModel {
     var showDeleteConfirm = false
     var deleteCandidate: VirtualDisplayConfig?
     var showRestoreFailureAlert = false
-    var showError = false
-    var errorMessage = ""
+    var userFacingAlert: UserFacingAlertState?
 
     @ObservationIgnored private var primaryDisplayMonitor = DebouncingDisplayReconfigurationMonitor()
     @ObservationIgnored private var primaryDisplayFallbackCoordinator = PrimaryDisplayFallbackCoordinator()
@@ -86,8 +85,10 @@ final class VirtualDisplayListViewModel {
             try dependencies.destroyDisplay(candidate.id)
         } catch {
             AppErrorMapper.logFailure("Delete virtual display", error: error, logger: AppLog.virtualDisplay)
-            errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
-            showError = true
+            userFacingAlert = UserFacingAlertState(
+                title: String(localized: "Delete Failed"),
+                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
+            )
             return
         }
         deleteCandidate = nil
@@ -124,8 +125,10 @@ final class VirtualDisplayListViewModel {
                     try dependencies.disableDisplayByConfig(config.id)
                 } catch {
                     AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
-                    self.errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
-                    self.showError = true
+                    self.userFacingAlert = UserFacingAlertState(
+                        title: String(localized: "Disable Failed"),
+                        message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
+                    )
                 }
                 return
             }
@@ -133,10 +136,16 @@ final class VirtualDisplayListViewModel {
                 try await dependencies.enableDisplay(config.id)
             } catch {
                 AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
-                self.errorMessage = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
-                self.showError = true
+                self.userFacingAlert = UserFacingAlertState(
+                    title: String(localized: "Enable Failed"),
+                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
+                )
             }
         }
+    }
+
+    func dismissAlert() {
+        userFacingAlert = nil
     }
 
     private func startPrimaryDisplayMonitoring() {

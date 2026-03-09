@@ -2,23 +2,23 @@ import Foundation
 
 @MainActor
 final class PrimaryDisplayFallbackCoordinator {
-    typealias Sleep = @Sendable (_ nanoseconds: UInt64) async -> Void
+    typealias Sleep = @Sendable (_ duration: Duration) async -> Void
 
-    private let pollIntervalNanoseconds: UInt64
+    private let pollInterval: Duration
     private let recoveryAttemptIntervalCycles: Int
     private let sleep: Sleep
 
     private var fallbackTask: Task<Void, Never>?
 
     init(
-        pollIntervalNanoseconds: UInt64 = 500_000_000,
+        pollInterval: Duration = .milliseconds(500),
         recoveryAttemptIntervalCycles: Int = 10,
         sleep: Sleep? = nil
     ) {
-        self.pollIntervalNanoseconds = pollIntervalNanoseconds
+        self.pollInterval = pollInterval
         self.recoveryAttemptIntervalCycles = max(1, recoveryAttemptIntervalCycles)
-        self.sleep = sleep ?? { nanoseconds in
-            try? await Task.sleep(nanoseconds: nanoseconds)
+        self.sleep = sleep ?? { duration in
+            try? await Task.sleep(for: duration)
         }
     }
 
@@ -38,7 +38,7 @@ final class PrimaryDisplayFallbackCoordinator {
 
             var cycle = 0
             while !Task.isCancelled {
-                await self.sleep(self.pollIntervalNanoseconds)
+                await self.sleep(self.pollInterval)
                 guard !Task.isCancelled else { break }
 
                 onTick()

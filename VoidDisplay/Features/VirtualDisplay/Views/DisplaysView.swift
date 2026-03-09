@@ -55,31 +55,20 @@ struct DisplaysView: View {
     }
 
     private func displayList(_ displays: [NSScreen]) -> some View {
-        GeometryReader { geometry in
-            let useGrid = geometry.size.width > 680
-            ScrollView {
-                displayRows(displays: displays, useGrid: useGrid)
-                    .appListContentInsets()
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 320), spacing: AppUI.List.sectionSpacing, alignment: .top)
+                ],
+                spacing: AppUI.List.sectionSpacing
+            ) {
+                ForEach(displays, id: \.self) { display in
+                    displayRow(display)
+                }
             }
+            .appListContentInsets()
         }
         .accessibilityIdentifier("displays_list")
-    }
-
-    @ViewBuilder
-    private func displayRows(displays: [NSScreen], useGrid: Bool) -> some View {
-        if useGrid {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppUI.List.sectionSpacing) {
-                ForEach(displays, id: \.self) { display in
-                    displayRow(display)
-                }
-            }
-        } else {
-            LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                ForEach(displays, id: \.self) { display in
-                    displayRow(display)
-                }
-            }
-        }
     }
 
     private func displayRow(_ display: NSScreen) -> some View {

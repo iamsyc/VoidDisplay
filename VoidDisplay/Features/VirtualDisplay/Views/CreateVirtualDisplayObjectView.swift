@@ -30,9 +30,7 @@ struct CreateVirtualDisplay: View {
     @State private var customRefreshRate: Double = 60.0
     
     // Validation & alerts
-    @State private var showError = false
-    @State private var errorMessage = ""
-    @State private var showDuplicateWarning = false
+    @State private var localAlert: UserFacingAlertState?
     
     // Focus state
     private enum FocusField: Hashable {
@@ -78,6 +76,8 @@ struct CreateVirtualDisplay: View {
     // MARK: - Body
     
     var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+
         Form {
             basicInfoSection
             physicalDisplaySection
@@ -100,22 +100,20 @@ struct CreateVirtualDisplay: View {
                 }
             }
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: {
-            Text(errorMessage)
+        .alert(item: $localAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message)
+            )
         }
-        .alert("Create Failed", isPresented: persistenceErrorBinding) {
-            Button("OK") {
-                virtualDisplay.clearPersistenceError()
-            }
-        } message: {
-            Text(virtualDisplay.persistenceErrorMessage)
-        }
-        .alert("Tip", isPresented: $showDuplicateWarning) {
-            Button("OK") {}
-        } message: {
-            Text("This resolution mode already exists.")
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
         }
         .onAppear {
             let initial = CreateVirtualDisplayInputValidator.initializeNameAndSerial(
@@ -149,7 +147,7 @@ struct CreateVirtualDisplay: View {
                         .focused($focusedField, equals: .serialNum)
                 } else {
                     Text(serialNum, format: .number)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             
@@ -185,11 +183,7 @@ struct CreateVirtualDisplay: View {
                 Text("Physical Size")
                 Spacer()
                 Text(verbatim: "\(physicalSize.width) × \(physicalSize.height) mm")
-                    .foregroundColor(.secondary)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                clearFocus()
+                    .foregroundStyle(.secondary)
             }
             
             HStack {
@@ -201,7 +195,7 @@ struct CreateVirtualDisplay: View {
                     .overlay {
                         Text(selectedAspectRatio.rawValue)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 Spacer()
             }
@@ -216,7 +210,7 @@ struct CreateVirtualDisplay: View {
         Section {
             if selectedModes.isEmpty {
                 Text("No resolution modes added")
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .italic()
             } else {
                 ForEach($selectedModes) { $mode in
@@ -228,7 +222,7 @@ struct CreateVirtualDisplay: View {
                         HStack(spacing: 6) {
                             Text("HiDPI")
                                 .font(.caption)
-                                .foregroundColor($mode.enableHiDPI.wrappedValue ? .green : .secondary)
+                                .foregroundStyle($mode.enableHiDPI.wrappedValue ? .green : .secondary)
                             Toggle("", isOn: $mode.enableHiDPI)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
@@ -237,11 +231,13 @@ struct CreateVirtualDisplay: View {
                         .onChange(of: mode.enableHiDPI) { _, _ in
                             clearFocus()
                         }
-                        Button(action: { removeMode(mode) }) {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundColor(.red)
+                        ResolutionModeActionButton(
+                            "Delete Resolution Mode",
+                            systemImage: "minus.circle.fill",
+                            tint: .red
+                        ) {
+                            removeMode(mode)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -271,14 +267,14 @@ struct CreateVirtualDisplay: View {
                             clearFocus()
                         }
                         
-                        Button(action: {
+                        ResolutionModeActionButton(
+                            "Add Preset Resolution",
+                            systemImage: "plus.circle.fill",
+                            tint: .green
+                        ) {
                             clearFocus()
                             addPresetMode()
-                        }) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.green)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             } else {
@@ -294,7 +290,7 @@ struct CreateVirtualDisplay: View {
                             .controlSize(.small)
 
                         Text("×")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         TextField("Height", value: $customHeight, format: .number)
                             .labelsHidden()
@@ -306,7 +302,7 @@ struct CreateVirtualDisplay: View {
                             .controlSize(.small)
 
                         Text("@")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
                         TextField("Hz", value: $customRefreshRate, format: .number)
                             .labelsHidden()
@@ -318,16 +314,16 @@ struct CreateVirtualDisplay: View {
                             .controlSize(.small)
 
                         Text("Hz")
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
 
-                        Button(action: {
+                        ResolutionModeActionButton(
+                            "Add Custom Resolution",
+                            systemImage: "plus.circle.fill",
+                            tint: .green
+                        ) {
                             clearFocus()
                             addCustomMode()
-                        }) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.green)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -336,7 +332,7 @@ struct CreateVirtualDisplay: View {
         } footer: {
             Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
     
@@ -350,7 +346,10 @@ struct CreateVirtualDisplay: View {
         case .appended(let updated):
             selectedModes = updated
         case .duplicate:
-            showDuplicateWarning = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
         case .invalidValues:
             break
         }
@@ -366,10 +365,15 @@ struct CreateVirtualDisplay: View {
         case .appended(let updated):
             selectedModes = updated
         case .duplicate:
-            showDuplicateWarning = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
         case .invalidValues:
-            errorMessage = String(localized: "Please enter valid resolution values.")
-            showError = true
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Please enter valid resolution values.")
+            )
         }
     }
     
@@ -390,17 +394,6 @@ struct CreateVirtualDisplay: View {
             )
             isShow = false
         } catch {}
-    }
-
-    private var persistenceErrorBinding: Binding<Bool> {
-        Binding(
-            get: { virtualDisplay.showPersistenceError },
-            set: { isPresented in
-                if !isPresented {
-                    virtualDisplay.clearPersistenceError()
-                }
-            }
-        )
     }
 }
 

@@ -8,7 +8,7 @@ struct PrimaryDisplayFallbackCoordinatorTests {
 
     @Test func coordinatorAttemptsRecoveryByCycleAndStopsAfterRecovery() async {
         let coordinator = PrimaryDisplayFallbackCoordinator(
-            pollIntervalNanoseconds: 1_000_000,
+            pollInterval: .milliseconds(1),
             recoveryAttemptIntervalCycles: 3,
             sleep: { _ in await Task.yield() }
         )
@@ -37,7 +37,7 @@ struct PrimaryDisplayFallbackCoordinatorTests {
 
     @Test func coordinatorDoesNotStartTwiceAndCanBeStopped() async {
         let coordinator = PrimaryDisplayFallbackCoordinator(
-            pollIntervalNanoseconds: 2_000_000,
+            pollInterval: .milliseconds(2),
             recoveryAttemptIntervalCycles: 10,
             sleep: { _ in await Task.yield() }
         )
@@ -71,7 +71,7 @@ struct PrimaryDisplayFallbackCoordinatorTests {
         #expect(stopped)
 
         let snapshot = tickCount
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        try? await Task.sleep(for: .milliseconds(20))
         #expect(tickCount == snapshot)
     }
 }

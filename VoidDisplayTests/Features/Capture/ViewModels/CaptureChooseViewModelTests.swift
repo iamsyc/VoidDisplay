@@ -72,7 +72,7 @@ struct CaptureChooseViewModelTests {
         let captureController = CaptureController(captureMonitoringService: captureService)
         let virtualDisplayController = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDurationNanoseconds: 1,
+            appliedBadgeDisplayDuration: .nanoseconds(1),
             stopDependentStreamsBeforeRebuild: { _ in }
         )
         let dependencies = CaptureChooseViewModel.Dependencies.live(
@@ -150,6 +150,28 @@ struct CaptureChooseViewModelTests {
         #expect(firstStarted)
         #expect(secondStarted)
         #expect(enteredDisplayIDs == [firstDisplayID, secondDisplayID])
+        #expect(sut.startingDisplayIDs.isEmpty)
+    }
+
+    @MainActor @Test func startMonitoringFailurePresentsUserFacingAlert() async {
+        struct ControlledError: LocalizedError {
+            var errorDescription: String? { "preview failed" }
+        }
+
+        let sut = CaptureChooseViewModel(
+            makePreviewSubscription: { _ in
+                throw ControlledError()
+            },
+            dependencies: makeNoopCaptureDependencies()
+        )
+        let display = MockSCDisplay.make(displayID: 777, width: 1920, height: 1080)
+        var openedSessionIDs: [UUID] = []
+
+        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+
+        #expect(openedSessionIDs.isEmpty)
+        #expect(sut.userFacingAlert?.title == "Start Monitoring Failed")
+        #expect(sut.userFacingAlert?.message.isEmpty == false)
         #expect(sut.startingDisplayIDs.isEmpty)
     }
 

@@ -576,7 +576,7 @@ final class VirtualDisplayOrchestrator {
             } else {
                 stableAbsenceSamples = 0
             }
-            await clock.sleep(seconds: pollInterval)
+            await clock.sleep(for: .seconds(pollInterval))
         }
 
         let waitedMs = elapsedMilliseconds(since: start)

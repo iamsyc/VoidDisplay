@@ -302,7 +302,7 @@ struct AppBootstrapTests {
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
-            appliedBadgeDisplayDurationNanoseconds: 50_000_000,
+            appliedBadgeDisplayDuration: .milliseconds(50),
             isRunningUnderXCTestOverride: true
         )
 
@@ -658,8 +658,8 @@ struct AppBootstrapTests {
         }
         #expect(virtualDisplay.resetAllVirtualDisplayDataCallCount == 1)
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [config.id])
-        #expect(sut.virtualDisplay.showPersistenceError)
-        #expect(sut.virtualDisplay.persistenceErrorMessage.isEmpty == false)
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
     @Test func updateConfigPropagatesFacadeFailureWithoutMutatingControllerState() {
@@ -692,8 +692,8 @@ struct AppBootstrapTests {
             try sut.virtualDisplay.updateConfig(updated)
         }
         #expect(sut.virtualDisplay.displayConfigs.first?.displayName == "Original")
-        #expect(sut.virtualDisplay.showPersistenceError)
-        #expect(sut.virtualDisplay.persistenceErrorMessage.isEmpty == false)
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
     @Test func createDisplayPropagatesFailureAndSetsPersistencePresentation() {
@@ -731,8 +731,8 @@ struct AppBootstrapTests {
             )
         }
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [existing.id])
-        #expect(sut.virtualDisplay.showPersistenceError)
-        #expect(sut.virtualDisplay.persistenceErrorMessage.isEmpty == false)
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
     @Test func createDisplayRollbackFailureUsesLocalizedPersistenceRecoveryErrorMessage() {
@@ -756,7 +756,7 @@ struct AppBootstrapTests {
 
         let sut = VirtualDisplayController(
             virtualDisplayFacade: orchestrator,
-            appliedBadgeDisplayDurationNanoseconds: 1,
+            appliedBadgeDisplayDuration: .nanoseconds(1),
             stopDependentStreamsBeforeRebuild: { _ in }
         )
 
@@ -769,9 +769,9 @@ struct AppBootstrapTests {
                 modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
             )
         }
-        #expect(sut.showPersistenceError)
+        #expect(sut.persistenceAlert != nil)
         #expect(
-            sut.persistenceErrorMessage ==
+            sut.persistenceAlert?.message ==
                 "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
         )
         #expect(sut.displayConfigs.count == 1)
@@ -812,8 +812,8 @@ struct AppBootstrapTests {
             _ = try sut.virtualDisplay.moveDisplayConfig(configB.id, direction: .up)
         }
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [configA.id, configB.id])
-        #expect(sut.virtualDisplay.showPersistenceError)
-        #expect(sut.virtualDisplay.persistenceErrorMessage.isEmpty == false)
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
     @Test func setPrimaryVirtualDisplayByReorderingPropagatesFailureAndSetsPersistencePresentation() {
@@ -855,11 +855,11 @@ struct AppBootstrapTests {
             _ = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(enabled.id)
         }
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [disabled.id, enabled.id])
-        #expect(sut.virtualDisplay.showPersistenceError)
-        #expect(sut.virtualDisplay.persistenceErrorMessage.isEmpty == false)
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
+        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
-    @Test func clearPersistenceErrorResetsControllerPresentationState() {
+    @Test func dismissPersistenceAlertResetsControllerPresentationState() {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -876,12 +876,11 @@ struct AppBootstrapTests {
         #expect(throws: Error.self) {
             _ = try sut.virtualDisplay.resetVirtualDisplayData()
         }
-        #expect(sut.virtualDisplay.showPersistenceError)
+        #expect(sut.virtualDisplay.persistenceAlert != nil)
 
-        sut.virtualDisplay.clearPersistenceError()
+        sut.virtualDisplay.dismissPersistenceAlert()
 
-        #expect(sut.virtualDisplay.showPersistenceError == false)
-        #expect(sut.virtualDisplay.persistenceErrorMessage.isEmpty)
+        #expect(sut.virtualDisplay.persistenceAlert == nil)
     }
 }
 

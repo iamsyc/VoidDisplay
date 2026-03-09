@@ -514,7 +514,7 @@ struct ShareViewModelTests {
 
         #expect(presented)
         #expect(sharing.startWebServiceCallCount == 1)
-        #expect(sut.showOpenPageError == false)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @MainActor @Test func initUsesPreferredPortAsInputDefault() {
@@ -545,7 +545,7 @@ struct ShareViewModelTests {
         #expect(sut.servicePortInput == "9099")
     }
 
-    @MainActor @Test func updateServicePortInputTruncatesToFiveCharacters() {
+    @MainActor @Test func servicePortInputTruncatesToFiveCharacters() {
         let env = makeEnvironment()
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -555,7 +555,7 @@ struct ShareViewModelTests {
             dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
         )
 
-        sut.updateServicePortInput("1234567890")
+        sut.servicePortInput = "1234567890"
 
         #expect(sut.servicePortInput == "12345")
     }
@@ -579,7 +579,7 @@ struct ShareViewModelTests {
 
         #expect(presented)
         #expect(sharing.startWebServiceCallCount == 0)
-        #expect(sut.showOpenPageError == false)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @MainActor @Test func startServicePassesRequestedPortToSharingLayer() async {
@@ -621,7 +621,7 @@ struct ShareViewModelTests {
         _ = await waitUntil { sut.portInputErrorMessage != nil }
         #expect(sut.portInputErrorMessage != nil)
 
-        sut.updateServicePortInput("8081")
+        sut.servicePortInput = "8081"
         #expect(sut.portInputErrorMessage == nil)
     }
 

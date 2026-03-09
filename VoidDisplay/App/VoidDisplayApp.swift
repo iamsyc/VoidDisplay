@@ -93,7 +93,7 @@ enum AppBootstrap {
         captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = nil,
         sharingService: (any SharingServiceProtocol)? = nil,
         virtualDisplayFacade: (any VirtualDisplayFacade)? = nil,
-        appliedBadgeDisplayDurationNanoseconds: UInt64 = 2_500_000_000,
+        appliedBadgeDisplayDuration: Duration = .seconds(2.5),
         startupPlan: StartupPlan? = nil,
         isRunningUnderXCTestOverride: Bool? = nil
     ) -> AppEnvironment {
@@ -136,7 +136,7 @@ enum AppBootstrap {
         )
         let virtualDisplay = VirtualDisplayController(
             virtualDisplayFacade: resolvedVirtualDisplayFacade,
-            appliedBadgeDisplayDurationNanoseconds: appliedBadgeDisplayDurationNanoseconds,
+            appliedBadgeDisplayDuration: appliedBadgeDisplayDuration,
             stopDependentStreamsBeforeRebuild: { displayID in
                 capture.stopDependentStreamsBeforeRebuild(
                     displayID: displayID,

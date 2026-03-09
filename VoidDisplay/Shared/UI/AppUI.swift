@@ -380,12 +380,13 @@ extension View {
     // MARK: Compat shims
 
     /// Toolbar / bottom bar — uses `.ultraThinMaterial`.
+    @ViewBuilder
     func appGlassBar(role: AppGlassBarRole) -> some View {
         switch role {
         case .status:
-            return AnyView(modifier(AppStatusBar()))
+            modifier(AppStatusBar())
         default:
-            return AnyView(modifier(AppToolbarBar()))
+            modifier(AppToolbarBar())
         }
     }
 
@@ -417,9 +418,10 @@ struct AppStatusBadge: View {
         switch style {
         case .roundedTag(let tint):
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(.caption)
+                .bold()
                 .padding(.horizontal, AppUI.Spacing.small - 1)
-                .padding(.vertical, AppUI.Spacing.xSmall - 1)
+                .padding(.vertical, AppUI.Spacing.xSmall)
                 .background(tint.opacity(colorScheme == .dark ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -429,9 +431,10 @@ struct AppStatusBadge: View {
         default:
             let p = badgePresentation
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(.caption)
+                .bold()
                 .padding(.horizontal, AppUI.Spacing.small - 1)
-                .padding(.vertical, AppUI.Spacing.xSmall - 1)
+                .padding(.vertical, AppUI.Spacing.xSmall)
                 .background(p.background, in: Capsule())
                 .overlay(Capsule().stroke(p.stroke, lineWidth: AppUI.Stroke.subtle))
                 .foregroundStyle(p.foreground)
@@ -456,9 +459,10 @@ struct AppCornerRibbon: View {
 
     var body: some View {
         Text(model.title)
-            .font(.caption2.weight(.semibold))
+            .font(.caption)
+            .bold()
             .padding(.horizontal, AppUI.Spacing.small)
-            .padding(.vertical, AppUI.Spacing.xSmall - 1)
+            .padding(.vertical, AppUI.Spacing.xSmall)
             .background(model.tint.opacity(colorScheme == .dark ? 0.22 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
