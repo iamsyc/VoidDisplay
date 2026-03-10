@@ -79,7 +79,6 @@ struct ShareView: View {
                 }
             )
         }
-        .appScreenBackground()
     }
 
     @ViewBuilder

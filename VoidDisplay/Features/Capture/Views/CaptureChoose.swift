@@ -61,7 +61,6 @@ struct IsCapturing: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
                 viewModel.refreshDisplaysBackgroundSafe()
             }
-            .appScreenBackground()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("capture_choose_root")
         }

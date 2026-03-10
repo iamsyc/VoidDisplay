@@ -106,23 +106,6 @@ enum AppUI {
             colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.08)
         }
 
-        // -- Screen background
-        static func screenBackground(for _: ColorScheme) -> Color {
-            Color(nsColor: .windowBackgroundColor)
-        }
-
-        static func screenBackgroundGradient(for colorScheme: ColorScheme) -> LinearGradient {
-            let topOpacity: Double = colorScheme == .dark ? 0.03 : 0
-            return LinearGradient(
-                colors: [
-                    .white.opacity(topOpacity),
-                    .clear,
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-
         // -- Reduce-transparency fallbacks
         static func fallbackBarFill(for colorScheme: ColorScheme) -> Color {
             colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.90)
@@ -142,21 +125,6 @@ enum AppGlassBarRole {
 }
 
 // MARK: ─── View Modifiers ───
-
-/// Screen background: window color + subtle gradient overlay.
-struct AppScreenBackground: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    AppUI.Surface.screenBackground(for: colorScheme)
-                    AppUI.Surface.screenBackgroundGradient(for: colorScheme)
-                }
-            }
-    }
-}
 
 /// Standalone panel: solid fill + border + shadow.
 struct AppPanel: ViewModifier {
@@ -312,10 +280,6 @@ struct AppActionButton: ViewModifier {
 // MARK: ─── View Extensions ───
 
 extension View {
-    func appScreenBackground() -> some View {
-        modifier(AppScreenBackground())
-    }
-
     func appPanelStyle() -> some View {
         modifier(AppPanel())
     }

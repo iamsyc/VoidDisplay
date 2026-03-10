@@ -42,10 +42,8 @@ struct HomeView: View {
                 }
             }
             .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(.regularMaterial)
             .accessibilityIdentifier("home_sidebar")
-            .navigationSplitViewColumnWidth(min: 160, ideal: 160, max: 190)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
             NavigationStack {
                 Group {

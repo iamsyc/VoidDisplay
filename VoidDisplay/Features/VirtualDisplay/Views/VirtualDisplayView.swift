@@ -93,7 +93,6 @@ struct VirtualDisplayView: View {
         } message: {
             Text(VirtualDisplayRowPresentation.restoreFailureSummary(virtualDisplay.restoreFailures))
         }
-        .appScreenBackground()
     }
 
     @ViewBuilder

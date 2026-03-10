@@ -33,7 +33,6 @@ struct DisplaysView: View {
                     .accessibilityIdentifier("displays_open_system_settings")
                 }
             }
-            .appScreenBackground()
     }
 
     @ViewBuilder
