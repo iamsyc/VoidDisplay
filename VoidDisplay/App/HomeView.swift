@@ -55,9 +55,16 @@ struct HomeView: View {
                             .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
                     case .virtualDisplay:
-                        VirtualDisplayView(controller: virtualDisplay)
-                            .navigationTitle("Virtual Displays")
-                            .accessibilityIdentifier("detail_virtual_display")
+                        if UITestRuntime.isEnabled {
+                            VirtualDisplayView(controller: virtualDisplay)
+                                .navigationTitle("Virtual Displays")
+                                .accessibilityIdentifier("detail_virtual_display")
+                                .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
+                        } else {
+                            VirtualDisplayView(controller: virtualDisplay)
+                                .navigationTitle("Virtual Displays")
+                                .accessibilityIdentifier("detail_virtual_display")
+                        }
                     case .monitorScreen:
                         IsCapturing(capture: capture, virtualDisplay: virtualDisplay)
                             .navigationTitle("Screen Monitoring")

@@ -104,15 +104,28 @@ struct VirtualDisplayView: View {
                     .appListContentInsets()
             }
         } else if !virtualDisplay.displayConfigs.isEmpty {
-            ScrollView {
-                LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                    ForEach(virtualDisplay.displayConfigs) { config in
-                        virtualDisplayRow(config)
+            if UITestRuntime.isEnabled {
+                ScrollView {
+                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                        ForEach(virtualDisplay.displayConfigs) { config in
+                            virtualDisplayRow(config)
+                        }
                     }
+                    .appListContentInsets()
                 }
-                .appListContentInsets()
+                .accessibilityIdentifier("virtual_displays_list")
+                .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                        ForEach(virtualDisplay.displayConfigs) { config in
+                            virtualDisplayRow(config)
+                        }
+                    }
+                    .appListContentInsets()
+                }
+                .accessibilityIdentifier("virtual_displays_list")
             }
-            .accessibilityIdentifier("virtual_displays_list")
         } else {
             ScrollView {
                 ContentUnavailableView(
@@ -211,7 +224,22 @@ struct VirtualDisplayView: View {
             onEdit: { editingConfig = EditingConfig(id: config.id) },
             onDelete: { viewModel.requestDelete(config) },
             onRetryRebuild: { virtualDisplay.retryRebuild(configId: config.id) },
-            iconScreenTint: iconScreenTint
+            iconScreenTint: iconScreenTint,
+            uiTestOpenEditAccessibilityIdentifier: UITestRuntime.isEnabled && isFirst
+                ? "virtual_display_open_edit_test_button"
+                : nil,
+            uiTestShowRebuildingAccessibilityIdentifier: UITestRuntime.isEnabled && isFirst
+                ? "virtual_display_show_rebuilding_test_button"
+                : nil,
+            uiTestShowRebuildFailedAccessibilityIdentifier: UITestRuntime.isEnabled && isFirst
+                ? "virtual_display_show_rebuild_failed_test_button"
+                : nil,
+            onUITestShowRebuilding: UITestRuntime.isEnabled && isFirst
+                ? { virtualDisplay.applyUITestPresentationState(scenario: .virtualDisplayRebuilding) }
+                : nil,
+            onUITestShowRebuildFailed: UITestRuntime.isEnabled && isFirst
+                ? { virtualDisplay.applyUITestPresentationState(scenario: .virtualDisplayRebuildFailed) }
+                : nil
         )
     }
 

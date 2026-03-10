@@ -173,6 +173,9 @@ final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         guard configs.contains(where: { $0.id == configId }) else {
             throw VirtualDisplayOperationError.configNotFound
         }
+        if scenario == .virtualDisplayRebuildPending {
+            try? await Task.sleep(for: .milliseconds(800))
+        }
         if scenario == .virtualDisplayRebuildFailed {
             throw VirtualDisplayOperationError.topologyRepairFailed
         }

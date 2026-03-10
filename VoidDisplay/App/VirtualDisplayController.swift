@@ -21,6 +21,7 @@ final class VirtualDisplayController {
     private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
     private(set) var recentlyAppliedConfigIds: Set<UUID> = []
     private(set) var configStorePresentation = VirtualDisplayConfigStorePresentation()
+    private(set) var rebuildRequestCount = 0
 
     @ObservationIgnored private let virtualDisplayFacade: any VirtualDisplayFacade
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
@@ -58,6 +59,7 @@ final class VirtualDisplayController {
             task.cancel()
         }
         appliedBadgeClearTasksByConfigId.removeAll()
+        rebuildRequestCount = 0
 
         switch scenario {
         case .baseline:
@@ -77,6 +79,8 @@ final class VirtualDisplayController {
                     message: String(localized: "Failed to rebuild virtual display.")
                 )
             }
+        case .virtualDisplayRebuildPending:
+            break
         }
 
         syncRebuildPresentationState()
@@ -114,6 +118,7 @@ final class VirtualDisplayController {
             clearRebuildPresentationState(configId: configId)
             return
         }
+        rebuildRequestCount += 1
 
         if let runtimeDisplayID = runtimeDisplayIDByConfigId[configId] {
             var displayIDsToStop: Set<CGDirectDisplayID> = [runtimeDisplayID]

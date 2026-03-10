@@ -90,14 +90,14 @@ struct SharingEndToEndIntegrationTests {
         let displayPath = "/display/\(shareID)"
         let displayRequest = Data("GET \(displayPath) HTTP/1.1\r\nHost: 127.0.0.1:\(boundPort)\r\n\r\n".utf8)
         let displayResponse = try await Task.detached {
-            try sendRequestAndReadUntilClose(port: boundPort, request: displayRequest)
+            try await sendRequestAndReadUntilClose(port: boundPort, request: displayRequest)
         }.value
         let displayText = try #require(String(data: displayResponse, encoding: .utf8))
         #expect(displayText.contains("HTTP/1.1 200 OK"))
 
         let signalPath = "/signal/\(shareID)"
         let signalUpgradeResponse = try await Task.detached {
-            try sendRequestAndReadPartialResponse(
+            try await sendRequestAndReadPartialResponse(
                 port: boundPort,
                 request: websocketUpgradeRequest(path: signalPath, port: boundPort)
             )
@@ -108,7 +108,7 @@ struct SharingEndToEndIntegrationTests {
         service.stopSharing(displayID: displayID)
         let stoppedSignalRequest = Data("GET \(signalPath) HTTP/1.1\r\nHost: 127.0.0.1:\(boundPort)\r\n\r\n".utf8)
         let stoppedSignalResponse = try await Task.detached {
-            try sendRequestAndReadUntilClose(port: boundPort, request: stoppedSignalRequest)
+            try await sendRequestAndReadUntilClose(port: boundPort, request: stoppedSignalRequest)
         }.value
         let stoppedSignalText = try #require(String(data: stoppedSignalResponse, encoding: .utf8))
         #expect(stoppedSignalText.contains("503 Service Unavailable"))
@@ -129,18 +129,17 @@ struct SharingEndToEndIntegrationTests {
     ) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
+        let request = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
         while clock.now < deadline {
             do {
-                let request = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
-                _ = try sendRequestAndReadUntilClose(port: port, request: request)
-                try? await Task.sleep(for: .milliseconds(50))
+                _ = try await sendRequestAndReadUntilClose(port: port, request: request)
+                await Task.yield()
             } catch {
                 return true
             }
         }
         do {
-            let request = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
-            _ = try sendRequestAndReadUntilClose(port: port, request: request)
+            _ = try await sendRequestAndReadUntilClose(port: port, request: request)
             return false
         } catch {
             return true

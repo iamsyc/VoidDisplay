@@ -281,8 +281,11 @@ struct ScreenCaptureDisplayCatalogLoaderTests {
         sut.loadDisplays()
 
         #expect(state.isLoadingDisplays == true)
-        try? await Task.sleep(nanoseconds: AsyncTestTimeouts.shortStabilityWindow)
-        #expect(await callFlag.wasCalled() == false)
+        #expect(
+            await staysTrue(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+                await callFlag.wasCalled() == false
+            }
+        )
 
         sut.cancelInFlightDisplayLoad()
         #expect(state.isLoadingDisplays == false)

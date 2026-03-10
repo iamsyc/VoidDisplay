@@ -71,7 +71,6 @@ struct PrimaryDisplayFallbackCoordinatorTests {
         #expect(stopped)
 
         let snapshot = tickCount
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(tickCount == snapshot)
+        #expect(await staysTrue(timeoutNanoseconds: 20_000_000) { tickCount == snapshot })
     }
 }

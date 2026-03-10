@@ -6,23 +6,20 @@
 import SwiftUI
 import ScreenCaptureKit
 import Combine
-import OSLog
 import AppKit
 import CoreGraphics
 
 struct ShareView: View {
     @Bindable private var sharing: SharingController
     @State private var viewModel: ShareViewModel
-    @State private var displayRefreshMonitor = DebouncingDisplayReconfigurationMonitor()
-    @State private var displayRefreshFallbackTask: Task<Void, Never>?
-    @State private var showToolbarRefresh = false
-    @State private var lastKnownDisplayTopologySignature: [CGDirectDisplayID] = []
+    @State private var lifecycle: ShareViewLifecycleController
     @Environment(\.openURL) private var openURL
     private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     init(
         sharing: SharingController,
-        virtualDisplay: VirtualDisplayController
+        virtualDisplay: VirtualDisplayController,
+        lifecycle: ShareViewLifecycleController = ShareViewLifecycleController()
     ) {
         _sharing = Bindable(sharing)
         _viewModel = State(
@@ -31,6 +28,7 @@ struct ShareView: View {
                 dependencies: .live(sharing: sharing, virtualDisplay: virtualDisplay)
             )
         )
+        _lifecycle = State(initialValue: lifecycle)
     }
 
     var body: some View {
@@ -45,7 +43,7 @@ struct ShareView: View {
         .accessibilityIdentifier("detail_screen_sharing")
         .toolbar {
             if sharing.isWebServiceRunning {
-                if showToolbarRefresh {
+                if lifecycle.showToolbarRefresh {
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         viewModel.refreshDisplays()
                     }
@@ -57,12 +55,10 @@ struct ShareView: View {
             }
         }
         .onAppear {
-            viewModel.refreshPermissionAndMaybeLoad()
-            startDisplayRefreshMonitoring()
+            lifecycle.handleAppear(viewModel: viewModel)
         }
         .onDisappear {
-            viewModel.cancelInFlightDisplayLoad()
-            stopDisplayRefreshMonitoring()
+            lifecycle.handleDisappear(viewModel: viewModel)
         }
         .onChange(of: sharing.isWebServiceRunning) { _, _ in
             viewModel.syncForCurrentState()
@@ -86,99 +82,30 @@ struct ShareView: View {
         .appScreenBackground()
     }
 
-    private func startDisplayRefreshMonitoring() {
-        lastKnownDisplayTopologySignature = displayTopologySignature()
-        let registered = displayRefreshMonitor.start {
-            guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-            viewModel.refreshDisplaysBackgroundSafe()
-        }
-        showToolbarRefresh = !registered
-        if registered {
-            stopDisplayRefreshFallbackPolling()
-            return
-        }
-
-        AppLog.sharing.error(
-            "Display reconfiguration callback registration failed in sharing view; enabling polling fallback."
-        )
-        startDisplayRefreshFallbackPolling()
-    }
-
-    private func stopDisplayRefreshMonitoring() {
-        displayRefreshMonitor.stop()
-        stopDisplayRefreshFallbackPolling()
-    }
-
-    private func startDisplayRefreshFallbackPolling() {
-        guard displayRefreshFallbackTask == nil else { return }
-        lastKnownDisplayTopologySignature = displayTopologySignature()
-        displayRefreshFallbackTask = Task { @MainActor in
-            var cycle: Int = 0
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { break }
-                guard viewModel.catalog.hasScreenCapturePermission == true else { continue }
-
-                refreshDisplaysIfTopologyChanged()
-                cycle += 1
-                if cycle % 5 != 0 { continue }
-
-                let recovered = displayRefreshMonitor.start {
-                    guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-                    viewModel.refreshDisplaysBackgroundSafe()
-                }
-                if recovered {
-                    showToolbarRefresh = false
-                    AppLog.sharing.notice(
-                        "Display reconfiguration callback recovered in sharing view; disabling polling fallback."
-                    )
-                    stopDisplayRefreshFallbackPolling()
-                    break
-                }
-            }
-        }
-    }
-
-    private func displayTopologySignature() -> [CGDirectDisplayID] {
-        NSScreen.screens
-            .compactMap(\.cgDirectDisplayID)
-            .sorted()
-    }
-
-    private func refreshDisplaysIfTopologyChanged() {
-        let signature = displayTopologySignature()
-        guard signature != lastKnownDisplayTopologySignature else { return }
-        lastKnownDisplayTopologySignature = signature
-        viewModel.refreshDisplaysBackgroundSafe()
-    }
-
-    private func stopDisplayRefreshFallbackPolling() {
-        displayRefreshFallbackTask?.cancel()
-        displayRefreshFallbackTask = nil
-    }
-
     @ViewBuilder
     private var shareContent: some View {
-        if viewModel.catalog.hasScreenCapturePermission == false {
+        let displays = viewModel.catalog.displays
+        let visibleDisplays = displays.map(viewModel.visibleDisplays(from:)) ?? []
+        switch ShareViewContentResolver.resolve(
+            catalog: viewModel.catalog,
+            isWebServiceRunning: sharing.isWebServiceRunning,
+            visibleDisplayCount: visibleDisplays.count
+        ) {
+        case .permissionGuide:
             screenCapturePermissionView
-        } else if viewModel.catalog.hasScreenCapturePermission == nil {
+        case .permissionLoading:
             permissionLoadingState
-        } else if !sharing.isWebServiceRunning {
+        case .serviceStopped:
             serviceStoppedState
-        } else if let displays = viewModel.catalog.displays {
-            let visibleDisplays = viewModel.visibleDisplays(from: displays)
-            if visibleDisplays.isEmpty {
-                shareEmptyState
-            } else {
-                ShareDisplayList(
-                    displays: visibleDisplays,
-                    viewModel: viewModel,
-                    openURLAction: openURL
-                )
-            }
-        } else if viewModel.catalog.isLoadingDisplays {
+        case .displaysList:
+            ShareDisplayList(
+                displays: visibleDisplays,
+                viewModel: viewModel,
+                openURLAction: openURL
+            )
+        case .displaysLoading:
             displaysLoadingState
-        } else {
+        case .empty:
             shareEmptyState
         }
     }

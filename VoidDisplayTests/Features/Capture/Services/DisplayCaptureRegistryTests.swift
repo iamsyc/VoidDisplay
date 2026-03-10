@@ -208,8 +208,11 @@ struct DisplayCaptureRegistryTests {
             try await registry.acquirePreview(display: sendableDisplay)
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(factoryCallCount.withLock { $0 } == 0)
+        #expect(
+            await staysTrue(timeoutNanoseconds: 50_000_000) {
+                factoryCallCount.withLock { $0 } == 0
+            }
+        )
 
         await stopGate.open()
         await releaseTask.value

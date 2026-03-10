@@ -25,45 +25,164 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     func testHomeNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke(scenario: .baseline)
+        let virtualDisplaySidebar = smokeElement(app, identifier: "sidebar_virtual_display")
+        let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
+        let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
+        let monitorDetail = smokeElement(app, identifier: "detail_monitor_screen")
+        let sharingDetail = smokeElement(app, identifier: "detail_screen_sharing")
+        let virtualDisplayRibbon = smokeElement(app, identifier: "virtual_display_primary_ribbon")
 
-        assertExists(app, identifier: "home_sidebar")
-        assertExists(app, identifier: "sidebar_screen")
-        assertExists(app, identifier: "sidebar_virtual_display")
-        assertExists(app, identifier: "sidebar_monitor_screen")
-        assertExists(app, identifier: "sidebar_screen_sharing")
+        assertAllExist(
+            app,
+            identifiers: [
+                "home_sidebar",
+                "sidebar_screen",
+                "sidebar_virtual_display",
+                "sidebar_monitor_screen",
+                "sidebar_screen_sharing",
+                "detail_screen",
+                "displays_open_system_settings"
+            ],
+            timeout: 3
+        )
 
-        assertExists(app, identifier: "detail_screen")
-        assertExists(app, identifier: "displays_open_system_settings")
+        virtualDisplaySidebar.tap()
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_virtual_display",
+                "virtual_display_add_button",
+                "virtual_display_primary_ribbon"
+            ],
+            timeout: 1.5
+        )
 
-        assertExists(app, identifier: "sidebar_virtual_display").tap()
-        assertExists(app, identifier: "detail_virtual_display")
-        assertExists(app, identifier: "virtual_display_add_button")
-        assertAnyExists(app, identifiers: ["virtual_display_row_card", "virtual_displays_empty_state"])
+        monitorSidebar.tap()
+        assertElementsExist([("detail_monitor_screen", monitorDetail)], timeout: 1.2)
 
-        assertExists(app, identifier: "sidebar_monitor_screen").tap()
-        assertExists(app, identifier: "detail_monitor_screen")
+        sharingSidebar.tap()
+        assertElementsExist([("detail_screen_sharing", sharingDetail)], timeout: 1.2)
+        virtualDisplaySidebar.tap()
+        assertElementsExist([("virtual_display_primary_ribbon", virtualDisplayRibbon)], timeout: 1.2)
+    }
 
-        assertExists(app, identifier: "sidebar_screen_sharing").tap()
-        assertExists(app, identifier: "detail_screen_sharing")
+    @MainActor
+    func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+        let detail = openVirtualDisplayDetail(in: app)
+        let openEditButton = smokeElement(app, identifier: "virtual_display_open_edit_test_button")
+
+        let initialEditState = openVirtualDisplayEditForm(
+            in: app,
+            detail: detail,
+            openEditButton: openEditButton
+        )
+        let initialValue = boolValue(forToggle: initialEditState.toggle)
+        let initialRebuildCount = rebuildRequestCount(in: detail)
+        tapFast(
+            initialEditState.toggle,
+            in: app
+        ) {
+            boolValue(forToggle: initialEditState.toggle) != initialValue
+        }
+        let saveOnlyButton = initialEditState.saveOnlyButton
+        let saveAndRebuildButton = initialEditState.saveAndRebuildButton
+        XCTAssertTrue(saveAndRebuildButton.isEnabled)
+        tapFast(
+            saveOnlyButton,
+            in: app
+        ) {
+            !initialEditState.form.exists
+        }
+        XCTAssertTrue(waitForDisappearance(of: initialEditState.form, timeout: 1.5))
+        XCTAssertEqual(rebuildRequestCount(in: detail), initialRebuildCount)
+
+        let saveOnlyPersistedState = reopenEditFormAndReadHiDPI(
+            in: app,
+            detail: detail,
+            openEditButton: openEditButton
+        )
+        XCTAssertEqual(saveOnlyPersistedState.value, !initialValue)
+        tapFast(
+            saveOnlyPersistedState.toggle,
+            in: app
+        ) {
+            boolValue(forToggle: saveOnlyPersistedState.toggle) == initialValue
+        }
+        tapFast(
+            saveOnlyPersistedState.saveAndRebuildButton,
+            in: app
+        ) {
+            !saveOnlyPersistedState.form.exists
+        }
+        XCTAssertTrue(waitForDisappearance(of: saveOnlyPersistedState.form, timeout: 1.5))
+        XCTAssertTrue(
+            waitForRebuildRequestCount(
+                in: detail,
+                expected: initialRebuildCount + 1,
+                timeout: 2
+            )
+        )
+
+        let saveAndRebuildPersistedState = reopenEditFormAndReadHiDPI(
+            in: app,
+            detail: detail,
+            openEditButton: openEditButton
+        )
+        XCTAssertEqual(saveAndRebuildPersistedState.value, initialValue)
+        tapFast(
+            saveAndRebuildPersistedState.cancelButton,
+            in: app
+        ) {
+            !saveAndRebuildPersistedState.form.exists
+        }
+        XCTAssertTrue(waitForDisappearance(of: saveAndRebuildPersistedState.form, timeout: 1.5))
     }
 
     @MainActor
     func testPermissionDeniedSmoke_captureAndShare() throws {
         let app = launchAppForSmoke(scenario: .permissionDenied)
+        let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
+        let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
+        let monitorDetail = smokeElement(app, identifier: "detail_monitor_screen")
+        let captureGuide = smokeElement(app, identifier: "capture_permission_guide")
+        let captureOpenSettings = smokeElement(app, identifier: "capture_open_settings_button")
+        let captureRequest = smokeElement(app, identifier: "capture_request_permission_button")
+        let captureRefresh = smokeElement(app, identifier: "capture_refresh_button")
+        let sharingDetail = smokeElement(app, identifier: "detail_screen_sharing")
+        let shareGuide = smokeElement(app, identifier: "share_permission_guide")
+        let shareOpenSettings = smokeElement(app, identifier: "share_open_settings_button")
+        let shareRequest = smokeElement(app, identifier: "share_request_permission_button")
+        let shareRefresh = smokeElement(app, identifier: "share_refresh_button")
 
-        assertExists(app, identifier: "sidebar_monitor_screen").tap()
-        assertExists(app, identifier: "detail_monitor_screen")
-        assertExists(app, identifier: "capture_permission_guide")
-        assertExists(app, identifier: "capture_open_settings_button")
-        assertExists(app, identifier: "capture_request_permission_button")
-        assertExists(app, identifier: "capture_refresh_button")
+        assertAllExist(
+            app,
+            identifiers: ["sidebar_monitor_screen", "sidebar_screen_sharing"],
+            timeout: 2
+        )
+        monitorSidebar.tap()
+        assertElementsExist(
+            [
+                ("detail_monitor_screen", monitorDetail),
+                ("capture_permission_guide", captureGuide),
+                ("capture_open_settings_button", captureOpenSettings),
+                ("capture_request_permission_button", captureRequest),
+                ("capture_refresh_button", captureRefresh)
+            ],
+            timeout: 1.2
+        )
 
-        assertExists(app, identifier: "sidebar_screen_sharing").tap()
-        assertExists(app, identifier: "detail_screen_sharing")
-        assertExists(app, identifier: "share_permission_guide")
-        assertExists(app, identifier: "share_open_settings_button")
-        assertExists(app, identifier: "share_request_permission_button")
-        assertExists(app, identifier: "share_refresh_button")
+        sharingSidebar.tap()
+        assertElementsExist(
+            [
+                ("detail_screen_sharing", sharingDetail),
+                ("share_permission_guide", shareGuide),
+                ("share_open_settings_button", shareOpenSettings),
+                ("share_request_permission_button", shareRequest),
+                ("share_refresh_button", shareRefresh)
+            ],
+            timeout: 1.2
+        )
     }
 
     @MainActor
@@ -78,20 +197,39 @@ final class HomeSmokeTests: XCTestCase {
                 scenario: .displayCatalogLoading,
                 preferredPort: candidatePort
             )
+            let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
+            let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
+            let monitorDetail = smokeElement(app, identifier: "detail_monitor_screen")
+            let captureLoading = smokeElement(app, identifier: "capture_loading_displays")
+            let sharingDetail = smokeElement(app, identifier: "detail_screen_sharing")
+            let startServiceButton = smokeElement(app, identifier: "share_start_service_button")
+            let shareLoading = smokeElement(app, identifier: "share_loading_displays")
 
-            assertExists(app, identifier: "sidebar_monitor_screen").tap()
-            assertExists(app, identifier: "detail_monitor_screen")
-            assertExists(app, identifier: "capture_loading_displays")
-
-            assertExists(app, identifier: "sidebar_screen_sharing").tap()
-            assertExists(app, identifier: "detail_screen_sharing")
-            assertExists(app, identifier: "share_start_service_button").tap()
-
-            if waitForIdentifierByPolling(
+            assertAllExist(
                 app,
-                identifier: "share_loading_displays",
-                timeout: 3
-            ) {
+                identifiers: ["sidebar_monitor_screen", "sidebar_screen_sharing"],
+                timeout: 2
+            )
+            monitorSidebar.tap()
+            assertElementsExist(
+                [
+                    ("detail_monitor_screen", monitorDetail),
+                    ("capture_loading_displays", captureLoading)
+                ],
+                timeout: 1.2
+            )
+
+            sharingSidebar.tap()
+            assertElementsExist(
+                [
+                    ("detail_screen_sharing", sharingDetail),
+                    ("share_start_service_button", startServiceButton)
+                ],
+                timeout: 1.2
+            )
+            startServiceButton.tap()
+
+            if waitForCondition(timeout: 1.0, condition: { shareLoading.exists }) {
                 app.terminate()
                 return
             }
@@ -119,67 +257,174 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testVirtualDisplaySmoke_rebuildingRowShowsProgress() throws {
-        let app = launchAppForSmoke(scenario: .virtualDisplayRebuilding)
+    func testVirtualDisplaySmoke_rebuildIndicators() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+        _ = openVirtualDisplayDetail(in: app)
+        let showRebuildingButton = smokeElement(app, identifier: "virtual_display_show_rebuilding_test_button")
+        let showRebuildFailedButton = smokeElement(app, identifier: "virtual_display_show_rebuild_failed_test_button")
 
-        assertExists(app, identifier: "sidebar_virtual_display").tap()
-        assertExists(app, identifier: "detail_virtual_display")
-        assertExists(app, identifier: "virtual_display_rebuild_progress")
-    }
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_virtual_display",
+                "virtual_display_show_rebuilding_test_button",
+                "virtual_display_show_rebuild_failed_test_button"
+            ],
+            timeout: 1.2
+        )
 
-    @MainActor
-    func testVirtualDisplaySmoke_rebuildFailedRowShowsRetry() throws {
-        let app = launchAppForSmoke(scenario: .virtualDisplayRebuildFailed)
+        let rebuildProgress = smokeElement(app, identifier: "virtual_display_rebuild_progress")
+        let retryButton = smokeElement(app, identifier: "virtual_display_rebuild_retry_button")
 
-        assertExists(app, identifier: "sidebar_virtual_display").tap()
-        assertExists(app, identifier: "detail_virtual_display")
-        let retryButton = assertExists(app, identifier: "virtual_display_rebuild_retry_button")
+        tapByCoordinate(showRebuildingButton, timeout: 1, requireExistenceCheck: false)
+        assertElementsExist([("virtual_display_rebuild_progress", rebuildProgress)], timeout: 1.2)
+        XCTAssertTrue(rebuildProgress.exists)
+
+        tapByCoordinate(showRebuildFailedButton, timeout: 1, requireExistenceCheck: false)
+        XCTAssertTrue(waitForDisappearance(of: rebuildProgress, timeout: 1.2))
+        assertElementsExist([("virtual_display_rebuild_retry_button", retryButton)], timeout: 1.2)
         XCTAssertTrue(retryButton.isEnabled)
     }
 
     @MainActor
-    func testVirtualDisplaySmoke_primaryRibbonPersistsAfterMenuSwitch() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
-
-        assertExists(app, identifier: "sidebar_virtual_display").tap()
-        assertExists(app, identifier: "detail_virtual_display")
-        assertExists(app, identifier: "virtual_display_primary_ribbon")
-
-        assertExists(app, identifier: "sidebar_screen").tap()
-        assertExists(app, identifier: "detail_screen")
-
-        assertExists(app, identifier: "sidebar_virtual_display").tap()
-        assertExists(app, identifier: "detail_virtual_display")
-        assertExists(app, identifier: "virtual_display_primary_ribbon")
+    private func boolValue(forToggle toggle: XCUIElement) -> Bool {
+        if let numberValue = toggle.value as? NSNumber {
+            return numberValue.intValue != 0
+        }
+        if let stringValue = toggle.value as? String {
+            let normalized = stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["1", "true", "on"].contains(normalized) {
+                return true
+            }
+            if ["0", "false", "off"].contains(normalized) {
+                return false
+            }
+        }
+        XCTFail("Unexpected toggle value: \(String(describing: toggle.value))")
+        return false
     }
 
     @MainActor
-    func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
-        let saveOnlyApp = launchAppForSmoke(scenario: .baseline)
-        assertExists(saveOnlyApp, identifier: "sidebar_virtual_display").tap()
-        assertExists(saveOnlyApp, identifier: "detail_virtual_display")
-        assertExists(saveOnlyApp, identifier: "virtual_display_edit_button").tap()
-        let saveOnlyForm = assertExists(saveOnlyApp, identifier: "edit_virtual_display_form")
-        assertExists(saveOnlyApp, identifier: "virtual_display_edit_mode_hidpi_toggle").tap()
-        let saveOnlyButton = assertExists(saveOnlyApp, identifier: "virtual_display_edit_save_only_button")
-        let saveAndRebuildButton = assertExists(saveOnlyApp, identifier: "virtual_display_edit_save_and_rebuild_button")
-        XCTAssertTrue(saveAndRebuildButton.isEnabled)
-        tapWhenHittable(saveOnlyButton, in: saveOnlyApp)
-        XCTAssertFalse(saveOnlyForm.waitForExistence(timeout: 0.3))
-        saveOnlyApp.terminate()
+    private func openVirtualDisplayDetail(in app: XCUIApplication) -> XCUIElement {
+        let virtualDisplaySidebar = smokeElement(app, identifier: "sidebar_virtual_display")
+        let detail = smokeElement(app, identifier: "detail_virtual_display")
+        assertElementsExist([("sidebar_virtual_display", virtualDisplaySidebar)], timeout: 1.2)
+        virtualDisplaySidebar.tap()
+        assertElementsExist([("detail_virtual_display", detail)], timeout: 1.2)
+        return detail
+    }
 
-        let saveAndRebuildApp = launchAppForSmoke(scenario: .baseline)
-        assertExists(saveAndRebuildApp, identifier: "sidebar_virtual_display").tap()
-        assertExists(saveAndRebuildApp, identifier: "detail_virtual_display")
-        assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_button").tap()
-        let saveAndRebuildForm = assertExists(saveAndRebuildApp, identifier: "edit_virtual_display_form")
-        assertExists(saveAndRebuildApp, identifier: "virtual_display_edit_mode_hidpi_toggle").tap()
-        let saveAndRebuildAction = assertExists(
-            saveAndRebuildApp,
-            identifier: "virtual_display_edit_save_and_rebuild_button"
+    @MainActor
+    private func openVirtualDisplayEditForm(
+        in app: XCUIApplication,
+        detail: XCUIElement,
+        openEditButton: XCUIElement
+    ) -> (
+        form: XCUIElement,
+        toggle: XCUIElement,
+        saveOnlyButton: XCUIElement,
+        saveAndRebuildButton: XCUIElement,
+        cancelButton: XCUIElement
+    ) {
+        let form = smokeElement(app, identifier: "edit_virtual_display_form")
+        let toggle = smokeElement(app, identifier: "virtual_display_edit_mode_hidpi_toggle")
+        let saveOnlyButton = smokeElement(app, identifier: "virtual_display_edit_save_only_button")
+        let saveAndRebuildButton = smokeElement(app, identifier: "virtual_display_edit_save_and_rebuild_button")
+        let cancelButton = smokeElement(app, identifier: "virtual_display_edit_cancel_button")
+        let formElements: [SmokeNamedElement] = [
+            ("edit_virtual_display_form", form),
+            ("virtual_display_edit_mode_hidpi_toggle", toggle),
+            ("virtual_display_edit_save_only_button", saveOnlyButton),
+            ("virtual_display_edit_save_and_rebuild_button", saveAndRebuildButton),
+            ("virtual_display_edit_cancel_button", cancelButton)
+        ]
+        assertAllExist(
+            app,
+            identifiers: ["detail_virtual_display", "virtual_display_open_edit_test_button"],
+            timeout: 1.2
         )
-        tapWhenHittable(saveAndRebuildAction, in: saveAndRebuildApp)
-        XCTAssertFalse(saveAndRebuildForm.waitForExistence(timeout: 0.3))
+        XCTAssertTrue(detail.exists, "Virtual display detail is unavailable.")
+        tapByCoordinate(
+            openEditButton,
+            timeout: 1,
+            requireExistenceCheck: false
+        )
+        if waitForIdentifierByPolling(app, identifier: "edit_virtual_display_form", timeout: 0.9) {
+            assertElementsExist(formElements, timeout: 0.6)
+        } else {
+            tapByCoordinate(
+                openEditButton,
+                timeout: 0.6,
+                requireExistenceCheck: false
+            )
+            assertElementsExist(formElements, timeout: 1.5)
+        }
+        return (
+            form: form,
+            toggle: toggle,
+            saveOnlyButton: saveOnlyButton,
+            saveAndRebuildButton: saveAndRebuildButton,
+            cancelButton: cancelButton
+        )
+    }
+
+    @MainActor
+    private func reopenEditFormAndReadHiDPI(
+        in app: XCUIApplication,
+        detail: XCUIElement,
+        openEditButton: XCUIElement
+    ) -> (
+        form: XCUIElement,
+        toggle: XCUIElement,
+        saveOnlyButton: XCUIElement,
+        saveAndRebuildButton: XCUIElement,
+        cancelButton: XCUIElement,
+        value: Bool
+    ) {
+        let state = openVirtualDisplayEditForm(
+            in: app,
+            detail: detail,
+            openEditButton: openEditButton
+        )
+        return (
+            state.form,
+            state.toggle,
+            state.saveOnlyButton,
+            state.saveAndRebuildButton,
+            state.cancelButton,
+            boolValue(forToggle: state.toggle)
+        )
+    }
+
+    @MainActor
+    private func rebuildRequestCount(in detail: XCUIElement) -> Int {
+        let rawValue = if let value = detail.value as? String, !value.isEmpty {
+            value
+        } else {
+            detail.label
+        }
+        guard let count = Int(rawValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            XCTFail("Unexpected rebuild request count: \(rawValue)")
+            return -1
+        }
+        return count
+    }
+
+    @MainActor
+    private func waitForRebuildRequestCount(
+        in detail: XCUIElement,
+        expected: Int,
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.1
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if rebuildRequestCount(in: detail) == expected {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+        return rebuildRequestCount(in: detail) == expected
     }
 
     @MainActor

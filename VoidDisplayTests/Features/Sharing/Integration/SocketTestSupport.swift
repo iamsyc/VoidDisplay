@@ -63,7 +63,7 @@ func configureReceiveTimeout(fd: Int32, milliseconds: Int) {
     }
 }
 
-func connectLoopbackSocket(port: UInt16) throws -> Int32 {
+func connectLoopbackSocket(port: UInt16) async throws -> Int32 {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else { throw SocketIntegrationError.socketCreationFailed }
 
@@ -86,7 +86,7 @@ func connectLoopbackSocket(port: UInt16) throws -> Int32 {
         }
 
         if errno == ECONNREFUSED || errno == EHOSTUNREACH || errno == ENETDOWN || errno == ENETUNREACH {
-            usleep(50_000)
+            await Task.yield()
             continue
         }
         close(fd)
@@ -103,8 +103,8 @@ func sendRequestAndReadUntilClose(
     port: UInt16,
     request: Data,
     timeoutMilliseconds: Int = 5000
-) throws -> Data {
-    let fd = try connectLoopbackSocket(port: port)
+) async throws -> Data {
+    let fd = try await connectLoopbackSocket(port: port)
     defer { close(fd) }
     configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
     try sendAll(fd, data: request)
@@ -116,8 +116,8 @@ func sendRequestAndReadPartialResponse(
     port: UInt16,
     request: Data,
     timeoutMilliseconds: Int = 3000
-) throws -> Data {
-    let fd = try connectLoopbackSocket(port: port)
+) async throws -> Data {
+    let fd = try await connectLoopbackSocket(port: port)
     defer { close(fd) }
     configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
     try sendAll(fd, data: request)
@@ -315,7 +315,7 @@ func startServerOnRandomPort(
                 throw error
             }
         } catch {
-            usleep(50_000)
+            await Task.yield()
         }
     }
 
