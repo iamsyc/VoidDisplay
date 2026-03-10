@@ -74,8 +74,7 @@ struct EditVirtualDisplayConfigView: View {
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
         .accessibilityIdentifier("edit_virtual_display_form")
-        .contentMargins(.bottom, 56, for: .scrollContent)
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             editActionBar
         }
         .alert(item: $localAlert) { alert in
@@ -96,6 +95,65 @@ struct EditVirtualDisplayConfigView: View {
         .onAppear {
             load()
         }
+    }
+
+    @ViewBuilder
+    private var editActionBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            HStack(spacing: 8) {
+                Spacer()
+
+                switch EditVirtualDisplayWorkflow.actionLayout(isRunning: isRunning) {
+                case .stopped:
+                    HStack(spacing: 12) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("virtual_display_edit_cancel_button")
+
+                        Button("Save") {
+                            handleSaveOnlyTapped()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isSaveBlockedByMissingRequiredFields)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("virtual_display_edit_save_button")
+                    }
+                case .running:
+                    HStack(spacing: 8) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("virtual_display_edit_cancel_button")
+
+                        Button("Save Only") {
+                            handleSaveOnlyTapped()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isSaveBlockedByMissingRequiredFields)
+                        .accessibilityIdentifier("virtual_display_edit_save_only_button")
+                    }
+
+                    Button("Save and Rebuild Now") {
+                        handleSaveAndRebuildTapped()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSaveBlockedByMissingRequiredFields)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
+        }
+        .appMaterialBarStyle()
     }
 
     @ViewBuilder
@@ -281,49 +339,6 @@ struct EditVirtualDisplayConfigView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-    }
-
-    @ViewBuilder
-    private var editActionBar: some View {
-        HStack(spacing: 8) {
-            Spacer()
-
-            Button("Cancel") {
-                dismiss()
-            }
-            .keyboardShortcut(.cancelAction)
-            .accessibilityIdentifier("virtual_display_edit_cancel_button")
-
-            switch EditVirtualDisplayWorkflow.actionLayout(isRunning: isRunning) {
-            case .stopped:
-                Button("Save") {
-                    handleSaveOnlyTapped()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isSaveBlockedByMissingRequiredFields)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier("virtual_display_edit_save_button")
-            case .running:
-                Button("Save Only") {
-                    handleSaveOnlyTapped()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSaveBlockedByMissingRequiredFields)
-                .accessibilityIdentifier("virtual_display_edit_save_only_button")
-
-                Button("Save and Rebuild Now") {
-                    handleSaveAndRebuildTapped()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isSaveBlockedByMissingRequiredFields)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
-        .appGlassBar(role: .toolbar)
     }
 
     private func load() {

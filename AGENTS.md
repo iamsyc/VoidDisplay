@@ -25,6 +25,7 @@
 
 ## Test Execution Policy
 - Default: run targeted tests related to changed module/feature.
+- For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.
 - Run full suite when changes are broad/high-risk or impact cannot be bounded:
 - shared/common code changes
 - dependency/build settings/script/test infra changes

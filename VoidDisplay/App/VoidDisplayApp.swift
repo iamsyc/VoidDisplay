@@ -34,6 +34,7 @@ struct VoidDisplayApp: App {
                 .environment(sharing)
                 .environment(virtualDisplay)
         }
+        .windowToolbarStyle(.unified(showsTitle: true))
 
         WindowGroup(for: UUID.self) { $sessionId in
             CaptureDisplayWindowRoot(sessionId: sessionId)
@@ -41,6 +42,7 @@ struct VoidDisplayApp: App {
                 .environment(sharing)
                 .environment(virtualDisplay)
         }
+        .windowToolbarStyle(.unifiedCompact(showsTitle: true))
 
         Settings {
             AppSettingsView()

@@ -92,11 +92,6 @@ enum AppUI {
             colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.12)
         }
 
-        // -- Status bar
-        static func statusStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.09)
-        }
-
         // -- Sidebar selection pill
         static func sidebarSelectionFill(for colorScheme: ColorScheme) -> Color {
             colorScheme == .dark ? .white.opacity(0.10) : .white.opacity(0.28)
@@ -106,57 +101,15 @@ enum AppUI {
             colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.08)
         }
 
-        // -- Screen background
-        static func screenBackground(for _: ColorScheme) -> Color {
-            Color(nsColor: .windowBackgroundColor)
-        }
-
-        static func screenBackgroundGradient(for colorScheme: ColorScheme) -> LinearGradient {
-            let topOpacity: Double = colorScheme == .dark ? 0.03 : 0
-            return LinearGradient(
-                colors: [
-                    .white.opacity(topOpacity),
-                    .clear,
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-
         // -- Reduce-transparency fallbacks
         static func fallbackBarFill(for colorScheme: ColorScheme) -> Color {
             colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.90)
         }
 
-        static func fallbackBarStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.10)
-        }
     }
-}
-
-// MARK: - Role enum (call-site compat)
-
-/// Kept so `appGlassBar(role:)` / `appGlassSurface(role:)` call sites compile.
-enum AppGlassBarRole {
-    case sidebar, panel, interactiveCard, toolbar, status
 }
 
 // MARK: ─── View Modifiers ───
-
-/// Screen background: window color + subtle gradient overlay.
-struct AppScreenBackground: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    AppUI.Surface.screenBackground(for: colorScheme)
-                    AppUI.Surface.screenBackgroundGradient(for: colorScheme)
-                }
-            }
-    }
-}
 
 /// Standalone panel: solid fill + border + shadow.
 struct AppPanel: ViewModifier {
@@ -216,8 +169,8 @@ struct AppInteractiveCard: ViewModifier {
     }
 }
 
-/// Toolbar / bottom action bar: native `.ultraThinMaterial` with reduce-transparency fallback.
-struct AppToolbarBar: ViewModifier {
+/// Bottom action bar: native `.ultraThinMaterial` with reduce-transparency fallback.
+struct AppMaterialBar: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -225,44 +178,9 @@ struct AppToolbarBar: ViewModifier {
         if reduceTransparency {
             content
                 .background(AppUI.Surface.fallbackBarFill(for: colorScheme))
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(AppUI.Surface.fallbackBarStroke(for: colorScheme))
-                        .frame(height: AppUI.Stroke.subtle)
-                }
         } else {
             content
                 .background(.ultraThinMaterial)
-        }
-    }
-}
-
-/// Status panel: `.thinMaterial` with rounded corners + fine border.
-struct AppStatusBar: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    func body(content: Content) -> some View {
-        if reduceTransparency {
-            content
-                .background(
-                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                        .fill(AppUI.Surface.fallbackBarFill(for: colorScheme))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                        .stroke(AppUI.Surface.fallbackBarStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
-                )
-        } else {
-            content
-                .background(
-                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                        .fill(.thinMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                        .stroke(AppUI.Surface.statusStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
-                )
         }
     }
 }
@@ -312,10 +230,6 @@ struct AppActionButton: ViewModifier {
 // MARK: ─── View Extensions ───
 
 extension View {
-    func appScreenBackground() -> some View {
-        modifier(AppScreenBackground())
-    }
-
     func appPanelStyle() -> some View {
         modifier(AppPanel())
     }
@@ -377,27 +291,8 @@ extension View {
         modifier(AppActionButton(variant: variant))
     }
 
-    // MARK: Compat shims
-
-    /// Toolbar / bottom bar — uses `.ultraThinMaterial`.
-    @ViewBuilder
-    func appGlassBar(role: AppGlassBarRole) -> some View {
-        switch role {
-        case .status:
-            modifier(AppStatusBar())
-        default:
-            modifier(AppToolbarBar())
-        }
-    }
-
-    /// Panel surface — uses solid fill.
-    func appGlassSurface(role _: AppGlassBarRole) -> some View {
-        modifier(AppPanel())
-    }
-
-    /// Sidebar background — system handles it; no-op.
-    func appGlassSidebarBackground() -> some View {
-        self
+    func appMaterialBarStyle() -> some View {
+        modifier(AppMaterialBar())
     }
 }
 

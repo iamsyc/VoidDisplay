@@ -12,7 +12,14 @@
       }
     },
     "-" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "-"
+          }
+        }
+      }
     },
     "@" : {
       "localizations" : {
@@ -148,13 +155,34 @@
       }
     },
     "1:1" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1:1"
+          }
+        }
+      }
     },
     "8089" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8089"
+          }
+        }
+      }
     },
     "Add Custom Resolution" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加自定义分辨率"
+          }
+        }
+      }
     },
     "Add Method" : {
       "localizations" : {
@@ -167,7 +195,14 @@
       }
     },
     "Add Preset Resolution" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加预设分辨率"
+          }
+        }
+      }
     },
     "Add Virtual Display" : {
       "localizations" : {
@@ -320,10 +355,24 @@
       }
     },
     "Create Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建失败"
+          }
+        }
+      }
     },
     "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建失败，且无法保存回滚后的配置。请检查配置文件权限，或重置配置文件。"
+          }
+        }
+      }
     },
     "Create failed." : {
       "localizations" : {
@@ -376,13 +425,34 @@
       }
     },
     "Delete Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除失败"
+          }
+        }
+      }
     },
     "Delete failed." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除失败。"
+          }
+        }
+      }
     },
     "Delete Resolution Mode" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除分辨率模式"
+          }
+        }
+      }
     },
     "Delete Virtual Display" : {
       "localizations" : {
@@ -395,7 +465,14 @@
       }
     },
     "Details" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "详细信息"
+          }
+        }
+      }
     },
     "Disable" : {
       "localizations" : {
@@ -408,7 +485,14 @@
       }
     },
     "Disable Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停用失败"
+          }
+        }
+      }
     },
     "Disable failed." : {
       "localizations" : {
@@ -441,7 +525,14 @@
       }
     },
     "Display configuration update is inconsistent with the requested operation." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示配置更新结果与请求的操作不一致。"
+          }
+        }
+      }
     },
     "Display Info" : {
       "localizations" : {
@@ -614,16 +705,44 @@
       }
     },
     "Failed to reset virtual display configurations." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置虚拟显示器配置失败。"
+          }
+        }
+      }
     },
     "Failed to save display settings." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存显示设置失败。"
+          }
+        }
+      }
     },
     "Failed to save virtual display changes." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存虚拟显示器更改失败。"
+          }
+        }
+      }
     },
     "Failed to start monitoring." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动监视失败。"
+          }
+        }
+      }
     },
     "Failed to start sharing." : {
       "localizations" : {
@@ -667,7 +786,14 @@
       }
     },
     "Fit" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "适应"
+          }
+        }
+      }
     },
     "Height" : {
       "localizations" : {
@@ -766,7 +892,14 @@
       }
     },
     "Loading..." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载中..."
+          }
+        }
+      }
     },
     "Loading…" : {
       "localizations" : {
@@ -975,7 +1108,15 @@
       }
     },
     "Original Size" : {
-
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原始大小"
+          }
+        }
+      }
     },
     "Permission denied for port %u. Choose another port and try again." : {
       "localizations" : {
@@ -1244,10 +1385,24 @@
       }
     },
     "Reset Config File" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置配置文件"
+          }
+        }
+      }
     },
     "Reset Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置失败"
+          }
+        }
+      }
     },
     "Reset Virtual Display Configurations" : {
       "localizations" : {
@@ -1340,7 +1495,14 @@
       }
     },
     "Save Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存失败"
+          }
+        }
+      }
     },
     "Save Only" : {
       "localizations" : {
@@ -1348,6 +1510,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "仅保存"
+          }
+        }
+      }
+    },
+    "Scale Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缩放模式"
           }
         }
       }
@@ -1469,7 +1641,14 @@
       }
     },
     "Share Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享失败"
+          }
+        }
+      }
     },
     "Sharing" : {
       "localizations" : {
@@ -1502,7 +1681,14 @@
       }
     },
     "Start Monitoring Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动监视失败"
+          }
+        }
+      }
     },
     "Start Service" : {
       "localizations" : {
@@ -1571,25 +1757,74 @@
       }
     },
     "Test Edit" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试编辑"
+          }
+        }
+      }
     },
     "Test Failed" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试失败"
+          }
+        }
+      }
     },
     "Test Rebuilding" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试重建中"
+          }
+        }
+      }
     },
     "The virtual display config file could not be accessed. Check the file path/permissions, or reset the config file." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法访问虚拟显示器配置文件。请检查文件路径或权限，或重置配置文件。"
+          }
+        }
+      }
     },
     "The virtual display config file format is not supported by this build. Reset the config file to continue." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前构建不支持该虚拟显示器配置文件格式。请重置配置文件后继续。"
+          }
+        }
+      }
     },
     "The virtual display config file is corrupted or invalid. Reset the config file to continue." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器配置文件已损坏或无效。请重置配置文件后继续。"
+          }
+        }
+      }
     },
     "The virtual display config file is incompatible or corrupted. Reset the config file to continue." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器配置文件不兼容或已损坏。请重置配置文件后继续。"
+          }
+        }
+      }
     },
     "This action cannot be undone." : {
       "localizations" : {
@@ -1648,7 +1883,14 @@
       }
     },
     "Virtual Display Config File Unavailable" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器配置文件不可用"
+          }
+        }
+      }
     },
     "Virtual display creation failed." : {
       "localizations" : {
@@ -1671,10 +1913,24 @@
       }
     },
     "Web listener stopped unexpectedly." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 监听器意外停止。"
+          }
+        }
+      }
     },
     "Web listener was cancelled unexpectedly." : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 监听器被意外取消。"
+          }
+        }
+      }
     },
     "Web service controller is unavailable." : {
       "localizations" : {

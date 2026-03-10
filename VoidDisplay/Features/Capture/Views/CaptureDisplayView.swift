@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Capture Display View
 
 struct CaptureDisplayView: View {
-    private enum PreviewScaleMode {
+    private enum PreviewScaleMode: Hashable {
         case fit
         case native
     }
@@ -54,7 +54,6 @@ struct CaptureDisplayView: View {
                                 width: nativeFrameSizeInPoints.width,
                                 height: nativeFrameSizeInPoints.height
                             )
-                            .background(Color.black)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -69,38 +68,23 @@ struct CaptureDisplayView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button("Fit") {
-                    scaleMode = .fit
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(scaleMode == .fit ? .accentColor : .gray.opacity(0.4))
-                .keyboardShortcut("1", modifiers: [.command])
-
-                Button("1:1") {
-                    scaleMode = .native
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(scaleMode == .native ? .accentColor : .gray.opacity(0.4))
-                .keyboardShortcut("2", modifiers: [.command])
-
-                Spacer()
-
-                Text(scaleMode == .fit ? "Fit" : "Original Size")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .appGlassBar(role: .toolbar)
-
-            ZStack {
-                Color.black
-                previewContent
-            }
+        ZStack {
+            Color.black
+            previewContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Scale Mode", selection: $scaleMode) {
+                    Text("Fit").tag(PreviewScaleMode.fit)
+                    Text("1:1").tag(PreviewScaleMode.native)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+                .accessibilityIdentifier("capture_preview_scale_mode_picker")
+            }
+        }
+        .toolbarTitleDisplayMode(.inline)
         .onChange(of: capture.screenCaptureSessions.map(\.id)) { _, ids in
             if !ids.contains(sessionId) {
                 dismiss()
