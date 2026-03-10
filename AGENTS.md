@@ -48,6 +48,9 @@
 - Do not frame the plan around human task management, personal schedules, or manual execution expectations unless the user explicitly asks for that format.
 - If timing is needed, describe agent-relevant sequencing or wait states, such as build time, network latency, review gates, or external blocking conditions.
 
+## Multilingual Content
+- Except for logs, diagnostics, and similar runtime output, all other text content must provide multilingual support.
+
 ## Xcode Tooling Policy (Token + Reliability First)
 - Token is money: default build/test gate is shell `xcodebuild`.
 - Write verbose logs to `.ai-tmp/` and report concise summaries only.
