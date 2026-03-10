@@ -42,6 +42,12 @@
 - Use isolated subdirectories under `.ai-tmp/`.
 - Do not create ad-hoc temp dirs at repo root unless explicitly requested.
 
+## AI Agent Plan Framing
+- When the user asks for a plan, treat it as an execution plan for the AI agent unless the user explicitly assigns a human executor.
+- Write plan steps from the agent's perspective.
+- Do not frame the plan around human task management, personal schedules, or manual execution expectations unless the user explicitly asks for that format.
+- If timing is needed, describe agent-relevant sequencing or wait states, such as build time, network latency, review gates, or external blocking conditions.
+
 ## Xcode Tooling Policy (Token + Reliability First)
 - Token is money: default build/test gate is shell `xcodebuild`.
 - Write verbose logs to `.ai-tmp/` and report concise summaries only.
