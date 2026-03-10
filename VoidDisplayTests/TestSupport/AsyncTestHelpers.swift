@@ -22,6 +22,37 @@ func waitUntil(
 }
 
 @MainActor
+func staysTrue(
+    timeoutNanoseconds: UInt64 = AsyncTestTimeouts.shortStabilityWindow,
+    pollNanoseconds: UInt64 = 10_000_000,
+    condition: @MainActor () -> Bool
+) async -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if !condition() {
+            return false
+        }
+        try? await Task.sleep(nanoseconds: pollNanoseconds)
+    }
+    return condition()
+}
+
+func staysTrue(
+    timeoutNanoseconds: UInt64 = AsyncTestTimeouts.shortStabilityWindow,
+    pollNanoseconds: UInt64 = 10_000_000,
+    condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if !(await condition()) {
+            return false
+        }
+        try? await Task.sleep(nanoseconds: pollNanoseconds)
+    }
+    return await condition()
+}
+
+@MainActor
 func drainMainActorTasks(iterations: Int = 5) async {
     for _ in 0..<max(0, iterations) {
         await Task.yield()

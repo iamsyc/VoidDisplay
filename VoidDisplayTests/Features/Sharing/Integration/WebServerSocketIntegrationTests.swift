@@ -18,7 +18,7 @@ struct WebServerSocketIntegrationTests {
 
         let request = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
         let responseData = try await Task.detached {
-            try sendRequestAndReadUntilClose(port: portValue, request: request)
+            try await sendRequestAndReadUntilClose(port: portValue, request: request)
         }.value
 
         let responseText = try #require(String(data: responseData, encoding: .utf8))
@@ -42,7 +42,7 @@ struct WebServerSocketIntegrationTests {
 
         let request = websocketUpgradeRequest(path: "/signal", port: portValue)
         let responseData = try await Task.detached {
-            try sendRequestAndReadPartialResponse(port: portValue, request: request)
+            try await sendRequestAndReadPartialResponse(port: portValue, request: request)
         }.value
         let responseText = try #require(String(data: responseData, encoding: .utf8))
         #expect(responseText.contains("101 Switching Protocols"))
@@ -60,7 +60,7 @@ struct WebServerSocketIntegrationTests {
 
         let request = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
         let responseData = try await Task.detached {
-            try sendRequestAndReadUntilClose(port: portValue, request: request)
+            try await sendRequestAndReadUntilClose(port: portValue, request: request)
         }.value
         let responseText = try #require(String(data: responseData, encoding: .utf8))
         #expect(responseText.contains("404 Not Found"))
@@ -79,7 +79,7 @@ struct WebServerSocketIntegrationTests {
         let server = setup.server
         let portValue = setup.port
         defer { server.stopListener() }
-        let result = try await Task.detached { try probeOversizedFrameClose(port: portValue) }.value
+        let result = try await Task.detached { try await probeOversizedFrameClose(port: portValue) }.value
 
         #expect(result.handshakeText.contains("101 Switching Protocols"))
         #expect(result.didClose)
@@ -99,17 +99,13 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let result = try await Task.detached { try probeClientCloseFrame(port: portValue) }.value
+        let result = try await Task.detached { try await probeClientCloseFrame(port: portValue) }.value
         #expect(result.handshakeText.contains("101 Switching Protocols"))
         #expect(result.didClose)
 
-        let deadline = Date().addingTimeInterval(2.0)
-        var clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
-        while !clientCleared, Date() < deadline {
-            try await Task.sleep(for: .milliseconds(40))
-            clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
+            server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
         }
-
         #expect(clientCleared)
     }
 
@@ -127,21 +123,31 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let result = try await Task.detached { try probeBinarySignalFrameClose(port: portValue) }.value
+        let result = try await Task.detached { try await probeBinarySignalFrameClose(port: portValue) }.value
         #expect(result.handshakeText.contains("101 Switching Protocols"))
         #expect(result.closeObservation.didClose)
         #expect(result.closeObservation.closeCode == 1003)
 
-        let deadline = Date().addingTimeInterval(2.0)
-        var clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
-        while !clientCleared, Date() < deadline {
-            try await Task.sleep(for: .milliseconds(40))
-            clientCleared = server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
+            server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
         }
-
         #expect(clientCleared)
     }
 
+    private func waitUntilAsync(
+        timeout: Duration,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if condition() {
+                return true
+            }
+            await Task.yield()
+        }
+        return condition()
+    }
 }
 
 private extension String {
@@ -170,11 +176,11 @@ private func makeIncompleteMaskedFrameChunk(
 private func probeOversizedFrameClose(
     port: UInt16,
     maxAttempts: Int = 3
-) throws -> (handshakeText: String, didClose: Bool) {
+) async throws -> (handshakeText: String, didClose: Bool) {
     var lastError: Error = SocketIntegrationError.receiveFailed
     for attempt in 1...maxAttempts {
         do {
-            let socketFD = try connectLoopbackSocket(port: port)
+            let socketFD = try await connectLoopbackSocket(port: port)
             defer { close(socketFD) }
 
             try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
@@ -203,7 +209,7 @@ private func probeOversizedFrameClose(
         } catch {
             lastError = error
             if attempt < maxAttempts {
-                usleep(100_000)
+                await Task.yield()
                 continue
             }
         }
@@ -226,11 +232,11 @@ private func makeMaskedCloseFrame(code: UInt16 = 1000) -> Data {
 private func probeClientCloseFrame(
     port: UInt16,
     maxAttempts: Int = 3
-) throws -> (handshakeText: String, didClose: Bool) {
+) async throws -> (handshakeText: String, didClose: Bool) {
     var lastError: Error = SocketIntegrationError.receiveFailed
     for attempt in 1...maxAttempts {
         do {
-            let socketFD = try connectLoopbackSocket(port: port)
+            let socketFD = try await connectLoopbackSocket(port: port)
             defer { close(socketFD) }
 
             try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
@@ -254,7 +260,7 @@ private func probeClientCloseFrame(
         } catch {
             lastError = error
             if attempt < maxAttempts {
-                usleep(100_000)
+                await Task.yield()
                 continue
             }
         }
@@ -265,11 +271,11 @@ private func probeClientCloseFrame(
 private func probeBinarySignalFrameClose(
     port: UInt16,
     maxAttempts: Int = 3
-) throws -> (handshakeText: String, closeObservation: WebSocketCloseObservation) {
+) async throws -> (handshakeText: String, closeObservation: WebSocketCloseObservation) {
     var lastError: Error = SocketIntegrationError.receiveFailed
     for attempt in 1...maxAttempts {
         do {
-            let socketFD = try connectLoopbackSocket(port: port)
+            let socketFD = try await connectLoopbackSocket(port: port)
             defer { close(socketFD) }
 
             try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
@@ -293,7 +299,7 @@ private func probeBinarySignalFrameClose(
         } catch {
             lastError = error
             if attempt < maxAttempts {
-                usleep(100_000)
+                await Task.yield()
                 continue
             }
         }

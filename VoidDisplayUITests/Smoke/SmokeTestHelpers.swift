@@ -1,6 +1,8 @@
 import Foundation
 import XCTest
 
+typealias SmokeNamedElement = (identifier: String, element: XCUIElement)
+
 enum SmokeScenario: String {
     case baseline
     case displayCatalogLoading = "display_catalog_loading"
@@ -10,6 +12,16 @@ enum SmokeScenario: String {
 }
 
 extension XCTestCase {
+    @MainActor
+    func smokeElement(
+        _ app: XCUIApplication,
+        identifier: String
+    ) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+    }
+
     @MainActor
     func launchAppForSmoke(
         scenario: SmokeScenario,
@@ -38,9 +50,7 @@ extension XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> XCUIElement {
-        let element = app.descendants(matching: .any)
-            .matching(identifier: identifier)
-            .firstMatch
+        let element = smokeElement(app, identifier: identifier)
         XCTAssertTrue(element.waitForExistence(timeout: timeout), "Missing identifier: \(identifier)", file: file, line: line)
         return element
     }
@@ -66,14 +76,78 @@ extension XCTestCase {
     }
 
     @MainActor
+    func assertAllExist(
+        _ app: XCUIApplication,
+        identifiers: [String],
+        timeout: TimeInterval = 5,
+        pollInterval: TimeInterval = 0.05,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let elements = identifiers.map { identifier in
+            app.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let missing = zip(identifiers, elements)
+                .filter { !$0.1.exists }
+                .map(\.0)
+            if missing.isEmpty {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+
+        let missing = zip(identifiers, elements)
+            .filter { !$0.1.exists }
+            .map(\.0)
+        XCTAssertTrue(missing.isEmpty, "Missing identifiers: \(missing.joined(separator: ", "))", file: file, line: line)
+    }
+
+    @MainActor
+    func assertElementsExist(
+        _ elements: [SmokeNamedElement],
+        timeout: TimeInterval = 1.2,
+        pollInterval: TimeInterval = 0.05,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let missing = elements
+                .filter { !$0.element.exists }
+                .map(\.identifier)
+            if missing.isEmpty {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+
+        let missing = elements
+            .filter { !$0.element.exists }
+            .map(\.identifier)
+        XCTAssertTrue(missing.isEmpty, "Missing identifiers: \(missing.joined(separator: ", "))", file: file, line: line)
+    }
+
+    @MainActor
     func tapWhenHittable(
         _ element: XCUIElement,
         in app: XCUIApplication,
         timeout: TimeInterval = 3,
+        requireExistenceCheck: Bool = true,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertTrue(element.waitForExistence(timeout: timeout), "Element does not exist before tap.", file: file, line: line)
+        if requireExistenceCheck {
+            XCTAssertTrue(
+                element.waitForExistence(timeout: timeout),
+                "Element does not exist before tap.",
+                file: file,
+                line: line
+            )
+        }
         let predicate = NSPredicate(format: "hittable == true")
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         if XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed {
@@ -92,23 +166,121 @@ extension XCTestCase {
     }
 
     @MainActor
+    func tapIdentifier(
+        _ app: XCUIApplication,
+        identifier: String,
+        timeout: TimeInterval = 1.5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let target = assertExists(
+            app,
+            identifier: identifier,
+            timeout: timeout,
+            file: file,
+            line: line
+        )
+        tapWhenHittable(
+            target,
+            in: app,
+            timeout: timeout,
+            requireExistenceCheck: false,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    func tapByCoordinate(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 1.5,
+        requireExistenceCheck: Bool = true,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        if requireExistenceCheck {
+            XCTAssertTrue(
+                element.waitForExistence(timeout: timeout),
+                "Element does not exist before coordinate tap.",
+                file: file,
+                line: line
+            )
+        }
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    @MainActor
     func waitForIdentifierByPolling(
         _ app: XCUIApplication,
         identifier: String,
         timeout: TimeInterval,
-        pollInterval: TimeInterval = 0.1
+        pollInterval: TimeInterval = 0.1,
+        activateBeforePolling: Bool = false
     ) -> Bool {
         let element = app.descendants(matching: .any)
             .matching(identifier: identifier)
             .firstMatch
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            app.activate()
+            if activateBeforePolling {
+                app.activate()
+            }
             if element.exists {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
         }
         return element.exists
+    }
+
+    @MainActor
+    func waitForCondition(
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.05,
+        condition: () -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+        return condition()
+    }
+
+    @MainActor
+    func waitForDisappearance(
+        of element: XCUIElement,
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.1
+    ) -> Bool {
+        waitForCondition(timeout: timeout, pollInterval: pollInterval) {
+            !element.exists
+        }
+    }
+
+    @MainActor
+    func tapFast(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        confirmationTimeout: TimeInterval = 0.45,
+        fallbackTimeout: TimeInterval = 1.5,
+        confirmation: () -> Bool
+    ) {
+        tapByCoordinate(
+            element,
+            timeout: 0.4,
+            requireExistenceCheck: false
+        )
+        if waitForCondition(timeout: confirmationTimeout, condition: confirmation) {
+            return
+        }
+        tapWhenHittable(
+            element,
+            in: app,
+            timeout: fallbackTimeout,
+            requireExistenceCheck: false
+        )
     }
 }

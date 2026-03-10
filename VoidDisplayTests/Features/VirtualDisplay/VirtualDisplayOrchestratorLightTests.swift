@@ -81,6 +81,65 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
+    func disableMainDisplayTriggersAggressiveRecoveryOnReenable() async throws {
+        let mainID = CGMainDisplayID()
+        let peerID: CGDirectDisplayID = mainID == 0 ? 1 : mainID &+ 1
+        var configMain = makeConfig(serial: 125, displayName: "Main")
+        var configPeer = makeConfig(serial: 126, displayName: "Peer")
+        configMain.desiredEnabled = false
+        configPeer.desiredEnabled = false
+        let driver = FakeOrchestratorRuntimeDriver(
+            scriptedResults: [
+                .success(serialNum: configMain.serialNum, displayID: mainID),
+                .success(serialNum: configPeer.serialNum, displayID: peerID),
+                .success(serialNum: configMain.serialNum, displayID: mainID),
+                .success(serialNum: configPeer.serialNum, displayID: peerID)
+            ]
+        )
+        let snapshot = DisplayTopologySnapshot(
+            mainDisplayID: mainID,
+            displays: [
+                .init(
+                    id: mainID,
+                    serialNumber: configMain.serialNum,
+                    isManagedVirtualDisplay: true,
+                    isActive: true,
+                    isInMirrorSet: false,
+                    mirrorMasterDisplayID: nil,
+                    bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080)
+                ),
+                .init(
+                    id: peerID,
+                    serialNumber: configPeer.serialNum,
+                    isManagedVirtualDisplay: true,
+                    isActive: true,
+                    isInMirrorSet: false,
+                    mirrorMasterDisplayID: nil,
+                    bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+                )
+            ]
+        )
+        let sut = makeOrchestrator(
+            store: FakeVirtualDisplayStore(),
+            initialConfigs: [configMain, configPeer],
+            inspector: StableTopologyInspector(snapshot: snapshot),
+            runtimeDriver: driver
+        )
+
+        try await sut.enableDisplay(configMain.id)
+        try await sut.enableDisplay(configPeer.id)
+        #expect(driver.createCallCount == 2)
+
+        try sut.disableDisplayByConfig(configMain.id)
+        try await sut.enableDisplay(configMain.id)
+
+        #expect(driver.createCallCount == 4)
+        #expect(Set(sut.snapshot.runningConfigIds) == Set([configMain.id, configPeer.id]))
+        #expect(sut.snapshot.runtimeDisplayID(for: configMain.id) == mainID)
+        #expect(sut.snapshot.runtimeDisplayID(for: configPeer.id) == peerID)
+    }
+
+    @Test
     func enableDisplaySetsDesiredEnabledEvenWhenRuntimeCreationFails() async {
         let store = FakeVirtualDisplayStore()
         var config = makeConfig(serial: 31, displayName: "Enable")
@@ -334,6 +393,31 @@ struct VirtualDisplayOrchestratorLightTests {
             sut.snapshot.configStorePresentation.diagnosticsSummary ==
                 store.diagnosticsValue.summary
         )
+    }
+
+    @Test
+    func restoreDesiredVirtualDisplaysClearsExistingFailuresWhenStoreFallsBackToLoadFailed() {
+        let store = FakeVirtualDisplayStore()
+        let restoreFailureConfig = makeConfig(serial: 64, displayName: "Restore Failure")
+        let driver = FakeOrchestratorRuntimeDriver(
+            scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
+        )
+        let sut = makeOrchestrator(
+            store: store,
+            initialConfigs: [restoreFailureConfig],
+            runtimeDriver: driver
+        )
+
+        sut.restoreDesiredVirtualDisplays()
+        #expect(sut.snapshot.restoreFailures.count == 1)
+
+        store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
+        sut.loadPersistedConfigs()
+        sut.restoreDesiredVirtualDisplays()
+
+        #expect(sut.snapshot.restoreFailures.isEmpty)
+        #expect(sut.snapshot.configStorePresentation.hasLoadFailure)
+        #expect(sut.snapshot.configStorePresentation.loadErrorMessage != nil)
     }
 
     @Test

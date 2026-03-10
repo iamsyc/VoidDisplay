@@ -2,9 +2,13 @@ import Foundation
 import CoreGraphics
 import XCTest
 
+/// 手工环境验证套件。
+/// 这组测试依赖真实权限、真实网络和真实桌面环境，不属于默认回归入口。
+/// 仅在显式设置 `VOIDDISPLAY_RUN_REAL_ENV_E2E=1` 时执行。
 final class RealEnvironmentE2ETests: XCTestCase {
     /// Must stay in sync with `SharingPortPreferenceKeys.preferredPort` in app target.
     private static let preferredPortLaunchArgumentKey = "sharing.preferredPort"
+    private static let runEnvironmentKey = "VOIDDISPLAY_RUN_REAL_ENV_E2E"
 
     private enum ShareAccessibilityState {
         static let sharing = "sharing"
@@ -33,6 +37,10 @@ final class RealEnvironmentE2ETests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment[Self.runEnvironmentKey] == "1",
+            "Set \(Self.runEnvironmentKey)=1 to run real-environment UI tests."
+        )
     }
 
     @MainActor
@@ -594,34 +602,27 @@ final class RealEnvironmentE2ETests: XCTestCase {
         expected: Int,
         timeout: TimeInterval
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        await waitUntilAsync(timeout: timeout, pollInterval: .milliseconds(300)) {
             do {
-                if try await fetchHTTPStatus(url: url, timeout: 2) == expected {
-                    return true
-                }
+                return try await self.fetchHTTPStatus(url: url, timeout: 2) == expected
             } catch {
-                // Retry until timeout.
+                return false
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
         }
-        return false
     }
 
     private func waitForHTTPFailure(
         url: URL,
         timeout: TimeInterval
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        await waitUntilAsync(timeout: timeout, pollInterval: .milliseconds(300)) {
             do {
-                _ = try await fetchHTTPStatus(url: url, timeout: 2)
+                _ = try await self.fetchHTTPStatus(url: url, timeout: 2)
+                return false
             } catch {
                 return true
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
         }
-        return false
     }
 
     private func fetchHTTPStatus(url: URL, timeout: TimeInterval) async throws -> Int {
@@ -632,5 +633,20 @@ final class RealEnvironmentE2ETests: XCTestCase {
             throw URLError(.badServerResponse)
         }
         return httpResponse.statusCode
+    }
+
+    private func waitUntilAsync(
+        timeout: TimeInterval,
+        pollInterval: Duration,
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(timeout)
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: pollInterval)
+        }
+        return await condition()
     }
 }

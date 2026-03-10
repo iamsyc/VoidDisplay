@@ -368,6 +368,37 @@ struct ShareViewModelTests {
         #expect(sut.catalog.isLoadingDisplays == false)
     }
 
+    @MainActor @Test func syncForCurrentStateCancelsLoadWithoutClearingDisplaysWhenServiceStoppedClearIsDisabled() {
+        let existingDisplay = MockSCDisplay.make(displayID: 9030, width: 1920, height: 1080)
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+        sut.catalog.hasScreenCapturePermission = true
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.isLoadingDisplays = true
+
+        sut.syncForCurrentState(clearDisplaysWhenServiceStopped: false)
+
+        #expect(sut.catalog.displays?.map(\.displayID) == [existingDisplay.displayID])
+        #expect(sut.catalog.isLoadingDisplays == false)
+    }
+
     @MainActor @Test func refreshDisplaysBackgroundSafeStartsLoadWhenIdle() async {
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -470,6 +501,37 @@ struct ShareViewModelTests {
             sut.catalog.isLoadingDisplays == false && sut.catalog.displays != nil
         }
         #expect(finished)
+    }
+
+    @MainActor @Test func refreshDisplaysBackgroundSafeSkipsWhenServiceIsStopped() async {
+        let gate = SequencedShareDisplayLoaderGate(scriptedOutcomes: [.success])
+        let existingDisplay = MockSCDisplay.make(displayID: 3344, width: 1920, height: 1080)
+        let sut = ShareViewModel(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure:
+                    throw ControlledLoadFailure()
+                }
+            },
+            dependencies: makeNoopShareDependencies()
+        )
+        sut.catalog.displays = [existingDisplay]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = [existingDisplay.displayID]
+
+        sut.refreshDisplaysBackgroundSafe()
+
+        let stayedIdle = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
+            sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays?.map(\.displayID) == [existingDisplay.displayID]
+        }
+        #expect(stayedIdle)
+        #expect(await gate.currentCallCount() == 0)
     }
 
     @MainActor @Test func loadDisplaysRecordsDetailedErrorWhenLoaderFails() async {
@@ -603,6 +665,114 @@ struct ShareViewModelTests {
 
         #expect(started)
         #expect(sharing.lastStartRequestedPort == requestedPort)
+    }
+
+    @MainActor @Test func startSharingWithInvalidPortSkipsServiceStartAndSharing() async {
+        let display = MockSCDisplay.make(displayID: 7001, width: 1920, height: 1080)
+        var startCallCount = 0
+        var beginSharingCallCount = 0
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in
+                        startCallCount += 1
+                        return .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081))
+                    },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in
+                        beginSharingCallCount += 1
+                    },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+        sut.servicePortInput = "abc"
+
+        await sut.startSharing(display: display)
+
+        #expect(startCallCount == 0)
+        #expect(beginSharingCallCount == 0)
+        #expect(sut.portInputErrorMessage != nil)
+        #expect(sut.userFacingAlert == nil)
+    }
+
+    @MainActor @Test func startSharingServiceStartFailureShowsInlineErrorAndSkipsSharing() async {
+        let display = MockSCDisplay.make(displayID: 7002, width: 1920, height: 1080)
+        var beginSharingCallCount = 0
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .failed(.portInUse(port: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in
+                        beginSharingCallCount += 1
+                    },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+
+        await sut.startSharing(display: display)
+
+        #expect(beginSharingCallCount == 0)
+        #expect(sut.portInputErrorMessage != nil)
+        #expect(sut.userFacingAlert == nil)
+    }
+
+    @MainActor @Test func startSharingFailureStopsShareAndPresentsAlert() async {
+        enum ShareStartFailure: Error {
+            case failed
+        }
+
+        let display = MockSCDisplay.make(displayID: 7003, width: 1920, height: 1080)
+        var stopSharingDisplayIDs: [CGDirectDisplayID] = []
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { true },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in
+                        throw ShareStartFailure.failed
+                    },
+                    stopSharing: { displayID in
+                        stopSharingDisplayIDs.append(displayID)
+                    }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+
+        await sut.startSharing(display: display)
+
+        #expect(stopSharingDisplayIDs == [display.displayID])
+        #expect(sut.userFacingAlert?.title == String(localized: "Share Failed"))
+        #expect(sut.portInputErrorMessage == nil)
     }
 
     @MainActor @Test func editingPortClearsInlineErrorMessage() async {

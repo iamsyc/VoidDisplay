@@ -6,6 +6,7 @@ enum UITestScenario: String {
     case permissionDenied = "permission_denied"
     case virtualDisplayRebuilding = "virtual_display_rebuilding"
     case virtualDisplayRebuildFailed = "virtual_display_rebuild_failed"
+    case virtualDisplayRebuildPending = "virtual_display_rebuild_pending"
 }
 
 enum UITestRuntime {

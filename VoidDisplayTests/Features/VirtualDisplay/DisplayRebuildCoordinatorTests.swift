@@ -142,6 +142,97 @@ struct DisplayRebuildCoordinatorTests {
     }
 
     @Test
+    func rebuildManagedDisplayFleetIncludesPrioritizedConfigWhenRequestedEvenIfStopped() async throws {
+        let mainID: CGDirectDisplayID = 1301
+        let peerID: CGDirectDisplayID = 1302
+        let configA = makeConfig(serial: 31, desiredEnabled: true)
+        let configB = makeConfig(serial: 32, desiredEnabled: true)
+        let stableSnapshot = makeSnapshot(
+            main: mainID,
+            displays: [
+                makeDisplayInfo(id: mainID, serial: configA.serialNum, managed: true),
+                makeDisplayInfo(
+                    id: peerID,
+                    serial: configB.serialNum,
+                    managed: true,
+                    bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+                )
+            ]
+        )
+
+        var rebuiltOrder: [UUID] = []
+        let harness = makeHarness(
+            configs: [configA, configB],
+            snapshots: Array(repeating: stableSnapshot, count: 120),
+            hook: { config, _, runtimeTracker in
+                rebuiltOrder.append(config.id)
+                let runtimeID = config.id == configA.id ? mainID : peerID
+                runtimeTracker.markConfigRunning(
+                    configId: config.id,
+                    generation: UInt64(300 + rebuiltOrder.count),
+                    runtimeDisplayID: runtimeID
+                )
+            }
+        )
+        harness.runtimeTracker.markConfigRunning(configId: configB.id, generation: 22, runtimeDisplayID: peerID)
+
+        try await harness.coordinator.rebuildManagedDisplayFleet(
+            prioritizing: configA.id,
+            fallbackPreferredMainDisplayID: mainID,
+            includePrioritizedConfigIfNotRunning: true
+        )
+
+        #expect(rebuiltOrder == [configA.id, configB.id])
+        #expect(Set(harness.runtimeTracker.runningConfigIDs()) == Set([configA.id, configB.id]))
+    }
+
+    @Test
+    func rebuildManagedDisplayFleetFleetOfflineOnlyKeepsRebuildUnsettledTerminationFlagsFalse() async throws {
+        let mainID: CGDirectDisplayID = 1401
+        let peerID: CGDirectDisplayID = 1402
+        let configA = makeConfig(serial: 41, desiredEnabled: true)
+        let configB = makeConfig(serial: 42, desiredEnabled: true)
+        let stableSnapshot = makeSnapshot(
+            main: mainID,
+            displays: [
+                makeDisplayInfo(id: mainID, serial: configA.serialNum, managed: true),
+                makeDisplayInfo(
+                    id: peerID,
+                    serial: configB.serialNum,
+                    managed: true,
+                    bounds: CGRect(x: 1920, y: 0, width: 1920, height: 1080)
+                )
+            ]
+        )
+
+        var terminationFlags: [Bool] = []
+        let harness = makeHarness(
+            configs: [configA, configB],
+            snapshots: Array(repeating: stableSnapshot, count: 120),
+            hook: { config, terminationConfirmed, runtimeTracker in
+                terminationFlags.append(terminationConfirmed)
+                let runtimeID = config.id == configA.id ? mainID : peerID
+                runtimeTracker.markConfigRunning(
+                    configId: config.id,
+                    generation: UInt64(400 + terminationFlags.count),
+                    runtimeDisplayID: runtimeID
+                )
+            }
+        )
+        harness.runtimeTracker.markConfigRunning(configId: configA.id, generation: 32, runtimeDisplayID: mainID)
+        harness.runtimeTracker.markConfigRunning(configId: configB.id, generation: 33, runtimeDisplayID: peerID)
+
+        try await harness.coordinator.rebuildManagedDisplayFleet(
+            prioritizing: configA.id,
+            fallbackPreferredMainDisplayID: peerID,
+            teardownStrategy: .fleetOfflineOnly
+        )
+
+        #expect(terminationFlags == [false, false])
+        #expect(Set(harness.runtimeTracker.runningConfigIDs()) == Set([configA.id, configB.id]))
+    }
+
+    @Test
     func ensureHealthyTopologyRepairsMainContinuityWhenPreferredMainDrifts() async throws {
         let displayA: CGDirectDisplayID = 901
         let displayB: CGDirectDisplayID = 902

@@ -294,7 +294,8 @@ struct EditVirtualDisplayConfigView: View {
             .keyboardShortcut(.cancelAction)
             .accessibilityIdentifier("virtual_display_edit_cancel_button")
 
-            if !isRunning {
+            switch EditVirtualDisplayWorkflow.actionLayout(isRunning: isRunning) {
+            case .stopped:
                 Button("Save") {
                     handleSaveOnlyTapped()
                 }
@@ -302,7 +303,7 @@ struct EditVirtualDisplayConfigView: View {
                 .disabled(isSaveBlockedByMissingRequiredFields)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("virtual_display_edit_save_button")
-            } else {
+            case .running:
                 Button("Save Only") {
                     handleSaveOnlyTapped()
                 }
@@ -326,15 +327,16 @@ struct EditVirtualDisplayConfigView: View {
     }
 
     private func load() {
-        guard let config = virtualDisplay.getConfig(configId) else {
-            localAlert = UserFacingAlertState(
-                title: String(localized: "Error"),
-                message: String(localized: "Display configuration not found.")
-            )
-            return
+        switch EditVirtualDisplayWorkflow.load(configId: configId, virtualDisplay: virtualDisplay) {
+        case .loaded(let config):
+            loadedConfig = config
+            populateForm(with: config)
+        case .missingConfig(let alert):
+            localAlert = alert
         }
+    }
 
-        loadedConfig = config
+    private func populateForm(with config: VirtualDisplayConfig) {
         name = config.displayName
         serialNum = Int(config.serialNum)
         selectedModes = config.resolutionModes

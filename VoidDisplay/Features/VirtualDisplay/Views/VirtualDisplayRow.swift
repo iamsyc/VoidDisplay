@@ -21,6 +21,11 @@ struct VirtualDisplayRow: View {
     let onDelete: () -> Void
     let onRetryRebuild: () -> Void
     let iconScreenTint: Color?
+    let uiTestOpenEditAccessibilityIdentifier: String?
+    let uiTestShowRebuildingAccessibilityIdentifier: String?
+    let uiTestShowRebuildFailedAccessibilityIdentifier: String?
+    let onUITestShowRebuilding: (() -> Void)?
+    let onUITestShowRebuildFailed: (() -> Void)?
 
     private var isRowBusy: Bool {
         isToggling || isRebuilding
@@ -59,6 +64,8 @@ struct VirtualDisplayRow: View {
                     rebuildAction
                     toggleButton
                     setPrimaryButton
+                    uiTestOpenEditButton
+                    uiTestStateButtons
                     editButton
                     deleteButton
                 }
@@ -67,6 +74,8 @@ struct VirtualDisplayRow: View {
                     moveButtons
                     rebuildAction
                     toggleButton
+                    uiTestOpenEditButton
+                    uiTestStateButtons
                     AppQuickActionsMenu {
                         Button(
                             String(localized: "Set as Primary"),
@@ -175,30 +184,54 @@ struct VirtualDisplayRow: View {
     }
 
     private var editButton: some View {
-        Button {
-            onEdit()
-        } label: {
-            Image(systemName: "square.and.pencil")
-                .font(.title3)
-                .frame(height: 24)
-        }
+        Button("Edit", systemImage: "square.and.pencil", action: onEdit)
+        .labelStyle(.iconOnly)
+        .font(.title3)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
         .buttonStyle(.borderless)
-        .accessibilityLabel(Text("Edit"))
+        .accessibilityRespondsToUserInteraction(true)
         .disabled(isRowBusy)
         .accessibilityIdentifier("virtual_display_edit_button")
     }
 
-    private var deleteButton: some View {
-        Button {
-            onDelete()
-        } label: {
-            Image(systemName: "trash")
-                .font(.title3)
-                .frame(height: 24)
-                .foregroundStyle(.red)
+    @ViewBuilder
+    private var uiTestOpenEditButton: some View {
+        if let uiTestOpenEditAccessibilityIdentifier {
+            Button("Test Edit", systemImage: "square.and.pencil", action: onEdit)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier(uiTestOpenEditAccessibilityIdentifier)
         }
+    }
+
+    @ViewBuilder
+    private var uiTestStateButtons: some View {
+        if let uiTestShowRebuildingAccessibilityIdentifier,
+           let onUITestShowRebuilding,
+           let uiTestShowRebuildFailedAccessibilityIdentifier,
+           let onUITestShowRebuildFailed {
+            Button("Test Rebuilding", action: onUITestShowRebuilding)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier(uiTestShowRebuildingAccessibilityIdentifier)
+
+            Button("Test Failed", role: .destructive, action: onUITestShowRebuildFailed)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier(uiTestShowRebuildFailedAccessibilityIdentifier)
+        }
+    }
+
+    private var deleteButton: some View {
+        Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+        .labelStyle(.iconOnly)
+        .font(.title3)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+        .foregroundStyle(.red)
         .buttonStyle(.borderless)
-        .accessibilityLabel(Text("Delete"))
+        .accessibilityRespondsToUserInteraction(true)
         .disabled(isRowBusy)
         .accessibilityIdentifier("virtual_display_delete_button")
     }

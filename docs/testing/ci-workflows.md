@@ -48,6 +48,14 @@ Release build check behavior:
 - It performs an unsigned `Release` build for `arm64`
 - It does not package DMG and does not publish artifacts
 
+Unit coverage guard behavior:
+
+- `unit-tests` only runs `VoidDisplayTests`
+- Coverage gating is based on behavior-layer tracked files plus their weighted aggregate coverage
+- Repository-wide `VoidDisplay.app` line coverage is reported for trend visibility
+- Repository-wide `VoidDisplay.app` line coverage is not a blocking threshold in the unit-only workflow
+- Large SwiftUI view files are excluded from the unit coverage hard gate unless they expose directly testable behavior logic
+
 ## Change Classification
 
 The `classify-changes` job decides whether a PR is `code` or `non_code`.

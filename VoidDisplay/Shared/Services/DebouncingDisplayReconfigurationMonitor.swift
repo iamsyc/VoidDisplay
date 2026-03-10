@@ -3,13 +3,34 @@ import Foundation
 
 @MainActor
 final class DebouncingDisplayReconfigurationMonitor {
+    typealias RegisterCallback = @Sendable (CGDisplayReconfigurationCallBack, UnsafeMutableRawPointer) -> CGError
+    typealias RemoveCallback = @Sendable (CGDisplayReconfigurationCallBack, UnsafeMutableRawPointer) -> Void
+    typealias SleepOperation = @Sendable (Duration) async -> Void
+
     private var handler: (@MainActor () -> Void)?
     private var debounceTask: Task<Void, Never>?
     private let debounceDuration: Duration
+    private let registerCallback: RegisterCallback
+    private let removeCallback: RemoveCallback
+    private let sleep: SleepOperation
     nonisolated(unsafe) private var isRunning = false
 
-    init(debounceDuration: Duration = .milliseconds(300)) {
+    init(
+        debounceDuration: Duration = .milliseconds(300),
+        registerCallback: @escaping RegisterCallback = { callback, userInfo in
+            CGDisplayRegisterReconfigurationCallback(callback, userInfo)
+        },
+        removeCallback: @escaping RemoveCallback = { callback, userInfo in
+            CGDisplayRemoveReconfigurationCallback(callback, userInfo)
+        },
+        sleep: @escaping SleepOperation = { duration in
+            try? await Task.sleep(for: duration)
+        }
+    ) {
         self.debounceDuration = debounceDuration
+        self.registerCallback = registerCallback
+        self.removeCallback = removeCallback
+        self.sleep = sleep
     }
 
     @discardableResult
@@ -18,7 +39,7 @@ final class DebouncingDisplayReconfigurationMonitor {
         guard !isRunning else { return true }
 
         let userInfo = Unmanaged.passRetained(self).toOpaque()
-        let result = CGDisplayRegisterReconfigurationCallback(
+        let result = registerCallback(
             Self.displayReconfigurationCallback,
             userInfo
         )
@@ -39,7 +60,7 @@ final class DebouncingDisplayReconfigurationMonitor {
         }
 
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
-        CGDisplayRemoveReconfigurationCallback(
+        removeCallback(
             Self.displayReconfigurationCallback,
             userInfo
         )
@@ -61,8 +82,9 @@ final class DebouncingDisplayReconfigurationMonitor {
             return
         }
         debounceTask = Task { [weak self] in
-            try? await Task.sleep(for: self?.debounceDuration ?? .zero)
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            await self.sleep(self.debounceDuration)
+            guard !Task.isCancelled else { return }
             self.handler?()
         }
     }
