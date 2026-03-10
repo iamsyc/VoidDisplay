@@ -35,7 +35,7 @@ jobs:
     steps:
       - name: Classify changed files
         id: classify
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const codePrefixes = [
@@ -237,7 +237,7 @@ jobs:
       issues: write
     steps:
       - name: Render summary and update PR sticky comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
