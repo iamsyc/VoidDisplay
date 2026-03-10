@@ -83,13 +83,6 @@ struct CaptureDisplayView: View {
                 .frame(width: 150)
                 .accessibilityIdentifier("capture_preview_scale_mode_picker")
             }
-
-            ToolbarItem {
-                Text(scaleMode == .fit ? "Fit" : "Original Size")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("capture_preview_scale_mode_label")
-            }
         }
         .toolbarTitleDisplayMode(.inline)
         .onChange(of: capture.screenCaptureSessions.map(\.id)) { _, ids in
