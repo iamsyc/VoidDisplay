@@ -105,28 +105,40 @@ struct EditVirtualDisplayConfigView: View {
             HStack(spacing: 8) {
                 Spacer()
 
-                Button("Cancel") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-                .accessibilityIdentifier("virtual_display_edit_cancel_button")
-
                 switch EditVirtualDisplayWorkflow.actionLayout(isRunning: isRunning) {
                 case .stopped:
-                    Button("Save") {
-                        handleSaveOnlyTapped()
+                    HStack(spacing: 12) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("virtual_display_edit_cancel_button")
+
+                        Button("Save") {
+                            handleSaveOnlyTapped()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isSaveBlockedByMissingRequiredFields)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("virtual_display_edit_save_button")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSaveBlockedByMissingRequiredFields)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("virtual_display_edit_save_button")
                 case .running:
-                    Button("Save Only") {
-                        handleSaveOnlyTapped()
+                    HStack(spacing: 8) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .buttonStyle(.bordered)
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("virtual_display_edit_cancel_button")
+
+                        Button("Save Only") {
+                            handleSaveOnlyTapped()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isSaveBlockedByMissingRequiredFields)
+                        .accessibilityIdentifier("virtual_display_edit_save_only_button")
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(isSaveBlockedByMissingRequiredFields)
-                    .accessibilityIdentifier("virtual_display_edit_save_only_button")
 
                     Button("Save and Rebuild Now") {
                         handleSaveAndRebuildTapped()
