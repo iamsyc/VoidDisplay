@@ -123,7 +123,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
@@ -235,6 +235,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: write
     steps:
       - name: Render summary and update PR sticky comment
         uses: actions/github-script@v8
