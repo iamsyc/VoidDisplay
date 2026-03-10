@@ -84,9 +84,33 @@ for key in $(jq -r 'keys[]' <<<"$tracked_paths_json"); do
             | .lineCoverage
         ' "$report_json_file" | head -n 1
     )"
+    covered_lines="$(
+        jq -r --arg target "$TARGET_NAME" --arg suffix "$path_suffix" '
+            .targets[]
+            | select(.name == $target)
+            | .files[]
+            | select(.path | endswith($suffix))
+            | .coveredLines
+        ' "$report_json_file" | head -n 1
+    )"
+    executable_lines="$(
+        jq -r --arg target "$TARGET_NAME" --arg suffix "$path_suffix" '
+            .targets[]
+            | select(.name == $target)
+            | .files[]
+            | select(.path | endswith($suffix))
+            | .executableLines
+        ' "$report_json_file" | head -n 1
+    )"
 
     if [[ -z "$line_coverage" ]]; then
         line_coverage="null"
+    fi
+    if [[ -z "$covered_lines" ]]; then
+        covered_lines="null"
+    fi
+    if [[ -z "$executable_lines" ]]; then
+        executable_lines="null"
     fi
 
     tracked_coverage="$(
@@ -94,20 +118,43 @@ for key in $(jq -r 'keys[]' <<<"$tracked_paths_json"); do
             --arg key "$key" \
             --arg path "$path_suffix" \
             --argjson coverage "$line_coverage" \
-            '. + {($key): {path: $path, line_coverage: $coverage}}' \
+            --argjson covered "$covered_lines" \
+            --argjson executable "$executable_lines" \
+            '. + {
+                ($key): {
+                    path: $path,
+                    line_coverage: $coverage,
+                    covered_lines: $covered,
+                    executable_lines: $executable
+                }
+            }' \
             <<<"$tracked_coverage"
     )"
 done
+
+aggregate_tracked_line_coverage="$(
+    jq -r '
+        [
+            .[]
+            | select(.covered_lines != null and .executable_lines != null and .executable_lines > 0)
+        ] as $tracked
+        | ($tracked | map(.covered_lines) | add) as $covered
+        | ($tracked | map(.executable_lines) | add) as $executable
+        | if ($executable // 0) > 0 then ($covered / $executable) else null end
+    ' <<<"$tracked_coverage"
+)"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 jq -n \
     --arg target "$TARGET_NAME" \
     --argjson target_coverage "$target_coverage" \
+    --argjson aggregate_tracked_line_coverage "$aggregate_tracked_line_coverage" \
     --arg generated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     --argjson tracked "$tracked_coverage" \
     '{
         target_name: $target,
         target_line_coverage: $target_coverage,
+        aggregate_tracked_line_coverage: $aggregate_tracked_line_coverage,
         generated_at: $generated_at,
         tracked_files: $tracked
     }' > "$OUTPUT_PATH"

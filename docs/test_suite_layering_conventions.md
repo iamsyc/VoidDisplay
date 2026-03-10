@@ -55,6 +55,7 @@
 - 优先写业务断言，不写纯渲染断言
 - UI smoke 默认使用 [ui_smoke_test_helper_conventions.md](/Users/syc/Project/VoidDisplay/docs/ui_smoke_test_helper_conventions.md) 里的 helper 组合
 - 新增 UI smoke 时，优先复用已有测试专用入口和快路径 helper
+- 视图层大文件默认通过 workflow、controller、behavior、UI smoke 保护，不把 render-only 覆盖率当硬门槛
 
 ## 不再新增的测试类型
 

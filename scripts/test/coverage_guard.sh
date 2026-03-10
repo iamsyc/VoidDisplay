@@ -53,6 +53,8 @@ fi
 
 min_target="$(jq -r '.minimums.target_line_coverage' "$BASELINE_PATH")"
 current_target="$(jq -r '.target_line_coverage' "$REPORT_PATH")"
+min_aggregate="$(jq -r '.minimums.aggregate_tracked_line_coverage // empty' "$BASELINE_PATH")"
+current_aggregate="$(jq -r '.aggregate_tracked_line_coverage // empty' "$REPORT_PATH")"
 
 compare_ge() {
     local current="$1"
@@ -64,9 +66,24 @@ echo "Coverage guard target: $target_name"
 echo "  current: $current_target"
 echo "  minimum: $min_target"
 
-if ! compare_ge "$current_target" "$min_target"; then
-    echo "Target coverage regression detected." >&2
-    exit 1
+if [[ -n "$min_aggregate" && "$min_aggregate" != "null" ]]; then
+    echo "Tracked aggregate coverage"
+    echo "  current: $current_aggregate"
+    echo "  minimum: $min_aggregate"
+
+    if [[ -z "$current_aggregate" || "$current_aggregate" == "null" ]]; then
+        echo "Missing aggregate tracked coverage in report." >&2
+        exit 1
+    fi
+
+    if ! compare_ge "$current_aggregate" "$min_aggregate"; then
+        echo "Tracked aggregate coverage regression detected." >&2
+        exit 1
+    fi
+fi
+
+if [[ -n "$min_target" && "$min_target" != "null" ]] && ! compare_ge "$current_target" "$min_target"; then
+    echo "Target coverage is below legacy threshold. Reporting only."
 fi
 
 failure_count=0
