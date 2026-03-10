@@ -42,6 +42,7 @@ struct VoidDisplayApp: App {
                 .environment(sharing)
                 .environment(virtualDisplay)
         }
+        .windowToolbarStyle(.unified(showsTitle: true))
 
         Settings {
             AppSettingsView()

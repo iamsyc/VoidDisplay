@@ -170,20 +170,18 @@ struct IsCapturing: View {
     }
 
     private var activeMonitoringSessionsFallback: some View {
-        ScrollView {
-            LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                ForEach(capture.screenCaptureSessions) { session in
-                    MonitoringSessionRow(
-                        session: session,
-                        isSharing: sharing.isDisplaySharing(displayID: session.displayID)
-                    ) {
-                        capture.removeMonitoringSession(id: session.id)
-                    }
+        VStack(spacing: AppUI.List.sectionSpacing) {
+            ForEach(capture.screenCaptureSessions) { session in
+                MonitoringSessionRow(
+                    session: session,
+                    isSharing: sharing.isDisplaySharing(displayID: session.displayID)
+                ) {
+                    capture.removeMonitoringSession(id: session.id)
                 }
             }
-            .appListContentInsets()
         }
-        .frame(maxHeight: 260)
+        .appListContentInsets()
+        .frame(maxWidth: .infinity, alignment: .top)
         .accessibilityIdentifier("capture_active_sessions_fallback")
     }
 
