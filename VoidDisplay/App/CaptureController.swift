@@ -36,6 +36,15 @@ final class CaptureController {
         }
     }
 
+    func setMonitoringSessionCapturesCursor(id: UUID, capturesCursor: Bool) {
+        mutateAndSync {
+            captureMonitoringService.updateMonitoringSessionCapturesCursor(
+                id: id,
+                capturesCursor: capturesCursor
+            )
+        }
+    }
+
     func removeMonitoringSession(id: UUID) {
         mutateAndSync {
             captureMonitoringService.removeMonitoringSession(id: id)

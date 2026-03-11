@@ -119,6 +119,7 @@ final class DisplaySharingCoordinator {
     func startSharing(display: SCDisplay) async throws {
         stopSharing(displayID: display.displayID)
         let subscription = try await captureRegistry.acquireShare(display: SendableDisplay(display))
+        try await subscription.prepareForSharing()
         sessionsByDisplayID[display.displayID] = SharingSession(display: display, subscription: subscription)
         if CGDisplayIsMain(display.displayID) != 0 {
             mainDisplayID = display.displayID

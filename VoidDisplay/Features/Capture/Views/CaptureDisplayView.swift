@@ -13,6 +13,7 @@ struct CaptureDisplayView: View {
     let sessionId: UUID
 
     @Environment(CaptureController.self) private var capture
+    @Environment(SharingController.self) private var sharing
     @Environment(\.dismiss) private var dismiss
 
     @State private var renderer = ZeroCopyPreviewRenderer()
@@ -21,9 +22,20 @@ struct CaptureDisplayView: View {
     @State private var windowCoordinator = CapturePreviewWindowCoordinator()
     @State private var hasAppliedInitialSize = false
     @State private var scaleMode: PreviewScaleMode = .fit
+    @State private var capturesCursor = false
+    @State private var isUpdatingCursorCapture = false
 
     private var session: ScreenMonitoringSession? {
         capture.monitoringSession(for: sessionId)
+    }
+
+    private var isSharingDisplay: Bool {
+        guard let displayID = session?.displayID else { return false }
+        return sharing.isDisplaySharing(displayID: displayID)
+    }
+
+    private var effectiveCapturesCursor: Bool {
+        capturesCursor || isSharingDisplay
     }
 
     private var currentScaleFactor: CGFloat {
@@ -90,10 +102,22 @@ struct CaptureDisplayView: View {
                 .frame(width: 150)
                 .accessibilityIdentifier("capture_preview_scale_mode_picker")
             }
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 6) {
+                    Text(String(localized: "Cursor"))
+                    Toggle("", isOn: cursorCaptureBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .disabled(isUpdatingCursorCapture || isSharingDisplay)
+                        .accessibilityIdentifier("capture_preview_cursor_toggle")
+                }
+            }
         }
         .toolbarTitleDisplayMode(.inline)
         .onAppear {
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
+            capturesCursor = session?.capturesCursor ?? false
         }
         .onChange(of: scaleMode) { _, newValue in
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: newValue == .fit)
@@ -106,6 +130,11 @@ struct CaptureDisplayView: View {
         .onChange(of: capture.screenCaptureSessions.map(\.id)) { _, ids in
             if !ids.contains(sessionId) {
                 dismiss()
+            }
+        }
+        .onChange(of: session?.capturesCursor ?? false) { _, newValue in
+            if !isUpdatingCursorCapture {
+                capturesCursor = newValue
             }
         }
         .onAppear {
@@ -159,6 +188,42 @@ struct CaptureDisplayView: View {
 // MARK: - Window Sizing
 
 extension CaptureDisplayView {
+    private var cursorCaptureBinding: Binding<Bool> {
+        Binding(
+            get: { effectiveCapturesCursor },
+            set: { newValue in
+                guard !isSharingDisplay else { return }
+                let previousValue = capturesCursor
+                capturesCursor = newValue
+
+                guard let session else { return }
+                isUpdatingCursorCapture = true
+                Task {
+                    do {
+                        try await session.previewSubscription.setShowsCursor(newValue)
+                        await MainActor.run {
+                            capture.setMonitoringSessionCapturesCursor(
+                                id: sessionId,
+                                capturesCursor: newValue
+                            )
+                            isUpdatingCursorCapture = false
+                        }
+                    } catch {
+                        AppErrorMapper.logFailure(
+                            "Update cursor capture",
+                            error: error,
+                            logger: AppLog.capture
+                        )
+                        await MainActor.run {
+                            capturesCursor = previousValue
+                            isUpdatingCursorCapture = false
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     /// Sets the window's initial size and aspect ratio to match the
     /// captured display.  Called once when both the window reference
     /// and the first frame's pixel dimensions become available.

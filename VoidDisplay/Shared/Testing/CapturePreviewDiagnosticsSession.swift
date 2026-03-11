@@ -24,6 +24,7 @@ enum CapturePreviewDiagnosticsBootstrap {
             resolutionText: previewSubscription.resolutionText,
             isVirtualDisplay: false,
             previewSubscription: previewSubscription,
+            capturesCursor: false,
             state: .starting
         )
         return CaptureMonitoringService(initialSessions: [monitoringSession])
@@ -51,6 +52,12 @@ final class UITestCapturePreviewSession: @unchecked Sendable, DisplayCaptureSess
     }
 
     nonisolated func stopSharing() {}
+
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {}
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }

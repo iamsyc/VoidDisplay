@@ -16,5 +16,6 @@ struct ScreenMonitoringSession: Identifiable {
     let resolutionText: String
     let isVirtualDisplay: Bool
     let previewSubscription: DisplayPreviewSubscription
+    var capturesCursor: Bool
     var state: State
 }
