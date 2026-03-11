@@ -18,6 +18,7 @@ struct CaptureDisplayView: View {
     @State private var renderer = ZeroCopyPreviewRenderer()
     @State private var recordingSink: CapturePreviewRecordingSink?
     @State private var window: NSWindow?
+    @State private var windowCoordinator = CapturePreviewWindowCoordinator()
     @State private var hasAppliedInitialSize = false
     @State private var scaleMode: PreviewScaleMode = .fit
 
@@ -48,7 +49,6 @@ struct CaptureDisplayView: View {
                 if scaleMode == .fit {
                     ZeroCopyPreviewLayerView(renderer: renderer)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.black)
                 } else {
                     ScrollView([.horizontal, .vertical]) {
                         ZeroCopyPreviewLayerView(renderer: renderer)
@@ -58,6 +58,7 @@ struct CaptureDisplayView: View {
                             )
                             .background(Color.black)
                     }
+                    .background(TransparentScrollViewConfigurator())
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
@@ -90,6 +91,12 @@ struct CaptureDisplayView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
+        .onAppear {
+            windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
+        }
+        .onChange(of: scaleMode) { _, newValue in
+            windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: newValue == .fit)
+        }
         .onChange(of: capture.screenCaptureSessions.map(\.id)) { _, ids in
             if !ids.contains(sessionId) {
                 dismiss()
@@ -122,12 +129,18 @@ struct CaptureDisplayView: View {
             capture.removeMonitoringSession(id: sessionId)
         }
         .onChange(of: renderer.framePixelSize) { _, _ in
+            windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
             applyInitialWindowSize()
         }
         .overlay {
             WindowAccessor { resolvedWindow in
                 if window !== resolvedWindow {
                     window = resolvedWindow
+                    windowCoordinator.attach(to: resolvedWindow)
+                    windowCoordinator.update(
+                        aspect: preferredAspect(),
+                        shouldLockAspect: scaleMode == .fit
+                    )
                     applyInitialWindowSize()
                 }
             }
@@ -230,6 +243,99 @@ extension CaptureDisplayView {
               let h = Double(parts[1]), h > 0
         else { return nil }
         return CGSize(width: w, height: h)
+    }
+}
+
+// MARK: - Window Coordination
+
+@MainActor
+private final class CapturePreviewWindowCoordinator: NSObject, NSWindowDelegate {
+    private weak var window: NSWindow?
+    private var aspect = CGSize.zero
+    private var shouldLockAspect = true
+
+    func attach(to window: NSWindow) {
+        guard self.window !== window else { return }
+        self.window = window
+        window.delegate = self
+    }
+
+    func update(aspect: CGSize, shouldLockAspect: Bool) {
+        self.aspect = aspect
+        self.shouldLockAspect = shouldLockAspect
+    }
+
+    func window(
+        _ window: NSWindow,
+        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
+    ) -> NSApplication.PresentationOptions {
+        proposedOptions.union(.autoHideToolbar)
+    }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else {
+            return frameSize
+        }
+
+        let currentContentRect = sender.contentRect(forFrameRect: sender.frame)
+        let currentLayoutRect = sender.contentLayoutRect
+        let layoutInsetWidth = max(0, currentContentRect.width - currentLayoutRect.width)
+        let layoutInsetHeight = max(0, currentContentRect.height - currentLayoutRect.height)
+        let proposedContentRect = sender.contentRect(
+            forFrameRect: NSRect(origin: .zero, size: frameSize)
+        )
+        let proposedPreviewWidth = max(1, proposedContentRect.width - layoutInsetWidth)
+        let proposedPreviewHeight = max(1, proposedContentRect.height - layoutInsetHeight)
+        let ratio = aspect.width / aspect.height
+
+        let previewWidth: CGFloat
+        let previewHeight: CGFloat
+
+        if proposedPreviewWidth / proposedPreviewHeight > ratio {
+            previewHeight = proposedPreviewHeight
+            previewWidth = previewHeight * ratio
+        } else {
+            previewWidth = proposedPreviewWidth
+            previewHeight = previewWidth / ratio
+        }
+
+        let targetContentRect = NSRect(
+            origin: .zero,
+            size: NSSize(
+                width: previewWidth + layoutInsetWidth,
+                height: previewHeight + layoutInsetHeight
+            )
+        )
+        return sender.frameRect(forContentRect: targetContentRect).size
+    }
+}
+
+// MARK: - Scroll View Configuration
+
+private struct TransparentScrollViewConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        Task { @MainActor in
+            configure(from: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        Task { @MainActor in
+            configure(from: nsView)
+        }
+    }
+
+    @MainActor
+    private func configure(from view: NSView) {
+        guard let scrollView = sequence(first: view.superview, next: { $0?.superview })
+            .first(where: { $0 is NSScrollView }) as? NSScrollView
+        else { return }
+
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.contentView.drawsBackground = false
     }
 }
 

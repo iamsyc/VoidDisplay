@@ -259,6 +259,129 @@ window.frameRect(forContentRect: targetContentSize)
    - `contentAspectRatio`
    - 预览层所在视图实际 bounds
 
+## 这轮新增经验
+
+这轮又补了三个和预览窗口观感直接相关的问题：
+
+- `适应` 和 `1:1` 时 toolbar 颜色不一致
+- 进入全屏后 toolbar 仍然显示，顶部是一整条白色区域
+- 拖动窗口边缘改变尺寸时，`适应` 模式重新出现左右白边
+
+### 1. toolbar 颜色不一致的真正影响项
+
+现象是：
+
+- `适应` 模式下 toolbar 更偏灰
+- `1:1` 模式下 toolbar 更接近灰白
+
+这次确认后，影响项主要有两个：
+
+- `适应` 和 `1:1` 的宿主结构不同
+- `1:1` 的底层 `NSScrollView` 自带背景参与了系统 toolbar 的材质取样
+
+曾经试过的几个方向都不理想：
+
+- 直接给 `.windowToolbar` 强制固定 `.regularMaterial`
+- 让 `适应` 也套一层伪 `ScrollView` 宿主
+- 直接把内容顶到 toolbar 后面
+
+这些方案会带来新的副作用，例如：
+
+- toolbar 变成偏灰的固定材质，看起来和常见 macOS 应用不一致
+- 全屏时黑屏或白边
+- 内容跑到标题栏后方
+
+这次最终保留的做法：
+
+- `适应` 模式恢复成普通预览层
+- `1:1` 模式继续使用真实 `ScrollView`
+- 给 `1:1` 的底层滚动宿主做透明化处理
+
+相关代码位置：
+
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L45)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L55)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L272)
+
+透明化处理的核心是：
+
+- `NSScrollView.drawsBackground = false`
+- `NSClipView.drawsBackground = false`
+- 去掉滚动视图边框
+
+这样系统 toolbar 仍然使用自己的灰白材质，`1:1` 又不会多出一层背景去污染取样。
+
+### 2. 全屏时 toolbar 不隐藏的处理方式
+
+预览窗口进入全屏后，如果 toolbar 继续常驻，效果会非常差：
+
+- 顶部会出现一整条白色区域
+- 预览内容观感被破坏
+- 和系统常见的媒体、预览类窗口表现不一致
+
+这次采用的是系统级做法，在窗口 delegate 里返回全屏展示选项：
+
+```text
+proposedOptions.union(.autoHideToolbar)
+```
+
+对应代码位置：
+
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L241)
+
+这样进入全屏后，toolbar 会自动隐藏。  
+这个方案优先级高于在 SwiftUI 视图层硬做显隐控制，因为它直接走 `NSWindow` 的系统行为。
+
+### 3. `适应` 模式拖拽 resize 后白边回来的根因
+
+这次确认了一个之前没有补上的问题：
+
+- 初始窗口创建时已经按真实内容区宽高比设置了尺寸
+- 用户后续手动拖动窗口边缘时，这个比例约束没有继续生效
+- 窗口一旦被拖成偏宽或偏高，`AVSampleBufferDisplayLayer` 在 `resizeAspect` 下就会重新留白边
+
+所以“初始尺寸算对”还不够，拖拽过程也要继续维持内容区比例。
+
+最终做法：
+
+- 在窗口 delegate 里实现 `windowWillResize`
+- 只在 `适应` 模式下启用
+- 使用当前窗口真实的 `contentRect` 与 `contentLayoutRect` 差值，推导可用预览承载区
+- 按采集源宽高比修正用户即将拖出的目标尺寸
+
+对应代码位置：
+
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L258)
+
+这样有几个好处：
+
+- `适应` 模式下拖拽窗口不会再重新出现左右白边
+- `1:1` 模式仍然保留自由窗口尺寸，不会被强行锁比例
+- 逻辑和初始 sizing 使用同一套内容区修正思路，行为更一致
+
+### 4. 这轮明确排除掉的错误方向
+
+这轮调试里已经证明以下方向不适合作为最终方案：
+
+- 给 toolbar 强制固定 `.regularMaterial`
+- 让 `适应` 模式借一个禁用滚动的伪 `ScrollView` 来模拟 `1:1`
+- 用 `ignoresSafeArea(.container, edges: .top)` 把内容直接推进标题栏
+
+这些尝试虽然能短暂改变 toolbar 颜色，但会带来更坏的问题：
+
+- 全屏黑屏
+- 顶部白边
+- 内容跑进标题栏
+- resize 行为变差
+
+后续如果再遇到 toolbar 材质和内容区相互影响的问题，优先顺序应该是：
+
+1. 先检查不同模式下的宿主结构是否一致
+2. 再检查 `NSScrollView` / `NSClipView` 是否自带背景
+3. 最后才考虑是否需要改 toolbar 材质
+
+不要先用强制材质去压问题。
+
 5. 不要先改 `videoGravity`
 
 6. 不要先改成 fill 或手工裁切
