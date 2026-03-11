@@ -269,7 +269,12 @@ struct VirtualDisplayOrchestratorLightTests {
                 Issue.record("Unexpected error: \(error)")
                 return
             }
-            #expect(message.contains("rollback"))
+            #expect(
+                message ==
+                    String(
+                        localized: "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
+                    )
+            )
         } catch {
             Issue.record("Unexpected error type: \(error)")
         }

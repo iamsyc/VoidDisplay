@@ -158,7 +158,12 @@ struct AppBootstrapTests {
         env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
         #expect(env.virtualDisplay.configStorePresentation.hasLoadFailure)
-        #expect(env.virtualDisplay.configStorePresentation.loadErrorMessage?.contains("Reset") == true)
+        #expect(
+            env.virtualDisplay.configStorePresentation.loadErrorMessage
+                == VirtualDisplayConfigStoreError
+                .unsupportedSchemaVersion(expected: 3, actual: 2)
+                .userFacingMessage
+        )
         #expect(env.virtualDisplay.configStorePresentation.diagnosticsSummary?.contains("primary=/tmp/virtual-displays.json") == true)
     }
 
@@ -772,7 +777,9 @@ struct AppBootstrapTests {
         #expect(sut.persistenceAlert != nil)
         #expect(
             sut.persistenceAlert?.message ==
-                "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
+                String(
+                    localized: "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
+                )
         )
         #expect(sut.displayConfigs.count == 1)
     }
