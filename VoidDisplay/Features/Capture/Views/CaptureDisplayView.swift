@@ -86,6 +86,7 @@ struct CaptureDisplayView: View {
                     Text("1:1").tag(PreviewScaleMode.native)
                 }
                 .pickerStyle(.segmented)
+                .controlSize(.small)
                 .frame(width: 150)
                 .accessibilityIdentifier("capture_preview_scale_mode_picker")
             }
