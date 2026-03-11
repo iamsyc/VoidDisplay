@@ -48,6 +48,7 @@ struct CaptureDisplayView: View {
                 if scaleMode == .fit {
                     ZeroCopyPreviewLayerView(renderer: renderer)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black)
                 } else {
                     ScrollView([.horizontal, .vertical]) {
                         ZeroCopyPreviewLayerView(renderer: renderer)
@@ -55,6 +56,7 @@ struct CaptureDisplayView: View {
                                 width: nativeFrameSizeInPoints.width,
                                 height: nativeFrameSizeInPoints.height
                             )
+                            .background(Color.black)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -70,7 +72,7 @@ struct CaptureDisplayView: View {
 
     var body: some View {
         ZStack {
-            Color.black
+            Color(nsColor: .windowBackgroundColor)
             previewContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -137,7 +139,6 @@ struct CaptureDisplayView: View {
 // MARK: - Window Sizing
 
 extension CaptureDisplayView {
-
     /// Sets the window's initial size and aspect ratio to match the
     /// captured display.  Called once when both the window reference
     /// and the first frame's pixel dimensions become available.
@@ -145,7 +146,7 @@ extension CaptureDisplayView {
         let aspect = preferredAspect()
         guard let window, aspect.width > 0, aspect.height > 0, !hasAppliedInitialSize else { return }
 
-        window.backgroundColor = .black
+        window.backgroundColor = .windowBackgroundColor
         let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         let contentRect = window.contentRect(forFrameRect: window.frame)
         let layoutRect = window.contentLayoutRect
