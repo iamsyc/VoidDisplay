@@ -17,6 +17,7 @@ final class CaptureController {
 
     init(captureMonitoringService: any CaptureMonitoringServiceProtocol) {
         self.captureMonitoringService = captureMonitoringService
+        self.screenCaptureSessions = captureMonitoringService.currentSessions
     }
 
     func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {

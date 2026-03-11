@@ -22,6 +22,16 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 @Suite(.serialized)
 @MainActor
 struct CaptureControllerTests {
+    @Test func initSynchronizesExistingSessionsFromService() {
+        let service = MockCaptureMonitoringService()
+        let existingSession = makeSession(id: UUID(), displayID: 66)
+        service.currentSessions = [existingSession]
+
+        let controller = CaptureController(captureMonitoringService: service)
+
+        #expect(controller.screenCaptureSessions.map(\.id) == [existingSession.id])
+    }
+
     @Test func addAndRemoveSessionSyncsControllerState() {
         let service = MockCaptureMonitoringService()
         let controller = CaptureController(captureMonitoringService: service)

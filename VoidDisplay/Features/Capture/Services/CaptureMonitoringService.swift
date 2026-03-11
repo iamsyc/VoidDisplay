@@ -18,6 +18,10 @@ protocol CaptureMonitoringServiceProtocol: AnyObject {
 final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
     private var sessions: [ScreenMonitoringSession] = []
 
+    init(initialSessions: [ScreenMonitoringSession] = []) {
+        self.sessions = initialSessions
+    }
+
     var currentSessions: [ScreenMonitoringSession] {
         sessions
     }

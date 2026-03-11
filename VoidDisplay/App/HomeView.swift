@@ -10,6 +10,7 @@ struct HomeView: View {
     @Environment(CaptureController.self) private var capture
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
+    @Environment(\.openWindow) private var openWindow
 
     private enum SidebarItem: Hashable {
         case screen
@@ -19,6 +20,7 @@ struct HomeView: View {
     }
 
     @State private var selection: SidebarItem? = .screen
+    @State private var hasAutoOpenedCapturePreview = false
 
     var body: some View {
         NavigationSplitView {
@@ -75,6 +77,22 @@ struct HomeView: View {
                 }
             }
         }
+        .onAppear {
+            autoOpenCapturePreviewWindowIfNeeded()
+        }
+    }
+
+    private func autoOpenCapturePreviewWindowIfNeeded() {
+        guard CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
+              !hasAutoOpenedCapturePreview,
+              let sessionID = capture.screenCaptureSessions.first?.id
+        else {
+            return
+        }
+
+        selection = .monitorScreen
+        openWindow(value: sessionID)
+        hasAutoOpenedCapturePreview = true
     }
 }
 

@@ -64,6 +64,8 @@ final class VirtualDisplayController {
         switch scenario {
         case .baseline:
             break
+        case .capturePreviewDiagnostics:
+            break
         case .displayCatalogLoading:
             break
         case .permissionDenied:

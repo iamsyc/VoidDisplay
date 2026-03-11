@@ -78,8 +78,19 @@ enum AppBootstrap {
         }
 
         let scenario = UITestRuntime.scenario
+        let captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = {
+            guard scenario == .capturePreviewDiagnostics,
+                  let configuration = CapturePreviewDiagnosticsRuntime.configuration()
+            else {
+                return nil
+            }
+            return try? CapturePreviewDiagnosticsBootstrap.makeMonitoringService(
+                configuration: configuration
+            )
+        }()
         return makeEnvironment(
             preview: false,
+            captureMonitoringService: captureMonitoringService,
             virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: scenario),
             startupPlan: .init(
                 shouldRestoreVirtualDisplays: true,

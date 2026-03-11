@@ -16,6 +16,7 @@ struct CaptureDisplayView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var renderer = ZeroCopyPreviewRenderer()
+    @State private var recordingSink: CapturePreviewRecordingSink?
     @State private var window: NSWindow?
     @State private var hasAppliedInitialSize = false
     @State private var scaleMode: PreviewScaleMode = .fit
@@ -73,6 +74,8 @@ struct CaptureDisplayView: View {
             previewContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("capture_preview_content")
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Scale Mode", selection: $scaleMode) {
@@ -93,6 +96,14 @@ struct CaptureDisplayView: View {
         .onAppear {
             if let session {
                 session.previewSubscription.attachPreviewSink(renderer)
+                if let destinationDirectory = CapturePreviewDiagnosticsRuntime.configuration()?.recordDirectoryURL {
+                    let sink = CapturePreviewRecordingSink(
+                        destinationDirectory: destinationDirectory,
+                        session: session
+                    )
+                    recordingSink = sink
+                    session.previewSubscription.attachPreviewSink(sink)
+                }
                 capture.markMonitoringSessionActive(id: sessionId)
             } else {
                 dismiss()
@@ -100,6 +111,9 @@ struct CaptureDisplayView: View {
         }
         .onDisappear {
             if let session {
+                if let recordingSink {
+                    session.previewSubscription.detachPreviewSink(recordingSink)
+                }
                 session.previewSubscription.detachPreviewSink(renderer)
             }
             renderer.flush()
@@ -153,6 +167,11 @@ extension CaptureDisplayView {
         if pixelSize.width > 0, pixelSize.height > 0 {
             w = pixelSize.width / scale
             h = pixelSize.height / scale
+        }
+
+        if let overriddenWidth = CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth {
+            w = min(max(320, overriddenWidth), maxW)
+            h = w / ratio
         }
 
         if w > maxW { w = maxW; h = w / ratio }
