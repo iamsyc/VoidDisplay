@@ -96,6 +96,11 @@ struct CaptureDisplayView: View {
         }
         .onChange(of: scaleMode) { _, newValue in
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: newValue == .fit)
+            if let window {
+                if newValue == .fit {
+                    windowCoordinator.snapWindowToAspect(window)
+                }
+            }
         }
         .onChange(of: capture.screenCaptureSessions.map(\.id)) { _, ids in
             if !ids.contains(sessionId) {
@@ -125,6 +130,7 @@ struct CaptureDisplayView: View {
                 }
                 session.previewSubscription.detachPreviewSink(renderer)
             }
+            windowCoordinator.tearDown()
             renderer.flush()
             capture.removeMonitoringSession(id: sessionId)
         }
@@ -208,7 +214,6 @@ extension CaptureDisplayView {
             width: previewWidth + layoutInsetWidth,
             height: previewHeight + layoutInsetHeight
         )
-        window.contentAspectRatio = targetContentSize
 
         let targetFrame = window.frameRect(
             forContentRect: NSRect(origin: .zero, size: targetContentSize)
@@ -248,15 +253,21 @@ extension CaptureDisplayView {
 
 // MARK: - Window Coordination
 
-@MainActor
-private final class CapturePreviewWindowCoordinator: NSObject, NSWindowDelegate {
+private final class CapturePreviewWindowCoordinator: NSObject {
     private weak var window: NSWindow?
+    nonisolated(unsafe) private weak var forwardedDelegate: (any NSWindowDelegate)?
     private var aspect = CGSize.zero
     private var shouldLockAspect = true
 
     func attach(to window: NSWindow) {
         guard self.window !== window else { return }
+        restoreWindowDelegate()
         self.window = window
+        if let delegate = window.delegate, delegate !== self {
+            forwardedDelegate = delegate
+        } else {
+            forwardedDelegate = nil
+        }
         window.delegate = self
     }
 
@@ -265,24 +276,45 @@ private final class CapturePreviewWindowCoordinator: NSObject, NSWindowDelegate 
         self.shouldLockAspect = shouldLockAspect
     }
 
-    func window(
-        _ window: NSWindow,
-        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
-    ) -> NSApplication.PresentationOptions {
-        proposedOptions.union(.autoHideToolbar)
+    func snapWindowToAspect(_ window: NSWindow) {
+        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else { return }
+        let targetSize = aspectLockedFrameSize(for: window, proposedFrameSize: window.frame.size)
+        guard abs(targetSize.width - window.frame.width) > 0.5
+                || abs(targetSize.height - window.frame.height) > 0.5 else { return }
+
+        var newFrame = window.frame
+        newFrame.origin.x += (newFrame.width - targetSize.width) / 2
+        newFrame.origin.y += (newFrame.height - targetSize.height) / 2
+        newFrame.size = targetSize
+        window.setFrame(newFrame, display: true, animate: false)
     }
 
-    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else {
-            return frameSize
+    func tearDown() {
+        restoreWindowDelegate()
+        window = nil
+        forwardedDelegate = nil
+    }
+
+    private func aspectLockedFrameSize(for window: NSWindow, proposedFrameSize: NSSize) -> NSSize {
+        guard let targetContentSize = aspectLockedContentSize(
+            for: window,
+            proposedFrameSize: proposedFrameSize
+        ) else {
+            return proposedFrameSize
         }
 
-        let currentContentRect = sender.contentRect(forFrameRect: sender.frame)
-        let currentLayoutRect = sender.contentLayoutRect
+        let targetContentRect = NSRect(origin: .zero, size: targetContentSize)
+        return window.frameRect(forContentRect: targetContentRect).size
+    }
+
+    private func aspectLockedContentSize(for window: NSWindow, proposedFrameSize: NSSize) -> NSSize? {
+        guard aspect.width > 0, aspect.height > 0 else { return nil }
+        let currentContentRect = window.contentRect(forFrameRect: window.frame)
+        let currentLayoutRect = window.contentLayoutRect
         let layoutInsetWidth = max(0, currentContentRect.width - currentLayoutRect.width)
         let layoutInsetHeight = max(0, currentContentRect.height - currentLayoutRect.height)
-        let proposedContentRect = sender.contentRect(
-            forFrameRect: NSRect(origin: .zero, size: frameSize)
+        let proposedContentRect = window.contentRect(
+            forFrameRect: NSRect(origin: .zero, size: proposedFrameSize)
         )
         let proposedPreviewWidth = max(1, proposedContentRect.width - layoutInsetWidth)
         let proposedPreviewHeight = max(1, proposedContentRect.height - layoutInsetHeight)
@@ -306,7 +338,59 @@ private final class CapturePreviewWindowCoordinator: NSObject, NSWindowDelegate 
                 height: previewHeight + layoutInsetHeight
             )
         )
-        return sender.frameRect(forContentRect: targetContentRect).size
+        return targetContentRect.size
+    }
+
+    private func restoreWindowDelegate() {
+        guard let window, window.delegate === self else { return }
+        window.delegate = forwardedDelegate
+    }
+}
+
+extension CapturePreviewWindowCoordinator: NSWindowDelegate {
+    nonisolated override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || (forwardedDelegate?.responds(to: aSelector) ?? false)
+    }
+
+    nonisolated override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        if forwardedDelegate?.responds(to: aSelector) == true {
+            return forwardedDelegate
+        }
+        return super.forwardingTarget(for: aSelector)
+    }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let proposedFrameSize = forwardedDelegate?.windowWillResize?(sender, to: frameSize) ?? frameSize
+        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else {
+            return proposedFrameSize
+        }
+        return aspectLockedFrameSize(for: sender, proposedFrameSize: proposedFrameSize)
+    }
+
+    func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame newFrame: NSRect) -> NSRect {
+        let proposedFrame = forwardedDelegate?.windowWillUseStandardFrame?(window, defaultFrame: newFrame)
+            ?? newFrame
+        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else {
+            return proposedFrame
+        }
+
+        let targetSize = aspectLockedFrameSize(for: window, proposedFrameSize: proposedFrame.size)
+        var adjustedFrame = proposedFrame
+        adjustedFrame.origin.x += (proposedFrame.width - targetSize.width) / 2
+        adjustedFrame.origin.y += (proposedFrame.height - targetSize.height) / 2
+        adjustedFrame.size = targetSize
+        return adjustedFrame
+    }
+
+    func window(
+        _ window: NSWindow,
+        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
+    ) -> NSApplication.PresentationOptions {
+        let forwardedOptions = forwardedDelegate?.window?(
+            window,
+            willUseFullScreenPresentationOptions: proposedOptions
+        ) ?? proposedOptions
+        return forwardedOptions.union(.autoHideToolbar)
     }
 }
 
