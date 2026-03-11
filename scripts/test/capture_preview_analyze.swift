@@ -50,33 +50,36 @@ let expectedColors: [String: RGBAColor] = [
 
 let colorTolerance = 0.35
 let blackLuminanceThreshold = 0.08
+let cornerTolerance = 0.28
+let circleColor = RGBAColor(red: 0.82, green: 0.16, blue: 0.66)
+let circleTolerance = 0.34
 
 func main() throws {
     guard CommandLine.arguments.count >= 2 else {
         throw AnalyzerError.missingArgument
     }
 
-    let imagePath = CommandLine.arguments[1]
+    let imagePath = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL.path
     let bitmap = try loadBitmap(path: imagePath)
     let width = bitmap.pixelsWide
     let height = bitmap.pixelsHigh
 
-    let samples: [(String, Double, Double)] = [
-        ("left", 0.02, 0.50),
-        ("right", 0.98, 0.50),
-        ("top", 0.50, 0.98),
-        ("bottom", 0.50, 0.02),
-        ("topLeftCorner", 0.10, 0.90),
-        ("topRightCorner", 0.90, 0.90),
-        ("bottomLeftCorner", 0.10, 0.10),
-        ("bottomRightCorner", 0.90, 0.10)
+    let edgeSearchRegions: [(String, CGRect)] = [
+        ("left", normalizedRect(0.00, 0.10, 0.04, 0.80, imageWidth: width, imageHeight: height)),
+        ("right", normalizedRect(0.96, 0.10, 0.04, 0.80, imageWidth: width, imageHeight: height)),
+        ("top", normalizedRect(0.10, 0.00, 0.80, 0.04, imageWidth: width, imageHeight: height)),
+        ("bottom", normalizedRect(0.10, 0.96, 0.80, 0.04, imageWidth: width, imageHeight: height))
     ]
 
     var failures: [String] = []
-    for (name, x, y) in samples {
-        let actual = averageColor(bitmap: bitmap, normalizedX: x, normalizedY: y, radius: 3)
+    for (name, rect) in edgeSearchRegions {
         let expected = expectedColors[name]!
-        if actual.distance(to: expected) > colorTolerance {
+        let (distance, actual) = nearestColorMatch(
+            bitmap: bitmap,
+            rect: rect,
+            expected: expected
+        )
+        if distance > colorTolerance {
             failures.append("\(name) expected close to diagnostic color, actual=(\(format(actual.red)), \(format(actual.green)), \(format(actual.blue)))")
         }
         if (name == "left" || name == "right") && actual.luminance < blackLuminanceThreshold {
@@ -84,7 +87,28 @@ func main() throws {
         }
     }
 
-    let circleBounds = detectMagentaCircleBounds(bitmap: bitmap)
+    let cornerSearchRegions: [(String, CGRect)] = [
+        ("topLeftCorner", normalizedRect(0.02, 0.02, 0.22, 0.22, imageWidth: width, imageHeight: height)),
+        ("topRightCorner", normalizedRect(0.78, 0.02, 0.20, 0.22, imageWidth: width, imageHeight: height)),
+        ("bottomLeftCorner", normalizedRect(0.02, 0.78, 0.22, 0.20, imageWidth: width, imageHeight: height)),
+        ("bottomRightCorner", normalizedRect(0.78, 0.78, 0.20, 0.20, imageWidth: width, imageHeight: height))
+    ]
+
+    for (name, rect) in cornerSearchRegions {
+        let distance = nearestColorDistance(
+            bitmap: bitmap,
+            rect: rect,
+            expected: expectedColors[name]!
+        )
+        if distance > cornerTolerance {
+            failures.append("\(name) marker not found in expected quadrant")
+        }
+    }
+
+    let circleBounds = detectMagentaCircleBounds(
+        bitmap: bitmap,
+        searchRect: normalizedRect(0.25, 0.25, 0.50, 0.50, imageWidth: width, imageHeight: height)
+    )
     if let circleBounds {
         let ratio = Double(circleBounds.width) / Double(circleBounds.height)
         if abs(ratio - 1) > 0.12 {
@@ -159,17 +183,22 @@ func averageColor(
     )
 }
 
-func detectMagentaCircleBounds(bitmap: NSBitmapImageRep) -> CGRect? {
-    var minX = bitmap.pixelsWide
-    var maxX = 0
-    var minY = bitmap.pixelsHigh
-    var maxY = 0
+func detectMagentaCircleBounds(bitmap: NSBitmapImageRep, searchRect: CGRect) -> CGRect? {
+    var minX = Int(searchRect.maxX)
+    var maxX = Int(searchRect.minX)
+    var minY = Int(searchRect.maxY)
+    var maxY = Int(searchRect.minY)
     var found = false
 
-    for x in 0..<bitmap.pixelsWide {
-        for y in 0..<bitmap.pixelsHigh {
+    for x in Int(searchRect.minX)..<Int(searchRect.maxX) {
+        for y in Int(searchRect.minY)..<Int(searchRect.maxY) {
             guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-            if color.redComponent > 0.6 && color.blueComponent > 0.45 && color.greenComponent < 0.45 {
+            let actual = RGBAColor(
+                red: Double(color.redComponent),
+                green: Double(color.greenComponent),
+                blue: Double(color.blueComponent)
+            )
+            if actual.distance(to: circleColor) <= circleTolerance {
                 found = true
                 minX = min(minX, x)
                 maxX = max(maxX, x)
@@ -186,6 +215,41 @@ func detectMagentaCircleBounds(bitmap: NSBitmapImageRep) -> CGRect? {
         width: maxX - minX + 1,
         height: maxY - minY + 1
     )
+}
+
+func nearestColorDistance(
+    bitmap: NSBitmapImageRep,
+    rect: CGRect,
+    expected: RGBAColor
+) -> Double {
+    nearestColorMatch(bitmap: bitmap, rect: rect, expected: expected).distance
+}
+
+func nearestColorMatch(
+    bitmap: NSBitmapImageRep,
+    rect: CGRect,
+    expected: RGBAColor
+) -> (distance: Double, color: RGBAColor) {
+    var bestDistance = Double.greatestFiniteMagnitude
+    var bestColor = RGBAColor(red: 0, green: 0, blue: 0)
+
+    for x in Int(rect.minX)..<Int(rect.maxX) {
+        for y in Int(rect.minY)..<Int(rect.maxY) {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+            let actual = RGBAColor(
+                red: Double(color.redComponent),
+                green: Double(color.greenComponent),
+                blue: Double(color.blueComponent)
+            )
+            let distance = actual.distance(to: expected)
+            if distance < bestDistance {
+                bestDistance = distance
+                bestColor = actual
+            }
+        }
+    }
+
+    return (bestDistance, bestColor)
 }
 
 func leadingBlackColumns(bitmap: NSBitmapImageRep, normalizedY: Double) -> Int {
@@ -218,6 +282,22 @@ func trailingBlackColumns(bitmap: NSBitmapImageRep, normalizedY: Double) -> Int 
 
 func format(_ value: Double) -> String {
     String(format: "%.3f", value)
+}
+
+func normalizedRect(
+    _ x: Double,
+    _ y: Double,
+    _ width: Double,
+    _ height: Double,
+    imageWidth: Int,
+    imageHeight: Int
+) -> CGRect {
+    CGRect(
+        x: Double(imageWidth) * x,
+        y: Double(imageHeight) * y,
+        width: Double(imageWidth) * width,
+        height: Double(imageHeight) * height
+    )
 }
 
 do {

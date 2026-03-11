@@ -146,39 +146,58 @@ extension CaptureDisplayView {
         guard let window, aspect.width > 0, aspect.height > 0, !hasAppliedInitialSize else { return }
 
         window.backgroundColor = .black
-        window.contentAspectRatio = NSSize(width: aspect.width, height: aspect.height)
-
-        let contentRect = window.contentRect(forFrameRect: window.frame)
         let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
-        let chromeWidth = window.frame.width - contentRect.width
-        let chromeHeight = window.frame.height - contentRect.height
+        let contentRect = window.contentRect(forFrameRect: window.frame)
+        let layoutRect = window.contentLayoutRect
+        let chromeWidth = max(0, window.frame.width - contentRect.width)
+        let chromeHeight = max(0, window.frame.height - contentRect.height)
+        let layoutInsetWidth = max(0, contentRect.width - layoutRect.width)
+        let layoutInsetHeight = max(0, contentRect.height - layoutRect.height)
 
-        let maxW = max(320, (visibleFrame?.width ?? 1280) - chromeWidth - 16)
-        let maxH = max(180, (visibleFrame?.height ?? 800) - chromeHeight - 16)
+        let maxPreviewWidth = max(
+            320,
+            (visibleFrame?.width ?? 1280) - chromeWidth - layoutInsetWidth - 16
+        )
+        let maxPreviewHeight = max(
+            180,
+            (visibleFrame?.height ?? 800) - chromeHeight - layoutInsetHeight - 16
+        )
 
         let ratio = aspect.width / aspect.height
         let scale = max(1, window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
         let pixelSize = renderer.framePixelSize
-        let defaultContentWidth = max(320, maxW * 0.85)
-        let defaultContentHeight = defaultContentWidth / ratio
-        var w = defaultContentWidth
-        var h = defaultContentHeight
+        let defaultPreviewWidth = max(320, maxPreviewWidth * 0.85)
+        let defaultPreviewHeight = defaultPreviewWidth / ratio
+        var previewWidth = defaultPreviewWidth
+        var previewHeight = defaultPreviewHeight
 
         if pixelSize.width > 0, pixelSize.height > 0 {
-            w = pixelSize.width / scale
-            h = pixelSize.height / scale
+            previewWidth = pixelSize.width / scale
+            previewHeight = pixelSize.height / scale
         }
 
         if let overriddenWidth = CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth {
-            w = min(max(320, overriddenWidth), maxW)
-            h = w / ratio
+            previewWidth = min(max(320, overriddenWidth), maxPreviewWidth)
+            previewHeight = previewWidth / ratio
         }
 
-        if w > maxW { w = maxW; h = w / ratio }
-        if h > maxH { h = maxH; w = h * ratio }
+        if previewWidth > maxPreviewWidth {
+            previewWidth = maxPreviewWidth
+            previewHeight = previewWidth / ratio
+        }
+        if previewHeight > maxPreviewHeight {
+            previewHeight = maxPreviewHeight
+            previewWidth = previewHeight * ratio
+        }
+
+        let targetContentSize = NSSize(
+            width: previewWidth + layoutInsetWidth,
+            height: previewHeight + layoutInsetHeight
+        )
+        window.contentAspectRatio = targetContentSize
 
         let targetFrame = window.frameRect(
-            forContentRect: NSRect(origin: .zero, size: NSSize(width: w, height: h))
+            forContentRect: NSRect(origin: .zero, size: targetContentSize)
         )
         var newFrame = window.frame
         newFrame.origin.x += (newFrame.width - targetFrame.width) / 2
