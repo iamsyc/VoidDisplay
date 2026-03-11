@@ -255,7 +255,7 @@ extension CaptureDisplayView {
 
 private final class CapturePreviewWindowCoordinator: NSObject {
     private weak var window: NSWindow?
-    nonisolated(unsafe) private weak var forwardedDelegate: (any NSWindowDelegate)?
+    nonisolated(unsafe) private var forwardedDelegate: (any NSWindowDelegate)?
     private var aspect = CGSize.zero
     private var shouldLockAspect = true
 
@@ -316,26 +316,42 @@ private final class CapturePreviewWindowCoordinator: NSObject {
         let proposedContentRect = window.contentRect(
             forFrameRect: NSRect(origin: .zero, size: proposedFrameSize)
         )
-        let proposedPreviewWidth = max(1, proposedContentRect.width - layoutInsetWidth)
-        let proposedPreviewHeight = max(1, proposedContentRect.height - layoutInsetHeight)
-        let ratio = aspect.width / aspect.height
+        let scale = max(1, window.backingScaleFactor)
+        let insetWidthPixels = max(0, Int((layoutInsetWidth * scale).rounded()))
+        let insetHeightPixels = max(0, Int((layoutInsetHeight * scale).rounded()))
+        let proposedPreviewWidthPixels = max(
+            1,
+            Int(((proposedContentRect.width - layoutInsetWidth) * scale).rounded(.down))
+        )
+        let proposedPreviewHeightPixels = max(
+            1,
+            Int(((proposedContentRect.height - layoutInsetHeight) * scale).rounded(.down))
+        )
+        let aspectWidthPixels = max(1, Int(aspect.width.rounded()))
+        let aspectHeightPixels = max(1, Int(aspect.height.rounded()))
 
-        let previewWidth: CGFloat
-        let previewHeight: CGFloat
+        let previewWidthPixels: Int
+        let previewHeightPixels: Int
 
-        if proposedPreviewWidth / proposedPreviewHeight > ratio {
-            previewHeight = proposedPreviewHeight
-            previewWidth = previewHeight * ratio
+        if proposedPreviewWidthPixels * aspectHeightPixels > proposedPreviewHeightPixels * aspectWidthPixels {
+            previewHeightPixels = proposedPreviewHeightPixels
+            previewWidthPixels = max(
+                1,
+                Int((CGFloat(previewHeightPixels) * aspect.width / aspect.height).rounded(.down))
+            )
         } else {
-            previewWidth = proposedPreviewWidth
-            previewHeight = previewWidth / ratio
+            previewWidthPixels = proposedPreviewWidthPixels
+            previewHeightPixels = max(
+                1,
+                Int((CGFloat(previewWidthPixels) * aspect.height / aspect.width).rounded(.down))
+            )
         }
 
         let targetContentRect = NSRect(
             origin: .zero,
             size: NSSize(
-                width: previewWidth + layoutInsetWidth,
-                height: previewHeight + layoutInsetHeight
+                width: CGFloat(previewWidthPixels + insetWidthPixels) / scale,
+                height: CGFloat(previewHeightPixels + insetHeightPixels) / scale
             )
         )
         return targetContentRect.size
