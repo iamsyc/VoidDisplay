@@ -73,6 +73,18 @@ struct CaptureControllerTests {
         #expect(service.updateStateCallCount == 1)
     }
 
+    @Test func setMonitoringSessionCapturesCursorRefreshesSnapshot() {
+        let service = MockCaptureMonitoringService()
+        let session = makeSession(id: UUID(), displayID: 89)
+        service.currentSessions = [session]
+        let controller = CaptureController(captureMonitoringService: service)
+
+        controller.setMonitoringSessionCapturesCursor(id: session.id, capturesCursor: true)
+
+        #expect(controller.screenCaptureSessions.first?.capturesCursor == true)
+        #expect(service.updateCapturesCursorCallCount == 1)
+    }
+
     @Test func removeMonitoringSessionsFiltersByDisplayID() {
         let service = MockCaptureMonitoringService()
         let first = makeSession(id: UUID(), displayID: 91)

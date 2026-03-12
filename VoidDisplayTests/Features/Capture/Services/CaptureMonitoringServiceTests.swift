@@ -66,6 +66,22 @@ struct CaptureMonitoringServiceTests {
         }
     }
 
+    @Test func updateMonitoringSessionCapturesCursorMutatesOnlyMatchingSession() {
+        let service = CaptureMonitoringService()
+        let first = makeSession(id: UUID(), displayID: 12).session
+        let second = makeSession(id: UUID(), displayID: 13).session
+        service.addMonitoringSession(first)
+        service.addMonitoringSession(second)
+
+        service.updateMonitoringSessionCapturesCursor(id: second.id, capturesCursor: true)
+
+        let cursorStates = service.currentSessions.reduce(into: [UUID: Bool]()) {
+            $0[$1.id] = $1.capturesCursor
+        }
+        #expect(cursorStates[first.id] == false)
+        #expect(cursorStates[second.id] == true)
+    }
+
     @Test func removeMonitoringSessionCancelsSubscription() {
         let service = CaptureMonitoringService()
         let (session, cancelCount) = makeSession(id: UUID(), displayID: 22)

@@ -6,6 +6,52 @@ import CoreGraphics
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
+    @Test func initUsesDefaultCaptureMonitoringServiceWhenInjectionIsOmitted() async {
+        let sharing = MockSharingService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(env.capture.screenCaptureSessions.isEmpty)
+        #expect(sharing.startWebServiceCallCount == 0)
+        #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
+    }
+
+    @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
+        let overrides = [
+            (UITestRuntime.modeEnvironmentKey, "1"),
+            (UITestRuntime.scenarioEnvironmentKey, UITestScenario.capturePreviewDiagnostics.rawValue),
+            (CapturePreviewDiagnosticsRuntime.sourceSizeEnvironmentKey, "3008x1692")
+        ]
+        let previousValues = overrides.map { ($0.0, ProcessInfo.processInfo.environment[$0.0]) }
+        for (key, value) in overrides {
+            setenv(key, value, 1)
+        }
+        defer {
+            for (key, previousValue) in previousValues {
+                if let previousValue {
+                    setenv(key, previousValue, 1)
+                } else {
+                    unsetenv(key)
+                }
+            }
+        }
+
+        let env = AppBootstrap.makeEnvironment()
+
+        let session = try #require(env.capture.screenCaptureSessions.first)
+        #expect(env.capture.screenCaptureSessions.count == 1)
+        #expect(session.displayName == "Preview Diagnostics")
+        #expect(session.resolutionText == "3008 × 1692")
+        #expect(session.capturesCursor == false)
+        #expect(env.virtualDisplay.displayConfigs.count == 2)
+    }
+
     @Test func previewEnvironmentDoesNotPersistPreferredPortToStandardDefaults() async {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let sharing = MockSharingService()
