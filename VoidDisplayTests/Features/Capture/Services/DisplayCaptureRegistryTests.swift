@@ -25,6 +25,14 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
         counters.withLock { $0.stopSharingCalls += 1 }
     }
 
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
     nonisolated func stop() async {
         counters.withLock { $0.stopCalls += 1 }
     }
@@ -80,6 +88,14 @@ private final class ControlledStopCaptureSession: DisplayCaptureSessioning, @unc
     nonisolated func stopSharing() {
         counters.withLock { $0.stopSharing += 1 }
     }
+
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {
         counters.withLock { $0.stop += 1 }

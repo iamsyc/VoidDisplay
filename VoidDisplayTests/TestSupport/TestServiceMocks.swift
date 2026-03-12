@@ -11,6 +11,7 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
     var removeByDisplayCallCount = 0
     var removedDisplayIDs: [CGDirectDisplayID] = []
     var updateStateCallCount = 0
+    var updateCapturesCursorCallCount = 0
 
     func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
         currentSessions.first(where: { $0.id == id })
@@ -28,6 +29,15 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
         updateStateCallCount += 1
         guard let index = currentSessions.firstIndex(where: { $0.id == id }) else { return }
         currentSessions[index].state = state
+    }
+
+    func updateMonitoringSessionCapturesCursor(
+        id: UUID,
+        capturesCursor: Bool
+    ) {
+        updateCapturesCursorCallCount += 1
+        guard let index = currentSessions.firstIndex(where: { $0.id == id }) else { return }
+        currentSessions[index].capturesCursor = capturesCursor
     }
 
     func removeMonitoringSession(id: UUID) {

@@ -170,7 +170,7 @@ struct CaptureChooseViewModelTests {
         await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
 
         #expect(openedSessionIDs.isEmpty)
-        #expect(sut.userFacingAlert?.title == "Start Monitoring Failed")
+        #expect(sut.userFacingAlert?.title == String(localized: "Start Monitoring Failed"))
         #expect(sut.userFacingAlert?.message.isEmpty == false)
         #expect(sut.startingDisplayIDs.isEmpty)
     }

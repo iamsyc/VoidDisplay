@@ -159,7 +159,8 @@ struct WebServiceControllerTests {
         #expect(
             states.contains(where: { state in
                 if case .failed(.listenerFailed(let failedPort, let message)) = state {
-                    return failedPort == port && message.contains("unexpectedly")
+                    return failedPort == port
+                        && message == String(localized: "Web listener stopped unexpectedly.")
                 }
                 return false
             })

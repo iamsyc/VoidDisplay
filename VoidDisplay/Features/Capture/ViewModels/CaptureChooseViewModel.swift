@@ -133,6 +133,7 @@ final class CaptureChooseViewModel {
                     resolutionText: resolutionText(for: display),
                     isVirtualDisplay: isVirtualDisplay(display),
                     previewSubscription: previewSubscription,
+                    capturesCursor: false,
                     state: .starting
                 )
                 dependencies.captureActions.addMonitoringSession(session)

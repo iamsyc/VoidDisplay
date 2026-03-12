@@ -31,6 +31,9 @@ protocol DisplayCaptureSessioning: AnyObject, Sendable {
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink)
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink)
     nonisolated func stopSharing()
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws
+    nonisolated func retainShareCursorOverride() async throws
+    nonisolated func releaseShareCursorOverride() async throws
     nonisolated func stop() async
 }
 
@@ -97,6 +100,10 @@ final class DisplayPreviewSubscription: Sendable {
         closure()
     }
 
+    nonisolated func setShowsCursor(_ showsCursor: Bool) async throws {
+        try await session.setPreviewShowsCursor(showsCursor)
+    }
+
     deinit { cancel() }
 }
 
@@ -106,16 +113,23 @@ final class DisplayShareSubscription: Sendable {
     let displayID: CGDirectDisplayID
     let sessionHub: WebRTCSessionHub
 
+    private let session: any DisplayCaptureSessioning
     private let cancelState = Mutex<(@Sendable () -> Void)?>(nil)
 
     nonisolated init(
         displayID: CGDirectDisplayID,
         sessionHub: WebRTCSessionHub,
+        session: any DisplayCaptureSessioning,
         cancelClosure: @escaping @Sendable () -> Void
     ) {
         self.displayID = displayID
         self.sessionHub = sessionHub
+        self.session = session
         cancelState.withLock { $0 = cancelClosure }
+    }
+
+    nonisolated func prepareForSharing() async throws {
+        try await session.retainShareCursorOverride()
     }
 
     nonisolated func cancel() {
@@ -124,7 +138,11 @@ final class DisplayShareSubscription: Sendable {
             state = nil
             return current
         }
-        closure?()
+        guard let closure else { return }
+        Task {
+            try? await session.releaseShareCursorOverride()
+            closure()
+        }
     }
 
     deinit { cancel() }
@@ -217,6 +235,7 @@ actor DisplayCaptureRegistry {
         return DisplayShareSubscription(
             displayID: token.displayID,
             sessionHub: record.session.sessionHub,
+            session: record.session,
             cancelClosure: { [weak self] in
                 guard let self else { return }
                 Task { await self.release(token) }
@@ -457,6 +476,17 @@ private final class DisplaySampleFanout: Sendable {
 // MARK: - Display Capture Session
 
 final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
+    private struct StreamConfigurationState: Sendable {
+        let width: Int
+        let height: Int
+        let minimumFrameInterval: CMTime
+        let queueDepth: Int
+        let capturesAudio: Bool
+        let pixelFormat: OSType
+        var previewShowsCursor: Bool
+        var shareCursorOverrideCount: Int
+    }
+
     nonisolated let displayID: CGDirectDisplayID
     nonisolated let sessionHub: WebRTCSessionHub
 
@@ -465,6 +495,7 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     nonisolated private let captureQueue: DispatchQueue
     nonisolated private let fanout = DisplaySampleFanout()
     nonisolated private let metrics = Mutex(DisplayCaptureMetrics())
+    nonisolated private let configurationState: Mutex<StreamConfigurationState>
 
     // MARK: Lifecycle
 
@@ -475,10 +506,12 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
             qos: .userInitiated
         )
 
-        let config = try await Self.makeStreamConfiguration(display: display)
+        let state = try await Self.makeStreamConfigurationState(display: display, showsCursor: false)
+        let config = Self.makeStreamConfiguration(from: state)
         let filter = try await Self.makeContentFilter(display: display)
         self.stream = SCStream(filter: filter, configuration: config, delegate: output)
         self.sessionHub = WebRTCSessionHub()
+        self.configurationState = Mutex(state)
 
         output.session = self
 
@@ -500,6 +533,45 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 
     nonisolated func stopSharing() {
         sessionHub.stopSharing()
+    }
+
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        let updatedState = configurationState.withLock { state -> StreamConfigurationState in
+            if state.previewShowsCursor == showsCursor {
+                return state
+            }
+            var copy = state
+            copy.previewShowsCursor = showsCursor
+            return copy
+        }
+        guard updatedState.previewShowsCursor == showsCursor else { return }
+        try await applyStreamConfiguration(updatedState)
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {
+        let updatedState = configurationState.withLock { state -> StreamConfigurationState in
+            var copy = state
+            copy.shareCursorOverrideCount += 1
+            return copy
+        }
+        try await applyStreamConfiguration(updatedState)
+    }
+
+    nonisolated func releaseShareCursorOverride() async throws {
+        let updatedState = configurationState.withLock { state -> StreamConfigurationState in
+            var copy = state
+            copy.shareCursorOverrideCount = max(0, copy.shareCursorOverrideCount - 1)
+            return copy
+        }
+        try await applyStreamConfiguration(updatedState)
+    }
+
+    nonisolated private func applyStreamConfiguration(_ updatedState: StreamConfigurationState) async throws {
+        try await stream.updateConfiguration(Self.makeStreamConfiguration(from: updatedState))
+        configurationState.withLock { state in
+            state.previewShowsCursor = updatedState.previewShowsCursor
+            state.shareCursorOverrideCount = updatedState.shareCursorOverrideCount
+        }
     }
 
     nonisolated func stop() async {
@@ -531,26 +603,43 @@ extension DisplayCaptureSession {
         return scaled.value > 0 ? UInt64(scaled.value) : 0
     }
 
-    nonisolated private static func makeStreamConfiguration(
-        display: SCDisplay
-    ) async throws -> SCStreamConfiguration {
-        let config = SCStreamConfiguration()
+    nonisolated private static func makeStreamConfigurationState(
+        display: SCDisplay,
+        showsCursor: Bool
+    ) async throws -> StreamConfigurationState {
         let displayMode = CGDisplayCopyDisplayMode(display.displayID)
 
         let captureSize = preferredCaptureSize(display: display, displayMode: displayMode)
         let refreshRate = max(60.0, min(displayMode?.refreshRate ?? 60.0, 120.0))
         let timescale = CMTimeScale(max(1, Int32(refreshRate.rounded())))
 
-        config.width = captureSize.width
-        config.height = captureSize.height
-        config.minimumFrameInterval = CMTime(value: 1, timescale: timescale)
-        config.queueDepth = 2
-        config.showsCursor = true
-        config.capturesAudio = false
-        config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        let state = StreamConfigurationState(
+            width: captureSize.width,
+            height: captureSize.height,
+            minimumFrameInterval: CMTime(value: 1, timescale: timescale),
+            queueDepth: 2,
+            capturesAudio: false,
+            pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            previewShowsCursor: showsCursor,
+            shareCursorOverrideCount: 0
+        )
         AppLog.capture.notice(
             "Capture config display=\(display.displayID, privacy: .public) size=\(captureSize.width)x\(captureSize.height, privacy: .public)"
         )
+        return state
+    }
+
+    nonisolated private static func makeStreamConfiguration(
+        from state: StreamConfigurationState
+    ) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.width = state.width
+        config.height = state.height
+        config.minimumFrameInterval = state.minimumFrameInterval
+        config.queueDepth = state.queueDepth
+        config.showsCursor = state.shareCursorOverrideCount > 0 || state.previewShowsCursor
+        config.capturesAudio = state.capturesAudio
+        config.pixelFormat = state.pixelFormat
         return config
     }
 

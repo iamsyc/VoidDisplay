@@ -16,6 +16,14 @@ private final class CaptureMonitoringDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
     nonisolated func stop() async {}
 }
 
@@ -56,6 +64,22 @@ struct CaptureMonitoringServiceTests {
         } else {
             Issue.record("Expected second session to become active.")
         }
+    }
+
+    @Test func updateMonitoringSessionCapturesCursorMutatesOnlyMatchingSession() {
+        let service = CaptureMonitoringService()
+        let first = makeSession(id: UUID(), displayID: 12).session
+        let second = makeSession(id: UUID(), displayID: 13).session
+        service.addMonitoringSession(first)
+        service.addMonitoringSession(second)
+
+        service.updateMonitoringSessionCapturesCursor(id: second.id, capturesCursor: true)
+
+        let cursorStates = service.currentSessions.reduce(into: [UUID: Bool]()) {
+            $0[$1.id] = $1.capturesCursor
+        }
+        #expect(cursorStates[first.id] == false)
+        #expect(cursorStates[second.id] == true)
     }
 
     @Test func removeMonitoringSessionCancelsSubscription() {
@@ -104,6 +128,7 @@ struct CaptureMonitoringServiceTests {
             resolutionText: "1920 x 1080",
             isVirtualDisplay: false,
             previewSubscription: subscription,
+            capturesCursor: false,
             state: .starting
         )
         return (session, cancelCount)

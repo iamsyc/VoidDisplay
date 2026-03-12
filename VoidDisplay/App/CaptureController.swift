@@ -17,6 +17,7 @@ final class CaptureController {
 
     init(captureMonitoringService: any CaptureMonitoringServiceProtocol) {
         self.captureMonitoringService = captureMonitoringService
+        self.screenCaptureSessions = captureMonitoringService.currentSessions
     }
 
     func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
@@ -32,6 +33,15 @@ final class CaptureController {
     func markMonitoringSessionActive(id: UUID) {
         mutateAndSync {
             captureMonitoringService.updateMonitoringSessionState(id: id, state: .active)
+        }
+    }
+
+    func setMonitoringSessionCapturesCursor(id: UUID, capturesCursor: Bool) {
+        mutateAndSync {
+            captureMonitoringService.updateMonitoringSessionCapturesCursor(
+                id: id,
+                capturesCursor: capturesCursor
+            )
         }
     }
 

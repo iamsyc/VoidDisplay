@@ -42,7 +42,7 @@ struct EditVirtualDisplayWorkflowTests {
         #expect(throws: Error.self) {
             try controller.updateConfig(config)
         }
-        #expect(controller.persistenceAlert?.title == "Save Failed")
+        #expect(controller.persistenceAlert?.title == String(localized: "Save Failed"))
         #expect(controller.persistenceAlert?.message.isEmpty == false)
     }
 

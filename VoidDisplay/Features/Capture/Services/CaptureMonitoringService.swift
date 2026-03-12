@@ -10,6 +10,10 @@ protocol CaptureMonitoringServiceProtocol: AnyObject {
         id: UUID,
         state: ScreenMonitoringSession.State
     )
+    func updateMonitoringSessionCapturesCursor(
+        id: UUID,
+        capturesCursor: Bool
+    )
     func removeMonitoringSession(id: UUID)
     func removeMonitoringSessions(displayID: CGDirectDisplayID)
 }
@@ -17,6 +21,10 @@ protocol CaptureMonitoringServiceProtocol: AnyObject {
 @MainActor
 final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
     private var sessions: [ScreenMonitoringSession] = []
+
+    init(initialSessions: [ScreenMonitoringSession] = []) {
+        self.sessions = initialSessions
+    }
 
     var currentSessions: [ScreenMonitoringSession] {
         sessions
@@ -36,6 +44,14 @@ final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
     ) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         sessions[index].state = state
+    }
+
+    func updateMonitoringSessionCapturesCursor(
+        id: UUID,
+        capturesCursor: Bool
+    ) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[index].capturesCursor = capturesCursor
     }
 
     func removeMonitoringSession(id: UUID) {

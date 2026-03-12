@@ -384,6 +384,16 @@
         }
       }
     },
+    "Cursor" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光标"
+          }
+        }
+      }
+    },
     "Custom" : {
       "localizations" : {
         "zh-Hans" : {

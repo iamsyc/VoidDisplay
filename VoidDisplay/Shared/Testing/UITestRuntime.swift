@@ -2,6 +2,7 @@ import Foundation
 
 enum UITestScenario: String {
     case baseline
+    case capturePreviewDiagnostics = "capture_preview_diagnostics"
     case displayCatalogLoading = "display_catalog_loading"
     case permissionDenied = "permission_denied"
     case virtualDisplayRebuilding = "virtual_display_rebuilding"

@@ -16,12 +16,30 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
     nonisolated func stop() async {}
 }
 
 @Suite(.serialized)
 @MainActor
 struct CaptureControllerTests {
+    @Test func initSynchronizesExistingSessionsFromService() {
+        let service = MockCaptureMonitoringService()
+        let existingSession = makeSession(id: UUID(), displayID: 66)
+        service.currentSessions = [existingSession]
+
+        let controller = CaptureController(captureMonitoringService: service)
+
+        #expect(controller.screenCaptureSessions.map(\.id) == [existingSession.id])
+    }
+
     @Test func addAndRemoveSessionSyncsControllerState() {
         let service = MockCaptureMonitoringService()
         let controller = CaptureController(captureMonitoringService: service)
@@ -53,6 +71,18 @@ struct CaptureControllerTests {
             Issue.record("Expected controller session to be active.")
         }
         #expect(service.updateStateCallCount == 1)
+    }
+
+    @Test func setMonitoringSessionCapturesCursorRefreshesSnapshot() {
+        let service = MockCaptureMonitoringService()
+        let session = makeSession(id: UUID(), displayID: 89)
+        service.currentSessions = [session]
+        let controller = CaptureController(captureMonitoringService: service)
+
+        controller.setMonitoringSessionCapturesCursor(id: session.id, capturesCursor: true)
+
+        #expect(controller.screenCaptureSessions.first?.capturesCursor == true)
+        #expect(service.updateCapturesCursorCallCount == 1)
     }
 
     @Test func removeMonitoringSessionsFiltersByDisplayID() {
@@ -105,6 +135,7 @@ struct CaptureControllerTests {
                 session: CaptureControllerDummySession(),
                 cancelClosure: {}
             ),
+            capturesCursor: false,
             state: .starting
         )
     }
