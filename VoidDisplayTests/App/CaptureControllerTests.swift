@@ -16,6 +16,14 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
     nonisolated func stop() async {}
 }
 
@@ -115,6 +123,7 @@ struct CaptureControllerTests {
                 session: CaptureControllerDummySession(),
                 cancelClosure: {}
             ),
+            capturesCursor: false,
             state: .starting
         )
     }

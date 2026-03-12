@@ -17,6 +17,14 @@ private final class EndToEndFakeCaptureSession: DisplayCaptureSessioning, @unche
 
     nonisolated func stopSharing() {}
 
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
     nonisolated func stop() async {}
 }
 

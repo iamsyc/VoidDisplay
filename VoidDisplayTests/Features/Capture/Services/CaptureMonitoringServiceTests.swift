@@ -16,6 +16,14 @@ private final class CaptureMonitoringDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
     nonisolated func stop() async {}
 }
 
@@ -104,6 +112,7 @@ struct CaptureMonitoringServiceTests {
             resolutionText: "1920 x 1080",
             isVirtualDisplay: false,
             previewSubscription: subscription,
+            capturesCursor: false,
             state: .starting
         )
         return (session, cancelCount)
