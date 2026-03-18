@@ -14,12 +14,7 @@ struct ScreenCapturePermissionGuideView: View {
     let refreshButtonAccessibilityIdentifier: String?
 
     var body: some View {
-        ScrollView {
-            permissionPanel
-                .frame(maxWidth: .infinity, minHeight: 200, alignment: .top)
-                .appListContentInsets()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        permissionPanel
     }
 
     private var permissionPanel: some View {

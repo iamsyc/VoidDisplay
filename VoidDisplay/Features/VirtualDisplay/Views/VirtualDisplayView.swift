@@ -103,28 +103,7 @@ struct VirtualDisplayView: View {
                     .appListContentInsets()
             }
         } else if !virtualDisplay.displayConfigs.isEmpty {
-            if UITestRuntime.isEnabled {
-                ScrollView {
-                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                        ForEach(virtualDisplay.displayConfigs) { config in
-                            virtualDisplayRow(config)
-                        }
-                    }
-                    .appListContentInsets()
-                }
-                .accessibilityIdentifier("virtual_displays_list")
-                .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: AppUI.List.sectionSpacing) {
-                        ForEach(virtualDisplay.displayConfigs) { config in
-                            virtualDisplayRow(config)
-                        }
-                    }
-                    .appListContentInsets()
-                }
-                .accessibilityIdentifier("virtual_displays_list")
-            }
+            virtualDisplayList
         } else {
             ScrollView {
                 ContentUnavailableView(
@@ -137,6 +116,21 @@ struct VirtualDisplayView: View {
                 .accessibilityIdentifier("virtual_displays_empty_state")
             }
         }
+    }
+
+    private var virtualDisplayList: some View {
+        ScrollView {
+            LazyVStack(spacing: AppUI.List.sectionSpacing) {
+                ForEach(virtualDisplay.displayConfigs) { config in
+                    virtualDisplayRow(config)
+                }
+            }
+            .appListContentInsets()
+        }
+        .accessibilityIdentifier("virtual_displays_list")
+        .optionalAccessibilityValue(
+            UITestRuntime.isEnabled ? Text("\(virtualDisplay.rebuildRequestCount)") : nil
+        )
     }
 
     private var configStoreErrorPanel: some View {
@@ -246,6 +240,17 @@ struct VirtualDisplayView: View {
         do {
             try action()
         } catch {}
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalAccessibilityValue(_ value: Text?) -> some View {
+        if let value {
+            accessibilityValue(value)
+        } else {
+            self
+        }
     }
 }
 

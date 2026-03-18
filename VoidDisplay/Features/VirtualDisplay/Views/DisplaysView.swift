@@ -100,7 +100,7 @@ struct DisplaysView: View {
             accessibilityIdentifier: "display_row_card"
         )
 
-        return AppListRowCard(model: model) {
+        return AppListRowCard(model: model, pushTrailingToEdge: false) {
             EmptyView()
         }
     }
