@@ -53,7 +53,7 @@ permissions:
 
 jobs:
   ui_smoke_tests:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
     outputs:
       ui_status: ${{ steps.parse_summary.outputs.ui_status }}

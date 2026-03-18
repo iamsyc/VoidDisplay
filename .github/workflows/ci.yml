@@ -109,7 +109,7 @@ jobs:
     needs:
       - classify_changes
     if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && needs.classify_changes.outputs.code_relevant == 'true' }}
-    runs-on: macos-15
+    runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -117,8 +117,10 @@ jobs:
         include:
           - label: arm64
             arch: arm64
+            runs_on: macos-26
           - label: intel64
             arch: x86_64
+            runs_on: macos-26-intel
     permissions:
       contents: read
     steps:
