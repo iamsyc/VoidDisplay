@@ -219,29 +219,34 @@ struct IsCapturing: View {
     private var screenCapturePermissionView: some View {
         @Bindable var bindableCatalog = viewModel.catalog
 
-        return ScreenCapturePermissionGuideView(
-            loadErrorMessage: viewModel.catalog.loadErrorMessage,
-            onOpenSettings: {
-                viewModel.openScreenCapturePrivacySettings { url in
-                    openURL(url)
-                }
-            },
-            onRequestPermission: {
-                viewModel.requestScreenCapturePermission()
-            },
-            onRefresh: {
-                viewModel.refreshPermissionAndMaybeLoad()
-            },
-            onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
-                viewModel.loadDisplays()
-            } : nil,
-            isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
-            debugItems: capturePermissionDebugItems,
-            rootAccessibilityIdentifier: "capture_permission_guide",
-            openSettingsButtonAccessibilityIdentifier: "capture_open_settings_button",
-            requestPermissionButtonAccessibilityIdentifier: "capture_request_permission_button",
-            refreshButtonAccessibilityIdentifier: "capture_refresh_button"
-        )
+        return ScrollView {
+            ScreenCapturePermissionGuideView(
+                loadErrorMessage: viewModel.catalog.loadErrorMessage,
+                onOpenSettings: {
+                    viewModel.openScreenCapturePrivacySettings { url in
+                        openURL(url)
+                    }
+                },
+                onRequestPermission: {
+                    viewModel.requestScreenCapturePermission()
+                },
+                onRefresh: {
+                    viewModel.refreshPermissionAndMaybeLoad()
+                },
+                onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
+                    viewModel.loadDisplays()
+                } : nil,
+                isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
+                debugItems: capturePermissionDebugItems,
+                rootAccessibilityIdentifier: "capture_permission_guide",
+                openSettingsButtonAccessibilityIdentifier: "capture_open_settings_button",
+                requestPermissionButtonAccessibilityIdentifier: "capture_request_permission_button",
+                refreshButtonAccessibilityIdentifier: "capture_refresh_button"
+            )
+            .frame(maxWidth: .infinity, minHeight: 200, alignment: .top)
+            .appListContentInsets()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var capturePermissionDebugItems: [(title: String, value: String)] {

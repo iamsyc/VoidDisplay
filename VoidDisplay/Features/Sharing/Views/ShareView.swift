@@ -181,31 +181,36 @@ struct ShareView: View {
     private var screenCapturePermissionView: some View {
         @Bindable var bindableCatalog = viewModel.catalog
 
-        return ScreenCapturePermissionGuideView(
-            loadErrorMessage: viewModel.catalog.loadErrorMessage,
-            onOpenSettings: {
-                viewModel.openScreenCapturePrivacySettings { url in
-                    openURL(url)
-                }
-            },
-            onRequestPermission: {
-                viewModel.requestScreenCapturePermission()
-            },
-            onRefresh: {
-                viewModel.refreshPermissionAndMaybeLoad()
-            },
-            onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
-                // User-initiated retry: attempt to load the display list.
-                // If permission is still missing, macOS may prompt here (expected).
-                viewModel.loadDisplays()
-            } : nil,
-            isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
-            debugItems: sharingPermissionDebugItems,
-            rootAccessibilityIdentifier: "share_permission_guide",
-            openSettingsButtonAccessibilityIdentifier: "share_open_settings_button",
-            requestPermissionButtonAccessibilityIdentifier: "share_request_permission_button",
-            refreshButtonAccessibilityIdentifier: "share_refresh_button"
-        )
+        return ScrollView {
+            ScreenCapturePermissionGuideView(
+                loadErrorMessage: viewModel.catalog.loadErrorMessage,
+                onOpenSettings: {
+                    viewModel.openScreenCapturePrivacySettings { url in
+                        openURL(url)
+                    }
+                },
+                onRequestPermission: {
+                    viewModel.requestScreenCapturePermission()
+                },
+                onRefresh: {
+                    viewModel.refreshPermissionAndMaybeLoad()
+                },
+                onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
+                    // User-initiated retry: attempt to load the display list.
+                    // If permission is still missing, macOS may prompt here (expected).
+                    viewModel.loadDisplays()
+                } : nil,
+                isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
+                debugItems: sharingPermissionDebugItems,
+                rootAccessibilityIdentifier: "share_permission_guide",
+                openSettingsButtonAccessibilityIdentifier: "share_open_settings_button",
+                requestPermissionButtonAccessibilityIdentifier: "share_request_permission_button",
+                refreshButtonAccessibilityIdentifier: "share_refresh_button"
+            )
+            .frame(maxWidth: .infinity, minHeight: 200, alignment: .top)
+            .appListContentInsets()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("share_permission_guide")
     }
