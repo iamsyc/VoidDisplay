@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   unit_tests:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
     outputs:
       unit_status: ${{ steps.finalize.outputs.unit_status }}
