@@ -8,6 +8,7 @@
 ## Delivery Flow
 - Only treat as full PR delivery when user explicitly asks (for example: "完成后提PR").
 - Full delivery means: branch -> change -> local verify -> commit -> push -> PR -> follow CI -> merge when appropriate.
+- If the user asks to keep `main` linear, rebase or otherwise update the working branch onto the latest `main` before opening or merging the PR, and use a merge method that adds a single linear commit on `main` without creating a merge commit. Prefer `squash merge` when the repository supports it; otherwise use `rebase merge`.
 - Do not commit unless the user explicitly requests or approves commit for this task.
 - If task is analysis/question only, do not create branch or commit.
 
