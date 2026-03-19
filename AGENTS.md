@@ -32,6 +32,7 @@
 ## Test Execution Policy
 - After every code change, explicitly check whether related tests need to be updated or added, and complete required test updates before handoff.
 - Default: run targeted tests related to changed module/feature.
+- If related verification has already completed after the latest code change, and no repo-tracked file has changed since that verification, a later commit-only instruction must reuse the existing fresh verification result instead of rerunning the same tests.
 - For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.
 - Run full suite when changes are broad/high-risk or impact cannot be bounded:
 - shared/common code changes
