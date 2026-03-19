@@ -20,7 +20,7 @@ The repository does not use GitHub merge queue. `merge_group` is intentionally o
 
 Default Xcode selection is centralized in `.github/actions/xcode-select` and prefers:
 
-- `/Applications/Xcode_26.2.app/Contents/Developer`
+- `/Applications/Xcode_26.3.app/Contents/Developer`
 - fallback: `/Applications/Xcode.app/Contents/Developer`
 
 ## Branch Protection Gate
@@ -45,7 +45,7 @@ UI smoke failure behavior:
 Release build check behavior:
 
 - `release-build-check` runs only on PRs targeting `main` with code-relevant changes
-- It performs an unsigned `Release` build for `arm64`
+- It performs unsigned `Release` builds for `arm64` and `x86_64` through a 2-job matrix
 - It does not package DMG and does not publish artifacts
 
 Unit coverage guard behavior:
