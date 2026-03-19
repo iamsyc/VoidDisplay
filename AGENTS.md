@@ -20,11 +20,17 @@
 - Keep deployment target at `15.6` unless user requests otherwise.
 - Prefer modern APIs compatible with target `15.6`; avoid deprecated APIs.
 
+## Compatibility Scope
+- Default to the current supported interfaces and behavior.
+- Do not preserve legacy interfaces, legacy behavior, compatibility layers, fallback branches, or duplicate paths unless user requirements, external callers, migration windows, or release plans explicitly require them.
+- If legacy compatibility is retained, document the reason, removal condition, and validation impact in the handoff.
+
 ## Build Verification Gate
 - After every code change, run local build verification.
 - Handoff requires: zero compile errors and zero compile warnings.
 
 ## Test Execution Policy
+- After every code change, explicitly check whether related tests need to be updated or added, and complete required test updates before handoff.
 - Default: run targeted tests related to changed module/feature.
 - For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.
 - Run full suite when changes are broad/high-risk or impact cannot be bounded:
@@ -49,9 +55,27 @@
 - Write plan steps from the agent's perspective.
 - Do not frame the plan around human task management, personal schedules, or manual execution expectations unless the user explicitly asks for that format.
 - If timing is needed, describe agent-relevant sequencing or wait states, such as build time, network latency, review gates, or external blocking conditions.
+- If the user goal or instruction is ambiguous, do not guess. Ask for clarification promptly before continuing.
+- Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
+
+## Code Review Output Policy
+- When review finds an issue, identify the root cause and provide a root-cause fix plan by default.
+- Always include a structural refactor assessment: whether it is needed, expected benefits, risks, and validation impact.
+- Provide a minimal fix option only when the user explicitly asks for it.
+
+## Complexity and Size Guardrail
+- Default goal: solve problems without increasing code complexity and code size.
+- If that is not feasible, lower complexity first.
+- Prefer deleting duplicate branches and duplicate checks.
+- Keep equivalent validation at one convergence layer. Avoid multi-layer duplicate defense.
+- When adding defensive branches, prioritize deleting equivalent legacy branches in the same module.
 
 ## Multilingual Content
-- Except for logs, diagnostics, and similar runtime output, all other text content must provide multilingual support.
+- Multilingual support requirement applies only to product software code and app-facing content in this repository.
+- Repository policy and workflow documents are out of scope for this rule, including `AGENTS.md` and similar docs.
+- Logs, diagnostics, and similar runtime output are exempt from multilingual requirements.
+- After changing code that affects app-facing text/content, explicitly verify whether localization resources need updates, and complete required localization updates before handoff.
+- If `Localizable.xcstrings` is modified by Xcode as a side effect of your code changes, treat it as required change output from the same task and include it in the same commit, even when you did not edit it manually.
 
 ## Xcode Tooling Policy (Token + Reliability First)
 - Token is money: default build/test gate is shell `xcodebuild`.
