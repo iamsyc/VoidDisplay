@@ -40,6 +40,13 @@
 - high-risk runtime behavior (concurrency/persistence/network/security)
 - user explicitly requests full suite
 
+## Test Permission Prompt Isolation
+- Automated tests must not trigger app-driven macOS privacy prompts such as screen recording, microphone, or camera authorization dialogs.
+- Test runs must remain non-interactive and must not depend on a human waiting for app permission prompts during execution.
+- Any code path that may request app privacy permissions must switch to a test-specific provider, mock, stub, or equivalent isolation layer under test environments.
+- macOS authorization required by the test harness itself, such as Automation, Accessibility, Input Monitoring, or related administrator approval for UI automation, is environment setup and should be handled separately from app permission flows.
+- Reject any test change that can block local or CI execution by introducing new app-driven privacy authorization prompts.
+
 ## UI Test Port Injection
 - Preferred port key is `SharingPortPreferenceKeys.preferredPort` (`sharing.preferredPort`).
 - For UI tests, inject with launch arguments: `-sharing.preferredPort <port>`.
