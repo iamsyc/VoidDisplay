@@ -5,9 +5,18 @@ import SwiftUI
 // MARK: - Capture Display View
 
 struct CaptureDisplayView: View {
-    private enum PreviewScaleMode: Hashable {
+    private enum PreviewScaleMode: Hashable, CaseIterable {
         case fit
         case native
+
+        var title: LocalizedStringResource {
+            switch self {
+            case .fit:
+                "Fit"
+            case .native:
+                "1:1"
+            }
+        }
     }
 
     let sessionId: UUID
@@ -90,14 +99,16 @@ struct CaptureDisplayView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Scale Mode", selection: $scaleMode) {
-                    Text("Fit").tag(PreviewScaleMode.fit)
-                    Text("1:1").tag(PreviewScaleMode.native)
+                    ForEach(PreviewScaleMode.allCases, id: \.self) { mode in
+                        Text(mode.title)
+                            .tag(mode)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .frame(width: 150)
                 .accessibilityIdentifier("capture_preview_scale_mode_picker")
-                .accessibilityValue(Text(scaleMode == .fit ? "fit" : "native"))
+                .accessibilityValue(Text(scaleMode.title))
             }
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: AppUI.Spacing.small + 2) {
