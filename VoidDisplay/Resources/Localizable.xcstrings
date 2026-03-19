@@ -795,6 +795,9 @@
         }
       }
     },
+    "fit" : {
+
+    },
     "Fit" : {
       "localizations" : {
         "zh-Hans" : {
@@ -986,6 +989,9 @@
           }
         }
       }
+    },
+    "native" : {
+
     },
     "No available display can be monitored right now." : {
       "localizations" : {

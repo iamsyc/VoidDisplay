@@ -100,15 +100,20 @@ struct CaptureDisplayView: View {
                 .accessibilityValue(Text(scaleMode == .fit ? "fit" : "native"))
             }
             ToolbarItem(placement: .automatic) {
-                HStack(spacing: 6) {
+                HStack(spacing: AppUI.Spacing.small + 2) {
                     Text(String(localized: "Cursor"))
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .fixedSize()
                     Toggle("", isOn: cursorCaptureBinding)
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
-                        .disabled(isUpdatingCursorCapture || isSharingDisplay)
-                        .accessibilityIdentifier("capture_preview_cursor_toggle")
+                        .accessibilityLabel(String(localized: "Cursor"))
                 }
+                .padding(.horizontal, AppUI.Spacing.xSmall)
+                .disabled(isUpdatingCursorCapture || isSharingDisplay)
+                .accessibilityIdentifier("capture_preview_cursor_toggle")
             }
         }
         .toolbarTitleDisplayMode(.inline)

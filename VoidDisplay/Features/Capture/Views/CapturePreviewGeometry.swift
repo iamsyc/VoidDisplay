@@ -62,7 +62,7 @@ struct CapturePreviewGeometry {
         let ratio = input.aspect.width / input.aspect.height
         let scale = max(1, input.scaleFactor)
         let pixelSize = input.framePixelSize
-        let defaultPreviewWidth = max(320, maxPreviewWidth * 0.85)
+        let defaultPreviewWidth = max(320, maxPreviewWidth * 0.70)
         let defaultPreviewHeight = defaultPreviewWidth / ratio
         var previewWidth = defaultPreviewWidth
         var previewHeight = defaultPreviewHeight
