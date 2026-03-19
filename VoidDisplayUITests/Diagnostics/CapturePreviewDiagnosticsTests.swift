@@ -16,7 +16,7 @@ final class CapturePreviewDiagnosticsTests: XCTestCase {
 
         static func fromAccessibilityValue(_ rawValue: String) -> Self? {
             let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if normalized.contains("fit") {
+            if normalized.contains("fit") || normalized.contains("适应") {
                 return .fit
             }
             if normalized.contains("native") || normalized.contains("1:1") {

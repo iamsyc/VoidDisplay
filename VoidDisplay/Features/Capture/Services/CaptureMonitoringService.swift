@@ -20,53 +20,43 @@ protocol CaptureMonitoringServiceProtocol: AnyObject {
 
 @MainActor
 final class CaptureMonitoringService: CaptureMonitoringServiceProtocol {
-    private var sessions: [ScreenMonitoringSession] = []
+    private let sessionStore: CaptureMonitoringSessionStore
 
     init(initialSessions: [ScreenMonitoringSession] = []) {
-        self.sessions = initialSessions
+        self.sessionStore = CaptureMonitoringSessionStore(initialSessions: initialSessions)
     }
 
     var currentSessions: [ScreenMonitoringSession] {
-        sessions
+        sessionStore.currentSessions
     }
 
     func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
-        sessions.first { $0.id == id }
+        sessionStore.session(for: id)
     }
 
     func addMonitoringSession(_ session: ScreenMonitoringSession) {
-        sessions.append(session)
+        sessionStore.add(session)
     }
 
     func updateMonitoringSessionState(
         id: UUID,
         state: ScreenMonitoringSession.State
     ) {
-        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
-        sessions[index].state = state
+        sessionStore.updateState(id: id, state: state)
     }
 
     func updateMonitoringSessionCapturesCursor(
         id: UUID,
         capturesCursor: Bool
     ) {
-        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
-        sessions[index].capturesCursor = capturesCursor
+        sessionStore.updateCapturesCursor(id: id, capturesCursor: capturesCursor)
     }
 
     func removeMonitoringSession(id: UUID) {
-        if let session = sessions.first(where: { $0.id == id }) {
-            session.previewSubscription.cancel()
-        }
-        sessions.removeAll { $0.id == id }
+        sessionStore.remove(id: id)
     }
 
     func removeMonitoringSessions(displayID: CGDirectDisplayID) {
-        let targetSessionIDs = sessions
-            .filter { $0.displayID == displayID }
-            .map(\.id)
-        for sessionID in targetSessionIDs {
-            removeMonitoringSession(id: sessionID)
-        }
+        sessionStore.remove(displayID: displayID)
     }
 }

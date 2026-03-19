@@ -30,6 +30,13 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 @Suite(.serialized)
 @MainActor
 struct CaptureControllerTests {
+    private struct SessionSnapshot: Equatable {
+        let id: UUID
+        let displayID: CGDirectDisplayID
+        let capturesCursor: Bool
+        let state: String
+    }
+
     @Test func initSynchronizesExistingSessionsFromService() {
         let service = MockCaptureMonitoringService()
         let existingSession = makeSession(id: UUID(), displayID: 66)
@@ -46,12 +53,13 @@ struct CaptureControllerTests {
         let session = makeSession(id: UUID(), displayID: 77)
 
         controller.addMonitoringSession(session)
-        #expect(controller.screenCaptureSessions.map(\.id) == [session.id])
+        assertSnapshotMatchesService(controller: controller, service: service)
         #expect(controller.monitoringSession(for: session.id)?.displayID == 77)
 
         controller.removeMonitoringSession(id: session.id)
         #expect(controller.screenCaptureSessions.isEmpty)
         #expect(service.removeCallCount == 1)
+        assertSnapshotMatchesService(controller: controller, service: service)
     }
 
     @Test func markMonitoringSessionActiveRefreshesSnapshot() {
@@ -71,6 +79,7 @@ struct CaptureControllerTests {
             Issue.record("Expected controller session to be active.")
         }
         #expect(service.updateStateCallCount == 1)
+        assertSnapshotMatchesService(controller: controller, service: service)
     }
 
     @Test func setMonitoringSessionCapturesCursorRefreshesSnapshot() {
@@ -83,6 +92,7 @@ struct CaptureControllerTests {
 
         #expect(controller.screenCaptureSessions.first?.capturesCursor == true)
         #expect(service.updateCapturesCursorCallCount == 1)
+        assertSnapshotMatchesService(controller: controller, service: service)
     }
 
     @Test func removeMonitoringSessionsFiltersByDisplayID() {
@@ -97,6 +107,28 @@ struct CaptureControllerTests {
         #expect(controller.screenCaptureSessions.map(\.displayID) == [92])
         #expect(service.removeByDisplayCallCount == 1)
         #expect(service.removedDisplayIDs == [91])
+        assertSnapshotMatchesService(controller: controller, service: service)
+    }
+
+    @Test func unknownMutationRequestsKeepControllerSnapshotStable() {
+        let service = MockCaptureMonitoringService()
+        let first = makeSession(id: UUID(), displayID: 101)
+        let second = makeSession(id: UUID(), displayID: 102)
+        service.currentSessions = [first, second]
+        let controller = CaptureController(captureMonitoringService: service)
+        let initialSignature = snapshotSignature(controller.screenCaptureSessions)
+
+        controller.markMonitoringSessionActive(id: UUID())
+        #expect(snapshotSignature(controller.screenCaptureSessions) == initialSignature)
+        assertSnapshotMatchesService(controller: controller, service: service)
+
+        controller.setMonitoringSessionCapturesCursor(id: UUID(), capturesCursor: true)
+        #expect(snapshotSignature(controller.screenCaptureSessions) == initialSignature)
+        assertSnapshotMatchesService(controller: controller, service: service)
+
+        controller.removeMonitoringSession(id: UUID())
+        #expect(snapshotSignature(controller.screenCaptureSessions) == initialSignature)
+        assertSnapshotMatchesService(controller: controller, service: service)
     }
 
     @Test func stopDependentStreamsBeforeRebuildStopsSharingAndMonitoring() {
@@ -120,6 +152,29 @@ struct CaptureControllerTests {
         #expect(sharingService.stopSharingCallCount == 1)
         #expect(service.removeByDisplayCallCount == 1)
         #expect(controller.screenCaptureSessions.isEmpty)
+        assertSnapshotMatchesService(controller: controller, service: service)
+    }
+
+    @Test func stopDependentStreamsBeforeRebuildDoesNotStopSharingWhenDisplayIsNotShared() {
+        let service = MockCaptureMonitoringService()
+        let session = makeSession(id: UUID(), displayID: 124)
+        service.currentSessions = [session]
+        let sharingService = MockSharingService()
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: SharingPortPreferences(defaults: UserDefaults(suiteName: "CaptureControllerTestsNoShare")!)
+        )
+        let controller = CaptureController(captureMonitoringService: service)
+
+        controller.stopDependentStreamsBeforeRebuild(
+            displayID: 124,
+            sharingController: sharingController
+        )
+
+        #expect(sharingService.stopSharingCallCount == 0)
+        #expect(service.removeByDisplayCallCount == 1)
+        #expect(controller.screenCaptureSessions.isEmpty)
+        assertSnapshotMatchesService(controller: controller, service: service)
     }
 
     private func makeSession(id: UUID, displayID: CGDirectDisplayID) -> ScreenMonitoringSession {
@@ -138,5 +193,30 @@ struct CaptureControllerTests {
             capturesCursor: false,
             state: .starting
         )
+    }
+
+    private func assertSnapshotMatchesService(
+        controller: CaptureController,
+        service: MockCaptureMonitoringService
+    ) {
+        #expect(snapshotSignature(controller.screenCaptureSessions) == snapshotSignature(service.currentSessions))
+    }
+
+    private func snapshotSignature(_ sessions: [ScreenMonitoringSession]) -> [SessionSnapshot] {
+        sessions.map { session in
+            let stateLabel: String
+            switch session.state {
+            case .starting:
+                stateLabel = "starting"
+            case .active:
+                stateLabel = "active"
+            }
+            return SessionSnapshot(
+                id: session.id,
+                displayID: session.displayID,
+                capturesCursor: session.capturesCursor,
+                state: stateLabel
+            )
+        }
     }
 }
