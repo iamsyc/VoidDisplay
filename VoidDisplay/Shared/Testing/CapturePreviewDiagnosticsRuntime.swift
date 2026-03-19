@@ -2,11 +2,17 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+enum CapturePreviewDiagnosticsScaleMode: String, Sendable {
+    case fit
+    case native
+}
+
 struct CapturePreviewDiagnosticsConfiguration: Sendable {
     let sourcePixelSize: CGSize
     let targetContentWidth: CGFloat?
     let replayImageURL: URL?
     let recordDirectoryURL: URL?
+    let initialScaleMode: CapturePreviewDiagnosticsScaleMode?
 }
 
 enum CapturePreviewDiagnosticsRuntime {
@@ -14,6 +20,15 @@ enum CapturePreviewDiagnosticsRuntime {
     nonisolated static let targetContentWidthEnvironmentKey = "VOIDDISPLAY_CAPTURE_PREVIEW_TARGET_CONTENT_WIDTH"
     nonisolated static let replayImagePathEnvironmentKey = "VOIDDISPLAY_CAPTURE_PREVIEW_REPLAY_IMAGE_PATH"
     nonisolated static let recordDirectoryPathEnvironmentKey = "VOIDDISPLAY_CAPTURE_PREVIEW_RECORD_DIRECTORY"
+    /// Diagnostics-only scale mode override.
+    ///
+    /// Valid values:
+    /// - `fit`: Preview uses the adaptive fit mode.
+    /// - `native`: Preview uses the `1:1` mode.
+    ///
+    /// This key is intended for UI diagnostics and test scenarios.
+    /// Production runtime should not depend on it.
+    nonisolated static let scaleModeEnvironmentKey = "VOIDDISPLAY_CAPTURE_PREVIEW_SCALE_MODE"
 
     nonisolated static var isPreviewDiagnosticsScenario: Bool {
         UITestRuntime.isEnabled && UITestRuntime.scenario == .capturePreviewDiagnostics
@@ -52,11 +67,20 @@ enum CapturePreviewDiagnosticsRuntime {
             recordDirectoryURL = nil
         }
 
+        let initialScaleMode: CapturePreviewDiagnosticsScaleMode?
+        if let rawMode = environment[scaleModeEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawMode.isEmpty {
+            initialScaleMode = CapturePreviewDiagnosticsScaleMode(rawValue: rawMode.lowercased())
+        } else {
+            initialScaleMode = nil
+        }
+
         return CapturePreviewDiagnosticsConfiguration(
             sourcePixelSize: sourcePixelSize,
             targetContentWidth: targetContentWidth,
             replayImageURL: replayImageURL,
-            recordDirectoryURL: recordDirectoryURL
+            recordDirectoryURL: recordDirectoryURL,
+            initialScaleMode: initialScaleMode
         )
     }
 

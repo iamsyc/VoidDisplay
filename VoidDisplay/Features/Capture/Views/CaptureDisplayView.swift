@@ -43,14 +43,10 @@ struct CaptureDisplayView: View {
     }
 
     private var nativeFrameSizeInPoints: CGSize {
-        let pixelSize = renderer.framePixelSize
-        guard pixelSize.width > 0, pixelSize.height > 0 else {
-            let fallback = preferredAspect()
-            return CGSize(width: max(1, fallback.width), height: max(1, fallback.height))
-        }
-        return CGSize(
-            width: max(1, pixelSize.width / currentScaleFactor),
-            height: max(1, pixelSize.height / currentScaleFactor)
+        CapturePreviewGeometry.nativeFrameSizeInPoints(
+            framePixelSize: renderer.framePixelSize,
+            scaleFactor: currentScaleFactor,
+            fallbackAspect: preferredAspect()
         )
     }
 
@@ -101,6 +97,7 @@ struct CaptureDisplayView: View {
                 .controlSize(.small)
                 .frame(width: 150)
                 .accessibilityIdentifier("capture_preview_scale_mode_picker")
+                .accessibilityValue(Text(scaleMode == .fit ? "fit" : "native"))
             }
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 6) {
@@ -116,6 +113,9 @@ struct CaptureDisplayView: View {
         }
         .toolbarTitleDisplayMode(.inline)
         .onAppear {
+            if let diagnosticsScaleMode = initialPreviewScaleModeOverride {
+                scaleMode = diagnosticsScaleMode
+            }
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
             capturesCursor = session?.capturesCursor ?? false
         }
@@ -232,57 +232,33 @@ extension CaptureDisplayView {
         guard let window, aspect.width > 0, aspect.height > 0, !hasAppliedInitialSize else { return }
 
         window.backgroundColor = .windowBackgroundColor
-        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         let contentRect = window.contentRect(forFrameRect: window.frame)
         let layoutRect = window.contentLayoutRect
-        let chromeWidth = max(0, window.frame.width - contentRect.width)
-        let chromeHeight = max(0, window.frame.height - contentRect.height)
-        let layoutInsetWidth = max(0, contentRect.width - layoutRect.width)
-        let layoutInsetHeight = max(0, contentRect.height - layoutRect.height)
-
-        let maxPreviewWidth = max(
-            320,
-            (visibleFrame?.width ?? 1280) - chromeWidth - layoutInsetWidth - 16
+        let targetContentSize = CapturePreviewGeometry.initialContentSize(
+            input: .init(
+                aspect: aspect,
+                framePixelSize: renderer.framePixelSize,
+                targetContentWidth: CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth,
+                visibleFrameSize: (window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)?.size
+                    ?? CGSize(width: 1280, height: 800),
+                chromeSize: CGSize(
+                    width: max(0, window.frame.width - contentRect.width),
+                    height: max(0, window.frame.height - contentRect.height)
+                ),
+                layoutInsetSize: CGSize(
+                    width: max(0, contentRect.width - layoutRect.width),
+                    height: max(0, contentRect.height - layoutRect.height)
+                ),
+                scaleFactor: max(1, window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+            )
         )
-        let maxPreviewHeight = max(
-            180,
-            (visibleFrame?.height ?? 800) - chromeHeight - layoutInsetHeight - 16
-        )
-
-        let ratio = aspect.width / aspect.height
-        let scale = max(1, window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
-        let pixelSize = renderer.framePixelSize
-        let defaultPreviewWidth = max(320, maxPreviewWidth * 0.85)
-        let defaultPreviewHeight = defaultPreviewWidth / ratio
-        var previewWidth = defaultPreviewWidth
-        var previewHeight = defaultPreviewHeight
-
-        if pixelSize.width > 0, pixelSize.height > 0 {
-            previewWidth = pixelSize.width / scale
-            previewHeight = pixelSize.height / scale
-        }
-
-        if let overriddenWidth = CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth {
-            previewWidth = min(max(320, overriddenWidth), maxPreviewWidth)
-            previewHeight = previewWidth / ratio
-        }
-
-        if previewWidth > maxPreviewWidth {
-            previewWidth = maxPreviewWidth
-            previewHeight = previewWidth / ratio
-        }
-        if previewHeight > maxPreviewHeight {
-            previewHeight = maxPreviewHeight
-            previewWidth = previewHeight * ratio
-        }
-
-        let targetContentSize = NSSize(
-            width: previewWidth + layoutInsetWidth,
-            height: previewHeight + layoutInsetHeight
-        )
+        guard let targetContentSize else { return }
 
         let targetFrame = window.frameRect(
-            forContentRect: NSRect(origin: .zero, size: targetContentSize)
+            forContentRect: NSRect(origin: .zero, size: NSSize(
+                width: targetContentSize.width,
+                height: targetContentSize.height
+            ))
         )
         var newFrame = window.frame
         newFrame.origin.x += (newFrame.width - targetFrame.width) / 2
@@ -297,23 +273,22 @@ extension CaptureDisplayView {
     /// resolution text (e.g. "2560 × 1440"), falling back to the
     /// pixel size reported by the renderer's first frame.
     private func preferredAspect() -> CGSize {
-        if let text = session?.resolutionText,
-           let size = Self.parseResolution(text) {
-            return size
-        }
-        return renderer.framePixelSize
+        CapturePreviewGeometry.preferredAspect(
+            resolutionText: session?.resolutionText,
+            framePixelSize: renderer.framePixelSize
+        )
     }
 
-    private static func parseResolution(_ text: String) -> CGSize? {
-        let separators: [Character] = ["×", "x", "X", "*"]
-        guard let sep = separators.first(where: { text.contains($0) }) else { return nil }
-        let parts = text.split(separator: sep, maxSplits: 1)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard parts.count == 2,
-              let w = Double(parts[0]), w > 0,
-              let h = Double(parts[1]), h > 0
-        else { return nil }
-        return CGSize(width: w, height: h)
+    private var initialPreviewScaleModeOverride: PreviewScaleMode? {
+        guard let override = CapturePreviewDiagnosticsRuntime.configuration()?.initialScaleMode else {
+            return nil
+        }
+        switch override {
+        case .fit:
+            return .fit
+        case .native:
+            return .native
+        }
     }
 }
 
@@ -374,53 +349,22 @@ private final class CapturePreviewWindowCoordinator: NSObject {
     }
 
     private func aspectLockedContentSize(for window: NSWindow, proposedFrameSize: NSSize) -> NSSize? {
-        guard aspect.width > 0, aspect.height > 0 else { return nil }
         let currentContentRect = window.contentRect(forFrameRect: window.frame)
         let currentLayoutRect = window.contentLayoutRect
-        let layoutInsetWidth = max(0, currentContentRect.width - currentLayoutRect.width)
-        let layoutInsetHeight = max(0, currentContentRect.height - currentLayoutRect.height)
         let proposedContentRect = window.contentRect(
             forFrameRect: NSRect(origin: .zero, size: proposedFrameSize)
         )
-        let scale = max(1, window.backingScaleFactor)
-        let insetWidthPixels = max(0, Int((layoutInsetWidth * scale).rounded()))
-        let insetHeightPixels = max(0, Int((layoutInsetHeight * scale).rounded()))
-        let proposedPreviewWidthPixels = max(
-            1,
-            Int(((proposedContentRect.width - layoutInsetWidth) * scale).rounded(.down))
+        let targetContentSize = CapturePreviewGeometry.aspectLockedContentSize(
+            aspect: aspect,
+            proposedContentSize: proposedContentRect.size,
+            layoutInsetSize: CGSize(
+                width: max(0, currentContentRect.width - currentLayoutRect.width),
+                height: max(0, currentContentRect.height - currentLayoutRect.height)
+            ),
+            scaleFactor: max(1, window.backingScaleFactor)
         )
-        let proposedPreviewHeightPixels = max(
-            1,
-            Int(((proposedContentRect.height - layoutInsetHeight) * scale).rounded(.down))
-        )
-        let aspectWidthPixels = max(1, Int(aspect.width.rounded()))
-        let aspectHeightPixels = max(1, Int(aspect.height.rounded()))
-
-        let previewWidthPixels: Int
-        let previewHeightPixels: Int
-
-        if proposedPreviewWidthPixels * aspectHeightPixels > proposedPreviewHeightPixels * aspectWidthPixels {
-            previewHeightPixels = proposedPreviewHeightPixels
-            previewWidthPixels = max(
-                1,
-                Int((CGFloat(previewHeightPixels) * aspect.width / aspect.height).rounded(.down))
-            )
-        } else {
-            previewWidthPixels = proposedPreviewWidthPixels
-            previewHeightPixels = max(
-                1,
-                Int((CGFloat(previewWidthPixels) * aspect.height / aspect.width).rounded(.down))
-            )
-        }
-
-        let targetContentRect = NSRect(
-            origin: .zero,
-            size: NSSize(
-                width: CGFloat(previewWidthPixels + insetWidthPixels) / scale,
-                height: CGFloat(previewHeightPixels + insetHeightPixels) / scale
-            )
-        )
-        return targetContentRect.size
+        guard let targetContentSize else { return nil }
+        return NSSize(width: targetContentSize.width, height: targetContentSize.height)
     }
 
     private func restoreWindowDelegate() {

@@ -20,21 +20,48 @@ struct RGBAColor {
     }
 }
 
+enum AnalyzerMode: String {
+    case fit
+    case native
+}
+
 enum AnalyzerError: LocalizedError {
     case missingArgument
+    case invalidMode(String)
+    case invalidArgument(String)
     case imageLoadFailed(String)
     case bitmapUnavailable(String)
 
     var errorDescription: String? {
         switch self {
         case .missingArgument:
-            return "Usage: capture_preview_analyze.swift <png-path>"
+            return "Usage: capture_preview_analyze.swift [--mode fit|native] <png-path>"
+        case .invalidMode(let mode):
+            return "Unsupported mode: \(mode). Expected fit or native."
+        case .invalidArgument(let argument):
+            return "Invalid argument: \(argument)"
         case .imageLoadFailed(let path):
             return "Failed to load image at path: \(path)"
         case .bitmapUnavailable(let path):
             return "Failed to create bitmap from image at path: \(path)"
         }
     }
+}
+
+struct AnalyzerArguments {
+    let mode: AnalyzerMode
+    let imagePath: String
+}
+
+struct EdgeObservation {
+    let name: String
+    let distance: Double
+    let actual: RGBAColor
+}
+
+struct CornerObservation {
+    let name: String
+    let distance: Double
 }
 
 let expectedColors: [String: RGBAColor] = [
@@ -55,11 +82,9 @@ let circleColor = RGBAColor(red: 0.82, green: 0.16, blue: 0.66)
 let circleTolerance = 0.34
 
 func main() throws {
-    guard CommandLine.arguments.count >= 2 else {
-        throw AnalyzerError.missingArgument
-    }
+    let arguments = try parseArguments()
 
-    let imagePath = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL.path
+    let imagePath = URL(fileURLWithPath: arguments.imagePath).standardizedFileURL.path
     let bitmap = try loadBitmap(path: imagePath)
     let width = bitmap.pixelsWide
     let height = bitmap.pixelsHigh
@@ -71,7 +96,7 @@ func main() throws {
         ("bottom", normalizedRect(0.10, 0.96, 0.80, 0.04, imageWidth: width, imageHeight: height))
     ]
 
-    var failures: [String] = []
+    var edgeObservations: [EdgeObservation] = []
     for (name, rect) in edgeSearchRegions {
         let expected = expectedColors[name]!
         let (distance, actual) = nearestColorMatch(
@@ -79,12 +104,7 @@ func main() throws {
             rect: rect,
             expected: expected
         )
-        if distance > colorTolerance {
-            failures.append("\(name) expected close to diagnostic color, actual=(\(format(actual.red)), \(format(actual.green)), \(format(actual.blue)))")
-        }
-        if (name == "left" || name == "right") && actual.luminance < blackLuminanceThreshold {
-            failures.append("\(name) edge looks black, likely side letterboxing remains")
-        }
+        edgeObservations.append(.init(name: name, distance: distance, actual: actual))
     }
 
     let cornerSearchRegions: [(String, CGRect)] = [
@@ -94,21 +114,82 @@ func main() throws {
         ("bottomRightCorner", normalizedRect(0.78, 0.78, 0.20, 0.20, imageWidth: width, imageHeight: height))
     ]
 
+    var cornerObservations: [CornerObservation] = []
     for (name, rect) in cornerSearchRegions {
-        let distance = nearestColorDistance(
-            bitmap: bitmap,
-            rect: rect,
-            expected: expectedColors[name]!
-        )
-        if distance > cornerTolerance {
-            failures.append("\(name) marker not found in expected quadrant")
-        }
+        let distance = nearestColorDistance(bitmap: bitmap, rect: rect, expected: expectedColors[name]!)
+        cornerObservations.append(.init(name: name, distance: distance))
     }
 
     let circleBounds = detectMagentaCircleBounds(
         bitmap: bitmap,
         searchRect: normalizedRect(0.25, 0.25, 0.50, 0.50, imageWidth: width, imageHeight: height)
     )
+    let centerColor = averageColor(bitmap: bitmap, normalizedX: 0.5, normalizedY: 0.5, radius: 4)
+
+    var leftBlackColumns = 0
+    var rightBlackColumns = 0
+    if arguments.mode == .fit {
+        leftBlackColumns = leadingBlackColumns(bitmap: bitmap, normalizedY: 0.5)
+        rightBlackColumns = trailingBlackColumns(bitmap: bitmap, normalizedY: 0.5)
+    }
+
+    let failures = switch arguments.mode {
+    case .fit:
+        validateFit(
+            edgeObservations: edgeObservations,
+            cornerObservations: cornerObservations,
+            circleBounds: circleBounds,
+            leftBlackColumns: leftBlackColumns,
+            rightBlackColumns: rightBlackColumns,
+            imageWidth: width
+        )
+    case .native:
+        validateNative(
+            edgeObservations: edgeObservations,
+            cornerObservations: cornerObservations,
+            circleBounds: circleBounds,
+            centerColor: centerColor
+        )
+    }
+
+    if failures.isEmpty {
+        print(
+            "PASS mode=\(arguments.mode.rawValue) \(imagePath) size=\(width)x\(height) leftBlack=\(leftBlackColumns) rightBlack=\(rightBlackColumns)"
+        )
+        return
+    }
+
+    print("FAIL mode=\(arguments.mode.rawValue) \(imagePath)")
+    for failure in failures {
+        print(" - \(failure)")
+    }
+    exit(1)
+}
+
+func validateFit(
+    edgeObservations: [EdgeObservation],
+    cornerObservations: [CornerObservation],
+    circleBounds: CGRect?,
+    leftBlackColumns: Int,
+    rightBlackColumns: Int,
+    imageWidth: Int
+) -> [String] {
+    var failures: [String] = []
+
+    for observation in edgeObservations where observation.distance > colorTolerance {
+        failures.append(
+            "\(observation.name) expected close to diagnostic color, actual=(\(format(observation.actual.red)), \(format(observation.actual.green)), \(format(observation.actual.blue)))"
+        )
+    }
+    for observation in edgeObservations
+    where (observation.name == "left" || observation.name == "right")
+        && observation.actual.luminance < blackLuminanceThreshold {
+        failures.append("\(observation.name) edge looks black, likely side letterboxing remains")
+    }
+    for observation in cornerObservations where observation.distance > cornerTolerance {
+        failures.append("\(observation.name) marker not found in expected quadrant")
+    }
+
     if let circleBounds {
         let ratio = Double(circleBounds.width) / Double(circleBounds.height)
         if abs(ratio - 1) > 0.12 {
@@ -118,25 +199,86 @@ func main() throws {
         failures.append("failed to detect center circle")
     }
 
-    let leftBlackColumns = leadingBlackColumns(bitmap: bitmap, normalizedY: 0.5)
-    let rightBlackColumns = trailingBlackColumns(bitmap: bitmap, normalizedY: 0.5)
-    if leftBlackColumns > max(2, width / 200) {
+    if leftBlackColumns > max(2, imageWidth / 200) {
         failures.append("left black bar width=\(leftBlackColumns)px")
     }
-    if rightBlackColumns > max(2, width / 200) {
+    if rightBlackColumns > max(2, imageWidth / 200) {
         failures.append("right black bar width=\(rightBlackColumns)px")
     }
+    return failures
+}
 
-    if failures.isEmpty {
-        print("PASS \(imagePath) size=\(width)x\(height) leftBlack=\(leftBlackColumns) rightBlack=\(rightBlackColumns)")
-        return
+func validateNative(
+    edgeObservations: [EdgeObservation],
+    cornerObservations: [CornerObservation],
+    circleBounds: CGRect?,
+    centerColor: RGBAColor
+) -> [String] {
+    var failures: [String] = []
+
+    let rightEdgeClipped = edgeObservations.first(where: { $0.name == "right" })?.distance ?? 0 > colorTolerance
+    let topRightMissing = cornerObservations.first(where: { $0.name == "topRightCorner" })?.distance ?? 0 > cornerTolerance
+    let bottomRightMissing = cornerObservations.first(where: { $0.name == "bottomRightCorner" })?.distance ?? 0 > cornerTolerance
+    let centerCircleClipped = circleBounds == nil
+
+    let clippingSignals = [
+        rightEdgeClipped,
+        topRightMissing,
+        bottomRightMissing,
+        centerCircleClipped
+    ]
+    let clippingSignalCount = clippingSignals.filter { $0 }.count
+    if clippingSignalCount < 3 {
+        failures.append(
+            "native mode clipping signature too weak: expected at least 3 clipped signals, actual=\(clippingSignalCount)"
+        )
     }
 
-    print("FAIL \(imagePath)")
-    for failure in failures {
-        print(" - \(failure)")
+    if centerColor.luminance < blackLuminanceThreshold {
+        failures.append("native mode center region is unexpectedly dark")
     }
-    exit(1)
+
+    return failures
+}
+
+func parseArguments() throws -> AnalyzerArguments {
+    let rawArguments = Array(CommandLine.arguments.dropFirst())
+    guard !rawArguments.isEmpty else {
+        throw AnalyzerError.missingArgument
+    }
+
+    var mode: AnalyzerMode = .fit
+    var imagePath: String?
+    var index = 0
+
+    while index < rawArguments.count {
+        let argument = rawArguments[index]
+        if argument == "--mode" {
+            guard index + 1 < rawArguments.count else {
+                throw AnalyzerError.missingArgument
+            }
+            let rawMode = rawArguments[index + 1].lowercased()
+            guard let resolvedMode = AnalyzerMode(rawValue: rawMode) else {
+                throw AnalyzerError.invalidMode(rawMode)
+            }
+            mode = resolvedMode
+            index += 2
+            continue
+        }
+
+        if imagePath == nil {
+            imagePath = argument
+            index += 1
+            continue
+        }
+
+        throw AnalyzerError.invalidArgument(argument)
+    }
+
+    guard let imagePath else {
+        throw AnalyzerError.missingArgument
+    }
+    return AnalyzerArguments(mode: mode, imagePath: imagePath)
 }
 
 func loadBitmap(path: String) throws -> NSBitmapImageRep {

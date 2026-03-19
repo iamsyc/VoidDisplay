@@ -168,6 +168,23 @@ window.frameRect(forContentRect: targetContentSize)
 - [capture_preview_self_check.sh](/Users/syc/Project/VoidDisplay/scripts/test/capture_preview_self_check.sh)
 - [capture_preview_analyze.swift](/Users/syc/Project/VoidDisplay/scripts/test/capture_preview_analyze.swift)
 
+### 诊断环境变量说明
+
+以下环境变量仅用于预览诊断与 UI 测试场景：
+
+| 变量名 | 取值示例 | 含义 |
+| --- | --- | --- |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_SOURCE_SIZE` | `3008x1692` | 注入的诊断画面像素尺寸。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_TARGET_CONTENT_WIDTH` | `1180` | 初始窗口目标内容宽度覆盖值（point）。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_REPLAY_IMAGE_PATH` | `/abs/path/frame.png` | 用指定图片替代内置诊断图。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_RECORD_DIRECTORY` | `/abs/path/recordings` | 预览录制输出目录。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_SCALE_MODE` | `fit` 或 `native` | 预览缩放模式。`fit` 表示适应模式，`native` 表示 `1:1` 模式。 |
+
+使用建议：
+
+1. 常规自检直接运行 `zsh scripts/test/capture_preview_self_check.sh`，脚本会自动跑 `fit` 与 `native` 两轮。
+2. 手动跑单轮 UI 诊断时，通过 app launch environment 设置 `VOIDDISPLAY_CAPTURE_PREVIEW_SCALE_MODE`。
+
 ### 自验证思路
 
 1. UI test 场景下注入假的监听会话
