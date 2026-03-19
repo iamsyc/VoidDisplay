@@ -53,7 +53,7 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     monitoringSessionForDisplayID: { _ in nil },
-                    addMonitoringSession: { _ in }
+                    startMonitoring: { _, _ in UUID() }
                 ),
                 virtualDisplayQueries: .init(
                     isManagedVirtualDisplay: { $0 == 1234 }
@@ -159,10 +159,17 @@ struct CaptureChooseViewModelTests {
         }
 
         let sut = CaptureChooseViewModel(
-            makePreviewSubscription: { _ in
-                throw ControlledError()
-            },
-            dependencies: makeNoopCaptureDependencies()
+            dependencies: .init(
+                captureActions: .init(
+                    monitoringSessionForDisplayID: { _ in nil },
+                    startMonitoring: { _, _ in
+                        throw ControlledError()
+                    }
+                ),
+                virtualDisplayQueries: .init(
+                    isManagedVirtualDisplay: { _ in false }
+                )
+            )
         )
         let display = MockSCDisplay.make(displayID: 777, width: 1920, height: 1080)
         var openedSessionIDs: [UUID] = []
@@ -172,6 +179,41 @@ struct CaptureChooseViewModelTests {
         #expect(openedSessionIDs.isEmpty)
         #expect(sut.userFacingAlert?.title == String(localized: "Start Monitoring Failed"))
         #expect(sut.userFacingAlert?.message.isEmpty == false)
+        #expect(sut.startingDisplayIDs.isEmpty)
+    }
+
+    @MainActor @Test func startMonitoringSuccessPassesMetadataToCaptureActions() async {
+        let expectedSessionID = UUID()
+        let display = MockSCDisplay.make(displayID: 778, width: 2560, height: 1440)
+        var receivedDisplayID: CGDirectDisplayID?
+        var receivedMetadata: CaptureMonitoringDisplayMetadata?
+        let sut = CaptureChooseViewModel(
+            dependencies: .init(
+                captureActions: .init(
+                    monitoringSessionForDisplayID: { _ in nil },
+                    startMonitoring: { display, metadata in
+                        receivedDisplayID = display.displayID
+                        receivedMetadata = metadata
+                        return expectedSessionID
+                    }
+                ),
+                virtualDisplayQueries: .init(
+                    isManagedVirtualDisplay: { $0 == 778 }
+                )
+            )
+        )
+        var openedSessionIDs: [UUID] = []
+
+        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+
+        #expect(receivedDisplayID == 778)
+        #expect(receivedMetadata == CaptureMonitoringDisplayMetadata(
+            displayName: String(localized: "Monitor"),
+            resolutionText: "2560 × 1440",
+            isVirtualDisplay: true
+        ))
+        #expect(openedSessionIDs == [expectedSessionID])
+        #expect(sut.userFacingAlert == nil)
         #expect(sut.startingDisplayIDs.isEmpty)
     }
 
@@ -569,7 +611,7 @@ struct CaptureChooseViewModelTests {
         .init(
             captureActions: .init(
                 monitoringSessionForDisplayID: { _ in nil },
-                addMonitoringSession: { _ in }
+                startMonitoring: { _, _ in UUID() }
             ),
             virtualDisplayQueries: .init(
                 isManagedVirtualDisplay: { _ in false }

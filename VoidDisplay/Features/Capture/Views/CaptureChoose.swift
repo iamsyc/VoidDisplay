@@ -176,7 +176,7 @@ struct IsCapturing: View {
                     session: session,
                     isSharing: sharing.isDisplaySharing(displayID: session.displayID)
                 ) {
-                    capture.removeMonitoringSession(id: session.id)
+                    capture.closeMonitoringSession(id: session.id)
                 }
             }
         }
@@ -203,7 +203,7 @@ struct IsCapturing: View {
             isSharing: sharing.isDisplaySharing(displayID: display.displayID)
         ) {
             if isMonitoring, let session = monitoringSession {
-                capture.removeMonitoringSession(id: session.id)
+                capture.closeMonitoringSession(id: session.id)
             } else {
                 Task {
                     await viewModel.startMonitoring(display: display) { sessionId in

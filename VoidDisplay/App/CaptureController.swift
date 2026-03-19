@@ -5,6 +5,7 @@
 
 import Foundation
 import CoreGraphics
+import ScreenCaptureKit
 import Observation
 
 @MainActor
@@ -14,9 +15,15 @@ final class CaptureController {
     @ObservationIgnored let displayCatalogState = ScreenCaptureDisplayCatalogState()
 
     @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
+    @ObservationIgnored private let captureMonitoringLifecycleService: any CaptureMonitoringLifecycleServiceProtocol
 
-    init(captureMonitoringService: any CaptureMonitoringServiceProtocol) {
+    init(
+        captureMonitoringService: any CaptureMonitoringServiceProtocol,
+        captureMonitoringLifecycleService: (any CaptureMonitoringLifecycleServiceProtocol)? = nil
+    ) {
         self.captureMonitoringService = captureMonitoringService
+        self.captureMonitoringLifecycleService = captureMonitoringLifecycleService
+            ?? CaptureMonitoringLifecycleService(captureMonitoringService: captureMonitoringService)
         self.screenCaptureSessions = captureMonitoringService.currentSessions
     }
 
@@ -24,30 +31,45 @@ final class CaptureController {
         captureMonitoringService.monitoringSession(for: id)
     }
 
-    func addMonitoringSession(_ session: ScreenMonitoringSession) {
-        mutateAndSync {
-            captureMonitoringService.addMonitoringSession(session)
+    func startMonitoring(
+        display: SCDisplay,
+        metadata: CaptureMonitoringDisplayMetadata
+    ) async throws -> UUID {
+        try await mutateAndSyncAsync {
+            try await captureMonitoringLifecycleService.startMonitoring(
+                display: display,
+                metadata: metadata
+            )
         }
     }
 
-    func markMonitoringSessionActive(id: UUID) {
+    func activateMonitoringSession(id: UUID) {
         mutateAndSync {
-            captureMonitoringService.updateMonitoringSessionState(id: id, state: .active)
+            captureMonitoringLifecycleService.activateMonitoringSession(id: id)
         }
     }
 
-    func setMonitoringSessionCapturesCursor(id: UUID, capturesCursor: Bool) {
+    func attachPreviewSink(_ sink: any DisplayPreviewSink, to id: UUID) {
         mutateAndSync {
-            captureMonitoringService.updateMonitoringSessionCapturesCursor(
+            captureMonitoringLifecycleService.attachPreviewSink(sink, to: id)
+        }
+    }
+
+    func setMonitoringSessionCapturesCursor(
+        id: UUID,
+        capturesCursor: Bool
+    ) async throws {
+        try await mutateAndSyncAsync {
+            try await captureMonitoringLifecycleService.setMonitoringSessionCapturesCursor(
                 id: id,
                 capturesCursor: capturesCursor
             )
         }
     }
 
-    func removeMonitoringSession(id: UUID) {
+    func closeMonitoringSession(id: UUID) {
         mutateAndSync {
-            captureMonitoringService.removeMonitoringSession(id: id)
+            captureMonitoringLifecycleService.closeMonitoringSession(id: id)
         }
     }
 
@@ -74,5 +96,10 @@ final class CaptureController {
     private func mutateAndSync(_ mutation: () -> Void) {
         mutation()
         syncCaptureMonitoringState()
+    }
+
+    private func mutateAndSyncAsync<T>(_ mutation: () async throws -> T) async rethrows -> T {
+        defer { syncCaptureMonitoringState() }
+        return try await mutation()
     }
 }

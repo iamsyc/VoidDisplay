@@ -40,7 +40,7 @@ private final class IsolationPortPreferences: SharingPortPreferencesProtocol {
 @Suite(.serialized)
 @MainActor
 struct CaptureSharingIsolationTests {
-    @Test func captureMutationsDoNotRewriteSharingSnapshot() async {
+    @Test func captureMutationsDoNotRewriteSharingSnapshot() async throws {
         let sharingService = MockSharingService()
         let sharedDisplay: CGDirectDisplayID = 901
         sharingService.activeSharingDisplayIDs = [sharedDisplay]
@@ -60,8 +60,11 @@ struct CaptureSharingIsolationTests {
         captureService.currentSessions = [captureSession]
         let captureController = CaptureController(captureMonitoringService: captureService)
 
-        captureController.markMonitoringSessionActive(id: captureSession.id)
-        captureController.setMonitoringSessionCapturesCursor(id: captureSession.id, capturesCursor: true)
+        captureController.activateMonitoringSession(id: captureSession.id)
+        try await captureController.setMonitoringSessionCapturesCursor(
+            id: captureSession.id,
+            capturesCursor: true
+        )
 
         #expect(sharingController.isWebServiceRunning)
         #expect(sharingController.isSharing)

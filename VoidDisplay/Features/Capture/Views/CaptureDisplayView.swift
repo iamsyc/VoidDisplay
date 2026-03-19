@@ -155,30 +155,24 @@ struct CaptureDisplayView: View {
         }
         .onAppear {
             if let session {
-                session.previewSubscription.attachPreviewSink(renderer)
+                capture.attachPreviewSink(renderer, to: sessionId)
                 if let destinationDirectory = CapturePreviewDiagnosticsRuntime.configuration()?.recordDirectoryURL {
                     let sink = CapturePreviewRecordingSink(
                         destinationDirectory: destinationDirectory,
                         session: session
                     )
                     recordingSink = sink
-                    session.previewSubscription.attachPreviewSink(sink)
+                    capture.attachPreviewSink(sink, to: sessionId)
                 }
-                capture.markMonitoringSessionActive(id: sessionId)
+                capture.activateMonitoringSession(id: sessionId)
             } else {
                 dismiss()
             }
         }
         .onDisappear {
-            if let session {
-                if let recordingSink {
-                    session.previewSubscription.detachPreviewSink(recordingSink)
-                }
-                session.previewSubscription.detachPreviewSink(renderer)
-            }
+            capture.closeMonitoringSession(id: sessionId)
             windowCoordinator.tearDown()
             renderer.flush()
-            capture.removeMonitoringSession(id: sessionId)
         }
         .onChange(of: renderer.framePixelSize) { _, _ in
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
@@ -212,16 +206,15 @@ extension CaptureDisplayView {
                 let previousValue = capturesCursor
                 capturesCursor = newValue
 
-                guard let session else { return }
+                guard session != nil else { return }
                 isUpdatingCursorCapture = true
                 Task {
                     do {
-                        try await session.previewSubscription.setShowsCursor(newValue)
+                        try await capture.setMonitoringSessionCapturesCursor(
+                            id: sessionId,
+                            capturesCursor: newValue
+                        )
                         await MainActor.run {
-                            capture.setMonitoringSessionCapturesCursor(
-                                id: sessionId,
-                                capturesCursor: newValue
-                            )
                             isUpdatingCursorCapture = false
                         }
                     } catch {

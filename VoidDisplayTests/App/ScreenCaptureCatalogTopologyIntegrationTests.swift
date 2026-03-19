@@ -234,7 +234,7 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
         .init(
             captureActions: .init(
                 monitoringSessionForDisplayID: { _ in nil },
-                addMonitoringSession: { _ in }
+                startMonitoring: { _, _ in UUID() }
             ),
             virtualDisplayQueries: .init(
                 isManagedVirtualDisplay: { _ in false }

@@ -12,7 +12,10 @@ final class CaptureChooseViewModel {
 
     struct CaptureActions {
         var monitoringSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?
-        var addMonitoringSession: @MainActor (ScreenMonitoringSession) -> Void
+        var startMonitoring: @MainActor (
+            SCDisplay,
+            CaptureMonitoringDisplayMetadata
+        ) async throws -> UUID
     }
 
     struct VirtualDisplayQueries {
@@ -32,8 +35,8 @@ final class CaptureChooseViewModel {
                     monitoringSessionForDisplayID: { displayID in
                         capture.screenCaptureSessions.first(where: { $0.displayID == displayID })
                     },
-                    addMonitoringSession: { session in
-                        capture.addMonitoringSession(session)
+                    startMonitoring: { display, metadata in
+                        try await capture.startMonitoring(display: display, metadata: metadata)
                     }
                 ),
                 virtualDisplayQueries: .init(
@@ -50,7 +53,6 @@ final class CaptureChooseViewModel {
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var userFacingAlert: UserFacingAlertState?
 
-    private let makePreviewSubscription: @MainActor (SCDisplay) async throws -> DisplayPreviewSubscription
     private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
     @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
@@ -59,7 +61,6 @@ final class CaptureChooseViewModel {
         catalogState: ScreenCaptureDisplayCatalogState? = nil,
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
-        makePreviewSubscription: (@MainActor (SCDisplay) async throws -> DisplayPreviewSubscription)? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
             Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         },
@@ -67,9 +68,6 @@ final class CaptureChooseViewModel {
     ) {
         let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
         self.catalog = catalog
-        self.makePreviewSubscription = makePreviewSubscription ?? { display in
-            try await DisplayCaptureRegistry.shared.acquirePreview(display: SendableDisplay(display))
-        }
         self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
             state: catalog,
             activeDisplayIDsProvider: activeDisplayIDsProvider
@@ -125,19 +123,13 @@ final class CaptureChooseViewModel {
             }
 
             do {
-                let previewSubscription = try await makePreviewSubscription(display)
-                let session = ScreenMonitoringSession(
-                    id: UUID(),
-                    displayID: display.displayID,
+                let metadata = CaptureMonitoringDisplayMetadata(
                     displayName: displayName(for: display),
                     resolutionText: resolutionText(for: display),
-                    isVirtualDisplay: isVirtualDisplay(display),
-                    previewSubscription: previewSubscription,
-                    capturesCursor: false,
-                    state: .starting
+                    isVirtualDisplay: isVirtualDisplay(display)
                 )
-                dependencies.captureActions.addMonitoringSession(session)
-                openWindow(session.id)
+                let sessionID = try await dependencies.captureActions.startMonitoring(display, metadata)
+                openWindow(sessionID)
             } catch {
                 AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
                 userFacingAlert = UserFacingAlertState(
