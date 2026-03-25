@@ -53,7 +53,8 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     monitoringSessionForDisplayID: { _ in nil },
-                    startMonitoring: { _, _ in UUID() }
+                    isStartingDisplayID: { _ in false },
+                    startMonitoring: { _, _ in .started(UUID()) }
                 ),
                 virtualDisplayQueries: .init(
                     isManagedVirtualDisplay: { $0 == 1234 }
@@ -70,6 +71,7 @@ struct CaptureChooseViewModelTests {
     @MainActor @Test func dependenciesLiveDelegatesToControllers() {
         let captureService = MockCaptureMonitoringService()
         let captureController = CaptureController(captureMonitoringService: captureService)
+        captureController.startingDisplayIDs = [777]
         let virtualDisplayController = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
             appliedBadgeDisplayDuration: .nanoseconds(1),
@@ -81,76 +83,26 @@ struct CaptureChooseViewModelTests {
         )
 
         #expect(dependencies.captureActions.monitoringSessionForDisplayID(777) == nil)
+        #expect(dependencies.captureActions.isStartingDisplayID(777))
         #expect(dependencies.virtualDisplayQueries.isManagedVirtualDisplay(777) == false)
     }
 
-    @MainActor @Test func withDisplayStartLockRejectsConcurrentStartForSameDisplay() async {
-        let sut = CaptureChooseViewModel(dependencies: makeNoopCaptureDependencies())
-        let displayID = CGDirectDisplayID(301)
-        var enteredCount = 0
-        var firstDidEnter = false
-        var allowFirstToFinish = false
+    @MainActor @Test func isStartingDelegatesToCaptureActions() {
+        let sut = CaptureChooseViewModel(
+            dependencies: .init(
+                captureActions: .init(
+                    monitoringSessionForDisplayID: { _ in nil },
+                    isStartingDisplayID: { $0 == 301 },
+                    startMonitoring: { _, _ in .started(UUID()) }
+                ),
+                virtualDisplayQueries: .init(
+                    isManagedVirtualDisplay: { _ in false }
+                )
+            )
+        )
 
-        let firstTask = Task { @MainActor in
-            await sut.withDisplayStartLock(displayID: displayID) {
-                enteredCount += 1
-                firstDidEnter = true
-                while !allowFirstToFinish {
-                    await Task.yield()
-                }
-            }
-        }
-
-        while !firstDidEnter {
-            await Task.yield()
-        }
-
-        let secondStarted = await sut.withDisplayStartLock(displayID: displayID) {
-            enteredCount += 1
-        }
-
-        allowFirstToFinish = true
-        let firstStarted = await firstTask.value
-
-        #expect(firstStarted)
-        #expect(secondStarted == false)
-        #expect(enteredCount == 1)
-        #expect(sut.startingDisplayIDs.isEmpty)
-    }
-
-    @MainActor @Test func withDisplayStartLockAllowsConcurrentStartForDifferentDisplays() async {
-        let sut = CaptureChooseViewModel(dependencies: makeNoopCaptureDependencies())
-        let firstDisplayID = CGDirectDisplayID(401)
-        let secondDisplayID = CGDirectDisplayID(402)
-        var enteredDisplayIDs: Set<CGDirectDisplayID> = []
-        var firstDidEnter = false
-        var allowFirstToFinish = false
-
-        let firstTask = Task { @MainActor in
-            await sut.withDisplayStartLock(displayID: firstDisplayID) {
-                enteredDisplayIDs.insert(firstDisplayID)
-                firstDidEnter = true
-                while !allowFirstToFinish {
-                    await Task.yield()
-                }
-            }
-        }
-
-        while !firstDidEnter {
-            await Task.yield()
-        }
-
-        let secondStarted = await sut.withDisplayStartLock(displayID: secondDisplayID) {
-            enteredDisplayIDs.insert(secondDisplayID)
-        }
-
-        allowFirstToFinish = true
-        let firstStarted = await firstTask.value
-
-        #expect(firstStarted)
-        #expect(secondStarted)
-        #expect(enteredDisplayIDs == [firstDisplayID, secondDisplayID])
-        #expect(sut.startingDisplayIDs.isEmpty)
+        #expect(sut.isStarting(displayID: 301))
+        #expect(sut.isStarting(displayID: 302) == false)
     }
 
     @MainActor @Test func startMonitoringFailurePresentsUserFacingAlert() async {
@@ -162,6 +114,7 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     monitoringSessionForDisplayID: { _ in nil },
+                    isStartingDisplayID: { _ in false },
                     startMonitoring: { _, _ in
                         throw ControlledError()
                     }
@@ -179,7 +132,30 @@ struct CaptureChooseViewModelTests {
         #expect(openedSessionIDs.isEmpty)
         #expect(sut.userFacingAlert?.title == String(localized: "Start Monitoring Failed"))
         #expect(sut.userFacingAlert?.message.isEmpty == false)
-        #expect(sut.startingDisplayIDs.isEmpty)
+    }
+
+    @MainActor @Test func startMonitoringCancellationDoesNotPresentUserFacingAlert() async {
+        let sut = CaptureChooseViewModel(
+            dependencies: .init(
+                captureActions: .init(
+                    monitoringSessionForDisplayID: { _ in nil },
+                    isStartingDisplayID: { _ in false },
+                    startMonitoring: { _, _ in
+                        throw CancellationError()
+                    }
+                ),
+                virtualDisplayQueries: .init(
+                    isManagedVirtualDisplay: { _ in false }
+                )
+            )
+        )
+        let display = MockSCDisplay.make(displayID: 779, width: 1920, height: 1080)
+        var openedSessionIDs: [UUID] = []
+
+        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+
+        #expect(openedSessionIDs.isEmpty)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @MainActor @Test func startMonitoringSuccessPassesMetadataToCaptureActions() async {
@@ -191,10 +167,11 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     monitoringSessionForDisplayID: { _ in nil },
+                    isStartingDisplayID: { _ in false },
                     startMonitoring: { display, metadata in
                         receivedDisplayID = display.displayID
                         receivedMetadata = metadata
-                        return expectedSessionID
+                        return .started(expectedSessionID)
                     }
                 ),
                 virtualDisplayQueries: .init(
@@ -214,7 +191,28 @@ struct CaptureChooseViewModelTests {
         ))
         #expect(openedSessionIDs == [expectedSessionID])
         #expect(sut.userFacingAlert == nil)
-        #expect(sut.startingDisplayIDs.isEmpty)
+    }
+
+    @MainActor @Test func startMonitoringInvalidationDoesNotPresentUserFacingAlert() async {
+        let sut = CaptureChooseViewModel(
+            dependencies: .init(
+                captureActions: .init(
+                    monitoringSessionForDisplayID: { _ in nil },
+                    isStartingDisplayID: { _ in false },
+                    startMonitoring: { _, _ in .invalidated }
+                ),
+                virtualDisplayQueries: .init(
+                    isManagedVirtualDisplay: { _ in false }
+                )
+            )
+        )
+        let display = MockSCDisplay.make(displayID: 780, width: 1920, height: 1080)
+        var openedSessionIDs: [UUID] = []
+
+        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+
+        #expect(openedSessionIDs.isEmpty)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @MainActor @Test func requestPermissionDeniedClearsDisplayState() {
@@ -611,7 +609,8 @@ struct CaptureChooseViewModelTests {
         .init(
             captureActions: .init(
                 monitoringSessionForDisplayID: { _ in nil },
-                startMonitoring: { _, _ in UUID() }
+                isStartingDisplayID: { _ in false },
+                startMonitoring: { _, _ in .started(UUID()) }
             ),
             virtualDisplayQueries: .init(
                 isManagedVirtualDisplay: { _ in false }

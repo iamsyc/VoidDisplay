@@ -554,6 +554,17 @@
         }
       }
     },
+    "Display sharing state changed. Try again." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示共享状态已变化，请重试。"
+          }
+        }
+      }
+    },
     "Display teardown timed out. Wait a moment and try rebuilding again." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1570,6 +1581,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "屏幕尺寸"
+          }
+        }
+      }
+    },
+    "Selected display is no longer available for sharing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选显示器已不再可用于共享。"
           }
         }
       }

@@ -1,7 +1,118 @@
 import CoreGraphics
+import CoreMedia
 import Foundation
+import ScreenCaptureKit
 import Testing
 @testable import VoidDisplay
+
+private final class DisplaySharingCoordinatorDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let sessionHub = WebRTCSessionHub()
+
+    private let retainGate: DisplaySharingCoordinatorAsyncGate?
+    private let releaseCounter: DisplaySharingCoordinatorCounter?
+
+    init(
+        retainGate: DisplaySharingCoordinatorAsyncGate? = nil,
+        releaseCounter: DisplaySharingCoordinatorCounter? = nil
+    ) {
+        self.retainGate = retainGate
+        self.releaseCounter = releaseCounter
+    }
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {
+        await retainGate?.wait()
+    }
+
+    nonisolated func releaseShareCursorOverride() async throws {
+        releaseCounter?.increment()
+    }
+
+    nonisolated func stop() async {}
+}
+
+private final class DisplaySharingCoordinatorCounter: @unchecked Sendable {
+    nonisolated(unsafe) var value = 0
+
+    nonisolated func increment() {
+        value += 1
+    }
+}
+
+private actor DisplaySharingCoordinatorAsyncGate {
+    private var waitCount = 0
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        waitCount += 1
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func releaseOne() {
+        guard !continuations.isEmpty else { return }
+        continuations.removeFirst().resume()
+    }
+
+    func currentWaitCount() -> Int {
+        waitCount
+    }
+}
+
+private actor DisplaySharingCoordinatorOutcomeBox {
+    private var outcome: DisplayStartOutcome<Void>?
+
+    func store(_ outcome: DisplayStartOutcome<Void>) {
+        self.outcome = outcome
+    }
+
+    func isInvalidated() -> Bool {
+        if case .invalidated = outcome {
+            return true
+        }
+        return false
+    }
+}
+
+private final class DisplaySharingCoordinatorMockSCDisplayBox: NSObject {
+    @objc let displayID: CGDirectDisplayID
+    @objc let width: Int
+    @objc let height: Int
+    @objc let frame: CGRect
+
+    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
+        self.displayID = displayID
+        self.width = width
+        self.height = height
+        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        super.init()
+    }
+}
+
+private enum DisplaySharingCoordinatorMockSCDisplay {
+    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
+        let box = DisplaySharingCoordinatorMockSCDisplayBox(
+            displayID: displayID,
+            width: width,
+            height: height
+        )
+        return unsafeBitCast(box, to: SCDisplay.self)
+    }
+}
 
 @Suite(.serialized)
 struct DisplaySharingCoordinatorTests {
@@ -31,9 +142,445 @@ struct DisplaySharingCoordinatorTests {
         #expect(!Set([UInt32(1), UInt32(3)]).contains(physicalShareID))
     }
 
+    @MainActor
+    @Test func physicalDisplayShareIDStaysStableAcrossReorderedRegistration() throws {
+        let store = DisplayShareIDStore(storeURL: temporaryStoreURL())
+        let coordinator = DisplaySharingCoordinator(idStore: store)
+        let firstMain: CGDirectDisplayID = 101
+        let secondPhysical: CGDirectDisplayID = 102
+
+        coordinator.registerShareableDisplays([
+            .init(displayID: firstMain, isMain: true, virtualSerial: nil),
+            .init(displayID: secondPhysical, isMain: false, virtualSerial: nil)
+        ])
+        let initialMainID = try #require(coordinator.shareID(for: firstMain))
+        let initialSecondaryID = try #require(coordinator.shareID(for: secondPhysical))
+
+        coordinator.registerShareableDisplays([
+            .init(displayID: secondPhysical, isMain: false, virtualSerial: nil),
+            .init(displayID: firstMain, isMain: true, virtualSerial: nil)
+        ])
+
+        #expect(coordinator.shareID(for: firstMain) == initialMainID)
+        #expect(coordinator.shareID(for: secondPhysical) == initialSecondaryID)
+    }
+
+    @MainActor
+    @Test func removingRegisteredDisplayStopsActiveSharingSession() async throws {
+        let displayID: CGDirectDisplayID = 103
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let subscription = makeSubscription(displayID: displayID)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in .started(subscription.subscription) }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let startOutcome = try await coordinator.startSharing(display: display)
+        guard case .started = startOutcome else {
+            Issue.record("Expected sharing start to succeed.")
+            return
+        }
+        coordinator.registerShareableDisplays([])
+
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func startSharingFailsForUnregisteredDisplay() async {
+        let displayID: CGDirectDisplayID = 104
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let coordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
+
+        do {
+            _ = try await coordinator.startSharing(display: display)
+            Issue.record("Expected displayNotRegistered error.")
+        } catch let error as SharingStartError {
+            #expect(error == .displayNotRegistered(displayID))
+        } catch {
+            Issue.record("Expected SharingStartError.displayNotRegistered, got \(error)")
+        }
+
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func startSharingCancelsSubscriptionWhenRegistrationChangesDuringAcquire() async {
+        let displayID: CGDirectDisplayID = 105
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let acquireGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: displayID)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in
+                await acquireGate.wait()
+                return .started(subscription.subscription)
+            }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let task = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForGate(acquireGate, count: 1))
+
+        coordinator.registerShareableDisplays([])
+        let outcome = try? await task.value
+        if case .some(.invalidated) = outcome {
+        } else {
+            Issue.record("Expected invalidated outcome.")
+        }
+
+        await acquireGate.releaseOne()
+
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func startSharingInvalidatesImmediatelyWhenRegistrationChangesDuringAcquire() async {
+        let displayID: CGDirectDisplayID = 205
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let acquireGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: displayID)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in
+                await acquireGate.wait()
+                return .started(subscription.subscription)
+            }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let task = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForGate(acquireGate, count: 1))
+
+        coordinator.registerShareableDisplays([])
+        let invalidatedBeforeGateRelease = await waitForTaskInvalidation(task)
+        #expect(invalidatedBeforeGateRelease)
+
+        await acquireGate.releaseOne()
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func startSharingCancelsSubscriptionWhenRegistrationChangesDuringPrepare() async {
+        let displayID: CGDirectDisplayID = 106
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let prepareGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: displayID, retainGate: prepareGate)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in .started(subscription.subscription) }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let task = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForGate(prepareGate, count: 1))
+
+        coordinator.registerShareableDisplays([])
+        let outcome = try? await task.value
+        if case .some(.invalidated) = outcome {
+        } else {
+            Issue.record("Expected invalidated outcome.")
+        }
+
+        await prepareGate.releaseOne()
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func startSharingSucceedsWhenRegistrationRefreshKeepsSameDisplay() async throws {
+        let targetDisplayID: CGDirectDisplayID = 107
+        let otherDisplayID: CGDirectDisplayID = 108
+        let targetDisplay = DisplaySharingCoordinatorMockSCDisplay.make(
+            displayID: targetDisplayID,
+            width: 1920,
+            height: 1080
+        )
+        let acquireGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: targetDisplayID)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in
+                await acquireGate.wait()
+                return .started(subscription.subscription)
+            }
+        )
+        coordinator.registerShareableDisplays([
+            .init(displayID: targetDisplayID, isMain: true, virtualSerial: nil),
+            .init(displayID: otherDisplayID, isMain: false, virtualSerial: nil)
+        ])
+
+        let task = Task { @MainActor in
+            try await coordinator.startSharing(display: targetDisplay)
+        }
+        #expect(await waitForGate(acquireGate, count: 1))
+
+        coordinator.registerShareableDisplays([
+            .init(displayID: otherDisplayID, isMain: false, virtualSerial: nil),
+            .init(displayID: targetDisplayID, isMain: true, virtualSerial: nil)
+        ])
+        await acquireGate.releaseOne()
+
+        let outcome = try await task.value
+        guard case .started = outcome else {
+            Issue.record("Expected sharing start to succeed after registration refresh.")
+            return
+        }
+
+        #expect(coordinator.isSharing(displayID: targetDisplayID))
+        #expect(subscription.cancelCounter.value == 0)
+
+        coordinator.stopAllSharing()
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+    }
+
+    @MainActor
+    @Test func concurrentStartSharingForSameDisplayAcquiresShareOnlyOnce() async throws {
+        let displayID: CGDirectDisplayID = 111
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let acquireGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: displayID)
+        let startCoordinator = DisplayStreamStartCoordinator()
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            startCoordinator: startCoordinator,
+            acquireShare: { _, _ in
+                await acquireGate.wait()
+                return .started(subscription.subscription)
+            }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let firstTask = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForGate(acquireGate, count: 1))
+
+        let secondTask = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForCoordinatorWaiters(
+            startCoordinator,
+            kind: .sharing,
+            displayID: displayID,
+            count: 2
+        ))
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.shortStabilityWindow
+        var observedSecondAcquire = false
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await acquireGate.currentWaitCount() > 1 {
+                observedSecondAcquire = true
+                break
+            }
+            await Task.yield()
+        }
+        #expect(observedSecondAcquire == false)
+
+        await acquireGate.releaseOne()
+
+        let firstOutcome = try await firstTask.value
+        let secondOutcome = try await secondTask.value
+        if case .started = firstOutcome {
+        } else {
+            Issue.record("Expected first sharing start to succeed.")
+        }
+        if case .started = secondOutcome {
+        } else {
+            Issue.record("Expected second sharing start to reuse the in-flight start.")
+        }
+
+        #expect(coordinator.isSharing(displayID: displayID))
+        #expect(subscription.cancelCounter.value == 0)
+
+        coordinator.stopAllSharing()
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+    }
+
+    @MainActor
+    @Test func stopAllSharingInvalidatesInFlightStartDuringAcquire() async throws {
+        let displayID: CGDirectDisplayID = 112
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let acquireGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: displayID)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in
+                await acquireGate.wait()
+                return .started(subscription.subscription)
+            }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let task = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForGate(acquireGate, count: 1))
+
+        coordinator.stopAllSharing()
+
+        #expect(await waitForTaskInvalidation(task))
+
+        await acquireGate.releaseOne()
+        let outcome = try await task.value
+        if case .invalidated = outcome {
+        } else {
+            Issue.record("Expected in-flight sharing start to be invalidated by stopAllSharing.")
+        }
+
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func stopAllSharingPreventsStaleSessionWriteWhenPrepareResumesAfterInvalidation() async throws {
+        let displayID: CGDirectDisplayID = 113
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let prepareGate = DisplaySharingCoordinatorAsyncGate()
+        let subscription = makeSubscription(displayID: displayID, retainGate: prepareGate)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in .started(subscription.subscription) }
+        )
+        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
+
+        let task = Task { @MainActor in
+            try await coordinator.startSharing(display: display)
+        }
+        #expect(await waitForGate(prepareGate, count: 1))
+
+        coordinator.stopAllSharing()
+        #expect(await waitForTaskInvalidation(task))
+
+        await prepareGate.releaseOne()
+        let outcome = try await task.value
+        if case .invalidated = outcome {
+        } else {
+            Issue.record("Expected sharing start to stay invalidated after stopAllSharing.")
+        }
+
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+    }
+
+    @MainActor
+    @Test func mainTargetContractIsActiveOrKnownInactiveAndHubIsNilWhenUnresolved() async throws {
+        let unresolvedCoordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
+        #expect(unresolvedCoordinator.state(for: ShareTarget.main) == .knownInactive)
+        #expect(unresolvedCoordinator.sessionHub(for: ShareTarget.main) == nil)
+
+        let inactiveCoordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
+        inactiveCoordinator.registerShareableDisplays([.init(displayID: 109, isMain: true, virtualSerial: nil)])
+        #expect(inactiveCoordinator.state(for: ShareTarget.main) == .knownInactive)
+        #expect(inactiveCoordinator.sessionHub(for: ShareTarget.main) == nil)
+
+        let activeSubscription = makeSubscription(displayID: 110)
+        let activeCoordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in .started(activeSubscription.subscription) }
+        )
+        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: 110, width: 1920, height: 1080)
+        activeCoordinator.registerShareableDisplays([.init(displayID: 110, isMain: true, virtualSerial: nil)])
+        let outcome = try await activeCoordinator.startSharing(display: display)
+        guard case .started = outcome else {
+            Issue.record("Expected active sharing start to succeed.")
+            return
+        }
+
+        #expect(activeCoordinator.state(for: ShareTarget.main) == .active)
+        let hub = try #require(activeCoordinator.sessionHub(for: ShareTarget.main))
+        #expect(ObjectIdentifier(hub) == ObjectIdentifier(activeSubscription.session.sessionHub))
+
+        activeCoordinator.stopAllSharing()
+        #expect(await waitUntil { activeSubscription.cancelCounter.value == 1 })
+    }
+
     private func temporaryStoreURL() -> URL {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("display-sharing-coordinator-tests-\(UUID().uuidString)", isDirectory: true)
         return base.appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
+    }
+
+    private func makeSubscription(
+        displayID: CGDirectDisplayID,
+        retainGate: DisplaySharingCoordinatorAsyncGate? = nil
+    ) -> (
+        subscription: DisplayShareSubscription,
+        session: DisplaySharingCoordinatorDummySession,
+        cancelCounter: DisplaySharingCoordinatorCounter
+    ) {
+        let cancelCounter = DisplaySharingCoordinatorCounter()
+        let releaseCounter = DisplaySharingCoordinatorCounter()
+        let session = DisplaySharingCoordinatorDummySession(
+            retainGate: retainGate,
+            releaseCounter: releaseCounter
+        )
+        let subscription = DisplayShareSubscription(
+            displayID: displayID,
+            sessionHub: session.sessionHub,
+            session: session,
+            cancelClosure: { cancelCounter.increment() }
+        )
+        return (subscription, session, cancelCounter)
+    }
+
+    private func waitForGate(
+        _ gate: DisplaySharingCoordinatorAsyncGate,
+        count: Int
+    ) async -> Bool {
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await gate.currentWaitCount() >= count {
+                return true
+            }
+            await Task.yield()
+        }
+        return await gate.currentWaitCount() >= count
+    }
+
+    private func waitForTaskInvalidation(
+        _ task: Task<DisplayStartOutcome<Void>, Error>
+    ) async -> Bool {
+        let box = DisplaySharingCoordinatorOutcomeBox()
+        Task {
+            guard let outcome = try? await task.value else { return }
+            await box.store(outcome)
+        }
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await box.isInvalidated() {
+                return true
+            }
+            await Task.yield()
+        }
+        return await box.isInvalidated()
+    }
+
+    private func waitForCoordinatorWaiters(
+        _ coordinator: DisplayStreamStartCoordinator,
+        kind: DisplayStartKind,
+        displayID: CGDirectDisplayID,
+        count: Int
+    ) async -> Bool {
+        let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await MainActor.run(body: {
+                coordinator.waiterCountForTesting(kind: kind, displayID: displayID) >= count
+            }) {
+                return true
+            }
+            await Task.yield()
+        }
+        return await MainActor.run(body: {
+            coordinator.waiterCountForTesting(kind: kind, displayID: displayID) >= count
+        })
     }
 }

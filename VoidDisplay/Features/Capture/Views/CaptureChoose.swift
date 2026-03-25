@@ -190,7 +190,7 @@ struct IsCapturing: View {
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let monitoringSession = capture.screenCaptureSessions.first(where: { $0.displayID == display.displayID })
         let isMonitoring = monitoringSession?.state == .active
-        let isStarting = viewModel.startingDisplayIDs.contains(display.displayID) || monitoringSession?.state == .starting
+        let isStarting = capture.isStarting(displayID: display.displayID) || monitoringSession?.state == .starting
 
         return CaptureDisplayRow(
             display: display,

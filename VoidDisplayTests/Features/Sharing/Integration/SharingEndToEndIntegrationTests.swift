@@ -92,7 +92,7 @@ struct SharingEndToEndIntegrationTests {
         }
         let boundPort = binding.boundPort
 
-        try await service.startSharing(display: display)
+        _ = try await service.startSharing(display: display)
         let shareID = try #require(service.shareID(for: displayID))
 
         let displayPath = "/display/\(shareID)"

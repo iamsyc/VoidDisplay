@@ -12,10 +12,12 @@ import Observation
 @Observable
 final class CaptureController {
     var screenCaptureSessions: [ScreenMonitoringSession] = []
+    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     @ObservationIgnored let displayCatalogState = ScreenCaptureDisplayCatalogState()
 
     @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
     @ObservationIgnored private let captureMonitoringLifecycleService: any CaptureMonitoringLifecycleServiceProtocol
+    @ObservationIgnored private var observedStartTokensByDisplayID: [CGDirectDisplayID: Set<UUID>] = [:]
 
     init(
         captureMonitoringService: any CaptureMonitoringServiceProtocol,
@@ -31,16 +33,25 @@ final class CaptureController {
         captureMonitoringService.monitoringSession(for: id)
     }
 
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        startingDisplayIDs.contains(displayID)
+    }
+
     func startMonitoring(
         display: SCDisplay,
         metadata: CaptureMonitoringDisplayMetadata
-    ) async throws -> UUID {
-        try await mutateAndSyncAsync {
-            try await captureMonitoringLifecycleService.startMonitoring(
-                display: display,
-                metadata: metadata
-            )
+    ) async throws -> DisplayStartOutcome<UUID> {
+        let displayID = display.displayID
+        let startToken = beginObservedStart(displayID: displayID)
+        defer {
+            endObservedStart(displayID: displayID, token: startToken)
+            syncCaptureMonitoringState()
         }
+
+        return try await captureMonitoringLifecycleService.startMonitoring(
+            display: display,
+            metadata: metadata
+        )
     }
 
     func activateMonitoringSession(id: UUID) {
@@ -74,8 +85,9 @@ final class CaptureController {
     }
 
     func removeMonitoringSessions(displayID: CGDirectDisplayID) {
+        clearObservedStarts(displayID: displayID)
         mutateAndSync {
-            captureMonitoringService.removeMonitoringSessions(displayID: displayID)
+            captureMonitoringLifecycleService.removeMonitoringSessions(displayID: displayID)
         }
     }
 
@@ -91,6 +103,31 @@ final class CaptureController {
 
     private func syncCaptureMonitoringState() {
         screenCaptureSessions = captureMonitoringService.currentSessions
+    }
+
+    private func beginObservedStart(displayID: CGDirectDisplayID) -> UUID {
+        let token = UUID()
+        var tokens = observedStartTokensByDisplayID[displayID] ?? []
+        tokens.insert(token)
+        observedStartTokensByDisplayID[displayID] = tokens
+        startingDisplayIDs.insert(displayID)
+        return token
+    }
+
+    private func endObservedStart(displayID: CGDirectDisplayID, token: UUID) {
+        guard var tokens = observedStartTokensByDisplayID[displayID] else { return }
+        tokens.remove(token)
+        if tokens.isEmpty {
+            observedStartTokensByDisplayID.removeValue(forKey: displayID)
+            startingDisplayIDs.remove(displayID)
+        } else {
+            observedStartTokensByDisplayID[displayID] = tokens
+        }
+    }
+
+    private func clearObservedStarts(displayID: CGDirectDisplayID) {
+        observedStartTokensByDisplayID.removeValue(forKey: displayID)
+        startingDisplayIDs.remove(displayID)
     }
 
     private func mutateAndSync(_ mutation: () -> Void) {

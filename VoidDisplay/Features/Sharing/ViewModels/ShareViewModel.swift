@@ -12,6 +12,7 @@ final class ShareViewModel {
 
     struct SharingQueries {
         var isWebServiceRunning: @MainActor () -> Bool
+        var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
         var sharePageAddress: @MainActor (CGDirectDisplayID) -> String?
         var preferredWebServicePort: @MainActor () -> UInt16
     }
@@ -20,7 +21,7 @@ final class ShareViewModel {
         var startWebService: @MainActor (UInt16) async -> WebServiceStartResult
         var stopWebService: @MainActor () -> Void
         var registerShareableDisplays: @MainActor ([SCDisplay], @escaping (CGDirectDisplayID) -> UInt32?) -> Void
-        var beginSharing: @MainActor (SCDisplay) async throws -> Void
+        var beginSharing: @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>
         var stopSharing: @MainActor (CGDirectDisplayID) -> Void
     }
 
@@ -40,6 +41,7 @@ final class ShareViewModel {
             .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { sharing.isWebServiceRunning },
+                    isStartingDisplayID: { displayID in sharing.isStarting(displayID: displayID) },
                     sharePageAddress: { displayID in sharing.sharePageAddress(for: displayID) },
                     preferredWebServicePort: { sharing.preferredWebServicePort }
                 ),
@@ -81,7 +83,6 @@ final class ShareViewModel {
     }
     var portInputErrorMessage: String?
     var isStartingService = false
-    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var userFacingAlert: UserFacingAlertState?
 
     private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
@@ -238,57 +239,52 @@ final class ShareViewModel {
         topologyCoordinator.visibleDisplays(from: displays)
     }
 
-    @discardableResult
-    func withDisplayStartLock(
-        displayID: CGDirectDisplayID,
-        operation: () async -> Void
-    ) async -> Bool {
-        guard !startingDisplayIDs.contains(displayID) else { return false }
-        startingDisplayIDs.insert(displayID)
-        defer { startingDisplayIDs.remove(displayID) }
-        await operation()
-        return true
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        dependencies.sharingQueries.isStartingDisplayID(displayID)
     }
 
     func startSharing(display: SCDisplay) async {
-        _ = await withDisplayStartLock(displayID: display.displayID) {
-            let ready: Bool
-            if dependencies.sharingQueries.isWebServiceRunning() {
-                ready = true
-            } else {
-                let requestedPort: UInt16
-                switch SharePortValidationError.parse(servicePortInput) {
-                case .success(let parsed):
-                    requestedPort = parsed
-                case .failure(let validationError):
-                    presentPortInputError(validationError.userMessage)
-                    return
-                }
-                let result = await dependencies.sharingActions.startWebService(requestedPort)
-                if case .failed(let failure) = result {
-                    presentPortInputError(failure.userMessage)
-                    return
-                }
-                ready = true
-            }
-            guard ready else {
-                presentError(
-                    title: String(localized: "Share Failed"),
-                    message: String(localized: "Web service is not running.")
-                )
+        guard !isStarting(displayID: display.displayID) else { return }
+
+        let ready: Bool
+        if dependencies.sharingQueries.isWebServiceRunning() {
+            ready = true
+        } else {
+            let requestedPort: UInt16
+            switch SharePortValidationError.parse(servicePortInput) {
+            case .success(let parsed):
+                requestedPort = parsed
+            case .failure(let validationError):
+                presentPortInputError(validationError.userMessage)
                 return
             }
-
-            do {
-                try await dependencies.sharingActions.beginSharing(display)
-            } catch {
-                dependencies.sharingActions.stopSharing(display.displayID)
-                AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
-                presentError(
-                    title: String(localized: "Share Failed"),
-                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing."))
-                )
+            let result = await dependencies.sharingActions.startWebService(requestedPort)
+            if case .failed(let failure) = result {
+                presentPortInputError(failure.userMessage)
+                return
             }
+            ready = true
+        }
+        guard ready else {
+            presentError(
+                title: String(localized: "Share Failed"),
+                message: String(localized: "Web service is not running.")
+            )
+            return
+        }
+
+        do {
+            let outcome = try await dependencies.sharingActions.beginSharing(display)
+            if case .invalidated = outcome {
+                return
+            }
+        } catch {
+            dependencies.sharingActions.stopSharing(display.displayID)
+            AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
+            presentError(
+                title: String(localized: "Share Failed"),
+                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing."))
+            )
         }
     }
 

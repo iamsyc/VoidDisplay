@@ -12,10 +12,11 @@ final class CaptureChooseViewModel {
 
     struct CaptureActions {
         var monitoringSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?
+        var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
         var startMonitoring: @MainActor (
             SCDisplay,
             CaptureMonitoringDisplayMetadata
-        ) async throws -> UUID
+        ) async throws -> DisplayStartOutcome<UUID>
     }
 
     struct VirtualDisplayQueries {
@@ -35,6 +36,9 @@ final class CaptureChooseViewModel {
                     monitoringSessionForDisplayID: { displayID in
                         capture.screenCaptureSessions.first(where: { $0.displayID == displayID })
                     },
+                    isStartingDisplayID: { displayID in
+                        capture.isStarting(displayID: displayID)
+                    },
                     startMonitoring: { display, metadata in
                         try await capture.startMonitoring(display: display, metadata: metadata)
                     }
@@ -50,7 +54,6 @@ final class CaptureChooseViewModel {
     }
 
     let catalog: ScreenCaptureDisplayCatalogState
-    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var userFacingAlert: UserFacingAlertState?
 
     private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
@@ -100,46 +103,43 @@ final class CaptureChooseViewModel {
         topologyCoordinator.visibleDisplays(from: displays)
     }
 
-    @discardableResult
-    func withDisplayStartLock(
-        displayID: CGDirectDisplayID,
-        operation: () async -> Void
-    ) async -> Bool {
-        guard !startingDisplayIDs.contains(displayID) else { return false }
-        startingDisplayIDs.insert(displayID)
-        defer { startingDisplayIDs.remove(displayID) }
-        await operation()
-        return true
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        dependencies.captureActions.isStartingDisplayID(displayID)
     }
 
     func startMonitoring(
         display: SCDisplay,
         openWindow: @escaping (UUID) -> Void
     ) async {
-        _ = await withDisplayStartLock(displayID: display.displayID) {
-            if let existingSession = dependencies.captureActions.monitoringSessionForDisplayID(display.displayID) {
-                openWindow(existingSession.id)
-                return
-            }
+        if let existingSession = dependencies.captureActions.monitoringSessionForDisplayID(display.displayID) {
+            openWindow(existingSession.id)
+            return
+        }
+        guard !isStarting(displayID: display.displayID) else { return }
 
-            do {
-                let metadata = CaptureMonitoringDisplayMetadata(
-                    displayName: displayName(for: display),
-                    resolutionText: resolutionText(for: display),
-                    isVirtualDisplay: isVirtualDisplay(display)
-                )
-                let sessionID = try await dependencies.captureActions.startMonitoring(display, metadata)
+        do {
+            let metadata = CaptureMonitoringDisplayMetadata(
+                displayName: displayName(for: display),
+                resolutionText: resolutionText(for: display),
+                isVirtualDisplay: isVirtualDisplay(display)
+            )
+            let outcome = try await dependencies.captureActions.startMonitoring(display, metadata)
+            switch outcome {
+            case .started(let sessionID):
                 openWindow(sessionID)
-            } catch {
-                AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
-                userFacingAlert = UserFacingAlertState(
-                    title: String(localized: "Start Monitoring Failed"),
-                    message: AppErrorMapper.userMessage(
-                        for: error,
-                        fallback: String(localized: "Failed to start monitoring.")
-                    )
-                )
+            case .invalidated:
+                break
             }
+        } catch is CancellationError {
+        } catch {
+            AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
+            userFacingAlert = UserFacingAlertState(
+                title: String(localized: "Start Monitoring Failed"),
+                message: AppErrorMapper.userMessage(
+                    for: error,
+                    fallback: String(localized: "Failed to start monitoring.")
+                )
+            )
         }
     }
 

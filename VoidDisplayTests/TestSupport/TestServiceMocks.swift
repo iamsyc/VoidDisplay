@@ -54,6 +54,8 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
 
 @MainActor
 final class MockSharingService: SharingServiceProtocol {
+    typealias StartSharingHandler = @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>
+
     var webServicePortValue: UInt16 = 8081
     var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
     var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
@@ -63,6 +65,7 @@ final class MockSharingService: SharingServiceProtocol {
     var currentWebServer: WebServer?
     var hasAnyActiveSharing = false
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
+    var startingDisplayIDs: Set<CGDirectDisplayID> = []
 
     var startResult: WebServiceStartResult = .started(
         WebServiceBinding(requestedPort: 8081, boundPort: 8081)
@@ -77,6 +80,12 @@ final class MockSharingService: SharingServiceProtocol {
     var streamClientCountsByTarget: [ShareTarget: Int] = [:]
     var shareIDByDisplayID: [CGDirectDisplayID: UInt32] = [:]
     var shareTargetByDisplayID: [CGDirectDisplayID: ShareTarget] = [:]
+    var onStopSharing: (@MainActor @Sendable (CGDirectDisplayID) -> Void)?
+    var startSharingHandler: StartSharingHandler?
+
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        startingDisplayIDs.contains(displayID)
+    }
 
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
@@ -113,15 +122,20 @@ final class MockSharingService: SharingServiceProtocol {
         _ = virtualSerialResolver(CGDirectDisplayID(0))
     }
 
-    func startSharing(display: SCDisplay) async throws {
+    func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
+        if let startSharingHandler {
+            return try await startSharingHandler(display)
+        }
         hasAnyActiveSharing = true
         activeSharingDisplayIDs.insert(display.displayID)
+        return .started(())
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {
         stopSharingCallCount += 1
         activeSharingDisplayIDs.remove(displayID)
         hasAnyActiveSharing = !activeSharingDisplayIDs.isEmpty
+        onStopSharing?(displayID)
     }
 
     func stopAllSharing() {

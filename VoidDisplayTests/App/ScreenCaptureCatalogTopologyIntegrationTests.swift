@@ -141,6 +141,7 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { true },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -150,7 +151,7 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
                     registerShareableDisplays: { _, _ in
                         registerCounter.value += 1
                     },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -187,6 +188,7 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { true },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -196,7 +198,7 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
                     registerShareableDisplays: { _, _ in
                         registerCounter.value += 1
                     },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -234,7 +236,8 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
         .init(
             captureActions: .init(
                 monitoringSessionForDisplayID: { _ in nil },
-                startMonitoring: { _, _ in UUID() }
+                isStartingDisplayID: { _ in false },
+                startMonitoring: { _, _ in .started(UUID()) }
             ),
             virtualDisplayQueries: .init(
                 isManagedVirtualDisplay: { _ in false }

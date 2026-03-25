@@ -1,7 +1,98 @@
 import Foundation
 import CoreGraphics
+import ScreenCaptureKit
 import Testing
 @testable import VoidDisplay
+
+private final class SharingServiceDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let sessionHub = WebRTCSessionHub()
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
+    nonisolated func stop() async {}
+}
+
+private final class SharingServiceCounter: @unchecked Sendable {
+    nonisolated(unsafe) var value = 0
+
+    nonisolated func increment() {
+        value += 1
+    }
+}
+
+private actor SharingServiceAsyncGate {
+    private var waitCount = 0
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        waitCount += 1
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func releaseOne() {
+        guard !continuations.isEmpty else { return }
+        continuations.removeFirst().resume()
+    }
+
+    func currentWaitCount() -> Int {
+        waitCount
+    }
+}
+
+private actor SharingServiceOutcomeBox {
+    private var outcome: DisplayStartOutcome<Void>?
+
+    func store(_ outcome: DisplayStartOutcome<Void>) {
+        self.outcome = outcome
+    }
+
+    func isInvalidated() -> Bool {
+        if case .invalidated = outcome {
+            return true
+        }
+        return false
+    }
+}
+
+private final class SharingServiceMockSCDisplayBox: NSObject {
+    @objc let displayID: CGDirectDisplayID
+    @objc let width: Int
+    @objc let height: Int
+    @objc let frame: CGRect
+
+    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
+        self.displayID = displayID
+        self.width = width
+        self.height = height
+        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        super.init()
+    }
+}
+
+private enum SharingServiceMockSCDisplay {
+    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
+        let box = SharingServiceMockSCDisplayBox(displayID: displayID, width: width, height: height)
+        return unsafeBitCast(box, to: SCDisplay.self)
+    }
+}
 
 struct SharingServiceTests {
 
@@ -57,6 +148,95 @@ struct SharingServiceTests {
         #expect(mock.stopCallCount == 1)
         #expect(mock.disconnectCallCount == 1)
         #expect(sut.isWebServiceRunning == false)
+    }
+
+    @MainActor @Test func stopWebServiceStopsActiveSharingSessionsBeforeStoppingController() async throws {
+        let mock = MockWebServiceController()
+        let displayID = CGDirectDisplayID(21)
+        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let cancelCounter = SharingServiceCounter()
+        let sut = makeService(
+            webServiceController: mock,
+            acquireShare: { _, _ in
+                .started(DisplayShareSubscription(
+                    displayID: displayID,
+                    sessionHub: WebRTCSessionHub(),
+                    session: SharingServiceDummySession(),
+                    cancelClosure: { cancelCounter.increment() }
+                ))
+            }
+        )
+        sut.registerShareableDisplays([display], virtualSerialResolver: { _ in nil })
+        let outcome = try await sut.startSharing(display: display)
+        guard case .started = outcome else {
+            Issue.record("Expected sharing start to succeed.")
+            return
+        }
+
+        sut.stopWebService()
+
+        #expect(await waitUntil { cancelCounter.value == 1 })
+        #expect(sut.hasAnyActiveSharing == false)
+        #expect(mock.disconnectCallCount == 1)
+        #expect(mock.stopCallCount == 1)
+    }
+
+    @MainActor @Test func stopWebServiceInvalidatesInFlightSharingStart() async throws {
+        let mock = MockWebServiceController()
+        let gate = SharingServiceAsyncGate()
+        let displayID = CGDirectDisplayID(23)
+        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let cancelCounter = SharingServiceCounter()
+        let sut = makeService(
+            webServiceController: mock,
+            acquireShare: { _, _ in
+                await gate.wait()
+                return .started(DisplayShareSubscription(
+                    displayID: displayID,
+                    sessionHub: WebRTCSessionHub(),
+                    session: SharingServiceDummySession(),
+                    cancelClosure: { cancelCounter.increment() }
+                ))
+            }
+        )
+        sut.registerShareableDisplays([display], virtualSerialResolver: { _ in nil })
+
+        let task = Task { @MainActor in
+            try await sut.startSharing(display: display)
+        }
+
+        #expect(await waitForSharingServiceGate(gate, count: 1))
+
+        sut.stopWebService()
+
+        #expect(await waitForSharingServiceTaskInvalidation(task))
+
+        await gate.releaseOne()
+        let outcome = try await task.value
+        if case .invalidated = outcome {
+        } else {
+            Issue.record("Expected in-flight sharing start to be invalidated when the web service stops.")
+        }
+
+        #expect(await waitUntil { cancelCounter.value == 1 })
+        #expect(sut.hasAnyActiveSharing == false)
+        #expect(mock.disconnectCallCount == 1)
+        #expect(mock.stopCallCount == 1)
+    }
+
+    @MainActor @Test func startSharingPropagatesDisplayNotRegisteredError() async {
+        let displayID = CGDirectDisplayID(22)
+        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sut = makeService(webServiceController: MockWebServiceController())
+
+        do {
+            _ = try await sut.startSharing(display: display)
+            Issue.record("Expected displayNotRegistered error.")
+        } catch let error as SharingStartError {
+            #expect(error == .displayNotRegistered(displayID))
+        } catch {
+            Issue.record("Expected SharingStartError.displayNotRegistered, got \(error)")
+        }
     }
 
     @MainActor @Test func activeStreamClientCountReflectsControllerValue() {
@@ -124,15 +304,58 @@ struct SharingServiceTests {
     }
 
     @MainActor
-    private func makeService(webServiceController: MockWebServiceController) -> SharingService {
+    private func makeService(
+        webServiceController: MockWebServiceController,
+        acquireShare: DisplaySharingCoordinator.AcquireShare? = nil
+    ) -> SharingService {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
             .appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
         let idStore = DisplayShareIDStore(storeURL: storeURL)
-        let coordinator = DisplaySharingCoordinator(idStore: idStore)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: idStore,
+            acquireShare: acquireShare
+        )
         return SharingService(
             webServiceController: webServiceController,
             sharingCoordinator: coordinator
         )
     }
+}
+
+private func waitForSharingServiceGate(
+    _ gate: SharingServiceAsyncGate,
+    count: Int,
+    timeoutNanoseconds: UInt64 = AsyncTestTimeouts.defaultAsyncAssertion,
+    pollNanoseconds: UInt64 = 10_000_000
+) async -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if await gate.currentWaitCount() >= count {
+            return true
+        }
+        try? await Task.sleep(for: .nanoseconds(pollNanoseconds))
+    }
+    return await gate.currentWaitCount() >= count
+}
+
+private func waitForSharingServiceTaskInvalidation(
+    _ task: Task<DisplayStartOutcome<Void>, Error>,
+    timeoutNanoseconds: UInt64 = AsyncTestTimeouts.defaultAsyncAssertion,
+    pollNanoseconds: UInt64 = 10_000_000
+) async -> Bool {
+    let box = SharingServiceOutcomeBox()
+    Task {
+        guard let outcome = try? await task.value else { return }
+        await box.store(outcome)
+    }
+
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if await box.isInvalidated() {
+            return true
+        }
+        try? await Task.sleep(for: .nanoseconds(pollNanoseconds))
+    }
+    return await box.isInvalidated()
 }

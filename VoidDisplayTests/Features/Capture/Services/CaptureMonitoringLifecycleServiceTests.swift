@@ -130,7 +130,7 @@ struct CaptureMonitoringLifecycleServiceTests {
         let previewRecord = makePreview(displayID: 701)
         let lifecycle = CaptureMonitoringLifecycleService(
             captureMonitoringService: service,
-            acquirePreview: { _ in previewRecord.subscription }
+            acquirePreview: { _, _ in .started(previewRecord.subscription) }
         )
         let display = CaptureMonitoringLifecycleMockSCDisplay.make(
             displayID: 701,
@@ -143,7 +143,15 @@ struct CaptureMonitoringLifecycleServiceTests {
             isVirtualDisplay: false
         )
 
-        let sessionID = try await lifecycle.startMonitoring(display: display, metadata: metadata)
+        let outcome = try await lifecycle.startMonitoring(display: display, metadata: metadata)
+        let sessionID: UUID
+        switch outcome {
+        case .started(let id):
+            sessionID = id
+        case .invalidated:
+            Issue.record("Expected monitoring start to succeed.")
+            return
+        }
 
         #expect(service.addCallCount == 1)
         #expect(service.currentSessions.count == 1)
@@ -160,9 +168,9 @@ struct CaptureMonitoringLifecycleServiceTests {
         var acquirePreviewCallCount = 0
         let lifecycle = CaptureMonitoringLifecycleService(
             captureMonitoringService: service,
-            acquirePreview: { _ in
+            acquirePreview: { _, _ in
                 acquirePreviewCallCount += 1
-                return makePreview(displayID: 702).subscription
+                return .started(makePreview(displayID: 702).subscription)
             }
         )
         let display = CaptureMonitoringLifecycleMockSCDisplay.make(
@@ -171,7 +179,7 @@ struct CaptureMonitoringLifecycleServiceTests {
             height: 1080
         )
 
-        let sessionID = try await lifecycle.startMonitoring(
+        let outcome = try await lifecycle.startMonitoring(
             display: display,
             metadata: .init(
                 displayName: "Ignored",
@@ -179,6 +187,14 @@ struct CaptureMonitoringLifecycleServiceTests {
                 isVirtualDisplay: false
             )
         )
+        let sessionID: UUID
+        switch outcome {
+        case .started(let id):
+            sessionID = id
+        case .invalidated:
+            Issue.record("Expected monitoring start to reuse existing session.")
+            return
+        }
 
         #expect(sessionID == existing.session.id)
         #expect(acquirePreviewCallCount == 0)
@@ -191,9 +207,9 @@ struct CaptureMonitoringLifecycleServiceTests {
         var usedInjectedAcquirePreview = false
         let lifecycle = CaptureMonitoringLifecycleService(
             captureMonitoringService: service,
-            acquirePreview: { _ in
+            acquirePreview: { _, _ in
                 usedInjectedAcquirePreview = true
-                return makePreview(displayID: 703).subscription
+                return .started(makePreview(displayID: 703).subscription)
             }
         )
         let display = CaptureMonitoringLifecycleMockSCDisplay.make(
@@ -222,10 +238,10 @@ struct CaptureMonitoringLifecycleServiceTests {
         )
         let lifecycle = CaptureMonitoringLifecycleService(
             captureMonitoringService: service,
-            acquirePreview: { _ in
+            acquirePreview: { _, _ in
                 switch await gate.nextOutcome() {
                 case .success(let subscription):
-                    return subscription
+                    return .started(subscription)
                 case .failure(let error):
                     throw error
                 }
@@ -256,8 +272,24 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(stayedSingleAcquire)
 
         await gate.release(call: 1)
-        let firstID = try await firstTask.value
-        let secondID = try await secondTask.value
+        let firstOutcome = try await firstTask.value
+        let secondOutcome = try await secondTask.value
+        let firstID: UUID
+        let secondID: UUID
+        switch firstOutcome {
+        case .started(let id):
+            firstID = id
+        case .invalidated:
+            Issue.record("Expected first monitoring start to succeed.")
+            return
+        }
+        switch secondOutcome {
+        case .started(let id):
+            secondID = id
+        case .invalidated:
+            Issue.record("Expected second monitoring start to reuse the same start outcome.")
+            return
+        }
 
         #expect(firstID == secondID)
         #expect(service.addCallCount == 1)
@@ -346,6 +378,49 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(service.currentSessions.isEmpty)
     }
 
+    @Test func removeMonitoringSessionsRemovesSingleMatchingDisplaySession() {
+        let record = makeSession(id: UUID(), displayID: 714)
+        let service = CaptureMonitoringService(initialSessions: [record.session])
+        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+
+        lifecycle.removeMonitoringSessions(displayID: 714)
+
+        #expect(service.currentSessions.isEmpty)
+        #expect(record.cancelCounter.value == 1)
+    }
+
+    @Test func removeMonitoringSessionsRemovesAllMatchingSessionsAndPreservesOtherDisplays() {
+        let first = makeSession(id: UUID(), displayID: 715)
+        let second = makeSession(id: UUID(), displayID: 715)
+        let third = makeSession(id: UUID(), displayID: 716)
+        let service = CaptureMonitoringService(initialSessions: [
+            first.session,
+            second.session,
+            third.session
+        ])
+        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+
+        lifecycle.removeMonitoringSessions(displayID: 715)
+
+        #expect(service.currentSessions.map(\.displayID) == [716])
+        #expect(first.cancelCounter.value == 1)
+        #expect(second.cancelCounter.value == 1)
+        #expect(third.cancelCounter.value == 0)
+    }
+
+    @Test func removeMonitoringSessionsIgnoresUnknownDisplayID() {
+        let first = makeSession(id: UUID(), displayID: 717)
+        let second = makeSession(id: UUID(), displayID: 718)
+        let service = CaptureMonitoringService(initialSessions: [first.session, second.session])
+        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+
+        lifecycle.removeMonitoringSessions(displayID: 999)
+
+        #expect(service.currentSessions.map(\.id) == [first.session.id, second.session.id])
+        #expect(first.cancelCounter.value == 0)
+        #expect(second.cancelCounter.value == 0)
+    }
+
     @Test func failedInFlightStartClearsMutualExclusionAndAllowsRetry() async {
         let service = MockCaptureMonitoringService()
         let secondPreview = makePreview(displayID: 713)
@@ -357,10 +432,10 @@ struct CaptureMonitoringLifecycleServiceTests {
         )
         let lifecycle = CaptureMonitoringLifecycleService(
             captureMonitoringService: service,
-            acquirePreview: { _ in
+            acquirePreview: { _, _ in
                 switch await gate.nextOutcome() {
                 case .success(let subscription):
-                    return subscription
+                    return .started(subscription)
                 case .failure(let error):
                     throw error
                 }
@@ -396,12 +471,133 @@ struct CaptureMonitoringLifecycleServiceTests {
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 2))
         await gate.release(call: 2)
-        let retryID = try? await retryTask.value
+        let retryOutcome = try? await retryTask.value
+        let retryID: UUID?
+        if case .some(.started(let id)) = retryOutcome {
+            retryID = id
+        } else {
+            retryID = nil
+        }
 
         #expect(retryID != nil)
         #expect(service.addCallCount == 1)
         #expect(service.currentSessions.count == 1)
         #expect(service.currentSessions.first?.displayID == 713)
+    }
+
+    @Test func removeMonitoringSessionsCancelsInFlightStartAndAllowsCleanRetry() async throws {
+        let service = CaptureMonitoringService()
+        let firstPreview = makePreview(displayID: 719)
+        let secondPreview = makePreview(displayID: 719)
+        let gate = CaptureMonitoringLifecycleAcquirePreviewGate(
+            scriptedOutcomes: [
+                .success(firstPreview.subscription),
+                .success(secondPreview.subscription)
+            ]
+        )
+        let lifecycle = CaptureMonitoringLifecycleService(
+            captureMonitoringService: service,
+            acquirePreview: { _, _ in
+                switch await gate.nextOutcome() {
+                case .success(let subscription):
+                    return .started(subscription)
+                case .failure(let error):
+                    throw error
+                }
+            }
+        )
+        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+            displayID: 719,
+            width: 1920,
+            height: 1080
+        )
+        let metadata = CaptureMonitoringDisplayMetadata(
+            displayName: "Rebuild Display",
+            resolutionText: "1920 × 1080",
+            isVirtualDisplay: false
+        )
+
+        let firstTask = Task { @MainActor in
+            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+        }
+        #expect(await waitForAcquirePreviewCall(gate, count: 1))
+
+        lifecycle.removeMonitoringSessions(displayID: 719)
+        await gate.release(call: 1)
+
+        let firstOutcome = try await firstTask.value
+        if case .invalidated = firstOutcome {
+        } else {
+            Issue.record("Expected in-flight start to be invalidated by removeMonitoringSessions.")
+        }
+
+        #expect(service.currentSessions.isEmpty)
+        #expect(await waitUntil { firstPreview.cancelCounter.value == 1 })
+
+        let retryTask = Task { @MainActor in
+            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+        }
+        #expect(await waitForAcquirePreviewCall(gate, count: 2))
+        await gate.release(call: 2)
+        let retryOutcome = try await retryTask.value
+        let retryID: UUID
+        switch retryOutcome {
+        case .started(let id):
+            retryID = id
+        case .invalidated:
+            Issue.record("Expected retry monitoring start to succeed.")
+            return
+        }
+
+        #expect(retryID == service.currentSessions.first?.id)
+        #expect(service.currentSessions.count == 1)
+        #expect(secondPreview.cancelCounter.value == 0)
+    }
+
+    @Test func removeMonitoringSessionsPreventsStaleSessionWriteWhenAcquireResumesAfterInvalidation() async throws {
+        let service = CaptureMonitoringService()
+        let preview = makePreview(displayID: 720)
+        let gate = CaptureMonitoringLifecycleAcquirePreviewGate(
+            scriptedOutcomes: [.success(preview.subscription)]
+        )
+        let lifecycle = CaptureMonitoringLifecycleService(
+            captureMonitoringService: service,
+            acquirePreview: { _, _ in
+                switch await gate.nextOutcome() {
+                case .success(let subscription):
+                    return .started(subscription)
+                case .failure(let error):
+                    throw error
+                }
+            }
+        )
+        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+            displayID: 720,
+            width: 1920,
+            height: 1080
+        )
+        let metadata = CaptureMonitoringDisplayMetadata(
+            displayName: "Cancelled Display",
+            resolutionText: "1920 × 1080",
+            isVirtualDisplay: false
+        )
+
+        let task = Task { @MainActor in
+            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+        }
+        #expect(await waitForAcquirePreviewCall(gate, count: 1))
+
+        lifecycle.removeMonitoringSessions(displayID: 720)
+        await gate.release(call: 1)
+
+        let outcome = try await task.value
+        if case .invalidated = outcome {
+        } else {
+            Issue.record("Expected invalidated outcome after removing monitoring sessions.")
+        }
+
+        #expect(service.currentSessions.isEmpty)
+        #expect(await waitUntil { preview.cancelCounter.value == 1 })
     }
 
     @Test func unknownSessionIDsAreNoOpForActivateAttachAndClose() async throws {

@@ -3,6 +3,17 @@ import ScreenCaptureKit
 import OSLog
 import CoreGraphics
 
+enum SharingStartError: LocalizedError, Equatable {
+    case displayNotRegistered(CGDirectDisplayID)
+
+    var errorDescription: String? {
+        switch self {
+        case .displayNotRegistered:
+            String(localized: "Selected display is no longer available for sharing.")
+        }
+    }
+}
+
 @MainActor
 protocol SharingServiceProtocol: AnyObject {
     var webServicePortValue: UInt16 { get }
@@ -14,6 +25,7 @@ protocol SharingServiceProtocol: AnyObject {
     var currentWebServer: WebServer? { get }
     var hasAnyActiveSharing: Bool { get }
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> { get }
+    func isStarting(displayID: CGDirectDisplayID) -> Bool
 
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult
@@ -22,7 +34,7 @@ protocol SharingServiceProtocol: AnyObject {
         _ displays: [SCDisplay],
         virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
     )
-    func startSharing(display: SCDisplay) async throws
+    func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void>
     func stopSharing(displayID: CGDirectDisplayID)
     func stopAllSharing()
     func isSharing(displayID: CGDirectDisplayID) -> Bool
@@ -86,6 +98,10 @@ final class SharingService: SharingServiceProtocol {
         sharingCoordinator.activeSharingDisplayIDs
     }
 
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        sharingCoordinator.isStarting(displayID: displayID)
+    }
+
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
         let result = await webServiceController.start(
@@ -120,9 +136,9 @@ final class SharingService: SharingServiceProtocol {
         )
     }
 
-    func startSharing(display: SCDisplay) async throws {
+    func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
         AppLog.sharing.info("Begin sharing stream for display \(display.displayID, privacy: .public).")
-        try await sharingCoordinator.startSharing(display: display)
+        return try await sharingCoordinator.startSharing(display: display)
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {

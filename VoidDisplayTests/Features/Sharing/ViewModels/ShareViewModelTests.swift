@@ -48,74 +48,78 @@ private actor SequencedShareDisplayLoaderGate {
 
 @Suite(.serialized)
 struct ShareViewModelTests {
+    @MainActor @Test func dependenciesLiveDelegatesToControllers() {
+        let sharingService = MockSharingService()
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: SharingPortPreferences(defaults: UserDefaults(suiteName: "ShareViewModelTestsLive")!)
+        )
+        sharingController.startingDisplayIDs = [501]
+        let virtualDisplayController = VirtualDisplayController(
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            appliedBadgeDisplayDuration: .nanoseconds(1),
+            stopDependentStreamsBeforeRebuild: { _ in }
+        )
+        let dependencies = ShareViewModel.Dependencies.live(
+            sharing: sharingController,
+            virtualDisplay: virtualDisplayController
+        )
 
-    @MainActor @Test func withDisplayStartLockRejectsConcurrentStartForSameDisplay() async {
-        let sut = ShareViewModel(dependencies: makeNoopShareDependencies())
-        let displayID = CGDirectDisplayID(101)
-        var enteredCount = 0
-        var firstDidEnter = false
-        var allowFirstToFinish = false
-
-        let firstTask = Task { @MainActor in
-            await sut.withDisplayStartLock(displayID: displayID) {
-                enteredCount += 1
-                firstDidEnter = true
-                while !allowFirstToFinish {
-                    await Task.yield()
-                }
-            }
-        }
-
-        while !firstDidEnter {
-            await Task.yield()
-        }
-
-        let secondStarted = await sut.withDisplayStartLock(displayID: displayID) {
-            enteredCount += 1
-        }
-
-        allowFirstToFinish = true
-        let firstStarted = await firstTask.value
-
-        #expect(firstStarted)
-        #expect(secondStarted == false)
-        #expect(enteredCount == 1)
-        #expect(sut.startingDisplayIDs.isEmpty)
+        #expect(dependencies.sharingQueries.isStartingDisplayID(501))
+        #expect(
+            dependencies.sharingQueries.preferredWebServicePort()
+                == sharingController.preferredWebServicePort
+        )
     }
 
-    @MainActor @Test func withDisplayStartLockAllowsConcurrentStartForDifferentDisplays() async {
-        let sut = ShareViewModel(dependencies: makeNoopShareDependencies())
-        let firstDisplayID = CGDirectDisplayID(201)
-        let secondDisplayID = CGDirectDisplayID(202)
-        var enteredDisplayIDs: Set<CGDirectDisplayID> = []
-        var firstDidEnter = false
-        var allowFirstToFinish = false
+    @MainActor @Test func dependenciesLiveReflectsStopWebServiceClearingStartingState() {
+        let sharingService = MockSharingService()
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: SharingPortPreferences(defaults: UserDefaults(suiteName: "ShareViewModelTestsStopWebService")!)
+        )
+        sharingController.startingDisplayIDs = [502]
+        let virtualDisplayController = VirtualDisplayController(
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            appliedBadgeDisplayDuration: .nanoseconds(1),
+            stopDependentStreamsBeforeRebuild: { _ in }
+        )
+        let dependencies = ShareViewModel.Dependencies.live(
+            sharing: sharingController,
+            virtualDisplay: virtualDisplayController
+        )
 
-        let firstTask = Task { @MainActor in
-            await sut.withDisplayStartLock(displayID: firstDisplayID) {
-                enteredDisplayIDs.insert(firstDisplayID)
-                firstDidEnter = true
-                while !allowFirstToFinish {
-                    await Task.yield()
-                }
-            }
-        }
+        #expect(dependencies.sharingQueries.isStartingDisplayID(502))
 
-        while !firstDidEnter {
-            await Task.yield()
-        }
+        sharingController.stopWebService()
 
-        let secondStarted = await sut.withDisplayStartLock(displayID: secondDisplayID) {
-            enteredDisplayIDs.insert(secondDisplayID)
-        }
+        #expect(dependencies.sharingQueries.isStartingDisplayID(502) == false)
+    }
 
-        allowFirstToFinish = true
-        let firstStarted = await firstTask.value
+    @MainActor @Test func isStartingDelegatesToSharingQueries() {
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { false },
+                    isStartingDisplayID: { $0 == 101 },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .failed(.timedOut(port: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in .started(()) },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
 
-        #expect(firstStarted)
-        #expect(secondStarted)
-        #expect(enteredDisplayIDs == [firstDisplayID, secondDisplayID])
-        #expect(sut.startingDisplayIDs.isEmpty)
+        #expect(sut.isStarting(displayID: 101))
+        #expect(sut.isStarting(displayID: 102) == false)
     }
 
     @MainActor @Test func requestPermissionDeniedClearsDisplaysAndSetsErrorMessage() {
@@ -173,6 +177,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { false },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -180,7 +185,7 @@ struct ShareViewModelTests {
                     startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -219,6 +224,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { true },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -228,7 +234,7 @@ struct ShareViewModelTests {
                     registerShareableDisplays: { _, _ in
                         registerShareableDisplaysCallCount += 1
                     },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -344,6 +350,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { false },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -351,7 +358,7 @@ struct ShareViewModelTests {
                     startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -374,6 +381,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { false },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -381,7 +389,7 @@ struct ShareViewModelTests {
                     startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -588,6 +596,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { false },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 9099 }
                 ),
@@ -595,7 +604,7 @@ struct ShareViewModelTests {
                     startWebService: { _ in .failed(.timedOut(port: 9099)) },
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
@@ -675,6 +684,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { false },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -687,6 +697,7 @@ struct ShareViewModelTests {
                     registerShareableDisplays: { _, _ in },
                     beginSharing: { _ in
                         beginSharingCallCount += 1
+                        return .started(())
                     },
                     stopSharing: { _ in }
                 ),
@@ -712,6 +723,7 @@ struct ShareViewModelTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { false },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -721,6 +733,7 @@ struct ShareViewModelTests {
                     registerShareableDisplays: { _, _ in },
                     beginSharing: { _ in
                         beginSharingCallCount += 1
+                        return .started(())
                     },
                     stopSharing: { _ in }
                 ),
@@ -737,17 +750,14 @@ struct ShareViewModelTests {
         #expect(sut.userFacingAlert == nil)
     }
 
-    @MainActor @Test func startSharingFailureStopsShareAndPresentsAlert() async {
-        enum ShareStartFailure: Error {
-            case failed
-        }
-
+    @MainActor @Test func startSharingFailureStopsShareAndPresentsLocalizedAlert() async {
         let display = MockSCDisplay.make(displayID: 7003, width: 1920, height: 1080)
         var stopSharingDisplayIDs: [CGDirectDisplayID] = []
         let sut = ShareViewModel(
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { true },
+                    isStartingDisplayID: { _ in false },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -756,7 +766,7 @@ struct ShareViewModelTests {
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
                     beginSharing: { _ in
-                        throw ShareStartFailure.failed
+                        throw SharingStartError.displayNotRegistered(display.displayID)
                     },
                     stopSharing: { displayID in
                         stopSharingDisplayIDs.append(displayID)
@@ -772,6 +782,40 @@ struct ShareViewModelTests {
 
         #expect(stopSharingDisplayIDs == [display.displayID])
         #expect(sut.userFacingAlert?.title == String(localized: "Share Failed"))
+        #expect(sut.userFacingAlert?.message == String(localized: "Selected display is no longer available for sharing."))
+        #expect(sut.portInputErrorMessage == nil)
+    }
+
+    @MainActor @Test func startSharingInvalidationEndsSilentlyWithoutStoppingShare() async {
+        let display = MockSCDisplay.make(displayID: 7004, width: 1920, height: 1080)
+        var stopSharingCallCount = 0
+        let sut = ShareViewModel(
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { true },
+                    isStartingDisplayID: { _ in false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { _, _ in },
+                    beginSharing: { _ in .invalidated },
+                    stopSharing: { _ in
+                        stopSharingCallCount += 1
+                    }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
+        )
+
+        await sut.startSharing(display: display)
+
+        #expect(stopSharingCallCount == 0)
+        #expect(sut.userFacingAlert == nil)
         #expect(sut.portInputErrorMessage == nil)
     }
 
@@ -909,6 +953,7 @@ struct ShareViewModelTests {
         .init(
             sharingQueries: .init(
                 isWebServiceRunning: { false },
+                isStartingDisplayID: { _ in false },
                 sharePageAddress: { _ in nil },
                 preferredWebServicePort: { 8081 }
             ),
@@ -916,7 +961,7 @@ struct ShareViewModelTests {
                 startWebService: { _ in .failed(.timedOut(port: 8081)) },
                 stopWebService: {},
                 registerShareableDisplays: { _, _ in },
-                beginSharing: { _ in },
+                beginSharing: { _ in .started(()) },
                 stopSharing: { _ in }
             ),
             virtualDisplayQueries: .init(
@@ -930,6 +975,7 @@ struct ShareViewModelTests {
         .init(
             sharingQueries: .init(
                 isWebServiceRunning: { true },
+                isStartingDisplayID: { _ in false },
                 sharePageAddress: { _ in nil },
                 preferredWebServicePort: { 8081 }
             ),
@@ -937,7 +983,7 @@ struct ShareViewModelTests {
                 startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                 stopWebService: {},
                 registerShareableDisplays: { _, _ in },
-                beginSharing: { _ in },
+                beginSharing: { _ in .started(()) },
                 stopSharing: { _ in }
             ),
             virtualDisplayQueries: .init(

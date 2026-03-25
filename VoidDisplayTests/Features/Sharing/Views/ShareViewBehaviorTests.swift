@@ -182,8 +182,19 @@ struct ShareViewBehaviorTests {
         #expect(monitor.stopCallCount == 1)
     }
 
+    @Test func viewModelSurfacesStartingStateFromSharingDependency() {
+        let viewModel = makeViewModel(
+            isWebServiceRunning: true,
+            isStartingDisplayID: { $0 == 404 }
+        )
+
+        #expect(viewModel.isStarting(displayID: 404))
+        #expect(viewModel.isStarting(displayID: 405) == false)
+    }
+
     private func makeViewModel(
         isWebServiceRunning: Bool,
+        isStartingDisplayID: @escaping @MainActor (CGDirectDisplayID) -> Bool = { _ in false },
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = { [] }
     ) -> ShareViewModel {
@@ -197,6 +208,7 @@ struct ShareViewBehaviorTests {
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { isWebServiceRunning },
+                    isStartingDisplayID: isStartingDisplayID,
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -204,7 +216,7 @@ struct ShareViewBehaviorTests {
                     startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                     stopWebService: {},
                     registerShareableDisplays: { _, _ in },
-                    beginSharing: { _ in },
+                    beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
                 ),
                 virtualDisplayQueries: .init(
