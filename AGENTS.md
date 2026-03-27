@@ -74,6 +74,9 @@
 ## Complexity and Size Guardrail
 - Default goal: solve problems without increasing code complexity and code size.
 - If that is not feasible, lower complexity first.
+- Reject temporary fixes, glue code, and patch-style handling. Solve the root problem with a clean structural change.
+- Do not add transitional adapters, one-off shims, or workaround layers unless the user explicitly requires them for a defined migration window.
+- Do not preserve backward compatibility by default. Only keep it when explicitly required, and document the caller, removal condition, and validation impact in the handoff.
 - Prefer deleting duplicate branches and duplicate checks.
 - Keep equivalent validation at one convergence layer. Avoid multi-layer duplicate defense.
 - When adding defensive branches, prioritize deleting equivalent legacy branches in the same module.
