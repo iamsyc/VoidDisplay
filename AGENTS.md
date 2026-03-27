@@ -66,6 +66,13 @@
 - If the user goal or instruction is ambiguous, do not guess. Ask for clarification promptly before continuing.
 - Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
 
+## Execution Mode Recommendation
+- For any actionable request related to feature work, bug fixing, review follow-up, refactor, or implementation analysis, include a short execution mode recommendation in the response.
+- Use `建议：直接执行` when scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate before implementation.
+- Use `建议：开启计划模式` when the task is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
+- Keep the recommendation to one or two sentences and state the concrete reason for the choice.
+- If the user explicitly requests plan mode or explicitly requests immediate execution, follow that instruction and still state the recommendation briefly for visibility.
+
 ## Code Review Output Policy
 - When review finds an issue, identify the root cause and provide a root-cause fix plan by default.
 - Always include a structural refactor assessment: whether it is needed, expected benefits, risks, and validation impact.
