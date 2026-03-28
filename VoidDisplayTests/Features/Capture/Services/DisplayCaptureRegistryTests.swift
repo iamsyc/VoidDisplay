@@ -8,6 +8,7 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     private struct Counters {
         var stopSharingCalls = 0
         var stopCalls = 0
+        var setSharingActiveCalls: [Bool] = []
     }
 
     private let counters = Mutex(Counters())
@@ -33,6 +34,10 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
 
     nonisolated func releaseShareCursorOverride() async throws {}
 
+    nonisolated func setSharingActive(_ isActive: Bool) async throws {
+        counters.withLock { $0.setSharingActiveCalls.append(isActive) }
+    }
+
     nonisolated func stop() async {
         counters.withLock { $0.stopCalls += 1 }
     }
@@ -43,6 +48,10 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
 
     var stopCalls: Int {
         counters.withLock { $0.stopCalls }
+    }
+
+    var setSharingActiveCalls: [Bool] {
+        counters.withLock { $0.setSharingActiveCalls }
     }
 }
 
@@ -97,9 +106,113 @@ private final class ControlledStopCaptureSession: DisplayCaptureSessioning, @unc
 
     nonisolated func releaseShareCursorOverride() async throws {}
 
+    nonisolated func setSharingActive(_ isActive: Bool) async throws {
+        _ = isActive
+    }
+
     nonisolated func stop() async {
         counters.withLock { $0.stop += 1 }
         await stopGate.waitUntilOpen()
+    }
+}
+
+private actor SharingStateGate {
+    private var isOpen = false
+    private var enteredFalse = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var openWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForFalseEntry() async {
+        guard !enteredFalse else { return }
+        await withCheckedContinuation { continuation in
+            enteredWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilOpen() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            openWaiters.append(continuation)
+        }
+    }
+
+    func markFalseEntered() {
+        guard !enteredFalse else { return }
+        enteredFalse = true
+        let waiters = enteredWaiters
+        enteredWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let waiters = openWaiters
+        openWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
+private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @unchecked Sendable {
+    private struct Counters {
+        var stopSharingCalls = 0
+        var stopCalls = 0
+        var setSharingActiveCalls: [Bool] = []
+    }
+
+    nonisolated let sessionHub = WebRTCSessionHub()
+    private let counters = Mutex(Counters())
+    private let gate: SharingStateGate
+
+    init(gate: SharingStateGate) {
+        self.gate = gate
+    }
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func stopSharing() {
+        counters.withLock { $0.stopSharingCalls += 1 }
+    }
+
+    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+        _ = showsCursor
+    }
+
+    nonisolated func retainShareCursorOverride() async throws {}
+
+    nonisolated func releaseShareCursorOverride() async throws {}
+
+    nonisolated func setSharingActive(_ isActive: Bool) async throws {
+        counters.withLock { $0.setSharingActiveCalls.append(isActive) }
+        guard !isActive else { return }
+        await gate.markFalseEntered()
+        await gate.waitUntilOpen()
+    }
+
+    nonisolated func stop() async {
+        counters.withLock { $0.stopCalls += 1 }
+    }
+
+    var stopSharingCalls: Int {
+        counters.withLock { $0.stopSharingCalls }
+    }
+
+    var stopCalls: Int {
+        counters.withLock { $0.stopCalls }
+    }
+
+    var setSharingActiveCalls: [Bool] {
+        counters.withLock { $0.setSharingActiveCalls }
     }
 }
 
@@ -119,6 +232,7 @@ struct DisplayCaptureRegistryTests {
 
         await registry.release(shareToken)
         #expect(fakeSession.stopSharingCalls == 1)
+        #expect(fakeSession.setSharingActiveCalls == [false])
         #expect(fakeSession.stopCalls == 0)
         #expect(await registry.sessionState(for: displayID) == .active)
 
@@ -159,7 +273,7 @@ struct DisplayCaptureRegistryTests {
         let fakeSession = FakeCaptureSession()
         let factoryCallCount = Mutex(0)
 
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _ in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _ in
             factoryCallCount.withLock { $0 += 1 }
             await gate.waitUntilOpen()
             return fakeSession
@@ -200,7 +314,7 @@ struct DisplayCaptureRegistryTests {
         let replacementSession = FakeCaptureSession()
         let factoryCallCount = Mutex(0)
 
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _ in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _ in
             factoryCallCount.withLock { $0 += 1 }
             return replacementSession
         })
@@ -241,6 +355,101 @@ struct DisplayCaptureRegistryTests {
             await registry.sessionState(for: displayID) == .stopped
         }
         #expect(drained)
+    }
+
+    @Test func acquiringShareFirstUsesShareOnlyInitialProfile() async throws {
+        let displayID = CGDirectDisplayID(8080)
+        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sendableDisplay = SendableDisplay(display)
+        let fakeSession = FakeCaptureSession()
+        let initialProfiles = Mutex<[DisplayCaptureProfile]>([])
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile in
+            initialProfiles.withLock { $0.append(initialProfile) }
+            return fakeSession
+        })
+
+        let subscription = try await registry.acquireShare(display: sendableDisplay)
+
+        #expect(initialProfiles.withLock { $0.first } == .shareOnly)
+        subscription.cancel()
+        let drained = await waitUntil {
+            await registry.sessionState(for: displayID) == .stopped
+        }
+        #expect(drained)
+    }
+
+    @Test func concurrentPreviewAndShareCreationUsesMixedInitialProfile() async throws {
+        let displayID = CGDirectDisplayID(9090)
+        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sendableDisplay = SendableDisplay(display)
+        let fakeSession = FakeCaptureSession()
+        let factoryGate = CaptureSessionFactoryGate()
+        let initialProfiles = Mutex<[DisplayCaptureProfile]>([])
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile in
+            initialProfiles.withLock { $0.append(initialProfile) }
+            await factoryGate.waitUntilOpen()
+            return fakeSession
+        })
+
+        async let previewSubscription = registry.acquirePreview(display: sendableDisplay)
+        async let shareSubscription = registry.acquireShare(display: sendableDisplay)
+
+        await factoryGate.open()
+
+        let preview = try await previewSubscription
+        let share = try await shareSubscription
+
+        #expect(initialProfiles.withLock { $0.first } == .mixed)
+
+        preview.cancel()
+        share.cancel()
+        let drained = await waitUntil {
+            await registry.sessionState(for: displayID) == .stopped
+        }
+        #expect(drained)
+    }
+
+    @Test func releaseWhileSetSharingActiveSuspendsDoesNotOverwriteConcurrentAcquire() async throws {
+        let displayID = CGDirectDisplayID(10010)
+        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sendableDisplay = SendableDisplay(display)
+        let gate = SharingStateGate()
+        let session = BlockingSetSharingActiveSession(gate: gate)
+        let registry = DisplayCaptureRegistry()
+
+        await registry.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1920 × 1080",
+            session: session
+        )
+
+        let previewToken = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
+        let firstToken = try await registry.acquireShareToken(display: sendableDisplay)
+        let releaseTask = Task {
+            await registry.release(firstToken)
+        }
+
+        await gate.waitForFalseEntry()
+
+        let secondToken = try await registry.acquireShareToken(display: sendableDisplay)
+        #expect(await registry.sessionState(for: displayID) == .active)
+
+        await gate.open()
+        await releaseTask.value
+
+        #expect(await registry.sessionState(for: displayID) == .active)
+        #expect(session.stopCalls == 0)
+        #expect(session.stopSharingCalls == 1)
+
+        await registry.release(secondToken)
+        #expect(await registry.sessionState(for: displayID) == .active)
+
+        await registry.release(previewToken)
+        let drained = await waitUntil {
+            await registry.sessionState(for: displayID) == .stopped
+        }
+        #expect(drained)
+        #expect(session.stopCalls == 1)
     }
 
     private func waitUntil(

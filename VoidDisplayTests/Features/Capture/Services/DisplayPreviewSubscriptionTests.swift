@@ -100,4 +100,43 @@ struct DisplayPreviewSubscriptionTests {
         #expect(snap.detach == 1)
         #expect(cancelCalls.withLock { $0 } == 1)
     }
+
+    @Test func duplicateAttachDoesNotForwardToSessionTwice() {
+        let session = MockDisplayCaptureSession()
+        let subscription = DisplayPreviewSubscription(
+            displayID: 1,
+            resolutionText: "100 × 100",
+            session: session,
+            cancelClosure: {}
+        )
+        let sink = TestPreviewSink()
+
+        subscription.attachPreviewSink(sink)
+        subscription.attachPreviewSink(sink)
+
+        let snap = session.snapshot()
+        #expect(snap.attached == 1)
+        #expect(snap.attach == 1)
+        #expect(snap.detach == 0)
+    }
+
+    @Test func extraDetachDoesNotForwardToSessionAgain() {
+        let session = MockDisplayCaptureSession()
+        let subscription = DisplayPreviewSubscription(
+            displayID: 1,
+            resolutionText: "100 × 100",
+            session: session,
+            cancelClosure: {}
+        )
+        let sink = TestPreviewSink()
+
+        subscription.attachPreviewSink(sink)
+        subscription.detachPreviewSink(sink)
+        subscription.detachPreviewSink(sink)
+
+        let snap = session.snapshot()
+        #expect(snap.attached == 0)
+        #expect(snap.attach == 1)
+        #expect(snap.detach == 1)
+    }
 }
