@@ -85,8 +85,39 @@ struct WebServerSocketIntegrationTests {
 
         let responseText = try #require(String(data: responseData, encoding: .utf8))
         #expect(responseText.contains("HTTP/1.1 200 OK"))
+        #expect(responseText.contains("<title>Screen Share</title>"))
         #expect(responseText.contains(#"id="voiddisplay-bootstrap""#))
         #expect(responseText.contains(#""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#))
+        #expect(responseText.contains(#"const messages = {"#))
+        #expect(responseText.contains(#"heroEyebrow: "VOIDDISPLAY 实时画面""#))
+        #expect(responseText.contains(#"fullscreenEnter: "全屏""#))
+        #expect(responseText.contains(#"pageTitle: "Screen Share""#))
+        #expect(responseText.contains("hero-eyebrow"))
+        #expect(responseText.contains("__PAGE_TITLE__") == false)
+        #expect(responseText.contains("<h1>") == false)
+        #expect(responseText.contains("Main Display") == false)
+        #expect(responseText.contains("Display 1") == false)
+    }
+
+    @Test func secondaryDisplayRouteAlsoUsesGenericPageTitle() async throws {
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { _ in .active },
+            sessionHubProvider: { _ in WebRTCSessionHub() }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let request = Data("GET /display/7 HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+        let responseData = try await Task.detached {
+            try await sendRequestAndReadUntilClose(port: portValue, request: request)
+        }.value
+
+        let responseText = try #require(String(data: responseData, encoding: .utf8))
+        #expect(responseText.contains("HTTP/1.1 200 OK"))
+        #expect(responseText.contains("<title>Screen Share</title>"))
+        #expect(responseText.contains("/signal/7"))
+        #expect(responseText.contains("Display 7") == false)
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {

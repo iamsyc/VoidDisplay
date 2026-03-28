@@ -171,8 +171,7 @@
     <div class="shell">
         <section class="hero">
             <div>
-                <p class="eyebrow">VoidDisplay Live</p>
-                <h1>__PAGE_TITLE__</h1>
+                <p class="eyebrow" id="hero-eyebrow">VoidDisplay Live</p>
             </div>
             <div class="hero-actions">
                 <div class="status" id="status">Connecting…</div>
@@ -193,7 +192,7 @@
             </div>
         </section>
 
-        <p class="footnote">Use `1:1` for original size and `Fullscreen` for immersive view.</p>
+        <p class="footnote" id="footnote">Use `1:1` for original size and `Fullscreen` for immersive view.</p>
     </div>
 
     <script id="voiddisplay-bootstrap" type="application/json">__BOOTSTRAP_JSON__</script>
@@ -204,6 +203,8 @@
         const overlayEl = document.getElementById("overlay");
         const messageTitleEl = document.getElementById("message-title");
         const messageBodyEl = document.getElementById("message-body");
+        const heroEyebrowEl = document.getElementById("hero-eyebrow");
+        const footnoteEl = document.getElementById("footnote");
         const player = document.getElementById("player");
         const stage = document.querySelector(".stage");
         const scaleModeBtn = document.getElementById("scale-mode-btn");
@@ -217,6 +218,118 @@
         let state = "idle";
         let originalScaleEnabled = false;
         const reconnectDelays = [250, 500, 1000, 2000, 4000];
+        const messages = {
+            en: {
+                pageTitle: "Screen Share",
+                heroEyebrow: "VoidDisplay Live",
+                statusConnecting: "Connecting…",
+                statusSignalingConnected: "Signaling connected",
+                statusConnected: "Connected",
+                statusLive: "Live",
+                statusConnectionLost: "Connection lost",
+                statusUnsupportedBrowser: "Unsupported browser",
+                statusNegotiationFailed: "Negotiation failed",
+                statusStopped: "Stopped",
+                statusError: "Error",
+                statusConnectionError: "Connection error",
+                statusReconnecting: (delay) => `Reconnecting in ${delay}ms`,
+                scaleFit: "Fit",
+                scaleOriginal: "1:1",
+                fullscreenEnter: "Fullscreen",
+                fullscreenExit: "Exit Fullscreen",
+                overlayConnectingTitle: "Connecting…",
+                overlayConnectingBody: "Preparing the WebRTC signaling channel.",
+                overlayNegotiatingTitle: "Negotiating…",
+                overlayNegotiatingBody: "Exchanging offer/answer and ICE candidates.",
+                overlayLiveTitle: "Live stream",
+                overlayLiveBody: "Connected and receiving frames.",
+                overlayReconnectTitle: "Reconnecting…",
+                overlayReconnectBody: "The signaling channel dropped. Retrying automatically.",
+                overlayConnectionLostTitle: "Connection lost",
+                overlayConnectionLostBody: "Trying to reconnect to the stream.",
+                overlayWebSocketRequiredTitle: "WebSocket required",
+                overlayWebSocketRequiredBody: "This browser cannot open signaling transport.",
+                overlayWebRTCRequiredTitle: "WebRTC required",
+                overlayWebRTCRequiredBody: "This browser does not support RTCPeerConnection.",
+                overlayNegotiationFailedTitle: "Negotiation failed",
+                overlayNegotiationFailedFallback: "Failed to create WebRTC offer.",
+                overlaySharingStoppedTitle: "Sharing stopped",
+                overlaySharingStoppedBody: "The source stream is no longer available.",
+                overlayStreamErrorTitle: "Stream error",
+                overlayStreamErrorFallback: "Unknown signaling error.",
+                footnote: "Use `1:1` for original size and `Fullscreen` for immersive view."
+            },
+            zhHans: {
+                pageTitle: "屏幕共享",
+                heroEyebrow: "VOIDDISPLAY 实时画面",
+                statusConnecting: "连接中…",
+                statusSignalingConnected: "信令已连接",
+                statusConnected: "已连接",
+                statusLive: "直播中",
+                statusConnectionLost: "连接已断开",
+                statusUnsupportedBrowser: "浏览器不受支持",
+                statusNegotiationFailed: "协商失败",
+                statusStopped: "已停止",
+                statusError: "发生错误",
+                statusConnectionError: "连接出错",
+                statusReconnecting: (delay) => `${delay}ms 后重连`,
+                scaleFit: "适应",
+                scaleOriginal: "1:1",
+                fullscreenEnter: "全屏",
+                fullscreenExit: "退出全屏",
+                overlayConnectingTitle: "连接中…",
+                overlayConnectingBody: "正在准备 WebRTC 信令通道。",
+                overlayNegotiatingTitle: "协商中…",
+                overlayNegotiatingBody: "正在交换 offer、answer 和 ICE 候选。",
+                overlayLiveTitle: "实时画面",
+                overlayLiveBody: "已连接并开始接收画面。",
+                overlayReconnectTitle: "正在重连…",
+                overlayReconnectBody: "信令通道已断开，正在自动重试。",
+                overlayConnectionLostTitle: "连接已断开",
+                overlayConnectionLostBody: "正在尝试重新连接画面流。",
+                overlayWebSocketRequiredTitle: "需要 WebSocket",
+                overlayWebSocketRequiredBody: "当前浏览器无法建立信令传输通道。",
+                overlayWebRTCRequiredTitle: "需要 WebRTC",
+                overlayWebRTCRequiredBody: "当前浏览器不支持 RTCPeerConnection。",
+                overlayNegotiationFailedTitle: "协商失败",
+                overlayNegotiationFailedFallback: "创建 WebRTC offer 失败。",
+                overlaySharingStoppedTitle: "共享已停止",
+                overlaySharingStoppedBody: "源端画面已不可用。",
+                overlayStreamErrorTitle: "画面错误",
+                overlayStreamErrorFallback: "发生未知信令错误。",
+                footnote: "使用“1:1”查看原始尺寸，使用“全屏”进入沉浸式观看。"
+            }
+        };
+
+        function resolveLocale() {
+            const preferredLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
+                ? navigator.languages
+                : [navigator.language || "en"];
+            for (const locale of preferredLocales) {
+                const normalized = String(locale || "").toLowerCase();
+                if (
+                    normalized === "zh-hans" ||
+                    normalized === "zh-cn" ||
+                    normalized === "zh-sg" ||
+                    normalized.startsWith("zh")
+                ) {
+                    return "zhHans";
+                }
+            }
+            return "en";
+        }
+
+        const locale = resolveLocale();
+        const currentMessages = messages[locale] || messages.en;
+
+        function t(key, ...args) {
+            const value = currentMessages[key];
+            if (typeof value === "function") {
+                return value(...args);
+            }
+            return value ?? messages.en[key] ?? "";
+        }
+
         const bootstrap = (() => {
             if (!bootstrapEl?.textContent) {
                 return { iceServers: [] };
@@ -229,6 +342,16 @@
                 return { iceServers: [] };
             }
         })();
+
+        function applyStaticCopy() {
+            document.title = t("pageTitle");
+            if (heroEyebrowEl) {
+                heroEyebrowEl.textContent = t("heroEyebrow");
+            }
+            if (footnoteEl) {
+                footnoteEl.textContent = t("footnote");
+            }
+        }
 
         function setStatus(text) {
             statusEl.textContent = text;
@@ -247,13 +370,13 @@
         function applyScaleMode() {
             document.body.classList.toggle("mode-native", originalScaleEnabled);
             if (scaleModeBtn) {
-                scaleModeBtn.textContent = originalScaleEnabled ? "Fit" : "1:1";
+                scaleModeBtn.textContent = originalScaleEnabled ? t("scaleFit") : t("scaleOriginal");
             }
         }
 
         function syncFullscreenButtonLabel() {
             if (!fullscreenBtn) return;
-            fullscreenBtn.textContent = document.fullscreenElement ? "Exit Fullscreen" : "Fullscreen";
+            fullscreenBtn.textContent = document.fullscreenElement ? t("fullscreenExit") : t("fullscreenEnter");
         }
 
         async function toggleFullscreen() {
@@ -279,6 +402,7 @@
         });
 
         document.addEventListener("fullscreenchange", syncFullscreenButtonLabel);
+        applyStaticCopy();
         applyScaleMode();
         syncFullscreenButtonLabel();
 
@@ -325,8 +449,8 @@
             }
             const delay = reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)];
             reconnectIndex += 1;
-            setStatus(`Reconnecting in ${delay}ms`);
-            setOverlay("Reconnecting…", "The signaling channel dropped. Retrying automatically.", true);
+            setStatus(t("statusReconnecting", delay));
+            setOverlay(t("overlayReconnectTitle"), t("overlayReconnectBody"), true);
             transition("handshaking");
             reconnectTimer = window.setTimeout(() => {
                 reconnectTimer = null;
@@ -346,8 +470,8 @@
             peer.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     player.srcObject = event.streams[0];
-                    setStatus("Live");
-                    setOverlay("Live stream", "Connected and receiving frames.", false);
+                    setStatus(t("statusLive"));
+                    setOverlay(t("overlayLiveTitle"), t("overlayLiveBody"), false);
                     transition("streaming");
                 }
             };
@@ -367,8 +491,8 @@
 
             peer.onconnectionstatechange = () => {
                 if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
-                    setStatus("Connection lost");
-                    setOverlay("Connection lost", "Trying to reconnect to the stream.", true);
+                    setStatus(t("statusConnectionLost"));
+                    setOverlay(t("overlayConnectionLostTitle"), t("overlayConnectionLostBody"), true);
                     if (!terminalStop) {
                         closeSocketAndClearReference();
                         scheduleReconnect();
@@ -393,14 +517,14 @@
                 return;
             }
             if (!window.WebSocket) {
-                setStatus("Unsupported browser");
-                setOverlay("WebSocket required", "This browser cannot open signaling transport.", true);
+                setStatus(t("statusUnsupportedBrowser"));
+                setOverlay(t("overlayWebSocketRequiredTitle"), t("overlayWebSocketRequiredBody"), true);
                 transition("closed");
                 return;
             }
             if (!window.RTCPeerConnection) {
-                setStatus("Unsupported browser");
-                setOverlay("WebRTC required", "This browser does not support RTCPeerConnection.", true);
+                setStatus(t("statusUnsupportedBrowser"));
+                setOverlay(t("overlayWebRTCRequiredTitle"), t("overlayWebRTCRequiredBody"), true);
                 transition("closed");
                 return;
             }
@@ -410,22 +534,26 @@
             const ws = new WebSocket(wsUrl);
             socket = ws;
             transition("handshaking");
-            setStatus("Connecting…");
-            setOverlay("Connecting…", "Preparing the WebRTC signaling channel.", true);
+            setStatus(t("statusConnecting"));
+            setOverlay(t("overlayConnectingTitle"), t("overlayConnectingBody"), true);
 
             ws.addEventListener("open", async () => {
                 if (socket !== ws) return;
                 reconnectIndex = 0;
                 clearReconnectTimer();
                 transition("signalingReady");
-                setStatus("Signaling connected");
+                setStatus(t("statusSignalingConnected"));
                 await sendSignal({ type: "viewer_ready" });
                 try {
                     await startPeerConnection();
-                    setOverlay("Negotiating…", "Exchanging offer/answer and ICE candidates.", true);
+                    setOverlay(t("overlayNegotiatingTitle"), t("overlayNegotiatingBody"), true);
                 } catch (error) {
-                    setStatus("Negotiation failed");
-                    setOverlay("Negotiation failed", error?.message || "Failed to create WebRTC offer.", true);
+                    setStatus(t("statusNegotiationFailed"));
+                    setOverlay(
+                        t("overlayNegotiationFailedTitle"),
+                        error?.message || t("overlayNegotiationFailedFallback"),
+                        true
+                    );
                     closeSocketAndClearReference();
                     scheduleReconnect();
                 }
@@ -455,7 +583,7 @@
                             type: "answer",
                             sdp: payload.sdp
                         });
-                        setStatus("Connected");
+                        setStatus(t("statusConnected"));
                         break;
                     case "ice_candidate":
                         if (!peer || typeof payload.candidate !== "string") return;
@@ -468,8 +596,8 @@
                     case "stopped":
                         terminalStop = true;
                         transition("stopping");
-                        setStatus("Stopped");
-                        setOverlay("Sharing stopped", "The source stream is no longer available.", true);
+                        setStatus(t("statusStopped"));
+                        setOverlay(t("overlaySharingStoppedTitle"), t("overlaySharingStoppedBody"), true);
                         closePeer();
                         clearReconnectTimer();
                         closeSocketAndClearReference();
@@ -477,8 +605,8 @@
                         break;
                     case "error":
                         terminalStop = true;
-                        setStatus("Error");
-                        setOverlay("Stream error", payload.reason || "Unknown signaling error.", true);
+                        setStatus(t("statusError"));
+                        setOverlay(t("overlayStreamErrorTitle"), payload.reason || t("overlayStreamErrorFallback"), true);
                         clearReconnectTimer();
                         closePeer();
                         closeSocketAndClearReference();
@@ -494,7 +622,7 @@
                 socket = null;
                 closePeer();
                 if (terminalStop || state === "closed" || state === "stopping") {
-                    setStatus("Stopped");
+                    setStatus(t("statusStopped"));
                     transition("closed");
                     return;
                 }
@@ -503,7 +631,7 @@
 
             ws.addEventListener("error", () => {
                 if (socket !== ws) return;
-                setStatus("Connection error");
+                setStatus(t("statusConnectionError"));
             });
         }
 

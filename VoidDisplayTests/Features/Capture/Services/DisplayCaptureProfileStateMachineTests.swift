@@ -89,6 +89,27 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 0) == 60)
     }
 
+    @Test func captureProfileFrameRatesMatchCurrentDefaults() {
+        #expect(
+            DisplayCaptureSession.captureFramesPerSecond(
+                for: .previewOnly,
+                maximumPreviewFramesPerSecond: 60
+            ) == 60
+        )
+        #expect(
+            DisplayCaptureSession.captureFramesPerSecond(
+                for: .shareOnly,
+                maximumPreviewFramesPerSecond: 60
+            ) == 60
+        )
+        #expect(
+            DisplayCaptureSession.captureFramesPerSecond(
+                for: .mixed,
+                maximumPreviewFramesPerSecond: 60
+            ) == 45
+        )
+    }
+
     @Test func committedTransitionUpdatesDwellBeforeReevaluatingPendingDemand() {
         var coordinator = DisplayCaptureProfileCoordinatorState(committedProfile: .previewOnly)
 

@@ -656,7 +656,7 @@ private final class WebRTCMediaPipeline: @unchecked Sendable {
 private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeerSessioning {
     nonisolated private static let desktopMinBitrateBps = NSNumber(value: 2_000_000)
     nonisolated private static let desktopMaxBitrateBps = NSNumber(value: 24_000_000)
-    nonisolated private static let desktopMaxFramerate = NSNumber(value: 30)
+    nonisolated private static let desktopMaxFramerate = NSNumber(value: 60)
     nonisolated private static let maintainResolutionPreference = NSNumber(
         value: RTCDegradationPreference.maintainResolution.rawValue
     )

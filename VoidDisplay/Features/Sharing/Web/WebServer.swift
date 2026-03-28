@@ -301,13 +301,8 @@ final class WebServer {
     }
 
     private func displayPage(for target: ShareTarget) -> String {
-        let title: String
-        switch target {
-        case .main:
-            title = "Main Display"
-        case .id(let id):
-            title = "Display \(id)"
-        }
+        _ = target
+        let title = "Screen Share"
         return displayPageTemplate
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
             .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)

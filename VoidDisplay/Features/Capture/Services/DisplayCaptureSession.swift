@@ -57,13 +57,10 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         var shareCursorOverrideCount: Int
 
         nonisolated var minimumFrameInterval: CMTime {
-            let framesPerSecond: Int
-            switch profile {
-            case .previewOnly:
-                framesPerSecond = maximumPreviewFramesPerSecond
-            case .shareOnly, .mixed:
-                framesPerSecond = 30
-            }
+            let framesPerSecond = DisplayCaptureSession.captureFramesPerSecond(
+                for: profile,
+                maximumPreviewFramesPerSecond: maximumPreviewFramesPerSecond
+            )
             return CMTime(value: 1, timescale: CMTimeScale(max(1, Int32(framesPerSecond))))
         }
     }
@@ -369,6 +366,20 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 }
 
 extension DisplayCaptureSession {
+    nonisolated static func captureFramesPerSecond(
+        for profile: DisplayCaptureProfile,
+        maximumPreviewFramesPerSecond: Int
+    ) -> Int {
+        switch profile {
+        case .previewOnly:
+            return maximumPreviewFramesPerSecond
+        case .shareOnly:
+            return 60
+        case .mixed:
+            return 45
+        }
+    }
+
     nonisolated static func microseconds(from time: CMTime) -> UInt64 {
         guard time.isValid, !time.isIndefinite, time.seconds.isFinite else { return 0 }
         let scaled = CMTimeConvertScale(time, timescale: 1_000_000, method: .default)
