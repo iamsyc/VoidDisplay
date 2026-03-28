@@ -5,7 +5,7 @@
     "capture_controller": "VoidDisplay/App/CaptureController.swift",
     "virtual_display_controller": "VoidDisplay/App/VirtualDisplayController.swift",
     "share_view_model": "VoidDisplay/Features/Sharing/ViewModels/ShareViewModel.swift",
-    "share_view_lifecycle_controller": "VoidDisplay/Features/Sharing/Views/ShareViewLifecycleController.swift",
+    "share_view_lifecycle_controller": "VoidDisplay/Shared/ScreenCapture/DisplayTopologyRefreshLifecycleController.swift",
     "capture_choose_view_model": "VoidDisplay/Features/Capture/ViewModels/CaptureChooseViewModel.swift",
     "capture_monitoring_service": "VoidDisplay/Features/Capture/Services/CaptureMonitoringService.swift",
     "virtual_display_orchestrator": "VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayOrchestrator.swift",

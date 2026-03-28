@@ -110,11 +110,11 @@
 
 ### 2.6 拓扑刷新路径两套实现
 
-共享页有 `ShareViewLifecycleController`、去抖回调注册与轮询回退；监听页仍然主要依赖 `onAppear` 和系统通知。
+共享页有 `DisplayTopologyRefreshLifecycleController`、去抖回调注册与轮询回退；监听页也已经复用同一套拓扑监听机制。
 
 相关位置：
 
-1. `VoidDisplay/Features/Sharing/Views/ShareViewLifecycleController.swift`
+1. `VoidDisplay/Shared/ScreenCapture/DisplayTopologyRefreshLifecycleController.swift`
 2. `VoidDisplay/Features/Capture/Views/CaptureChoose.swift`
 3. `VoidDisplay/Shared/Services/DebouncingDisplayReconfigurationMonitor.swift`
 
