@@ -12,6 +12,7 @@ struct AppEnvironment {
     let capture: CaptureController
     let sharing: SharingController
     let virtualDisplay: VirtualDisplayController
+    let topology: DisplayTopologyChangeCoordinator
 }
 
 @main
@@ -19,17 +20,19 @@ struct VoidDisplayApp: App {
     @State private var capture: CaptureController
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
+    @State private var topology: DisplayTopologyChangeCoordinator
 
     init() {
         let env = AppBootstrap.makeEnvironment()
         _capture = State(initialValue: env.capture)
         _sharing = State(initialValue: env.sharing)
         _virtualDisplay = State(initialValue: env.virtualDisplay)
+        _topology = State(initialValue: env.topology)
     }
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            HomeView(topologyCoordinator: topology)
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
@@ -166,7 +169,13 @@ enum AppBootstrap {
         let env = AppEnvironment(
             capture: capture,
             sharing: sharing,
-            virtualDisplay: virtualDisplay
+            virtualDisplay: virtualDisplay,
+            topology: DisplayTopologyChangeCoordinator(
+                capture: capture,
+                sharing: sharing,
+                virtualDisplay: virtualDisplay,
+                catalogService: catalogService
+            )
         )
 
         guard !preview else { return env }

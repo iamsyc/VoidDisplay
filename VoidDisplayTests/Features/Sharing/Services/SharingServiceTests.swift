@@ -113,6 +113,7 @@ struct SharingServiceTests {
         #expect(mock.capturedTargetStateProvider?(.main) == .knownInactive)
         #expect(mock.capturedTargetStateProvider?(.id(123)) == .unknown)
         #expect(mock.capturedSessionHubProvider?(.main) == nil)
+        #expect(mock.capturedSharingEventSink != nil)
     }
 
     @MainActor @Test func startWebServiceReturnsFalseWhenControllerFails() async {
@@ -239,12 +240,129 @@ struct SharingServiceTests {
         }
     }
 
-    @MainActor @Test func activeStreamClientCountReflectsControllerValue() {
+    @MainActor @Test func activeStreamClientCountReflectsSharingSnapshot() {
         let mock = MockWebServiceController()
-        mock.activeStreamClientCount = 3
-        let sut = makeService(webServiceController: mock)
+        let aggregator = SharingStateAggregator()
+        aggregator.record(
+            SharingSessionEvent(
+                target: .main,
+                clientID: "client-1",
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: .id(7),
+                clientID: "client-2",
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: .id(7),
+                clientID: "client-3",
+                sequence: 1,
+                phase: .signalingConnected,
+                source: .webSocket
+            )
+        )
+        let sut = makeService(webServiceController: mock, sharingStateAggregator: aggregator)
 
-        #expect(sut.activeStreamClientCount == 3)
+        #expect(sut.activeStreamClientCount == 2)
+        #expect(sut.streamClientCount(for: .id(7)) == 1)
+        #expect(sut.sharingStateSnapshot.signalingConnections == 3)
+    }
+
+    @MainActor @Test func subscribeSharingStateImmediatelyReplaysCurrentSnapshot() {
+        let mock = MockWebServiceController()
+        let aggregator = SharingStateAggregator()
+        aggregator.record(
+            SharingSessionEvent(
+                target: .main,
+                clientID: "client-1",
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        let sut = makeService(webServiceController: mock, sharingStateAggregator: aggregator)
+        var snapshots: [SharingStateSnapshot] = []
+
+        let subscription = sut.subscribeSharingState { snapshot in
+            snapshots.append(snapshot)
+        }
+
+        #expect(snapshots.count == 1)
+        #expect(snapshots.first?.streamingPeers == 1)
+        subscription.cancel()
+    }
+
+    @MainActor @Test func closedClientIsRemovedFromCurrentSnapshot() {
+        let aggregator = SharingStateAggregator()
+        aggregator.record(
+            SharingSessionEvent(
+                target: .id(7),
+                clientID: "client-1",
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: .id(7),
+                clientID: "client-1",
+                sequence: 2,
+                phase: .closed,
+                source: .webSocket
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: .id(7),
+                clientID: "client-1",
+                sequence: 1,
+                phase: .peerDisconnected,
+                source: .peerConnection
+            )
+        )
+
+        let snapshot = aggregator.currentSnapshot
+        #expect(snapshot.signalingConnections == 0)
+        #expect(snapshot.streamingPeers == 0)
+        #expect(snapshot.clientsByTarget[.id(7)]?.isEmpty ?? true)
+        #expect(snapshot.lastUpdatedAt != nil)
+    }
+
+    @MainActor @Test func alreadyRunningStartPreservesCurrentSharingSnapshot() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let mock = MockWebServiceController()
+        mock.isRunning = true
+        mock.lifecycleState = .running(.init(requestedPort: requestedPort, boundPort: requestedPort))
+        mock.startResult = .alreadyRunning(
+            WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)
+        )
+        let aggregator = SharingStateAggregator()
+        aggregator.record(
+            SharingSessionEvent(
+                target: .main,
+                clientID: "client-1",
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        let sut = makeService(webServiceController: mock, sharingStateAggregator: aggregator)
+
+        let result = await sut.startWebService(requestedPort: requestedPort)
+
+        #expect(result == .alreadyRunning(.init(requestedPort: requestedPort, boundPort: requestedPort)))
+        #expect(sut.sharingStateSnapshot.streamingPeers == 1)
+        #expect(sut.sharingStateSnapshot.clientsByTarget[.main]?["client-1"] != nil)
     }
 
     @MainActor @Test func forwardsWebServiceRunningStateCallbackFromController() {
@@ -306,7 +424,8 @@ struct SharingServiceTests {
     @MainActor
     private func makeService(
         webServiceController: MockWebServiceController,
-        acquireShare: DisplaySharingCoordinator.AcquireShare? = nil
+        acquireShare: DisplaySharingCoordinator.AcquireShare? = nil,
+        sharingStateAggregator: SharingStateAggregator = SharingStateAggregator()
     ) -> SharingService {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -318,7 +437,8 @@ struct SharingServiceTests {
         )
         return SharingService(
             webServiceController: webServiceController,
-            sharingCoordinator: coordinator
+            sharingCoordinator: coordinator,
+            sharingStateAggregator: sharingStateAggregator
         )
     }
 }

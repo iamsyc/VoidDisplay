@@ -11,6 +11,7 @@ struct HomeView: View {
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(\.openWindow) private var openWindow
+    private let topologyCoordinator: DisplayTopologyChangeCoordinator
 
     private enum SidebarItem: Hashable {
         case screen
@@ -21,6 +22,10 @@ struct HomeView: View {
 
     @State private var selection: SidebarItem? = .screen
     @State private var hasAutoOpenedCapturePreview = false
+
+    init(topologyCoordinator: DisplayTopologyChangeCoordinator) {
+        self.topologyCoordinator = topologyCoordinator
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -66,11 +71,19 @@ struct HomeView: View {
                                 .accessibilityIdentifier("detail_virtual_display")
                         }
                     case .monitorScreen:
-                        IsCapturing(capture: capture, virtualDisplay: virtualDisplay)
+                        IsCapturing(
+                            capture: capture,
+                            virtualDisplay: virtualDisplay,
+                            topologyCoordinator: topologyCoordinator
+                        )
                             .navigationTitle("Screen Monitoring")
                             .accessibilityIdentifier("detail_monitor_screen")
                     case .screenSharing:
-                        ShareView(sharing: sharing, virtualDisplay: virtualDisplay)
+                        ShareView(
+                            sharing: sharing,
+                            virtualDisplay: virtualDisplay,
+                            topologyCoordinator: topologyCoordinator
+                        )
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
                     }
@@ -98,7 +111,7 @@ struct HomeView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    HomeView()
+    HomeView(topologyCoordinator: env.topology)
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)

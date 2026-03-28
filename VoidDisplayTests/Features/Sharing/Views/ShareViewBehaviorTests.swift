@@ -103,12 +103,13 @@ struct ShareViewBehaviorTests {
     @Test func lifecycleHandleAppearRefreshesPermissionAndEnablesToolbarFallback() {
         let viewModel = makeViewModel(isWebServiceRunning: false)
         let monitor = ShareViewDisplayReconfigurationMonitor(startResults: [false])
-        let lifecycle = ShareViewLifecycleController(
+        let lifecycle = DisplayTopologyRefreshLifecycleController(
             displayRefreshMonitor: monitor,
             recoveryAttemptInterval: 99
         )
 
-        lifecycle.handleAppear(viewModel: viewModel)
+        viewModel.refreshPermissionAndMaybeLoad()
+        lifecycle.handleAppear {}
 
         #expect(viewModel.catalog.lastPreflightPermission == true)
         #expect(lifecycle.showToolbarRefresh)
@@ -131,14 +132,18 @@ struct ShareViewBehaviorTests {
         viewModel.catalog.displays = [existingDisplay]
         viewModel.catalog.lastLoadedActiveDisplayTopologySignature = [101]
 
-        let lifecycle = ShareViewLifecycleController(
+        let lifecycle = DisplayTopologyRefreshLifecycleController(
             displayRefreshMonitor: ShareViewDisplayReconfigurationMonitor(startResults: [false, false]),
             displayTopologySignatureProvider: { signatureBox.value },
             fallbackPollingInterval: .milliseconds(20),
             recoveryAttemptInterval: 99
         )
 
-        lifecycle.handleAppear(viewModel: viewModel)
+        viewModel.refreshPermissionAndMaybeLoad()
+        lifecycle.handleAppear {
+            guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+            viewModel.refreshDisplaysBackgroundSafe()
+        }
         await drainMainActorTasks()
         #expect(await loaderGate.currentCallCount() == 0)
 
@@ -167,12 +172,13 @@ struct ShareViewBehaviorTests {
                 return [ShareViewMockSCDisplay.make(displayID: 303, width: 1280, height: 720)]
             }
         )
-        let lifecycle = ShareViewLifecycleController(displayRefreshMonitor: monitor)
+        let lifecycle = DisplayTopologyRefreshLifecycleController(displayRefreshMonitor: monitor)
 
         viewModel.loadDisplays()
         #expect(await waitUntilAsync { await loaderGate.currentCallCount() == 1 })
 
-        lifecycle.handleDisappear(viewModel: viewModel)
+        viewModel.cancelInFlightDisplayLoad()
+        lifecycle.handleDisappear()
         await loaderGate.release()
 
         let cancelled = await waitUntil {

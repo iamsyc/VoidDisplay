@@ -11,13 +11,17 @@ import AppKit
 struct IsCapturing: View {
     @Bindable private var capture: CaptureController
     @State private var viewModel: CaptureChooseViewModel
+    @State private var lifecycle: DisplayTopologyRefreshLifecycleController
     @Environment(SharingController.self) private var sharing
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
+    private let topologyCoordinator: DisplayTopologyChangeCoordinator
 
     init(
         capture: CaptureController,
-        virtualDisplay: VirtualDisplayController
+        virtualDisplay: VirtualDisplayController,
+        topologyCoordinator: DisplayTopologyChangeCoordinator,
+        lifecycle: DisplayTopologyRefreshLifecycleController = DisplayTopologyRefreshLifecycleController()
     ) {
         _capture = Bindable(capture)
         _viewModel = State(
@@ -26,6 +30,8 @@ struct IsCapturing: View {
                 dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
             )
         )
+        _lifecycle = State(initialValue: lifecycle)
+        self.topologyCoordinator = topologyCoordinator
     }
 
     private var shouldShowActiveSessionFallback: Bool {
@@ -54,12 +60,14 @@ struct IsCapturing: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 viewModel.refreshPermissionAndMaybeLoad()
+                lifecycle.handleAppear {
+                    guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+                    topologyCoordinator.handleTopologyChange(source: .captureView)
+                }
             }
             .onDisappear {
                 viewModel.cancelInFlightDisplayLoad()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-                viewModel.refreshDisplaysBackgroundSafe()
+                lifecycle.handleDisappear()
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("capture_choose_root")
@@ -293,8 +301,13 @@ struct IsCapturing: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    IsCapturing(capture: env.capture, virtualDisplay: env.virtualDisplay)
+    IsCapturing(
+        capture: env.capture,
+        virtualDisplay: env.virtualDisplay,
+        topologyCoordinator: env.topology
+    )
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
+        .environment(env.topology)
 }

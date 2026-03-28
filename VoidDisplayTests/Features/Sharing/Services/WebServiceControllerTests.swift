@@ -33,7 +33,8 @@ struct WebServiceControllerTests {
         let result = await sut.start(
             requestedPort: 1000,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
 
         #expect(result == .failed(.invalidPort(.outOfRange)))
@@ -51,7 +52,8 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
 
         #expect(states == [
@@ -71,7 +73,8 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
         sut.stop()
 
@@ -94,7 +97,8 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
         sut.stop()
 
@@ -276,7 +280,8 @@ struct WebServiceControllerTests {
             await sut.start(
                 requestedPort: requestedPort,
                 targetStateProvider: targetStateProvider,
-                sessionHubProvider: sessionHubProvider
+                sessionHubProvider: sessionHubProvider,
+                sharingEventSink: { _ in }
             )
         }
 
@@ -354,11 +359,13 @@ private final class WebServiceServerHarness {
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _ sharingEventSink: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {
         _ = port
         _ = targetStateProvider
         _ = sessionHubProvider
+        _ = sharingEventSink
         let server = ControlledWebServiceServer(onListenerStopped: onListenerStopped)
         createdServers.append(server)
         return server

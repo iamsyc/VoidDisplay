@@ -66,6 +66,29 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("404 Not Found"))
     }
 
+    @Test func displayRouteEmbedsBootstrapJSON() async throws {
+        setenv("VOIDDISPLAY_WEBRTC_ICE_SERVERS", "stun:127.0.0.1:3478,turn:127.0.0.1:3479", 1)
+        defer { unsetenv("VOIDDISPLAY_WEBRTC_ICE_SERVERS") }
+
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { _ in .active },
+            sessionHubProvider: { _ in WebRTCSessionHub() }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let request = Data("GET /display HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+        let responseData = try await Task.detached {
+            try await sendRequestAndReadUntilClose(port: portValue, request: request)
+        }.value
+
+        let responseText = try #require(String(data: responseData, encoding: .utf8))
+        #expect(responseText.contains("HTTP/1.1 200 OK"))
+        #expect(responseText.contains(#"id="voiddisplay-bootstrap""#))
+        #expect(responseText.contains(#""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#))
+    }
+
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
         let sessionHub = WebRTCSessionHub()
         let setup = try await startServerOnRandomPort(
@@ -105,6 +128,40 @@ struct WebServerSocketIntegrationTests {
 
         let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
             server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
+        }
+        #expect(clientCleared)
+    }
+
+    @Test func clientCloseFrameLeavesNoGhostClientsInSharingSnapshot() async throws {
+        let sessionHub = WebRTCSessionHub()
+        let aggregator = SharingStateAggregator()
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                target == .main ? .active : .unknown
+            },
+            sessionHubProvider: { target in
+                target == .main ? sessionHub : nil
+            },
+            sharingEventSink: { event in
+                Task { @MainActor in
+                    aggregator.record(event)
+                }
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let result = try await Task.detached { try await probeClientCloseFrame(port: portValue) }.value
+        #expect(result.handshakeText.contains("101 Switching Protocols"))
+        #expect(result.didClose)
+
+        let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
+            server.activeStreamClientCount == 0 &&
+            sessionHub.activeClientCount == 0 &&
+            aggregator.currentSnapshot.signalingConnections == 0 &&
+            aggregator.currentSnapshot.streamingPeers == 0 &&
+            aggregator.currentSnapshot.clientsByTarget[.main]?.isEmpty ?? true
         }
         #expect(clientCleared)
     }

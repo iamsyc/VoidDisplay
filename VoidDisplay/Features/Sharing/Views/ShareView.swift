@@ -5,21 +5,21 @@
 
 import SwiftUI
 import ScreenCaptureKit
-import Combine
 import AppKit
 import CoreGraphics
 
 struct ShareView: View {
     @Bindable private var sharing: SharingController
     @State private var viewModel: ShareViewModel
-    @State private var lifecycle: ShareViewLifecycleController
+    @State private var lifecycle: DisplayTopologyRefreshLifecycleController
     @Environment(\.openURL) private var openURL
-    private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let topologyCoordinator: DisplayTopologyChangeCoordinator
 
     init(
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
-        lifecycle: ShareViewLifecycleController = ShareViewLifecycleController()
+        topologyCoordinator: DisplayTopologyChangeCoordinator,
+        lifecycle: DisplayTopologyRefreshLifecycleController = DisplayTopologyRefreshLifecycleController()
     ) {
         _sharing = Bindable(sharing)
         _viewModel = State(
@@ -29,6 +29,7 @@ struct ShareView: View {
             )
         )
         _lifecycle = State(initialValue: lifecycle)
+        self.topologyCoordinator = topologyCoordinator
     }
 
     var body: some View {
@@ -55,20 +56,21 @@ struct ShareView: View {
             }
         }
         .onAppear {
-            lifecycle.handleAppear(viewModel: viewModel)
+            viewModel.refreshPermissionAndMaybeLoad()
+            lifecycle.handleAppear {
+                guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+                topologyCoordinator.handleTopologyChange(source: .sharingView)
+            }
         }
         .onDisappear {
-            lifecycle.handleDisappear(viewModel: viewModel)
+            viewModel.cancelInFlightDisplayLoad()
+            lifecycle.handleDisappear()
         }
         .onChange(of: sharing.isWebServiceRunning) { _, _ in
             viewModel.syncForCurrentState()
         }
         .onChange(of: sharing.isSharing) { _, _ in
             viewModel.syncForCurrentState()
-        }
-        .onReceive(sharingStatsTimer) { _ in
-            guard sharing.isWebServiceRunning else { return }
-            sharing.refreshSharingClientCount()
         }
         .alert(item: $bindableViewModel.userFacingAlert) { alert in
             Alert(
@@ -272,8 +274,13 @@ struct ShareView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    ShareView(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+    ShareView(
+        sharing: env.sharing,
+        virtualDisplay: env.virtualDisplay,
+        topologyCoordinator: env.topology
+    )
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
+        .environment(env.topology)
 }

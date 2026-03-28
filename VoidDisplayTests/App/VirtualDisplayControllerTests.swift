@@ -642,7 +642,6 @@ struct AppBootstrapTests {
         #expect(sut.sharing.isDisplaySharing(displayID: displayID))
         #expect(sut.sharing.sharePagePath(for: displayID) == "/display/99")
 
-        sut.sharing.refreshSharingClientCount()
         #expect(sut.sharing.sharingClientCount == 3)
         #expect(sut.sharing.sharingClientCounts[displayID] == 3)
 

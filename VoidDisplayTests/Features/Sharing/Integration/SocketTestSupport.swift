@@ -291,7 +291,8 @@ private final class StaticLiveHubStore {
 @MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+    sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
 ) async throws -> (server: WebServer, port: UInt16) {
     guard let endpointPort = NWEndpoint.Port(rawValue: 0) else {
         throw SocketIntegrationError.bindFailed
@@ -302,7 +303,8 @@ func startServerOnRandomPort(
             let server = try WebServer(
                 using: endpointPort,
                 targetStateProvider: targetStateProvider,
-                sessionHubProvider: sessionHubProvider
+                sessionHubProvider: sessionHubProvider,
+                sharingEventSink: sharingEventSink
             )
             let result = await server.startListener(timeout: 1.0)
             switch result {

@@ -30,6 +30,7 @@ final class SharingController {
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
     @ObservationIgnored private let portPreferences: any SharingPortPreferencesProtocol
     @ObservationIgnored private var observedStartTokensByDisplayID: [CGDirectDisplayID: Set<UUID>] = [:]
+    @ObservationIgnored private var sharingStateSubscription: SharingStateSubscription?
 
     init(
         sharingService: any SharingServiceProtocol,
@@ -42,6 +43,10 @@ final class SharingController {
         self.sharingService.onWebServiceLifecycleStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }
+        self.sharingStateSubscription = self.sharingService.subscribeSharingState { [weak self] _ in
+            self?.refreshSharingCountsFromSnapshot()
+        }
+        syncSharingState()
     }
 
     var displayCatalogState: ScreenCaptureDisplayCatalogState {
@@ -108,11 +113,6 @@ final class SharingController {
         portPreferences.preferredPort
     }
 
-    func refreshSharingClientCount() {
-        sharingClientCount = sharingService.activeStreamClientCount
-        refreshSharingClientCounts()
-    }
-
     func isDisplaySharing(displayID: CGDirectDisplayID) -> Bool {
         activeSharingDisplayIDs.contains(displayID)
     }
@@ -158,12 +158,11 @@ final class SharingController {
 
     private func syncSharingState() {
         webServer = sharingService.currentWebServer
-        sharingClientCount = sharingService.activeStreamClientCount
         activeSharingDisplayIDs = sharingService.activeSharingDisplayIDs
         isSharing = sharingService.hasAnyActiveSharing
         isWebServiceRunning = sharingService.isWebServiceRunning
         webServiceLifecycleState = sharingService.webServiceLifecycleState
-        refreshSharingClientCounts()
+        refreshSharingCountsFromSnapshot()
     }
 
     private func beginObservedStart(displayID: CGDirectDisplayID) -> UUID {
@@ -196,7 +195,9 @@ final class SharingController {
         startingDisplayIDs.removeAll()
     }
 
-    private func refreshSharingClientCounts() {
+    private func refreshSharingCountsFromSnapshot() {
+        let snapshot = sharingService.sharingStateSnapshot
+        sharingClientCount = snapshot.streamingPeers
         guard isWebServiceRunning else {
             sharingClientCounts = [:]
             return
@@ -204,7 +205,7 @@ final class SharingController {
         var counts: [CGDirectDisplayID: Int] = [:]
         for displayID in sharingService.activeSharingDisplayIDs {
             if let target = sharingService.shareTarget(for: displayID) {
-                counts[displayID] = sharingService.streamClientCount(for: target)
+                counts[displayID] = snapshot.streamingPeersByTarget[target] ?? 0
             }
         }
         sharingClientCounts = counts

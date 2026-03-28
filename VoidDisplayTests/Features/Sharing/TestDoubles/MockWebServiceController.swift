@@ -21,16 +21,19 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var disconnectCallCount = 0
     var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
     var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?)?
+    var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
 
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         startCallCount += 1
         lastRequestedPort = requestedPort
         capturedTargetStateProvider = targetStateProvider
         capturedSessionHubProvider = sessionHubProvider
+        capturedSharingEventSink = sharingEventSink
         switch startResult {
         case .started(let binding), .alreadyRunning(let binding):
             isRunning = true
