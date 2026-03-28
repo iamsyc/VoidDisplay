@@ -122,7 +122,7 @@ struct ShareViewModelTests {
         #expect(sut.isStarting(displayID: 102) == false)
     }
 
-    @MainActor @Test func requestPermissionDeniedClearsDisplaysAndSetsErrorMessage() {
+    @MainActor @Test func requestPermissionDeniedClearsDisplaysAndSetsErrorMessage() async {
         let env = makeEnvironment()
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
@@ -136,6 +136,16 @@ struct ShareViewModelTests {
 
         sut.requestScreenCapturePermission()
 
+        let cleared = await waitUntil {
+            sut.catalog.hasScreenCapturePermission == false &&
+                sut.catalog.lastRequestPermission == false &&
+                sut.catalog.lastPreflightPermission == false &&
+                sut.catalog.displays == nil &&
+                sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.loadErrorMessage != nil
+        }
+
+        #expect(cleared)
         #expect(sut.catalog.hasScreenCapturePermission == false)
         #expect(sut.catalog.lastRequestPermission == false)
         #expect(sut.catalog.lastPreflightPermission == false)
@@ -146,14 +156,32 @@ struct ShareViewModelTests {
 
     @MainActor @Test func loadDisplaysRegistersDisplaysThroughControllers() async {
         let sharing = MockSharingService()
-        let env = makeEnvironment(sharing: sharing)
         let sut = ShareViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
                 preflightResult: true,
                 requestResult: true
             ),
             loadShareableDisplays: { [] },
-            dependencies: .live(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+            dependencies: .init(
+                sharingQueries: .init(
+                    isWebServiceRunning: { true },
+                    isStartingDisplayID: { _ in false },
+                    sharePageAddress: { _ in nil },
+                    preferredWebServicePort: { 8081 }
+                ),
+                sharingActions: .init(
+                    startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
+                    stopWebService: {},
+                    registerShareableDisplays: { displays, resolver in
+                        sharing.registerShareableDisplays(displays, virtualSerialResolver: resolver)
+                    },
+                    beginSharing: { _ in .started(()) },
+                    stopSharing: { _ in }
+                ),
+                virtualDisplayQueries: .init(
+                    virtualSerialForManagedDisplay: { _ in nil }
+                )
+            )
         )
 
         sut.loadDisplays()
@@ -344,7 +372,7 @@ struct ShareViewModelTests {
         #expect(secondFinished)
     }
 
-    @MainActor @Test func syncForCurrentStateClearsDisplaysWhenServiceIsStopped() {
+    @MainActor @Test func syncForCurrentStatePreservesDisplaysWhenServiceIsStopped() {
         let existingDisplay = MockSCDisplay.make(displayID: 9022, width: 1920, height: 1080)
         let sut = ShareViewModel(
             dependencies: .init(
@@ -371,11 +399,11 @@ struct ShareViewModelTests {
 
         sut.syncForCurrentState()
 
-        #expect(sut.catalog.displays == nil)
+        #expect(sut.catalog.displays?.map(\.displayID) == [existingDisplay.displayID])
         #expect(sut.catalog.isLoadingDisplays == false)
     }
 
-    @MainActor @Test func syncForCurrentStateCancelsLoadWithoutClearingDisplaysWhenServiceStoppedClearIsDisabled() {
+    @MainActor @Test func syncForCurrentStateCancelsLoadWithoutClearingDisplaysWhenServiceStoppedClearIsDisabled() async {
         let existingDisplay = MockSCDisplay.make(displayID: 9030, width: 1920, height: 1080)
         let sut = ShareViewModel(
             dependencies: .init(
@@ -403,6 +431,11 @@ struct ShareViewModelTests {
 
         sut.syncForCurrentState(clearDisplaysWhenServiceStopped: false)
 
+        let cancelled = await waitUntil {
+            sut.catalog.isLoadingDisplays == false
+        }
+
+        #expect(cancelled)
         #expect(sut.catalog.displays?.map(\.displayID) == [existingDisplay.displayID])
         #expect(sut.catalog.isLoadingDisplays == false)
     }
@@ -910,6 +943,11 @@ struct ShareViewModelTests {
         #expect(await waitForLoaderCall(gate, count: 1))
 
         sut.stopService()
+        let cancelled = await waitUntil {
+            sut.catalog.isLoadingDisplays == false && sut.catalog.displays == nil
+        }
+
+        #expect(cancelled)
         #expect(sut.catalog.isLoadingDisplays == false)
         #expect(sut.catalog.displays == nil)
 

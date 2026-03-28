@@ -22,7 +22,7 @@ struct IsCapturing: View {
         _capture = Bindable(capture)
         _viewModel = State(
             initialValue: CaptureChooseViewModel(
-                catalogState: capture.displayCatalogState,
+                catalogService: capture.catalogService,
                 dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
             )
         )

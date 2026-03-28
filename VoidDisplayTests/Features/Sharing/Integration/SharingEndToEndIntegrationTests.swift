@@ -61,7 +61,7 @@ struct SharingEndToEndIntegrationTests {
     @Test
     func sharingLifecycleRoutesRemainConsistent() async throws {
         let storeURL = temporaryStoreURL()
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _ in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _ in
             EndToEndFakeCaptureSession()
         })
         let coordinator = DisplaySharingCoordinator(

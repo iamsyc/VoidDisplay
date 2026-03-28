@@ -114,6 +114,7 @@ enum AppBootstrap {
             ?? (ProcessInfo.processInfo.environment[xCTestConfigurationEnvironmentKey] != nil)
         let resolvedStartupPlan = startupPlan ?? (isRunningUnderXCTest ? .skipAll : .standard)
         let resolvedCaptureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
+        let catalogService = ScreenCaptureCatalogService()
 
         var persistenceEnvironment = ProcessInfo.processInfo.environment
         if preview {
@@ -142,10 +143,14 @@ enum AppBootstrap {
             resolvedVirtualDisplayFacade = VirtualDisplayOrchestrator(configRepository: configRepository)
         }
 
-        let capture = CaptureController(captureMonitoringService: resolvedCaptureMonitoringService)
+        let capture = CaptureController(
+            captureMonitoringService: resolvedCaptureMonitoringService,
+            catalogService: catalogService
+        )
         let sharing = SharingController(
             sharingService: resolvedSharingService,
-            portPreferences: SharingPortPreferences(defaults: persistenceContext.userDefaults)
+            portPreferences: SharingPortPreferences(defaults: persistenceContext.userDefaults),
+            catalogService: catalogService
         )
         let virtualDisplay = VirtualDisplayController(
             virtualDisplayFacade: resolvedVirtualDisplayFacade,

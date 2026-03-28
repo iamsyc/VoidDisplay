@@ -24,7 +24,7 @@ struct ShareView: View {
         _sharing = Bindable(sharing)
         _viewModel = State(
             initialValue: ShareViewModel(
-                catalogState: sharing.displayCatalogState,
+                catalogService: sharing.catalogService,
                 dependencies: .live(sharing: sharing, virtualDisplay: virtualDisplay)
             )
         )

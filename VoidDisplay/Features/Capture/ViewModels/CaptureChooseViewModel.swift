@@ -9,6 +9,7 @@ import OSLog
 @Observable
 final class CaptureChooseViewModel {
     typealias LoadErrorInfo = ScreenCaptureDisplayCatalogLoadErrorInfo
+    typealias RefreshIntent = ScreenCaptureCatalogRefreshIntent
 
     struct CaptureActions {
         var monitoringSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?
@@ -56,11 +57,12 @@ final class CaptureChooseViewModel {
     let catalog: ScreenCaptureDisplayCatalogState
     var userFacingAlert: UserFacingAlertState?
 
-    private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
+    private let catalogService: ScreenCaptureCatalogService
+    @ObservationIgnored private let refreshOwner = ScreenCaptureCatalogService.RefreshOwner()
     @ObservationIgnored private let dependencies: Dependencies
-    @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
+        catalogService: ScreenCaptureCatalogService? = nil,
         catalogState: ScreenCaptureDisplayCatalogState? = nil,
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
@@ -69,20 +71,17 @@ final class CaptureChooseViewModel {
         },
         dependencies: Dependencies
     ) {
-        let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
-        self.catalog = catalog
-        self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
-            state: catalog,
-            activeDisplayIDsProvider: activeDisplayIDsProvider
-        )
-        self.dependencies = dependencies
-        self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
-            state: catalog,
+        let resolvedCatalogService = catalogService ?? ScreenCaptureCatalogService(
+            store: catalogState,
             permissionProvider: permissionProvider,
             loadShareableDisplays: loadShareableDisplays,
+            activeDisplayIDsProvider: activeDisplayIDsProvider,
             logOperation: "Load shareable displays",
             logger: AppLog.capture
         )
+        self.catalogService = resolvedCatalogService
+        self.catalog = resolvedCatalogService.store
+        self.dependencies = dependencies
     }
 
     func isVirtualDisplay(_ display: SCDisplay) -> Bool {
@@ -100,7 +99,7 @@ final class CaptureChooseViewModel {
     }
 
     func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
-        topologyCoordinator.visibleDisplays(from: displays)
+        catalogService.visibleDisplays(from: displays)
     }
 
     func isStarting(displayID: CGDirectDisplayID) -> Bool {
@@ -148,64 +147,44 @@ final class CaptureChooseViewModel {
     }
 
     func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
-        catalogLoader.openScreenCapturePrivacySettings(openURL: openURL)
+        catalogService.openScreenCapturePrivacySettings(openURL: openURL)
     }
 
     func requestScreenCapturePermission() {
-        let granted = catalogLoader.requestPermission()
+        let granted = catalogService.requestPermission()
         if !granted {
-            catalogLoader.clearDisplaysAndCancel()
+            Task { await catalogService.clearSnapshotForDeniedPermission() }
             AppLog.capture.notice("Screen capture permission request denied.")
             return
         }
-        loadDisplays()
+        Task { await self.submitRefresh(.permissionChanged) }
     }
 
     func refreshPermissionAndMaybeLoad() {
-        let granted = catalogLoader.refreshPermission()
+        let granted = catalogService.refreshPermission()
         if !granted {
-            catalogLoader.cancelInFlightDisplayLoad()
+            Task { await catalogService.clearSnapshotForDeniedPermission() }
             AppLog.capture.notice("Screen capture permission preflight denied.")
             return
         }
-        guard topologyCoordinator.needsRefresh() else { return }
-        if catalog.displays == nil {
-            loadDisplaysIfNeeded()
-            return
-        }
-        loadDisplaysPreservingExisting()
+        Task { await self.submitRefresh(.permissionChanged) }
     }
 
     func loadDisplays() {
-        catalogLoader.loadDisplays { [weak self] _ in
-            self?.topologyCoordinator.commitLoadedTopologySignature()
-        }
+        Task { await self.submitRefresh(.userForcedRefresh) }
     }
 
     func refreshDisplaysBackgroundSafe() {
         guard catalog.hasScreenCapturePermission == true else { return }
         guard !catalog.isLoadingDisplays else { return }
-        guard topologyCoordinator.needsRefresh() else { return }
-        if catalog.displays == nil {
-            loadDisplaysIfNeeded()
-            return
-        }
-        loadDisplaysPreservingExisting()
+        Task { await self.submitRefresh(.topologyChanged) }
     }
 
     func cancelInFlightDisplayLoad() {
-        catalogLoader.cancelInFlightDisplayLoad()
+        Task { await catalogService.cancelRefresh(owner: refreshOwner) }
     }
 
-    private func loadDisplaysIfNeeded() {
-        catalogLoader.loadDisplaysIfNeeded { [weak self] _ in
-            self?.topologyCoordinator.commitLoadedTopologySignature()
-        }
-    }
-
-    private func loadDisplaysPreservingExisting() {
-        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] _ in
-            self?.topologyCoordinator.commitLoadedTopologySignature()
-        }
+    private func submitRefresh(_ intent: RefreshIntent) async {
+        _ = await catalogService.submitRefresh(intent: intent, owner: refreshOwner)
     }
 }

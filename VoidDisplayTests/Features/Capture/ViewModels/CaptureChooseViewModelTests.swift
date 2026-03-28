@@ -215,7 +215,7 @@ struct CaptureChooseViewModelTests {
         #expect(sut.userFacingAlert == nil)
     }
 
-    @MainActor @Test func requestPermissionDeniedClearsDisplayState() {
+    @MainActor @Test func requestPermissionDeniedClearsDisplayState() async {
         let sut = CaptureChooseViewModel(
             permissionProvider: MockScreenCapturePermissionProvider(
                 preflightResult: false,
@@ -228,6 +228,15 @@ struct CaptureChooseViewModelTests {
 
         sut.requestScreenCapturePermission()
 
+        let cleared = await waitUntil {
+            sut.catalog.hasScreenCapturePermission == false &&
+                sut.catalog.lastRequestPermission == false &&
+                sut.catalog.lastPreflightPermission == false &&
+                sut.catalog.displays == nil &&
+                sut.catalog.isLoadingDisplays == false
+        }
+
+        #expect(cleared)
         #expect(sut.catalog.hasScreenCapturePermission == false)
         #expect(sut.catalog.lastRequestPermission == false)
         #expect(sut.catalog.lastPreflightPermission == false)
@@ -515,7 +524,7 @@ struct CaptureChooseViewModelTests {
         #expect(staleResultIgnored)
     }
 
-    @MainActor @Test func refreshPermissionDeniedCancelsInFlightDisplayLoad() async {
+    @MainActor @Test func refreshPermissionDeniedClearsStateWithoutStartingLoad() async {
         let gate = SequencedCaptureDisplayLoaderGate(
             scriptedOutcomes: [.success]
         )
@@ -536,12 +545,16 @@ struct CaptureChooseViewModelTests {
         )
 
         sut.loadDisplays()
-        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(await waitForLoaderCall(gate, count: 1) == false)
 
         sut.refreshPermissionAndMaybeLoad()
-        #expect(sut.catalog.hasScreenCapturePermission == false)
-        #expect(sut.catalog.isLoadingDisplays == false)
-        #expect(sut.catalog.displays == nil)
+        let cleared = await waitUntil {
+            sut.catalog.hasScreenCapturePermission == false &&
+                sut.catalog.isLoadingDisplays == false &&
+                sut.catalog.displays == nil
+        }
+
+        #expect(cleared)
 
         await gate.release(call: 1)
         let lateWritePrevented = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {
@@ -571,7 +584,10 @@ struct CaptureChooseViewModelTests {
         sut.loadDisplays()
         #expect(await waitForLoaderCall(gate, count: 1))
         sut.cancelInFlightDisplayLoad()
-        #expect(sut.catalog.isLoadingDisplays == false)
+        let cancelled = await waitUntil {
+            sut.catalog.isLoadingDisplays == false
+        }
+        #expect(cancelled)
 
         await gate.release(call: 1)
         let lateWritePrevented = await waitUntil(timeoutNanoseconds: AsyncTestTimeouts.shortStabilityWindow) {

@@ -13,7 +13,7 @@ import Observation
 final class CaptureController {
     var screenCaptureSessions: [ScreenMonitoringSession] = []
     var startingDisplayIDs: Set<CGDirectDisplayID> = []
-    @ObservationIgnored let displayCatalogState = ScreenCaptureDisplayCatalogState()
+    @ObservationIgnored let catalogService: ScreenCaptureCatalogService
 
     @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
     @ObservationIgnored private let captureMonitoringLifecycleService: any CaptureMonitoringLifecycleServiceProtocol
@@ -21,12 +21,18 @@ final class CaptureController {
 
     init(
         captureMonitoringService: any CaptureMonitoringServiceProtocol,
-        captureMonitoringLifecycleService: (any CaptureMonitoringLifecycleServiceProtocol)? = nil
+        captureMonitoringLifecycleService: (any CaptureMonitoringLifecycleServiceProtocol)? = nil,
+        catalogService: ScreenCaptureCatalogService? = nil
     ) {
         self.captureMonitoringService = captureMonitoringService
         self.captureMonitoringLifecycleService = captureMonitoringLifecycleService
             ?? CaptureMonitoringLifecycleService(captureMonitoringService: captureMonitoringService)
+        self.catalogService = catalogService ?? ScreenCaptureCatalogService()
         self.screenCaptureSessions = captureMonitoringService.currentSessions
+    }
+
+    var displayCatalogState: ScreenCaptureDisplayCatalogState {
+        catalogService.store
     }
 
     func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
