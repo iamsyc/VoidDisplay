@@ -1,6 +1,7 @@
 import CoreVideo
 import Foundation
 import Network
+import OSLog
 import Synchronization
 
 #if canImport(WebRTC)
@@ -73,12 +74,20 @@ nonisolated private struct SignalingOutboundMessage: Encodable {
 }
 
 final class WebRTCSessionHub: Sendable {
+    enum AddClientResult: Sendable, Equatable {
+        case accepted(clientID: String)
+        case rejected(reason: String)
+    }
+
     nonisolated struct PeerCallbacks: Sendable {
         let onAnswer: @Sendable (String) -> Void
         let onLocalCandidate: @Sendable (_ sdp: String, _ sdpMid: String?, _ sdpMLineIndex: Int32) -> Void
+        let onConnected: @Sendable () -> Void
         let onFailure: @Sendable (String) -> Void
         let onDisconnected: @Sendable () -> Void
     }
+
+    typealias SharingEventSink = @Sendable (SharingSessionEvent) -> Void
 
     typealias PeerFactory = @Sendable (PeerCallbacks) -> (any WebRTCPeerSessioning)?
 
@@ -89,6 +98,10 @@ final class WebRTCSessionHub: Sendable {
 
     private nonisolated struct ClientState {
         nonisolated(unsafe) let connection: any SignalSocketConnection
+        let clientID: String
+        let target: ShareTarget
+        let eventSink: SharingEventSink
+        var nextEventSequence: UInt64 = 0
         var isSending = false
         var pendingSignals: [QueuedSignal] = []
         var peer: (any WebRTCPeerSessioning)?
@@ -124,6 +137,7 @@ final class WebRTCSessionHub: Sendable {
                         Int32(candidate.sdpMLineIndex)
                     )
                 },
+                onConnected: callbacks.onConnected,
                 onFailure: callbacks.onFailure,
                 onDisconnected: callbacks.onDisconnected
             )
@@ -146,36 +160,61 @@ final class WebRTCSessionHub: Sendable {
         state.withLock { $0.onDemandChanged = onDemandChanged }
     }
 
-    nonisolated func addClient(_ connection: any SignalSocketConnection) {
+    nonisolated func addClient(
+        _ connection: any SignalSocketConnection,
+        target: ShareTarget,
+        makeClientID: @escaping @Sendable () -> String = { UUID().uuidString },
+        eventSink: @escaping SharingEventSink
+    ) -> AddClientResult {
         let key = ObjectIdentifier(connection as AnyObject)
-        let (added, shouldSignalDemand, callback) = state.withLock { state -> (Bool, Bool, @Sendable (Bool) -> Void) in
+        let (result, acceptedClientID, shouldSignalDemand, callback) = state.withLock {
+            state -> (AddClientResult, String?, Bool, @Sendable (Bool) -> Void) in
             guard state.clients.count < maxClients else {
-                return (false, false, state.onDemandChanged)
+                return (.rejected(reason: "too_many_viewers"), nil, false, state.onDemandChanged)
             }
             let wasEmpty = state.clients.isEmpty
-            state.clients[key] = ClientState(connection: connection)
-            return (true, wasEmpty, state.onDemandChanged)
+            let clientID = makeClientID()
+            state.clients[key] = ClientState(
+                connection: connection,
+                clientID: clientID,
+                target: target,
+                eventSink: eventSink
+            )
+            return (.accepted(clientID: clientID), clientID, wasEmpty, state.onDemandChanged)
         }
 
-        if !added {
-            send(
-                message: SignalingOutboundMessage(type: .error, reason: "too_many_viewers"),
-                to: connection,
-                completion: nil
-            )
-            connection.cancelSocket()
-            return
+        guard case .accepted = result, let clientID = acceptedClientID else {
+            return result
         }
 
         if shouldSignalDemand {
             callback(true)
         }
 
+        emitEvent(
+            SharingSessionEvent(
+                target: target,
+                clientID: clientID,
+                sequence: nextEventSequence(for: key),
+                phase: .signalingConnected,
+                source: .webSocket
+            ),
+            for: key
+        )
         send(message: SignalingOutboundMessage(type: .ready), to: connection, completion: nil)
+        return .accepted(clientID: clientID)
     }
 
     nonisolated func removeClient(_ connection: any SignalSocketConnection) {
         removeClient(for: ObjectIdentifier(connection as AnyObject), cancelConnection: false)
+    }
+
+    nonisolated func sendRejection(reason: String, to connection: any SignalSocketConnection) {
+        send(
+            message: SignalingOutboundMessage(type: .error, reason: reason),
+            to: connection,
+            completion: nil
+        )
     }
 
     nonisolated func disconnectAllClients() {
@@ -237,6 +276,7 @@ final class WebRTCSessionHub: Sendable {
                 send(message: SignalingOutboundMessage(type: .error, reason: "missing_offer_sdp"), to: key)
                 return
             }
+            emitEvent(phase: .offerReceived, source: .peerConnection, for: key)
             ensurePeer(for: key)?.handleRemoteOffer(sdp: sdp)
         case .iceCandidate:
             guard let candidate = message.candidate else {
@@ -280,11 +320,18 @@ final class WebRTCSessionHub: Sendable {
                     to: key
                 )
             },
+            onConnected: { [weak self] in
+                self?.emitEvent(phase: .peerConnected, source: .peerConnection, for: key)
+            },
             onFailure: { [weak self] reason in
-                self?.send(message: SignalingOutboundMessage(type: .error, reason: reason), to: key)
+                self?.emitEvent(phase: .peerFailed, source: .peerConnection, for: key)
+                AppLog.web.warning(
+                    "WebRTC peer failed; closing signaling socket to trigger reconnect (reason: \(reason, privacy: .public))."
+                )
                 self?.removeClient(for: key, cancelConnection: true)
             },
             onDisconnected: { [weak self] in
+                self?.emitEvent(phase: .peerDisconnected, source: .peerConnection, for: key)
                 self?.removeClient(for: key, cancelConnection: true)
             }
         )
@@ -440,6 +487,15 @@ final class WebRTCSessionHub: Sendable {
         }
 
         guard let removed else { return }
+        removed.eventSink(
+            SharingSessionEvent(
+                target: removed.target,
+                clientID: removed.clientID,
+                sequence: removed.nextEventSequence + 1,
+                phase: .closed,
+                source: .webSocket
+            )
+        )
         removed.peer?.close()
         if cancelConnection {
             removed.connection.cancelSocket()
@@ -448,20 +504,83 @@ final class WebRTCSessionHub: Sendable {
             callback(false)
         }
     }
+
+    nonisolated private func emitEvent(
+        _ event: SharingSessionEvent,
+        for key: ObjectIdentifier
+    ) {
+        let sink = state.withLock { $0.clients[key]?.eventSink }
+        sink?(event)
+    }
+
+    nonisolated private func emitEvent(
+        phase: SharingPeerPhase,
+        source: SharingSessionEventSource,
+        for key: ObjectIdentifier
+    ) {
+        let payload = state.withLock {
+            state -> (target: ShareTarget, clientID: String, sequence: UInt64, sink: SharingEventSink)? in
+            guard var client = state.clients[key] else { return nil }
+            client.nextEventSequence += 1
+            let sequence = client.nextEventSequence
+            state.clients[key] = client
+            return (client.target, client.clientID, sequence, client.eventSink)
+        }
+        guard let payload else { return }
+        payload.sink(
+            SharingSessionEvent(
+                target: payload.target,
+                clientID: payload.clientID,
+                sequence: payload.sequence,
+                phase: phase,
+                source: source
+            )
+        )
+    }
+
+    nonisolated private func nextEventSequence(for key: ObjectIdentifier) -> UInt64 {
+        state.withLock { state -> UInt64 in
+            guard var client = state.clients[key] else { return 0 }
+            client.nextEventSequence += 1
+            let sequence = client.nextEventSequence
+            state.clients[key] = client
+            return sequence
+        }
+    }
+}
+
+enum WebRTCIceServerProvider {
+    // Reserved extension point: defaults to host candidates only for LAN P2P.
+    nonisolated static func configuredURLStrings() -> [String] {
+        guard let raw = ProcessInfo.processInfo.environment["VOIDDISPLAY_WEBRTC_ICE_SERVERS"] else {
+            return []
+        }
+        return raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    nonisolated static func browserBootstrapJSON() -> String {
+        let urls = configuredURLStrings()
+        let payload: [String: Any] = [
+            "iceServers": urls.isEmpty ? [] : [["urls": urls]]
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              var json = String(data: data, encoding: .utf8) else {
+            return #"{"iceServers":[]}"#
+        }
+        json = json.replacingOccurrences(of: "</script>", with: "<\\/script>")
+        return json
+    }
 }
 
 #if canImport(WebRTC)
 
-private enum WebRTCIceServerProvider {
-    // Reserved extension point: defaults to host candidates only for LAN P2P.
+private extension WebRTCIceServerProvider {
     nonisolated static func configuredServers() -> [RTCIceServer] {
-        guard let raw = ProcessInfo.processInfo.environment["VOIDDISPLAY_WEBRTC_ICE_SERVERS"] else {
-            return []
-        }
-        let urls = raw
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let urls = configuredURLStrings()
         guard !urls.isEmpty else { return [] }
         return [RTCIceServer(urlStrings: urls)]
     }
@@ -545,6 +664,7 @@ private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeer
     nonisolated(unsafe) private let peerConnection: RTCPeerConnection
     private let onAnswer: @Sendable (String) -> Void
     private let onLocalCandidate: @Sendable (RTCIceCandidate) -> Void
+    private let onConnected: @Sendable () -> Void
     private let onFailure: @Sendable (String) -> Void
     private let onDisconnected: @Sendable () -> Void
 
@@ -552,6 +672,7 @@ private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeer
         mediaPipeline: WebRTCMediaPipeline,
         onAnswer: @escaping @Sendable (String) -> Void,
         onLocalCandidate: @escaping @Sendable (RTCIceCandidate) -> Void,
+        onConnected: @escaping @Sendable () -> Void,
         onFailure: @escaping @Sendable (String) -> Void,
         onDisconnected: @escaping @Sendable () -> Void
     ) {
@@ -559,6 +680,7 @@ private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeer
         self.peerConnection = peerConnection
         self.onAnswer = onAnswer
         self.onLocalCandidate = onLocalCandidate
+        self.onConnected = onConnected
         self.onFailure = onFailure
         self.onDisconnected = onDisconnected
         super.init()
@@ -636,12 +758,18 @@ extension WebRTCPeerSession: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
+        if newState == .connected {
+            onConnected()
+        }
         if newState == .failed || newState == .closed || newState == .disconnected {
             onDisconnected()
         }
     }
 
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        if newState == .connected || newState == .completed {
+            onConnected()
+        }
         if newState == .failed || newState == .closed || newState == .disconnected {
             onDisconnected()
         }

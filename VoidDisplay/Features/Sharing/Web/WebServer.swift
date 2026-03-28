@@ -94,6 +94,7 @@ final class WebServer {
 
     private struct ActiveConnection {
         let target: ShareTarget
+        let clientID: String
         let connection: NWConnection
     }
 
@@ -104,6 +105,7 @@ final class WebServer {
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
     private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+    private let sharingEventSink: @Sendable (SharingSessionEvent) -> Void
     private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     private var didNotifyListenerStopped = false
     private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
@@ -117,10 +119,12 @@ final class WebServer {
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
         self.sessionHubProvider = sessionHubProvider
+        self.sharingEventSink = sharingEventSink
         self.onListenerStopped = onListenerStopped
 
         displayPageTemplate = try Self.loadDisplayPageTemplate()
@@ -307,6 +311,11 @@ final class WebServer {
         return displayPageTemplate
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
             .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)
+            .replacingOccurrences(of: "__BOOTSTRAP_JSON__", with: makeDisplayPageBootstrapJSON())
+    }
+
+    private func makeDisplayPageBootstrapJSON() -> String {
+        WebRTCIceServerProvider.browserBootstrapJSON()
     }
 
     private func processRequest(_ content: Data?, on connection: NWConnection) {
@@ -424,9 +433,28 @@ final class WebServer {
                     return
                 }
                 AppLog.web.info("WebServer: [\(endpoint)] WebSocket upgrade succeeded.")
-                hub.addClient(connection)
+                let sharingEventSink = self.sharingEventSink
+                let addResult = hub.addClient(
+                    connection,
+                    target: target,
+                    makeClientID: { UUID().uuidString },
+                    eventSink: { event in
+                        sharingEventSink(event)
+                    }
+                )
+                guard case .accepted(let clientID) = addResult else {
+                    if case .rejected(let reason) = addResult {
+                        hub.sendRejection(reason: reason, to: connection)
+                    }
+                    connection.cancel()
+                    return
+                }
                 let key = self.connectionKey(for: connection)
-                self.activeConnections[key] = ActiveConnection(target: target, connection: connection)
+                self.activeConnections[key] = ActiveConnection(
+                    target: target,
+                    clientID: clientID,
+                    connection: connection
+                )
                 self.signalDecodersByConnectionKey[key] = WebSocketFrameDecoder(
                     maxFramePayloadBytes: Self.maxSignalBufferBytes,
                     maxContinuationPayloadBytes: Self.maxSignalBufferBytes,

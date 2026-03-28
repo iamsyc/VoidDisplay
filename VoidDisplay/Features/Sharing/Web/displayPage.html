@@ -196,8 +196,10 @@
         <p class="footnote">Use `1:1` for original size and `Fullscreen` for immersive view.</p>
     </div>
 
+    <script id="voiddisplay-bootstrap" type="application/json">__BOOTSTRAP_JSON__</script>
     <script>
         const signalPath = "__SIGNAL_PATH__";
+        const bootstrapEl = document.getElementById("voiddisplay-bootstrap");
         const statusEl = document.getElementById("status");
         const overlayEl = document.getElementById("overlay");
         const messageTitleEl = document.getElementById("message-title");
@@ -211,10 +213,22 @@
         let peer = null;
         let reconnectIndex = 0;
         let reconnectTimer = null;
-        let terminalStop = false;
+        var terminalStop = false;
         let state = "idle";
         let originalScaleEnabled = false;
         const reconnectDelays = [250, 500, 1000, 2000, 4000];
+        const bootstrap = (() => {
+            if (!bootstrapEl?.textContent) {
+                return { iceServers: [] };
+            }
+            try {
+                const parsed = JSON.parse(bootstrapEl.textContent);
+                const iceServers = Array.isArray(parsed?.iceServers) ? parsed.iceServers : [];
+                return { iceServers };
+            } catch {
+                return { iceServers: [] };
+            }
+        })();
 
         function setStatus(text) {
             statusEl.textContent = text;
@@ -327,7 +341,7 @@
 
         async function startPeerConnection() {
             closePeer();
-            peer = new RTCPeerConnection({ iceServers: [] });
+            peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });
 
             peer.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
@@ -462,8 +476,13 @@
                         transition("closed");
                         break;
                     case "error":
+                        terminalStop = true;
                         setStatus("Error");
                         setOverlay("Stream error", payload.reason || "Unknown signaling error.", true);
+                        clearReconnectTimer();
+                        closePeer();
+                        closeSocketAndClearReference();
+                        transition("closed");
                         break;
                     default:
                         break;

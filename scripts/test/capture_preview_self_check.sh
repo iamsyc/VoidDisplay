@@ -48,6 +48,10 @@ run_mode() {
     exit 1
   fi
 
+  bash "$ROOT_DIR/scripts/test/xcresult_test_count_guard.sh" \
+    --xcresult "$result_bundle" \
+    --label "Capture preview diagnostics ($mode)"
+
   xcrun xcresulttool export attachments \
     --path "$result_bundle" \
     --output-path "$attachments_dir" \
