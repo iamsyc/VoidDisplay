@@ -61,7 +61,7 @@ struct SharingEndToEndIntegrationTests {
     @Test
     func sharingLifecycleRoutesRemainConsistent() async throws {
         let storeURL = temporaryStoreURL()
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _ in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _ in
             EndToEndFakeCaptureSession()
         })
         let coordinator = DisplaySharingCoordinator(
@@ -130,6 +130,80 @@ struct SharingEndToEndIntegrationTests {
         #expect(unreachableAfterStop)
     }
 
+    @MainActor
+    @Test
+    func restartingWebServiceKeepsPreviousSharingSessionStopped() async throws {
+        let storeURL = temporaryStoreURL()
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _ in
+            EndToEndFakeCaptureSession()
+        })
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: storeURL),
+            captureRegistry: registry
+        )
+        let webServiceController = WebServiceController()
+        let service = SharingService(
+            webServiceController: webServiceController,
+            sharingCoordinator: coordinator
+        )
+
+        let displayID = CGDirectDisplayID(9201)
+        let display = EndToEndMockSCDisplay.make(displayID: displayID, width: 2560, height: 1440)
+        service.registerShareableDisplays([display], virtualSerialResolver: { _ in nil })
+
+        let firstStart = await startWebServiceWithDynamicPorts(service: service)
+        let firstBinding = try requireBinding(firstStart)
+        _ = try await service.startSharing(display: display)
+        let shareID = try #require(service.shareID(for: displayID))
+        let displayPath = "/display/\(shareID)"
+        let signalPath = "/signal/\(shareID)"
+
+        service.stopWebService()
+
+        let fullyStopped = await waitUntil(timeout: .seconds(2)) {
+            service.activeSharingDisplayIDs.isEmpty &&
+            service.hasAnyActiveSharing == false &&
+            service.isSharing(displayID: displayID) == false &&
+            service.sharingStateSnapshot == .empty
+        }
+        #expect(fullyStopped)
+
+        let firstPortClosed = await waitForConnectionFailure(
+            port: firstBinding.boundPort,
+            path: displayPath,
+            timeout: .seconds(3)
+        )
+        #expect(firstPortClosed)
+
+        let secondStart = await startWebServiceWithDynamicPorts(service: service)
+        let secondBinding = try requireBinding(secondStart)
+        defer {
+            service.stopWebService()
+        }
+
+        #expect(service.activeSharingDisplayIDs.isEmpty)
+        #expect(service.hasAnyActiveSharing == false)
+        #expect(service.isSharing(displayID: displayID) == false)
+
+        let displayResponse = try await Task.detached {
+            try await sendRequestAndReadUntilClose(
+                port: secondBinding.boundPort,
+                request: Data("GET \(displayPath) HTTP/1.1\r\nHost: 127.0.0.1:\(secondBinding.boundPort)\r\n\r\n".utf8)
+            )
+        }.value
+        let displayText = try #require(String(data: displayResponse, encoding: .utf8))
+        #expect(displayText.contains("HTTP/1.1 200 OK"))
+
+        let signalResponse = try await Task.detached {
+            try await sendRequestAndReadUntilClose(
+                port: secondBinding.boundPort,
+                request: Data("GET \(signalPath) HTTP/1.1\r\nHost: 127.0.0.1:\(secondBinding.boundPort)\r\n\r\n".utf8)
+            )
+        }.value
+        let signalText = try #require(String(data: signalResponse, encoding: .utf8))
+        #expect(signalText.contains("503 Service Unavailable"))
+    }
+
     private func waitForConnectionFailure(
         port: UInt16,
         path: String,
@@ -152,6 +226,18 @@ struct SharingEndToEndIntegrationTests {
         } catch {
             return true
         }
+    }
+
+    private func waitUntil(timeout: Duration, condition: @escaping @MainActor () -> Bool) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if await condition() {
+                return true
+            }
+            await Task.yield()
+        }
+        return await condition()
     }
 
     private func temporaryStoreURL() -> URL {
@@ -192,5 +278,16 @@ struct SharingEndToEndIntegrationTests {
         let message = "Web service start exhausted retry budget. attemptedPorts=\(attemptedPorts)"
         print("[SharingEndToEndIntegrationTests] \(message)")
         return .failure(.message(message))
+    }
+
+    private func requireBinding(
+        _ result: Result<WebServiceBinding, DynamicStartError>
+    ) throws -> WebServiceBinding {
+        switch result {
+        case .success(let binding):
+            return binding
+        case .failure(let error):
+            throw error
+        }
     }
 }

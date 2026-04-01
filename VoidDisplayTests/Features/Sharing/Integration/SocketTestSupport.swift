@@ -271,6 +271,28 @@ func makeMaskedBinaryFrame(payload: Data) -> Data {
     return frame
 }
 
+func makeMaskedTextFrame(_ text: String) -> Data {
+    let payload = Data(text.utf8)
+    let mask: [UInt8] = [0x10, 0x32, 0x54, 0x76]
+    var frame = Data([0x81])
+    if payload.count <= 125 {
+        frame.append(0x80 | UInt8(payload.count))
+    } else if payload.count <= Int(UInt16.max) {
+        frame.append(0x80 | 126)
+        var length = UInt16(payload.count).bigEndian
+        withUnsafeBytes(of: &length) { frame.append(contentsOf: $0) }
+    } else {
+        frame.append(0x80 | 127)
+        var length = UInt64(payload.count).bigEndian
+        withUnsafeBytes(of: &length) { frame.append(contentsOf: $0) }
+    }
+    frame.append(contentsOf: mask)
+    for (index, byte) in payload.enumerated() {
+        frame.append(byte ^ mask[index % 4])
+    }
+    return frame
+}
+
 func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
     let request =
         "GET \(path) HTTP/1.1\r\n" +

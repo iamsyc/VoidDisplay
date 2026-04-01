@@ -3,6 +3,27 @@ import Darwin
 import Testing
 @testable import VoidDisplay
 
+private final class IntegrationAutoConnectingPeer: @unchecked Sendable, WebRTCPeerSessioning {
+    private let onConnected: @Sendable () -> Void
+
+    init(onConnected: @escaping @Sendable () -> Void) {
+        self.onConnected = onConnected
+    }
+
+    nonisolated func handleRemoteOffer(sdp: String) {
+        _ = sdp
+        onConnected()
+    }
+
+    nonisolated func addRemoteCandidate(sdp: String, sdpMid: String?, sdpMLineIndex: Int32) {
+        _ = sdp
+        _ = sdpMid
+        _ = sdpMLineIndex
+    }
+
+    nonisolated func close() {}
+}
+
 @MainActor
 @Suite(.serialized)
 struct WebServerSocketIntegrationTests {
@@ -89,12 +110,26 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains(#"id="voiddisplay-bootstrap""#))
         #expect(responseText.contains(#""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#))
         #expect(responseText.contains(#"const messages = {"#))
+        #expect(responseText.contains(#"function resolveLocale() {"#))
+        #expect(responseText.contains(#"const locale = resolveLocale();"#))
+        #expect(responseText.contains(#"document.title = t("pageTitle");"#))
+        #expect(responseText.contains(#"function applyScaleMode() {"#))
+        #expect(responseText.contains(#"function syncFullscreenButtonLabel() {"#))
+        #expect(responseText.contains(#"const reconnectDelays = [250, 500, 1000, 2000, 4000];"#))
+        #expect(responseText.contains(#"function scheduleReconnect() {"#))
+        #expect(responseText.contains(#"peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });"#))
+        #expect(responseText.contains(#"setOverlay(t("overlayReconnectTitle"), t("overlayReconnectBody"), true);"#))
+        #expect(responseText.contains(#"setOverlay(t("overlaySharingStoppedTitle"), t("overlaySharingStoppedBody"), true);"#))
+        #expect(responseText.contains(#"case "stopped":"#))
+        #expect(responseText.contains(#"case "error":"#))
+        #expect(responseText.contains(#"connect();"#))
         #expect(responseText.contains(#"heroEyebrow: "VOIDDISPLAY 实时画面""#))
         #expect(responseText.contains(#"fullscreenEnter: "全屏""#))
         #expect(responseText.contains(#"pageTitle: "Screen Share""#))
         #expect(responseText.contains("hero-eyebrow"))
+        #expect(responseText.contains("footnote"))
         #expect(responseText.contains("__PAGE_TITLE__") == false)
-        #expect(responseText.contains("<h1>") == false)
+        #expect(responseText.contains("__SIGNAL_PATH__") == false)
         #expect(responseText.contains("Main Display") == false)
         #expect(responseText.contains("Display 1") == false)
     }
@@ -197,6 +232,126 @@ struct WebServerSocketIntegrationTests {
         #expect(clientCleared)
     }
 
+    @Test func sameTargetPeersAccumulateStreamingCounts() async throws {
+        let aggregator = SharingStateAggregator()
+        let sessionHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                target == .main ? .active : .unknown
+            },
+            sessionHubProvider: { target in
+                target == .main ? sessionHub : nil
+            },
+            sharingEventSink: { event in
+                Task { @MainActor in
+                    aggregator.record(event)
+                }
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let firstSocket = try await openWebSocket(path: "/signal", port: portValue)
+        let secondSocket = try await openWebSocket(path: "/signal", port: portValue)
+        defer {
+            close(firstSocket)
+            close(secondSocket)
+        }
+
+        try sendAll(firstSocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+        try sendAll(secondSocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+
+        let accumulated = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnections == 2 &&
+                snapshot.streamingPeers == 2 &&
+                snapshot.signalingConnectionsByTarget[.main] == 2 &&
+                snapshot.streamingPeersByTarget[.main] == 2
+        }
+        #expect(accumulated)
+
+        try sendAll(firstSocket, data: makeMaskedCloseFrame())
+        try sendAll(secondSocket, data: makeMaskedCloseFrame())
+        _ = try await waitForSocketClose(firstSocket)
+        _ = try await waitForSocketClose(secondSocket)
+
+        let cleared = await waitUntilAsync(timeout: .seconds(2)) {
+            aggregator.currentSnapshot.signalingConnections == 0 &&
+            aggregator.currentSnapshot.streamingPeers == 0
+        }
+        #expect(cleared)
+    }
+
+    @Test func simultaneousTargetsKeepPerTargetSharingCountsIsolated() async throws {
+        let aggregator = SharingStateAggregator()
+        let mainHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let secondaryHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                switch target {
+                case .main, .id(7):
+                    .active
+                default:
+                    .unknown
+                }
+            },
+            sessionHubProvider: { target in
+                switch target {
+                case .main:
+                    mainHub
+                case .id(7):
+                    secondaryHub
+                default:
+                    nil
+                }
+            },
+            sharingEventSink: { event in
+                Task { @MainActor in
+                    aggregator.record(event)
+                }
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let mainSocket = try await openWebSocket(path: "/signal", port: portValue)
+        let secondarySocket = try await openWebSocket(path: "/signal/7", port: portValue)
+        defer {
+            close(mainSocket)
+            close(secondarySocket)
+        }
+
+        try sendAll(mainSocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+        try sendAll(secondarySocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+
+        let isolated = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnections == 2 &&
+                snapshot.streamingPeers == 2 &&
+                snapshot.signalingConnectionsByTarget[.main] == 1 &&
+                snapshot.signalingConnectionsByTarget[.id(7)] == 1 &&
+                snapshot.streamingPeersByTarget[.main] == 1 &&
+                snapshot.streamingPeersByTarget[.id(7)] == 1 &&
+                server.streamClientCount(for: .main) == 1 &&
+                server.streamClientCount(for: .id(7)) == 1
+        }
+        #expect(isolated)
+    }
+
     @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
         let sessionHub = WebRTCSessionHub()
         let setup = try await startServerOnRandomPort(
@@ -235,6 +390,40 @@ struct WebServerSocketIntegrationTests {
             await Task.yield()
         }
         return condition()
+    }
+
+    private func openWebSocket(path: String, port: UInt16) async throws -> Int32 {
+        let result = try await Task.detached {
+            let socketFD = try await connectLoopbackSocket(port: port)
+            do {
+                try sendAll(socketFD, data: websocketUpgradeRequest(path: path, port: port))
+                let handshake = try readUntilHeaderTerminator(
+                    from: socketFD,
+                    timeoutMilliseconds: 500,
+                    deadlineSeconds: 8
+                )
+                let terminator = Data("\r\n\r\n".utf8)
+                guard let headerRange = handshake.range(of: terminator) else {
+                    throw SocketIntegrationError.receiveFailed
+                }
+                let headerData = Data(handshake[..<headerRange.upperBound])
+                guard let handshakeText = String(data: headerData, encoding: .utf8) else {
+                    throw SocketIntegrationError.receiveFailed
+                }
+                return (socketFD, handshakeText)
+            } catch {
+                close(socketFD)
+                throw error
+            }
+        }.value
+        #expect(result.1.contains("101 Switching Protocols"))
+        return result.0
+    }
+
+    private func waitForSocketClose(_ socketFD: Int32) async throws -> Bool {
+        try await Task.detached {
+            try waitForCloseOrEOF(from: socketFD, deadlineSeconds: 5)
+        }.value
     }
 }
 

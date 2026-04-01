@@ -83,6 +83,10 @@ private final class SharingEventRecorder: @unchecked Sendable {
         events.withLock { $0.append(event) }
     }
 
+    func currentEvents() -> [SharingSessionEvent] {
+        events.withLock { $0 }
+    }
+
     func currentPhases() -> [SharingPeerPhase] {
         events.withLock { $0.map(\.recordedPhase) }
     }
@@ -195,6 +199,47 @@ struct WebRTCSessionHubTests {
         #expect(idGenerationCount.value() == acceptedIDGenerationCount)
         hub.sendRejection(reason: "too_many_viewers", to: rejectedClient)
         #expect(rejectedClient.decodedTextPayloads().contains(where: { $0.contains(#""reason":"too_many_viewers""#) }))
+    }
+
+    @MainActor @Test func rejectedViewerDoesNotEnterSharingSnapshot() {
+        let recorder = SharingEventRecorder()
+        let hub = WebRTCSessionHub()
+        var clients: [MockSignalSocketConnection] = []
+
+        for index in 0..<10 {
+            let client = MockSignalSocketConnection()
+            clients.append(client)
+            let result = hub.addClient(
+                client,
+                target: .main,
+                makeClientID: { "client-\(index)" },
+                eventSink: { event in
+                    recorder.record(event)
+                }
+            )
+            #expect(isAccepted(result))
+        }
+
+        let rejectedClient = MockSignalSocketConnection()
+        let result = hub.addClient(
+            rejectedClient,
+            target: .main,
+            makeClientID: { "client-overflow" },
+            eventSink: { event in
+                recorder.record(event)
+            }
+        )
+
+        let aggregator = SharingStateAggregator()
+        for event in recorder.currentEvents() {
+            aggregator.record(event)
+        }
+
+        #expect(result == .rejected(reason: "too_many_viewers"))
+        #expect(aggregator.currentSnapshot.signalingConnections == 10)
+        #expect(aggregator.currentSnapshot.streamingPeers == 0)
+        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?.count == 10)
+        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?["client-overflow"] == nil)
     }
 
     @MainActor @Test func stopSharingBroadcastsStoppedAndDisconnectsClients() {
