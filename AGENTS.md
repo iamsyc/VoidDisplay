@@ -67,11 +67,14 @@
 - Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
 
 ## Execution Mode Recommendation
-- For any actionable request related to feature work, bug fixing, review follow-up, refactor, or implementation analysis, include a short execution mode recommendation in the response.
-- Use `建议：直接执行` when scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate before implementation.
-- Use `建议：开启计划模式` when the task is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
-- Keep the recommendation to one or two sentences and state the concrete reason for the choice.
-- If the user explicitly requests plan mode or explicitly requests immediate execution, follow that instruction and still state the recommendation briefly for visibility.
+- Provide an execution mode recommendation only before starting work on an actionable request and only when there is a meaningful choice between immediate execution and plan-first handling.
+- Do not provide this recommendation in completion handoff, status updates, commit summaries, verification summaries, review results, or meta discussions about process, prompts, or repository policy.
+- Do not provide this recommendation for analysis-only or question-only requests.
+- Do not provide this recommendation when the user has already explicitly chosen the mode for the current turn.
+- Once execution has started in the current turn, stop emitting execution mode recommendations.
+- Use `建议：直接执行` only when implementation has not started, scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate.
+- Use `建议：开启计划模式` only when implementation has not started and the task is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
+- Keep the recommendation to one sentence and state the concrete reason.
 
 ## Code Review Output Policy
 - When review finds an issue, identify the root cause and provide a root-cause fix plan by default.
