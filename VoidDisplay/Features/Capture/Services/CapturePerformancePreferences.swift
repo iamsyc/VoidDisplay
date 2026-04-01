@@ -21,20 +21,19 @@ protocol CapturePerformancePreferencesProtocol: AnyObject {
 @MainActor
 @Observable
 final class CapturePerformancePreferences: CapturePerformancePreferencesProtocol {
-    private let defaults: UserDefaults
-    var onModeChanged: (@MainActor @Sendable (CapturePerformanceMode) -> Void)?
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored var onModeChanged: (@MainActor @Sendable (CapturePerformanceMode) -> Void)?
+    var mode: CapturePerformanceMode
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
-    }
-
-    var mode: CapturePerformanceMode {
         let rawValue = defaults.string(forKey: CapturePerformancePreferenceKeys.mode)
-        return rawValue.flatMap(CapturePerformanceMode.init(rawValue:)) ?? .automatic
+        self.mode = rawValue.flatMap(CapturePerformanceMode.init(rawValue:)) ?? .automatic
     }
 
     func saveMode(_ mode: CapturePerformanceMode) {
         guard self.mode != mode else { return }
+        self.mode = mode
         defaults.set(mode.rawValue, forKey: CapturePerformancePreferenceKeys.mode)
         onModeChanged?(mode)
     }

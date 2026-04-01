@@ -29,4 +29,17 @@ struct CapturePerformancePreferencesTests {
         let reloaded = CapturePerformancePreferences(defaults: defaults)
         #expect(reloaded.mode == .powerEfficient)
     }
+
+    @Test
+    func saveModeUpdatesInMemoryStateImmediately() {
+        let suiteName = "CapturePerformancePreferencesTests.immediate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let sut = CapturePerformancePreferences(defaults: defaults)
+        sut.saveMode(.smooth)
+
+        #expect(sut.mode == .smooth)
+    }
 }

@@ -347,6 +347,47 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(powerDecision == .noChange)
     }
 
+    @Test func performanceModeUpdateRecomputesCommittedMixedConfiguration() {
+        var coordinator = DisplayCaptureConfigurationCoordinatorState(
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
+            performanceMode: .automatic
+        )
+        coordinator.previewSinkCount = 1
+        coordinator.sharingActive = true
+
+        let smoothDecision = coordinator.updatePerformanceMode(
+            .smooth,
+            nowNs: 1,
+            minimumDwellNanoseconds: 0
+        )
+        switch smoothDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps60)
+        default:
+            Issue.record("Expected smooth mode update to promote mixed configuration to 60fps, got \(String(describing: smoothDecision))")
+        }
+
+        let followUpDecision = coordinator.finishAppliedTransition(
+            at: 2,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(followUpDecision == .noChange)
+
+        let powerDecision = coordinator.updatePerformanceMode(
+            .powerEfficient,
+            nowNs: 3,
+            minimumDwellNanoseconds: 0
+        )
+        switch powerDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps30)
+        default:
+            Issue.record("Expected power efficient mode update to reduce mixed configuration to 30fps, got \(String(describing: powerDecision))")
+        }
+    }
+
     @Test func committedTransitionUpdatesDwellBeforeReevaluatingPendingDemand() {
         var coordinator = DisplayCaptureProfileCoordinatorState(committedProfile: .previewOnly)
 

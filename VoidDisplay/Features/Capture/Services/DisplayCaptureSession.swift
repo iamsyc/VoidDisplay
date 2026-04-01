@@ -70,14 +70,14 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     }
 
     private struct DemandState {
-        var profileCoordinator: DisplayCaptureProfileCoordinatorState
+        var configurationCoordinator: DisplayCaptureConfigurationCoordinatorState
         var taskLifetime = DisplayCaptureTaskLifetimeState()
         var pendingTaskNonce: UInt64 = 0
-        var pendingProfileTask: Task<Void, Never>?
+        var pendingConfigurationTask: Task<Void, Never>?
         var activeApplyTask: Task<Void, Never>?
     }
 
-    nonisolated private static let minimumProfileDwellNanoseconds: UInt64 = 5_000_000_000
+    nonisolated private static let minimumConfigurationDwellNanoseconds: UInt64 = 5_000_000_000
 
     nonisolated let displayID: CGDirectDisplayID
     nonisolated let sessionHub: WebRTCSessionHub
@@ -114,8 +114,12 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         self.configurationState = Mutex(state)
         self.demandState = Mutex(
             DemandState(
-                profileCoordinator: DisplayCaptureProfileCoordinatorState(
-                    committedProfile: initialProfile
+                configurationCoordinator: DisplayCaptureConfigurationCoordinatorState(
+                    committedConfiguration: .init(
+                        profile: state.profile,
+                        frameRateTier: state.frameRateTier
+                    ),
+                    performanceMode: initialPerformanceMode
                 )
             )
         )
@@ -133,16 +137,16 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
         fanout.attachPreviewSink(sink)
         scheduleDemandUpdate { state in
-            state.profileCoordinator.previewSinkCount += 1
+            state.previewSinkCount += 1
         }
     }
 
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
         fanout.detachPreviewSink(sink)
         scheduleDemandUpdate { state in
-            state.profileCoordinator.previewSinkCount = max(
+            state.previewSinkCount = max(
                 0,
-                state.profileCoordinator.previewSinkCount - 1
+                state.previewSinkCount - 1
             )
         }
     }
@@ -185,8 +189,16 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 
     nonisolated func setSharingActive(_ isActive: Bool) async throws {
         scheduleDemandUpdate { state in
-            state.profileCoordinator.sharingActive = isActive
+            state.sharingActive = isActive
         }
+    }
+
+    nonisolated func setPerformanceMode(_ mode: CapturePerformanceMode) async throws {
+        schedulePerformanceModeUpdate(mode)
+    }
+
+    nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
+        schedulePreviewPerformanceSample(sample)
     }
 
     nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
@@ -197,6 +209,7 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         try await stream.updateConfiguration(Self.makeStreamConfiguration(from: updatedState))
         configurationState.withLock { state in
             state.profile = updatedState.profile
+            state.frameRateTier = updatedState.frameRateTier
             state.previewShowsCursor = updatedState.previewShowsCursor
             state.shareCursorOverrideCount = updatedState.shareCursorOverrideCount
         }
@@ -205,8 +218,8 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     nonisolated func stop() async {
         demandState.withLock { state in
             _ = state.taskLifetime.invalidateAllTasks()
-            state.pendingProfileTask?.cancel()
-            state.pendingProfileTask = nil
+            state.pendingConfigurationTask?.cancel()
+            state.pendingConfigurationTask = nil
             state.activeApplyTask?.cancel()
             state.activeApplyTask = nil
         }
@@ -225,35 +238,64 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         sessionHub.submitFrame(pixelBuffer: pixelBuffer, ptsUs: ptsUs)
     }
 
-    nonisolated private func scheduleDemandUpdate(_ mutation: (inout DemandState) -> Void) {
-        let decision = demandState.withLock { state -> (DisplayCaptureProfileDecision, UInt64) in
-            mutation(&state)
-            state.pendingProfileTask?.cancel()
-            state.pendingProfileTask = nil
-            state.pendingTaskNonce &+= 1
-            let now = Self.currentTimeNanoseconds()
-            let decision = state.profileCoordinator.mutateDemand(
-                nowNs: now,
-                minimumDwellNanoseconds: Self.minimumProfileDwellNanoseconds
-            ) { _ in }
-            return (decision, state.pendingTaskNonce)
+    nonisolated private func scheduleDemandUpdate(
+        _ mutation: (inout DisplayCaptureConfigurationCoordinatorState) -> Void
+    ) {
+        scheduleConfigurationDecision { state in
+            state.configurationCoordinator.mutateDemand(
+                nowNs: Self.currentTimeNanoseconds(),
+                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds,
+                mutation: mutation
+            )
         }
-        handleProfileDecision(decision.0, schedulingNonce: decision.1)
     }
 
-    nonisolated private func handleProfileDecision(
-        _ decision: DisplayCaptureProfileDecision,
+    nonisolated private func schedulePerformanceModeUpdate(_ mode: CapturePerformanceMode) {
+        scheduleConfigurationDecision { state in
+            state.configurationCoordinator.updatePerformanceMode(
+                mode,
+                nowNs: Self.currentTimeNanoseconds(),
+                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
+            )
+        }
+    }
+
+    nonisolated private func schedulePreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
+        scheduleConfigurationDecision { state in
+            state.configurationCoordinator.recordPreviewPerformanceSample(
+                sample,
+                nowNs: Self.currentTimeNanoseconds(),
+                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
+            )
+        }
+    }
+
+    nonisolated private func scheduleConfigurationDecision(
+        _ decisionProvider: (inout DemandState) -> DisplayCaptureConfigurationDecision
+    ) {
+        let decision = demandState.withLock { state -> (DisplayCaptureConfigurationDecision, UInt64) in
+            state.pendingConfigurationTask?.cancel()
+            state.pendingConfigurationTask = nil
+            state.pendingTaskNonce &+= 1
+            let decision = decisionProvider(&state)
+            return (decision, state.pendingTaskNonce)
+        }
+        handleConfigurationDecision(decision.0, schedulingNonce: decision.1)
+    }
+
+    nonisolated private func handleConfigurationDecision(
+        _ decision: DisplayCaptureConfigurationDecision,
         schedulingNonce: UInt64
     ) {
         switch decision {
         case .noChange:
             return
-        case .applyNow(let profile):
+        case .applyNow(let configuration):
             let executionGeneration = demandState.withLock { $0.taskLifetime.currentGeneration }
             let task = Task<Void, Never> { [weak self] in
                 guard let self else { return }
-                try? await self.applyDemandDrivenProfile(
-                    profile: profile,
+                try? await self.applyDemandDrivenConfiguration(
+                    configuration: configuration,
                     executionGeneration: executionGeneration
                 )
             }
@@ -267,11 +309,11 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         case .applyAfter(_, let delayNanoseconds):
             let task = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: delayNanoseconds)
-                self?.resumeDemandDrivenProfileEvaluation(schedulingNonce: schedulingNonce)
+                self?.resumeDemandDrivenConfigurationEvaluation(schedulingNonce: schedulingNonce)
             }
             demandState.withLock { state in
                 if state.pendingTaskNonce == schedulingNonce {
-                    state.pendingProfileTask = task
+                    state.pendingConfigurationTask = task
                 } else {
                     task.cancel()
                 }
@@ -279,37 +321,40 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         }
     }
 
-    nonisolated private func resumeDemandDrivenProfileEvaluation(schedulingNonce: UInt64) {
-        let decision = demandState.withLock { state -> (DisplayCaptureProfileDecision, UInt64)? in
+    nonisolated private func resumeDemandDrivenConfigurationEvaluation(schedulingNonce: UInt64) {
+        let decision = demandState.withLock { state -> (DisplayCaptureConfigurationDecision, UInt64)? in
             guard state.pendingTaskNonce == schedulingNonce else {
                 return nil
             }
-            state.pendingProfileTask = nil
+            state.pendingConfigurationTask = nil
             state.pendingTaskNonce &+= 1
-            let decision = state.profileCoordinator.resumeScheduledTransition(
+            let decision = state.configurationCoordinator.resumeScheduledTransition(
                 nowNs: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumProfileDwellNanoseconds
+                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
             )
             return (decision, state.pendingTaskNonce)
         }
         guard let decision else { return }
-        handleProfileDecision(decision.0, schedulingNonce: decision.1)
+        handleConfigurationDecision(decision.0, schedulingNonce: decision.1)
     }
 
-    nonisolated private func applyDemandDrivenProfile(
-        profile: DisplayCaptureProfile,
+    nonisolated private func applyDemandDrivenConfiguration(
+        configuration: DisplayCaptureConfiguration,
         executionGeneration: UInt64
     ) async throws {
         guard isExecutionAllowed(for: executionGeneration) else { return }
 
         let updatedState = configurationState.withLock { state -> StreamConfigurationState? in
-            guard state.profile != profile else { return nil }
+            guard state.profile != configuration.profile || state.frameRateTier != configuration.frameRateTier else {
+                return nil
+            }
             var copy = state
-            copy.profile = profile
+            copy.profile = configuration.profile
+            copy.frameRateTier = configuration.frameRateTier
             return copy
         }
         guard let updatedState else {
-            finishDemandDrivenProfileFailure(executionGeneration: executionGeneration)
+            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
             return
         }
 
@@ -322,41 +367,43 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 
             configurationState.withLock { state in
                 state.profile = updatedState.profile
+                state.frameRateTier = updatedState.frameRateTier
                 state.previewShowsCursor = updatedState.previewShowsCursor
                 state.shareCursorOverrideCount = updatedState.shareCursorOverrideCount
             }
         } catch is CancellationError {
-            finishDemandDrivenProfileFailure(executionGeneration: executionGeneration)
+            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
             return
         } catch {
-            finishDemandDrivenProfileFailure(executionGeneration: executionGeneration)
-            AppErrorMapper.logFailure("Update capture profile", error: error, logger: AppLog.capture)
+            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
+            AppErrorMapper.logFailure("Update capture configuration", error: error, logger: AppLog.capture)
             return
         }
 
         guard isExecutionAllowed(for: executionGeneration) else { return }
 
         metrics.withLock { metrics in
-            metrics.currentProfile = profile
+            metrics.currentProfile = configuration.profile
+            metrics.currentFrameRateTier = configuration.frameRateTier
             metrics.profileReconfigurationCount &+= 1
         }
 
-        let decision = demandState.withLock { state -> (DisplayCaptureProfileDecision, UInt64)? in
+        let decision = demandState.withLock { state -> (DisplayCaptureConfigurationDecision, UInt64)? in
             guard state.taskLifetime.allowsExecution(for: executionGeneration) else {
                 return nil
             }
-            state.pendingProfileTask?.cancel()
-            state.pendingProfileTask = nil
+            state.pendingConfigurationTask?.cancel()
+            state.pendingConfigurationTask = nil
             state.activeApplyTask = nil
             state.pendingTaskNonce &+= 1
-            let decision = state.profileCoordinator.finishAppliedTransition(
+            let decision = state.configurationCoordinator.finishAppliedTransition(
                 at: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumProfileDwellNanoseconds
+                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
             )
             return (decision, state.pendingTaskNonce)
         }
         guard let decision else { return }
-        handleProfileDecision(decision.0, schedulingNonce: decision.1)
+        handleConfigurationDecision(decision.0, schedulingNonce: decision.1)
     }
 
     nonisolated private func isExecutionAllowed(for generation: UInt64) -> Bool {
@@ -365,11 +412,11 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         }
     }
 
-    nonisolated private func finishDemandDrivenProfileFailure(executionGeneration: UInt64) {
+    nonisolated private func finishDemandDrivenConfigurationFailure(executionGeneration: UInt64) {
         demandState.withLock { state in
             guard state.taskLifetime.allowsExecution(for: executionGeneration) else { return }
             state.activeApplyTask = nil
-            state.profileCoordinator.failAppliedTransition()
+            state.configurationCoordinator.failAppliedTransition()
         }
     }
 }
