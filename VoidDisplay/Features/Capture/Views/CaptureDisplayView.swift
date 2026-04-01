@@ -34,6 +34,7 @@ struct CaptureDisplayView: View {
     @State private var scaleMode: PreviewScaleMode = .fit
     @State private var capturesCursor = false
     @State private var isUpdatingCursorCapture = false
+    @State private var lastReportedRendererMetrics: ZeroCopyPreviewRenderer.MetricsSnapshot?
 
     private var session: ScreenMonitoringSession? {
         capture.monitoringSession(for: sessionId)
@@ -174,6 +175,10 @@ struct CaptureDisplayView: View {
             capture.closeMonitoringSession(id: sessionId)
             windowCoordinator.tearDown()
             renderer.flush()
+            lastReportedRendererMetrics = nil
+        }
+        .task(id: sessionId) {
+            await reportPreviewPerformanceLoop()
         }
         .onChange(of: renderer.framePixelSize) { _, _ in
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
@@ -199,6 +204,33 @@ struct CaptureDisplayView: View {
 // MARK: - Window Sizing
 
 extension CaptureDisplayView {
+    @MainActor
+    private func reportPreviewPerformanceLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                return
+            }
+
+            guard let session else { continue }
+            let currentMetrics = renderer.metricsSnapshot()
+            let previousMetrics = lastReportedRendererMetrics
+            lastReportedRendererMetrics = currentMetrics
+
+            let renderedDelta = currentMetrics.renderedFrameCount &- (previousMetrics?.renderedFrameCount ?? 0)
+            let droppedDelta = currentMetrics.droppedFrameCount &- (previousMetrics?.droppedFrameCount ?? 0)
+            let sample = DisplayPreviewPerformanceSample(
+                renderedFrameCount: renderedDelta,
+                droppedFrameCount: droppedDelta,
+                latestRenderLatencyMilliseconds: currentMetrics.latestRenderLatencyMilliseconds ?? 0,
+                pendingSlotOccupied: currentMetrics.pendingSlotOccupied,
+                capturedAt: DispatchTime.now().uptimeNanoseconds
+            )
+            session.previewSubscription.reportPerformanceSample(sample)
+        }
+    }
+
     private var cursorCaptureBinding: Binding<Bool> {
         Binding(
             get: { effectiveCapturesCursor },

@@ -16,16 +16,17 @@ final class CaptureMonitoringLifecycleService: CaptureMonitoringLifecycleService
     init(
         captureMonitoringService: any CaptureMonitoringServiceProtocol,
         startCoordinator: DisplayStreamStartCoordinator = DisplayStreamStartCoordinator(),
-        acquirePreview: @escaping AcquirePreview = { display, invalidationContext in
-            try await DisplayCaptureRegistry.shared.acquirePreview(
+        captureRegistry: DisplayCaptureRegistry = .shared,
+        acquirePreview: AcquirePreview? = nil
+    ) {
+        self.captureMonitoringService = captureMonitoringService
+        self.startCoordinator = startCoordinator
+        self.acquirePreview = acquirePreview ?? { display, invalidationContext in
+            try await captureRegistry.acquirePreview(
                 display: SendableDisplay(display),
                 invalidationContext: invalidationContext
             )
         }
-    ) {
-        self.captureMonitoringService = captureMonitoringService
-        self.startCoordinator = startCoordinator
-        self.acquirePreview = acquirePreview
     }
 
     func isStarting(displayID: CGDirectDisplayID) -> Bool {

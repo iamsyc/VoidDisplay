@@ -76,6 +76,10 @@ final class DisplayPreviewSubscription: Sendable {
         closure()
     }
 
+    nonisolated func reportPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
+        session.reportPreviewPerformanceSample(sample)
+    }
+
     nonisolated func setShowsCursor(_ showsCursor: Bool) async throws {
         try await session.setPreviewShowsCursor(showsCursor)
     }
@@ -241,12 +245,14 @@ actor DisplayCaptureRegistry {
 
     typealias CaptureSessionFactory = @Sendable (
         SendableDisplay,
-        DisplayCaptureProfile
+        DisplayCaptureProfile,
+        CapturePerformanceMode
     ) async throws -> any DisplayCaptureSessioning
 
     static let shared = DisplayCaptureRegistry()
 
     private let captureSessionFactory: CaptureSessionFactory
+    private var performanceMode: CapturePerformanceMode
     private var sessionsByDisplayID: [CGDirectDisplayID: SessionRecord] = [:]
     private var tokenOwnership: [UUID: TokenRecord] = [:]
     private var sessionCreationTasks: [CGDirectDisplayID: Task<SessionRecord, Error>] = [:]
@@ -255,11 +261,25 @@ actor DisplayCaptureRegistry {
     private var initializingDisplayIDs: Set<CGDirectDisplayID> = []
 
     init(
-        captureSessionFactory: @escaping CaptureSessionFactory = { display, initialProfile in
-            try await DisplayCaptureSession(display: display.value, initialProfile: initialProfile)
+        performanceMode: CapturePerformanceMode = .automatic,
+        captureSessionFactory: @escaping CaptureSessionFactory = { display, initialProfile, initialPerformanceMode in
+            try await DisplayCaptureSession(
+                display: display.value,
+                initialProfile: initialProfile,
+                initialPerformanceMode: initialPerformanceMode
+            )
         }
     ) {
+        self.performanceMode = performanceMode
         self.captureSessionFactory = captureSessionFactory
+    }
+
+    func updatePerformanceMode(_ mode: CapturePerformanceMode) async {
+        performanceMode = mode
+        let sessions = sessionsByDisplayID.values.map(\.session)
+        for session in sessions {
+            try? await session.setPerformanceMode(mode)
+        }
     }
 
     func acquirePreview(display: SendableDisplay) async throws -> DisplayPreviewSubscription {
@@ -448,7 +468,8 @@ actor DisplayCaptureRegistry {
                 displayID: displayID,
                 fallbackKind: fallbackKind
             )
-            let session = try await captureSessionFactory(display, initialProfile)
+            let performanceMode = self.performanceMode
+            let session = try await captureSessionFactory(display, initialProfile, performanceMode)
             return SessionRecord(
                 session: session,
                 resolutionText: "\(display.width) × \(display.height)",

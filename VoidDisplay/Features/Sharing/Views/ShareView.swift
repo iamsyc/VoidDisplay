@@ -124,6 +124,7 @@ struct ShareView: View {
 
     private var serviceStoppedState: some View {
         @Bindable var bindableViewModel = viewModel
+        let contentColumnWidth: CGFloat = 440
 
         return stateContainer {
             VStack(spacing: AppUI.Spacing.medium + 2) {
@@ -138,27 +139,33 @@ struct ShareView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+                    .frame(width: contentColumnWidth)
 
-                VStack(spacing: 4) {
-                    HStack(spacing: AppUI.Spacing.small) {
-                        Text("Port")
+                VStack(spacing: AppUI.Spacing.medium) {
+                    SharePerformanceModePicker()
+                        .frame(width: contentColumnWidth)
+
+                    VStack(spacing: 4) {
+                        HStack(spacing: AppUI.Spacing.small) {
+                            Text("Port")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField("8089", text: $bindableViewModel.servicePortInput)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 84)
+                                .accessibilityIdentifier("share_port_input")
+                        }
+                        .frame(width: contentColumnWidth, alignment: .center)
+
+                        Text(viewModel.portInputErrorMessage ?? " ")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField("8089", text: $bindableViewModel.servicePortInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 84)
-                            .accessibilityIdentifier("share_port_input")
+                            .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .multilineTextAlignment(.center)
+                            .frame(minWidth: contentColumnWidth, maxWidth: contentColumnWidth, minHeight: 14, maxHeight: 14, alignment: .center)
+                            .accessibilityIdentifier("share_port_error_text")
                     }
-
-                    Text(viewModel.portInputErrorMessage ?? " ")
-                        .font(.caption)
-                        .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 360, minHeight: 14, maxHeight: 14, alignment: .center)
-                        .accessibilityIdentifier("share_port_error_text")
                 }
 
                 Button("Start Service") {
@@ -221,6 +228,8 @@ struct ShareView: View {
         stateContainer {
             VStack(spacing: AppUI.Spacing.medium) {
                 Text("No screen to share")
+                SharePerformanceModePicker()
+                    .frame(maxWidth: 360)
                 Button("Refresh") {
                     viewModel.refreshDisplays()
                 }

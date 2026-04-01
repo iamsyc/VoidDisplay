@@ -30,6 +30,7 @@ private final class DisplayStreamOutput: NSObject, SCStreamOutput, SCStreamDeleg
 
 private struct DisplayCaptureMetrics: Sendable {
     var currentProfile: DisplayCaptureProfile?
+    var currentFrameRateTier: DisplayCaptureFrameRateTier?
     var receivedFrameCount: UInt64 = 0
     var profileReconfigurationCount: UInt64 = 0
     var cursorOverrideReconfigurationCount: UInt64 = 0
@@ -37,6 +38,7 @@ private struct DisplayCaptureMetrics: Sendable {
     nonisolated func snapshot() -> DisplayCaptureMetricsSnapshot {
         .init(
             currentProfile: currentProfile,
+            currentFrameRateTier: currentFrameRateTier,
             receivedFrameCount: receivedFrameCount,
             profileReconfigurationCount: profileReconfigurationCount,
             cursorOverrideReconfigurationCount: cursorOverrideReconfigurationCount
@@ -53,12 +55,14 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         let capturesAudio: Bool
         let pixelFormat: OSType
         var profile: DisplayCaptureProfile
+        var frameRateTier: DisplayCaptureFrameRateTier
         var previewShowsCursor: Bool
         var shareCursorOverrideCount: Int
 
         nonisolated var minimumFrameInterval: CMTime {
             let framesPerSecond = DisplayCaptureSession.captureFramesPerSecond(
                 for: profile,
+                frameRateTier: frameRateTier,
                 maximumPreviewFramesPerSecond: maximumPreviewFramesPerSecond
             )
             return CMTime(value: 1, timescale: CMTimeScale(max(1, Int32(framesPerSecond))))
@@ -88,7 +92,8 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 
     nonisolated init(
         display: SCDisplay,
-        initialProfile: DisplayCaptureProfile = .previewOnly
+        initialProfile: DisplayCaptureProfile = .previewOnly,
+        initialPerformanceMode: CapturePerformanceMode = .automatic
     ) async throws {
         self.displayID = display.displayID
         self.captureQueue = DispatchQueue(
@@ -99,7 +104,8 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         let state = try await Self.makeStreamConfigurationState(
             display: display,
             showsCursor: false,
-            initialProfile: initialProfile
+            initialProfile: initialProfile,
+            initialPerformanceMode: initialPerformanceMode
         )
         let config = Self.makeStreamConfiguration(from: state)
         let filter = try await Self.makeContentFilter(display: display)
@@ -113,7 +119,10 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
                 )
             )
         )
-        self.metrics.withLock { $0.currentProfile = state.profile }
+        self.metrics.withLock {
+            $0.currentProfile = state.profile
+            $0.currentFrameRateTier = state.frameRateTier
+        }
 
         output.session = self
 
@@ -368,15 +377,16 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 extension DisplayCaptureSession {
     nonisolated static func captureFramesPerSecond(
         for profile: DisplayCaptureProfile,
+        frameRateTier: DisplayCaptureFrameRateTier,
         maximumPreviewFramesPerSecond: Int
     ) -> Int {
         switch profile {
         case .previewOnly:
-            return maximumPreviewFramesPerSecond
+            return min(maximumPreviewFramesPerSecond, frameRateTier.framesPerSecond)
         case .shareOnly:
-            return 60
+            return frameRateTier.framesPerSecond
         case .mixed:
-            return 45
+            return frameRateTier.framesPerSecond
         }
     }
 
@@ -398,12 +408,17 @@ extension DisplayCaptureSession {
     nonisolated private static func makeStreamConfigurationState(
         display: SCDisplay,
         showsCursor: Bool,
-        initialProfile: DisplayCaptureProfile
+        initialProfile: DisplayCaptureProfile,
+        initialPerformanceMode: CapturePerformanceMode
     ) async throws -> StreamConfigurationState {
         let displayMode = CGDisplayCopyDisplayMode(display.displayID)
 
         let captureSize = preferredCaptureSize(display: display, displayMode: displayMode)
         let previewFramesPerSecond = clampedPreviewFramesPerSecond(for: displayMode?.refreshRate ?? 60.0)
+        let initialFrameRateTier = DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+            for: initialProfile,
+            performanceMode: initialPerformanceMode
+        )
 
         let state = StreamConfigurationState(
             width: captureSize.width,
@@ -413,6 +428,7 @@ extension DisplayCaptureSession {
             capturesAudio: false,
             pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
             profile: initialProfile,
+            frameRateTier: initialFrameRateTier,
             previewShowsCursor: showsCursor,
             shareCursorOverrideCount: 0
         )

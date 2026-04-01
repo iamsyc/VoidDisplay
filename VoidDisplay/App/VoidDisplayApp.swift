@@ -13,6 +13,7 @@ struct AppEnvironment {
     let sharing: SharingController
     let virtualDisplay: VirtualDisplayController
     let topology: DisplayTopologyChangeCoordinator
+    let capturePerformancePreferences: CapturePerformancePreferences
 }
 
 @main
@@ -21,6 +22,7 @@ struct VoidDisplayApp: App {
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
     @State private var topology: DisplayTopologyChangeCoordinator
+    @State private var capturePerformancePreferences: CapturePerformancePreferences
 
     init() {
         let env = AppBootstrap.makeEnvironment()
@@ -28,6 +30,7 @@ struct VoidDisplayApp: App {
         _sharing = State(initialValue: env.sharing)
         _virtualDisplay = State(initialValue: env.virtualDisplay)
         _topology = State(initialValue: env.topology)
+        _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
     }
 
     var body: some Scene {
@@ -36,6 +39,7 @@ struct VoidDisplayApp: App {
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
+                .environment(capturePerformancePreferences)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
 
@@ -52,6 +56,7 @@ struct VoidDisplayApp: App {
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
+                .environment(capturePerformancePreferences)
         }
     }
 }
@@ -124,13 +129,27 @@ enum AppBootstrap {
             persistenceEnvironment[PersistenceContext.uiTestModeEnvironmentKey] = "1"
         }
         let persistenceContext = PersistenceContext.resolve(environment: persistenceEnvironment)
+        let capturePerformancePreferences = CapturePerformancePreferences(
+            defaults: persistenceContext.userDefaults
+        )
+        let captureRegistry = DisplayCaptureRegistry(
+            performanceMode: capturePerformancePreferences.mode
+        )
+        capturePerformancePreferences.onModeChanged = { mode in
+            Task {
+                await captureRegistry.updatePerformanceMode(mode)
+            }
+        }
 
         let resolvedSharingService: any SharingServiceProtocol
         if let sharingService {
             resolvedSharingService = sharingService
         } else {
             let idStore = DisplayShareIDStore(storeURL: persistenceContext.displayShareIDMappingsURL)
-            let sharingCoordinator = DisplaySharingCoordinator(idStore: idStore)
+            let sharingCoordinator = DisplaySharingCoordinator(
+                idStore: idStore,
+                captureRegistry: captureRegistry
+            )
             resolvedSharingService = SharingService(sharingCoordinator: sharingCoordinator)
         }
 
@@ -148,6 +167,10 @@ enum AppBootstrap {
 
         let capture = CaptureController(
             captureMonitoringService: resolvedCaptureMonitoringService,
+            captureMonitoringLifecycleService: CaptureMonitoringLifecycleService(
+                captureMonitoringService: resolvedCaptureMonitoringService,
+                captureRegistry: captureRegistry
+            ),
             catalogService: catalogService
         )
         let sharing = SharingController(
@@ -175,7 +198,8 @@ enum AppBootstrap {
                 sharing: sharing,
                 virtualDisplay: virtualDisplay,
                 catalogService: catalogService
-            )
+            ),
+            capturePerformancePreferences: capturePerformancePreferences
         )
 
         guard !preview else { return env }

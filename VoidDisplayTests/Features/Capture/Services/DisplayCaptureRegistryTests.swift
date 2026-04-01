@@ -9,6 +9,7 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
         var stopSharingCalls = 0
         var stopCalls = 0
         var setSharingActiveCalls: [Bool] = []
+        var setPerformanceModeCalls: [CapturePerformanceMode] = []
     }
 
     private let counters = Mutex(Counters())
@@ -38,6 +39,10 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
         counters.withLock { $0.setSharingActiveCalls.append(isActive) }
     }
 
+    nonisolated func setPerformanceMode(_ mode: CapturePerformanceMode) async throws {
+        counters.withLock { $0.setPerformanceModeCalls.append(mode) }
+    }
+
     nonisolated func stop() async {
         counters.withLock { $0.stopCalls += 1 }
     }
@@ -52,6 +57,10 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
 
     var setSharingActiveCalls: [Bool] {
         counters.withLock { $0.setSharingActiveCalls }
+    }
+
+    var setPerformanceModeCalls: [CapturePerformanceMode] {
+        counters.withLock { $0.setPerformanceModeCalls }
     }
 }
 
@@ -273,7 +282,7 @@ struct DisplayCaptureRegistryTests {
         let fakeSession = FakeCaptureSession()
         let factoryCallCount = Mutex(0)
 
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _ in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _ in
             factoryCallCount.withLock { $0 += 1 }
             await gate.waitUntilOpen()
             return fakeSession
@@ -314,7 +323,7 @@ struct DisplayCaptureRegistryTests {
         let replacementSession = FakeCaptureSession()
         let factoryCallCount = Mutex(0)
 
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _ in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _ in
             factoryCallCount.withLock { $0 += 1 }
             return replacementSession
         })
@@ -363,7 +372,7 @@ struct DisplayCaptureRegistryTests {
         let sendableDisplay = SendableDisplay(display)
         let fakeSession = FakeCaptureSession()
         let initialProfiles = Mutex<[DisplayCaptureProfile]>([])
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile, _ in
             initialProfiles.withLock { $0.append(initialProfile) }
             return fakeSession
         })
@@ -385,7 +394,7 @@ struct DisplayCaptureRegistryTests {
         let fakeSession = FakeCaptureSession()
         let factoryGate = CaptureSessionFactoryGate()
         let initialProfiles = Mutex<[DisplayCaptureProfile]>([])
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile in
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile, _ in
             initialProfiles.withLock { $0.append(initialProfile) }
             await factoryGate.waitUntilOpen()
             return fakeSession
@@ -450,6 +459,44 @@ struct DisplayCaptureRegistryTests {
         }
         #expect(drained)
         #expect(session.stopCalls == 1)
+    }
+
+    @Test func updatingPerformanceModePropagatesToExistingSessionsAndNewSessions() async throws {
+        let displayID = CGDirectDisplayID(11011)
+        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sendableDisplay = SendableDisplay(display)
+        let installedSession = FakeCaptureSession()
+        let createdSession = FakeCaptureSession()
+        let createdModes = Mutex<[CapturePerformanceMode]>([])
+        let registry = DisplayCaptureRegistry(
+            performanceMode: .automatic,
+            captureSessionFactory: { _, _, mode in
+                createdModes.withLock { $0.append(mode) }
+                return createdSession
+            }
+        )
+
+        await registry.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1920 × 1080",
+            session: installedSession
+        )
+
+        await registry.updatePerformanceMode(.powerEfficient)
+        #expect(installedSession.setPerformanceModeCalls == [.powerEfficient])
+
+        let subscription = try await registry.acquireShare(display: sendableDisplay)
+
+        #expect(createdModes.withLock { $0.first } == nil)
+        #expect(installedSession.setSharingActiveCalls == [true])
+
+        subscription.cancel()
+
+        let newDisplayID = CGDirectDisplayID(11012)
+        let newDisplay = MockSCDisplay.make(displayID: newDisplayID, width: 1280, height: 720)
+        let newSubscription = try await registry.acquireShare(display: SendableDisplay(newDisplay))
+        #expect(createdModes.withLock { $0.first } == .powerEfficient)
+        newSubscription.cancel()
     }
 
     private func waitUntil(

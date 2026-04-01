@@ -93,21 +93,258 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(
             DisplayCaptureSession.captureFramesPerSecond(
                 for: .previewOnly,
+                frameRateTier: .fps60,
                 maximumPreviewFramesPerSecond: 60
             ) == 60
         )
         #expect(
             DisplayCaptureSession.captureFramesPerSecond(
                 for: .shareOnly,
+                frameRateTier: .fps60,
                 maximumPreviewFramesPerSecond: 60
             ) == 60
         )
         #expect(
             DisplayCaptureSession.captureFramesPerSecond(
                 for: .mixed,
+                frameRateTier: .fps45,
                 maximumPreviewFramesPerSecond: 60
             ) == 45
         )
+    }
+
+    @Test func performanceModesMapToExpectedFrameRateTiers() {
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .previewOnly,
+                performanceMode: .automatic
+            ) == .fps60
+        )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .shareOnly,
+                performanceMode: .automatic
+            ) == .fps60
+        )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .mixed,
+                performanceMode: .automatic
+            ) == .fps45
+        )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .mixed,
+                performanceMode: .smooth
+            ) == .fps60
+        )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .mixed,
+                performanceMode: .powerEfficient
+            ) == .fps30
+        )
+    }
+
+    @Test func automaticMixedModeDropsTo30AfterTwoPressureWindows() {
+        var coordinator = DisplayCaptureConfigurationCoordinatorState(
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
+            performanceMode: .automatic
+        )
+        coordinator.previewSinkCount = 1
+        coordinator.sharingActive = true
+
+        let firstDecision = coordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 90,
+                droppedFrameCount: 10,
+                latestRenderLatencyMilliseconds: 12,
+                pendingSlotOccupied: false,
+                capturedAt: 1
+            ),
+            nowNs: 1,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(firstDecision == .noChange)
+
+        let secondDecision = coordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 85,
+                droppedFrameCount: 15,
+                latestRenderLatencyMilliseconds: 14,
+                pendingSlotOccupied: false,
+                capturedAt: 2
+            ),
+            nowNs: 2,
+            minimumDwellNanoseconds: 0
+        )
+        switch secondDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps30)
+        default:
+            Issue.record("Expected automatic mixed mode to drop to 30fps, got \(String(describing: secondDecision))")
+        }
+    }
+
+    @Test func automaticMixedModeRisesBackTo60AcrossStableWindows() {
+        var coordinator = DisplayCaptureConfigurationCoordinatorState(
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
+            performanceMode: .automatic
+        )
+        coordinator.previewSinkCount = 1
+        coordinator.sharingActive = true
+
+        let pressureDecision = coordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 80,
+                droppedFrameCount: 20,
+                latestRenderLatencyMilliseconds: 10,
+                pendingSlotOccupied: false,
+                capturedAt: 1
+            ),
+            nowNs: 1,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(pressureDecision == .noChange)
+        let downgradeDecision = coordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 70,
+                droppedFrameCount: 30,
+                latestRenderLatencyMilliseconds: 10,
+                pendingSlotOccupied: false,
+                capturedAt: 2
+            ),
+            nowNs: 2,
+            minimumDwellNanoseconds: 0
+        )
+        guard case .applyNow(let downgradedConfiguration) = downgradeDecision else {
+            Issue.record("Expected downgrade to 30fps before stable-window recovery.")
+            return
+        }
+        #expect(downgradedConfiguration.frameRateTier == .fps30)
+
+        let postDowngradeDecision = coordinator.finishAppliedTransition(
+            at: 3,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(postDowngradeDecision == .noChange)
+
+        for index in 0..<3 {
+            let stableDecision = coordinator.recordPreviewPerformanceSample(
+                .init(
+                    renderedFrameCount: 100,
+                    droppedFrameCount: 0,
+                    latestRenderLatencyMilliseconds: 10,
+                    pendingSlotOccupied: false,
+                    capturedAt: UInt64(10 + index)
+                ),
+                nowNs: UInt64(10 + index),
+                minimumDwellNanoseconds: 0
+            )
+            #expect(stableDecision == .noChange)
+        }
+
+        let fourthStableDecision = coordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 100,
+                droppedFrameCount: 0,
+                latestRenderLatencyMilliseconds: 10,
+                pendingSlotOccupied: false,
+                capturedAt: 14
+            ),
+            nowNs: 14,
+            minimumDwellNanoseconds: 0
+        )
+        switch fourthStableDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps45)
+        default:
+            Issue.record("Expected recovery to 45fps after four stable windows, got \(String(describing: fourthStableDecision))")
+        }
+
+        let postRecoveryDecision = coordinator.finishAppliedTransition(
+            at: 15,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(postRecoveryDecision == .noChange)
+
+        for index in 0..<3 {
+            let stableDecision = coordinator.recordPreviewPerformanceSample(
+                .init(
+                    renderedFrameCount: 100,
+                    droppedFrameCount: 0,
+                    latestRenderLatencyMilliseconds: 10,
+                    pendingSlotOccupied: false,
+                    capturedAt: UInt64(20 + index)
+                ),
+                nowNs: UInt64(20 + index),
+                minimumDwellNanoseconds: 0
+            )
+            #expect(stableDecision == .noChange)
+        }
+
+        let eighthStableDecision = coordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 100,
+                droppedFrameCount: 0,
+                latestRenderLatencyMilliseconds: 10,
+                pendingSlotOccupied: false,
+                capturedAt: 24
+            ),
+            nowNs: 24,
+            minimumDwellNanoseconds: 0
+        )
+        switch eighthStableDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps60)
+        default:
+            Issue.record("Expected recovery to 60fps after another four stable windows, got \(String(describing: eighthStableDecision))")
+        }
+    }
+
+    @Test func smoothAndPowerEfficientModesIgnoreAutomaticPreviewPressureSamples() {
+        var smoothCoordinator = DisplayCaptureConfigurationCoordinatorState(
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
+            performanceMode: .smooth
+        )
+        smoothCoordinator.previewSinkCount = 1
+        smoothCoordinator.sharingActive = true
+
+        let smoothDecision = smoothCoordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 50,
+                droppedFrameCount: 50,
+                latestRenderLatencyMilliseconds: 60,
+                pendingSlotOccupied: true,
+                capturedAt: 1
+            ),
+            nowNs: 1,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(smoothDecision == .noChange)
+
+        var powerCoordinator = DisplayCaptureConfigurationCoordinatorState(
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps30),
+            performanceMode: .powerEfficient
+        )
+        powerCoordinator.previewSinkCount = 1
+        powerCoordinator.sharingActive = true
+
+        let powerDecision = powerCoordinator.recordPreviewPerformanceSample(
+            .init(
+                renderedFrameCount: 100,
+                droppedFrameCount: 0,
+                latestRenderLatencyMilliseconds: 5,
+                pendingSlotOccupied: false,
+                capturedAt: 1
+            ),
+            nowNs: 1,
+            minimumDwellNanoseconds: 0
+        )
+        #expect(powerDecision == .noChange)
     }
 
     @Test func committedTransitionUpdatesDwellBeforeReevaluatingPendingDemand() {
