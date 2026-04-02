@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import JavaScriptCore
 import Testing
 @testable import VoidDisplay
 
@@ -153,6 +154,28 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("<title>Screen Share</title>"))
         #expect(responseText.contains("/signal/7"))
         #expect(responseText.contains("Display 7") == false)
+    }
+
+    @Test func displayRouteScriptBootstrapsAndHandlesBasicUIStateChanges() async throws {
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { _ in .active },
+            sessionHubProvider: { _ in WebRTCSessionHub() }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let request = Data("GET /display HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+        let responseData = try await Task.detached {
+            try await sendRequestAndReadUntilClose(port: portValue, request: request)
+        }.value
+
+        let responseText = try #require(String(data: responseData, encoding: .utf8))
+        let smokeResult = try evaluateDisplayPageRuntimeScript(in: responseText)
+
+        #expect(smokeResult.documentTitle == "Screen Share")
+        #expect(smokeResult.scaleButtonText == "Fit")
+        #expect(smokeResult.toggleCallCount >= 2)
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
@@ -425,6 +448,154 @@ struct WebServerSocketIntegrationTests {
             try waitForCloseOrEOF(from: socketFD, deadlineSeconds: 5)
         }.value
     }
+}
+
+private struct DisplayPageScriptSmokeResult: Equatable {
+    let documentTitle: String
+    let scaleButtonText: String
+    let toggleCallCount: Int
+}
+
+private enum DisplayPageScriptSmokeError: Error {
+    case missingRuntimeScript
+    case evaluationFailed(String)
+}
+
+private func evaluateDisplayPageRuntimeScript(
+    in responseText: String
+) throws -> DisplayPageScriptSmokeResult {
+    guard let scriptOpenRange = responseText.range(of: "<script>", options: .backwards),
+          let scriptCloseRange = responseText.range(
+              of: "</script>",
+              range: scriptOpenRange.upperBound..<responseText.endIndex
+          ) else {
+        throw DisplayPageScriptSmokeError.missingRuntimeScript
+    }
+
+    let script = String(responseText[scriptOpenRange.upperBound..<scriptCloseRange.lowerBound])
+    let context = JSContext()!
+    var exceptionMessage: String?
+    context.exceptionHandler = { _, exception in
+        exceptionMessage = exception?.toString() ?? "unknown JavaScript error"
+    }
+
+    context.evaluateScript(
+        """
+        var __toggleCount = 0;
+        var __elements = {};
+
+        function makeElement(id) {
+            return {
+                id: id,
+                textContent: "",
+                hidden: false,
+                srcObject: null,
+                __handlers: {},
+                addEventListener: function(type, handler) {
+                    this.__handlers[type] = handler;
+                },
+                classList: {
+                    toggle: function() {
+                        __toggleCount += 1;
+                    }
+                },
+                requestFullscreen: function() {}
+            };
+        }
+
+        function WebSocket(url) {
+            this.url = url;
+            this.__handlers = {};
+        }
+        WebSocket.prototype.addEventListener = function(type, handler) {
+            this.__handlers[type] = handler;
+        };
+        WebSocket.prototype.send = function() {};
+        WebSocket.prototype.close = function() {};
+
+        function RTCPeerConnection(config) {
+            this.config = config;
+        }
+        RTCPeerConnection.prototype.addIceCandidate = function() {};
+        RTCPeerConnection.prototype.close = function() {};
+
+        var document = {
+            title: "",
+            fullscreenElement: null,
+            fullscreenEnabled: false,
+            body: {
+                classList: {
+                    toggle: function() {
+                        __toggleCount += 1;
+                    }
+                }
+            },
+            getElementById: function(id) {
+                if (!__elements[id]) {
+                    __elements[id] = makeElement(id);
+                }
+                return __elements[id];
+            },
+            querySelector: function() {
+                return makeElement("stage");
+            },
+            addEventListener: function(type, handler) {
+                this["on" + type] = handler;
+            },
+            exitFullscreen: function() {}
+        };
+
+        var navigator = {
+            languages: ["en-US"],
+            language: "en-US"
+        };
+
+        var window = {
+            WebSocket: WebSocket,
+            RTCPeerConnection: RTCPeerConnection,
+            location: {
+                protocol: "http:",
+                host: "127.0.0.1"
+            },
+            setTimeout: function() { return 1; },
+            clearTimeout: function() {},
+            addEventListener: function() {}
+        };
+
+        var console = {
+            log: function() {},
+            warn: function() {},
+            error: function() {}
+        };
+        """
+    )
+    if let exceptionMessage {
+        throw DisplayPageScriptSmokeError.evaluationFailed(exceptionMessage)
+    }
+
+    context.evaluateScript(script)
+    if let exceptionMessage {
+        throw DisplayPageScriptSmokeError.evaluationFailed(exceptionMessage)
+    }
+
+    context.evaluateScript(
+        """
+        transition("streaming");
+        __elements["scale-mode-btn"].__handlers["click"]();
+        """
+    )
+    if let exceptionMessage {
+        throw DisplayPageScriptSmokeError.evaluationFailed(exceptionMessage)
+    }
+
+    let documentTitle = context.evaluateScript("document.title")?.toString() ?? ""
+    let scaleButtonText = context.evaluateScript("__elements['scale-mode-btn'].textContent")?.toString() ?? ""
+    let toggleCallCount = Int(context.evaluateScript("__toggleCount")?.toInt32() ?? 0)
+    return DisplayPageScriptSmokeResult(
+        documentTitle: documentTitle,
+        scaleButtonText: scaleButtonText,
+        toggleCallCount: toggleCallCount
+    )
 }
 
 private extension String {

@@ -1,5 +1,96 @@
+import Foundation
+import CoreVideo
 import Testing
 @testable import VoidDisplay
+
+private func makeTestStreamConfigurationState(
+    profile: DisplayCaptureProfile = .mixed,
+    frameRateTier: DisplayCaptureFrameRateTier = .fps45,
+    previewShowsCursor: Bool = false,
+    shareCursorOverrideCount: Int = 0
+) -> DisplayCaptureStreamConfigurationState {
+    DisplayCaptureStreamConfigurationState(
+        width: 1920,
+        height: 1080,
+        maximumPreviewFramesPerSecond: 60,
+        queueDepth: 2,
+        capturesAudio: false,
+        pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+        profile: profile,
+        frameRateTier: frameRateTier,
+        previewShowsCursor: previewShowsCursor,
+        shareCursorOverrideCount: shareCursorOverrideCount
+    )
+}
+
+private actor StreamConfigurationApplyGate {
+    private var isOpen = false
+    private var enteredCount = 0
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var openWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitForFirstEntry() async {
+        guard enteredCount == 0 else { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(continuation)
+        }
+    }
+
+    func enter() async {
+        enteredCount += 1
+        let pendingEntryWaiters = entryWaiters
+        entryWaiters.removeAll()
+        for waiter in pendingEntryWaiters {
+            waiter.resume()
+        }
+
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            openWaiters.append(continuation)
+        }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let pendingOpenWaiters = openWaiters
+        openWaiters.removeAll()
+        for waiter in pendingOpenWaiters {
+            waiter.resume()
+        }
+    }
+}
+
+private actor StreamConfigurationRecorder {
+    private var states: [DisplayCaptureStreamConfigurationState] = []
+
+    func record(_ state: DisplayCaptureStreamConfigurationState) {
+        states.append(state)
+    }
+
+    func snapshot() -> [DisplayCaptureStreamConfigurationState] {
+        states
+    }
+}
+
+private struct StreamConfigurationCoordinatorTestError: Error {}
+
+private actor StreamConfigurationFailureController {
+    private var shouldFailNext = true
+    private var appliedStates: [DisplayCaptureStreamConfigurationState] = []
+
+    func apply(_ state: DisplayCaptureStreamConfigurationState) throws {
+        if shouldFailNext {
+            shouldFailNext = false
+            throw StreamConfigurationCoordinatorTestError()
+        }
+        appliedStates.append(state)
+    }
+
+    func snapshot() -> [DisplayCaptureStreamConfigurationState] {
+        appliedStates
+    }
+}
 
 struct DisplayCaptureProfileStateMachineTests {
     @Test func desiredProfileMatchesPreviewAndSharingDemand() {
@@ -441,5 +532,73 @@ struct DisplayCaptureProfileStateMachineTests {
 
         #expect(lifetime.allowsExecution(for: initialGeneration) == false)
         #expect(lifetime.allowsExecution(for: lifetime.currentGeneration))
+    }
+
+    @Test func streamConfigurationCoordinatorPreservesOverlappingChanges() async throws {
+        let gate = StreamConfigurationApplyGate()
+        let recorder = StreamConfigurationRecorder()
+        let coordinator = DisplayCaptureStreamConfigurationCoordinator(
+            initialState: makeTestStreamConfigurationState(),
+            applier: { state in
+                await recorder.record(state)
+                await gate.enter()
+            }
+        )
+
+        let firstTask = Task {
+            try await coordinator.setPreviewShowsCursor(true)
+        }
+        await gate.waitForFirstEntry()
+
+        let secondTask = Task {
+            try await coordinator.applyDemandDrivenConfiguration(
+                .init(profile: .mixed, frameRateTier: .fps30)
+            )
+        }
+
+        await gate.open()
+
+        let firstChanged = try await firstTask.value
+        let secondChanged = try await secondTask.value
+        let committedState = await coordinator.committedStateSnapshot()
+
+        #expect(firstChanged)
+        #expect(secondChanged)
+        #expect(committedState == makeTestStreamConfigurationState(frameRateTier: .fps30, previewShowsCursor: true))
+        #expect(
+            await recorder.snapshot() == [
+                makeTestStreamConfigurationState(previewShowsCursor: true),
+                makeTestStreamConfigurationState(frameRateTier: .fps30, previewShowsCursor: true)
+            ]
+        )
+    }
+
+    @Test func streamConfigurationCoordinatorRecoversFromFailedApplyUsingCommittedState() async throws {
+        let failureController = StreamConfigurationFailureController()
+        let coordinator = DisplayCaptureStreamConfigurationCoordinator(
+            initialState: makeTestStreamConfigurationState(),
+            applier: { state in
+                try await failureController.apply(state)
+            }
+        )
+
+        do {
+            _ = try await coordinator.setPreviewShowsCursor(true)
+            Issue.record("Expected first coordinator apply to fail")
+        } catch {
+        }
+
+        let retryChanged = try await coordinator.applyDemandDrivenConfiguration(
+            .init(profile: .mixed, frameRateTier: .fps30)
+        )
+        let committedState = await coordinator.committedStateSnapshot()
+
+        #expect(retryChanged)
+        #expect(committedState == makeTestStreamConfigurationState(frameRateTier: .fps30))
+        #expect(
+            await failureController.snapshot() == [
+                makeTestStreamConfigurationState(frameRateTier: .fps30)
+            ]
+        )
     }
 }

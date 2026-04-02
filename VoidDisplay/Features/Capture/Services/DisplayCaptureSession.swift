@@ -46,29 +46,264 @@ private struct DisplayCaptureMetrics: Sendable {
     }
 }
 
-final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
-    private struct StreamConfigurationState: Sendable {
-        let width: Int
-        let height: Int
-        let maximumPreviewFramesPerSecond: Int
-        let queueDepth: Int
-        let capturesAudio: Bool
-        let pixelFormat: OSType
-        var profile: DisplayCaptureProfile
-        var frameRateTier: DisplayCaptureFrameRateTier
-        var previewShowsCursor: Bool
-        var shareCursorOverrideCount: Int
+nonisolated struct DisplayCaptureStreamConfigurationState: Sendable, Equatable {
+    let width: Int
+    let height: Int
+    let maximumPreviewFramesPerSecond: Int
+    let queueDepth: Int
+    let capturesAudio: Bool
+    let pixelFormat: OSType
+    var profile: DisplayCaptureProfile
+    var frameRateTier: DisplayCaptureFrameRateTier
+    var previewShowsCursor: Bool
+    var shareCursorOverrideCount: Int
 
-        nonisolated var minimumFrameInterval: CMTime {
-            let framesPerSecond = DisplayCaptureSession.captureFramesPerSecond(
-                for: profile,
-                frameRateTier: frameRateTier,
-                maximumPreviewFramesPerSecond: maximumPreviewFramesPerSecond
-            )
-            return CMTime(value: 1, timescale: CMTimeScale(max(1, Int32(framesPerSecond))))
+    nonisolated var minimumFrameInterval: CMTime {
+        let framesPerSecond = DisplayCaptureSession.captureFramesPerSecond(
+            for: profile,
+            frameRateTier: frameRateTier,
+            maximumPreviewFramesPerSecond: maximumPreviewFramesPerSecond
+        )
+        return CMTime(value: 1, timescale: CMTimeScale(max(1, Int32(framesPerSecond))))
+    }
+}
+
+private nonisolated func makeDisplayCaptureStreamConfiguration(
+    from state: DisplayCaptureStreamConfigurationState
+) -> SCStreamConfiguration {
+    let config = SCStreamConfiguration()
+    config.width = state.width
+    config.height = state.height
+    config.minimumFrameInterval = state.minimumFrameInterval
+    config.queueDepth = state.queueDepth
+    config.showsCursor = state.shareCursorOverrideCount > 0 || state.previewShowsCursor
+    config.capturesAudio = state.capturesAudio
+    config.pixelFormat = state.pixelFormat
+    return config
+}
+
+actor DisplayCaptureStreamConfigurationCoordinator {
+    typealias TestApplier = @Sendable (DisplayCaptureStreamConfigurationState) async throws -> Void
+
+    private struct Waiter {
+        let revision: UInt64
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private let stream: SCStream?
+    private let testApplier: TestApplier?
+    private var committedState: DisplayCaptureStreamConfigurationState
+    private var desiredState: DisplayCaptureStreamConfigurationState
+    private var committedRevision: UInt64 = 0
+    private var nextRevision: UInt64 = 0
+    private var pendingRevision: UInt64?
+    private var failedThroughRevision: UInt64?
+    private var lastFailure: (any Error)?
+    private var flushTask: Task<Void, Never>?
+    private var waiters: [UUID: Waiter] = [:]
+
+    init(
+        stream: SCStream,
+        initialState: DisplayCaptureStreamConfigurationState
+    ) {
+        self.stream = stream
+        self.testApplier = nil
+        self.committedState = initialState
+        self.desiredState = initialState
+    }
+
+    init(
+        initialState: DisplayCaptureStreamConfigurationState,
+        applier: @escaping TestApplier
+    ) {
+        self.stream = nil
+        self.testApplier = applier
+        self.committedState = initialState
+        self.desiredState = initialState
+    }
+
+    func setPreviewShowsCursor(_ showsCursor: Bool) async throws -> Bool {
+        try await applyMutation { state in
+            state.previewShowsCursor = showsCursor
         }
     }
 
+    func retainShareCursorOverride() async throws -> Bool {
+        try await applyMutation { state in
+            state.shareCursorOverrideCount += 1
+        }
+    }
+
+    func releaseShareCursorOverride() async throws -> Bool {
+        try await applyMutation { state in
+            state.shareCursorOverrideCount = max(0, state.shareCursorOverrideCount - 1)
+        }
+    }
+
+    func applyDemandDrivenConfiguration(_ configuration: DisplayCaptureConfiguration) async throws -> Bool {
+        try await applyMutation { state in
+            state.profile = configuration.profile
+            state.frameRateTier = configuration.frameRateTier
+        }
+    }
+
+    func committedStateSnapshot() -> DisplayCaptureStreamConfigurationState {
+        committedState
+    }
+
+    func cancelPending(error: any Error = CancellationError()) {
+        flushTask?.cancel()
+        flushTask = nil
+
+        guard let pendingRevision else { return }
+        desiredState = committedState
+        self.pendingRevision = nil
+        failedThroughRevision = pendingRevision
+        lastFailure = error
+        failWaiters(
+            upTo: pendingRevision,
+            error: error
+        )
+    }
+
+    private func applyMutation(
+        _ mutation: (inout DisplayCaptureStreamConfigurationState) -> Void
+    ) async throws -> Bool {
+        var nextState = desiredState
+        mutation(&nextState)
+
+        guard nextState != desiredState else {
+            if let pendingRevision {
+                try await waitForResolution(of: pendingRevision)
+            }
+            return false
+        }
+
+        desiredState = nextState
+        nextRevision &+= 1
+        let targetRevision = nextRevision
+        pendingRevision = targetRevision
+        if flushTask == nil {
+            flushTask = Task {
+                await self.flushLoop()
+            }
+        }
+        try await waitForResolution(of: targetRevision)
+        return true
+    }
+
+    private func waitForResolution(of revision: UInt64) async throws {
+        if committedRevision >= revision {
+            return
+        }
+        if let failedThroughRevision,
+           failedThroughRevision >= revision,
+           let lastFailure {
+            throw lastFailure
+        }
+
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if committedRevision >= revision {
+                    continuation.resume(returning: ())
+                    return
+                }
+                if let failedThroughRevision,
+                   failedThroughRevision >= revision,
+                   let lastFailure {
+                    continuation.resume(throwing: lastFailure)
+                    return
+                }
+                waiters[waiterID] = Waiter(
+                    revision: revision,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id: waiterID)
+            }
+        }
+    }
+
+    private func flushLoop() async {
+        while let pendingRevision {
+            let stateToApply = desiredState
+            let revisionToApply = pendingRevision
+
+            do {
+                try Task.checkCancellation()
+                try await applyState(stateToApply)
+            } catch {
+                let failedThrough = self.pendingRevision ?? revisionToApply
+                desiredState = committedState
+                self.pendingRevision = nil
+                failedThroughRevision = failedThrough
+                lastFailure = error
+                flushTask = nil
+                failWaiters(
+                    upTo: failedThrough,
+                    error: error
+                )
+                return
+            }
+
+            committedState = stateToApply
+            committedRevision = revisionToApply
+            resumeWaiters(upTo: revisionToApply)
+
+            if self.pendingRevision == revisionToApply {
+                desiredState = committedState
+                self.pendingRevision = nil
+            }
+        }
+
+        flushTask = nil
+    }
+
+    private func applyState(_ state: DisplayCaptureStreamConfigurationState) async throws {
+        if let stream {
+            try await stream.updateConfiguration(makeDisplayCaptureStreamConfiguration(from: state))
+            return
+        }
+        if let testApplier {
+            try await testApplier(state)
+            return
+        }
+        preconditionFailure("DisplayCaptureStreamConfigurationCoordinator requires an applier")
+    }
+
+    private func cancelWaiter(id: UUID) {
+        guard let waiter = waiters.removeValue(forKey: id) else { return }
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    private func resumeWaiters(upTo revision: UInt64) {
+        let matchingIDs = waiters.compactMap { id, waiter in
+            waiter.revision <= revision ? id : nil
+        }
+        for id in matchingIDs {
+            guard let waiter = waiters.removeValue(forKey: id) else { continue }
+            waiter.continuation.resume(returning: ())
+        }
+    }
+
+    private func failWaiters(
+        upTo revision: UInt64,
+        error: any Error
+    ) {
+        let matchingIDs = waiters.compactMap { id, waiter in
+            waiter.revision <= revision ? id : nil
+        }
+        for id in matchingIDs {
+            guard let waiter = waiters.removeValue(forKey: id) else { continue }
+            waiter.continuation.resume(throwing: error)
+        }
+    }
+}
+
+final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
     private struct DemandState {
         var configurationCoordinator: DisplayCaptureConfigurationCoordinatorState
         var taskLifetime = DisplayCaptureTaskLifetimeState()
@@ -87,7 +322,7 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     nonisolated private let captureQueue: DispatchQueue
     nonisolated private let fanout = DisplaySampleFanout()
     nonisolated private let metrics = Mutex(DisplayCaptureMetrics())
-    nonisolated private let configurationState: Mutex<StreamConfigurationState>
+    nonisolated private let streamConfigurationCoordinator: DisplayCaptureStreamConfigurationCoordinator
     nonisolated private let demandState: Mutex<DemandState>
 
     nonisolated init(
@@ -107,11 +342,14 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
             initialProfile: initialProfile,
             initialPerformanceMode: initialPerformanceMode
         )
-        let config = Self.makeStreamConfiguration(from: state)
+        let config = makeDisplayCaptureStreamConfiguration(from: state)
         let filter = try await Self.makeContentFilter(display: display)
         self.stream = SCStream(filter: filter, configuration: config, delegate: output)
         self.sessionHub = WebRTCSessionHub()
-        self.configurationState = Mutex(state)
+        self.streamConfigurationCoordinator = DisplayCaptureStreamConfigurationCoordinator(
+            stream: self.stream,
+            initialState: state
+        )
         self.demandState = Mutex(
             DemandState(
                 configurationCoordinator: DisplayCaptureConfigurationCoordinatorState(
@@ -156,35 +394,21 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     }
 
     nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        let updatedState = configurationState.withLock { state -> StreamConfigurationState in
-            guard state.previewShowsCursor != showsCursor else { return state }
-            var copy = state
-            copy.previewShowsCursor = showsCursor
-            return copy
-        }
-        guard updatedState.previewShowsCursor == showsCursor else { return }
+        let changed = try await streamConfigurationCoordinator.setPreviewShowsCursor(showsCursor)
+        guard changed else { return }
         metrics.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
-        try await applyStreamConfiguration(updatedState)
     }
 
     nonisolated func retainShareCursorOverride() async throws {
-        let updatedState = configurationState.withLock { state -> StreamConfigurationState in
-            var copy = state
-            copy.shareCursorOverrideCount += 1
-            return copy
-        }
+        let changed = try await streamConfigurationCoordinator.retainShareCursorOverride()
+        guard changed else { return }
         metrics.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
-        try await applyStreamConfiguration(updatedState)
     }
 
     nonisolated func releaseShareCursorOverride() async throws {
-        let updatedState = configurationState.withLock { state -> StreamConfigurationState in
-            var copy = state
-            copy.shareCursorOverrideCount = max(0, copy.shareCursorOverrideCount - 1)
-            return copy
-        }
+        let changed = try await streamConfigurationCoordinator.releaseShareCursorOverride()
+        guard changed else { return }
         metrics.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
-        try await applyStreamConfiguration(updatedState)
     }
 
     nonisolated func setSharingActive(_ isActive: Bool) async throws {
@@ -205,16 +429,6 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         metrics.withLock { $0.snapshot() }
     }
 
-    nonisolated private func applyStreamConfiguration(_ updatedState: StreamConfigurationState) async throws {
-        try await stream.updateConfiguration(Self.makeStreamConfiguration(from: updatedState))
-        configurationState.withLock { state in
-            state.profile = updatedState.profile
-            state.frameRateTier = updatedState.frameRateTier
-            state.previewShowsCursor = updatedState.previewShowsCursor
-            state.shareCursorOverrideCount = updatedState.shareCursorOverrideCount
-        }
-    }
-
     nonisolated func stop() async {
         demandState.withLock { state in
             _ = state.taskLifetime.invalidateAllTasks()
@@ -223,6 +437,7 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
             state.activeApplyTask?.cancel()
             state.activeApplyTask = nil
         }
+        await streamConfigurationCoordinator.cancelPending()
         stopSharing()
         try? await stream.stopCapture()
     }
@@ -344,39 +559,24 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     ) async throws {
         guard isExecutionAllowed(for: executionGeneration) else { return }
 
-        let updatedState = configurationState.withLock { state -> StreamConfigurationState? in
-            guard state.profile != configuration.profile || state.frameRateTier != configuration.frameRateTier else {
-                return nil
-            }
-            var copy = state
-            copy.profile = configuration.profile
-            copy.frameRateTier = configuration.frameRateTier
-            return copy
-        }
-        guard let updatedState else {
-            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
-            return
-        }
+        let changed: Bool
 
         do {
             try Task.checkCancellation()
             guard isExecutionAllowed(for: executionGeneration) else { return }
 
-            try await stream.updateConfiguration(Self.makeStreamConfiguration(from: updatedState))
-            guard isExecutionAllowed(for: executionGeneration) else { return }
-
-            configurationState.withLock { state in
-                state.profile = updatedState.profile
-                state.frameRateTier = updatedState.frameRateTier
-                state.previewShowsCursor = updatedState.previewShowsCursor
-                state.shareCursorOverrideCount = updatedState.shareCursorOverrideCount
-            }
+            changed = try await streamConfigurationCoordinator.applyDemandDrivenConfiguration(configuration)
         } catch is CancellationError {
             finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
             return
         } catch {
             finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
             AppErrorMapper.logFailure("Update capture configuration", error: error, logger: AppLog.capture)
+            return
+        }
+
+        guard changed else {
+            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
             return
         }
 
@@ -457,7 +657,7 @@ extension DisplayCaptureSession {
         showsCursor: Bool,
         initialProfile: DisplayCaptureProfile,
         initialPerformanceMode: CapturePerformanceMode
-    ) async throws -> StreamConfigurationState {
+    ) async throws -> DisplayCaptureStreamConfigurationState {
         let displayMode = CGDisplayCopyDisplayMode(display.displayID)
 
         let captureSize = preferredCaptureSize(display: display, displayMode: displayMode)
@@ -467,7 +667,7 @@ extension DisplayCaptureSession {
             performanceMode: initialPerformanceMode
         )
 
-        let state = StreamConfigurationState(
+        let state = DisplayCaptureStreamConfigurationState(
             width: captureSize.width,
             height: captureSize.height,
             maximumPreviewFramesPerSecond: previewFramesPerSecond,
@@ -483,20 +683,6 @@ extension DisplayCaptureSession {
             "Capture config display=\(display.displayID, privacy: .public) size=\(captureSize.width)x\(captureSize.height, privacy: .public)"
         )
         return state
-    }
-
-    nonisolated private static func makeStreamConfiguration(
-        from state: StreamConfigurationState
-    ) -> SCStreamConfiguration {
-        let config = SCStreamConfiguration()
-        config.width = state.width
-        config.height = state.height
-        config.minimumFrameInterval = state.minimumFrameInterval
-        config.queueDepth = state.queueDepth
-        config.showsCursor = state.shareCursorOverrideCount > 0 || state.previewShowsCursor
-        config.capturesAudio = state.capturesAudio
-        config.pixelFormat = state.pixelFormat
-        return config
     }
 
     nonisolated private static func preferredCaptureSize(
