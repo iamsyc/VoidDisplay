@@ -503,6 +503,29 @@ struct DisplaySharingCoordinatorTests {
         #expect(await waitUntil { activeSubscription.cancelCounter.value == 1 })
     }
 
+    @MainActor
+    @Test func resolveConcreteTargetMapsMainAliasAndRejectsUnknownTargets() {
+        let coordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
+        coordinator.registerShareableDisplays([
+            .init(displayID: 201, isMain: true, virtualSerial: nil),
+            .init(displayID: 202, isMain: false, virtualSerial: nil)
+        ])
+
+        guard let mainShareID = coordinator.shareID(for: 201),
+              let secondaryShareID = coordinator.shareID(for: 202) else {
+            Issue.record("Expected registered displays to receive concrete share IDs.")
+            return
+        }
+
+        #expect(coordinator.resolveConcreteTarget(for: .main) == .id(mainShareID))
+        #expect(coordinator.resolveConcreteTarget(for: .id(mainShareID)) == .id(mainShareID))
+        #expect(coordinator.resolveConcreteTarget(for: .id(secondaryShareID)) == .id(secondaryShareID))
+        #expect(coordinator.resolveConcreteTarget(for: .id(999_999)) == nil)
+
+        let unresolvedCoordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
+        #expect(unresolvedCoordinator.resolveConcreteTarget(for: .main) == nil)
+    }
+
     private func temporaryStoreURL() -> URL {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("display-sharing-coordinator-tests-\(UUID().uuidString)", isDirectory: true)

@@ -289,6 +289,7 @@ struct ShareView: View {
         topologyCoordinator: env.topology
     )
         .environment(env.capture)
+        .environment(env.capturePerformancePreferences)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
         .environment(env.topology)

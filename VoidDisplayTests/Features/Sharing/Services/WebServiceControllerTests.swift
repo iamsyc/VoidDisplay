@@ -33,6 +33,7 @@ struct WebServiceControllerTests {
         let result = await sut.start(
             requestedPort: 1000,
             targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { $0 },
             sessionHubProvider: { _ in nil },
             sharingEventSink: { _ in }
         )
@@ -52,6 +53,7 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { $0 },
             sessionHubProvider: { _ in nil },
             sharingEventSink: { _ in }
         )
@@ -73,6 +75,7 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { $0 },
             sessionHubProvider: { _ in nil },
             sharingEventSink: { _ in }
         )
@@ -97,6 +100,7 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { $0 },
             sessionHubProvider: { _ in nil },
             sharingEventSink: { _ in }
         )
@@ -273,6 +277,7 @@ struct WebServiceControllerTests {
         sut: WebServiceController,
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState = { _ in .unknown },
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { $0 },
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub? = { _ in nil }
     ) async -> (startTask: Task<WebServiceStartResult, Never>, server: ControlledWebServiceServer)? {
         let existingServerCount = harness.createdServers.count
@@ -280,6 +285,7 @@ struct WebServiceControllerTests {
             await sut.start(
                 requestedPort: requestedPort,
                 targetStateProvider: targetStateProvider,
+                concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: { _ in }
             )
@@ -358,12 +364,14 @@ private final class WebServiceServerHarness {
     func makeServer(
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         _ sharingEventSink: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {
         _ = port
         _ = targetStateProvider
+        _ = concreteTargetResolver
         _ = sessionHubProvider
         _ = sharingEventSink
         let server = ControlledWebServiceServer(onListenerStopped: onListenerStopped)

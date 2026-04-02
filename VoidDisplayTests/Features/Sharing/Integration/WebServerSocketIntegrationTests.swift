@@ -28,6 +28,8 @@ private final class IntegrationAutoConnectingPeer: @unchecked Sendable, WebRTCPe
 @MainActor
 @Suite(.serialized)
 struct WebServerSocketIntegrationTests {
+    private static let mainAliasShareID: UInt32 = 5
+    private static let replacementMainAliasShareID: UInt32 = 6
 
     @Test func rootRouteSupportsFragmentedSocketRequest() async throws {
         let setup = try await startServerOnRandomPort(
@@ -54,8 +56,18 @@ struct WebServerSocketIntegrationTests {
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { target in
-                target == .main ? sessionHub : nil
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
             }
         )
         let server = setup.server
@@ -94,6 +106,16 @@ struct WebServerSocketIntegrationTests {
 
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .active },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { _ in WebRTCSessionHub() }
         )
         let server = setup.server
@@ -131,6 +153,8 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("footnote"))
         #expect(responseText.contains("__PAGE_TITLE__") == false)
         #expect(responseText.contains("__SIGNAL_PATH__") == false)
+        #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
+        #expect(responseText.contains(#"new WebSocket((window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/signal");"#) == false)
         #expect(responseText.contains("Main Display") == false)
         #expect(responseText.contains("Display 1") == false)
     }
@@ -159,6 +183,16 @@ struct WebServerSocketIntegrationTests {
     @Test func displayRouteScriptBootstrapsAndHandlesBasicUIStateChanges() async throws {
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .active },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { _ in WebRTCSessionHub() }
         )
         let server = setup.server
@@ -171,6 +205,7 @@ struct WebServerSocketIntegrationTests {
         }.value
 
         let responseText = try #require(String(data: responseData, encoding: .utf8))
+        #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
         let smokeResult = try evaluateDisplayPageRuntimeScript(in: responseText)
 
         #expect(smokeResult.documentTitle == "Screen Share")
@@ -184,8 +219,18 @@ struct WebServerSocketIntegrationTests {
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { target in
-                target == .main ? sessionHub : nil
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
             }
         )
         let server = setup.server
@@ -203,8 +248,18 @@ struct WebServerSocketIntegrationTests {
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { target in
-                target == .main ? sessionHub : nil
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
             }
         )
         let server = setup.server
@@ -228,8 +283,18 @@ struct WebServerSocketIntegrationTests {
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { target in
-                target == .main ? sessionHub : nil
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
             },
             sharingEventSink: { event in
                 Task { @MainActor in
@@ -250,7 +315,7 @@ struct WebServerSocketIntegrationTests {
             sessionHub.activeClientCount == 0 &&
             aggregator.currentSnapshot.signalingConnections == 0 &&
             aggregator.currentSnapshot.streamingPeers == 0 &&
-            aggregator.currentSnapshot.clientsByTarget[.main]?.isEmpty ?? true
+            aggregator.currentSnapshot.clientsByTarget[.id(Self.mainAliasShareID)]?.isEmpty ?? true
         }
         #expect(clientCleared)
     }
@@ -266,8 +331,18 @@ struct WebServerSocketIntegrationTests {
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { target in
-                target == .main ? sessionHub : nil
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
             },
             sharingEventSink: { event in
                 Task { @MainActor in
@@ -293,8 +368,8 @@ struct WebServerSocketIntegrationTests {
             let snapshot = aggregator.currentSnapshot
             return snapshot.signalingConnections == 2 &&
                 snapshot.streamingPeers == 2 &&
-                snapshot.signalingConnectionsByTarget[.main] == 2 &&
-                snapshot.streamingPeersByTarget[.main] == 2
+                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 2 &&
+                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 2
         }
         #expect(accumulated)
 
@@ -331,9 +406,19 @@ struct WebServerSocketIntegrationTests {
                     .unknown
                 }
             },
-            sessionHubProvider: { target in
+            concreteTargetResolver: { target in
                 switch target {
                 case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID || id == 7:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
+            sessionHubProvider: { target in
+                switch target {
+                case .id(let id) where id == Self.mainAliasShareID:
                     mainHub
                 case .id(7):
                     secondaryHub
@@ -365,14 +450,99 @@ struct WebServerSocketIntegrationTests {
             let snapshot = aggregator.currentSnapshot
             return snapshot.signalingConnections == 2 &&
                 snapshot.streamingPeers == 2 &&
-                snapshot.signalingConnectionsByTarget[.main] == 1 &&
+                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
                 snapshot.signalingConnectionsByTarget[.id(7)] == 1 &&
-                snapshot.streamingPeersByTarget[.main] == 1 &&
+                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1 &&
                 snapshot.streamingPeersByTarget[.id(7)] == 1 &&
-                server.streamClientCount(for: .main) == 1 &&
+                server.streamClientCount(for: .id(Self.mainAliasShareID)) == 1 &&
                 server.streamClientCount(for: .id(7)) == 1
         }
         #expect(isolated)
+    }
+
+    @Test func aliasConnectionCleanupStaysBoundToOriginalConcreteTargetAfterMainSwitch() async throws {
+        let aggregator = SharingStateAggregator()
+        let originalHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let replacementHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                switch target {
+                case .main:
+                    .active
+                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
+                    .active
+                default:
+                    .unknown
+                }
+            },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(mainShareIDBox.value)
+                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
+            sessionHubProvider: { target in
+                switch target {
+                case .id(let id) where id == Self.mainAliasShareID:
+                    originalHub
+                case .id(let id) where id == Self.replacementMainAliasShareID:
+                    replacementHub
+                default:
+                    nil
+                }
+            },
+            sharingEventSink: { event in
+                Task { @MainActor in
+                    aggregator.record(event)
+                }
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let socket = try await openWebSocket(path: "/signal", port: portValue)
+        defer { close(socket) }
+
+        try sendAll(socket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+
+        let connectedToOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
+                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1 &&
+                originalHub.activeClientCount == 1 &&
+                replacementHub.activeClientCount == 0
+        }
+        #expect(connectedToOriginalTarget)
+
+        mainShareIDBox.setValue(Self.replacementMainAliasShareID)
+
+        try sendAll(socket, data: makeMaskedCloseFrame())
+        _ = try await waitForSocketClose(socket)
+
+        let clearedFromOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnections == 0 &&
+                snapshot.streamingPeers == 0 &&
+                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == nil &&
+                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == nil &&
+                originalHub.activeClientCount == 0 &&
+                replacementHub.activeClientCount == 0
+        }
+        #expect(clearedFromOriginalTarget)
     }
 
     @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
@@ -381,8 +551,18 @@ struct WebServerSocketIntegrationTests {
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
             sessionHubProvider: { target in
-                target == .main ? sessionHub : nil
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
             }
         )
         let server = setup.server
@@ -454,6 +634,19 @@ private struct DisplayPageScriptSmokeResult: Equatable {
     let documentTitle: String
     let scaleButtonText: String
     let toggleCallCount: Int
+}
+
+@MainActor
+private final class MutableShareIDBox {
+    var value: UInt32
+
+    init(_ value: UInt32) {
+        self.value = value
+    }
+
+    func setValue(_ newValue: UInt32) {
+        value = newValue
+    }
 }
 
 private enum DisplayPageScriptSmokeError: Error {

@@ -130,6 +130,9 @@ final class SharingService: SharingServiceProtocol {
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },
+            concreteTargetResolver: { [weak self] target in
+                self?.sharingCoordinator.resolveConcreteTarget(for: target)
+            },
             sessionHubProvider: { [weak self] target in
                 self?.sharingCoordinator.sessionHub(for: target)
             },

@@ -313,6 +313,7 @@ private final class StaticLiveHubStore {
 @MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+    concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { $0 },
     sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
     sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
 ) async throws -> (server: WebServer, port: UInt16) {
@@ -325,6 +326,7 @@ func startServerOnRandomPort(
             let server = try WebServer(
                 using: endpointPort,
                 targetStateProvider: targetStateProvider,
+                concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: sharingEventSink
             )

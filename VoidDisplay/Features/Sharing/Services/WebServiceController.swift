@@ -35,6 +35,7 @@ protocol WebServiceControllerProtocol: AnyObject {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult
@@ -70,6 +71,7 @@ final class WebServiceController: WebServiceControllerProtocol {
     typealias WebServiceServerFactory = @MainActor @Sendable (
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         _ sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
@@ -93,12 +95,14 @@ final class WebServiceController: WebServiceControllerProtocol {
         webServiceServerFactory: @escaping WebServiceServerFactory = {
             port,
             targetStateProvider,
+            concreteTargetResolver,
             sessionHubProvider,
             sharingEventSink,
             onListenerStopped in
             try WebServer(
                 using: port,
                 targetStateProvider: targetStateProvider,
+                concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: sharingEventSink,
                 onListenerStopped: onListenerStopped
@@ -143,6 +147,7 @@ final class WebServiceController: WebServiceControllerProtocol {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
@@ -173,6 +178,7 @@ final class WebServiceController: WebServiceControllerProtocol {
                 requestedPort: requestedPort,
                 operationNonce: nonce,
                 targetStateProvider: targetStateProvider,
+                concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: sharingEventSink
             )
@@ -218,6 +224,7 @@ final class WebServiceController: WebServiceControllerProtocol {
         requestedPort: UInt16,
         operationNonce: UInt64,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
@@ -251,6 +258,7 @@ final class WebServiceController: WebServiceControllerProtocol {
             let server = try webServiceServerFactory(
                 port,
                 targetStateProvider,
+                concreteTargetResolver,
                 sessionHubProvider,
                 sharingEventSink,
                 { [weak self] reason in

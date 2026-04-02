@@ -104,6 +104,7 @@ final class WebServer {
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
+    private let concreteTargetResolver: @MainActor @Sendable (ShareTarget) -> ShareTarget?
     private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
     private let sharingEventSink: @Sendable (SharingSessionEvent) -> Void
     private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
@@ -118,11 +119,13 @@ final class WebServer {
     init(
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
+        self.concreteTargetResolver = concreteTargetResolver
         self.sessionHubProvider = sessionHubProvider
         self.sharingEventSink = sharingEventSink
         self.onListenerStopped = onListenerStopped
@@ -300,6 +303,10 @@ final class WebServer {
         sessionHubProvider(target)
     }
 
+    private func concreteTarget(for target: ShareTarget) -> ShareTarget? {
+        concreteTargetResolver(target)
+    }
+
     private func displayPage(for target: ShareTarget) -> String {
         _ = target
         let title = "Screen Share"
@@ -348,15 +355,31 @@ final class WebServer {
                 failureContext: "Send root page response"
             )
         case .showDisplayPage(let target):
+            guard let concreteTarget = concreteTarget(for: target) else {
+                sendResponseAndClose(
+                    requestHandler.responseData(for: .notFound),
+                    on: connection,
+                    failureContext: "Reject unresolved display target"
+                )
+                return
+            }
             sendResponseAndClose(
                 requestHandler.responseData(
-                    for: decision,
-                    htmlBody: displayPage(for: target)
+                    for: .showDisplayPage(concreteTarget),
+                    htmlBody: displayPage(for: concreteTarget)
                 ),
                 on: connection,
                 failureContext: "Send display page response"
             )
         case .openSignalSocket(let target):
+            guard let concreteTarget = concreteTarget(for: target) else {
+                sendResponseAndClose(
+                    requestHandler.responseData(for: .notFound),
+                    on: connection,
+                    failureContext: "Reject unresolved websocket target"
+                )
+                return
+            }
             guard isValidWebSocketUpgrade(request.headers) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .badRequest),
@@ -365,7 +388,7 @@ final class WebServer {
                 )
                 return
             }
-            openSignalSocket(on: connection, target: target, headers: request.headers)
+            openSignalSocket(on: connection, target: concreteTarget, headers: request.headers)
         case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),

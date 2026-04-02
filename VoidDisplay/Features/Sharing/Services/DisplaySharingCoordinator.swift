@@ -236,6 +236,20 @@ final class DisplaySharingCoordinator {
         }
     }
 
+    func resolveConcreteTarget(for target: ShareTarget) -> ShareTarget? {
+        switch target {
+        case .main:
+            guard let resolvedMainID = resolvedMainDisplayID(),
+                  let shareID = registrationsByDisplayID[resolvedMainID]?.shareID else {
+                return nil
+            }
+            return .id(shareID)
+        case .id(let id):
+            guard displayIDsByShareID[id] != nil else { return nil }
+            return .id(id)
+        }
+    }
+
     func shareID(for displayID: CGDirectDisplayID) -> UInt32? {
         registrationsByDisplayID[displayID]?.shareID
     }

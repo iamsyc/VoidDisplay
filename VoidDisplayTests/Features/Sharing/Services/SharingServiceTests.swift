@@ -112,6 +112,8 @@ struct SharingServiceTests {
         #expect(sut.isWebServiceRunning)
         #expect(mock.capturedTargetStateProvider?(.main) == .knownInactive)
         #expect(mock.capturedTargetStateProvider?(.id(123)) == .unknown)
+        #expect(mock.capturedConcreteTargetResolver?(.main) == nil)
+        #expect(mock.capturedConcreteTargetResolver?(.id(123)) == nil)
         #expect(mock.capturedSessionHubProvider?(.main) == nil)
         #expect(mock.capturedSharingEventSink != nil)
     }
