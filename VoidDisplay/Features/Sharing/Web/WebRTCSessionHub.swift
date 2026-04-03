@@ -94,6 +94,19 @@ final class WebRTCSessionHub: Sendable {
     private nonisolated struct QueuedSignal: Sendable {
         let text: String
         let disconnectAfterSend: Bool
+        let coalescingKey: CoalescingKey?
+    }
+
+    private nonisolated enum CoalescingKey: Sendable, Equatable {
+        case answer
+        case stopped
+    }
+
+    private nonisolated enum EnqueueDecision {
+        case sendNow(QueuedSignal)
+        case queued
+        case overflow
+        case dropped
     }
 
     private nonisolated struct ClientState {
@@ -113,8 +126,8 @@ final class WebRTCSessionHub: Sendable {
     }
 
     nonisolated private let state: Mutex<State>
-    nonisolated private let maxClients = 10
     nonisolated private let peerFactory: PeerFactory
+    nonisolated private static let maxPendingSignalsPerClient = 256
 
 #if canImport(WebRTC)
     nonisolated private let mediaPipeline = WebRTCMediaPipeline()
@@ -169,9 +182,6 @@ final class WebRTCSessionHub: Sendable {
         let key = ObjectIdentifier(connection as AnyObject)
         let (result, acceptedClientID, shouldSignalDemand, callback) = state.withLock {
             state -> (AddClientResult, String?, Bool, @Sendable (Bool) -> Void) in
-            guard state.clients.count < maxClients else {
-                return (.rejected(reason: "too_many_viewers"), nil, false, state.onDemandChanged)
-            }
             let wasEmpty = state.clients.isEmpty
             let clientID = makeClientID()
             state.clients[key] = ClientState(
@@ -400,6 +410,7 @@ final class WebRTCSessionHub: Sendable {
             }
             return
         }
+        let coalescingKey = coalescingKey(for: message)
 
         let connection = state.withLock { $0.clients[key]?.connection }
         guard let connection else { return }
@@ -408,7 +419,8 @@ final class WebRTCSessionHub: Sendable {
             to: key,
             connection: connection,
             disconnectAfterSend: disconnectAfterSend,
-            replacePending: replacePending
+            replacePending: replacePending,
+            coalescingKey: coalescingKey
         )
     }
 
@@ -417,31 +429,70 @@ final class WebRTCSessionHub: Sendable {
         to key: ObjectIdentifier,
         connection: any SignalSocketConnection,
         disconnectAfterSend: Bool,
-        replacePending: Bool
+        replacePending: Bool,
+        coalescingKey: CoalescingKey?
     ) {
         let queuedSignal = QueuedSignal(
             text: text,
-            disconnectAfterSend: disconnectAfterSend
+            disconnectAfterSend: disconnectAfterSend,
+            coalescingKey: coalescingKey
         )
 
-        let nextToSend = state.withLock { state -> QueuedSignal? in
-            guard var current = state.clients[key] else { return nil }
+        let decision = state.withLock { state -> EnqueueDecision in
+            guard var current = state.clients[key] else { return .dropped }
             if current.isSending {
                 if replacePending {
                     current.pendingSignals = [queuedSignal]
-                } else {
-                    current.pendingSignals.append(queuedSignal)
+                    state.clients[key] = current
+                    return .queued
                 }
+
+                if let coalescingKey {
+                    if let index = current.pendingSignals.lastIndex(where: { $0.coalescingKey == coalescingKey }) {
+                        current.pendingSignals[index] = queuedSignal
+                        state.clients[key] = current
+                        return .queued
+                    }
+                }
+
+                if current.pendingSignals.count >= Self.maxPendingSignalsPerClient {
+                    return .overflow
+                }
+                current.pendingSignals.append(queuedSignal)
                 state.clients[key] = current
-                return nil
+                return .queued
             }
             current.isSending = true
             state.clients[key] = current
-            return queuedSignal
+            return .sendNow(queuedSignal)
         }
 
-        guard let nextToSend else { return }
-        send(signal: nextToSend, to: key, connection: connection)
+        switch decision {
+        case .sendNow(let nextToSend):
+            send(signal: nextToSend, to: key, connection: connection)
+        case .queued:
+            return
+        case .overflow:
+            AppLog.web.warning(
+                "WebRTC signaling backlog overflow; disconnecting client to prevent unbounded queue growth."
+            )
+            removeClient(for: key, cancelConnection: true)
+        case .dropped:
+            return
+        }
+    }
+
+    nonisolated private func coalescingKey(
+        for message: SignalingOutboundMessage
+    ) -> CoalescingKey? {
+        switch message.type {
+        case .answer:
+            return .answer
+        case .stopped:
+            return .stopped
+        default:
+            return nil
+        }
     }
 
     nonisolated private func send(

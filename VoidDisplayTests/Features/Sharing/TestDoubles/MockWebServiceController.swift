@@ -19,6 +19,8 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var startCallCount = 0
     var stopCallCount = 0
     var disconnectCallCount = 0
+    var disconnectTargetCallCount = 0
+    var disconnectedTargetsHistory: [Set<ShareTarget>] = []
     var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
     var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
     var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?)?
@@ -61,6 +63,11 @@ final class MockWebServiceController: WebServiceControllerProtocol {
 
     func disconnectAllStreamClients() {
         disconnectCallCount += 1
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        disconnectTargetCallCount += 1
+        disconnectedTargetsHistory.append(targets)
     }
 
     func streamClientCount(for target: ShareTarget) -> Int {

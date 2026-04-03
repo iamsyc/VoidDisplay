@@ -545,6 +545,249 @@ struct WebServerSocketIntegrationTests {
         #expect(clearedFromOriginalTarget)
     }
 
+    @Test func existingAliasConnectionKeepsBoundHubAfterMainMappingChanges() async throws {
+        let aggregator = SharingStateAggregator()
+        let sessionHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                switch target {
+                case .main:
+                    .active
+                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
+                    .active
+                default:
+                    .unknown
+                }
+            },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(mainShareIDBox.value)
+                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
+            sessionHubProvider: { target in
+                switch target {
+                case .id(let id) where id == mainShareIDBox.value:
+                    sessionHub
+                default:
+                    nil
+                }
+            },
+            sharingEventSink: { event in
+                Task { @MainActor in
+                    aggregator.record(event)
+                }
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let socket = try await openWebSocket(path: "/signal", port: portValue)
+        defer { close(socket) }
+
+        let connected = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
+                sessionHub.activeClientCount == 1
+        }
+        #expect(connected)
+
+        mainShareIDBox.setValue(Self.replacementMainAliasShareID)
+
+        try sendAll(socket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+
+        let offerStillHandledByBoundHub = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1
+        }
+        #expect(offerStillHandledByBoundHub)
+
+        try sendAll(socket, data: makeMaskedCloseFrame())
+        _ = try await waitForSocketClose(socket)
+
+        let cleared = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnections == 0 &&
+                snapshot.streamingPeers == 0 &&
+                sessionHub.activeClientCount == 0
+        }
+        #expect(cleared)
+    }
+
+    @Test func targetedDisconnectRemovesOnlyMatchingConnections() async throws {
+        let aggregator = SharingStateAggregator()
+        let mainHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let secondaryHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                switch target {
+                case .main, .id(7):
+                    .active
+                default:
+                    .unknown
+                }
+            },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID || id == 7:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
+            sessionHubProvider: { target in
+                switch target {
+                case .id(let id) where id == Self.mainAliasShareID:
+                    mainHub
+                case .id(7):
+                    secondaryHub
+                default:
+                    nil
+                }
+            },
+            sharingEventSink: { event in
+                Task { @MainActor in
+                    aggregator.record(event)
+                }
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let mainSocket = try await openWebSocket(path: "/signal", port: portValue)
+        let secondarySocket = try await openWebSocket(path: "/signal/7", port: portValue)
+        defer {
+            close(mainSocket)
+            close(secondarySocket)
+        }
+
+        try sendAll(mainSocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+        try sendAll(secondarySocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
+
+        let connected = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnections == 2 &&
+                snapshot.streamingPeers == 2 &&
+                mainHub.activeClientCount == 1 &&
+                secondaryHub.activeClientCount == 1
+        }
+        #expect(connected)
+
+        server.disconnectStreamClients(for: [.id(Self.mainAliasShareID)])
+
+        let mainClosed = try await waitForSocketClose(mainSocket)
+        #expect(mainClosed)
+
+        let targetedDisconnectObserved = await waitUntilAsync(timeout: .seconds(2)) {
+            let snapshot = aggregator.currentSnapshot
+            return snapshot.signalingConnections == 1 &&
+                snapshot.streamingPeers == 1 &&
+                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == nil &&
+                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == nil &&
+                snapshot.signalingConnectionsByTarget[.id(7)] == 1 &&
+                snapshot.streamingPeersByTarget[.id(7)] == 1 &&
+                mainHub.activeClientCount == 0 &&
+                secondaryHub.activeClientCount == 1 &&
+                server.streamClientCount(for: .id(Self.mainAliasShareID)) == 0 &&
+                server.streamClientCount(for: .id(7)) == 1
+        }
+        #expect(targetedDisconnectObserved)
+
+        try sendAll(secondarySocket, data: makeMaskedCloseFrame())
+        _ = try await waitForSocketClose(secondarySocket)
+    }
+
+    @Test func tenClientsOnSameTargetCanConnectAndDisconnectCleanly() async throws {
+        let sessionHub = WebRTCSessionHub(
+            peerFactory: { callbacks in
+                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
+            }
+        )
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                target == .main ? .active : .unknown
+            },
+            concreteTargetResolver: { target in
+                switch target {
+                case .main:
+                    .id(Self.mainAliasShareID)
+                case .id(let id) where id == Self.mainAliasShareID:
+                    .id(id)
+                default:
+                    nil
+                }
+            },
+            sessionHubProvider: { target in
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
+            }
+        )
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        let expectedClientCount = 10
+        var sockets: [Int32] = []
+        sockets.reserveCapacity(expectedClientCount)
+        do {
+            for _ in 0..<expectedClientCount {
+                let socket = try await openWebSocket(path: "/signal", port: portValue)
+                sockets.append(socket)
+            }
+        } catch {
+            for socket in sockets {
+                close(socket)
+            }
+            throw error
+        }
+        defer {
+            for socket in sockets {
+                close(socket)
+            }
+        }
+
+        let connected = await waitUntilAsync(timeout: .seconds(4)) {
+            server.activeStreamClientCount == expectedClientCount &&
+                sessionHub.activeClientCount == expectedClientCount &&
+                server.streamClientCount(for: .id(Self.mainAliasShareID)) == expectedClientCount
+        }
+        #expect(connected)
+
+        for socket in sockets {
+            try sendAll(socket, data: makeMaskedCloseFrame())
+        }
+        for socket in sockets {
+            _ = try await waitForSocketClose(socket)
+        }
+
+        let cleared = await waitUntilAsync(timeout: .seconds(4)) {
+            server.activeStreamClientCount == 0 &&
+                sessionHub.activeClientCount == 0 &&
+                server.streamClientCount(for: .id(Self.mainAliasShareID)) == 0
+        }
+        #expect(cleared)
+    }
+
     @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
         let sessionHub = WebRTCSessionHub()
         let setup = try await startServerOnRandomPort(

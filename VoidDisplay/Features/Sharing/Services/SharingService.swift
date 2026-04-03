@@ -161,10 +161,12 @@ final class SharingService: SharingServiceProtocol {
         _ displays: [SCDisplay],
         virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
     ) {
-        sharingCoordinator.registerShareableDisplays(
+        let invalidatedTargets = sharingCoordinator.registerShareableDisplays(
             displays,
             virtualSerialResolver: virtualSerialResolver
         )
+        guard !invalidatedTargets.isEmpty else { return }
+        webServiceController.disconnectStreamClients(for: invalidatedTargets)
     }
 
     func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {

@@ -41,6 +41,7 @@ protocol WebServiceControllerProtocol: AnyObject {
     ) async -> WebServiceStartResult
     func stop()
     func disconnectAllStreamClients()
+    func disconnectStreamClients(for targets: Set<ShareTarget>)
 }
 
 @MainActor
@@ -48,6 +49,7 @@ protocol WebServiceServerProtocol: AnyObject {
     func startListener() async -> WebServer.ListenerStartResult
     func stopListener(reason: WebServiceServerStopReason)
     func disconnectAllStreamClients()
+    func disconnectStreamClients(for targets: Set<ShareTarget>)
     var activeStreamClientCount: Int { get }
     func streamClientCount(for target: ShareTarget) -> Int
 }
@@ -218,6 +220,11 @@ final class WebServiceController: WebServiceControllerProtocol {
 
     func disconnectAllStreamClients() {
         activeServer?.disconnectAllStreamClients()
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        guard !targets.isEmpty else { return }
+        activeServer?.disconnectStreamClients(for: targets)
     }
 
     private func startInternal(

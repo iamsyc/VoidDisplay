@@ -272,6 +272,32 @@ struct WebServiceControllerTests {
         #expect(sut.lifecycleState == .running(.init(requestedPort: secondPort, boundPort: secondPort)))
     }
 
+    @Test
+    func disconnectStreamClientsForwardsTargetsToActiveServer() async {
+        let harness = WebServiceServerHarness()
+        let sut = WebServiceController(webServiceServerFactory: harness.makeServer)
+
+        let requestedPort: UInt16 = 18086
+        guard let startup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
+            requestedPort: requestedPort
+        ) else {
+            return
+        }
+
+        startup.server.finishStart(with: .ready(boundPort: requestedPort))
+        let result = await startup.startTask.value
+        guard case .started = result else {
+            Issue.record("Expected controlled startup to succeed before disconnecting clients.")
+            return
+        }
+
+        sut.disconnectStreamClients(for: [.id(7)])
+
+        #expect(startup.server.disconnectedTargetsHistory == [Set([.id(7)])])
+    }
+
     private func beginControlledStartup(
         harness: WebServiceServerHarness,
         sut: WebServiceController,
@@ -388,6 +414,7 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
     private(set) var stopCallCount = 0
     private(set) var stopReasons: [WebServiceServerStopReason] = []
     private(set) var disconnectCallCount = 0
+    private(set) var disconnectedTargetsHistory: [Set<ShareTarget>] = []
     var activeStreamClientCount: Int = 0
 
     init(onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?) {
@@ -425,6 +452,10 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
 
     func disconnectAllStreamClients() {
         disconnectCallCount += 1
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        disconnectedTargetsHistory.append(targets)
     }
 
     func streamClientCount(for target: ShareTarget) -> Int {

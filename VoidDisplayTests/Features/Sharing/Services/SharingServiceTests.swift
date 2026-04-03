@@ -142,6 +142,23 @@ struct SharingServiceTests {
         #expect(sut.hasAnyActiveSharing == false)
     }
 
+    @MainActor @Test func registerShareableDisplaysDisconnectsConnectionsForRemappedTargets() throws {
+        let mock = MockWebServiceController()
+        let sut = makeService(webServiceController: mock)
+        let displayID = CGDirectDisplayID(24)
+        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+
+        sut.registerShareableDisplays([display], virtualSerialResolver: { _ in nil })
+        let originalTarget = try #require(sut.shareTarget(for: displayID))
+        #expect(mock.disconnectTargetCallCount == 0)
+
+        sut.registerShareableDisplays([display], virtualSerialResolver: { _ in 77 })
+
+        #expect(mock.disconnectTargetCallCount == 1)
+        #expect(mock.disconnectedTargetsHistory == [Set([originalTarget])])
+        #expect(sut.shareTarget(for: displayID) == .id(77))
+    }
+
     @MainActor @Test func stopWebServiceStopsControllerAndDisconnectsAllStreamClients() {
         let mock = MockWebServiceController()
         let sut = makeService(webServiceController: mock)

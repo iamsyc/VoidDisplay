@@ -526,6 +526,25 @@ struct DisplaySharingCoordinatorTests {
         #expect(unresolvedCoordinator.resolveConcreteTarget(for: .main) == nil)
     }
 
+    @MainActor
+    @Test func registerShareableDisplaysReturnsPriorConcreteTargetWhenShareIDChanges() throws {
+        let displayID: CGDirectDisplayID = 301
+        let coordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
+
+        let initialInvalidatedTargets = coordinator.registerShareableDisplays([
+            .init(displayID: displayID, isMain: true, virtualSerial: nil)
+        ])
+        let originalTarget = try #require(coordinator.target(for: displayID))
+
+        let remappedTargets = coordinator.registerShareableDisplays([
+            .init(displayID: displayID, isMain: true, virtualSerial: 77)
+        ])
+
+        #expect(initialInvalidatedTargets.isEmpty)
+        #expect(remappedTargets == Set([originalTarget]))
+        #expect(coordinator.target(for: displayID) == .id(77))
+    }
+
     private func temporaryStoreURL() -> URL {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("display-sharing-coordinator-tests-\(UUID().uuidString)", isDirectory: true)

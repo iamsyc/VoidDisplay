@@ -163,12 +163,14 @@ struct WebRTCSessionHubTests {
         #expect(client.decodedTextPayloads().contains(where: { $0.contains(#""reason":"invalid_signal_payload""#) }))
     }
 
-    @MainActor @Test func addClientRejectsViewerBeyondCapacity() {
+    @MainActor @Test func addClientAcceptsViewerBeyondFormerCapacity() {
         let hub = WebRTCSessionHub()
         var clients: [MockSignalSocketConnection] = []
         let idGenerationCount = Counter()
+        let formerCapacity = 10
+        let expectedClientCount = formerCapacity + 5
 
-        for index in 0..<10 {
+        for index in 0..<expectedClientCount {
             let client = MockSignalSocketConnection()
             clients.append(client)
             let result = hub.addClient(
@@ -183,30 +185,17 @@ struct WebRTCSessionHubTests {
             #expect(isAccepted(result))
         }
 
-        let acceptedIDGenerationCount = idGenerationCount.value()
-        let rejectedClient = MockSignalSocketConnection()
-        let result = hub.addClient(
-            rejectedClient,
-            target: .main,
-            makeClientID: {
-                idGenerationCount.increment()
-                return "client-overflow"
-            },
-            eventSink: { _ in }
-        )
-
-        #expect(result == .rejected(reason: "too_many_viewers"))
-        #expect(idGenerationCount.value() == acceptedIDGenerationCount)
-        hub.sendRejection(reason: "too_many_viewers", to: rejectedClient)
-        #expect(rejectedClient.decodedTextPayloads().contains(where: { $0.contains(#""reason":"too_many_viewers""#) }))
+        #expect(idGenerationCount.value() == expectedClientCount)
+        #expect(hub.activeClientCount == expectedClientCount)
     }
 
-    @MainActor @Test func rejectedViewerDoesNotEnterSharingSnapshot() {
+    @MainActor @Test func viewerBeyondFormerCapacityEntersSharingSnapshot() {
         let recorder = SharingEventRecorder()
         let hub = WebRTCSessionHub()
         var clients: [MockSignalSocketConnection] = []
+        let formerCapacity = 10
 
-        for index in 0..<10 {
+        for index in 0..<formerCapacity {
             let client = MockSignalSocketConnection()
             clients.append(client)
             let result = hub.addClient(
@@ -220,11 +209,11 @@ struct WebRTCSessionHubTests {
             #expect(isAccepted(result))
         }
 
-        let rejectedClient = MockSignalSocketConnection()
+        let additionalClient = MockSignalSocketConnection()
         let result = hub.addClient(
-            rejectedClient,
+            additionalClient,
             target: .main,
-            makeClientID: { "client-overflow" },
+            makeClientID: { "client-extra" },
             eventSink: { event in
                 recorder.record(event)
             }
@@ -235,11 +224,11 @@ struct WebRTCSessionHubTests {
             aggregator.record(event)
         }
 
-        #expect(result == .rejected(reason: "too_many_viewers"))
-        #expect(aggregator.currentSnapshot.signalingConnections == 10)
+        #expect(isAccepted(result))
+        #expect(aggregator.currentSnapshot.signalingConnections == formerCapacity + 1)
         #expect(aggregator.currentSnapshot.streamingPeers == 0)
-        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?.count == 10)
-        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?["client-overflow"] == nil)
+        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?.count == formerCapacity + 1)
+        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?["client-extra"] != nil)
     }
 
     @MainActor @Test func stopSharingBroadcastsStoppedAndDisconnectsClients() {
@@ -291,6 +280,19 @@ struct WebRTCSessionHubTests {
         #expect(missingTypeIndex < unsupportedIndex)
     }
 
+    @MainActor @Test func signalingBacklogOverflowDisconnectsClient() {
+        let hub = WebRTCSessionHub()
+        let client = MockSignalSocketConnection(autoCompleteSends: false)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+
+        for _ in 0..<600 where hub.activeClientCount > 0 {
+            hub.receiveSignalText("not-a-json", from: client)
+        }
+
+        #expect(hub.activeClientCount == 0)
+        #expect(client.cancelCallCount == 1)
+    }
+
     @MainActor @Test func removedClient_offer_doesNotCreatePeer() {
         let peerCreateCalls = Counter()
         let peerCloseCalls = Counter()
@@ -309,6 +311,32 @@ struct WebRTCSessionHubTests {
     }
 
 #if canImport(WebRTC)
+    @MainActor @Test func answerMessagesCoalesceToLatestUnderBackpressure() throws {
+        let callbacksBox = PeerCallbacksBox()
+        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+            callbacksBox.callbacks = callbacks
+            return MockPeerSession(closeCalls: Counter())
+        })
+        let client = MockSignalSocketConnection(autoCompleteSends: false)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+
+        hub.receiveSignalText("not-a-json", from: client)
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+        callbacksBox.callbacks?.onAnswer("v=1")
+        callbacksBox.callbacks?.onAnswer("v=2")
+
+        #expect(client.completeNextSend())
+        #expect(client.completeNextSend())
+        #expect(client.completeNextSend())
+
+        let payloads = client.decodedTextPayloads()
+        let answerPayloads = payloads.filter { $0.contains(#""type":"answer""#) }
+        #expect(answerPayloads.count == 1)
+        let finalAnswer = try #require(answerPayloads.first)
+        #expect(finalAnswer.contains(#""sdp":"v=2""#))
+        #expect(finalAnswer.contains(#""sdp":"v=1""#) == false)
+    }
+
     @MainActor @Test func clientRemovedDuringEnsurePeer_closesNewPeer() {
         let peerCloseCalls = Counter()
         let box = PeerFactoryBox(closeCalls: peerCloseCalls)

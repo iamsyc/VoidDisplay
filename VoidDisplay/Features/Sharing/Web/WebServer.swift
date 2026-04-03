@@ -96,6 +96,7 @@ final class WebServer {
         let target: ShareTarget
         let clientID: String
         let connection: NWConnection
+        let sessionHub: WebRTCSessionHub
     }
 
     private var listener: NWListener?
@@ -199,14 +200,9 @@ final class WebServer {
     }
 
     func disconnectAllStreamClients() {
-        for client in activeConnections.values {
-            if let hub = sessionHub(for: client.target) {
-                hub.removeClient(client.connection)
-            }
-            client.connection.cancel()
+        for key in Array(activeConnections.keys) {
+            disconnectActiveConnection(forKey: key, cancelConnection: true)
         }
-        activeConnections.removeAll()
-        signalDecodersByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
@@ -215,6 +211,16 @@ final class WebServer {
 
     func streamClientCount(for target: ShareTarget) -> Int {
         activeConnections.values.filter { $0.target == target }.count
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        guard !targets.isEmpty else { return }
+        let keysToDisconnect = activeConnections.compactMap { key, connection in
+            targets.contains(connection.target) ? key : nil
+        }
+        for key in keysToDisconnect {
+            disconnectActiveConnection(forKey: key, cancelConnection: true)
+        }
     }
 
     func stopListener(reason: WebServiceServerStopReason = .requested) {
@@ -288,14 +294,21 @@ final class WebServer {
 
     private func removeSignalClient(_ connection: NWConnection, cancelConnection: Bool) {
         let key = connectionKey(for: connection)
+        disconnectActiveConnection(forKey: key, cancelConnection: cancelConnection, fallbackConnection: connection)
+    }
+
+    private func disconnectActiveConnection(
+        forKey key: ObjectIdentifier,
+        cancelConnection: Bool,
+        fallbackConnection: NWConnection? = nil
+    ) {
         signalDecodersByConnectionKey.removeValue(forKey: key)
+        let connection = activeConnections[key]?.connection ?? fallbackConnection
         if let active = activeConnections.removeValue(forKey: key) {
-            if let hub = sessionHub(for: active.target) {
-                hub.removeClient(connection)
-            }
+            active.sessionHub.removeClient(active.connection)
         }
         if cancelConnection {
-            connection.cancel()
+            connection?.cancel()
         }
     }
 
@@ -471,19 +484,28 @@ final class WebServer {
                 self.activeConnections[key] = ActiveConnection(
                     target: target,
                     clientID: clientID,
-                    connection: connection
+                    connection: connection,
+                    sessionHub: hub
                 )
                 self.signalDecodersByConnectionKey[key] = WebSocketFrameDecoder(
                     maxFramePayloadBytes: Self.maxSignalBufferBytes,
                     maxContinuationPayloadBytes: Self.maxSignalBufferBytes,
                     requiresMaskedFrames: true
                 )
-                self.startSignalReceiveLoop(on: connection, target: target)
+                self.startSignalReceiveLoop(
+                    on: connection,
+                    target: target,
+                    sessionHub: hub
+                )
             }
         })
     }
 
-    nonisolated private func startSignalReceiveLoop(on connection: NWConnection, target: ShareTarget) {
+    nonisolated private func startSignalReceiveLoop(
+        on connection: NWConnection,
+        target: ShareTarget,
+        sessionHub: WebRTCSessionHub
+    ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             if let error = error {
                 AppLog.web.warning("WebServer: WebSocket receive error: \(error)")
@@ -526,7 +548,7 @@ final class WebServer {
                 for frame in decoded.frames {
                     switch frame {
                     case .text(let text):
-                        self.sessionHub(for: target)?.receiveSignalText(text, from: connection)
+                        sessionHub.receiveSignalText(text, from: connection)
                     case .ping(let payload):
                         connection.send(
                             content: encodeWebSocketPongFrame(payload),
@@ -557,7 +579,11 @@ final class WebServer {
                 guard self.activeConnections[key] != nil else {
                     return
                 }
-                self.startSignalReceiveLoop(on: connection, target: target)
+                self.startSignalReceiveLoop(
+                    on: connection,
+                    target: target,
+                    sessionHub: sessionHub
+                )
             }
         }
     }
