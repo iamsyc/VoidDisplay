@@ -93,7 +93,8 @@ final class DisplayShareSubscription: Sendable {
 
     private let session: any DisplayCaptureSessioning
     private let cancelState = Mutex<(@Sendable () -> Void)?>(nil)
-    private let prepareRetainTask = Mutex<Task<Void, Error>?>(nil)
+    private let prepareRetainTask = Mutex<Task<Bool, Error>?>(nil)
+    private let hasRetainedShareCursorOverride = Mutex(false)
 
     nonisolated init(
         displayID: CGDirectDisplayID,
@@ -109,26 +110,29 @@ final class DisplayShareSubscription: Sendable {
 
     nonisolated func prepareForSharing() async throws {
         try await session.retainShareCursorOverride()
+        hasRetainedShareCursorOverride.withLock { $0 = true }
     }
 
     nonisolated func prepareForSharing(
         invalidationContext: DisplayStartInvalidationContext
     ) async throws -> DisplayStartOutcome<Void> {
-        let retainTask = Task {
+        let retainTask = Task<Bool, Error> {
             try await session.retainShareCursorOverride()
+            return true
         }
         prepareRetainTask.withLock { state in
             state = retainTask
         }
         do {
             let outcome = try await invalidationContext.race {
-                try await retainTask.value
+                _ = try await retainTask.value
             }
             switch outcome {
             case .started:
                 prepareRetainTask.withLock { state in
                     state = nil
                 }
+                hasRetainedShareCursorOverride.withLock { $0 = true }
             case .invalidated:
                 cancel()
             }
@@ -141,9 +145,14 @@ final class DisplayShareSubscription: Sendable {
 
     nonisolated func cancel() {
         let session = self.session
-        let pendingRetainTask = prepareRetainTask.withLock { state -> Task<Void, Error>? in
+        let pendingRetainTask = prepareRetainTask.withLock { state -> Task<Bool, Error>? in
             let current = state
             state = nil
+            return current
+        }
+        let hasRetained = hasRetainedShareCursorOverride.withLock { state -> Bool in
+            let current = state
+            state = false
             return current
         }
         let closure = cancelState.withLock { state -> (@Sendable () -> Void)? in
@@ -154,17 +163,23 @@ final class DisplayShareSubscription: Sendable {
         guard let closure else { return }
         if let pendingRetainTask {
             Task.detached {
+                var needsRelease = hasRetained
                 do {
-                    try await pendingRetainTask.value
+                    let didRetain = try await pendingRetainTask.value
+                    needsRelease = needsRelease || didRetain
                 } catch {
                 }
-                try? await session.releaseShareCursorOverride()
+                if needsRelease {
+                    try? await session.releaseShareCursorOverride()
+                }
                 closure()
             }
             return
         }
         Task {
-            try? await session.releaseShareCursorOverride()
+            if hasRetained {
+                try? await session.releaseShareCursorOverride()
+            }
             closure()
         }
     }
