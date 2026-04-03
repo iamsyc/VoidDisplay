@@ -60,11 +60,15 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
         let sharedCatalogState = ScreenCaptureDisplayCatalogState()
         sharedCatalogState.displays = [staleDisplay]
         sharedCatalogState.lastLoadedActiveDisplayTopologySignature = nil
-
+        let permissionProvider = MockScreenCapturePermissionProvider(
+            preflightResult: true,
+            requestResult: true
+        )
+        let activeDisplayIDsProvider: @MainActor () -> Set<CGDirectDisplayID> = { [3333] }
         let firstGate = IntegrationSequencedDisplayLoaderGate(scriptedOutcomes: [.success])
-        let firstVM = CaptureChooseViewModel(
-            catalogState: sharedCatalogState,
-            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+        let firstCatalogService = makeCatalogService(
+            store: sharedCatalogState,
+            permissionProvider: permissionProvider,
             loadShareableDisplays: {
                 switch await firstGate.nextOutcome() {
                 case .success:
@@ -73,7 +77,21 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
                     throw IntegrationControlledLoadFailure()
                 }
             },
-            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([3333]) },
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
+        let firstVM = CaptureChooseViewModel(
+            catalogService: firstCatalogService,
+            catalogState: sharedCatalogState,
+            permissionProvider: permissionProvider,
+            loadShareableDisplays: {
+                switch await firstGate.nextOutcome() {
+                case .success:
+                    return [refreshedDisplay]
+                case .failure:
+                    throw IntegrationControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: activeDisplayIDsProvider,
             dependencies: makeNoopCaptureDependencies()
         )
 
@@ -83,15 +101,16 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
 
         let firstRefreshFinished = await waitUntil {
             sharedCatalogState.isLoadingDisplays == false &&
-                sharedCatalogState.displays?.map(\.displayID) == [3333] &&
-                sharedCatalogState.lastLoadedActiveDisplayTopologySignature == [3333]
+                sharedCatalogState.displays?.map { $0.displayID } == [3333] &&
+                sharedCatalogState.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([3333])
         }
         #expect(firstRefreshFinished)
 
         let secondGate = IntegrationSequencedDisplayLoaderGate(scriptedOutcomes: [.success])
-        let secondVM = CaptureChooseViewModel(
-            catalogState: sharedCatalogState,
-            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+        let secondCatalogService = makeCatalogService(
+            store: sharedCatalogState,
+            permissionProvider: permissionProvider,
             loadShareableDisplays: {
                 switch await secondGate.nextOutcome() {
                 case .success:
@@ -100,7 +119,21 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
                     throw IntegrationControlledLoadFailure()
                 }
             },
-            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([3333]) },
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
+        let secondVM = CaptureChooseViewModel(
+            catalogService: secondCatalogService,
+            catalogState: sharedCatalogState,
+            permissionProvider: permissionProvider,
+            loadShareableDisplays: {
+                switch await secondGate.nextOutcome() {
+                case .success:
+                    return [refreshedDisplay]
+                case .failure:
+                    throw IntegrationControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: activeDisplayIDsProvider,
             dependencies: makeNoopCaptureDependencies()
         )
 
@@ -122,13 +155,18 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
         let refreshedDisplay = IntegrationMockSCDisplay.make(displayID: 5555, width: 2560, height: 1440)
         let sharedCatalogState = ScreenCaptureDisplayCatalogState()
         sharedCatalogState.displays = [staleDisplay]
-        sharedCatalogState.lastLoadedActiveDisplayTopologySignature = [4444]
+        sharedCatalogState.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([4444])
         let registerCounter = IntegrationRegisterCounter()
+        let permissionProvider = MockScreenCapturePermissionProvider(
+            preflightResult: true,
+            requestResult: true
+        )
+        let activeDisplayIDsProvider: @MainActor () -> Set<CGDirectDisplayID> = { [5555] }
 
         let firstGate = IntegrationSequencedDisplayLoaderGate(scriptedOutcomes: [.success])
-        let firstVM = ShareViewModel(
-            catalogState: sharedCatalogState,
-            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+        let firstCatalogService = makeCatalogService(
+            store: sharedCatalogState,
+            permissionProvider: permissionProvider,
             loadShareableDisplays: {
                 switch await firstGate.nextOutcome() {
                 case .success:
@@ -137,7 +175,21 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
                     throw IntegrationControlledLoadFailure()
                 }
             },
-            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([5555]) },
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
+        let firstVM = ShareViewModel(
+            catalogService: firstCatalogService,
+            catalogState: sharedCatalogState,
+            permissionProvider: permissionProvider,
+            loadShareableDisplays: {
+                switch await firstGate.nextOutcome() {
+                case .success:
+                    return [refreshedDisplay]
+                case .failure:
+                    throw IntegrationControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: activeDisplayIDsProvider,
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { true },
@@ -166,16 +218,17 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
 
         let firstRefreshFinished = await waitUntil {
             sharedCatalogState.isLoadingDisplays == false &&
-                sharedCatalogState.displays?.map(\.displayID) == [5555] &&
-                sharedCatalogState.lastLoadedActiveDisplayTopologySignature == [5555]
+                sharedCatalogState.displays?.map { $0.displayID } == [5555] &&
+                sharedCatalogState.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([5555])
         }
         #expect(firstRefreshFinished)
         #expect(registerCounter.value >= 1)
 
         let secondGate = IntegrationSequencedDisplayLoaderGate(scriptedOutcomes: [.success])
-        let secondVM = ShareViewModel(
-            catalogState: sharedCatalogState,
-            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+        let secondCatalogService = makeCatalogService(
+            store: sharedCatalogState,
+            permissionProvider: permissionProvider,
             loadShareableDisplays: {
                 switch await secondGate.nextOutcome() {
                 case .success:
@@ -184,7 +237,21 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
                     throw IntegrationControlledLoadFailure()
                 }
             },
-            activeDisplayIDsProvider: { Set<CGDirectDisplayID>([5555]) },
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
+        let secondVM = ShareViewModel(
+            catalogService: secondCatalogService,
+            catalogState: sharedCatalogState,
+            permissionProvider: permissionProvider,
+            loadShareableDisplays: {
+                switch await secondGate.nextOutcome() {
+                case .success:
+                    return [refreshedDisplay]
+                case .failure:
+                    throw IntegrationControlledLoadFailure()
+                }
+            },
+            activeDisplayIDsProvider: activeDisplayIDsProvider,
             dependencies: .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { true },
@@ -230,6 +297,29 @@ struct ScreenCaptureCatalogTopologyIntegrationTests {
             await Task.yield()
         }
         return await gate.currentCallCount() >= count
+    }
+
+    private func makeCatalogService(
+        store: ScreenCaptureDisplayCatalogState,
+        permissionProvider: any ScreenCapturePermissionProvider,
+        loadShareableDisplays: @escaping @MainActor () async throws -> [SCDisplay],
+        activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID>
+    ) -> ScreenCaptureCatalogService {
+        ScreenCaptureCatalogService(
+            store: store,
+            permissionProvider: permissionProvider,
+            loadShareableDisplays: loadShareableDisplays,
+            activeDisplayIDsProvider: activeDisplayIDsProvider,
+            displayTopologySignatureProvider: {
+                ScreenCaptureDisplayTopologySignatureResolver.current(
+                    activeDisplayIDsProvider: activeDisplayIDsProvider
+                )
+            },
+            runtimeScenarioProbe: .init(
+                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
+                shouldDelayDisplayLoadForUITest: { false }
+            )
+        )
     }
 
     private func makeNoopCaptureDependencies() -> CaptureChooseViewModel.Dependencies {

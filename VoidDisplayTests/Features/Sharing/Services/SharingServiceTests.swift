@@ -440,6 +440,36 @@ struct SharingServiceTests {
         #expect(receivedStates == [true, false])
     }
 
+    @MainActor @Test func closedClientTombstonesStayBounded() {
+        let aggregator = SharingStateAggregator()
+        let target = ShareTarget.id(88)
+
+        for index in 0..<(SharingStateAggregator.closedClientTombstoneLimit + 5) {
+            let clientID = "client-\(index)"
+            aggregator.record(
+                SharingSessionEvent(
+                    target: target,
+                    clientID: clientID,
+                    sequence: 1,
+                    phase: .signalingConnected,
+                    source: .webSocket
+                )
+            )
+            aggregator.record(
+                SharingSessionEvent(
+                    target: target,
+                    clientID: clientID,
+                    sequence: 2,
+                    phase: .closed,
+                    source: .webSocket
+                )
+            )
+        }
+
+        #expect(aggregator.currentSnapshot.signalingConnections == 0)
+        #expect(aggregator.closedClientTombstoneCountForTesting == SharingStateAggregator.closedClientTombstoneLimit)
+    }
+
     @MainActor
     private func makeService(
         webServiceController: MockWebServiceController,

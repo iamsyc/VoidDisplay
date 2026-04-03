@@ -46,6 +46,15 @@ private actor SequencedCatalogServiceLoadGate {
 
 private struct CatalogServiceControlledFailure: Error, Sendable {}
 
+@MainActor
+private final class CatalogServiceSignatureBox {
+    var value: ScreenCaptureDisplayTopologySignature
+
+    init(_ value: ScreenCaptureDisplayTopologySignature) {
+        self.value = value
+    }
+}
+
 private final class CatalogServiceMockSCDisplayBox: NSObject {
     @objc let displayID: CGDirectDisplayID
     @objc let width: Int
@@ -112,7 +121,7 @@ struct ScreenCaptureCatalogServiceTests {
         )
         sut.store.hasScreenCapturePermission = true
         sut.store.displays = []
-        sut.store.lastLoadedActiveDisplayTopologySignature = [101]
+        sut.store.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([101])
 
         let result = await sut.submitRefresh(intent: .permissionChanged)
 
@@ -272,7 +281,7 @@ struct ScreenCaptureCatalogServiceTests {
         )
         sut.store.hasScreenCapturePermission = true
         sut.store.displays = [staleDisplay]
-        sut.store.lastLoadedActiveDisplayTopologySignature = [707]
+        sut.store.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([707])
 
         let firstRefresh = Task {
             await sut.submitRefresh(intent: .userForcedRefresh)
@@ -329,6 +338,57 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(sut.store.hasScreenCapturePermission == false)
         #expect(sut.store.lastRefreshResult == .clearedSnapshot)
         #expect(sut.store.loadErrorMessage == "permission denied")
+    }
+
+    @Test func changedDisplayConfigurationReloadsEvenWhenDisplayIDIsUnchanged() async {
+        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success])
+        let displayID = CGDirectDisplayID(909)
+        let signatureBox = CatalogServiceSignatureBox([
+            makeTestDisplayTopologySignatureEntry(
+                displayID: displayID,
+                pixelWidth: 1920,
+                pixelHeight: 1080
+            )
+        ])
+        let refreshedDisplay = CatalogServiceMockSCDisplay.make(
+            displayID: displayID,
+            width: 2560,
+            height: 1440
+        )
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [refreshedDisplay]
+                case .failure(let error):
+                    throw error
+                }
+            },
+            activeDisplayIDsProvider: { [displayID] },
+            displayTopologySignatureProvider: { signatureBox.value }
+        )
+        sut.store.hasScreenCapturePermission = true
+        sut.store.displays = [
+            CatalogServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        ]
+        sut.store.lastLoadedActiveDisplayTopologySignature = signatureBox.value
+
+        signatureBox.value = [
+            makeTestDisplayTopologySignatureEntry(
+                displayID: displayID,
+                pixelWidth: 2560,
+                pixelHeight: 1440
+            )
+        ]
+
+        let refresh = Task { await sut.submitRefresh(intent: .topologyChanged) }
+        #expect(await waitForLoaderCall(gate, count: 1))
+        await gate.release(call: 1)
+
+        #expect(await refresh.value == .reloadedSnapshot)
+        #expect(sut.store.displays?.map(\.displayID) == [displayID])
+        #expect(sut.store.lastLoadedActiveDisplayTopologySignature == signatureBox.value)
     }
 
     private func waitForLoaderCall(

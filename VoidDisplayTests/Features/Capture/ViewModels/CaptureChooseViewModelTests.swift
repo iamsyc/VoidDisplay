@@ -307,7 +307,7 @@ struct CaptureChooseViewModelTests {
             dependencies: makeNoopCaptureDependencies()
         )
         sut.catalog.displays = [existingDisplay]
-        sut.catalog.lastLoadedActiveDisplayTopologySignature = [2222]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([2222])
 
         sut.refreshPermissionAndMaybeLoad()
         let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.shortStabilityWindow
@@ -357,7 +357,8 @@ struct CaptureChooseViewModelTests {
         let finished = await waitUntil {
             sut.catalog.isLoadingDisplays == false &&
                 sut.catalog.displays?.map(\.displayID) == [3333] &&
-                sut.catalog.lastLoadedActiveDisplayTopologySignature == [3333]
+                sut.catalog.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([3333])
         }
         #expect(finished)
     }
@@ -383,7 +384,7 @@ struct CaptureChooseViewModelTests {
             dependencies: makeNoopCaptureDependencies()
         )
         sut.catalog.displays = [existingDisplay]
-        sut.catalog.lastLoadedActiveDisplayTopologySignature = [2222]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([2222])
 
         sut.refreshPermissionAndMaybeLoad()
         #expect(await waitForLoaderCall(gate, count: 1))
@@ -394,7 +395,8 @@ struct CaptureChooseViewModelTests {
         let finished = await waitUntil {
             sut.catalog.isLoadingDisplays == false &&
                 sut.catalog.displays?.map(\.displayID) == [3333] &&
-                sut.catalog.lastLoadedActiveDisplayTopologySignature == [3333]
+                sut.catalog.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([3333])
         }
         #expect(finished)
     }
@@ -420,7 +422,7 @@ struct CaptureChooseViewModelTests {
             dependencies: makeNoopCaptureDependencies()
         )
         sut.catalog.displays = [existingDisplay]
-        sut.catalog.lastLoadedActiveDisplayTopologySignature = [2222]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([2222])
 
         sut.refreshPermissionAndMaybeLoad()
         #expect(await waitForLoaderCall(gate, count: 1))
@@ -431,7 +433,10 @@ struct CaptureChooseViewModelTests {
         }
         #expect(firstFinished)
         #expect(sut.catalog.displays?.map(\.displayID) == [2222])
-        #expect(sut.catalog.lastLoadedActiveDisplayTopologySignature == [2222])
+        #expect(
+            sut.catalog.lastLoadedActiveDisplayTopologySignature
+                == makeTestDisplayTopologySignature([2222])
+        )
 
         sut.refreshPermissionAndMaybeLoad()
         #expect(await waitForLoaderCall(gate, count: 2))
@@ -441,7 +446,8 @@ struct CaptureChooseViewModelTests {
             sut.catalog.isLoadingDisplays == false &&
                 sut.catalog.lastLoadError == nil &&
                 sut.catalog.displays?.map(\.displayID) == [3333] &&
-                sut.catalog.lastLoadedActiveDisplayTopologySignature == [3333]
+                sut.catalog.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([3333])
         }
         #expect(secondFinished)
     }

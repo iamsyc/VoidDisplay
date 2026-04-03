@@ -1,5 +1,6 @@
 import CoreGraphics
 import ScreenCaptureKit
+import Synchronization
 import Testing
 @testable import VoidDisplay
 
@@ -55,10 +56,22 @@ private final class ShareViewDisplayReconfigurationMonitor: DisplayReconfigurati
 }
 
 private final class ShareViewSignatureBox {
-    var value: [CGDirectDisplayID]
+    var value: ScreenCaptureDisplayTopologySignature
 
-    init(_ value: [CGDirectDisplayID]) {
+    init(_ value: ScreenCaptureDisplayTopologySignature) {
         self.value = value
+    }
+}
+
+private final class ShareViewTopologyChangeCounter: @unchecked Sendable {
+    private let count = Mutex(0)
+
+    nonisolated func increment() {
+        count.withLock { $0 += 1 }
+    }
+
+    nonisolated func snapshot() -> Int {
+        count.withLock { $0 }
     }
 }
 
@@ -118,19 +131,35 @@ struct ShareViewBehaviorTests {
 
     @Test func lifecycleFallbackRefreshesDisplaysAfterTopologyChange() async {
         let loaderGate = ShareViewLoaderGate()
-        let signatureBox = ShareViewSignatureBox([101])
+        let signatureBox = ShareViewSignatureBox(makeTestDisplayTopologySignature([101]))
         let existingDisplay = ShareViewMockSCDisplay.make(displayID: 101, width: 1920, height: 1080)
         let refreshedDisplay = ShareViewMockSCDisplay.make(displayID: 202, width: 2560, height: 1440)
-        let viewModel = makeViewModel(
-            isWebServiceRunning: true,
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(
+                preflightResult: true,
+                requestResult: true
+            ),
             loadShareableDisplays: {
                 await loaderGate.next()
                 return [refreshedDisplay]
             },
-            activeDisplayIDsProvider: { Set(signatureBox.value) }
+            activeDisplayIDsProvider: { Set(signatureBox.value.map(\.displayID)) },
+            displayTopologySignatureProvider: { signatureBox.value },
+            runtimeScenarioProbe: .init(
+                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
+                shouldDelayDisplayLoadForUITest: { false }
+            )
+        )
+        let viewModel = makeViewModel(
+            catalogService: catalogService,
+            isWebServiceRunning: true,
+            loadShareableDisplays: {
+                await loaderGate.next()
+                return [refreshedDisplay]
+            }
         )
         viewModel.catalog.displays = [existingDisplay]
-        viewModel.catalog.lastLoadedActiveDisplayTopologySignature = [101]
+        viewModel.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([101])
 
         let lifecycle = DisplayTopologyRefreshLifecycleController(
             displayRefreshMonitor: ShareViewDisplayReconfigurationMonitor(startResults: [false, false]),
@@ -147,7 +176,7 @@ struct ShareViewBehaviorTests {
         await drainMainActorTasks()
         #expect(await loaderGate.currentCallCount() == 0)
 
-        signatureBox.value = [202]
+        signatureBox.value = makeTestDisplayTopologySignature([202])
 
         let requestedReload = await waitUntilAsync {
             await loaderGate.currentCallCount() == 1
@@ -157,7 +186,7 @@ struct ShareViewBehaviorTests {
         await loaderGate.release()
         let finished = await waitUntil {
             viewModel.catalog.isLoadingDisplays == false &&
-                viewModel.catalog.displays?.map(\.displayID) == [202]
+                viewModel.catalog.displays?.map { $0.displayID } == [202]
         }
         #expect(finished)
     }
@@ -188,6 +217,38 @@ struct ShareViewBehaviorTests {
         #expect(monitor.stopCallCount == 1)
     }
 
+    @Test func lifecycleFallbackDetectsConfigurationChangeForSameDisplayID() async {
+        let displayID = CGDirectDisplayID(707)
+        let signatureBox = ShareViewSignatureBox([
+            makeTestDisplayTopologySignatureEntry(
+                displayID: displayID,
+                pixelWidth: 1920,
+                pixelHeight: 1080
+            )
+        ])
+        let lifecycle = DisplayTopologyRefreshLifecycleController(
+            displayRefreshMonitor: ShareViewDisplayReconfigurationMonitor(startResults: [false, false]),
+            displayTopologySignatureProvider: { signatureBox.value },
+            fallbackPollingInterval: .milliseconds(20),
+            recoveryAttemptInterval: 99
+        )
+        let topologyChangeCount = ShareViewTopologyChangeCounter()
+
+        lifecycle.handleAppear {
+            topologyChangeCount.increment()
+        }
+        signatureBox.value = [
+            makeTestDisplayTopologySignatureEntry(
+                displayID: displayID,
+                pixelWidth: 2560,
+                pixelHeight: 1440
+            )
+        ]
+
+        #expect(await waitUntilAsync { topologyChangeCount.snapshot() == 1 })
+        lifecycle.handleDisappear()
+    }
+
     @Test func viewModelSurfacesStartingStateFromSharingDependency() {
         let viewModel = makeViewModel(
             isWebServiceRunning: true,
@@ -199,12 +260,14 @@ struct ShareViewBehaviorTests {
     }
 
     private func makeViewModel(
+        catalogService: ScreenCaptureCatalogService? = nil,
         isWebServiceRunning: Bool,
         isStartingDisplayID: @escaping @MainActor (CGDirectDisplayID) -> Bool = { _ in false },
         loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = { [] }
     ) -> ShareViewModel {
         ShareViewModel(
+            catalogService: catalogService,
             permissionProvider: MockScreenCapturePermissionProvider(
                 preflightResult: true,
                 requestResult: true

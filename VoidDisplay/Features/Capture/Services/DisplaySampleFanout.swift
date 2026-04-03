@@ -54,21 +54,21 @@ private final class PreviewSinkMailbox: @unchecked Sendable {
 
     nonisolated private func drain() {
         while true {
-            let shouldContinue = state.withLock { state -> Bool in
+            let nextFrame = state.withLock { state -> SendableSampleBuffer? in
                 guard state.isActive else {
                     state.latestFrame = nil
                     state.isDraining = false
-                    return false
+                    return nil
                 }
                 guard let latestFrame = state.latestFrame else {
                     state.isDraining = false
-                    return false
+                    return nil
                 }
                 state.latestFrame = nil
-                sink.submitFrame(latestFrame.value)
-                return true
+                return latestFrame
             }
-            guard shouldContinue else { return }
+            guard let nextFrame else { return }
+            sink.submitFrame(nextFrame.value)
         }
     }
 }

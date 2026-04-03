@@ -7,7 +7,7 @@ import OSLog
 @MainActor
 @Observable
 final class DisplayTopologyRefreshLifecycleController {
-    typealias DisplayTopologySignatureProvider = @MainActor () -> [CGDirectDisplayID]
+    typealias DisplayTopologySignatureProvider = @MainActor () -> ScreenCaptureDisplayTopologySignature
     typealias SleepOperation = @Sendable (Duration) async -> Void
 
     private(set) var showToolbarRefresh = false
@@ -18,12 +18,16 @@ final class DisplayTopologyRefreshLifecycleController {
     @ObservationIgnored private let fallbackPollingInterval: Duration
     @ObservationIgnored private let recoveryAttemptInterval: Int
     @ObservationIgnored private var displayRefreshFallbackTask: Task<Void, Never>?
-    @ObservationIgnored private var lastKnownDisplayTopologySignature: [CGDirectDisplayID] = []
+    @ObservationIgnored private var lastKnownDisplayTopologySignature: ScreenCaptureDisplayTopologySignature = []
 
     init(
         displayRefreshMonitor: any DisplayReconfigurationMonitoring = DebouncingDisplayReconfigurationMonitor(),
         displayTopologySignatureProvider: @escaping DisplayTopologySignatureProvider = {
-            NSScreen.screens.compactMap(\.cgDirectDisplayID).sorted()
+            ScreenCaptureDisplayTopologySignatureResolver.current(
+                activeDisplayIDsProvider: {
+                    Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
+                }
+            )
         },
         sleep: @escaping SleepOperation = { duration in
             try? await Task.sleep(for: duration)

@@ -5,6 +5,68 @@ import Observation
 import OSLog
 @preconcurrency import ScreenCaptureKit
 
+typealias ScreenCaptureDisplayTopologySignature = [ScreenCaptureDisplayTopologySignatureEntry]
+
+struct ScreenCaptureDisplayTopologySignatureEntry: Sendable, Equatable, Hashable {
+    let displayID: CGDirectDisplayID
+    let isMain: Bool
+    let pixelWidth: Int
+    let pixelHeight: Int
+    let refreshRateMilliHertz: Int?
+    let mirrorsDisplayID: CGDirectDisplayID?
+
+    init(
+        displayID: CGDirectDisplayID,
+        isMain: Bool = false,
+        pixelWidth: Int = 0,
+        pixelHeight: Int = 0,
+        refreshRateMilliHertz: Int? = nil,
+        mirrorsDisplayID: CGDirectDisplayID? = nil
+    ) {
+        self.displayID = displayID
+        self.isMain = isMain
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.refreshRateMilliHertz = refreshRateMilliHertz
+        self.mirrorsDisplayID = mirrorsDisplayID
+    }
+
+    static func current(displayID: CGDirectDisplayID) -> Self {
+        let mode = CGDisplayCopyDisplayMode(displayID)
+        let refreshRateMilliHertz: Int? = {
+            guard let mode else { return nil }
+            let refreshRate = mode.refreshRate
+            guard refreshRate > 0 else { return nil }
+            return Int((refreshRate * 1_000).rounded())
+        }()
+        let mirrorsDisplayID: CGDirectDisplayID? = {
+            let mirroredDisplayID = CGDisplayMirrorsDisplay(displayID)
+            guard mirroredDisplayID != kCGNullDirectDisplay else { return nil }
+            guard mirroredDisplayID != CGDirectDisplayID.max else { return nil }
+            return mirroredDisplayID
+        }()
+        return .init(
+            displayID: displayID,
+            isMain: CGDisplayIsMain(displayID) > 0,
+            pixelWidth: max(0, CGDisplayPixelsWide(displayID)),
+            pixelHeight: max(0, CGDisplayPixelsHigh(displayID)),
+            refreshRateMilliHertz: refreshRateMilliHertz,
+            mirrorsDisplayID: mirrorsDisplayID
+        )
+    }
+}
+
+enum ScreenCaptureDisplayTopologySignatureResolver {
+    @MainActor
+    static func current(
+        activeDisplayIDsProvider: () -> Set<CGDirectDisplayID>
+    ) -> ScreenCaptureDisplayTopologySignature {
+        activeDisplayIDsProvider()
+            .sorted()
+            .map(ScreenCaptureDisplayTopologySignatureEntry.current(displayID:))
+    }
+}
+
 enum ScreenCaptureCatalogRefreshIntent: Sendable, Equatable {
     case permissionChanged
     case topologyChanged
@@ -27,7 +89,7 @@ final class ScreenCaptureCatalogStore {
     var hasScreenCapturePermission: Bool?
     var lastPreflightPermission: Bool?
     var lastRequestPermission: Bool?
-    var lastLoadedActiveDisplayTopologySignature: [CGDirectDisplayID]?
+    var lastLoadedActiveDisplayTopologySignature: ScreenCaptureDisplayTopologySignature?
     var isLoadingDisplays = false
     var loadErrorMessage: String?
     var lastLoadError: ScreenCaptureDisplayCatalogLoadErrorInfo?
@@ -48,6 +110,7 @@ final class ScreenCaptureCatalogService {
         var permissionProvider: any ScreenCapturePermissionProvider
         var loadShareableDisplays: LoadShareableDisplays
         var activeDisplayIDsProvider: ActiveDisplayIDsProvider
+        var displayTopologySignatureProvider: @MainActor () -> ScreenCaptureDisplayTopologySignature
         var loadFailureMessage: String
         var logOperation: String
         var logger: Logger
@@ -58,10 +121,16 @@ final class ScreenCaptureCatalogService {
             logOperation: String = "Load shareable displays",
             logger: Logger = AppLog.capture
         ) -> Self {
-            .init(
+            let activeDisplayIDsProvider = ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault()
+            return .init(
                 permissionProvider: ScreenCapturePermissionProviderFactory.makeDefault(),
                 loadShareableDisplays: ScreenCaptureShareableDisplayLoaderFactory.makeDefault(),
-                activeDisplayIDsProvider: ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault(),
+                activeDisplayIDsProvider: activeDisplayIDsProvider,
+                displayTopologySignatureProvider: {
+                    ScreenCaptureDisplayTopologySignatureResolver.current(
+                        activeDisplayIDsProvider: activeDisplayIDsProvider
+                    )
+                },
                 loadFailureMessage: loadFailureMessage,
                 logOperation: logOperation,
                 logger: logger,
@@ -97,19 +166,26 @@ final class ScreenCaptureCatalogService {
         permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
         loadShareableDisplays: LoadShareableDisplays? = nil,
         activeDisplayIDsProvider: ActiveDisplayIDsProvider? = nil,
+        displayTopologySignatureProvider: (@MainActor () -> ScreenCaptureDisplayTopologySignature)? = nil,
         loadFailureMessage: String = String(localized: "Failed to load displays. Check permission and try again."),
         logOperation: String = "Load shareable displays",
         logger: Logger = AppLog.capture,
         runtimeScenarioProbe: ScreenCaptureDisplayCatalogLoader.RuntimeScenarioProbe = .live
     ) {
+        let resolvedActiveDisplayIDsProvider = activeDisplayIDsProvider
+            ?? ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault()
         self.init(
             store: store,
             dependencies: .init(
                 permissionProvider: permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault(),
                 loadShareableDisplays: loadShareableDisplays
                     ?? ScreenCaptureShareableDisplayLoaderFactory.makeDefault(),
-                activeDisplayIDsProvider: activeDisplayIDsProvider
-                    ?? ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault(),
+                activeDisplayIDsProvider: resolvedActiveDisplayIDsProvider,
+                displayTopologySignatureProvider: displayTopologySignatureProvider ?? {
+                    ScreenCaptureDisplayTopologySignatureResolver.current(
+                        activeDisplayIDsProvider: resolvedActiveDisplayIDsProvider
+                    )
+                },
                 loadFailureMessage: loadFailureMessage,
                 logOperation: logOperation,
                 logger: logger,
@@ -145,8 +221,8 @@ final class ScreenCaptureCatalogService {
         return granted
     }
 
-    func currentActiveDisplayTopologySignature() -> [CGDirectDisplayID] {
-        dependencies.activeDisplayIDsProvider().sorted()
+    func currentActiveDisplayTopologySignature() -> ScreenCaptureDisplayTopologySignature {
+        dependencies.displayTopologySignatureProvider()
     }
 
     func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
@@ -210,7 +286,7 @@ final class ScreenCaptureCatalogService {
         }
     }
 
-    private func applyClearedSnapshot(signature: [CGDirectDisplayID]) {
+    private func applyClearedSnapshot(signature: ScreenCaptureDisplayTopologySignature) {
         store.displays = nil
         store.hasScreenCapturePermission = false
         store.lastPreflightPermission = false
@@ -223,7 +299,7 @@ final class ScreenCaptureCatalogService {
 
     private func commit(
         execution: CatalogRefreshCoordinator.ExecutionResult,
-        signature: [CGDirectDisplayID]
+        signature: ScreenCaptureDisplayTopologySignature
     ) -> ScreenCaptureCatalogRefreshResult {
         switch execution {
         case .reloadedSnapshot(let displays):
@@ -276,8 +352,8 @@ actor CatalogRefreshCoordinator {
     struct Request: Sendable {
         let intent: ScreenCaptureCatalogRefreshIntent
         let permissionGranted: Bool
-        let currentTopologySignature: [CGDirectDisplayID]
-        let cachedTopologySignature: [CGDirectDisplayID]?
+        let currentTopologySignature: ScreenCaptureDisplayTopologySignature
+        let cachedTopologySignature: ScreenCaptureDisplayTopologySignature?
         let hasCachedDisplays: Bool
         let ownerID: UUID?
     }

@@ -34,7 +34,9 @@ struct ScreenCaptureCatalogTopologyCoordinator {
         state.lastLoadedActiveDisplayTopologySignature = currentActiveDisplayTopologySignature()
     }
 
-    func currentActiveDisplayTopologySignature() -> [CGDirectDisplayID] {
-        activeDisplayIDsProvider().sorted()
+    func currentActiveDisplayTopologySignature() -> ScreenCaptureDisplayTopologySignature {
+        ScreenCaptureDisplayTopologySignatureResolver.current(
+            activeDisplayIDsProvider: activeDisplayIDsProvider
+        )
     }
 }

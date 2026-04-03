@@ -4,6 +4,32 @@ import ScreenCaptureKit
 @testable import VoidDisplay
 
 @MainActor
+func makeTestDisplayTopologySignature(
+    _ displayIDs: [CGDirectDisplayID]
+) -> ScreenCaptureDisplayTopologySignature {
+    displayIDs.map { ScreenCaptureDisplayTopologySignatureEntry(displayID: $0) }
+}
+
+@MainActor
+func makeTestDisplayTopologySignatureEntry(
+    displayID: CGDirectDisplayID,
+    isMain: Bool = false,
+    pixelWidth: Int = 0,
+    pixelHeight: Int = 0,
+    refreshRateMilliHertz: Int? = nil,
+    mirrorsDisplayID: CGDirectDisplayID? = nil
+) -> ScreenCaptureDisplayTopologySignatureEntry {
+    .init(
+        displayID: displayID,
+        isMain: isMain,
+        pixelWidth: pixelWidth,
+        pixelHeight: pixelHeight,
+        refreshRateMilliHertz: refreshRateMilliHertz,
+        mirrorsDisplayID: mirrorsDisplayID
+    )
+}
+
+@MainActor
 final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
     var currentSessions: [ScreenMonitoringSession] = []
     var addCallCount = 0

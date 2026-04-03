@@ -118,9 +118,12 @@ final class SharingStateSubscription {
 @MainActor
 final class SharingStateAggregator {
     typealias Observer = @MainActor @Sendable (SharingStateSnapshot) -> Void
+    nonisolated static let closedClientTombstoneLimit = 512
 
     private var clientStatesByID: [String: SharingClientState] = [:]
     private var lastAcceptedSequenceByClientID: [String: UInt64] = [:]
+    private var closedClientTombstoneSequenceByClientID: [String: UInt64] = [:]
+    private var closedClientTombstoneOrder: [(clientID: String, sequence: UInt64)] = []
     private var observers: [UUID: Observer] = [:]
     private var snapshot = SharingStateSnapshot.empty
 
@@ -128,15 +131,27 @@ final class SharingStateAggregator {
         snapshot
     }
 
+    var closedClientTombstoneCountForTesting: Int {
+        closedClientTombstoneSequenceByClientID.count
+    }
+
     func record(_ event: SharingSessionEvent) {
         if let lastAcceptedSequence = lastAcceptedSequenceByClientID[event.clientID],
            event.sequence <= lastAcceptedSequence {
             return
         }
-        lastAcceptedSequenceByClientID[event.clientID] = event.sequence
+        if let closedClientSequence = closedClientTombstoneSequenceByClientID[event.clientID] {
+            guard event.sequence > closedClientSequence else { return }
+            closedClientTombstoneSequenceByClientID.removeValue(forKey: event.clientID)
+        }
         if event.phase == .closed {
             clientStatesByID.removeValue(forKey: event.clientID)
+            lastAcceptedSequenceByClientID.removeValue(forKey: event.clientID)
+            closedClientTombstoneSequenceByClientID[event.clientID] = event.sequence
+            closedClientTombstoneOrder.append((event.clientID, event.sequence))
+            pruneClosedClientTombstonesIfNeeded()
         } else {
+            lastAcceptedSequenceByClientID[event.clientID] = event.sequence
             let nextState = SharingClientState(
                 target: event.target,
                 clientID: event.clientID,
@@ -152,6 +167,8 @@ final class SharingStateAggregator {
     func reset() {
         clientStatesByID.removeAll()
         lastAcceptedSequenceByClientID.removeAll()
+        closedClientTombstoneSequenceByClientID.removeAll()
+        closedClientTombstoneOrder.removeAll()
         rebuildSnapshot(lastUpdatedAt: nil)
     }
 
@@ -192,6 +209,15 @@ final class SharingStateAggregator {
 
         for observer in observers.values {
             observer(snapshot)
+        }
+    }
+
+    private func pruneClosedClientTombstonesIfNeeded() {
+        while closedClientTombstoneSequenceByClientID.count > Self.closedClientTombstoneLimit,
+              let oldest = closedClientTombstoneOrder.first {
+            closedClientTombstoneOrder.removeFirst()
+            guard closedClientTombstoneSequenceByClientID[oldest.clientID] == oldest.sequence else { continue }
+            closedClientTombstoneSequenceByClientID.removeValue(forKey: oldest.clientID)
         }
     }
 }

@@ -271,7 +271,7 @@ struct ShareViewModelTests {
             )
         )
         sut.catalog.displays = [existingDisplay]
-        sut.catalog.lastLoadedActiveDisplayTopologySignature = [4444]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([4444])
 
         sut.refreshPermissionAndMaybeLoad()
         #expect(await waitForLoaderCall(gate, count: 1))
@@ -282,7 +282,8 @@ struct ShareViewModelTests {
         let finished = await waitUntil {
             sut.catalog.isLoadingDisplays == false &&
                 sut.catalog.displays?.map(\.displayID) == [5555] &&
-                sut.catalog.lastLoadedActiveDisplayTopologySignature == [5555]
+                sut.catalog.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([5555])
         }
         #expect(finished)
         #expect(registerShareableDisplaysCallCount == 1)
@@ -320,7 +321,8 @@ struct ShareViewModelTests {
         let finished = await waitUntil {
             sut.catalog.isLoadingDisplays == false &&
                 sut.catalog.displays?.map(\.displayID) == [5555] &&
-                sut.catalog.lastLoadedActiveDisplayTopologySignature == [5555]
+                sut.catalog.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([5555])
         }
         #expect(finished)
     }
@@ -346,7 +348,7 @@ struct ShareViewModelTests {
             dependencies: makeAlwaysRunningShareDependencies()
         )
         sut.catalog.displays = [existingDisplay]
-        sut.catalog.lastLoadedActiveDisplayTopologySignature = [4444]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([4444])
 
         sut.refreshPermissionAndMaybeLoad()
         #expect(await waitForLoaderCall(gate, count: 1))
@@ -357,7 +359,10 @@ struct ShareViewModelTests {
         }
         #expect(firstFinished)
         #expect(sut.catalog.displays?.map(\.displayID) == [4444])
-        #expect(sut.catalog.lastLoadedActiveDisplayTopologySignature == [4444])
+        #expect(
+            sut.catalog.lastLoadedActiveDisplayTopologySignature
+                == makeTestDisplayTopologySignature([4444])
+        )
 
         sut.refreshPermissionAndMaybeLoad()
         #expect(await waitForLoaderCall(gate, count: 2))
@@ -367,7 +372,8 @@ struct ShareViewModelTests {
             sut.catalog.isLoadingDisplays == false &&
                 sut.catalog.lastLoadError == nil &&
                 sut.catalog.displays?.map(\.displayID) == [5555] &&
-                sut.catalog.lastLoadedActiveDisplayTopologySignature == [5555]
+                sut.catalog.lastLoadedActiveDisplayTopologySignature
+                    == makeTestDisplayTopologySignature([5555])
         }
         #expect(secondFinished)
     }
@@ -563,7 +569,9 @@ struct ShareViewModelTests {
             dependencies: makeNoopShareDependencies()
         )
         sut.catalog.displays = [existingDisplay]
-        sut.catalog.lastLoadedActiveDisplayTopologySignature = [existingDisplay.displayID]
+        sut.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature(
+            [existingDisplay.displayID]
+        )
 
         sut.refreshDisplaysBackgroundSafe()
 
