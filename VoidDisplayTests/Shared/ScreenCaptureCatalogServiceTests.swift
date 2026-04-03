@@ -71,6 +71,31 @@ private enum CatalogServiceMockSCDisplay {
 @MainActor
 @Suite(.serialized)
 struct ScreenCaptureCatalogServiceTests {
+    @Test func defaultShareableDisplayLoaderReturnsEmptySnapshotUnderXCTestEnvironment() async throws {
+        let loader = ScreenCaptureShareableDisplayLoaderFactory.makeDefault(
+            environment: [
+                PersistenceContext.xCTestConfigurationEnvironmentKey: "/tmp/VoidDisplayTests.xctest"
+            ]
+        )
+
+        let displays = try await loader()
+
+        #expect(displays.isEmpty)
+    }
+
+    @Test func defaultShareableDisplayLoaderUsesFixtureDisplaysUnderUITestMode() async throws {
+        let loader = ScreenCaptureShareableDisplayLoaderFactory.makeDefault(
+            environment: [
+                UITestRuntime.modeEnvironmentKey: "1",
+                UITestRuntime.scenarioEnvironmentKey: UITestScenario.baseline.rawValue
+            ]
+        )
+
+        let displays = try await loader()
+
+        #expect(!displays.isEmpty)
+    }
+
     @Test func unchangedTopologyReusesSnapshotWithoutReload() async {
         let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success])
         let sut = ScreenCaptureCatalogService(

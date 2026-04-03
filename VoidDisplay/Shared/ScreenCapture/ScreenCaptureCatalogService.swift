@@ -60,16 +60,8 @@ final class ScreenCaptureCatalogService {
         ) -> Self {
             .init(
                 permissionProvider: ScreenCapturePermissionProviderFactory.makeDefault(),
-                loadShareableDisplays: {
-                    let content = try await SCShareableContent.excludingDesktopWindows(
-                        false,
-                        onScreenWindowsOnly: false
-                    )
-                    return content.displays
-                },
-                activeDisplayIDsProvider: {
-                    Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
-                },
+                loadShareableDisplays: ScreenCaptureShareableDisplayLoaderFactory.makeDefault(),
+                activeDisplayIDsProvider: ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault(),
                 loadFailureMessage: loadFailureMessage,
                 logOperation: logOperation,
                 logger: logger,
@@ -114,16 +106,10 @@ final class ScreenCaptureCatalogService {
             store: store,
             dependencies: .init(
                 permissionProvider: permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault(),
-                loadShareableDisplays: loadShareableDisplays ?? {
-                    let content = try await SCShareableContent.excludingDesktopWindows(
-                        false,
-                        onScreenWindowsOnly: false
-                    )
-                    return content.displays
-                },
-                activeDisplayIDsProvider: activeDisplayIDsProvider ?? {
-                    Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
-                },
+                loadShareableDisplays: loadShareableDisplays
+                    ?? ScreenCaptureShareableDisplayLoaderFactory.makeDefault(),
+                activeDisplayIDsProvider: activeDisplayIDsProvider
+                    ?? ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault(),
                 loadFailureMessage: loadFailureMessage,
                 logOperation: logOperation,
                 logger: logger,
