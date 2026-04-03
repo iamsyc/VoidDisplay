@@ -94,6 +94,10 @@ private final class SharingEventRecorder: @unchecked Sendable {
     func currentSequences() -> [UInt64] {
         events.withLock { $0.map(\.recordedSequence) }
     }
+
+    func currentSessionEpochs() -> [UInt64] {
+        events.withLock { $0.map(\.recordedSessionEpoch) }
+    }
 }
 
 private final class PeerCallbacksBox: @unchecked Sendable {
@@ -373,7 +377,7 @@ struct WebRTCSessionHubTests {
         #expect(hub.activeClientCount == 0)
     }
 
-    @MainActor @Test func lifecycleEventsReflectOfferConnectAndClose() async {
+    @MainActor @Test func lifecycleEventsReflectOfferConnectAndClose() async throws {
         let eventRecorder = SharingEventRecorder()
         let callbacksBox = PeerCallbacksBox()
         let hub = WebRTCSessionHub(peerFactory: { callbacks in
@@ -407,6 +411,43 @@ struct WebRTCSessionHubTests {
         ])
         let sequences = eventRecorder.currentSequences()
         #expect(sequences == [1, 2, 3, 4, 5])
+        let sessionEpochs = eventRecorder.currentSessionEpochs()
+        let firstEpoch = try #require(sessionEpochs.first)
+        #expect(sessionEpochs.allSatisfy { $0 == firstEpoch })
+    }
+
+    @MainActor @Test func reusedClientIDGetsNewSessionEpoch() {
+        let eventRecorder = SharingEventRecorder()
+        let hub = WebRTCSessionHub()
+        let firstClient = MockSignalSocketConnection()
+        let secondClient = MockSignalSocketConnection()
+
+        let firstResult = hub.addClient(
+            firstClient,
+            target: .main,
+            makeClientID: { "client-1" },
+            eventSink: { event in
+                eventRecorder.record(event)
+            }
+        )
+        #expect(isAccepted(firstResult))
+        hub.removeClient(firstClient)
+
+        let secondResult = hub.addClient(
+            secondClient,
+            target: .main,
+            makeClientID: { "client-1" },
+            eventSink: { event in
+                eventRecorder.record(event)
+            }
+        )
+        #expect(isAccepted(secondResult))
+
+        let events = eventRecorder.currentEvents()
+        #expect(events.count == 3)
+        #expect(events[0].recordedSessionEpoch == events[1].recordedSessionEpoch)
+        #expect(events[2].recordedSessionEpoch > events[1].recordedSessionEpoch)
+        #expect(events[2].recordedSequence == 1)
     }
 #endif
 }

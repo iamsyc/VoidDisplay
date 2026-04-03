@@ -112,6 +112,7 @@ final class WebRTCSessionHub: Sendable {
     private nonisolated struct ClientState {
         nonisolated(unsafe) let connection: any SignalSocketConnection
         let clientID: String
+        let sessionEpoch: UInt64
         let target: ShareTarget
         let eventSink: SharingEventSink
         var nextEventSequence: UInt64 = 0
@@ -122,6 +123,7 @@ final class WebRTCSessionHub: Sendable {
 
     private nonisolated struct State: ~Copyable {
         var clients: [ObjectIdentifier: ClientState] = [:]
+        var nextSessionEpoch: UInt64 = 0
         var onDemandChanged: @Sendable (Bool) -> Void
     }
 
@@ -184,9 +186,11 @@ final class WebRTCSessionHub: Sendable {
             state -> (AddClientResult, String?, Bool, @Sendable (Bool) -> Void) in
             let wasEmpty = state.clients.isEmpty
             let clientID = makeClientID()
+            state.nextSessionEpoch &+= 1
             state.clients[key] = ClientState(
                 connection: connection,
                 clientID: clientID,
+                sessionEpoch: state.nextSessionEpoch,
                 target: target,
                 eventSink: eventSink
             )
@@ -201,10 +205,12 @@ final class WebRTCSessionHub: Sendable {
             callback(true)
         }
 
+        let sessionEpoch = state.withLock { $0.clients[key]?.sessionEpoch } ?? 0
         emitEvent(
             SharingSessionEvent(
                 target: target,
                 clientID: clientID,
+                sessionEpoch: sessionEpoch,
                 sequence: nextEventSequence(for: key),
                 phase: .signalingConnected,
                 source: .webSocket
@@ -542,6 +548,7 @@ final class WebRTCSessionHub: Sendable {
             SharingSessionEvent(
                 target: removed.target,
                 clientID: removed.clientID,
+                sessionEpoch: removed.sessionEpoch,
                 sequence: removed.nextEventSequence + 1,
                 phase: .closed,
                 source: .webSocket
@@ -570,18 +577,19 @@ final class WebRTCSessionHub: Sendable {
         for key: ObjectIdentifier
     ) {
         let payload = state.withLock {
-            state -> (target: ShareTarget, clientID: String, sequence: UInt64, sink: SharingEventSink)? in
+            state -> (target: ShareTarget, clientID: String, sessionEpoch: UInt64, sequence: UInt64, sink: SharingEventSink)? in
             guard var client = state.clients[key] else { return nil }
             client.nextEventSequence += 1
             let sequence = client.nextEventSequence
             state.clients[key] = client
-            return (client.target, client.clientID, sequence, client.eventSink)
+            return (client.target, client.clientID, client.sessionEpoch, sequence, client.eventSink)
         }
         guard let payload else { return }
         payload.sink(
             SharingSessionEvent(
                 target: payload.target,
                 clientID: payload.clientID,
+                sessionEpoch: payload.sessionEpoch,
                 sequence: payload.sequence,
                 phase: phase,
                 source: source

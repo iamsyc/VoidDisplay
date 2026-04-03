@@ -357,6 +357,96 @@ struct SharingServiceTests {
         #expect(snapshot.lastUpdatedAt != nil)
     }
 
+    @MainActor @Test func closedClientReconnectWithSameIDStartsFreshSession() {
+        let aggregator = SharingStateAggregator()
+        let target = ShareTarget.id(7)
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 1,
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 1,
+                sequence: 2,
+                phase: .closed,
+                source: .webSocket
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 2,
+                sequence: 1,
+                phase: .signalingConnected,
+                source: .webSocket
+            )
+        )
+
+        let snapshot = aggregator.currentSnapshot
+        #expect(snapshot.signalingConnections == 1)
+        #expect(snapshot.streamingPeers == 0)
+        #expect(snapshot.clientsByTarget[target]?["client-1"]?.phase == .signalingConnected)
+    }
+
+    @MainActor @Test func lateEventFromClosedSessionDoesNotOverrideReconnectedClient() {
+        let aggregator = SharingStateAggregator()
+        let target = ShareTarget.id(7)
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 1,
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 1,
+                sequence: 2,
+                phase: .closed,
+                source: .webSocket
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 2,
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        aggregator.record(
+            SharingSessionEvent(
+                target: target,
+                clientID: "client-1",
+                sessionEpoch: 1,
+                sequence: 3,
+                phase: .peerDisconnected,
+                source: .peerConnection
+            )
+        )
+
+        let snapshot = aggregator.currentSnapshot
+        #expect(snapshot.signalingConnections == 1)
+        #expect(snapshot.streamingPeers == 1)
+        #expect(snapshot.clientsByTarget[target]?["client-1"]?.phase == .peerConnected)
+    }
+
     @MainActor @Test func alreadyRunningStartPreservesCurrentSharingSnapshot() async {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()

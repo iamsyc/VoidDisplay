@@ -391,6 +391,145 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(sut.store.lastLoadedActiveDisplayTopologySignature == signatureBox.value)
     }
 
+    @Test func topologyMismatchBeforeCommitRetriesAndCommitsLatestSnapshot() async {
+        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success, .success])
+        let initialSignature = makeTestDisplayTopologySignature([1001])
+        let retriedSignature = makeTestDisplayTopologySignature([1002])
+        let signatureBox = CatalogServiceSignatureBox(initialSignature)
+        let firstDisplay = CatalogServiceMockSCDisplay.make(displayID: 1001, width: 1280, height: 720)
+        let retriedDisplay = CatalogServiceMockSCDisplay.make(displayID: 1002, width: 1920, height: 1080)
+        var loadCallIndex = 0
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                loadCallIndex += 1
+                switch await gate.nextOutcome() {
+                case .success:
+                    return loadCallIndex == 1 ? [firstDisplay] : [retriedDisplay]
+                case .failure(let error):
+                    throw error
+                }
+            },
+            activeDisplayIDsProvider: { [1002] },
+            displayTopologySignatureProvider: { signatureBox.value }
+        )
+        sut.store.hasScreenCapturePermission = true
+
+        let refresh = Task { await sut.submitRefresh(intent: .topologyChanged) }
+        #expect(await waitForLoaderCall(gate, count: 1))
+
+        signatureBox.value = retriedSignature
+        await gate.release(call: 1)
+
+        #expect(await waitForLoaderCall(gate, count: 2))
+        await gate.release(call: 2)
+
+        #expect(await refresh.value == .reloadedSnapshot)
+        #expect(await gate.currentCallCount() == 2)
+        #expect(sut.store.displays?.map(\.displayID) == [1002])
+        #expect(sut.store.lastLoadedActiveDisplayTopologySignature == retriedSignature)
+    }
+
+    @Test func topologySignatureJitterRetriesUntilCommitMatchesLatestSample() async {
+        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success, .success, .success])
+        let signatureA = makeTestDisplayTopologySignature([1101])
+        let signatureB = makeTestDisplayTopologySignature([1102])
+        let finalSignature = makeTestDisplayTopologySignature([1103])
+        let signatureBox = CatalogServiceSignatureBox(signatureA)
+        let displays = [
+            CatalogServiceMockSCDisplay.make(displayID: 1101, width: 1280, height: 720),
+            CatalogServiceMockSCDisplay.make(displayID: 1102, width: 1920, height: 1080),
+            CatalogServiceMockSCDisplay.make(displayID: 1103, width: 2560, height: 1440)
+        ]
+        var loadCallIndex = 0
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                loadCallIndex += 1
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [displays[loadCallIndex - 1]]
+                case .failure(let error):
+                    throw error
+                }
+            },
+            activeDisplayIDsProvider: { [1103] },
+            displayTopologySignatureProvider: { signatureBox.value }
+        )
+        sut.store.hasScreenCapturePermission = true
+
+        let refresh = Task { await sut.submitRefresh(intent: .topologyChanged) }
+        #expect(await waitForLoaderCall(gate, count: 1))
+
+        signatureBox.value = signatureB
+        await gate.release(call: 1)
+
+        #expect(await waitForLoaderCall(gate, count: 2))
+        signatureBox.value = finalSignature
+        await gate.release(call: 2)
+
+        #expect(await waitForLoaderCall(gate, count: 3))
+        await gate.release(call: 3)
+
+        #expect(await refresh.value == .reloadedSnapshot)
+        #expect(await gate.currentCallCount() == 3)
+        #expect(sut.store.displays?.map(\.displayID) == [1103])
+        #expect(sut.store.lastLoadedActiveDisplayTopologySignature == finalSignature)
+    }
+
+    @Test func repeatedTopologyMismatchFailsWithoutOverwritingStableSnapshot() async {
+        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success, .success, .success, .success])
+        let stableSignature = makeTestDisplayTopologySignature([1200])
+        let signatureBox = CatalogServiceSignatureBox(makeTestDisplayTopologySignature([1201]))
+        let stableDisplay = CatalogServiceMockSCDisplay.make(displayID: 1200, width: 1440, height: 900)
+        var loadCallIndex = 0
+        let retrySignatures = [
+            makeTestDisplayTopologySignature([1202]),
+            makeTestDisplayTopologySignature([1203]),
+            makeTestDisplayTopologySignature([1204]),
+            makeTestDisplayTopologySignature([1205])
+        ]
+        let refreshedDisplays = [
+            CatalogServiceMockSCDisplay.make(displayID: 1201, width: 1280, height: 720),
+            CatalogServiceMockSCDisplay.make(displayID: 1202, width: 1600, height: 900),
+            CatalogServiceMockSCDisplay.make(displayID: 1203, width: 1920, height: 1080),
+            CatalogServiceMockSCDisplay.make(displayID: 1204, width: 2560, height: 1440)
+        ]
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                loadCallIndex += 1
+                switch await gate.nextOutcome() {
+                case .success:
+                    return [refreshedDisplays[loadCallIndex - 1]]
+                case .failure(let error):
+                    throw error
+                }
+            },
+            activeDisplayIDsProvider: { [1205] },
+            displayTopologySignatureProvider: { signatureBox.value }
+        )
+        sut.store.hasScreenCapturePermission = true
+        sut.store.displays = [stableDisplay]
+        sut.store.lastLoadedActiveDisplayTopologySignature = stableSignature
+        sut.store.lastRefreshResult = .reusedSnapshot
+
+        let refresh = Task { await sut.submitRefresh(intent: .topologyChanged) }
+
+        for (index, retrySignature) in retrySignatures.enumerated() {
+            #expect(await waitForLoaderCall(gate, count: index + 1))
+            signatureBox.value = retrySignature
+            await gate.release(call: index + 1)
+        }
+
+        #expect(await refresh.value == .failed)
+        #expect(await gate.currentCallCount() == 4)
+        #expect(sut.store.displays?.map(\.displayID) == [1200])
+        #expect(sut.store.lastLoadedActiveDisplayTopologySignature == stableSignature)
+        #expect(sut.store.lastRefreshResult == .failed)
+        #expect(sut.store.lastLoadError == nil)
+    }
+
     private func waitForLoaderCall(
         _ gate: SequencedCatalogServiceLoadGate,
         count: Int

@@ -17,6 +17,7 @@ enum SharingPeerPhase: String, Sendable, Equatable, Codable {
 struct SharingSessionEvent: Sendable, Equatable {
     let target: ShareTarget
     let clientID: String
+    let sessionEpoch: UInt64
     let sequence: UInt64
     let phase: SharingPeerPhase
     let source: SharingSessionEventSource
@@ -30,9 +31,14 @@ struct SharingSessionEvent: Sendable, Equatable {
         sequence
     }
 
+    nonisolated var recordedSessionEpoch: UInt64 {
+        sessionEpoch
+    }
+
     nonisolated init(
         target: ShareTarget,
         clientID: String,
+        sessionEpoch: UInt64 = 0,
         sequence: UInt64 = 0,
         phase: SharingPeerPhase,
         source: SharingSessionEventSource,
@@ -40,6 +46,7 @@ struct SharingSessionEvent: Sendable, Equatable {
     ) {
         self.target = target
         self.clientID = clientID
+        self.sessionEpoch = sessionEpoch
         self.sequence = sequence
         self.phase = phase
         self.source = source
@@ -120,10 +127,15 @@ final class SharingStateAggregator {
     typealias Observer = @MainActor @Sendable (SharingStateSnapshot) -> Void
     nonisolated static let closedClientTombstoneLimit = 512
 
-    private var clientStatesByID: [String: SharingClientState] = [:]
-    private var lastAcceptedSequenceByClientID: [String: UInt64] = [:]
-    private var closedClientTombstoneSequenceByClientID: [String: UInt64] = [:]
-    private var closedClientTombstoneOrder: [(clientID: String, sequence: UInt64)] = []
+    private struct ConnectionKey: Hashable {
+        let clientID: String
+        let sessionEpoch: UInt64
+    }
+
+    private var clientStatesByConnectionKey: [ConnectionKey: SharingClientState] = [:]
+    private var lastAcceptedSequenceByConnectionKey: [ConnectionKey: UInt64] = [:]
+    private var closedClientTombstoneSequenceByConnectionKey: [ConnectionKey: UInt64] = [:]
+    private var closedClientTombstoneOrder: [(key: ConnectionKey, sequence: UInt64)] = []
     private var observers: [UUID: Observer] = [:]
     private var snapshot = SharingStateSnapshot.empty
 
@@ -132,26 +144,26 @@ final class SharingStateAggregator {
     }
 
     var closedClientTombstoneCountForTesting: Int {
-        closedClientTombstoneSequenceByClientID.count
+        closedClientTombstoneSequenceByConnectionKey.count
     }
 
     func record(_ event: SharingSessionEvent) {
-        if let lastAcceptedSequence = lastAcceptedSequenceByClientID[event.clientID],
+        let key = ConnectionKey(clientID: event.clientID, sessionEpoch: event.sessionEpoch)
+        if let lastAcceptedSequence = lastAcceptedSequenceByConnectionKey[key],
            event.sequence <= lastAcceptedSequence {
             return
         }
-        if let closedClientSequence = closedClientTombstoneSequenceByClientID[event.clientID] {
-            guard event.sequence > closedClientSequence else { return }
-            closedClientTombstoneSequenceByClientID.removeValue(forKey: event.clientID)
+        if closedClientTombstoneSequenceByConnectionKey[key] != nil {
+            return
         }
         if event.phase == .closed {
-            clientStatesByID.removeValue(forKey: event.clientID)
-            lastAcceptedSequenceByClientID.removeValue(forKey: event.clientID)
-            closedClientTombstoneSequenceByClientID[event.clientID] = event.sequence
-            closedClientTombstoneOrder.append((event.clientID, event.sequence))
+            clientStatesByConnectionKey.removeValue(forKey: key)
+            lastAcceptedSequenceByConnectionKey.removeValue(forKey: key)
+            closedClientTombstoneSequenceByConnectionKey[key] = event.sequence
+            closedClientTombstoneOrder.append((key, event.sequence))
             pruneClosedClientTombstonesIfNeeded()
         } else {
-            lastAcceptedSequenceByClientID[event.clientID] = event.sequence
+            lastAcceptedSequenceByConnectionKey[key] = event.sequence
             let nextState = SharingClientState(
                 target: event.target,
                 clientID: event.clientID,
@@ -159,15 +171,15 @@ final class SharingStateAggregator {
                 source: event.source,
                 lastUpdatedAt: event.timestamp
             )
-            clientStatesByID[event.clientID] = nextState
+            clientStatesByConnectionKey[key] = nextState
         }
         rebuildSnapshot(lastUpdatedAt: event.timestamp)
     }
 
     func reset() {
-        clientStatesByID.removeAll()
-        lastAcceptedSequenceByClientID.removeAll()
-        closedClientTombstoneSequenceByClientID.removeAll()
+        clientStatesByConnectionKey.removeAll()
+        lastAcceptedSequenceByConnectionKey.removeAll()
+        closedClientTombstoneSequenceByConnectionKey.removeAll()
         closedClientTombstoneOrder.removeAll()
         rebuildSnapshot(lastUpdatedAt: nil)
     }
@@ -186,7 +198,7 @@ final class SharingStateAggregator {
         var signalingConnectionsByTarget: [ShareTarget: Int] = [:]
         var streamingPeersByTarget: [ShareTarget: Int] = [:]
 
-        for clientState in clientStatesByID.values {
+        for clientState in clientStatesByConnectionKey.values {
             clientsByTarget[clientState.target, default: [:]][clientState.clientID] = clientState
             if clientState.hasActiveSignalingConnection {
                 signalingConnectionsByTarget[clientState.target, default: 0] += 1
@@ -213,11 +225,11 @@ final class SharingStateAggregator {
     }
 
     private func pruneClosedClientTombstonesIfNeeded() {
-        while closedClientTombstoneSequenceByClientID.count > Self.closedClientTombstoneLimit,
+        while closedClientTombstoneSequenceByConnectionKey.count > Self.closedClientTombstoneLimit,
               let oldest = closedClientTombstoneOrder.first {
             closedClientTombstoneOrder.removeFirst()
-            guard closedClientTombstoneSequenceByClientID[oldest.clientID] == oldest.sequence else { continue }
-            closedClientTombstoneSequenceByClientID.removeValue(forKey: oldest.clientID)
+            guard closedClientTombstoneSequenceByConnectionKey[oldest.key] == oldest.sequence else { continue }
+            closedClientTombstoneSequenceByConnectionKey.removeValue(forKey: oldest.key)
         }
     }
 }

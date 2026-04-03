@@ -99,6 +99,11 @@ final class ScreenCaptureCatalogStore {
 
 @MainActor
 final class ScreenCaptureCatalogService {
+    private enum CommitResolution {
+        case completed(ScreenCaptureCatalogRefreshResult)
+        case retry
+    }
+
     struct RefreshOwner: Hashable, Sendable {
         fileprivate let id = UUID()
     }
@@ -140,6 +145,8 @@ final class ScreenCaptureCatalogService {
     }
 
     let store: ScreenCaptureCatalogStore
+
+    nonisolated private static let maxCommitSignatureRetryCount = 3
 
     private let dependencies: Dependencies
     private let coordinator: CatalogRefreshCoordinator
@@ -248,41 +255,66 @@ final class ScreenCaptureCatalogService {
         intent: ScreenCaptureCatalogRefreshIntent,
         owner: RefreshOwner? = nil
     ) async -> ScreenCaptureCatalogRefreshResult {
-        let permissionGranted = refreshPermission()
-        let currentSignature = currentActiveDisplayTopologySignature()
-        let request = CatalogRefreshCoordinator.Request(
-            intent: intent,
-            permissionGranted: permissionGranted,
-            currentTopologySignature: currentSignature,
-            cachedTopologySignature: store.lastLoadedActiveDisplayTopologySignature,
-            hasCachedDisplays: store.displays != nil,
-            ownerID: owner?.id
-        )
+        var staleCommitRetryCount = 0
+        var clearedSnapshotForCurrentRequest = false
 
-        switch await coordinator.prepare(request: request) {
-        case .reusedSnapshot:
-            store.lastRefreshResult = .reusedSnapshot
-            return .reusedSnapshot
-        case .clearedSnapshot:
-            applyClearedSnapshot(signature: currentSignature)
-            return .clearedSnapshot
-        case .failed:
-            store.lastRefreshResult = .failed
-            return .failed
-        case .awaitInFlight(let loadID):
-            store.isLoadingDisplays = true
-            let execution = await coordinator.executeLoad(loadID: loadID)
-            return commit(execution: execution, signature: currentSignature)
-        case .execute(let loadID, let clearsSnapshotFirst):
-            store.isLoadingDisplays = true
-            store.loadErrorMessage = nil
-            store.lastLoadError = nil
-            if clearsSnapshotFirst {
-                store.displays = nil
+        while true {
+            let permissionGranted = refreshPermission()
+            let requestSignature = currentActiveDisplayTopologySignature()
+            let request = CatalogRefreshCoordinator.Request(
+                intent: intent,
+                permissionGranted: permissionGranted,
+                currentTopologySignature: requestSignature,
+                cachedTopologySignature: store.lastLoadedActiveDisplayTopologySignature,
+                hasCachedDisplays: store.displays != nil,
+                ownerID: owner?.id
+            )
+
+            switch await coordinator.prepare(request: request) {
+            case .reusedSnapshot:
+                store.lastRefreshResult = .reusedSnapshot
+                return .reusedSnapshot
+            case .clearedSnapshot:
+                applyClearedSnapshot(signature: requestSignature)
+                return .clearedSnapshot
+            case .failed:
+                store.isLoadingDisplays = false
+                store.lastRefreshResult = .failed
+                return .failed
+            case .awaitInFlight(let loadID):
+                store.isLoadingDisplays = true
+                let execution = await coordinator.executeLoad(loadID: loadID)
+                switch resolveCommit(
+                    execution: execution,
+                    requestSignature: requestSignature,
+                    staleCommitRetryCount: &staleCommitRetryCount
+                ) {
+                case .completed(let result):
+                    return result
+                case .retry:
+                    continue
+                }
+            case .execute(let loadID, let clearsSnapshotFirst):
+                store.isLoadingDisplays = true
+                store.loadErrorMessage = nil
+                store.lastLoadError = nil
+                if clearsSnapshotFirst, !clearedSnapshotForCurrentRequest {
+                    store.displays = nil
+                    clearedSnapshotForCurrentRequest = true
+                }
+
+                let execution = await coordinator.executeLoad(loadID: loadID)
+                switch resolveCommit(
+                    execution: execution,
+                    requestSignature: requestSignature,
+                    staleCommitRetryCount: &staleCommitRetryCount
+                ) {
+                case .completed(let result):
+                    return result
+                case .retry:
+                    continue
+                }
             }
-
-            let execution = await coordinator.executeLoad(loadID: loadID)
-            return commit(execution: execution, signature: currentSignature)
         }
     }
 
@@ -297,21 +329,38 @@ final class ScreenCaptureCatalogService {
         store.lastRefreshResult = .clearedSnapshot
     }
 
-    private func commit(
+    private func resolveCommit(
         execution: CatalogRefreshCoordinator.ExecutionResult,
-        signature: ScreenCaptureDisplayTopologySignature
-    ) -> ScreenCaptureCatalogRefreshResult {
+        requestSignature: ScreenCaptureDisplayTopologySignature,
+        staleCommitRetryCount: inout Int
+    ) -> CommitResolution {
         switch execution {
         case .reloadedSnapshot(let displays):
+            let commitSignature = currentActiveDisplayTopologySignature()
+            guard commitSignature == requestSignature else {
+                dependencies.logger.warning(
+                    "Discarding stale display snapshot before commit because topology changed during refresh."
+                )
+                guard staleCommitRetryCount < Self.maxCommitSignatureRetryCount else {
+                    dependencies.logger.error(
+                        "Abandoning display refresh after repeated topology changes prevented a stable commit."
+                    )
+                    store.isLoadingDisplays = false
+                    store.lastRefreshResult = .failed
+                    return .completed(.failed)
+                }
+                staleCommitRetryCount += 1
+                return .retry
+            }
             store.displays = displays.map(\.value)
             store.hasScreenCapturePermission = true
             store.lastPreflightPermission = true
-            store.lastLoadedActiveDisplayTopologySignature = signature
+            store.lastLoadedActiveDisplayTopologySignature = commitSignature
             store.isLoadingDisplays = false
             store.loadErrorMessage = nil
             store.lastLoadError = nil
             store.lastRefreshResult = .reloadedSnapshot
-            return .reloadedSnapshot
+            return .completed(.reloadedSnapshot)
         case .failed(let error, let shouldClearDisplays):
             let nsError = error as NSError
             AppErrorMapper.logFailure(
@@ -332,12 +381,12 @@ final class ScreenCaptureCatalogService {
                 store.displays = nil
             }
             store.lastRefreshResult = .failed
-            return .failed
+            return .completed(.failed)
         case .clearedSnapshot:
-            applyClearedSnapshot(signature: signature)
-            return .clearedSnapshot
+            applyClearedSnapshot(signature: requestSignature)
+            return .completed(.clearedSnapshot)
         case .failedSuperseded:
-            return .failed
+            return .completed(.failed)
         }
     }
 }
