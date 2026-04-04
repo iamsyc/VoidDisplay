@@ -35,11 +35,18 @@ struct VoidDisplayApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView(screenCatalogOrchestrator: screenCatalog)
-                .environment(capture)
-                .environment(sharing)
-                .environment(virtualDisplay)
-                .environment(capturePerformancePreferences)
+            Group {
+                if CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
+                   let sessionID = capture.screenCaptureSessions.first?.id {
+                    CaptureDisplayView(sessionId: sessionID)
+                } else {
+                    HomeView(screenCatalogOrchestrator: screenCatalog)
+                }
+            }
+            .environment(capture)
+            .environment(sharing)
+            .environment(virtualDisplay)
+            .environment(capturePerformancePreferences)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
 

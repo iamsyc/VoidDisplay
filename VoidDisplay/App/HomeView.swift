@@ -31,20 +31,24 @@ struct HomeView: View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("Display") {
-                    Label("Displays", systemImage: "display")
-                        .tag(SidebarItem.screen)
+                    NavigationLink(value: SidebarItem.screen) {
+                        Label("Displays", systemImage: "display")
+                    }
                         .accessibilityIdentifier("sidebar_screen")
-                    Label("Virtual Displays", systemImage: "display.2")
-                        .tag(SidebarItem.virtualDisplay)
+                    NavigationLink(value: SidebarItem.virtualDisplay) {
+                        Label("Virtual Displays", systemImage: "display.2")
+                    }
                         .accessibilityIdentifier("sidebar_virtual_display")
-                    Label("Screen Monitoring", systemImage: "dot.scope.display")
-                        .tag(SidebarItem.monitorScreen)
+                    NavigationLink(value: SidebarItem.monitorScreen) {
+                        Label("Screen Monitoring", systemImage: "dot.scope.display")
+                    }
                         .accessibilityIdentifier("sidebar_monitor_screen")
                 }
 
                 Section("Sharing") {
-                    Label("Screen Sharing", systemImage: "display")
-                        .tag(SidebarItem.screenSharing)
+                    NavigationLink(value: SidebarItem.screenSharing) {
+                        Label("Screen Sharing", systemImage: "display")
+                    }
                         .accessibilityIdentifier("sidebar_screen_sharing")
                 }
             }
@@ -88,6 +92,7 @@ struct HomeView: View {
                             .accessibilityIdentifier("detail_screen_sharing")
                     }
                 }
+                .id(selection ?? .screen)
             }
         }
         .onAppear {

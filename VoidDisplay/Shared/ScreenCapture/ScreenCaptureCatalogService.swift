@@ -161,7 +161,7 @@ final class ScreenCaptureCatalogService {
         self.coordinator = CatalogRefreshCoordinator(
             loadShareableDisplays: {
                 try await Task { @MainActor in
-                    try await dependencies.loadShareableDisplays()
+                    try await dependencies.loadShareableDisplays().map(SendableDisplay.init)
                 }.value
             },
             runtimeScenarioProbe: dependencies.runtimeScenarioProbe
@@ -422,7 +422,7 @@ actor CatalogRefreshCoordinator {
         case failedSuperseded
     }
 
-    private let loadShareableDisplays: @Sendable () async throws -> [SCDisplay]
+    private let loadShareableDisplays: @Sendable () async throws -> [SendableDisplay]
     private let runtimeScenarioProbe: ScreenCaptureDisplayCatalogLoader.RuntimeScenarioProbe
     private var nextLoadID: UInt64 = 0
     private var activeLoadID: UInt64?
@@ -431,7 +431,7 @@ actor CatalogRefreshCoordinator {
     private var waiterCountsByLoadID: [UInt64: Int] = [:]
 
     init(
-        loadShareableDisplays: @escaping @Sendable () async throws -> [SCDisplay],
+        loadShareableDisplays: @escaping @Sendable () async throws -> [SendableDisplay],
         runtimeScenarioProbe: ScreenCaptureDisplayCatalogLoader.RuntimeScenarioProbe
     ) {
         self.loadShareableDisplays = loadShareableDisplays
@@ -495,7 +495,7 @@ actor CatalogRefreshCoordinator {
                     if await MainActor.run(body: { runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() }) {
                         try await Task.sleep(for: .seconds(3))
                     }
-                    return try await loadShareableDisplays().map(SendableDisplay.init)
+                    return try await loadShareableDisplays()
                 }
                 activeTask = createdTask
                 task = createdTask

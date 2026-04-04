@@ -92,13 +92,13 @@ private extension CapturePreviewDiagnosticsTests {
         scaleMode: PreviewScaleMode
     ) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["VOIDDISPLAY_TEST_ISOLATION_ID"] = UUID().uuidString
+        configureAppForUITestLaunch(app)
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = "capture_preview_diagnostics"
         app.launchEnvironment["VOIDDISPLAY_CAPTURE_PREVIEW_SOURCE_SIZE"] = sourceSize
         app.launchEnvironment["VOIDDISPLAY_CAPTURE_PREVIEW_TARGET_CONTENT_WIDTH"] = String(targetContentWidth)
         app.launchEnvironment["VOIDDISPLAY_CAPTURE_PREVIEW_SCALE_MODE"] = scaleMode.rawValue
         app.launch()
+        app.activate()
         return app
     }
 

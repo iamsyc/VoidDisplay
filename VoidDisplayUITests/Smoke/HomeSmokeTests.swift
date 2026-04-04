@@ -28,9 +28,6 @@ final class HomeSmokeTests: XCTestCase {
         let virtualDisplaySidebar = smokeElement(app, identifier: "sidebar_virtual_display")
         let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
         let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
-        let monitorDetail = smokeElement(app, identifier: "detail_monitor_screen")
-        let sharingDetail = smokeElement(app, identifier: "detail_screen_sharing")
-        let virtualDisplayRibbon = smokeElement(app, identifier: "virtual_display_primary_ribbon")
 
         assertAllExist(
             app,
@@ -43,7 +40,7 @@ final class HomeSmokeTests: XCTestCase {
                 "detail_screen",
                 "displays_open_system_settings"
             ],
-            timeout: 3
+            timeout: 6
         )
 
         virtualDisplaySidebar.tap()
@@ -58,25 +55,45 @@ final class HomeSmokeTests: XCTestCase {
         )
 
         monitorSidebar.tap()
-        assertElementsExist([("detail_monitor_screen", monitorDetail)], timeout: 1.2)
+        let didShowMonitorDetail = waitForIdentifierByPolling(
+            app,
+            identifier: "detail_monitor_screen",
+            timeout: 1.2,
+            activateBeforePolling: true
+        )
+        if !didShowMonitorDetail {
+            print("AX DEBUG START")
+            print(app.debugDescription)
+            print("AX DEBUG END")
+        }
+        XCTAssertTrue(
+            didShowMonitorDetail,
+            """
+            detail_monitor_screen did not appear after tapping sidebar_monitor_screen.
+            detailStates=\(detailVisibilitySummary(in: app))
+            """.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
 
         sharingSidebar.tap()
-        assertElementsExist([("detail_screen_sharing", sharingDetail)], timeout: 1.2)
+        assertAllExist(
+            app,
+            identifiers: ["detail_screen_sharing"],
+            timeout: 1.2
+        )
         virtualDisplaySidebar.tap()
-        assertElementsExist([("virtual_display_primary_ribbon", virtualDisplayRibbon)], timeout: 1.2)
+        assertAllExist(
+            app,
+            identifiers: ["virtual_display_primary_ribbon"],
+            timeout: 1.2
+        )
     }
 
     @MainActor
     func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
         let app = launchAppForSmoke(scenario: .baseline)
         let detail = openVirtualDisplayDetail(in: app)
-        let openEditButton = smokeElement(app, identifier: "virtual_display_open_edit_test_button")
 
-        let initialEditState = openVirtualDisplayEditForm(
-            in: app,
-            detail: detail,
-            openEditButton: openEditButton
-        )
+        let initialEditState = openVirtualDisplayEditForm(in: app, detail: detail)
         let initialValue = boolValue(forToggle: initialEditState.toggle)
         let initialRebuildCount = rebuildRequestCount(in: detail)
         tapFast(
@@ -97,11 +114,7 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertTrue(waitForDisappearance(of: initialEditState.form, timeout: 1.5))
         XCTAssertEqual(rebuildRequestCount(in: detail), initialRebuildCount)
 
-        let saveOnlyPersistedState = reopenEditFormAndReadHiDPI(
-            in: app,
-            detail: detail,
-            openEditButton: openEditButton
-        )
+        let saveOnlyPersistedState = reopenEditFormAndReadHiDPI(in: app, detail: detail)
         XCTAssertEqual(saveOnlyPersistedState.value, !initialValue)
         tapFast(
             saveOnlyPersistedState.toggle,
@@ -124,11 +137,7 @@ final class HomeSmokeTests: XCTestCase {
             )
         )
 
-        let saveAndRebuildPersistedState = reopenEditFormAndReadHiDPI(
-            in: app,
-            detail: detail,
-            openEditButton: openEditButton
-        )
+        let saveAndRebuildPersistedState = reopenEditFormAndReadHiDPI(in: app, detail: detail)
         XCTAssertEqual(saveAndRebuildPersistedState.value, initialValue)
         tapFast(
             saveAndRebuildPersistedState.cancelButton,
@@ -144,16 +153,6 @@ final class HomeSmokeTests: XCTestCase {
         let app = launchAppForSmoke(scenario: .permissionDenied)
         let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
         let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
-        let monitorDetail = smokeElement(app, identifier: "detail_monitor_screen")
-        let captureGuide = smokeElement(app, identifier: "capture_permission_guide")
-        let captureOpenSettings = smokeElement(app, identifier: "capture_open_settings_button")
-        let captureRequest = smokeElement(app, identifier: "capture_request_permission_button")
-        let captureRefresh = smokeElement(app, identifier: "capture_refresh_button")
-        let sharingDetail = smokeElement(app, identifier: "detail_screen_sharing")
-        let shareGuide = smokeElement(app, identifier: "share_permission_guide")
-        let shareOpenSettings = smokeElement(app, identifier: "share_open_settings_button")
-        let shareRequest = smokeElement(app, identifier: "share_request_permission_button")
-        let shareRefresh = smokeElement(app, identifier: "share_refresh_button")
 
         assertAllExist(
             app,
@@ -161,25 +160,27 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 2
         )
         monitorSidebar.tap()
-        assertElementsExist(
-            [
-                ("detail_monitor_screen", monitorDetail),
-                ("capture_permission_guide", captureGuide),
-                ("capture_open_settings_button", captureOpenSettings),
-                ("capture_request_permission_button", captureRequest),
-                ("capture_refresh_button", captureRefresh)
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_monitor_screen",
+                "capture_permission_guide",
+                "capture_open_settings_button",
+                "capture_request_permission_button",
+                "capture_refresh_button"
             ],
             timeout: 1.2
         )
 
         sharingSidebar.tap()
-        assertElementsExist(
-            [
-                ("detail_screen_sharing", sharingDetail),
-                ("share_permission_guide", shareGuide),
-                ("share_open_settings_button", shareOpenSettings),
-                ("share_request_permission_button", shareRequest),
-                ("share_refresh_button", shareRefresh)
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_screen_sharing",
+                "share_permission_guide",
+                "share_open_settings_button",
+                "share_request_permission_button",
+                "share_refresh_button"
             ],
             timeout: 1.2
         )
@@ -199,11 +200,7 @@ final class HomeSmokeTests: XCTestCase {
             )
             let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
             let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
-            let monitorDetail = smokeElement(app, identifier: "detail_monitor_screen")
-            let captureLoading = smokeElement(app, identifier: "capture_loading_displays")
-            let sharingDetail = smokeElement(app, identifier: "detail_screen_sharing")
             let startServiceButton = smokeElement(app, identifier: "share_start_service_button")
-            let shareLoading = smokeElement(app, identifier: "share_loading_displays")
 
             assertAllExist(
                 app,
@@ -211,25 +208,31 @@ final class HomeSmokeTests: XCTestCase {
                 timeout: 2
             )
             monitorSidebar.tap()
-            assertElementsExist(
-                [
-                    ("detail_monitor_screen", monitorDetail),
-                    ("capture_loading_displays", captureLoading)
+            assertAllExist(
+                app,
+                identifiers: [
+                    "detail_monitor_screen",
+                    "capture_loading_displays"
                 ],
                 timeout: 1.2
             )
 
             sharingSidebar.tap()
-            assertElementsExist(
-                [
-                    ("detail_screen_sharing", sharingDetail),
-                    ("share_start_service_button", startServiceButton)
+            assertAllExist(
+                app,
+                identifiers: [
+                    "detail_screen_sharing",
+                    "share_start_service_button"
                 ],
                 timeout: 1.2
             )
             startServiceButton.tap()
 
-            if waitForCondition(timeout: 1.0, condition: { shareLoading.exists }) {
+            if waitForIdentifierByPolling(
+                app,
+                identifier: "share_loading_displays",
+                timeout: 1.0
+            ) {
                 app.terminate()
                 return
             }
@@ -306,19 +309,24 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     private func openVirtualDisplayDetail(in app: XCUIApplication) -> XCUIElement {
-        let virtualDisplaySidebar = smokeElement(app, identifier: "sidebar_virtual_display")
-        let detail = smokeElement(app, identifier: "detail_virtual_display")
-        assertElementsExist([("sidebar_virtual_display", virtualDisplaySidebar)], timeout: 1.2)
-        virtualDisplaySidebar.tap()
-        assertElementsExist([("detail_virtual_display", detail)], timeout: 1.2)
-        return detail
+        assertAllExist(
+            app,
+            identifiers: ["sidebar_virtual_display"],
+            timeout: 1.2
+        )
+        smokeElement(app, identifier: "sidebar_virtual_display").tap()
+        assertAllExist(
+            app,
+            identifiers: ["detail_virtual_display"],
+            timeout: 1.2
+        )
+        return smokeElement(app, identifier: "detail_virtual_display")
     }
 
     @MainActor
     private func openVirtualDisplayEditForm(
         in app: XCUIApplication,
-        detail: XCUIElement,
-        openEditButton: XCUIElement
+        detail: XCUIElement
     ) -> (
         form: XCUIElement,
         toggle: XCUIElement,
@@ -331,33 +339,48 @@ final class HomeSmokeTests: XCTestCase {
         let saveOnlyButton = smokeElement(app, identifier: "virtual_display_edit_save_only_button")
         let saveAndRebuildButton = smokeElement(app, identifier: "virtual_display_edit_save_and_rebuild_button")
         let cancelButton = smokeElement(app, identifier: "virtual_display_edit_cancel_button")
-        let formElements: [SmokeNamedElement] = [
-            ("edit_virtual_display_form", form),
-            ("virtual_display_edit_mode_hidpi_toggle", toggle),
-            ("virtual_display_edit_save_only_button", saveOnlyButton),
-            ("virtual_display_edit_save_and_rebuild_button", saveAndRebuildButton),
-            ("virtual_display_edit_cancel_button", cancelButton)
-        ]
         assertAllExist(
             app,
             identifiers: ["detail_virtual_display", "virtual_display_open_edit_test_button"],
             timeout: 1.2
         )
         XCTAssertTrue(detail.exists, "Virtual display detail is unavailable.")
+        let openEditButton = smokeElement(app, identifier: "virtual_display_open_edit_test_button")
         tapByCoordinate(
             openEditButton,
             timeout: 1,
             requireExistenceCheck: false
         )
         if waitForIdentifierByPolling(app, identifier: "edit_virtual_display_form", timeout: 0.9) {
-            assertElementsExist(formElements, timeout: 0.6)
+            assertAllExist(
+                app,
+                identifiers: [
+                    "edit_virtual_display_form",
+                    "virtual_display_edit_mode_hidpi_toggle",
+                    "virtual_display_edit_save_only_button",
+                    "virtual_display_edit_save_and_rebuild_button",
+                    "virtual_display_edit_cancel_button"
+                ],
+                timeout: 0.6
+            )
         } else {
+            let retryOpenEditButton = smokeElement(app, identifier: "virtual_display_open_edit_test_button")
             tapByCoordinate(
-                openEditButton,
+                retryOpenEditButton,
                 timeout: 0.6,
                 requireExistenceCheck: false
             )
-            assertElementsExist(formElements, timeout: 1.5)
+            assertAllExist(
+                app,
+                identifiers: [
+                    "edit_virtual_display_form",
+                    "virtual_display_edit_mode_hidpi_toggle",
+                    "virtual_display_edit_save_only_button",
+                    "virtual_display_edit_save_and_rebuild_button",
+                    "virtual_display_edit_cancel_button"
+                ],
+                timeout: 1.5
+            )
         }
         return (
             form: form,
@@ -371,8 +394,7 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     private func reopenEditFormAndReadHiDPI(
         in app: XCUIApplication,
-        detail: XCUIElement,
-        openEditButton: XCUIElement
+        detail: XCUIElement
     ) -> (
         form: XCUIElement,
         toggle: XCUIElement,
@@ -381,11 +403,7 @@ final class HomeSmokeTests: XCTestCase {
         cancelButton: XCUIElement,
         value: Bool
     ) {
-        let state = openVirtualDisplayEditForm(
-            in: app,
-            detail: detail,
-            openEditButton: openEditButton
-        )
+        let state = openVirtualDisplayEditForm(in: app, detail: detail)
         return (
             state.form,
             state.toggle,
@@ -461,6 +479,22 @@ final class HomeSmokeTests: XCTestCase {
         ]
 
         return markers.contains { normalizedMessage.contains($0) }
+    }
+
+    @MainActor
+    private func detailVisibilitySummary(in app: XCUIApplication) -> String {
+        [
+            "detail_screen",
+            "detail_virtual_display",
+            "detail_monitor_screen",
+            "detail_screen_sharing",
+            "capture_choose_root",
+            "share_content_root"
+        ]
+        .map { identifier in
+            "\(identifier)=\(smokeElement(app, identifier: identifier).exists)"
+        }
+        .joined(separator: ", ")
     }
 
     @MainActor

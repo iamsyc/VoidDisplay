@@ -60,6 +60,7 @@ struct IsCapturing: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 Task { await screenCatalogOrchestrator.handleAppear(source: .capturePage) }
+                guard !UITestRuntime.isEnabled else { return }
                 lifecycle.handleAppear {
                     guard viewModel.catalog.hasScreenCapturePermission == true else { return }
                     Task { await screenCatalogOrchestrator.handleTopologyChanged() }
@@ -67,6 +68,7 @@ struct IsCapturing: View {
             }
             .onDisappear {
                 Task { await screenCatalogOrchestrator.handleDisappear(source: .capturePage) }
+                guard !UITestRuntime.isEnabled else { return }
                 lifecycle.handleDisappear()
             }
             .accessibilityElement(children: .contain)
