@@ -76,6 +76,34 @@ private final class Counter: @unchecked Sendable {
     }
 }
 
+private final class SharingEventRecorder: @unchecked Sendable {
+    private let events = Mutex<[SharingSessionEvent]>([])
+
+    nonisolated func record(_ event: SharingSessionEvent) {
+        events.withLock { $0.append(event) }
+    }
+
+    func currentEvents() -> [SharingSessionEvent] {
+        events.withLock { $0 }
+    }
+
+    func currentPhases() -> [SharingPeerPhase] {
+        events.withLock { $0.map(\.recordedPhase) }
+    }
+
+    func currentSequences() -> [UInt64] {
+        events.withLock { $0.map(\.recordedSequence) }
+    }
+
+    func currentSessionEpochs() -> [UInt64] {
+        events.withLock { $0.map(\.recordedSessionEpoch) }
+    }
+}
+
+private final class PeerCallbacksBox: @unchecked Sendable {
+    nonisolated(unsafe) var callbacks: WebRTCSessionHub.PeerCallbacks?
+}
+
 private final class MockPeerSession: @unchecked Sendable, WebRTCPeerSessioning {
     private let closeCalls: Counter
 
@@ -121,8 +149,9 @@ struct WebRTCSessionHubTests {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection()
 
-        hub.addClient(client)
+        let result = hub.addClient(client, target: .main, eventSink: { _ in })
 
+        #expect(isAccepted(result))
         let payloads = client.decodedTextPayloads()
         #expect(payloads.contains(where: { $0.contains(#""type":"ready""#) }))
         #expect(payloads.allSatisfy { !$0.contains(#""version""#) })
@@ -131,17 +160,85 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func malformedSignalPayloadReturnsError() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection()
-        hub.addClient(client)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
 
         hub.receiveSignalText("not-a-json", from: client)
 
         #expect(client.decodedTextPayloads().contains(where: { $0.contains(#""reason":"invalid_signal_payload""#) }))
     }
 
+    @MainActor @Test func addClientAcceptsViewerBeyondFormerCapacity() {
+        let hub = WebRTCSessionHub()
+        var clients: [MockSignalSocketConnection] = []
+        let idGenerationCount = Counter()
+        let formerCapacity = 10
+        let expectedClientCount = formerCapacity + 5
+
+        for index in 0..<expectedClientCount {
+            let client = MockSignalSocketConnection()
+            clients.append(client)
+            let result = hub.addClient(
+                client,
+                target: .main,
+                makeClientID: {
+                    idGenerationCount.increment()
+                    return "client-\(index)"
+                },
+                eventSink: { _ in }
+            )
+            #expect(isAccepted(result))
+        }
+
+        #expect(idGenerationCount.value() == expectedClientCount)
+        #expect(hub.activeClientCount == expectedClientCount)
+    }
+
+    @MainActor @Test func viewerBeyondFormerCapacityEntersSharingSnapshot() {
+        let recorder = SharingEventRecorder()
+        let hub = WebRTCSessionHub()
+        var clients: [MockSignalSocketConnection] = []
+        let formerCapacity = 10
+
+        for index in 0..<formerCapacity {
+            let client = MockSignalSocketConnection()
+            clients.append(client)
+            let result = hub.addClient(
+                client,
+                target: .main,
+                makeClientID: { "client-\(index)" },
+                eventSink: { event in
+                    recorder.record(event)
+                }
+            )
+            #expect(isAccepted(result))
+        }
+
+        let additionalClient = MockSignalSocketConnection()
+        let result = hub.addClient(
+            additionalClient,
+            target: .main,
+            makeClientID: { "client-extra" },
+            eventSink: { event in
+                recorder.record(event)
+            }
+        )
+
+        let aggregator = SharingStateAggregator()
+        for event in recorder.currentEvents() {
+            aggregator.record(event)
+        }
+
+        #expect(isAccepted(result))
+        #expect(aggregator.currentSnapshot.signalingConnections == formerCapacity + 1)
+        #expect(aggregator.currentSnapshot.streamingPeers == 0)
+        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?.count == formerCapacity + 1)
+        #expect(aggregator.currentSnapshot.clientsByTarget[.main]?["client-extra"] != nil)
+    }
+
     @MainActor @Test func stopSharingBroadcastsStoppedAndDisconnectsClients() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection(autoCompleteSends: false)
-        hub.addClient(client)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
         #expect(client.completeNextSend())
 
         hub.stopSharing()
@@ -155,7 +252,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func viewerReadyDoesNotEmitErrorResponse() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection()
-        hub.addClient(client)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
         let baselinePayloadCount = client.decodedTextPayloads().count
 
         hub.receiveSignalText(#"{"type":"viewer_ready"}"#, from: client)
@@ -167,7 +264,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func queuedSignalingMessagesPreserveOrderUnderBackpressure() throws {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection(autoCompleteSends: false)
-        hub.addClient(client)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
         #expect(client.completeNextSend())
 
         hub.receiveSignalText("not-a-json", from: client)
@@ -187,6 +284,19 @@ struct WebRTCSessionHubTests {
         #expect(missingTypeIndex < unsupportedIndex)
     }
 
+    @MainActor @Test func signalingBacklogOverflowDisconnectsClient() {
+        let hub = WebRTCSessionHub()
+        let client = MockSignalSocketConnection(autoCompleteSends: false)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+
+        for _ in 0..<600 where hub.activeClientCount > 0 {
+            hub.receiveSignalText("not-a-json", from: client)
+        }
+
+        #expect(hub.activeClientCount == 0)
+        #expect(client.cancelCallCount == 1)
+    }
+
     @MainActor @Test func removedClient_offer_doesNotCreatePeer() {
         let peerCreateCalls = Counter()
         let peerCloseCalls = Counter()
@@ -195,7 +305,7 @@ struct WebRTCSessionHubTests {
             return MockPeerSession(closeCalls: peerCloseCalls)
         })
         let client = MockSignalSocketConnection()
-        hub.addClient(client)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
         hub.removeClient(client)
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
@@ -205,6 +315,32 @@ struct WebRTCSessionHubTests {
     }
 
 #if canImport(WebRTC)
+    @MainActor @Test func answerMessagesCoalesceToLatestUnderBackpressure() throws {
+        let callbacksBox = PeerCallbacksBox()
+        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+            callbacksBox.callbacks = callbacks
+            return MockPeerSession(closeCalls: Counter())
+        })
+        let client = MockSignalSocketConnection(autoCompleteSends: false)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+
+        hub.receiveSignalText("not-a-json", from: client)
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+        callbacksBox.callbacks?.onAnswer("v=1")
+        callbacksBox.callbacks?.onAnswer("v=2")
+
+        #expect(client.completeNextSend())
+        #expect(client.completeNextSend())
+        #expect(client.completeNextSend())
+
+        let payloads = client.decodedTextPayloads()
+        let answerPayloads = payloads.filter { $0.contains(#""type":"answer""#) }
+        #expect(answerPayloads.count == 1)
+        let finalAnswer = try #require(answerPayloads.first)
+        #expect(finalAnswer.contains(#""sdp":"v=2""#))
+        #expect(finalAnswer.contains(#""sdp":"v=1""#) == false)
+    }
+
     @MainActor @Test func clientRemovedDuringEnsurePeer_closesNewPeer() {
         let peerCloseCalls = Counter()
         let box = PeerFactoryBox(closeCalls: peerCloseCalls)
@@ -214,12 +350,126 @@ struct WebRTCSessionHubTests {
         let client = MockSignalSocketConnection()
         box.hub = hub
         box.client = client
-        hub.addClient(client)
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
 
         #expect(peerCloseCalls.value() == 1)
         #expect(hub.activeClientCount == 0)
     }
+
+    @MainActor @Test func peerFailureClosesClientWithoutTerminalErrorSignal() {
+        let callbacksBox = PeerCallbacksBox()
+        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+            callbacksBox.callbacks = callbacks
+            return MockPeerSession(closeCalls: Counter())
+        })
+        let client = MockSignalSocketConnection()
+        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+        callbacksBox.callbacks?.onFailure("transient_peer_failure")
+
+        let payloads = client.decodedTextPayloads()
+        #expect(payloads.contains(where: { $0.contains(#""type":"ready""#) }))
+        #expect(payloads.contains(where: { $0.contains(#""type":"error""#) }) == false)
+        #expect(client.cancelCallCount == 1)
+        #expect(hub.activeClientCount == 0)
+    }
+
+    @MainActor @Test func lifecycleEventsReflectOfferConnectAndClose() async throws {
+        let eventRecorder = SharingEventRecorder()
+        let callbacksBox = PeerCallbacksBox()
+        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+            callbacksBox.callbacks = callbacks
+            return MockPeerSession(closeCalls: Counter())
+        })
+        let client = MockSignalSocketConnection()
+
+        let addResult = hub.addClient(
+            client,
+            target: .id(9),
+            eventSink: { event in
+                eventRecorder.record(event)
+            }
+        )
+        #expect(isAccepted(addResult))
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+        callbacksBox.callbacks?.onConnected()
+        callbacksBox.callbacks?.onDisconnected()
+
+        let observed = await waitUntilPhases(eventRecorder, count: 5)
+        #expect(observed)
+        let phases = eventRecorder.currentPhases()
+        #expect(phases == [
+            .signalingConnected,
+            .offerReceived,
+            .peerConnected,
+            .peerDisconnected,
+            .closed,
+        ])
+        let sequences = eventRecorder.currentSequences()
+        #expect(sequences == [1, 2, 3, 4, 5])
+        let sessionEpochs = eventRecorder.currentSessionEpochs()
+        let firstEpoch = try #require(sessionEpochs.first)
+        #expect(sessionEpochs.allSatisfy { $0 == firstEpoch })
+    }
+
+    @MainActor @Test func reusedClientIDGetsNewSessionEpoch() {
+        let eventRecorder = SharingEventRecorder()
+        let hub = WebRTCSessionHub()
+        let firstClient = MockSignalSocketConnection()
+        let secondClient = MockSignalSocketConnection()
+
+        let firstResult = hub.addClient(
+            firstClient,
+            target: .main,
+            makeClientID: { "client-1" },
+            eventSink: { event in
+                eventRecorder.record(event)
+            }
+        )
+        #expect(isAccepted(firstResult))
+        hub.removeClient(firstClient)
+
+        let secondResult = hub.addClient(
+            secondClient,
+            target: .main,
+            makeClientID: { "client-1" },
+            eventSink: { event in
+                eventRecorder.record(event)
+            }
+        )
+        #expect(isAccepted(secondResult))
+
+        let events = eventRecorder.currentEvents()
+        #expect(events.count == 3)
+        #expect(events[0].recordedSessionEpoch == events[1].recordedSessionEpoch)
+        #expect(events[2].recordedSessionEpoch > events[1].recordedSessionEpoch)
+        #expect(events[2].recordedSequence == 1)
+    }
 #endif
+}
+
+private func isAccepted(_ result: WebRTCSessionHub.AddClientResult) -> Bool {
+    if case .accepted = result {
+        return true
+    }
+    return false
+}
+
+private func waitUntilPhases(
+    _ recorder: SharingEventRecorder,
+    count: Int,
+    timeoutNanoseconds: UInt64 = AsyncTestTimeouts.defaultAsyncAssertion
+) async -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+        if recorder.currentPhases().count >= count {
+            return true
+        }
+        await Task.yield()
+    }
+    return recorder.currentPhases().count >= count
 }

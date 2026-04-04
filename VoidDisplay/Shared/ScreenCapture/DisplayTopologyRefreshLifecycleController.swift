@@ -6,8 +6,8 @@ import OSLog
 
 @MainActor
 @Observable
-final class ShareViewLifecycleController {
-    typealias DisplayTopologySignatureProvider = @MainActor () -> [CGDirectDisplayID]
+final class DisplayTopologyRefreshLifecycleController {
+    typealias DisplayTopologySignatureProvider = @MainActor () -> ScreenCaptureDisplayTopologySignature
     typealias SleepOperation = @Sendable (Duration) async -> Void
 
     private(set) var showToolbarRefresh = false
@@ -18,12 +18,16 @@ final class ShareViewLifecycleController {
     @ObservationIgnored private let fallbackPollingInterval: Duration
     @ObservationIgnored private let recoveryAttemptInterval: Int
     @ObservationIgnored private var displayRefreshFallbackTask: Task<Void, Never>?
-    @ObservationIgnored private var lastKnownDisplayTopologySignature: [CGDirectDisplayID] = []
+    @ObservationIgnored private var lastKnownDisplayTopologySignature: ScreenCaptureDisplayTopologySignature = []
 
     init(
         displayRefreshMonitor: any DisplayReconfigurationMonitoring = DebouncingDisplayReconfigurationMonitor(),
         displayTopologySignatureProvider: @escaping DisplayTopologySignatureProvider = {
-            NSScreen.screens.compactMap(\.cgDirectDisplayID).sorted()
+            ScreenCaptureDisplayTopologySignatureResolver.current(
+                activeDisplayIDsProvider: {
+                    Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
+                }
+            )
         },
         sleep: @escaping SleepOperation = { duration in
             try? await Task.sleep(for: duration)
@@ -38,21 +42,18 @@ final class ShareViewLifecycleController {
         self.recoveryAttemptInterval = max(1, recoveryAttemptInterval)
     }
 
-    func handleAppear(viewModel: ShareViewModel) {
-        viewModel.refreshPermissionAndMaybeLoad()
-        startDisplayRefreshMonitoring(viewModel: viewModel)
+    func handleAppear(onTopologyChanged: @escaping @MainActor () -> Void) {
+        startDisplayRefreshMonitoring(onTopologyChanged: onTopologyChanged)
     }
 
-    func handleDisappear(viewModel: ShareViewModel) {
-        viewModel.cancelInFlightDisplayLoad()
+    func handleDisappear() {
         stopDisplayRefreshMonitoring()
     }
 
-    private func startDisplayRefreshMonitoring(viewModel: ShareViewModel) {
+    private func startDisplayRefreshMonitoring(onTopologyChanged: @escaping @MainActor () -> Void) {
         lastKnownDisplayTopologySignature = displayTopologySignatureProvider()
         let registered = displayRefreshMonitor.start {
-            guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-            viewModel.refreshDisplaysBackgroundSafe()
+            onTopologyChanged()
         }
         showToolbarRefresh = !registered
         if registered {
@@ -61,9 +62,9 @@ final class ShareViewLifecycleController {
         }
 
         AppLog.sharing.error(
-            "Display reconfiguration callback registration failed in sharing view; enabling polling fallback."
+            "Display reconfiguration callback registration failed; enabling polling fallback."
         )
-        startDisplayRefreshFallbackPolling(viewModel: viewModel)
+        startDisplayRefreshFallbackPolling(onTopologyChanged: onTopologyChanged)
     }
 
     private func stopDisplayRefreshMonitoring() {
@@ -71,7 +72,7 @@ final class ShareViewLifecycleController {
         stopDisplayRefreshFallbackPolling()
     }
 
-    private func startDisplayRefreshFallbackPolling(viewModel: ShareViewModel) {
+    private func startDisplayRefreshFallbackPolling(onTopologyChanged: @escaping @MainActor () -> Void) {
         guard displayRefreshFallbackTask == nil else { return }
         lastKnownDisplayTopologySignature = displayTopologySignatureProvider()
         displayRefreshFallbackTask = Task { @MainActor [weak self] in
@@ -80,20 +81,18 @@ final class ShareViewLifecycleController {
             while !Task.isCancelled {
                 await self.sleep(self.fallbackPollingInterval)
                 guard !Task.isCancelled else { break }
-                guard viewModel.catalog.hasScreenCapturePermission == true else { continue }
 
-                self.refreshDisplaysIfTopologyChanged(viewModel: viewModel)
+                self.refreshDisplaysIfTopologyChanged(onTopologyChanged: onTopologyChanged)
                 cycle += 1
                 if cycle % self.recoveryAttemptInterval != 0 { continue }
 
                 let recovered = self.displayRefreshMonitor.start {
-                    guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-                    viewModel.refreshDisplaysBackgroundSafe()
+                    onTopologyChanged()
                 }
                 if recovered {
                     self.showToolbarRefresh = false
                     AppLog.sharing.notice(
-                        "Display reconfiguration callback recovered in sharing view; disabling polling fallback."
+                        "Display reconfiguration callback recovered; disabling polling fallback."
                     )
                     self.stopDisplayRefreshFallbackPolling()
                     break
@@ -102,11 +101,11 @@ final class ShareViewLifecycleController {
         }
     }
 
-    private func refreshDisplaysIfTopologyChanged(viewModel: ShareViewModel) {
+    private func refreshDisplaysIfTopologyChanged(onTopologyChanged: @escaping @MainActor () -> Void) {
         let signature = displayTopologySignatureProvider()
         guard signature != lastKnownDisplayTopologySignature else { return }
         lastKnownDisplayTopologySignature = signature
-        viewModel.refreshDisplaysBackgroundSafe()
+        onTopologyChanged()
     }
 
     private func stopDisplayRefreshFallbackPolling() {

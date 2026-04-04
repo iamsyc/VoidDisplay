@@ -284,6 +284,26 @@
         }
       }
     },
+    "Automatic" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        }
+      }
+    },
+    "Automatic adapts frame rate for mixed preview and sharing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动模式会在监听和共享同时开启时动态调整帧率。"
+          }
+        }
+      }
+    },
     "Basic Info" : {
       "localizations" : {
         "zh-Hans" : {
@@ -320,6 +340,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消启动"
+          }
+        }
+      }
+    },
+    "Capture Performance" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采集性能"
+          }
+        }
+      }
+    },
+    "Choose how screen monitoring and sharing balance smoothness and resource usage." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择屏幕监听与共享在流畅度和资源占用之间的平衡方式。"
           }
         }
       }
@@ -550,6 +590,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示器信息"
+          }
+        }
+      }
+    },
+    "Display sharing state changed. Try again." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示共享状态已变化，请重试。"
           }
         }
       }
@@ -1128,6 +1179,17 @@
         }
       }
     },
+    "Performance" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能模式"
+          }
+        }
+      }
+    },
     "Permission denied for port %u. Choose another port and try again." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1244,6 +1306,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "端口必须在 1024 到 65535 之间。"
+          }
+        }
+      }
+    },
+    "Power Efficient" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "节能优先"
           }
         }
       }
@@ -1574,6 +1646,16 @@
         }
       }
     },
+    "Selected display is no longer available for sharing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选显示器已不再可用于共享。"
+          }
+        }
+      }
+    },
     "Serial Number" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1660,6 +1742,16 @@
         }
       }
     },
+    "Share smoothness" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享流畅度"
+          }
+        }
+      }
+    },
     "Sharing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1676,6 +1768,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共享中"
+          }
+        }
+      }
+    },
+    "Smooth" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流畅优先"
           }
         }
       }

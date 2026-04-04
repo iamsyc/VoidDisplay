@@ -4,6 +4,11 @@ import ScreenCaptureKit
 
 @MainActor
 final class DisplaySharingCoordinator {
+    typealias AcquireShare = @MainActor (
+        SCDisplay,
+        DisplayStartInvalidationContext
+    ) async throws -> DisplayStartOutcome<DisplayShareSubscription>
+
     struct ShareableDisplayRegistrationInput {
         let displayID: CGDirectDisplayID
         let isMain: Bool
@@ -26,14 +31,23 @@ final class DisplaySharingCoordinator {
     private var sessionsByDisplayID: [CGDirectDisplayID: SharingSession] = [:]
     private var mainDisplayID: CGDirectDisplayID?
     private let idStore: DisplayShareIDStore
-    private let captureRegistry: DisplayCaptureRegistry
+    private let startCoordinator: DisplayStreamStartCoordinator
+    private let acquireShare: AcquireShare
 
     init(
         idStore: DisplayShareIDStore,
-        captureRegistry: DisplayCaptureRegistry = .shared
+        startCoordinator: DisplayStreamStartCoordinator = DisplayStreamStartCoordinator(),
+        captureRegistry: DisplayCaptureRegistry = .shared,
+        acquireShare: AcquireShare? = nil
     ) {
         self.idStore = idStore
-        self.captureRegistry = captureRegistry
+        self.startCoordinator = startCoordinator
+        self.acquireShare = acquireShare ?? { display, invalidationContext in
+            try await captureRegistry.acquireShare(
+                display: SendableDisplay(display),
+                invalidationContext: invalidationContext
+            )
+        }
     }
 
     var hasAnyActiveSharing: Bool {
@@ -44,10 +58,15 @@ final class DisplaySharingCoordinator {
         Set(sessionsByDisplayID.keys)
     }
 
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        startCoordinator.isStarting(kind: .sharing, displayID: displayID)
+    }
+
+    @discardableResult
     func registerShareableDisplays(
         _ displays: [SCDisplay],
         virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
-    ) {
+    ) -> Set<ShareTarget> {
         let inputs = displays.map { display in
             ShareableDisplayRegistrationInput(
                 displayID: display.displayID,
@@ -55,10 +74,11 @@ final class DisplaySharingCoordinator {
                 virtualSerial: virtualSerialResolver(display.displayID)
             )
         }
-        registerShareableDisplays(inputs)
+        return registerShareableDisplays(inputs)
     }
 
-    func registerShareableDisplays(_ inputs: [ShareableDisplayRegistrationInput]) {
+    @discardableResult
+    func registerShareableDisplays(_ inputs: [ShareableDisplayRegistrationInput]) -> Set<ShareTarget> {
         var nextRegistrationsByDisplayID: [CGDirectDisplayID: DisplayRegistration] = [:]
         var nextDisplayIDsByShareID: [UInt32: CGDirectDisplayID] = [:]
         var resolvedMainDisplayID: CGDirectDisplayID?
@@ -106,45 +126,100 @@ final class DisplaySharingCoordinator {
             nextDisplayIDsByShareID[shareID] = input.displayID
         }
 
+        let currentRegistrationsByDisplayID = registrationsByDisplayID
+        let invalidatedTargets = invalidatedConcreteTargets(
+            current: currentRegistrationsByDisplayID,
+            next: nextRegistrationsByDisplayID
+        )
+        let displayIDsToInvalidate = invalidatedDisplayIDs(
+            current: currentRegistrationsByDisplayID,
+            next: nextRegistrationsByDisplayID
+        )
         registrationsByDisplayID = nextRegistrationsByDisplayID
         displayIDsByShareID = nextDisplayIDsByShareID
         mainDisplayID = resolvedMainDisplayID ?? mainDisplayID
+        for displayID in displayIDsToInvalidate {
+            startCoordinator.invalidate(kind: .sharing, displayID: displayID)
+        }
 
         let registeredDisplayIDs = Set(nextRegistrationsByDisplayID.keys)
         for displayID in Array(sessionsByDisplayID.keys) where !registeredDisplayIDs.contains(displayID) {
             stopSharing(displayID: displayID)
         }
+        return invalidatedTargets
     }
 
-    func startSharing(display: SCDisplay) async throws {
-        stopSharing(displayID: display.displayID)
-        let subscription = try await captureRegistry.acquireShare(display: SendableDisplay(display))
-        try await subscription.prepareForSharing()
-        sessionsByDisplayID[display.displayID] = SharingSession(display: display, subscription: subscription)
-        if CGDisplayIsMain(display.displayID) != 0 {
-            mainDisplayID = display.displayID
+    func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
+        let displayID = display.displayID
+        guard registrationsByDisplayID[displayID] != nil else {
+            throw SharingStartError.displayNotRegistered(displayID)
+        }
+
+        return try await startCoordinator.start(
+            kind: .sharing,
+            displayID: displayID
+        ) { [self, acquireShare] invalidationContext in
+            guard self.registrationsByDisplayID[displayID] != nil else {
+                return .invalidated
+            }
+            self.stopActiveSharingSession(displayID: displayID)
+
+            let subscription: DisplayShareSubscription
+            switch try await acquireShare(display, invalidationContext) {
+            case .invalidated:
+                return .invalidated
+            case .started(let acquiredSubscription):
+                subscription = acquiredSubscription
+            }
+
+            if invalidationContext.isInvalidated() || self.registrationsByDisplayID[displayID] == nil {
+                subscription.cancel()
+                return .invalidated
+            }
+
+            switch try await subscription.prepareForSharing(invalidationContext: invalidationContext) {
+            case .invalidated:
+                return .invalidated
+            case .started:
+                break
+            }
+
+            if invalidationContext.isInvalidated() || self.registrationsByDisplayID[displayID] == nil {
+                subscription.cancel()
+                return .invalidated
+            }
+            self.sessionsByDisplayID[displayID] = SharingSession(display: display, subscription: subscription)
+            if CGDisplayIsMain(displayID) != 0 {
+                self.mainDisplayID = displayID
+            }
+            return .started(())
         }
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {
+        startCoordinator.invalidate(kind: .sharing, displayID: displayID)
+        stopActiveSharingSession(displayID: displayID)
+    }
+
+    private func stopActiveSharingSession(displayID: CGDirectDisplayID) {
         guard let session = sessionsByDisplayID.removeValue(forKey: displayID) else { return }
         session.subscription.cancel()
     }
 
     func stopAllSharing() {
+        startCoordinator.invalidateAll(kind: .sharing)
         for displayID in Array(sessionsByDisplayID.keys) {
-            stopSharing(displayID: displayID)
+            stopActiveSharingSession(displayID: displayID)
         }
     }
 
     func state(for target: ShareTarget) -> ShareTargetState {
         switch target {
         case .main:
-            if let resolvedMainID = resolvedMainDisplayID(),
-               sessionsByDisplayID[resolvedMainID] != nil {
-                return .active
+            guard let resolvedMainID = resolvedMainDisplayID() else {
+                return .knownInactive
             }
-            return .knownInactive
+            return sessionsByDisplayID[resolvedMainID] != nil ? .active : .knownInactive
         case .id(let id):
             guard let displayID = displayIDsByShareID[id] else {
                 return .unknown
@@ -161,6 +236,20 @@ final class DisplaySharingCoordinator {
         case .id(let id):
             guard let displayID = displayIDsByShareID[id] else { return nil }
             return sessionsByDisplayID[displayID]?.subscription.sessionHub
+        }
+    }
+
+    func resolveConcreteTarget(for target: ShareTarget) -> ShareTarget? {
+        switch target {
+        case .main:
+            guard let resolvedMainID = resolvedMainDisplayID(),
+                  let shareID = registrationsByDisplayID[resolvedMainID]?.shareID else {
+                return nil
+            }
+            return .id(shareID)
+        case .id(let id):
+            guard displayIDsByShareID[id] != nil else { return nil }
+            return .id(id)
         }
     }
 
@@ -194,6 +283,44 @@ final class DisplaySharingCoordinator {
             return systemMain
         }
         return nil
+    }
+
+    private func invalidatedDisplayIDs(
+        current: [CGDirectDisplayID: DisplayRegistration],
+        next: [CGDirectDisplayID: DisplayRegistration]
+    ) -> Set<CGDirectDisplayID> {
+        let allDisplayIDs = Set(current.keys).union(next.keys)
+        return Set(
+            allDisplayIDs.filter { displayID in
+                switch (current[displayID], next[displayID]) {
+                case (.none, .some), (.some, .none):
+                    true
+                case (.some(let old), .some(let new)):
+                    old.shareID != new.shareID || old.isMain != new.isMain
+                case (.none, .none):
+                    false
+                }
+            }
+        )
+    }
+
+    private func invalidatedConcreteTargets(
+        current: [CGDirectDisplayID: DisplayRegistration],
+        next: [CGDirectDisplayID: DisplayRegistration]
+    ) -> Set<ShareTarget> {
+        Set(
+            current.compactMap { displayID, registration in
+                switch next[displayID] {
+                case .none:
+                    return .id(registration.shareID)
+                case .some(let nextRegistration):
+                    guard registration.shareID != nextRegistration.shareID else {
+                        return nil
+                    }
+                    return .id(registration.shareID)
+                }
+            }
+        )
     }
 
     private func makeIdentityKey(for displayID: CGDirectDisplayID) -> String {

@@ -12,6 +12,8 @@ struct AppEnvironment {
     let capture: CaptureController
     let sharing: SharingController
     let virtualDisplay: VirtualDisplayController
+    let screenCatalog: ScreenCatalogOrchestrator
+    let capturePerformancePreferences: CapturePerformancePreferences
 }
 
 @main
@@ -19,20 +21,32 @@ struct VoidDisplayApp: App {
     @State private var capture: CaptureController
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
+    @State private var screenCatalog: ScreenCatalogOrchestrator
+    @State private var capturePerformancePreferences: CapturePerformancePreferences
 
     init() {
         let env = AppBootstrap.makeEnvironment()
         _capture = State(initialValue: env.capture)
         _sharing = State(initialValue: env.sharing)
         _virtualDisplay = State(initialValue: env.virtualDisplay)
+        _screenCatalog = State(initialValue: env.screenCatalog)
+        _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
     }
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
-                .environment(capture)
-                .environment(sharing)
-                .environment(virtualDisplay)
+            Group {
+                if CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
+                   let sessionID = capture.screenCaptureSessions.first?.id {
+                    CaptureDisplayView(sessionId: sessionID)
+                } else {
+                    HomeView(screenCatalogOrchestrator: screenCatalog)
+                }
+            }
+            .environment(capture)
+            .environment(sharing)
+            .environment(virtualDisplay)
+            .environment(capturePerformancePreferences)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
 
@@ -49,6 +63,7 @@ struct VoidDisplayApp: App {
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
+                .environment(capturePerformancePreferences)
         }
     }
 }
@@ -114,19 +129,34 @@ enum AppBootstrap {
             ?? (ProcessInfo.processInfo.environment[xCTestConfigurationEnvironmentKey] != nil)
         let resolvedStartupPlan = startupPlan ?? (isRunningUnderXCTest ? .skipAll : .standard)
         let resolvedCaptureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
+        let catalogService = ScreenCaptureCatalogService()
 
         var persistenceEnvironment = ProcessInfo.processInfo.environment
         if preview {
             persistenceEnvironment[PersistenceContext.uiTestModeEnvironmentKey] = "1"
         }
         let persistenceContext = PersistenceContext.resolve(environment: persistenceEnvironment)
+        let capturePerformancePreferences = CapturePerformancePreferences(
+            defaults: persistenceContext.userDefaults
+        )
+        let captureRegistry = DisplayCaptureRegistry(
+            performanceMode: capturePerformancePreferences.mode
+        )
+        capturePerformancePreferences.onModeChanged = { mode in
+            Task {
+                await captureRegistry.updatePerformanceMode(mode)
+            }
+        }
 
         let resolvedSharingService: any SharingServiceProtocol
         if let sharingService {
             resolvedSharingService = sharingService
         } else {
             let idStore = DisplayShareIDStore(storeURL: persistenceContext.displayShareIDMappingsURL)
-            let sharingCoordinator = DisplaySharingCoordinator(idStore: idStore)
+            let sharingCoordinator = DisplaySharingCoordinator(
+                idStore: idStore,
+                captureRegistry: captureRegistry
+            )
             resolvedSharingService = SharingService(sharingCoordinator: sharingCoordinator)
         }
 
@@ -142,10 +172,18 @@ enum AppBootstrap {
             resolvedVirtualDisplayFacade = VirtualDisplayOrchestrator(configRepository: configRepository)
         }
 
-        let capture = CaptureController(captureMonitoringService: resolvedCaptureMonitoringService)
+        let capture = CaptureController(
+            captureMonitoringService: resolvedCaptureMonitoringService,
+            captureMonitoringLifecycleService: CaptureMonitoringLifecycleService(
+                captureMonitoringService: resolvedCaptureMonitoringService,
+                captureRegistry: captureRegistry
+            ),
+            catalogService: catalogService
+        )
         let sharing = SharingController(
             sharingService: resolvedSharingService,
-            portPreferences: SharingPortPreferences(defaults: persistenceContext.userDefaults)
+            portPreferences: SharingPortPreferences(defaults: persistenceContext.userDefaults),
+            catalogService: catalogService
         )
         let virtualDisplay = VirtualDisplayController(
             virtualDisplayFacade: resolvedVirtualDisplayFacade,
@@ -161,7 +199,14 @@ enum AppBootstrap {
         let env = AppEnvironment(
             capture: capture,
             sharing: sharing,
-            virtualDisplay: virtualDisplay
+            virtualDisplay: virtualDisplay,
+            screenCatalog: ScreenCatalogOrchestrator(
+                catalogService: catalogService,
+                capture: capture,
+                sharing: sharing,
+                virtualDisplay: virtualDisplay
+            ),
+            capturePerformancePreferences: capturePerformancePreferences
         )
 
         guard !preview else { return env }

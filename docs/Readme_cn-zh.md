@@ -127,7 +127,7 @@ UI 入口：`HomeView` 包含四个标签页 — **显示器**、**虚拟显示�
 | 功能区域 | 文件 |
 |---------|------|
 | 虚拟显示器 | `VirtualDisplayService.swift`、`CreateVirtualDisplayObjectView.swift`、`EditVirtualDisplayConfigView.swift` |
-| 屏幕采集 | `CaptureChooseViewModel.swift`、`ScreenCaptureFunction.swift` |
+| 屏幕采集 | `CaptureChooseViewModel.swift`、`DisplayCaptureRegistry.swift`、`DisplayCaptureSession.swift`、`DisplayStartCoordinator.swift` |
 | 局域网共享 | `ShareViewModel.swift`、`SharingService.swift`、`Features/Sharing/Web/WebServer.swift` |
 
 统一日志（`Logger`，subsystem `com.developerchen.voiddisplay`）：

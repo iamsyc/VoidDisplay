@@ -19,18 +19,26 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var startCallCount = 0
     var stopCallCount = 0
     var disconnectCallCount = 0
+    var disconnectTargetCallCount = 0
+    var disconnectedTargetsHistory: [Set<ShareTarget>] = []
     var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
+    var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
     var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?)?
+    var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
 
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         startCallCount += 1
         lastRequestedPort = requestedPort
         capturedTargetStateProvider = targetStateProvider
+        capturedConcreteTargetResolver = concreteTargetResolver
         capturedSessionHubProvider = sessionHubProvider
+        capturedSharingEventSink = sharingEventSink
         switch startResult {
         case .started(let binding), .alreadyRunning(let binding):
             isRunning = true
@@ -55,6 +63,11 @@ final class MockWebServiceController: WebServiceControllerProtocol {
 
     func disconnectAllStreamClients() {
         disconnectCallCount += 1
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        disconnectTargetCallCount += 1
+        disconnectedTargetsHistory.append(targets)
     }
 
     func streamClientCount(for target: ShareTarget) -> Int {

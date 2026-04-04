@@ -53,11 +53,9 @@ final class UITestCapturePreviewSession: @unchecked Sendable, DisplayCaptureSess
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {}
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
+    }
 
     nonisolated func stop() async {}
 }

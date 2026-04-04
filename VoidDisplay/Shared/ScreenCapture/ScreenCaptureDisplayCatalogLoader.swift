@@ -73,13 +73,8 @@ final class ScreenCaptureDisplayCatalogLoader {
     ) {
         self.state = state ?? ScreenCaptureDisplayCatalogState()
         self.permissionProvider = permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault()
-        self.loadShareableDisplays = loadShareableDisplays ?? {
-            let content = try await SCShareableContent.excludingDesktopWindows(
-                false,
-                onScreenWindowsOnly: false
-            )
-            return content.displays
-        }
+        self.loadShareableDisplays = loadShareableDisplays
+            ?? ScreenCaptureShareableDisplayLoaderFactory.makeDefault()
         self.loadFailureMessage = loadFailureMessage
         self.logOperation = logOperation
         self.logger = logger

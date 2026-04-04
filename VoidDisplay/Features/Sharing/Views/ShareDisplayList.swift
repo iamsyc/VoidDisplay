@@ -62,6 +62,7 @@ struct ShareDisplayList: View {
         let displayURL = displayAddress.flatMap(URL.init(string:))
         let displayClientCount = sharing.sharingClientCounts[display.displayID] ?? 0
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
+        let isStartingDisplay = sharing.isStarting(displayID: display.displayID)
 
         let isMonitoring = capture.screenCaptureSessions.contains { $0.displayID == display.displayID }
 
@@ -103,7 +104,8 @@ struct ShareDisplayList: View {
                 displayAddress: displayAddress,
                 displayURL: displayURL,
                 displayClientCount: displayClientCount,
-                isSharingDisplay: isSharingDisplay
+                isSharingDisplay: isSharingDisplay,
+                isStartingDisplay: isStartingDisplay
             )
         }
     }
@@ -114,7 +116,8 @@ struct ShareDisplayList: View {
         displayAddress: String?,
         displayURL: URL?,
         displayClientCount: Int,
-        isSharingDisplay: Bool
+        isSharingDisplay: Bool,
+        isStartingDisplay: Bool
     ) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
@@ -127,7 +130,11 @@ struct ShareDisplayList: View {
                     openURLAction: openURLAction
                 )
 
-                shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
+                shareActionButton(
+                    display: display,
+                    isSharingDisplay: isSharingDisplay,
+                    isStartingDisplay: isStartingDisplay
+                )
             }
 
             VStack(alignment: .trailing, spacing: AppUI.Spacing.small) {
@@ -140,14 +147,22 @@ struct ShareDisplayList: View {
                     openURLAction: openURLAction
                 )
 
-                shareActionButton(display: display, isSharingDisplay: isSharingDisplay)
+                shareActionButton(
+                    display: display,
+                    isSharingDisplay: isSharingDisplay,
+                    isStartingDisplay: isStartingDisplay
+                )
             }
         }
         .frame(maxWidth: 560, alignment: .trailing)
     }
 
     @ViewBuilder
-    private func shareActionButton(display: SCDisplay, isSharingDisplay: Bool) -> some View {
+    private func shareActionButton(
+        display: SCDisplay,
+        isSharingDisplay: Bool,
+        isStartingDisplay: Bool
+    ) -> some View {
         Button {
             if isSharingDisplay {
                 viewModel.stopSharing(displayID: display.displayID)
@@ -159,19 +174,23 @@ struct ShareDisplayList: View {
         } label: {
             ZStack {
                 Label(String(localized: "Share"), systemImage: "play.fill").hidden()
+                Label(String(localized: "Starting"), systemImage: "hourglass").hidden()
                 Label(String(localized: "Stop"), systemImage: "stop.fill").hidden()
 
                 if isSharingDisplay {
                     Label(String(localized: "Stop"), systemImage: "stop.fill")
+                } else if isStartingDisplay {
+                    Label(String(localized: "Starting"), systemImage: "hourglass")
                 } else {
                     Label(String(localized: "Share"), systemImage: "play.fill")
                 }
             }
         }
         .appActionButtonStyle(variant: isSharingDisplay ? .danger : .primary)
+        .disabled(isStartingDisplay)
         .accessibilityIdentifier("share_action_button_\(display.displayID)")
         .accessibilityValue(
-            Text(verbatim: isSharingDisplay ? ShareAccessibilityState.sharing : ShareAccessibilityState.idle)
+            Text(verbatim: isSharingDisplay ? ShareAccessibilityState.sharing : (isStartingDisplay ? "starting" : ShareAccessibilityState.idle))
         )
     }
 }

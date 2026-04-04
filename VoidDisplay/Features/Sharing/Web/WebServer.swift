@@ -94,7 +94,9 @@ final class WebServer {
 
     private struct ActiveConnection {
         let target: ShareTarget
+        let clientID: String
         let connection: NWConnection
+        let sessionHub: WebRTCSessionHub
     }
 
     private var listener: NWListener?
@@ -103,7 +105,9 @@ final class WebServer {
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
+    private let concreteTargetResolver: @MainActor @Sendable (ShareTarget) -> ShareTarget?
     private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+    private let sharingEventSink: @Sendable (SharingSessionEvent) -> Void
     private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     private var didNotifyListenerStopped = false
     private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
@@ -116,11 +120,15 @@ final class WebServer {
     init(
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
+        self.concreteTargetResolver = concreteTargetResolver
         self.sessionHubProvider = sessionHubProvider
+        self.sharingEventSink = sharingEventSink
         self.onListenerStopped = onListenerStopped
 
         displayPageTemplate = try Self.loadDisplayPageTemplate()
@@ -192,14 +200,9 @@ final class WebServer {
     }
 
     func disconnectAllStreamClients() {
-        for client in activeConnections.values {
-            if let hub = sessionHub(for: client.target) {
-                hub.removeClient(client.connection)
-            }
-            client.connection.cancel()
+        for key in Array(activeConnections.keys) {
+            disconnectActiveConnection(forKey: key, cancelConnection: true)
         }
-        activeConnections.removeAll()
-        signalDecodersByConnectionKey.removeAll()
     }
 
     var activeStreamClientCount: Int {
@@ -208,6 +211,16 @@ final class WebServer {
 
     func streamClientCount(for target: ShareTarget) -> Int {
         activeConnections.values.filter { $0.target == target }.count
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        guard !targets.isEmpty else { return }
+        let keysToDisconnect = activeConnections.compactMap { key, connection in
+            targets.contains(connection.target) ? key : nil
+        }
+        for key in keysToDisconnect {
+            disconnectActiveConnection(forKey: key, cancelConnection: true)
+        }
     }
 
     func stopListener(reason: WebServiceServerStopReason = .requested) {
@@ -281,14 +294,21 @@ final class WebServer {
 
     private func removeSignalClient(_ connection: NWConnection, cancelConnection: Bool) {
         let key = connectionKey(for: connection)
+        disconnectActiveConnection(forKey: key, cancelConnection: cancelConnection, fallbackConnection: connection)
+    }
+
+    private func disconnectActiveConnection(
+        forKey key: ObjectIdentifier,
+        cancelConnection: Bool,
+        fallbackConnection: NWConnection? = nil
+    ) {
         signalDecodersByConnectionKey.removeValue(forKey: key)
+        let connection = activeConnections[key]?.connection ?? fallbackConnection
         if let active = activeConnections.removeValue(forKey: key) {
-            if let hub = sessionHub(for: active.target) {
-                hub.removeClient(connection)
-            }
+            active.sessionHub.removeClient(active.connection)
         }
         if cancelConnection {
-            connection.cancel()
+            connection?.cancel()
         }
     }
 
@@ -296,17 +316,21 @@ final class WebServer {
         sessionHubProvider(target)
     }
 
+    private func concreteTarget(for target: ShareTarget) -> ShareTarget? {
+        concreteTargetResolver(target)
+    }
+
     private func displayPage(for target: ShareTarget) -> String {
-        let title: String
-        switch target {
-        case .main:
-            title = "Main Display"
-        case .id(let id):
-            title = "Display \(id)"
-        }
+        _ = target
+        let title = "Screen Share"
         return displayPageTemplate
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
             .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)
+            .replacingOccurrences(of: "__BOOTSTRAP_JSON__", with: makeDisplayPageBootstrapJSON())
+    }
+
+    private func makeDisplayPageBootstrapJSON() -> String {
+        WebRTCIceServerProvider.browserBootstrapJSON()
     }
 
     private func processRequest(_ content: Data?, on connection: NWConnection) {
@@ -344,15 +368,31 @@ final class WebServer {
                 failureContext: "Send root page response"
             )
         case .showDisplayPage(let target):
+            guard let concreteTarget = concreteTarget(for: target) else {
+                sendResponseAndClose(
+                    requestHandler.responseData(for: .notFound),
+                    on: connection,
+                    failureContext: "Reject unresolved display target"
+                )
+                return
+            }
             sendResponseAndClose(
                 requestHandler.responseData(
-                    for: decision,
-                    htmlBody: displayPage(for: target)
+                    for: .showDisplayPage(concreteTarget),
+                    htmlBody: displayPage(for: concreteTarget)
                 ),
                 on: connection,
                 failureContext: "Send display page response"
             )
         case .openSignalSocket(let target):
+            guard let concreteTarget = concreteTarget(for: target) else {
+                sendResponseAndClose(
+                    requestHandler.responseData(for: .notFound),
+                    on: connection,
+                    failureContext: "Reject unresolved websocket target"
+                )
+                return
+            }
             guard isValidWebSocketUpgrade(request.headers) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .badRequest),
@@ -361,7 +401,7 @@ final class WebServer {
                 )
                 return
             }
-            openSignalSocket(on: connection, target: target, headers: request.headers)
+            openSignalSocket(on: connection, target: concreteTarget, headers: request.headers)
         case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),
@@ -424,20 +464,48 @@ final class WebServer {
                     return
                 }
                 AppLog.web.info("WebServer: [\(endpoint)] WebSocket upgrade succeeded.")
-                hub.addClient(connection)
+                let sharingEventSink = self.sharingEventSink
+                let addResult = hub.addClient(
+                    connection,
+                    target: target,
+                    makeClientID: { UUID().uuidString },
+                    eventSink: { event in
+                        sharingEventSink(event)
+                    }
+                )
+                guard case .accepted(let clientID) = addResult else {
+                    if case .rejected(let reason) = addResult {
+                        hub.sendRejection(reason: reason, to: connection)
+                    }
+                    connection.cancel()
+                    return
+                }
                 let key = self.connectionKey(for: connection)
-                self.activeConnections[key] = ActiveConnection(target: target, connection: connection)
+                self.activeConnections[key] = ActiveConnection(
+                    target: target,
+                    clientID: clientID,
+                    connection: connection,
+                    sessionHub: hub
+                )
                 self.signalDecodersByConnectionKey[key] = WebSocketFrameDecoder(
                     maxFramePayloadBytes: Self.maxSignalBufferBytes,
                     maxContinuationPayloadBytes: Self.maxSignalBufferBytes,
                     requiresMaskedFrames: true
                 )
-                self.startSignalReceiveLoop(on: connection, target: target)
+                self.startSignalReceiveLoop(
+                    on: connection,
+                    target: target,
+                    sessionHub: hub
+                )
             }
         })
     }
 
-    nonisolated private func startSignalReceiveLoop(on connection: NWConnection, target: ShareTarget) {
+    nonisolated private func startSignalReceiveLoop(
+        on connection: NWConnection,
+        target: ShareTarget,
+        sessionHub: WebRTCSessionHub
+    ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             if let error = error {
                 AppLog.web.warning("WebServer: WebSocket receive error: \(error)")
@@ -480,7 +548,7 @@ final class WebServer {
                 for frame in decoded.frames {
                     switch frame {
                     case .text(let text):
-                        self.sessionHub(for: target)?.receiveSignalText(text, from: connection)
+                        sessionHub.receiveSignalText(text, from: connection)
                     case .ping(let payload):
                         connection.send(
                             content: encodeWebSocketPongFrame(payload),
@@ -511,7 +579,11 @@ final class WebServer {
                 guard self.activeConnections[key] != nil else {
                     return
                 }
-                self.startSignalReceiveLoop(on: connection, target: target)
+                self.startSignalReceiveLoop(
+                    on: connection,
+                    target: target,
+                    sessionHub: sessionHub
+                )
             }
         }
     }

@@ -11,6 +11,7 @@ struct HomeView: View {
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(\.openWindow) private var openWindow
+    private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
 
     private enum SidebarItem: Hashable {
         case screen
@@ -22,24 +23,32 @@ struct HomeView: View {
     @State private var selection: SidebarItem? = .screen
     @State private var hasAutoOpenedCapturePreview = false
 
+    init(screenCatalogOrchestrator: ScreenCatalogOrchestrator) {
+        self.screenCatalogOrchestrator = screenCatalogOrchestrator
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("Display") {
-                    Label("Displays", systemImage: "display")
-                        .tag(SidebarItem.screen)
+                    NavigationLink(value: SidebarItem.screen) {
+                        Label("Displays", systemImage: "display")
+                    }
                         .accessibilityIdentifier("sidebar_screen")
-                    Label("Virtual Displays", systemImage: "display.2")
-                        .tag(SidebarItem.virtualDisplay)
+                    NavigationLink(value: SidebarItem.virtualDisplay) {
+                        Label("Virtual Displays", systemImage: "display.2")
+                    }
                         .accessibilityIdentifier("sidebar_virtual_display")
-                    Label("Screen Monitoring", systemImage: "dot.scope.display")
-                        .tag(SidebarItem.monitorScreen)
+                    NavigationLink(value: SidebarItem.monitorScreen) {
+                        Label("Screen Monitoring", systemImage: "dot.scope.display")
+                    }
                         .accessibilityIdentifier("sidebar_monitor_screen")
                 }
 
                 Section("Sharing") {
-                    Label("Screen Sharing", systemImage: "display")
-                        .tag(SidebarItem.screenSharing)
+                    NavigationLink(value: SidebarItem.screenSharing) {
+                        Label("Screen Sharing", systemImage: "display")
+                    }
                         .accessibilityIdentifier("sidebar_screen_sharing")
                 }
             }
@@ -66,15 +75,24 @@ struct HomeView: View {
                                 .accessibilityIdentifier("detail_virtual_display")
                         }
                     case .monitorScreen:
-                        IsCapturing(capture: capture, virtualDisplay: virtualDisplay)
+                        IsCapturing(
+                            capture: capture,
+                            virtualDisplay: virtualDisplay,
+                            screenCatalogOrchestrator: screenCatalogOrchestrator
+                        )
                             .navigationTitle("Screen Monitoring")
                             .accessibilityIdentifier("detail_monitor_screen")
                     case .screenSharing:
-                        ShareView(sharing: sharing, virtualDisplay: virtualDisplay)
+                        ShareView(
+                            sharing: sharing,
+                            virtualDisplay: virtualDisplay,
+                            screenCatalogOrchestrator: screenCatalogOrchestrator
+                        )
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
                     }
                 }
+                .id(selection ?? .screen)
             }
         }
         .onAppear {
@@ -98,7 +116,7 @@ struct HomeView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    HomeView()
+    HomeView(screenCatalogOrchestrator: env.screenCatalog)
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)

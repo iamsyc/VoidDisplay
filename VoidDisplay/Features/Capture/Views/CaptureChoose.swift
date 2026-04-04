@@ -11,13 +11,17 @@ import AppKit
 struct IsCapturing: View {
     @Bindable private var capture: CaptureController
     @State private var viewModel: CaptureChooseViewModel
+    @State private var lifecycle: DisplayTopologyRefreshLifecycleController
     @Environment(SharingController.self) private var sharing
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
+    private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
 
     init(
         capture: CaptureController,
-        virtualDisplay: VirtualDisplayController
+        virtualDisplay: VirtualDisplayController,
+        screenCatalogOrchestrator: ScreenCatalogOrchestrator,
+        lifecycle: DisplayTopologyRefreshLifecycleController = DisplayTopologyRefreshLifecycleController()
     ) {
         _capture = Bindable(capture)
         _viewModel = State(
@@ -26,6 +30,8 @@ struct IsCapturing: View {
                 dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
             )
         )
+        _lifecycle = State(initialValue: lifecycle)
+        self.screenCatalogOrchestrator = screenCatalogOrchestrator
     }
 
     private var shouldShowActiveSessionFallback: Bool {
@@ -53,13 +59,17 @@ struct IsCapturing: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
-                viewModel.refreshPermissionAndMaybeLoad()
+                Task { await screenCatalogOrchestrator.handleAppear(source: .capturePage) }
+                guard !UITestRuntime.isEnabled else { return }
+                lifecycle.handleAppear {
+                    guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+                    Task { await screenCatalogOrchestrator.handleTopologyChanged() }
+                }
             }
             .onDisappear {
-                viewModel.cancelInFlightDisplayLoad()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-                viewModel.refreshDisplaysBackgroundSafe()
+                Task { await screenCatalogOrchestrator.handleDisappear(source: .capturePage) }
+                guard !UITestRuntime.isEnabled else { return }
+                lifecycle.handleDisappear()
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("capture_choose_root")
@@ -129,7 +139,7 @@ struct IsCapturing: View {
                         .textSelection(.enabled)
                 }
                 Button("Retry") {
-                    viewModel.refreshPermissionAndMaybeLoad()
+                    Task { await screenCatalogOrchestrator.refreshPermission(source: .capturePage) }
                 }
             }
         }
@@ -176,7 +186,7 @@ struct IsCapturing: View {
                     session: session,
                     isSharing: sharing.isDisplaySharing(displayID: session.displayID)
                 ) {
-                    capture.removeMonitoringSession(id: session.id)
+                    capture.closeMonitoringSession(id: session.id)
                 }
             }
         }
@@ -190,7 +200,7 @@ struct IsCapturing: View {
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
         let monitoringSession = capture.screenCaptureSessions.first(where: { $0.displayID == display.displayID })
         let isMonitoring = monitoringSession?.state == .active
-        let isStarting = viewModel.startingDisplayIDs.contains(display.displayID) || monitoringSession?.state == .starting
+        let isStarting = capture.isStarting(displayID: display.displayID) || monitoringSession?.state == .starting
 
         return CaptureDisplayRow(
             display: display,
@@ -203,7 +213,7 @@ struct IsCapturing: View {
             isSharing: sharing.isDisplaySharing(displayID: display.displayID)
         ) {
             if isMonitoring, let session = monitoringSession {
-                capture.removeMonitoringSession(id: session.id)
+                capture.closeMonitoringSession(id: session.id)
             } else {
                 Task {
                     await viewModel.startMonitoring(display: display) { sessionId in
@@ -223,18 +233,18 @@ struct IsCapturing: View {
             ScreenCapturePermissionGuideView(
                 loadErrorMessage: viewModel.catalog.loadErrorMessage,
                 onOpenSettings: {
-                    viewModel.openScreenCapturePrivacySettings { url in
+                    screenCatalogOrchestrator.openScreenCapturePrivacySettings { url in
                         openURL(url)
                     }
                 },
                 onRequestPermission: {
-                    viewModel.requestScreenCapturePermission()
+                    Task { await screenCatalogOrchestrator.requestPermission(source: .capturePage) }
                 },
                 onRefresh: {
-                    viewModel.refreshPermissionAndMaybeLoad()
+                    Task { await screenCatalogOrchestrator.refreshPermission(source: .capturePage) }
                 },
                 onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
-                    viewModel.loadDisplays()
+                    Task { await screenCatalogOrchestrator.forceRefresh(source: .capturePage) }
                 } : nil,
                 isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
                 debugItems: capturePermissionDebugItems,
@@ -293,7 +303,11 @@ struct IsCapturing: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    IsCapturing(capture: env.capture, virtualDisplay: env.virtualDisplay)
+    IsCapturing(
+        capture: env.capture,
+        virtualDisplay: env.virtualDisplay,
+        screenCatalogOrchestrator: env.screenCatalog
+    )
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)

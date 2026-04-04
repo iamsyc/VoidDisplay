@@ -7,6 +7,7 @@ import SwiftUI
 
 struct AppSettingsView: View {
     @Environment(VirtualDisplayController.self) private var virtualDisplay
+    @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
     @State private var showResetConfirmation = false
     @State private var resetCompleted = false
 
@@ -14,6 +15,20 @@ struct AppSettingsView: View {
         @Bindable var bindableVirtualDisplay = virtualDisplay
 
         VStack(alignment: .leading, spacing: 12) {
+            Text("Capture Performance")
+                .font(.headline)
+
+            Text("Choose how screen monitoring and sharing balance smoothness and resource usage.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Picker("Capture Performance", selection: performanceModeBinding) {
+                Text("Automatic").tag(CapturePerformanceMode.automatic)
+                Text("Smooth").tag(CapturePerformanceMode.smooth)
+                Text("Power Efficient").tag(CapturePerformanceMode.powerEfficient)
+            }
+            .pickerStyle(.segmented)
+
             Text("Virtual Displays")
                 .font(.headline)
 
@@ -35,7 +50,7 @@ struct AppSettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(16)
-        .frame(width: 420, height: 170, alignment: .topLeading)
+        .frame(width: 420, height: 270, alignment: .topLeading)
         .confirmationDialog(
             "Reset Virtual Display Configurations?",
             isPresented: $showResetConfirmation
@@ -59,5 +74,12 @@ struct AppSettingsView: View {
                 }
             )
         }
+    }
+
+    private var performanceModeBinding: Binding<CapturePerformanceMode> {
+        Binding(
+            get: { capturePerformancePreferences.mode },
+            set: { capturePerformancePreferences.saveMode($0) }
+        )
     }
 }

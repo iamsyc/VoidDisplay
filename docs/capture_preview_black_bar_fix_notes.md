@@ -168,6 +168,23 @@ window.frameRect(forContentRect: targetContentSize)
 - [capture_preview_self_check.sh](/Users/syc/Project/VoidDisplay/scripts/test/capture_preview_self_check.sh)
 - [capture_preview_analyze.swift](/Users/syc/Project/VoidDisplay/scripts/test/capture_preview_analyze.swift)
 
+### 诊断环境变量说明
+
+以下环境变量仅用于预览诊断与 UI 测试场景：
+
+| 变量名 | 取值示例 | 含义 |
+| --- | --- | --- |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_SOURCE_SIZE` | `3008x1692` | 注入的诊断画面像素尺寸。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_TARGET_CONTENT_WIDTH` | `1180` | 初始窗口目标内容宽度覆盖值（point）。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_REPLAY_IMAGE_PATH` | `/abs/path/frame.png` | 用指定图片替代内置诊断图。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_RECORD_DIRECTORY` | `/abs/path/recordings` | 预览录制输出目录。 |
+| `VOIDDISPLAY_CAPTURE_PREVIEW_SCALE_MODE` | `fit` 或 `native` | 预览缩放模式。`fit` 表示适应模式，`native` 表示 `1:1` 模式。 |
+
+使用建议：
+
+1. 常规自检直接运行 `zsh scripts/test/capture_preview_self_check.sh`，脚本会自动跑 `fit` 与 `native` 两轮。
+2. 手动跑单轮 UI 诊断时，通过 app launch environment 设置 `VOIDDISPLAY_CAPTURE_PREVIEW_SCALE_MODE`。
+
 ### 自验证思路
 
 1. UI test 场景下注入假的监听会话
@@ -258,6 +275,100 @@ window.frameRect(forContentRect: targetContentSize)
    - `contentLayoutRect`
    - `contentAspectRatio`
    - 预览层所在视图实际 bounds
+
+## UI 测试授权排查
+
+预览诊断链路依赖 macOS 的自动化与截图能力。
+
+如果在运行 [CapturePreviewDiagnosticsTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayUITests/Diagnostics/CapturePreviewDiagnosticsTests.swift) 或 `scripts/test/capture_preview_self_check.sh` 时，系统弹出与以下能力相关的授权窗口：
+
+- 屏幕录制
+- 辅助功能
+- 自动化控制
+
+必须先完成授权，再判断是不是代码问题。
+
+### 常见现象
+
+如果授权弹窗出现但没有及时允许，常见现象包括：
+
+- `XCUIElement.screenshot()` 失败
+- 诊断矩阵只在截图步骤失败
+- 日志里出现 “Failed to create screenshot” 一类错误
+- UI 元素存在性检查正常，但 attachment 生成失败
+
+### 排查顺序
+
+遇到这类失败时，先按下面顺序检查：
+
+1. 是否有未处理的系统授权弹窗
+2. `Xcode`、测试 Runner、目标应用是否已经被授予需要的权限
+3. 重新运行同一条测试，确认失败是否可复现
+4. 权限与弹窗都确认无误后，再继续怀疑代码实现
+
+### 结论
+
+这类失败经常来自权限与弹窗环境，不应直接判定为代码回归。
+
+## 额外排查信号
+
+除了左右黑边和裁切问题，这条链路还积累过两类很容易混淆的现象。它们适合保留为排查信号，不适合把旧实现里的修法直接当成当前结论。
+
+### 1. `适应` 正常，但 `1:1` 明显偏小
+
+这类回归的识别信号通常是：
+
+- `适应` 铺满逻辑正常
+- 切到 `1:1` 后内容缩成居中的小画面
+- 工具栏、滚动宿主、窗口外观都正常
+- 预期应当能看到滚动条，实际没有出现
+
+出现这种组合时，优先怀疑尺寸语义链路，不要先去改 `ScrollView`、`videoGravity` 或窗口约束。
+
+建议按这个顺序查：
+
+1. `session.resolutionText` 是否表达原生像素尺寸
+2. `renderer.framePixelSize` 是否更接近逻辑尺寸
+3. 首帧 `CMVideoFormatDescriptionGetDimensions` 是否和前两者一致
+4. `SCStreamConfiguration.width/height` 是否已经在上游偏小
+5. 虚拟 HiDPI 场景下，`CGDisplayMode`、`CGDisplayPixelsWide`、`CGDisplayPixelsHigh` 是否互相矛盾
+
+这类问题的核心不是视图层观感，关键在于“当前拿来喂给 `1:1` 的尺寸语义到底是什么”。
+
+### 2. `1:1` 尺寸看起来对，但画面仍然发糊
+
+这类问题要区分两件事：
+
+1. 预览窗口按多大尺寸显示一帧
+2. `SCStream` 实际交付的这一帧有多少有效像素
+
+如果第 1 项正确、第 2 项偏低，最终效果仍然会糊。
+
+建议按这个顺序查：
+
+1. `SCStreamConfiguration.width/height`
+2. `SCContentFilter.pointPixelScale`
+3. 首帧 `CMVideoFormatDescriptionGetDimensions`
+4. 首帧 `SCStreamFrameInfo.scaleFactor`
+5. 首帧 `SCStreamFrameInfo.contentScale`
+6. 预览窗口的 `resolutionText`
+7. 预览窗口的 `renderer.framePixelSize`
+
+如果看到下面这种组合：
+
+- `SCStreamConfiguration.width/height` 很大
+- `resolutionText` 也很大
+- 首帧 `dimensions` 仍然偏小
+
+优先查采集链路本身。
+
+如果看到下面这种组合：
+
+- 首帧 `dimensions` 已经接近原生像素尺寸
+- 预览尺寸也匹配
+- 视觉上仍然发糊
+
+优先查被监听的源内容是否本身就没有以 HiDPI 方式渲染。
 
 ## 这轮新增经验
 

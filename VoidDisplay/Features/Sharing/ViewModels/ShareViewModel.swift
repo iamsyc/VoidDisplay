@@ -8,10 +8,9 @@ import OSLog
 @MainActor
 @Observable
 final class ShareViewModel {
-    typealias LoadErrorInfo = ScreenCaptureDisplayCatalogLoadErrorInfo
-
     struct SharingQueries {
         var isWebServiceRunning: @MainActor () -> Bool
+        var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
         var sharePageAddress: @MainActor (CGDirectDisplayID) -> String?
         var preferredWebServicePort: @MainActor () -> UInt16
     }
@@ -20,7 +19,7 @@ final class ShareViewModel {
         var startWebService: @MainActor (UInt16) async -> WebServiceStartResult
         var stopWebService: @MainActor () -> Void
         var registerShareableDisplays: @MainActor ([SCDisplay], @escaping (CGDirectDisplayID) -> UInt32?) -> Void
-        var beginSharing: @MainActor (SCDisplay) async throws -> Void
+        var beginSharing: @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>
         var stopSharing: @MainActor (CGDirectDisplayID) -> Void
     }
 
@@ -40,6 +39,7 @@ final class ShareViewModel {
             .init(
                 sharingQueries: .init(
                     isWebServiceRunning: { sharing.isWebServiceRunning },
+                    isStartingDisplayID: { displayID in sharing.isStarting(displayID: displayID) },
                     sharePageAddress: { displayID in sharing.sharePageAddress(for: displayID) },
                     preferredWebServicePort: { sharing.preferredWebServicePort }
                 ),
@@ -81,60 +81,22 @@ final class ShareViewModel {
     }
     var portInputErrorMessage: String?
     var isStartingService = false
-    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var userFacingAlert: UserFacingAlertState?
 
-    private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
+    @ObservationIgnored private let activeDisplayIDsProvider: @MainActor () -> Set<CGDirectDisplayID>
     @ObservationIgnored private let dependencies: Dependencies
-    @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
         catalogState: ScreenCaptureDisplayCatalogState? = nil,
-        permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
-        loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
             Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         },
         dependencies: Dependencies
     ) {
-        let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
-        self.catalog = catalog
-        self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
-            state: catalog,
-            activeDisplayIDsProvider: activeDisplayIDsProvider
-        )
+        self.catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
+        self.activeDisplayIDsProvider = activeDisplayIDsProvider
         self.dependencies = dependencies
-        self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
-            state: catalog,
-            permissionProvider: permissionProvider,
-            loadShareableDisplays: loadShareableDisplays,
-            logOperation: "Load shareable displays (sharing)",
-            logger: AppLog.capture
-        )
         self.servicePortInput = String(dependencies.sharingQueries.preferredWebServicePort())
-    }
-
-    func syncForCurrentState(
-        clearDisplaysWhenPermissionDenied: Bool = true,
-        clearDisplaysWhenServiceStopped: Bool = true
-    ) {
-        guard catalog.hasScreenCapturePermission == true else {
-            if clearDisplaysWhenPermissionDenied {
-                catalogLoader.clearDisplaysAndCancel()
-            } else {
-                catalogLoader.cancelInFlightDisplayLoad()
-            }
-            return
-        }
-        guard dependencies.sharingQueries.isWebServiceRunning() else {
-            if clearDisplaysWhenServiceStopped {
-                catalogLoader.clearDisplaysAndCancel()
-            } else {
-                catalogLoader.cancelInFlightDisplayLoad()
-            }
-            return
-        }
-        refreshDisplaysForCurrentTopologyIfNeeded()
     }
 
     func startService() {
@@ -162,133 +124,64 @@ final class ShareViewModel {
             }
             servicePortInput = String(requestedPort)
             portInputErrorMessage = nil
-            syncForCurrentState()
         }
     }
 
     func stopService() {
-        catalogLoader.cancelInFlightDisplayLoad()
         dependencies.sharingActions.stopWebService()
-        syncForCurrentState()
-    }
-
-    func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
-        catalogLoader.openScreenCapturePrivacySettings(openURL: openURL)
-    }
-
-    func requestScreenCapturePermission() {
-        let granted = catalogLoader.requestPermission()
-
-        AppLog.capture.notice(
-            "Screen capture permission request (sharing): requestResult=\((self.catalog.lastRequestPermission ?? false), privacy: .public), preflightResult=\(granted, privacy: .public)"
-        )
-
-        if !granted {
-            catalogLoader.clearDisplaysAndCancel()
-            catalog.loadErrorMessage = String(localized: "Failed to load displays. Check permission and try again.")
-            AppLog.capture.notice("Screen capture permission request denied (sharing).")
-            return
-        }
-        syncForCurrentState()
-    }
-
-    func refreshPermissionAndMaybeLoad() {
-        let granted = catalogLoader.refreshPermission()
-        if !granted {
-            catalogLoader.clearDisplaysAndCancel()
-            return
-        }
-        syncForCurrentState(clearDisplaysWhenServiceStopped: false)
-    }
-
-    func loadDisplaysIfNeeded() {
-        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        catalogLoader.loadDisplaysIfNeeded { [weak self] displays in
-            self?.handleDisplaysLoaded(displays)
-        }
-    }
-
-    func loadDisplays() {
-        catalogLoader.loadDisplays { [weak self] displays in
-            self?.handleDisplaysLoaded(displays)
-        }
-    }
-
-    func refreshDisplays() {
-        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
-            self?.handleDisplaysLoaded(displays)
-        }
-    }
-
-    func refreshDisplaysBackgroundSafe() {
-        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        guard !catalog.isLoadingDisplays else { return }
-        guard topologyCoordinator.needsRefresh() else { return }
-        if catalog.displays == nil {
-            loadDisplaysIfNeeded()
-            return
-        }
-        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
-            self?.handleDisplaysLoaded(displays)
-        }
     }
 
     func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
-        topologyCoordinator.visibleDisplays(from: displays)
+        let activeDisplayIDs = activeDisplayIDsProvider()
+        return displays.filter { activeDisplayIDs.contains($0.displayID) }
     }
 
-    @discardableResult
-    func withDisplayStartLock(
-        displayID: CGDirectDisplayID,
-        operation: () async -> Void
-    ) async -> Bool {
-        guard !startingDisplayIDs.contains(displayID) else { return false }
-        startingDisplayIDs.insert(displayID)
-        defer { startingDisplayIDs.remove(displayID) }
-        await operation()
-        return true
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        dependencies.sharingQueries.isStartingDisplayID(displayID)
     }
 
     func startSharing(display: SCDisplay) async {
-        _ = await withDisplayStartLock(displayID: display.displayID) {
-            let ready: Bool
-            if dependencies.sharingQueries.isWebServiceRunning() {
-                ready = true
-            } else {
-                let requestedPort: UInt16
-                switch SharePortValidationError.parse(servicePortInput) {
-                case .success(let parsed):
-                    requestedPort = parsed
-                case .failure(let validationError):
-                    presentPortInputError(validationError.userMessage)
-                    return
-                }
-                let result = await dependencies.sharingActions.startWebService(requestedPort)
-                if case .failed(let failure) = result {
-                    presentPortInputError(failure.userMessage)
-                    return
-                }
-                ready = true
-            }
-            guard ready else {
-                presentError(
-                    title: String(localized: "Share Failed"),
-                    message: String(localized: "Web service is not running.")
-                )
+        guard !isStarting(displayID: display.displayID) else { return }
+
+        let ready: Bool
+        if dependencies.sharingQueries.isWebServiceRunning() {
+            ready = true
+        } else {
+            let requestedPort: UInt16
+            switch SharePortValidationError.parse(servicePortInput) {
+            case .success(let parsed):
+                requestedPort = parsed
+            case .failure(let validationError):
+                presentPortInputError(validationError.userMessage)
                 return
             }
-
-            do {
-                try await dependencies.sharingActions.beginSharing(display)
-            } catch {
-                dependencies.sharingActions.stopSharing(display.displayID)
-                AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
-                presentError(
-                    title: String(localized: "Share Failed"),
-                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing."))
-                )
+            let result = await dependencies.sharingActions.startWebService(requestedPort)
+            if case .failed(let failure) = result {
+                presentPortInputError(failure.userMessage)
+                return
             }
+            ready = true
+        }
+        guard ready else {
+            presentError(
+                title: String(localized: "Share Failed"),
+                message: String(localized: "Web service is not running.")
+            )
+            return
+        }
+
+        do {
+            let outcome = try await dependencies.sharingActions.beginSharing(display)
+            if case .invalidated = outcome {
+                return
+            }
+        } catch {
+            dependencies.sharingActions.stopSharing(display.displayID)
+            AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
+            presentError(
+                title: String(localized: "Share Failed"),
+                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start sharing."))
+            )
         }
     }
 
@@ -302,32 +195,6 @@ final class ShareViewModel {
 
     func dismissAlert() {
         userFacingAlert = nil
-    }
-
-    func cancelInFlightDisplayLoad() {
-        catalogLoader.cancelInFlightDisplayLoad()
-    }
-
-    private func refreshDisplaysForCurrentTopologyIfNeeded() {
-        guard topologyCoordinator.needsRefresh() else { return }
-        if catalog.displays == nil {
-            loadDisplaysIfNeeded()
-            return
-        }
-        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] displays in
-            self?.handleDisplaysLoaded(displays)
-        }
-    }
-
-    private func handleDisplaysLoaded(_ displays: [SCDisplay]) {
-        topologyCoordinator.commitLoadedTopologySignature()
-        registerShareableDisplays(displays)
-    }
-
-    private func registerShareableDisplays(_ displays: [SCDisplay]) {
-        dependencies.sharingActions.registerShareableDisplays(displays) { [weak self] displayID in
-            self?.dependencies.virtualDisplayQueries.virtualSerialForManagedDisplay(displayID)
-        }
     }
 
     private func presentError(title: String, message: String) {

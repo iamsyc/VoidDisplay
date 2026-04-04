@@ -33,7 +33,9 @@ struct WebServiceControllerTests {
         let result = await sut.start(
             requestedPort: 1000,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            concreteTargetResolver: { $0 },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
 
         #expect(result == .failed(.invalidPort(.outOfRange)))
@@ -51,7 +53,9 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            concreteTargetResolver: { $0 },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
 
         #expect(states == [
@@ -71,7 +75,9 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            concreteTargetResolver: { $0 },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
         sut.stop()
 
@@ -94,7 +100,9 @@ struct WebServiceControllerTests {
         _ = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
+            concreteTargetResolver: { $0 },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
         )
         sut.stop()
 
@@ -264,11 +272,38 @@ struct WebServiceControllerTests {
         #expect(sut.lifecycleState == .running(.init(requestedPort: secondPort, boundPort: secondPort)))
     }
 
+    @Test
+    func disconnectStreamClientsForwardsTargetsToActiveServer() async {
+        let harness = WebServiceServerHarness()
+        let sut = WebServiceController(webServiceServerFactory: harness.makeServer)
+
+        let requestedPort: UInt16 = 18086
+        guard let startup = await beginControlledStartup(
+            harness: harness,
+            sut: sut,
+            requestedPort: requestedPort
+        ) else {
+            return
+        }
+
+        startup.server.finishStart(with: .ready(boundPort: requestedPort))
+        let result = await startup.startTask.value
+        guard case .started = result else {
+            Issue.record("Expected controlled startup to succeed before disconnecting clients.")
+            return
+        }
+
+        sut.disconnectStreamClients(for: [.id(7)])
+
+        #expect(startup.server.disconnectedTargetsHistory == [Set([.id(7)])])
+    }
+
     private func beginControlledStartup(
         harness: WebServiceServerHarness,
         sut: WebServiceController,
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState = { _ in .unknown },
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { $0 },
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub? = { _ in nil }
     ) async -> (startTask: Task<WebServiceStartResult, Never>, server: ControlledWebServiceServer)? {
         let existingServerCount = harness.createdServers.count
@@ -276,7 +311,9 @@ struct WebServiceControllerTests {
             await sut.start(
                 requestedPort: requestedPort,
                 targetStateProvider: targetStateProvider,
-                sessionHubProvider: sessionHubProvider
+                concreteTargetResolver: concreteTargetResolver,
+                sessionHubProvider: sessionHubProvider,
+                sharingEventSink: { _ in }
             )
         }
 
@@ -353,12 +390,16 @@ private final class WebServiceServerHarness {
     func makeServer(
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _ sharingEventSink: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {
         _ = port
         _ = targetStateProvider
+        _ = concreteTargetResolver
         _ = sessionHubProvider
+        _ = sharingEventSink
         let server = ControlledWebServiceServer(onListenerStopped: onListenerStopped)
         createdServers.append(server)
         return server
@@ -373,6 +414,7 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
     private(set) var stopCallCount = 0
     private(set) var stopReasons: [WebServiceServerStopReason] = []
     private(set) var disconnectCallCount = 0
+    private(set) var disconnectedTargetsHistory: [Set<ShareTarget>] = []
     var activeStreamClientCount: Int = 0
 
     init(onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?) {
@@ -410,6 +452,10 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
 
     func disconnectAllStreamClients() {
         disconnectCallCount += 1
+    }
+
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        disconnectedTargetsHistory.append(targets)
     }
 
     func streamClientCount(for target: ShareTarget) -> Int {

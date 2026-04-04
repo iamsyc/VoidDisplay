@@ -5,21 +5,21 @@
 
 import SwiftUI
 import ScreenCaptureKit
-import Combine
 import AppKit
 import CoreGraphics
 
 struct ShareView: View {
     @Bindable private var sharing: SharingController
     @State private var viewModel: ShareViewModel
-    @State private var lifecycle: ShareViewLifecycleController
+    @State private var lifecycle: DisplayTopologyRefreshLifecycleController
     @Environment(\.openURL) private var openURL
-    private let sharingStatsTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
 
     init(
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
-        lifecycle: ShareViewLifecycleController = ShareViewLifecycleController()
+        screenCatalogOrchestrator: ScreenCatalogOrchestrator,
+        lifecycle: DisplayTopologyRefreshLifecycleController = DisplayTopologyRefreshLifecycleController()
     ) {
         _sharing = Bindable(sharing)
         _viewModel = State(
@@ -29,6 +29,7 @@ struct ShareView: View {
             )
         )
         _lifecycle = State(initialValue: lifecycle)
+        self.screenCatalogOrchestrator = screenCatalogOrchestrator
     }
 
     var body: some View {
@@ -45,7 +46,7 @@ struct ShareView: View {
             if sharing.isWebServiceRunning {
                 if lifecycle.showToolbarRefresh {
                     Button("Refresh", systemImage: "arrow.clockwise") {
-                        viewModel.refreshDisplays()
+                        Task { await screenCatalogOrchestrator.forceRefresh(source: .sharingPage) }
                     }
                 }
                 Button("Stop Service") {
@@ -55,20 +56,18 @@ struct ShareView: View {
             }
         }
         .onAppear {
-            lifecycle.handleAppear(viewModel: viewModel)
+            Task { await screenCatalogOrchestrator.handleAppear(source: .sharingPage) }
+            lifecycle.handleAppear {
+                guard viewModel.catalog.hasScreenCapturePermission == true else { return }
+                Task { await screenCatalogOrchestrator.handleTopologyChanged() }
+            }
         }
         .onDisappear {
-            lifecycle.handleDisappear(viewModel: viewModel)
+            Task { await screenCatalogOrchestrator.handleDisappear(source: .sharingPage) }
+            lifecycle.handleDisappear()
         }
-        .onChange(of: sharing.isWebServiceRunning) { _, _ in
-            viewModel.syncForCurrentState()
-        }
-        .onChange(of: sharing.isSharing) { _, _ in
-            viewModel.syncForCurrentState()
-        }
-        .onReceive(sharingStatsTimer) { _ in
-            guard sharing.isWebServiceRunning else { return }
-            sharing.refreshSharingClientCount()
+        .onChange(of: sharing.isWebServiceRunning) { _, isRunning in
+            Task { await screenCatalogOrchestrator.handleSharingServiceStateChanged(isRunning: isRunning) }
         }
         .alert(item: $bindableViewModel.userFacingAlert) { alert in
             Alert(
@@ -122,6 +121,7 @@ struct ShareView: View {
 
     private var serviceStoppedState: some View {
         @Bindable var bindableViewModel = viewModel
+        let contentColumnWidth: CGFloat = 440
 
         return stateContainer {
             VStack(spacing: AppUI.Spacing.medium + 2) {
@@ -136,27 +136,33 @@ struct ShareView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+                    .frame(width: contentColumnWidth)
 
-                VStack(spacing: 4) {
-                    HStack(spacing: AppUI.Spacing.small) {
-                        Text("Port")
+                VStack(spacing: AppUI.Spacing.medium) {
+                    SharePerformanceModePicker()
+                        .frame(width: contentColumnWidth)
+
+                    VStack(spacing: 4) {
+                        HStack(spacing: AppUI.Spacing.small) {
+                            Text("Port")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField("8089", text: $bindableViewModel.servicePortInput)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 84)
+                                .accessibilityIdentifier("share_port_input")
+                        }
+                        .frame(width: contentColumnWidth, alignment: .center)
+
+                        Text(viewModel.portInputErrorMessage ?? " ")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField("8089", text: $bindableViewModel.servicePortInput)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 84)
-                            .accessibilityIdentifier("share_port_input")
+                            .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .multilineTextAlignment(.center)
+                            .frame(minWidth: contentColumnWidth, maxWidth: contentColumnWidth, minHeight: 14, maxHeight: 14, alignment: .center)
+                            .accessibilityIdentifier("share_port_error_text")
                     }
-
-                    Text(viewModel.portInputErrorMessage ?? " ")
-                        .font(.caption)
-                        .foregroundStyle(viewModel.portInputErrorMessage == nil ? .clear : .red)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 360, minHeight: 14, maxHeight: 14, alignment: .center)
-                        .accessibilityIdentifier("share_port_error_text")
                 }
 
                 Button("Start Service") {
@@ -185,20 +191,18 @@ struct ShareView: View {
             ScreenCapturePermissionGuideView(
                 loadErrorMessage: viewModel.catalog.loadErrorMessage,
                 onOpenSettings: {
-                    viewModel.openScreenCapturePrivacySettings { url in
+                    screenCatalogOrchestrator.openScreenCapturePrivacySettings { url in
                         openURL(url)
                     }
                 },
                 onRequestPermission: {
-                    viewModel.requestScreenCapturePermission()
+                    Task { await screenCatalogOrchestrator.requestPermission(source: .sharingPage) }
                 },
                 onRefresh: {
-                    viewModel.refreshPermissionAndMaybeLoad()
+                    Task { await screenCatalogOrchestrator.refreshPermission(source: .sharingPage) }
                 },
                 onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
-                    // User-initiated retry: attempt to load the display list.
-                    // If permission is still missing, macOS may prompt here (expected).
-                    viewModel.loadDisplays()
+                    Task { await screenCatalogOrchestrator.forceRefresh(source: .sharingPage) }
                 } : nil,
                 isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
                 debugItems: sharingPermissionDebugItems,
@@ -219,8 +223,10 @@ struct ShareView: View {
         stateContainer {
             VStack(spacing: AppUI.Spacing.medium) {
                 Text("No screen to share")
+                SharePerformanceModePicker()
+                    .frame(maxWidth: 360)
                 Button("Refresh") {
-                    viewModel.refreshDisplays()
+                    Task { await screenCatalogOrchestrator.forceRefresh(source: .sharingPage) }
                 }
                 .appActionButtonStyle(variant: .default)
                 .accessibilityIdentifier("share_empty_refresh_button")
@@ -272,8 +278,13 @@ struct ShareView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    ShareView(sharing: env.sharing, virtualDisplay: env.virtualDisplay)
+    ShareView(
+        sharing: env.sharing,
+        virtualDisplay: env.virtualDisplay,
+        screenCatalogOrchestrator: env.screenCatalog
+    )
         .environment(env.capture)
+        .environment(env.capturePerformancePreferences)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
 }

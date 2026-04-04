@@ -11,16 +11,4 @@ struct ScreenCaptureDisplayCatalogLoadErrorInfo: Equatable {
     var recoverySuggestion: String?
 }
 
-@MainActor
-@Observable
-final class ScreenCaptureDisplayCatalogState {
-    var displays: [SCDisplay]?
-    var hasScreenCapturePermission: Bool?
-    var lastPreflightPermission: Bool?
-    var lastRequestPermission: Bool?
-    var lastLoadedActiveDisplayTopologySignature: [CGDirectDisplayID]?
-    var isLoadingDisplays = false
-    var loadErrorMessage: String?
-    var lastLoadError: ScreenCaptureDisplayCatalogLoadErrorInfo?
-    var showDebugInfo = false
-}
+typealias ScreenCaptureDisplayCatalogState = ScreenCaptureCatalogStore

@@ -35,10 +35,13 @@ protocol WebServiceControllerProtocol: AnyObject {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult
     func stop()
     func disconnectAllStreamClients()
+    func disconnectStreamClients(for targets: Set<ShareTarget>)
 }
 
 @MainActor
@@ -46,6 +49,7 @@ protocol WebServiceServerProtocol: AnyObject {
     func startListener() async -> WebServer.ListenerStartResult
     func stopListener(reason: WebServiceServerStopReason)
     func disconnectAllStreamClients()
+    func disconnectStreamClients(for targets: Set<ShareTarget>)
     var activeStreamClientCount: Int { get }
     func streamClientCount(for target: ShareTarget) -> Int
 }
@@ -69,7 +73,9 @@ final class WebServiceController: WebServiceControllerProtocol {
     typealias WebServiceServerFactory = @MainActor @Sendable (
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _ sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol
 
@@ -91,12 +97,16 @@ final class WebServiceController: WebServiceControllerProtocol {
         webServiceServerFactory: @escaping WebServiceServerFactory = {
             port,
             targetStateProvider,
+            concreteTargetResolver,
             sessionHubProvider,
+            sharingEventSink,
             onListenerStopped in
             try WebServer(
                 using: port,
                 targetStateProvider: targetStateProvider,
+                concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
+                sharingEventSink: sharingEventSink,
                 onListenerStopped: onListenerStopped
             )
         }
@@ -139,7 +149,9 @@ final class WebServiceController: WebServiceControllerProtocol {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         if case .running(let binding) = state, activeServer != nil {
             AppLog.web.debug("Start requested while web service is already running.")
@@ -168,7 +180,9 @@ final class WebServiceController: WebServiceControllerProtocol {
                 requestedPort: requestedPort,
                 operationNonce: nonce,
                 targetStateProvider: targetStateProvider,
-                sessionHubProvider: sessionHubProvider
+                concreteTargetResolver: concreteTargetResolver,
+                sessionHubProvider: sessionHubProvider,
+                sharingEventSink: sharingEventSink
             )
         }
 
@@ -208,11 +222,18 @@ final class WebServiceController: WebServiceControllerProtocol {
         activeServer?.disconnectAllStreamClients()
     }
 
+    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+        guard !targets.isEmpty else { return }
+        activeServer?.disconnectStreamClients(for: targets)
+    }
+
     private func startInternal(
         requestedPort: UInt16,
         operationNonce: UInt64,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         lastRequestedPort = requestedPort
 
@@ -244,7 +265,9 @@ final class WebServiceController: WebServiceControllerProtocol {
             let server = try webServiceServerFactory(
                 port,
                 targetStateProvider,
+                concreteTargetResolver,
                 sessionHubProvider,
+                sharingEventSink,
                 { [weak self] reason in
                     self?.handleServerStop(serverToken: serverToken, reason: reason)
                 }

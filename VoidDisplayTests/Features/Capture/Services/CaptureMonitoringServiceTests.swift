@@ -16,13 +16,9 @@ private final class CaptureMonitoringDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }
@@ -34,6 +30,13 @@ private final class CancellationCounter: @unchecked Sendable {
 @Suite(.serialized)
 @MainActor
 struct CaptureMonitoringServiceTests {
+    private struct SessionSnapshot: Equatable {
+        let id: UUID
+        let displayID: CGDirectDisplayID
+        let capturesCursor: Bool
+        let state: String
+    }
+
     @Test func addAndLookupSessionTracksCurrentSessions() {
         let service = CaptureMonitoringService()
         let session = makeSession(id: UUID(), displayID: 7).session
@@ -82,6 +85,37 @@ struct CaptureMonitoringServiceTests {
         #expect(cursorStates[second.id] == true)
     }
 
+    @Test func updateMonitoringSessionStateIgnoresUnknownSessionID() {
+        let service = CaptureMonitoringService()
+        let session = makeSession(id: UUID(), displayID: 15).session
+        service.addMonitoringSession(session)
+
+        service.updateMonitoringSessionState(id: UUID(), state: .active)
+
+        #expect(snapshotSignature(service.currentSessions) == [signature(for: session)])
+    }
+
+    @Test func updateMonitoringSessionStateDoesNotRevertActiveSessionToStarting() {
+        let service = CaptureMonitoringService()
+        var activeSession = makeSession(id: UUID(), displayID: 16).session
+        activeSession.state = .active
+        service.addMonitoringSession(activeSession)
+
+        service.updateMonitoringSessionState(id: activeSession.id, state: .starting)
+
+        #expect(service.currentSessions.first?.state == .active)
+    }
+
+    @Test func updateMonitoringSessionCapturesCursorIgnoresUnknownSessionID() {
+        let service = CaptureMonitoringService()
+        let session = makeSession(id: UUID(), displayID: 17).session
+        service.addMonitoringSession(session)
+
+        service.updateMonitoringSessionCapturesCursor(id: UUID(), capturesCursor: true)
+
+        #expect(snapshotSignature(service.currentSessions) == [signature(for: session)])
+    }
+
     @Test func removeMonitoringSessionCancelsSubscription() {
         let service = CaptureMonitoringService()
         let (session, cancelCount) = makeSession(id: UUID(), displayID: 22)
@@ -91,6 +125,17 @@ struct CaptureMonitoringServiceTests {
 
         #expect(service.currentSessions.isEmpty)
         #expect(cancelCount.value == 1)
+    }
+
+    @Test func removeMonitoringSessionIgnoresUnknownSessionID() {
+        let service = CaptureMonitoringService()
+        let retained = makeSession(id: UUID(), displayID: 23)
+        service.addMonitoringSession(retained.session)
+
+        service.removeMonitoringSession(id: UUID())
+
+        #expect(snapshotSignature(service.currentSessions) == [signature(for: retained.session)])
+        #expect(retained.cancelCount.value == 0)
     }
 
     @Test func removeMonitoringSessionsCancelsAllMatchingDisplaySessions() {
@@ -108,6 +153,51 @@ struct CaptureMonitoringServiceTests {
         #expect(first.cancelCount.value == 1)
         #expect(second.cancelCount.value == 1)
         #expect(third.cancelCount.value == 0)
+        #expect(first.cancelCount.value + second.cancelCount.value == 2)
+    }
+
+    @Test func removeMonitoringSessionsIgnoresUnknownDisplayIDAndPreservesOrder() {
+        let service = CaptureMonitoringService()
+        let first = makeSession(id: UUID(), displayID: 50)
+        let second = makeSession(id: UUID(), displayID: 51)
+        let third = makeSession(id: UUID(), displayID: 52)
+        service.addMonitoringSession(first.session)
+        service.addMonitoringSession(second.session)
+        service.addMonitoringSession(third.session)
+
+        service.removeMonitoringSessions(displayID: 99)
+
+        #expect(snapshotSignature(service.currentSessions) == [
+            signature(for: first.session),
+            signature(for: second.session),
+            signature(for: third.session)
+        ])
+        #expect(first.cancelCount.value == 0)
+        #expect(second.cancelCount.value == 0)
+        #expect(third.cancelCount.value == 0)
+    }
+
+    @Test func removeMonitoringSessionsKeepsRemainingOrderAfterCancellingMatches() {
+        let service = CaptureMonitoringService()
+        let first = makeSession(id: UUID(), displayID: 60)
+        let second = makeSession(id: UUID(), displayID: 61)
+        let third = makeSession(id: UUID(), displayID: 60)
+        let fourth = makeSession(id: UUID(), displayID: 62)
+        service.addMonitoringSession(first.session)
+        service.addMonitoringSession(second.session)
+        service.addMonitoringSession(third.session)
+        service.addMonitoringSession(fourth.session)
+
+        service.removeMonitoringSessions(displayID: 60)
+
+        #expect(snapshotSignature(service.currentSessions) == [
+            signature(for: second.session),
+            signature(for: fourth.session)
+        ])
+        #expect(first.cancelCount.value == 1)
+        #expect(third.cancelCount.value == 1)
+        #expect(second.cancelCount.value == 0)
+        #expect(fourth.cancelCount.value == 0)
     }
 
     private func makeSession(
@@ -132,5 +222,25 @@ struct CaptureMonitoringServiceTests {
             state: .starting
         )
         return (session, cancelCount)
+    }
+
+    private func snapshotSignature(_ sessions: [ScreenMonitoringSession]) -> [SessionSnapshot] {
+        sessions.map(signature(for:))
+    }
+
+    private func signature(for session: ScreenMonitoringSession) -> SessionSnapshot {
+        let stateLabel: String
+        switch session.state {
+        case .starting:
+            stateLabel = "starting"
+        case .active:
+            stateLabel = "active"
+        }
+        return SessionSnapshot(
+            id: session.id,
+            displayID: session.displayID,
+            capturesCursor: session.capturesCursor,
+            state: stateLabel
+        )
     }
 }

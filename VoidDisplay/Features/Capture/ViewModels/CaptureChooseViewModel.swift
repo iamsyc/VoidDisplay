@@ -8,11 +8,13 @@ import OSLog
 @MainActor
 @Observable
 final class CaptureChooseViewModel {
-    typealias LoadErrorInfo = ScreenCaptureDisplayCatalogLoadErrorInfo
-
     struct CaptureActions {
         var monitoringSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?
-        var addMonitoringSession: @MainActor (ScreenMonitoringSession) -> Void
+        var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
+        var startMonitoring: @MainActor (
+            SCDisplay,
+            CaptureMonitoringDisplayMetadata
+        ) async throws -> DisplayStartOutcome<UUID>
     }
 
     struct VirtualDisplayQueries {
@@ -32,8 +34,11 @@ final class CaptureChooseViewModel {
                     monitoringSessionForDisplayID: { displayID in
                         capture.screenCaptureSessions.first(where: { $0.displayID == displayID })
                     },
-                    addMonitoringSession: { session in
-                        capture.addMonitoringSession(session)
+                    isStartingDisplayID: { displayID in
+                        capture.isStarting(displayID: displayID)
+                    },
+                    startMonitoring: { display, metadata in
+                        try await capture.startMonitoring(display: display, metadata: metadata)
                     }
                 ),
                 virtualDisplayQueries: .init(
@@ -47,41 +52,21 @@ final class CaptureChooseViewModel {
     }
 
     let catalog: ScreenCaptureDisplayCatalogState
-    var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var userFacingAlert: UserFacingAlertState?
 
-    private let makePreviewSubscription: @MainActor (SCDisplay) async throws -> DisplayPreviewSubscription
-    private let topologyCoordinator: ScreenCaptureCatalogTopologyCoordinator
+    @ObservationIgnored private let activeDisplayIDsProvider: @MainActor () -> Set<CGDirectDisplayID>
     @ObservationIgnored private let dependencies: Dependencies
-    @ObservationIgnored private let catalogLoader: ScreenCaptureDisplayCatalogLoader
 
     init(
         catalogState: ScreenCaptureDisplayCatalogState? = nil,
-        permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
-        loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
-        makePreviewSubscription: (@MainActor (SCDisplay) async throws -> DisplayPreviewSubscription)? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
             Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         },
         dependencies: Dependencies
     ) {
-        let catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
-        self.catalog = catalog
-        self.makePreviewSubscription = makePreviewSubscription ?? { display in
-            try await DisplayCaptureRegistry.shared.acquirePreview(display: SendableDisplay(display))
-        }
-        self.topologyCoordinator = ScreenCaptureCatalogTopologyCoordinator(
-            state: catalog,
-            activeDisplayIDsProvider: activeDisplayIDsProvider
-        )
+        self.catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
+        self.activeDisplayIDsProvider = activeDisplayIDsProvider
         self.dependencies = dependencies
-        self.catalogLoader = ScreenCaptureDisplayCatalogLoader(
-            state: catalog,
-            permissionProvider: permissionProvider,
-            loadShareableDisplays: loadShareableDisplays,
-            logOperation: "Load shareable displays",
-            logger: AppLog.capture
-        )
     }
 
     func isVirtualDisplay(_ display: SCDisplay) -> Bool {
@@ -99,121 +84,51 @@ final class CaptureChooseViewModel {
     }
 
     func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
-        topologyCoordinator.visibleDisplays(from: displays)
+        let activeDisplayIDs = activeDisplayIDsProvider()
+        return displays.filter { activeDisplayIDs.contains($0.displayID) }
     }
 
-    @discardableResult
-    func withDisplayStartLock(
-        displayID: CGDirectDisplayID,
-        operation: () async -> Void
-    ) async -> Bool {
-        guard !startingDisplayIDs.contains(displayID) else { return false }
-        startingDisplayIDs.insert(displayID)
-        defer { startingDisplayIDs.remove(displayID) }
-        await operation()
-        return true
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        dependencies.captureActions.isStartingDisplayID(displayID)
     }
 
     func startMonitoring(
         display: SCDisplay,
         openWindow: @escaping (UUID) -> Void
     ) async {
-        _ = await withDisplayStartLock(displayID: display.displayID) {
-            if let existingSession = dependencies.captureActions.monitoringSessionForDisplayID(display.displayID) {
-                openWindow(existingSession.id)
-                return
-            }
+        if let existingSession = dependencies.captureActions.monitoringSessionForDisplayID(display.displayID) {
+            openWindow(existingSession.id)
+            return
+        }
+        guard !isStarting(displayID: display.displayID) else { return }
 
-            do {
-                let previewSubscription = try await makePreviewSubscription(display)
-                let session = ScreenMonitoringSession(
-                    id: UUID(),
-                    displayID: display.displayID,
-                    displayName: displayName(for: display),
-                    resolutionText: resolutionText(for: display),
-                    isVirtualDisplay: isVirtualDisplay(display),
-                    previewSubscription: previewSubscription,
-                    capturesCursor: false,
-                    state: .starting
-                )
-                dependencies.captureActions.addMonitoringSession(session)
-                openWindow(session.id)
-            } catch {
-                AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
-                userFacingAlert = UserFacingAlertState(
-                    title: String(localized: "Start Monitoring Failed"),
-                    message: AppErrorMapper.userMessage(
-                        for: error,
-                        fallback: String(localized: "Failed to start monitoring.")
-                    )
-                )
+        do {
+            let metadata = CaptureMonitoringDisplayMetadata(
+                displayName: displayName(for: display),
+                resolutionText: resolutionText(for: display),
+                isVirtualDisplay: isVirtualDisplay(display)
+            )
+            let outcome = try await dependencies.captureActions.startMonitoring(display, metadata)
+            switch outcome {
+            case .started(let sessionID):
+                openWindow(sessionID)
+            case .invalidated:
+                break
             }
+        } catch is CancellationError {
+        } catch {
+            AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
+            userFacingAlert = UserFacingAlertState(
+                title: String(localized: "Start Monitoring Failed"),
+                message: AppErrorMapper.userMessage(
+                    for: error,
+                    fallback: String(localized: "Failed to start monitoring.")
+                )
+            )
         }
     }
 
     func dismissAlert() {
         userFacingAlert = nil
-    }
-
-    func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
-        catalogLoader.openScreenCapturePrivacySettings(openURL: openURL)
-    }
-
-    func requestScreenCapturePermission() {
-        let granted = catalogLoader.requestPermission()
-        if !granted {
-            catalogLoader.clearDisplaysAndCancel()
-            AppLog.capture.notice("Screen capture permission request denied.")
-            return
-        }
-        loadDisplays()
-    }
-
-    func refreshPermissionAndMaybeLoad() {
-        let granted = catalogLoader.refreshPermission()
-        if !granted {
-            catalogLoader.cancelInFlightDisplayLoad()
-            AppLog.capture.notice("Screen capture permission preflight denied.")
-            return
-        }
-        guard topologyCoordinator.needsRefresh() else { return }
-        if catalog.displays == nil {
-            loadDisplaysIfNeeded()
-            return
-        }
-        loadDisplaysPreservingExisting()
-    }
-
-    func loadDisplays() {
-        catalogLoader.loadDisplays { [weak self] _ in
-            self?.topologyCoordinator.commitLoadedTopologySignature()
-        }
-    }
-
-    func refreshDisplaysBackgroundSafe() {
-        guard catalog.hasScreenCapturePermission == true else { return }
-        guard !catalog.isLoadingDisplays else { return }
-        guard topologyCoordinator.needsRefresh() else { return }
-        if catalog.displays == nil {
-            loadDisplaysIfNeeded()
-            return
-        }
-        loadDisplaysPreservingExisting()
-    }
-
-    func cancelInFlightDisplayLoad() {
-        catalogLoader.cancelInFlightDisplayLoad()
-    }
-
-    private func loadDisplaysIfNeeded() {
-        catalogLoader.loadDisplaysIfNeeded { [weak self] _ in
-            self?.topologyCoordinator.commitLoadedTopologySignature()
-        }
-    }
-
-    private func loadDisplaysPreservingExisting() {
-        catalogLoader.loadDisplays(preserveExistingDisplays: true) { [weak self] _ in
-            self?.topologyCoordinator.commitLoadedTopologySignature()
-        }
     }
 }

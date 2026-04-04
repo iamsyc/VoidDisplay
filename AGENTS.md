@@ -32,6 +32,7 @@
 ## Test Execution Policy
 - After every code change, explicitly check whether related tests need to be updated or added, and complete required test updates before handoff.
 - Default: run targeted tests related to changed module/feature.
+- If related verification has already completed after the latest code change, and no repo-tracked file has changed since that verification, a later commit-only instruction must reuse the existing fresh verification result instead of rerunning the same tests.
 - For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.
 - Run full suite when changes are broad/high-risk or impact cannot be bounded:
 - shared/common code changes
@@ -39,6 +40,13 @@
 - large refactors (batch rename/signature/file moves)
 - high-risk runtime behavior (concurrency/persistence/network/security)
 - user explicitly requests full suite
+
+## Test Permission Prompt Isolation
+- Automated tests must not trigger app-driven macOS privacy prompts such as screen recording, microphone, or camera authorization dialogs.
+- Test runs must remain non-interactive and must not depend on a human waiting for app permission prompts during execution.
+- Any code path that may request app privacy permissions must switch to a test-specific provider, mock, stub, or equivalent isolation layer under test environments.
+- macOS authorization required by the test harness itself, such as Automation, Accessibility, Input Monitoring, or related administrator approval for UI automation, is environment setup and should be handled separately from app permission flows.
+- Reject any test change that can block local or CI execution by introducing new app-driven privacy authorization prompts.
 
 ## UI Test Port Injection
 - Preferred port key is `SharingPortPreferenceKeys.preferredPort` (`sharing.preferredPort`).
@@ -58,6 +66,17 @@
 - If the user goal or instruction is ambiguous, do not guess. Ask for clarification promptly before continuing.
 - Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
 
+## Execution Mode Recommendation
+- Provide an execution mode recommendation only before starting work on an actionable request and only when there is a meaningful choice between immediate execution and plan-first handling.
+- Do not provide this recommendation in completion handoff, commit summaries, verification summaries, or meta discussions about process, prompts, or repository policy.
+- Do not provide this recommendation for analysis-only or question-only requests, unless the current turn is a code review that produced actionable findings requiring follow-up implementation.
+- For code review requests with actionable findings, append exactly one execution mode recommendation after the findings summary.
+- Do not provide this recommendation when the user has already explicitly chosen the mode for the current turn.
+- Once execution has started in the current turn, stop emitting execution mode recommendations.
+- Use `建议：直接执行` only when implementation has not started, scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate.
+- Use `建议：开启计划模式` only when implementation has not started and the task is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
+- Keep the recommendation to one sentence and state the concrete reason.
+
 ## Code Review Output Policy
 - When review finds an issue, identify the root cause and provide a root-cause fix plan by default.
 - Always include a structural refactor assessment: whether it is needed, expected benefits, risks, and validation impact.
@@ -66,6 +85,9 @@
 ## Complexity and Size Guardrail
 - Default goal: solve problems without increasing code complexity and code size.
 - If that is not feasible, lower complexity first.
+- Reject temporary fixes, glue code, and patch-style handling. Solve the root problem with a clean structural change.
+- Do not add transitional adapters, one-off shims, or workaround layers unless the user explicitly requires them for a defined migration window.
+- Do not preserve backward compatibility by default. Only keep it when explicitly required, and document the caller, removal condition, and validation impact in the handoff.
 - Prefer deleting duplicate branches and duplicate checks.
 - Keep equivalent validation at one convergence layer. Avoid multi-layer duplicate defense.
 - When adding defensive branches, prioritize deleting equivalent legacy branches in the same module.

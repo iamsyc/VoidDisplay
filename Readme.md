@@ -139,7 +139,7 @@ Key files for debugging:
 | Area | Files |
 |------|-------|
 | Virtual Display | `VirtualDisplayService.swift`, `CreateVirtualDisplayObjectView.swift`, `EditVirtualDisplayConfigView.swift` |
-| Screen Capture | `CaptureChooseViewModel.swift`, `ScreenCaptureFunction.swift` |
+| Screen Capture | `CaptureChooseViewModel.swift`, `DisplayCaptureRegistry.swift`, `DisplayCaptureSession.swift`, `DisplayStartCoordinator.swift` |
 | LAN Sharing | `ShareViewModel.swift`, `SharingService.swift`, `Features/Sharing/Web/WebServer.swift` |
 
 Unified logs (`Logger`, subsystem `com.developerchen.voiddisplay`):

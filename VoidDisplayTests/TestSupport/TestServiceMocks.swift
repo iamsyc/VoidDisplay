@@ -4,6 +4,32 @@ import ScreenCaptureKit
 @testable import VoidDisplay
 
 @MainActor
+func makeTestDisplayTopologySignature(
+    _ displayIDs: [CGDirectDisplayID]
+) -> ScreenCaptureDisplayTopologySignature {
+    displayIDs.map { ScreenCaptureDisplayTopologySignatureEntry(displayID: $0) }
+}
+
+@MainActor
+func makeTestDisplayTopologySignatureEntry(
+    displayID: CGDirectDisplayID,
+    isMain: Bool = false,
+    pixelWidth: Int = 0,
+    pixelHeight: Int = 0,
+    refreshRateMilliHertz: Int? = nil,
+    mirrorsDisplayID: CGDirectDisplayID? = nil
+) -> ScreenCaptureDisplayTopologySignatureEntry {
+    .init(
+        displayID: displayID,
+        isMain: isMain,
+        pixelWidth: pixelWidth,
+        pixelHeight: pixelHeight,
+        refreshRateMilliHertz: refreshRateMilliHertz,
+        mirrorsDisplayID: mirrorsDisplayID
+    )
+}
+
+@MainActor
 final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
     var currentSessions: [ScreenMonitoringSession] = []
     var addCallCount = 0
@@ -54,15 +80,19 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
 
 @MainActor
 final class MockSharingService: SharingServiceProtocol {
+    typealias StartSharingHandler = @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>
+
     var webServicePortValue: UInt16 = 8081
     var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
     var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
     var webServiceLifecycleState: WebServiceLifecycleState = .stopped
     var isWebServiceRunning = false
     var activeStreamClientCount = 0
+    var sharingStateSnapshot: SharingStateSnapshot = .empty
     var currentWebServer: WebServer?
     var hasAnyActiveSharing = false
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
+    var startingDisplayIDs: Set<CGDirectDisplayID> = []
 
     var startResult: WebServiceStartResult = .started(
         WebServiceBinding(requestedPort: 8081, boundPort: 8081)
@@ -77,6 +107,24 @@ final class MockSharingService: SharingServiceProtocol {
     var streamClientCountsByTarget: [ShareTarget: Int] = [:]
     var shareIDByDisplayID: [CGDirectDisplayID: UInt32] = [:]
     var shareTargetByDisplayID: [CGDirectDisplayID: ShareTarget] = [:]
+    var onStopSharing: (@MainActor @Sendable (CGDirectDisplayID) -> Void)?
+    var startSharingHandler: StartSharingHandler?
+    private var sharingStateObservers: [UUID: @MainActor @Sendable (SharingStateSnapshot) -> Void] = [:]
+
+    func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        startingDisplayIDs.contains(displayID)
+    }
+
+    func subscribeSharingState(
+        _ observer: @escaping @MainActor @Sendable (SharingStateSnapshot) -> Void
+    ) -> SharingStateSubscription {
+        let id = UUID()
+        sharingStateObservers[id] = observer
+        observer(sharingStateSnapshot)
+        return SharingStateSubscription { [weak self] in
+            self?.sharingStateObservers.removeValue(forKey: id)
+        }
+    }
 
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
@@ -91,8 +139,19 @@ final class MockSharingService: SharingServiceProtocol {
             isWebServiceRunning = false
             webServiceLifecycleState = .failed(startResult.failure ?? .listenerFailed(port: requestedPort, message: "mock_failure"))
         }
+        if sharingStateSnapshot == .empty && (activeStreamClientCount > 0 || !streamClientCountsByTarget.isEmpty) {
+            sharingStateSnapshot = SharingStateSnapshot(
+                signalingConnections: activeStreamClientCount,
+                streamingPeers: activeStreamClientCount,
+                signalingConnectionsByTarget: streamClientCountsByTarget,
+                streamingPeersByTarget: streamClientCountsByTarget,
+                clientsByTarget: [:],
+                lastUpdatedAt: Date()
+            )
+        }
         onWebServiceRunningStateChanged?(isWebServiceRunning)
         onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
+        notifySharingStateObservers()
         return startResult
     }
 
@@ -102,6 +161,8 @@ final class MockSharingService: SharingServiceProtocol {
         webServiceLifecycleState = .stopped
         onWebServiceRunningStateChanged?(false)
         onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
+        sharingStateSnapshot = .empty
+        notifySharingStateObservers()
     }
 
     func registerShareableDisplays(
@@ -113,15 +174,20 @@ final class MockSharingService: SharingServiceProtocol {
         _ = virtualSerialResolver(CGDirectDisplayID(0))
     }
 
-    func startSharing(display: SCDisplay) async throws {
+    func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
+        if let startSharingHandler {
+            return try await startSharingHandler(display)
+        }
         hasAnyActiveSharing = true
         activeSharingDisplayIDs.insert(display.displayID)
+        return .started(())
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {
         stopSharingCallCount += 1
         activeSharingDisplayIDs.remove(displayID)
         hasAnyActiveSharing = !activeSharingDisplayIDs.isEmpty
+        onStopSharing?(displayID)
     }
 
     func stopAllSharing() {
@@ -144,6 +210,19 @@ final class MockSharingService: SharingServiceProtocol {
 
     func streamClientCount(for target: ShareTarget) -> Int {
         streamClientCountsByTarget[target] ?? 0
+    }
+
+    func updateSharingStateSnapshot(_ snapshot: SharingStateSnapshot) {
+        sharingStateSnapshot = snapshot
+        activeStreamClientCount = snapshot.streamingPeers
+        streamClientCountsByTarget = snapshot.streamingPeersByTarget
+        notifySharingStateObservers()
+    }
+
+    private func notifySharingStateObservers() {
+        for observer in sharingStateObservers.values {
+            observer(sharingStateSnapshot)
+        }
     }
 }
 

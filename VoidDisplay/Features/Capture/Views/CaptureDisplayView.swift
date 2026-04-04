@@ -1,13 +1,21 @@
 import AppKit
-import AVFoundation
 import SwiftUI
 
 // MARK: - Capture Display View
 
 struct CaptureDisplayView: View {
-    private enum PreviewScaleMode: Hashable {
+    private enum PreviewScaleMode: Hashable, CaseIterable {
         case fit
         case native
+
+        var title: LocalizedStringResource {
+            switch self {
+            case .fit:
+                "Fit"
+            case .native:
+                "1:1"
+            }
+        }
     }
 
     let sessionId: UUID
@@ -24,6 +32,7 @@ struct CaptureDisplayView: View {
     @State private var scaleMode: PreviewScaleMode = .fit
     @State private var capturesCursor = false
     @State private var isUpdatingCursorCapture = false
+    @State private var lastReportedRendererMetrics: ZeroCopyPreviewRenderer.MetricsSnapshot?
 
     private var session: ScreenMonitoringSession? {
         capture.monitoringSession(for: sessionId)
@@ -43,14 +52,10 @@ struct CaptureDisplayView: View {
     }
 
     private var nativeFrameSizeInPoints: CGSize {
-        let pixelSize = renderer.framePixelSize
-        guard pixelSize.width > 0, pixelSize.height > 0 else {
-            let fallback = preferredAspect()
-            return CGSize(width: max(1, fallback.width), height: max(1, fallback.height))
-        }
-        return CGSize(
-            width: max(1, pixelSize.width / currentScaleFactor),
-            height: max(1, pixelSize.height / currentScaleFactor)
+        CapturePreviewGeometry.nativeFrameSizeInPoints(
+            framePixelSize: renderer.framePixelSize,
+            scaleFactor: currentScaleFactor,
+            fallbackAspect: preferredAspect()
         )
     }
 
@@ -94,28 +99,39 @@ struct CaptureDisplayView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Scale Mode", selection: $scaleMode) {
-                    Text("Fit").tag(PreviewScaleMode.fit)
-                    Text("1:1").tag(PreviewScaleMode.native)
+                    ForEach(PreviewScaleMode.allCases, id: \.self) { mode in
+                        Text(mode.title)
+                            .tag(mode)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .frame(width: 150)
                 .accessibilityIdentifier("capture_preview_scale_mode_picker")
+                .accessibilityValue(Text(scaleMode.title))
             }
             ToolbarItem(placement: .automatic) {
-                HStack(spacing: 6) {
+                HStack(spacing: AppUI.Spacing.small + 2) {
                     Text(String(localized: "Cursor"))
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .fixedSize()
                     Toggle("", isOn: cursorCaptureBinding)
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
-                        .disabled(isUpdatingCursorCapture || isSharingDisplay)
-                        .accessibilityIdentifier("capture_preview_cursor_toggle")
+                        .accessibilityLabel(String(localized: "Cursor"))
                 }
+                .padding(.horizontal, AppUI.Spacing.xSmall)
+                .disabled(isUpdatingCursorCapture || isSharingDisplay)
+                .accessibilityIdentifier("capture_preview_cursor_toggle")
             }
         }
         .toolbarTitleDisplayMode(.inline)
         .onAppear {
+            if let diagnosticsScaleMode = initialPreviewScaleModeOverride {
+                scaleMode = diagnosticsScaleMode
+            }
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
             capturesCursor = session?.capturesCursor ?? false
         }
@@ -139,30 +155,28 @@ struct CaptureDisplayView: View {
         }
         .onAppear {
             if let session {
-                session.previewSubscription.attachPreviewSink(renderer)
+                capture.attachPreviewSink(renderer, to: sessionId)
                 if let destinationDirectory = CapturePreviewDiagnosticsRuntime.configuration()?.recordDirectoryURL {
                     let sink = CapturePreviewRecordingSink(
                         destinationDirectory: destinationDirectory,
                         session: session
                     )
                     recordingSink = sink
-                    session.previewSubscription.attachPreviewSink(sink)
+                    capture.attachPreviewSink(sink, to: sessionId)
                 }
-                capture.markMonitoringSessionActive(id: sessionId)
+                capture.activateMonitoringSession(id: sessionId)
             } else {
                 dismiss()
             }
         }
         .onDisappear {
-            if let session {
-                if let recordingSink {
-                    session.previewSubscription.detachPreviewSink(recordingSink)
-                }
-                session.previewSubscription.detachPreviewSink(renderer)
-            }
+            capture.closeMonitoringSession(id: sessionId)
             windowCoordinator.tearDown()
             renderer.flush()
-            capture.removeMonitoringSession(id: sessionId)
+            lastReportedRendererMetrics = nil
+        }
+        .task(id: sessionId) {
+            await reportPreviewPerformanceLoop()
         }
         .onChange(of: renderer.framePixelSize) { _, _ in
             windowCoordinator.update(aspect: preferredAspect(), shouldLockAspect: scaleMode == .fit)
@@ -188,6 +202,33 @@ struct CaptureDisplayView: View {
 // MARK: - Window Sizing
 
 extension CaptureDisplayView {
+    @MainActor
+    private func reportPreviewPerformanceLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                return
+            }
+
+            guard let session else { continue }
+            let currentMetrics = renderer.metricsSnapshot()
+            let previousMetrics = lastReportedRendererMetrics
+            lastReportedRendererMetrics = currentMetrics
+
+            let renderedDelta = currentMetrics.renderedFrameCount &- (previousMetrics?.renderedFrameCount ?? 0)
+            let droppedDelta = currentMetrics.droppedFrameCount &- (previousMetrics?.droppedFrameCount ?? 0)
+            let sample = DisplayPreviewPerformanceSample(
+                renderedFrameCount: renderedDelta,
+                droppedFrameCount: droppedDelta,
+                latestRenderLatencyMilliseconds: currentMetrics.latestRenderLatencyMilliseconds ?? 0,
+                pendingSlotOccupied: currentMetrics.pendingSlotOccupied,
+                capturedAt: DispatchTime.now().uptimeNanoseconds
+            )
+            session.previewSubscription.reportPerformanceSample(sample)
+        }
+    }
+
     private var cursorCaptureBinding: Binding<Bool> {
         Binding(
             get: { effectiveCapturesCursor },
@@ -196,16 +237,15 @@ extension CaptureDisplayView {
                 let previousValue = capturesCursor
                 capturesCursor = newValue
 
-                guard let session else { return }
+                guard session != nil else { return }
                 isUpdatingCursorCapture = true
                 Task {
                     do {
-                        try await session.previewSubscription.setShowsCursor(newValue)
+                        try await capture.setMonitoringSessionCapturesCursor(
+                            id: sessionId,
+                            capturesCursor: newValue
+                        )
                         await MainActor.run {
-                            capture.setMonitoringSessionCapturesCursor(
-                                id: sessionId,
-                                capturesCursor: newValue
-                            )
                             isUpdatingCursorCapture = false
                         }
                     } catch {
@@ -232,57 +272,33 @@ extension CaptureDisplayView {
         guard let window, aspect.width > 0, aspect.height > 0, !hasAppliedInitialSize else { return }
 
         window.backgroundColor = .windowBackgroundColor
-        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         let contentRect = window.contentRect(forFrameRect: window.frame)
         let layoutRect = window.contentLayoutRect
-        let chromeWidth = max(0, window.frame.width - contentRect.width)
-        let chromeHeight = max(0, window.frame.height - contentRect.height)
-        let layoutInsetWidth = max(0, contentRect.width - layoutRect.width)
-        let layoutInsetHeight = max(0, contentRect.height - layoutRect.height)
-
-        let maxPreviewWidth = max(
-            320,
-            (visibleFrame?.width ?? 1280) - chromeWidth - layoutInsetWidth - 16
+        let targetContentSize = CapturePreviewGeometry.initialContentSize(
+            input: .init(
+                aspect: aspect,
+                framePixelSize: renderer.framePixelSize,
+                targetContentWidth: CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth,
+                visibleFrameSize: (window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)?.size
+                    ?? CGSize(width: 1280, height: 800),
+                chromeSize: CGSize(
+                    width: max(0, window.frame.width - contentRect.width),
+                    height: max(0, window.frame.height - contentRect.height)
+                ),
+                layoutInsetSize: CGSize(
+                    width: max(0, contentRect.width - layoutRect.width),
+                    height: max(0, contentRect.height - layoutRect.height)
+                ),
+                scaleFactor: max(1, window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+            )
         )
-        let maxPreviewHeight = max(
-            180,
-            (visibleFrame?.height ?? 800) - chromeHeight - layoutInsetHeight - 16
-        )
-
-        let ratio = aspect.width / aspect.height
-        let scale = max(1, window.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
-        let pixelSize = renderer.framePixelSize
-        let defaultPreviewWidth = max(320, maxPreviewWidth * 0.85)
-        let defaultPreviewHeight = defaultPreviewWidth / ratio
-        var previewWidth = defaultPreviewWidth
-        var previewHeight = defaultPreviewHeight
-
-        if pixelSize.width > 0, pixelSize.height > 0 {
-            previewWidth = pixelSize.width / scale
-            previewHeight = pixelSize.height / scale
-        }
-
-        if let overriddenWidth = CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth {
-            previewWidth = min(max(320, overriddenWidth), maxPreviewWidth)
-            previewHeight = previewWidth / ratio
-        }
-
-        if previewWidth > maxPreviewWidth {
-            previewWidth = maxPreviewWidth
-            previewHeight = previewWidth / ratio
-        }
-        if previewHeight > maxPreviewHeight {
-            previewHeight = maxPreviewHeight
-            previewWidth = previewHeight * ratio
-        }
-
-        let targetContentSize = NSSize(
-            width: previewWidth + layoutInsetWidth,
-            height: previewHeight + layoutInsetHeight
-        )
+        guard let targetContentSize else { return }
 
         let targetFrame = window.frameRect(
-            forContentRect: NSRect(origin: .zero, size: targetContentSize)
+            forContentRect: NSRect(origin: .zero, size: NSSize(
+                width: targetContentSize.width,
+                height: targetContentSize.height
+            ))
         )
         var newFrame = window.frame
         newFrame.origin.x += (newFrame.width - targetFrame.width) / 2
@@ -297,182 +313,22 @@ extension CaptureDisplayView {
     /// resolution text (e.g. "2560 × 1440"), falling back to the
     /// pixel size reported by the renderer's first frame.
     private func preferredAspect() -> CGSize {
-        if let text = session?.resolutionText,
-           let size = Self.parseResolution(text) {
-            return size
-        }
-        return renderer.framePixelSize
-    }
-
-    private static func parseResolution(_ text: String) -> CGSize? {
-        let separators: [Character] = ["×", "x", "X", "*"]
-        guard let sep = separators.first(where: { text.contains($0) }) else { return nil }
-        let parts = text.split(separator: sep, maxSplits: 1)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard parts.count == 2,
-              let w = Double(parts[0]), w > 0,
-              let h = Double(parts[1]), h > 0
-        else { return nil }
-        return CGSize(width: w, height: h)
-    }
-}
-
-// MARK: - Window Coordination
-
-private final class CapturePreviewWindowCoordinator: NSObject {
-    private weak var window: NSWindow?
-    nonisolated(unsafe) private var forwardedDelegate: (any NSWindowDelegate)?
-    private var aspect = CGSize.zero
-    private var shouldLockAspect = true
-
-    func attach(to window: NSWindow) {
-        guard self.window !== window else { return }
-        restoreWindowDelegate()
-        self.window = window
-        if let delegate = window.delegate, delegate !== self {
-            forwardedDelegate = delegate
-        } else {
-            forwardedDelegate = nil
-        }
-        window.delegate = self
-    }
-
-    func update(aspect: CGSize, shouldLockAspect: Bool) {
-        self.aspect = aspect
-        self.shouldLockAspect = shouldLockAspect
-    }
-
-    func snapWindowToAspect(_ window: NSWindow) {
-        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else { return }
-        let targetSize = aspectLockedFrameSize(for: window, proposedFrameSize: window.frame.size)
-        guard abs(targetSize.width - window.frame.width) > 0.5
-                || abs(targetSize.height - window.frame.height) > 0.5 else { return }
-
-        var newFrame = window.frame
-        newFrame.origin.x += (newFrame.width - targetSize.width) / 2
-        newFrame.origin.y += (newFrame.height - targetSize.height) / 2
-        newFrame.size = targetSize
-        window.setFrame(newFrame, display: true, animate: false)
-    }
-
-    func tearDown() {
-        restoreWindowDelegate()
-        window = nil
-        forwardedDelegate = nil
-    }
-
-    private func aspectLockedFrameSize(for window: NSWindow, proposedFrameSize: NSSize) -> NSSize {
-        guard let targetContentSize = aspectLockedContentSize(
-            for: window,
-            proposedFrameSize: proposedFrameSize
-        ) else {
-            return proposedFrameSize
-        }
-
-        let targetContentRect = NSRect(origin: .zero, size: targetContentSize)
-        return window.frameRect(forContentRect: targetContentRect).size
-    }
-
-    private func aspectLockedContentSize(for window: NSWindow, proposedFrameSize: NSSize) -> NSSize? {
-        guard aspect.width > 0, aspect.height > 0 else { return nil }
-        let currentContentRect = window.contentRect(forFrameRect: window.frame)
-        let currentLayoutRect = window.contentLayoutRect
-        let layoutInsetWidth = max(0, currentContentRect.width - currentLayoutRect.width)
-        let layoutInsetHeight = max(0, currentContentRect.height - currentLayoutRect.height)
-        let proposedContentRect = window.contentRect(
-            forFrameRect: NSRect(origin: .zero, size: proposedFrameSize)
+        CapturePreviewGeometry.preferredAspect(
+            resolutionText: session?.resolutionText,
+            framePixelSize: renderer.framePixelSize
         )
-        let scale = max(1, window.backingScaleFactor)
-        let insetWidthPixels = max(0, Int((layoutInsetWidth * scale).rounded()))
-        let insetHeightPixels = max(0, Int((layoutInsetHeight * scale).rounded()))
-        let proposedPreviewWidthPixels = max(
-            1,
-            Int(((proposedContentRect.width - layoutInsetWidth) * scale).rounded(.down))
-        )
-        let proposedPreviewHeightPixels = max(
-            1,
-            Int(((proposedContentRect.height - layoutInsetHeight) * scale).rounded(.down))
-        )
-        let aspectWidthPixels = max(1, Int(aspect.width.rounded()))
-        let aspectHeightPixels = max(1, Int(aspect.height.rounded()))
+    }
 
-        let previewWidthPixels: Int
-        let previewHeightPixels: Int
-
-        if proposedPreviewWidthPixels * aspectHeightPixels > proposedPreviewHeightPixels * aspectWidthPixels {
-            previewHeightPixels = proposedPreviewHeightPixels
-            previewWidthPixels = max(
-                1,
-                Int((CGFloat(previewHeightPixels) * aspect.width / aspect.height).rounded(.down))
-            )
-        } else {
-            previewWidthPixels = proposedPreviewWidthPixels
-            previewHeightPixels = max(
-                1,
-                Int((CGFloat(previewWidthPixels) * aspect.height / aspect.width).rounded(.down))
-            )
+    private var initialPreviewScaleModeOverride: PreviewScaleMode? {
+        guard let override = CapturePreviewDiagnosticsRuntime.configuration()?.initialScaleMode else {
+            return nil
         }
-
-        let targetContentRect = NSRect(
-            origin: .zero,
-            size: NSSize(
-                width: CGFloat(previewWidthPixels + insetWidthPixels) / scale,
-                height: CGFloat(previewHeightPixels + insetHeightPixels) / scale
-            )
-        )
-        return targetContentRect.size
-    }
-
-    private func restoreWindowDelegate() {
-        guard let window, window.delegate === self else { return }
-        window.delegate = forwardedDelegate
-    }
-}
-
-extension CapturePreviewWindowCoordinator: NSWindowDelegate {
-    nonisolated override func responds(to aSelector: Selector!) -> Bool {
-        super.responds(to: aSelector) || (forwardedDelegate?.responds(to: aSelector) ?? false)
-    }
-
-    nonisolated override func forwardingTarget(for aSelector: Selector!) -> Any? {
-        if forwardedDelegate?.responds(to: aSelector) == true {
-            return forwardedDelegate
+        switch override {
+        case .fit:
+            return .fit
+        case .native:
+            return .native
         }
-        return super.forwardingTarget(for: aSelector)
-    }
-
-    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        let proposedFrameSize = forwardedDelegate?.windowWillResize?(sender, to: frameSize) ?? frameSize
-        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else {
-            return proposedFrameSize
-        }
-        return aspectLockedFrameSize(for: sender, proposedFrameSize: proposedFrameSize)
-    }
-
-    func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame newFrame: NSRect) -> NSRect {
-        let proposedFrame = forwardedDelegate?.windowWillUseStandardFrame?(window, defaultFrame: newFrame)
-            ?? newFrame
-        guard shouldLockAspect, aspect.width > 0, aspect.height > 0 else {
-            return proposedFrame
-        }
-
-        let targetSize = aspectLockedFrameSize(for: window, proposedFrameSize: proposedFrame.size)
-        var adjustedFrame = proposedFrame
-        adjustedFrame.origin.x += (proposedFrame.width - targetSize.width) / 2
-        adjustedFrame.origin.y += (proposedFrame.height - targetSize.height) / 2
-        adjustedFrame.size = targetSize
-        return adjustedFrame
-    }
-
-    func window(
-        _ window: NSWindow,
-        willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
-    ) -> NSApplication.PresentationOptions {
-        let forwardedOptions = forwardedDelegate?.window?(
-            window,
-            willUseFullScreenPresentationOptions: proposedOptions
-        ) ?? proposedOptions
-        return forwardedOptions.union(.autoHideToolbar)
     }
 }
 
@@ -502,110 +358,6 @@ private struct TransparentScrollViewConfigurator: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.contentView.drawsBackground = false
-    }
-}
-
-// MARK: - Zero-Copy Preview Renderer
-
-/// Renders captured frames via `AVSampleBufferDisplayLayer` with zero
-/// pixel-data copies.  The layer natively accepts `CMSampleBuffer`
-/// backed by `IOSurface`, handling YUV→RGB conversion and colour
-/// management entirely on the GPU.
-@Observable
-final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreviewSink {
-    var framePixelSize: CGSize = .zero
-    var hasReceivedFrame = false
-
-    let displayLayer: AVSampleBufferDisplayLayer = {
-        let layer = AVSampleBufferDisplayLayer()
-        layer.videoGravity = .resizeAspect
-        layer.preventsDisplaySleepDuringVideoPlayback = false
-        return layer
-    }()
-
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        let box = UncheckedSendableBuffer(sampleBuffer)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let renderer = self.displayLayer.sampleBufferRenderer
-
-            if renderer.status == .failed { renderer.flush() }
-            renderer.enqueue(box.buffer)
-
-            if !self.hasReceivedFrame {
-                self.hasReceivedFrame = true
-            }
-
-            if let desc = CMSampleBufferGetFormatDescription(box.buffer) {
-                let dims = CMVideoFormatDescriptionGetDimensions(desc)
-                let size = CGSize(width: CGFloat(dims.width), height: CGFloat(dims.height))
-                if self.framePixelSize != size {
-                    self.framePixelSize = size
-                }
-            }
-        }
-    }
-
-    func flush() {
-        displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true)
-    }
-}
-
-/// Wraps `CMSampleBuffer` for safe cross-isolation transfer.
-private struct UncheckedSendableBuffer: @unchecked Sendable {
-    nonisolated(unsafe) let buffer: CMSampleBuffer
-    nonisolated init(_ buffer: CMSampleBuffer) { self.buffer = buffer }
-}
-
-// MARK: - Layer Host View
-
-private struct ZeroCopyPreviewLayerView: NSViewRepresentable {
-    let renderer: ZeroCopyPreviewRenderer
-
-    func makeNSView(context: Context) -> ZeroCopyHostView {
-        let view = ZeroCopyHostView()
-        view.hostDisplayLayer(renderer.displayLayer)
-        return view
-    }
-
-    func updateNSView(_: ZeroCopyHostView, context: Context) {}
-}
-
-private final class ZeroCopyHostView: NSView {
-    private weak var displayLayer: AVSampleBufferDisplayLayer?
-
-    func hostDisplayLayer(_ layer: AVSampleBufferDisplayLayer) {
-        wantsLayer = true
-        layerContentsRedrawPolicy = .duringViewResize
-        layer.frame = bounds
-        self.layer?.addSublayer(layer)
-        displayLayer = layer
-        syncLayerScale()
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        displayLayer?.frame = bounds
-        CATransaction.commit()
-        syncLayerScale()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        syncLayerScale()
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        syncLayerScale()
-    }
-
-    private func syncLayerScale() {
-        let scale = max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
-        layer?.contentsScale = scale
-        displayLayer?.contentsScale = scale
     }
 }
 

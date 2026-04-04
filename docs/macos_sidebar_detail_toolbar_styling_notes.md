@@ -37,6 +37,9 @@
 - 想让主窗口材质和 titlebar 完全走系统行为时，额外的 `NSWindow` bridge、`NSVisualEffectView` 和自定义 window chrome 会偏离“通用做法”。  
   If the goal is to keep window material and titlebar fully system-driven, extra `NSWindow` bridges, `NSVisualEffectView`, and custom window chrome move away from the most general best-practice path.
 
+- 2026-03 阶段 4 到 6 重构期间，曾把 `DisplayTopologyChangeCoordinator` 通过根层 `.environment(...)` 挂到主 `WindowGroup -> HomeView`。这没有直接改 toolbar 样式，却触发了 unified toolbar 下方分隔线回归。回退后横线消失。后续若要给主窗口根层追加 environment、scene modifier 或根容器装配改动，必须把它视为 toolbar/detail 样式风险项。  
+  During the 2026-03 phase 4-6 refactor, `DisplayTopologyChangeCoordinator` was injected at the main `WindowGroup -> HomeView` root via `.environment(...)`. That did not directly change toolbar styling, but it brought back the separator under the unified toolbar. Removing that root injection cleared the line. Any future root-level environment, scene modifier, or root-container wiring change must be treated as a toolbar/detail styling risk.
+
 ## 3. 系统表现应该怎么理解 / How To Read the Native macOS Look
 
 - `sidebar` 和 `detail` 有轻微材质差异是正常现象。  
@@ -67,6 +70,9 @@
 
 - 自定义背景只放在局部组件上，例如卡片、状态条、空状态面板。  
   Limit custom backgrounds to local components such as cards, status bars, and empty-state panels.
+
+- 需要把额外协调器或服务传给 detail 页面时，优先使用显式参数传递，尽量不要给主 `WindowGroup` 或 `HomeView` 根层追加新的 `.environment(...)`。  
+  When a coordinator or service must reach detail pages, prefer explicit parameter passing and avoid adding new `.environment(...)` injections at the main `WindowGroup` or `HomeView` root.
 
 ## 5. 这次最终保留和移除的内容 / What We Kept And Removed
 
@@ -120,3 +126,6 @@
 
 - 如果某个窗口样式改动导致 UI smoke 主入口 identifier 消失，优先回退 scene-level 风格改动，再查业务视图。  
   If a window-style change causes UI smoke to lose primary identifiers, revert the scene-level styling first before debugging business views.
+
+- 如果工具栏下方横线突然回归，优先检查最近是否给主 `WindowGroup`、`HomeView` 根层或 `NavigationSplitView` 外层追加了新的 environment 注入、scene modifier 或容器包装。  
+  If the separator under the toolbar suddenly comes back, first inspect whether a new environment injection, scene modifier, or wrapper view was recently added around the main `WindowGroup`, the `HomeView` root, or the outer `NavigationSplitView`.

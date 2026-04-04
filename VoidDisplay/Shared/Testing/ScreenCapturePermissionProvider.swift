@@ -42,11 +42,35 @@ struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
     }
 }
 
+struct XCTestScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
+    nonisolated func preflight() -> Bool {
+        false
+    }
+
+    nonisolated func request() -> Bool {
+        false
+    }
+}
+
 enum ScreenCapturePermissionProviderFactory {
-    static func makeDefault() -> any ScreenCapturePermissionProvider {
-        guard UITestRuntime.isEnabled else {
-            return SystemScreenCapturePermissionProvider()
+    static func makeDefault(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> any ScreenCapturePermissionProvider {
+        if environment[UITestRuntime.modeEnvironmentKey] == "1" {
+            let scenario: UITestScenario
+            if let rawValue = environment[UITestRuntime.scenarioEnvironmentKey],
+               let resolvedScenario = UITestScenario(rawValue: rawValue) {
+                scenario = resolvedScenario
+            } else {
+                scenario = .baseline
+            }
+            return UITestScreenCapturePermissionProvider(scenario: scenario)
         }
-        return UITestScreenCapturePermissionProvider(scenario: UITestRuntime.scenario)
+
+        if environment[PersistenceContext.xCTestConfigurationEnvironmentKey] != nil {
+            return XCTestScreenCapturePermissionProvider()
+        }
+
+        return SystemScreenCapturePermissionProvider()
     }
 }

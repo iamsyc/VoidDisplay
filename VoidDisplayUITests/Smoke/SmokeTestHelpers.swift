@@ -13,6 +13,18 @@ enum SmokeScenario: String {
 
 extension XCTestCase {
     @MainActor
+    func configureAppForUITestLaunch(_ app: XCUIApplication) {
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState",
+            "YES",
+            "-NSQuitAlwaysKeepsWindows",
+            "NO"
+        ]
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["VOIDDISPLAY_TEST_ISOLATION_ID"] = UUID().uuidString
+    }
+
+    @MainActor
     func smokeElement(
         _ app: XCUIApplication,
         identifier: String
@@ -28,16 +40,16 @@ extension XCTestCase {
         preferredPort: UInt16? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["VOIDDISPLAY_TEST_ISOLATION_ID"] = UUID().uuidString
+        configureAppForUITestLaunch(app)
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = scenario.rawValue
         if let preferredPort {
-            app.launchArguments = [
+            app.launchArguments.append(contentsOf: [
                 "-sharing.preferredPort",
                 String(preferredPort)
-            ]
+            ])
         }
         app.launch()
+        app.activate()
         return app
     }
 
@@ -84,25 +96,26 @@ extension XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let elements = identifiers.map { identifier in
-            app.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-        }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let missing = zip(identifiers, elements)
-                .filter { !$0.1.exists }
-                .map(\.0)
+            let missing = identifiers.filter { identifier in
+                !app.descendants(matching: .any)
+                    .matching(identifier: identifier)
+                    .firstMatch
+                    .exists
+            }
             if missing.isEmpty {
                 return
             }
             RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
         }
 
-        let missing = zip(identifiers, elements)
-            .filter { !$0.1.exists }
-            .map(\.0)
+        let missing = identifiers.filter { identifier in
+            !app.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+                .exists
+        }
         XCTAssertTrue(missing.isEmpty, "Missing identifiers: \(missing.joined(separator: ", "))", file: file, line: line)
     }
 
@@ -217,20 +230,23 @@ extension XCTestCase {
         pollInterval: TimeInterval = 0.1,
         activateBeforePolling: Bool = false
     ) -> Bool {
-        let element = app.descendants(matching: .any)
-            .matching(identifier: identifier)
-            .firstMatch
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if activateBeforePolling {
                 app.activate()
             }
-            if element.exists {
+            if app.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+                .exists {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
         }
-        return element.exists
+        return app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+            .exists
     }
 
     @MainActor
