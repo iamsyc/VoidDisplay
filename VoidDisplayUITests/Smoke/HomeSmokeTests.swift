@@ -290,6 +290,25 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testVirtualDisplaySmoke_rebuildFailedRowShowsRetry() throws {
+        let app = launchAppForSmoke(scenario: .virtualDisplayRebuildFailed)
+        _ = openVirtualDisplayDetail(in: app)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_virtual_display",
+                "virtual_display_rebuild_retry_button"
+            ],
+            timeout: 1.2
+        )
+
+        let retryButton = smokeElement(app, identifier: "virtual_display_rebuild_retry_button")
+        XCTAssertTrue(retryButton.isEnabled)
+        XCTAssertFalse(smokeElement(app, identifier: "virtual_display_rebuild_progress").exists)
+    }
+
+    @MainActor
     private func boolValue(forToggle toggle: XCUIElement) -> Bool {
         if let numberValue = toggle.value as? NSNumber {
             return numberValue.intValue != 0
