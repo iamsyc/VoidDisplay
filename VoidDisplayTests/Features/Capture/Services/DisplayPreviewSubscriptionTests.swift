@@ -47,13 +47,9 @@ private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptu
         state.withLock { $0.stopSharingCallCount += 1 }
     }
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {
         state.withLock { $0.stopCallCount += 1 }

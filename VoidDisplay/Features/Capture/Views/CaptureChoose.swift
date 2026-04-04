@@ -15,23 +15,23 @@ struct IsCapturing: View {
     @Environment(SharingController.self) private var sharing
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
-    private let topologyCoordinator: DisplayTopologyChangeCoordinator
+    private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
 
     init(
         capture: CaptureController,
         virtualDisplay: VirtualDisplayController,
-        topologyCoordinator: DisplayTopologyChangeCoordinator,
+        screenCatalogOrchestrator: ScreenCatalogOrchestrator,
         lifecycle: DisplayTopologyRefreshLifecycleController = DisplayTopologyRefreshLifecycleController()
     ) {
         _capture = Bindable(capture)
         _viewModel = State(
             initialValue: CaptureChooseViewModel(
-                catalogService: capture.catalogService,
+                catalogState: capture.displayCatalogState,
                 dependencies: .live(capture: capture, virtualDisplay: virtualDisplay)
             )
         )
         _lifecycle = State(initialValue: lifecycle)
-        self.topologyCoordinator = topologyCoordinator
+        self.screenCatalogOrchestrator = screenCatalogOrchestrator
     }
 
     private var shouldShowActiveSessionFallback: Bool {
@@ -59,14 +59,14 @@ struct IsCapturing: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
-                viewModel.refreshPermissionAndMaybeLoad()
+                Task { await screenCatalogOrchestrator.handleAppear(source: .capturePage) }
                 lifecycle.handleAppear {
                     guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-                    topologyCoordinator.handleTopologyChange(source: .captureView)
+                    Task { await screenCatalogOrchestrator.handleTopologyChanged() }
                 }
             }
             .onDisappear {
-                viewModel.cancelInFlightDisplayLoad()
+                Task { await screenCatalogOrchestrator.handleDisappear(source: .capturePage) }
                 lifecycle.handleDisappear()
             }
             .accessibilityElement(children: .contain)
@@ -137,7 +137,7 @@ struct IsCapturing: View {
                         .textSelection(.enabled)
                 }
                 Button("Retry") {
-                    viewModel.refreshPermissionAndMaybeLoad()
+                    Task { await screenCatalogOrchestrator.refreshPermission(source: .capturePage) }
                 }
             }
         }
@@ -231,18 +231,18 @@ struct IsCapturing: View {
             ScreenCapturePermissionGuideView(
                 loadErrorMessage: viewModel.catalog.loadErrorMessage,
                 onOpenSettings: {
-                    viewModel.openScreenCapturePrivacySettings { url in
+                    screenCatalogOrchestrator.openScreenCapturePrivacySettings { url in
                         openURL(url)
                     }
                 },
                 onRequestPermission: {
-                    viewModel.requestScreenCapturePermission()
+                    Task { await screenCatalogOrchestrator.requestPermission(source: .capturePage) }
                 },
                 onRefresh: {
-                    viewModel.refreshPermissionAndMaybeLoad()
+                    Task { await screenCatalogOrchestrator.refreshPermission(source: .capturePage) }
                 },
                 onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
-                    viewModel.loadDisplays()
+                    Task { await screenCatalogOrchestrator.forceRefresh(source: .capturePage) }
                 } : nil,
                 isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
                 debugItems: capturePermissionDebugItems,
@@ -304,10 +304,9 @@ struct IsCapturing: View {
     IsCapturing(
         capture: env.capture,
         virtualDisplay: env.virtualDisplay,
-        topologyCoordinator: env.topology
+        screenCatalogOrchestrator: env.screenCatalog
     )
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
-        .environment(env.topology)
 }

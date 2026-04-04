@@ -8,9 +8,6 @@ import OSLog
 @MainActor
 @Observable
 final class ShareViewModel {
-    typealias LoadErrorInfo = ScreenCaptureDisplayCatalogLoadErrorInfo
-    typealias RefreshIntent = ScreenCaptureCatalogRefreshIntent
-
     struct SharingQueries {
         var isWebServiceRunning: @MainActor () -> Bool
         var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
@@ -86,55 +83,20 @@ final class ShareViewModel {
     var isStartingService = false
     var userFacingAlert: UserFacingAlertState?
 
-    private let catalogService: ScreenCaptureCatalogService
-    @ObservationIgnored private let refreshOwner = ScreenCaptureCatalogService.RefreshOwner()
+    @ObservationIgnored private let activeDisplayIDsProvider: @MainActor () -> Set<CGDirectDisplayID>
     @ObservationIgnored private let dependencies: Dependencies
 
     init(
-        catalogService: ScreenCaptureCatalogService? = nil,
         catalogState: ScreenCaptureDisplayCatalogState? = nil,
-        permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
-        loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
             Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         },
         dependencies: Dependencies
     ) {
-        let resolvedCatalogService = catalogService ?? ScreenCaptureCatalogService(
-            store: catalogState,
-            permissionProvider: permissionProvider,
-            loadShareableDisplays: loadShareableDisplays,
-            activeDisplayIDsProvider: activeDisplayIDsProvider,
-            logOperation: "Load shareable displays (sharing)",
-            logger: AppLog.capture
-        )
-        self.catalogService = resolvedCatalogService
-        self.catalog = resolvedCatalogService.store
+        self.catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
+        self.activeDisplayIDsProvider = activeDisplayIDsProvider
         self.dependencies = dependencies
         self.servicePortInput = String(dependencies.sharingQueries.preferredWebServicePort())
-        if dependencies.sharingQueries.isWebServiceRunning() {
-            replayShareableDisplaysIfAvailable()
-        }
-    }
-
-    func syncForCurrentState(
-        clearDisplaysWhenPermissionDenied: Bool = true,
-        clearDisplaysWhenServiceStopped: Bool = true
-    ) {
-        guard catalog.hasScreenCapturePermission == true else {
-            if clearDisplaysWhenPermissionDenied {
-                Task { await self.submitRefresh(.permissionChanged, replayRegistration: false) }
-            } else {
-                Task { await self.catalogService.cancelRefresh(owner: self.refreshOwner) }
-            }
-            return
-        }
-        guard dependencies.sharingQueries.isWebServiceRunning() else {
-            _ = clearDisplaysWhenServiceStopped
-            Task { await self.catalogService.cancelRefresh(owner: self.refreshOwner) }
-            return
-        }
-        Task { await self.submitRefresh(.serviceBecameRunning) }
     }
 
     func startService() {
@@ -162,70 +124,16 @@ final class ShareViewModel {
             }
             servicePortInput = String(requestedPort)
             portInputErrorMessage = nil
-            _ = await submitRefresh(.serviceBecameRunning)
         }
     }
 
     func stopService() {
-        Task { await catalogService.cancelRefresh(owner: refreshOwner) }
         dependencies.sharingActions.stopWebService()
-        syncForCurrentState()
-    }
-
-    func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
-        catalogService.openScreenCapturePrivacySettings(openURL: openURL)
-    }
-
-    func requestScreenCapturePermission() {
-        let granted = catalogService.requestPermission()
-
-        AppLog.capture.notice(
-            "Screen capture permission request (sharing): requestResult=\((self.catalog.lastRequestPermission ?? false), privacy: .public), preflightResult=\(granted, privacy: .public)"
-        )
-
-        if !granted {
-            Task {
-                await catalogService.clearSnapshotForDeniedPermission(
-                    loadErrorMessage: String(localized: "Failed to load displays. Check permission and try again.")
-                )
-            }
-            AppLog.capture.notice("Screen capture permission request denied (sharing).")
-            return
-        }
-        syncForCurrentState()
-    }
-
-    func refreshPermissionAndMaybeLoad() {
-        let granted = catalogService.refreshPermission()
-        if !granted {
-            Task { await self.submitRefresh(.permissionChanged, replayRegistration: false) }
-            return
-        }
-        syncForCurrentState(clearDisplaysWhenServiceStopped: false)
-    }
-
-    func loadDisplaysIfNeeded() {
-        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        Task { await self.submitRefresh(.serviceBecameRunning) }
-    }
-
-    func loadDisplays() {
-        Task { await self.submitRefresh(.userForcedRefresh) }
-    }
-
-    func refreshDisplays() {
-        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        Task { await self.submitRefresh(.userForcedRefresh) }
-    }
-
-    func refreshDisplaysBackgroundSafe() {
-        guard dependencies.sharingQueries.isWebServiceRunning() else { return }
-        guard !catalog.isLoadingDisplays else { return }
-        Task { await self.submitRefresh(.topologyChanged) }
     }
 
     func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
-        catalogService.visibleDisplays(from: displays)
+        let activeDisplayIDs = activeDisplayIDsProvider()
+        return displays.filter { activeDisplayIDs.contains($0.displayID) }
     }
 
     func isStarting(displayID: CGDirectDisplayID) -> Bool {
@@ -289,43 +197,11 @@ final class ShareViewModel {
         userFacingAlert = nil
     }
 
-    func cancelInFlightDisplayLoad() {
-        Task { await catalogService.cancelRefresh(owner: refreshOwner) }
-    }
-
-    private func registerShareableDisplays(_ displays: [SCDisplay]) {
-        dependencies.sharingActions.registerShareableDisplays(displays) { [weak self] displayID in
-            self?.dependencies.virtualDisplayQueries.virtualSerialForManagedDisplay(displayID)
-        }
-    }
-
     private func presentError(title: String, message: String) {
         userFacingAlert = UserFacingAlertState(title: title, message: message)
     }
 
     private func presentPortInputError(_ message: String) {
         portInputErrorMessage = message
-    }
-
-    @discardableResult
-    private func submitRefresh(
-        _ intent: RefreshIntent,
-        replayRegistration: Bool = true
-    ) async -> ScreenCaptureCatalogRefreshResult {
-        let result = await catalogService.submitRefresh(intent: intent, owner: refreshOwner)
-        if replayRegistration, dependencies.sharingQueries.isWebServiceRunning() {
-            switch result {
-            case .reloadedSnapshot, .reusedSnapshot:
-                replayShareableDisplaysIfAvailable()
-            case .clearedSnapshot, .failed:
-                break
-            }
-        }
-        return result
-    }
-
-    private func replayShareableDisplaysIfAvailable() {
-        guard let displays = catalog.displays else { return }
-        registerShareableDisplays(displays)
     }
 }

@@ -1,32 +1,7 @@
 import CoreGraphics
-import ScreenCaptureKit
 import Synchronization
 import Testing
 @testable import VoidDisplay
-
-private actor ShareViewLoaderGate {
-    private var callCount = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func next() async {
-        callCount += 1
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    func release() {
-        let pending = waiters
-        waiters.removeAll()
-        for waiter in pending {
-            waiter.resume()
-        }
-    }
-
-    func currentCallCount() -> Int {
-        callCount
-    }
-}
 
 private final class ShareViewDisplayReconfigurationMonitor: DisplayReconfigurationMonitoring {
     private let startResults: [Bool]
@@ -75,28 +50,6 @@ private final class ShareViewTopologyChangeCounter: @unchecked Sendable {
     }
 }
 
-private final class ShareViewMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum ShareViewMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = ShareViewMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 @Suite(.serialized)
 @MainActor
 struct ShareViewBehaviorTests {
@@ -113,107 +66,26 @@ struct ShareViewBehaviorTests {
         #expect(state == .serviceStopped)
     }
 
-    @Test func lifecycleHandleAppearRefreshesPermissionAndEnablesToolbarFallback() {
-        let viewModel = makeViewModel(isWebServiceRunning: false)
+    @Test func lifecycleHandleAppearEnablesToolbarFallbackWhenMonitorRegistrationFails() {
         let monitor = ShareViewDisplayReconfigurationMonitor(startResults: [false])
         let lifecycle = DisplayTopologyRefreshLifecycleController(
             displayRefreshMonitor: monitor,
             recoveryAttemptInterval: 99
         )
 
-        viewModel.refreshPermissionAndMaybeLoad()
         lifecycle.handleAppear {}
 
-        #expect(viewModel.catalog.lastPreflightPermission == true)
         #expect(lifecycle.showToolbarRefresh)
         #expect(monitor.startCallCount == 1)
     }
 
-    @Test func lifecycleFallbackRefreshesDisplaysAfterTopologyChange() async {
-        let loaderGate = ShareViewLoaderGate()
-        let signatureBox = ShareViewSignatureBox(makeTestDisplayTopologySignature([101]))
-        let existingDisplay = ShareViewMockSCDisplay.make(displayID: 101, width: 1920, height: 1080)
-        let refreshedDisplay = ShareViewMockSCDisplay.make(displayID: 202, width: 2560, height: 1440)
-        let catalogService = ScreenCaptureCatalogService(
-            permissionProvider: MockScreenCapturePermissionProvider(
-                preflightResult: true,
-                requestResult: true
-            ),
-            loadShareableDisplays: {
-                await loaderGate.next()
-                return [refreshedDisplay]
-            },
-            activeDisplayIDsProvider: { Set(signatureBox.value.map(\.displayID)) },
-            displayTopologySignatureProvider: { signatureBox.value },
-            runtimeScenarioProbe: .init(
-                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
-                shouldDelayDisplayLoadForUITest: { false }
-            )
-        )
-        let viewModel = makeViewModel(
-            catalogService: catalogService,
-            isWebServiceRunning: true,
-            loadShareableDisplays: {
-                await loaderGate.next()
-                return [refreshedDisplay]
-            }
-        )
-        viewModel.catalog.displays = [existingDisplay]
-        viewModel.catalog.lastLoadedActiveDisplayTopologySignature = makeTestDisplayTopologySignature([101])
-
-        let lifecycle = DisplayTopologyRefreshLifecycleController(
-            displayRefreshMonitor: ShareViewDisplayReconfigurationMonitor(startResults: [false, false]),
-            displayTopologySignatureProvider: { signatureBox.value },
-            fallbackPollingInterval: .milliseconds(20),
-            recoveryAttemptInterval: 99
-        )
-
-        viewModel.refreshPermissionAndMaybeLoad()
-        lifecycle.handleAppear {
-            guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-            viewModel.refreshDisplaysBackgroundSafe()
-        }
-        await drainMainActorTasks()
-        #expect(await loaderGate.currentCallCount() == 0)
-
-        signatureBox.value = makeTestDisplayTopologySignature([202])
-
-        let requestedReload = await waitUntilAsync {
-            await loaderGate.currentCallCount() == 1
-        }
-        #expect(requestedReload)
-
-        await loaderGate.release()
-        let finished = await waitUntil {
-            viewModel.catalog.isLoadingDisplays == false &&
-                viewModel.catalog.displays?.map { $0.displayID } == [202]
-        }
-        #expect(finished)
-    }
-
-    @Test func lifecycleHandleDisappearCancelsInFlightLoadAndStopsMonitor() async {
-        let loaderGate = ShareViewLoaderGate()
+    @Test func lifecycleHandleDisappearStopsMonitor() {
         let monitor = ShareViewDisplayReconfigurationMonitor(startResults: [true])
-        let viewModel = makeViewModel(
-            isWebServiceRunning: true,
-            loadShareableDisplays: {
-                await loaderGate.next()
-                return [ShareViewMockSCDisplay.make(displayID: 303, width: 1280, height: 720)]
-            }
-        )
         let lifecycle = DisplayTopologyRefreshLifecycleController(displayRefreshMonitor: monitor)
 
-        viewModel.loadDisplays()
-        #expect(await waitUntilAsync { await loaderGate.currentCallCount() == 1 })
-
-        viewModel.cancelInFlightDisplayLoad()
+        lifecycle.handleAppear {}
         lifecycle.handleDisappear()
-        await loaderGate.release()
 
-        let cancelled = await waitUntil {
-            viewModel.catalog.isLoadingDisplays == false && viewModel.catalog.displays == nil
-        }
-        #expect(cancelled)
         #expect(monitor.stopCallCount == 1)
     }
 
@@ -250,34 +122,11 @@ struct ShareViewBehaviorTests {
     }
 
     @Test func viewModelSurfacesStartingStateFromSharingDependency() {
-        let viewModel = makeViewModel(
-            isWebServiceRunning: true,
-            isStartingDisplayID: { $0 == 404 }
-        )
-
-        #expect(viewModel.isStarting(displayID: 404))
-        #expect(viewModel.isStarting(displayID: 405) == false)
-    }
-
-    private func makeViewModel(
-        catalogService: ScreenCaptureCatalogService? = nil,
-        isWebServiceRunning: Bool,
-        isStartingDisplayID: @escaping @MainActor (CGDirectDisplayID) -> Bool = { _ in false },
-        loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
-        activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = { [] }
-    ) -> ShareViewModel {
-        ShareViewModel(
-            catalogService: catalogService,
-            permissionProvider: MockScreenCapturePermissionProvider(
-                preflightResult: true,
-                requestResult: true
-            ),
-            loadShareableDisplays: loadShareableDisplays,
-            activeDisplayIDsProvider: activeDisplayIDsProvider,
+        let viewModel = ShareViewModel(
             dependencies: .init(
                 sharingQueries: .init(
-                    isWebServiceRunning: { isWebServiceRunning },
-                    isStartingDisplayID: isStartingDisplayID,
+                    isWebServiceRunning: { true },
+                    isStartingDisplayID: { $0 == 404 },
                     sharePageAddress: { _ in nil },
                     preferredWebServicePort: { 8081 }
                 ),
@@ -293,6 +142,9 @@ struct ShareViewBehaviorTests {
                 )
             )
         )
+
+        #expect(viewModel.isStarting(displayID: 404))
+        #expect(viewModel.isStarting(displayID: 405) == false)
     }
 
     private func waitUntilAsync(

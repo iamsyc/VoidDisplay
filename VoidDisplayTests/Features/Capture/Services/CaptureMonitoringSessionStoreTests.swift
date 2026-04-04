@@ -16,13 +16,9 @@ private final class CaptureMonitoringSessionStoreDummySession: DisplayCaptureSes
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }

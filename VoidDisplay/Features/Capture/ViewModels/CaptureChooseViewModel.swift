@@ -8,9 +8,6 @@ import OSLog
 @MainActor
 @Observable
 final class CaptureChooseViewModel {
-    typealias LoadErrorInfo = ScreenCaptureDisplayCatalogLoadErrorInfo
-    typealias RefreshIntent = ScreenCaptureCatalogRefreshIntent
-
     struct CaptureActions {
         var monitoringSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?
         var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
@@ -57,30 +54,18 @@ final class CaptureChooseViewModel {
     let catalog: ScreenCaptureDisplayCatalogState
     var userFacingAlert: UserFacingAlertState?
 
-    private let catalogService: ScreenCaptureCatalogService
-    @ObservationIgnored private let refreshOwner = ScreenCaptureCatalogService.RefreshOwner()
+    @ObservationIgnored private let activeDisplayIDsProvider: @MainActor () -> Set<CGDirectDisplayID>
     @ObservationIgnored private let dependencies: Dependencies
 
     init(
-        catalogService: ScreenCaptureCatalogService? = nil,
         catalogState: ScreenCaptureDisplayCatalogState? = nil,
-        permissionProvider: (any ScreenCapturePermissionProvider)? = nil,
-        loadShareableDisplays: (@MainActor () async throws -> [SCDisplay])? = nil,
         activeDisplayIDsProvider: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
             Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         },
         dependencies: Dependencies
     ) {
-        let resolvedCatalogService = catalogService ?? ScreenCaptureCatalogService(
-            store: catalogState,
-            permissionProvider: permissionProvider,
-            loadShareableDisplays: loadShareableDisplays,
-            activeDisplayIDsProvider: activeDisplayIDsProvider,
-            logOperation: "Load shareable displays",
-            logger: AppLog.capture
-        )
-        self.catalogService = resolvedCatalogService
-        self.catalog = resolvedCatalogService.store
+        self.catalog = catalogState ?? ScreenCaptureDisplayCatalogState()
+        self.activeDisplayIDsProvider = activeDisplayIDsProvider
         self.dependencies = dependencies
     }
 
@@ -99,7 +84,8 @@ final class CaptureChooseViewModel {
     }
 
     func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
-        catalogService.visibleDisplays(from: displays)
+        let activeDisplayIDs = activeDisplayIDsProvider()
+        return displays.filter { activeDisplayIDs.contains($0.displayID) }
     }
 
     func isStarting(displayID: CGDirectDisplayID) -> Bool {
@@ -144,47 +130,5 @@ final class CaptureChooseViewModel {
 
     func dismissAlert() {
         userFacingAlert = nil
-    }
-
-    func openScreenCapturePrivacySettings(openURL: (URL) -> Void) {
-        catalogService.openScreenCapturePrivacySettings(openURL: openURL)
-    }
-
-    func requestScreenCapturePermission() {
-        let granted = catalogService.requestPermission()
-        if !granted {
-            Task { await catalogService.clearSnapshotForDeniedPermission() }
-            AppLog.capture.notice("Screen capture permission request denied.")
-            return
-        }
-        Task { await self.submitRefresh(.permissionChanged) }
-    }
-
-    func refreshPermissionAndMaybeLoad() {
-        let granted = catalogService.refreshPermission()
-        if !granted {
-            Task { await catalogService.clearSnapshotForDeniedPermission() }
-            AppLog.capture.notice("Screen capture permission preflight denied.")
-            return
-        }
-        Task { await self.submitRefresh(.permissionChanged) }
-    }
-
-    func loadDisplays() {
-        Task { await self.submitRefresh(.userForcedRefresh) }
-    }
-
-    func refreshDisplaysBackgroundSafe() {
-        guard catalog.hasScreenCapturePermission == true else { return }
-        guard !catalog.isLoadingDisplays else { return }
-        Task { await self.submitRefresh(.topologyChanged) }
-    }
-
-    func cancelInFlightDisplayLoad() {
-        Task { await catalogService.cancelRefresh(owner: refreshOwner) }
-    }
-
-    private func submitRefresh(_ intent: RefreshIntent) async {
-        _ = await catalogService.submitRefresh(intent: intent, owner: refreshOwner)
     }
 }

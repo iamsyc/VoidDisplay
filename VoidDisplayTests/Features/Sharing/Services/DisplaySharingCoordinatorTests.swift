@@ -29,16 +29,12 @@ private final class DisplaySharingCoordinatorDummySession: DisplayCaptureSession
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
-    }
-
-    nonisolated func retainShareCursorOverride() async throws {
-        await retainGate?.wait()
-    }
-
-    nonisolated func releaseShareCursorOverride() async throws {
-        releaseCounter?.increment()
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        if demand.shareCursorOverrideCount > 0 {
+            await retainGate?.wait()
+        } else {
+            releaseCounter?.increment()
+        }
     }
 
     nonisolated func stop() async {}
@@ -568,8 +564,25 @@ struct DisplaySharingCoordinatorTests {
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             sessionHub: session.sessionHub,
-            session: session,
-            cancelClosure: { cancelCounter.increment() }
+            cancelClosure: { cancelCounter.increment() },
+            prepareForSharingClosure: {
+                try await session.setDemand(
+                    DisplayCaptureDemandSnapshot(
+                        shareTokenCount: 1,
+                        shareCursorOverrideCount: 1,
+                        performanceMode: .automatic
+                    )
+                )
+            },
+            releasePreparedShareClosure: {
+                try? await session.setDemand(
+                    DisplayCaptureDemandSnapshot(
+                        shareTokenCount: 1,
+                        shareCursorOverrideCount: 0,
+                        performanceMode: .automatic
+                    )
+                )
+            }
         )
         return (subscription, session, cancelCounter)
     }

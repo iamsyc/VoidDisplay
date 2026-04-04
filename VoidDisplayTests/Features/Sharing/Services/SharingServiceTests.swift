@@ -17,13 +17,9 @@ private final class SharingServiceDummySession: DisplayCaptureSessioning, @unche
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }
@@ -181,7 +177,6 @@ struct SharingServiceTests {
                 .started(DisplayShareSubscription(
                     displayID: displayID,
                     sessionHub: WebRTCSessionHub(),
-                    session: SharingServiceDummySession(),
                     cancelClosure: { cancelCounter.increment() }
                 ))
             }
@@ -214,7 +209,6 @@ struct SharingServiceTests {
                 return .started(DisplayShareSubscription(
                     displayID: displayID,
                     sessionHub: WebRTCSessionHub(),
-                    session: SharingServiceDummySession(),
                     cancelClosure: { cancelCounter.increment() }
                 ))
             }

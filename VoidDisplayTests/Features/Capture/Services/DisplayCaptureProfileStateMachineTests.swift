@@ -23,6 +23,22 @@ private func makeTestStreamConfigurationState(
     )
 }
 
+private func makeDemand(
+    attachedPreviewSinkCount: Int = 0,
+    shareTokenCount: Int = 0,
+    previewShowsCursor: Bool = false,
+    shareCursorOverrideCount: Int = 0,
+    performanceMode: CapturePerformanceMode = .automatic
+) -> DisplayCaptureDemandSnapshot {
+    DisplayCaptureDemandSnapshot(
+        attachedPreviewSinkCount: attachedPreviewSinkCount,
+        shareTokenCount: shareTokenCount,
+        previewShowsCursor: previewShowsCursor,
+        shareCursorOverrideCount: shareCursorOverrideCount,
+        performanceMode: performanceMode
+    )
+}
+
 private actor StreamConfigurationApplyGate {
     private var isOpen = false
     private var enteredCount = 0
@@ -96,34 +112,43 @@ struct DisplayCaptureProfileStateMachineTests {
     @Test func desiredProfileMatchesPreviewAndSharingDemand() {
         #expect(
             DisplayCaptureProfileStateMachine.desiredProfile(
-                previewSinkCount: 1,
-                sharingActive: false
+                for: makeDemand(attachedPreviewSinkCount: 1)
             ) == .previewOnly
         )
         #expect(
             DisplayCaptureProfileStateMachine.desiredProfile(
-                previewSinkCount: 0,
-                sharingActive: true
+                for: makeDemand(shareTokenCount: 1)
             ) == .shareOnly
         )
         #expect(
             DisplayCaptureProfileStateMachine.desiredProfile(
-                previewSinkCount: 2,
-                sharingActive: true
+                for: makeDemand(attachedPreviewSinkCount: 2, shareTokenCount: 1)
             ) == .mixed
         )
         #expect(
             DisplayCaptureProfileStateMachine.desiredProfile(
-                previewSinkCount: 0,
-                sharingActive: false
+                for: makeDemand()
             ) == nil
         )
     }
 
+    @Test func demandSnapshotComputesDerivedState() {
+        let demand = makeDemand(
+            attachedPreviewSinkCount: 1,
+            shareTokenCount: 1,
+            previewShowsCursor: false,
+            shareCursorOverrideCount: 2,
+            performanceMode: .smooth
+        )
+
+        #expect(demand.desiredProfile == .mixed)
+        #expect(demand.showsCursor)
+        #expect(demand.isEmpty == false)
+    }
+
     @Test func firstTransitionAppliesImmediately() {
         let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            previewSinkCount: 1,
-            sharingActive: true,
+            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1),
             currentProfile: .previewOnly,
             lastProfileSwitchTimeNs: nil,
             nowNs: 10,
@@ -140,8 +165,7 @@ struct DisplayCaptureProfileStateMachineTests {
 
     @Test func dwellWindowSchedulesDelayedTransition() {
         let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            previewSinkCount: 0,
-            sharingActive: true,
+            demand: makeDemand(shareTokenCount: 1),
             currentProfile: .previewOnly,
             lastProfileSwitchTimeNs: 1_000,
             nowNs: 2_000,
@@ -158,8 +182,7 @@ struct DisplayCaptureProfileStateMachineTests {
 
     @Test func elapsedDwellAppliesImmediately() {
         let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            previewSinkCount: 0,
-            sharingActive: true,
+            demand: makeDemand(shareTokenCount: 1),
             currentProfile: .previewOnly,
             lastProfileSwitchTimeNs: 1_000,
             nowNs: 10_000,
@@ -240,10 +263,8 @@ struct DisplayCaptureProfileStateMachineTests {
     @Test func automaticMixedModeDropsTo30AfterTwoPressureWindows() {
         var coordinator = DisplayCaptureConfigurationCoordinatorState(
             committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
-            performanceMode: .automatic
+            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
         )
-        coordinator.previewSinkCount = 1
-        coordinator.sharingActive = true
 
         let firstDecision = coordinator.recordPreviewPerformanceSample(
             .init(
@@ -281,10 +302,8 @@ struct DisplayCaptureProfileStateMachineTests {
     @Test func automaticMixedModeRisesBackTo60AcrossStableWindows() {
         var coordinator = DisplayCaptureConfigurationCoordinatorState(
             committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
-            performanceMode: .automatic
+            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
         )
-        coordinator.previewSinkCount = 1
-        coordinator.sharingActive = true
 
         let pressureDecision = coordinator.recordPreviewPerformanceSample(
             .init(
@@ -399,10 +418,12 @@ struct DisplayCaptureProfileStateMachineTests {
     @Test func smoothAndPowerEfficientModesIgnoreAutomaticPreviewPressureSamples() {
         var smoothCoordinator = DisplayCaptureConfigurationCoordinatorState(
             committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
-            performanceMode: .smooth
+            demand: makeDemand(
+                attachedPreviewSinkCount: 1,
+                shareTokenCount: 1,
+                performanceMode: .smooth
+            )
         )
-        smoothCoordinator.previewSinkCount = 1
-        smoothCoordinator.sharingActive = true
 
         let smoothDecision = smoothCoordinator.recordPreviewPerformanceSample(
             .init(
@@ -419,10 +440,12 @@ struct DisplayCaptureProfileStateMachineTests {
 
         var powerCoordinator = DisplayCaptureConfigurationCoordinatorState(
             committedConfiguration: .init(profile: .mixed, frameRateTier: .fps30),
-            performanceMode: .powerEfficient
+            demand: makeDemand(
+                attachedPreviewSinkCount: 1,
+                shareTokenCount: 1,
+                performanceMode: .powerEfficient
+            )
         )
-        powerCoordinator.previewSinkCount = 1
-        powerCoordinator.sharingActive = true
 
         let powerDecision = powerCoordinator.recordPreviewPerformanceSample(
             .init(
@@ -441,13 +464,15 @@ struct DisplayCaptureProfileStateMachineTests {
     @Test func performanceModeUpdateRecomputesCommittedMixedConfiguration() {
         var coordinator = DisplayCaptureConfigurationCoordinatorState(
             committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
-            performanceMode: .automatic
+            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
         )
-        coordinator.previewSinkCount = 1
-        coordinator.sharingActive = true
 
-        let smoothDecision = coordinator.updatePerformanceMode(
-            .smooth,
+        let smoothDecision = coordinator.updateDemand(
+            makeDemand(
+                attachedPreviewSinkCount: 1,
+                shareTokenCount: 1,
+                performanceMode: .smooth
+            ),
             nowNs: 1,
             minimumDwellNanoseconds: 0
         )
@@ -465,8 +490,12 @@ struct DisplayCaptureProfileStateMachineTests {
         )
         #expect(followUpDecision == .noChange)
 
-        let powerDecision = coordinator.updatePerformanceMode(
-            .powerEfficient,
+        let powerDecision = coordinator.updateDemand(
+            makeDemand(
+                attachedPreviewSinkCount: 1,
+                shareTokenCount: 1,
+                performanceMode: .powerEfficient
+            ),
             nowNs: 3,
             minimumDwellNanoseconds: 0
         )
@@ -480,14 +509,16 @@ struct DisplayCaptureProfileStateMachineTests {
     }
 
     @Test func committedTransitionUpdatesDwellBeforeReevaluatingPendingDemand() {
-        var coordinator = DisplayCaptureProfileCoordinatorState(committedProfile: .previewOnly)
+        var coordinator = DisplayCaptureProfileCoordinatorState(
+            committedProfile: .previewOnly,
+            demand: makeDemand()
+        )
 
-        let initialDecision = coordinator.mutateDemand(
+        let initialDecision = coordinator.updateDemand(
+            makeDemand(shareTokenCount: 1),
             nowNs: 0,
             minimumDwellNanoseconds: 5_000
-        ) { state in
-            state.sharingActive = true
-        }
+        )
         switch initialDecision {
         case .applyNow(.mixed):
             Issue.record("Expected shareOnly transition before preview demand arrives")
@@ -498,12 +529,11 @@ struct DisplayCaptureProfileStateMachineTests {
         }
         #expect(coordinator.inFlightProfile == .shareOnly)
 
-        let inFlightDecision = coordinator.mutateDemand(
+        let inFlightDecision = coordinator.updateDemand(
+            makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1),
             nowNs: 1_000,
             minimumDwellNanoseconds: 5_000
-        ) { state in
-            state.previewSinkCount = 1
-        }
+        )
         #expect(inFlightDecision == .noChange)
         #expect(coordinator.inFlightProfile == .shareOnly)
 
@@ -546,7 +576,9 @@ struct DisplayCaptureProfileStateMachineTests {
         )
 
         let firstTask = Task {
-            try await coordinator.setPreviewShowsCursor(true)
+            try await coordinator.applyImmediateDemand(
+                makeDemand(previewShowsCursor: true)
+            )
         }
         await gate.waitForFirstEntry()
 
@@ -583,7 +615,9 @@ struct DisplayCaptureProfileStateMachineTests {
         )
 
         do {
-            _ = try await coordinator.setPreviewShowsCursor(true)
+            _ = try await coordinator.applyImmediateDemand(
+                makeDemand(previewShowsCursor: true)
+            )
             Issue.record("Expected first coordinator apply to fail")
         } catch {
         }

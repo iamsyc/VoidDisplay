@@ -13,23 +13,23 @@ struct ShareView: View {
     @State private var viewModel: ShareViewModel
     @State private var lifecycle: DisplayTopologyRefreshLifecycleController
     @Environment(\.openURL) private var openURL
-    private let topologyCoordinator: DisplayTopologyChangeCoordinator
+    private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
 
     init(
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
-        topologyCoordinator: DisplayTopologyChangeCoordinator,
+        screenCatalogOrchestrator: ScreenCatalogOrchestrator,
         lifecycle: DisplayTopologyRefreshLifecycleController = DisplayTopologyRefreshLifecycleController()
     ) {
         _sharing = Bindable(sharing)
         _viewModel = State(
             initialValue: ShareViewModel(
-                catalogService: sharing.catalogService,
+                catalogState: sharing.displayCatalogState,
                 dependencies: .live(sharing: sharing, virtualDisplay: virtualDisplay)
             )
         )
         _lifecycle = State(initialValue: lifecycle)
-        self.topologyCoordinator = topologyCoordinator
+        self.screenCatalogOrchestrator = screenCatalogOrchestrator
     }
 
     var body: some View {
@@ -46,7 +46,7 @@ struct ShareView: View {
             if sharing.isWebServiceRunning {
                 if lifecycle.showToolbarRefresh {
                     Button("Refresh", systemImage: "arrow.clockwise") {
-                        viewModel.refreshDisplays()
+                        Task { await screenCatalogOrchestrator.forceRefresh(source: .sharingPage) }
                     }
                 }
                 Button("Stop Service") {
@@ -56,21 +56,18 @@ struct ShareView: View {
             }
         }
         .onAppear {
-            viewModel.refreshPermissionAndMaybeLoad()
+            Task { await screenCatalogOrchestrator.handleAppear(source: .sharingPage) }
             lifecycle.handleAppear {
                 guard viewModel.catalog.hasScreenCapturePermission == true else { return }
-                topologyCoordinator.handleTopologyChange(source: .sharingView)
+                Task { await screenCatalogOrchestrator.handleTopologyChanged() }
             }
         }
         .onDisappear {
-            viewModel.cancelInFlightDisplayLoad()
+            Task { await screenCatalogOrchestrator.handleDisappear(source: .sharingPage) }
             lifecycle.handleDisappear()
         }
-        .onChange(of: sharing.isWebServiceRunning) { _, _ in
-            viewModel.syncForCurrentState()
-        }
-        .onChange(of: sharing.isSharing) { _, _ in
-            viewModel.syncForCurrentState()
+        .onChange(of: sharing.isWebServiceRunning) { _, isRunning in
+            Task { await screenCatalogOrchestrator.handleSharingServiceStateChanged(isRunning: isRunning) }
         }
         .alert(item: $bindableViewModel.userFacingAlert) { alert in
             Alert(
@@ -194,20 +191,18 @@ struct ShareView: View {
             ScreenCapturePermissionGuideView(
                 loadErrorMessage: viewModel.catalog.loadErrorMessage,
                 onOpenSettings: {
-                    viewModel.openScreenCapturePrivacySettings { url in
+                    screenCatalogOrchestrator.openScreenCapturePrivacySettings { url in
                         openURL(url)
                     }
                 },
                 onRequestPermission: {
-                    viewModel.requestScreenCapturePermission()
+                    Task { await screenCatalogOrchestrator.requestPermission(source: .sharingPage) }
                 },
                 onRefresh: {
-                    viewModel.refreshPermissionAndMaybeLoad()
+                    Task { await screenCatalogOrchestrator.refreshPermission(source: .sharingPage) }
                 },
                 onRetry: (viewModel.catalog.loadErrorMessage != nil || viewModel.catalog.lastLoadError != nil) ? {
-                    // User-initiated retry: attempt to load the display list.
-                    // If permission is still missing, macOS may prompt here (expected).
-                    viewModel.loadDisplays()
+                    Task { await screenCatalogOrchestrator.forceRefresh(source: .sharingPage) }
                 } : nil,
                 isDebugInfoExpanded: $bindableCatalog.showDebugInfo,
                 debugItems: sharingPermissionDebugItems,
@@ -231,7 +226,7 @@ struct ShareView: View {
                 SharePerformanceModePicker()
                     .frame(maxWidth: 360)
                 Button("Refresh") {
-                    viewModel.refreshDisplays()
+                    Task { await screenCatalogOrchestrator.forceRefresh(source: .sharingPage) }
                 }
                 .appActionButtonStyle(variant: .default)
                 .accessibilityIdentifier("share_empty_refresh_button")
@@ -286,11 +281,10 @@ struct ShareView: View {
     ShareView(
         sharing: env.sharing,
         virtualDisplay: env.virtualDisplay,
-        topologyCoordinator: env.topology
+        screenCatalogOrchestrator: env.screenCatalog
     )
         .environment(env.capture)
         .environment(env.capturePerformancePreferences)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
-        .environment(env.topology)
 }

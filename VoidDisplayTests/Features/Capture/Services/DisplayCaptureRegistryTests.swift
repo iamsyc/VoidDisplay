@@ -8,8 +8,7 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     private struct Counters {
         var stopSharingCalls = 0
         var stopCalls = 0
-        var setSharingActiveCalls: [Bool] = []
-        var setPerformanceModeCalls: [CapturePerformanceMode] = []
+        var setDemandCalls: [DisplayCaptureDemandSnapshot] = []
     }
 
     private let counters = Mutex(Counters())
@@ -27,20 +26,8 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
         counters.withLock { $0.stopSharingCalls += 1 }
     }
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
-    }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
-
-    nonisolated func setSharingActive(_ isActive: Bool) async throws {
-        counters.withLock { $0.setSharingActiveCalls.append(isActive) }
-    }
-
-    nonisolated func setPerformanceMode(_ mode: CapturePerformanceMode) async throws {
-        counters.withLock { $0.setPerformanceModeCalls.append(mode) }
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        counters.withLock { $0.setDemandCalls.append(demand) }
     }
 
     nonisolated func stop() async {
@@ -55,12 +42,8 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
         counters.withLock { $0.stopCalls }
     }
 
-    var setSharingActiveCalls: [Bool] {
-        counters.withLock { $0.setSharingActiveCalls }
-    }
-
-    var setPerformanceModeCalls: [CapturePerformanceMode] {
-        counters.withLock { $0.setPerformanceModeCalls }
+    var setDemandCalls: [DisplayCaptureDemandSnapshot] {
+        counters.withLock { $0.setDemandCalls }
     }
 }
 
@@ -107,16 +90,8 @@ private final class ControlledStopCaptureSession: DisplayCaptureSessioning, @unc
         counters.withLock { $0.stopSharing += 1 }
     }
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
-    }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
-
-    nonisolated func setSharingActive(_ isActive: Bool) async throws {
-        _ = isActive
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
 
     nonisolated func stop() async {
@@ -170,7 +145,7 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
     private struct Counters {
         var stopSharingCalls = 0
         var stopCalls = 0
-        var setSharingActiveCalls: [Bool] = []
+        var setDemandCalls: [DisplayCaptureDemandSnapshot] = []
     }
 
     nonisolated let sessionHub = WebRTCSessionHub()
@@ -193,17 +168,9 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
         counters.withLock { $0.stopSharingCalls += 1 }
     }
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
-    }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
-
-    nonisolated func setSharingActive(_ isActive: Bool) async throws {
-        counters.withLock { $0.setSharingActiveCalls.append(isActive) }
-        guard !isActive else { return }
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        counters.withLock { $0.setDemandCalls.append(demand) }
+        guard demand.shareTokenCount == 0 else { return }
         await gate.markFalseEntered()
         await gate.waitUntilOpen()
     }
@@ -220,8 +187,8 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
         counters.withLock { $0.stopCalls }
     }
 
-    var setSharingActiveCalls: [Bool] {
-        counters.withLock { $0.setSharingActiveCalls }
+    var setDemandCalls: [DisplayCaptureDemandSnapshot] {
+        counters.withLock { $0.setDemandCalls }
     }
 }
 
@@ -229,35 +196,22 @@ private enum CursorOverrideTrackingError: Error {
     case forcedRetainFailure
 }
 
-private final class CursorOverrideTrackingSession: DisplayCaptureSessioning, @unchecked Sendable {
+private final class CursorOverrideTrackingSession: @unchecked Sendable {
     private struct State {
         var retainCalls = 0
         var releaseCalls = 0
         var pendingRetainFailures: [Bool]
     }
 
-    nonisolated let sessionHub = WebRTCSessionHub()
     private let state: Mutex<State>
 
     init(retainFailures: [Bool] = []) {
         self.state = Mutex(State(pendingRetainFailures: retainFailures))
     }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated let sessionHub = WebRTCSessionHub()
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
-    }
-
-    nonisolated func retainShareCursorOverride() async throws {
+    nonisolated func prepareForSharing() async throws {
         let shouldFail = state.withLock { state -> Bool in
             state.retainCalls += 1
             guard !state.pendingRetainFailures.isEmpty else {
@@ -270,11 +224,9 @@ private final class CursorOverrideTrackingSession: DisplayCaptureSessioning, @un
         }
     }
 
-    nonisolated func releaseShareCursorOverride() async throws {
+    nonisolated func releasePreparedShare() async {
         state.withLock { $0.releaseCalls += 1 }
     }
-
-    nonisolated func stop() async {}
 
     var retainCalls: Int {
         state.withLock { $0.retainCalls }
@@ -292,16 +244,21 @@ struct DisplayCaptureRegistryTests {
         let subscription = DisplayShareSubscription(
             displayID: CGDirectDisplayID(12001),
             sessionHub: session.sessionHub,
-            session: session,
             cancelClosure: {
                 cancelCount.withLock { $0 += 1 }
+            },
+            prepareForSharingClosure: {
+                try await session.prepareForSharing()
+            },
+            releasePreparedShareClosure: {
+                await session.releasePreparedShare()
             }
         )
         let invalidationContext = DisplayStartInvalidationContext()
 
         do {
             _ = try await subscription.prepareForSharing(invalidationContext: invalidationContext)
-            Issue.record("Expected retainShareCursorOverride to fail.")
+            Issue.record("Expected prepareForSharing to fail.")
         } catch {
         }
 
@@ -319,9 +276,14 @@ struct DisplayCaptureRegistryTests {
         let subscription = DisplayShareSubscription(
             displayID: CGDirectDisplayID(12002),
             sessionHub: session.sessionHub,
-            session: session,
             cancelClosure: {
                 cancelCount.withLock { $0 += 1 }
+            },
+            prepareForSharingClosure: {
+                try await session.prepareForSharing()
+            },
+            releasePreparedShareClosure: {
+                await session.releasePreparedShare()
             }
         )
         let invalidationContext = DisplayStartInvalidationContext()
@@ -347,17 +309,27 @@ struct DisplayCaptureRegistryTests {
         let firstSubscription = DisplayShareSubscription(
             displayID: CGDirectDisplayID(12003),
             sessionHub: session.sessionHub,
-            session: session,
             cancelClosure: {
                 firstCancelCount.withLock { $0 += 1 }
+            },
+            prepareForSharingClosure: {
+                try await session.prepareForSharing()
+            },
+            releasePreparedShareClosure: {
+                await session.releasePreparedShare()
             }
         )
         let secondSubscription = DisplayShareSubscription(
             displayID: CGDirectDisplayID(12003),
             sessionHub: session.sessionHub,
-            session: session,
             cancelClosure: {
                 secondCancelCount.withLock { $0 += 1 }
+            },
+            prepareForSharingClosure: {
+                try await session.prepareForSharing()
+            },
+            releasePreparedShareClosure: {
+                await session.releasePreparedShare()
             }
         )
 
@@ -408,7 +380,7 @@ struct DisplayCaptureRegistryTests {
 
         await registry.release(shareToken)
         #expect(fakeSession.stopSharingCalls == 1)
-        #expect(fakeSession.setSharingActiveCalls == [false])
+        #expect(fakeSession.setDemandCalls.last?.shareTokenCount == 0)
         #expect(fakeSession.stopCalls == 0)
         #expect(await registry.sessionState(for: displayID) == .active)
 
@@ -650,12 +622,12 @@ struct DisplayCaptureRegistryTests {
         )
 
         await registry.updatePerformanceMode(.powerEfficient)
-        #expect(installedSession.setPerformanceModeCalls == [.powerEfficient])
+        #expect(installedSession.setDemandCalls.last?.performanceMode == .powerEfficient)
 
         let subscription = try await registry.acquireShare(display: sendableDisplay)
 
         #expect(createdModes.withLock { $0.first } == nil)
-        #expect(installedSession.setSharingActiveCalls == [true])
+        #expect(installedSession.setDemandCalls.last?.shareTokenCount == 1)
 
         subscription.cancel()
 
@@ -669,6 +641,335 @@ struct DisplayCaptureRegistryTests {
     private func waitUntil(
         timeout: Duration = .seconds(1),
         condition: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if await condition() {
+                return true
+            }
+            await Task.yield()
+        }
+        return await condition()
+    }
+}
+
+private actor SessionStoreStopGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilOpen() async {
+        guard isOpen == false else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        guard isOpen == false else { return }
+        isOpen = true
+        let pendingWaiters = waiters
+        waiters.removeAll()
+        for waiter in pendingWaiters {
+            waiter.resume()
+        }
+    }
+}
+
+private actor SessionStoreDrainFinisher {
+    private let store: DisplayCaptureSessionStore
+
+    init(store: DisplayCaptureSessionStore) {
+        self.store = store
+    }
+
+    func finish(displayID: CGDirectDisplayID, hasActiveTokens: Bool) {
+        store.finishDraining(displayID: displayID, hasActiveTokens: hasActiveTokens)
+    }
+}
+
+private final class SessionStoreFakeSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let sessionHub = WebRTCSessionHub()
+    private let stopCallCountValue = Mutex(0)
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
+    }
+
+    nonisolated func stop() async {
+        stopCallCountValue.withLock { $0 += 1 }
+    }
+
+    var stopCallCount: Int {
+        stopCallCountValue.withLock { $0 }
+    }
+}
+
+private final class SessionStoreControlledStopSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let sessionHub = WebRTCSessionHub()
+    private let stopGate: SessionStoreStopGate
+    private let stopCallCountValue = Mutex(0)
+
+    init(stopGate: SessionStoreStopGate) {
+        self.stopGate = stopGate
+    }
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
+        _ = sink
+    }
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
+    }
+
+    nonisolated func stop() async {
+        stopCallCountValue.withLock { $0 += 1 }
+        await stopGate.waitUntilOpen()
+    }
+
+    var stopCallCount: Int {
+        stopCallCountValue.withLock { $0 }
+    }
+}
+
+struct DisplayCaptureLeaseBookTests {
+    @Test func initialProfileUsesPendingCreationDemand() {
+        let book = DisplayCaptureLeaseBook()
+        let displayID = CGDirectDisplayID(21001)
+
+        book.recordPendingCreationDemand(for: displayID, kind: .preview, delta: 1)
+        #expect(book.initialProfile(for: displayID, fallbackKind: .preview) == .previewOnly)
+
+        book.recordPendingCreationDemand(for: displayID, kind: .share, delta: 1)
+        #expect(book.initialProfile(for: displayID, fallbackKind: .preview) == .mixed)
+
+        book.recordPendingCreationDemand(for: displayID, kind: .preview, delta: -1)
+        #expect(book.initialProfile(for: displayID, fallbackKind: .preview) == .shareOnly)
+    }
+
+    @Test func demandSnapshotCombinesPreviewShareAndCursorState() {
+        let book = DisplayCaptureLeaseBook()
+        let displayID = CGDirectDisplayID(21002)
+
+        let previewToken = book.registerToken(displayID: displayID, kind: .preview)
+        let shareToken = book.registerToken(displayID: displayID, kind: .share)
+
+        _ = book.recordAttachedPreviewSinkDelta(2, for: previewToken)
+        let cursorMutation = book.setPreviewShowsCursor(true, for: previewToken)
+        #expect(cursorMutation?.previousValue == false)
+        #expect(book.prepareShareForSharing(shareToken) == displayID)
+
+        let snapshot = book.demandSnapshot(for: displayID, performanceMode: .smooth)
+
+        #expect(snapshot.attachedPreviewSinkCount == 2)
+        #expect(snapshot.shareTokenCount == 1)
+        #expect(snapshot.previewShowsCursor)
+        #expect(snapshot.shareCursorOverrideCount == 1)
+        #expect(snapshot.performanceMode == .smooth)
+        #expect(snapshot.showsCursor)
+        #expect(snapshot.desiredProfile == .mixed)
+    }
+
+    @Test func preparedShareRollbackAndCancelClearCursorOverrideDemand() {
+        let book = DisplayCaptureLeaseBook()
+        let displayID = CGDirectDisplayID(21003)
+        let shareToken = book.registerToken(displayID: displayID, kind: .share)
+
+        #expect(book.prepareShareForSharing(shareToken) == displayID)
+        #expect(
+            book.demandSnapshot(for: displayID, performanceMode: .automatic).shareCursorOverrideCount == 1
+        )
+
+        book.revertPreparedShare(shareToken)
+        #expect(
+            book.demandSnapshot(for: displayID, performanceMode: .automatic).shareCursorOverrideCount == 0
+        )
+
+        #expect(book.prepareShareForSharing(shareToken) == displayID)
+        #expect(book.releasePreparedShare(shareToken) == displayID)
+        #expect(
+            book.demandSnapshot(for: displayID, performanceMode: .automatic).shareCursorOverrideCount == 0
+        )
+    }
+
+    @Test func releasingShareTokenWithPreviewRemainingStopsSharingWithoutDraining() {
+        let book = DisplayCaptureLeaseBook()
+        let displayID = CGDirectDisplayID(21004)
+        _ = book.registerToken(displayID: displayID, kind: .preview)
+        let shareToken = book.registerToken(displayID: displayID, kind: .share)
+
+        let result = book.releaseToken(shareToken, expectedKind: .share)
+
+        #expect(result?.displayID == displayID)
+        #expect(result?.shouldStopSharing == true)
+        #expect(result?.shouldApplyDemand == true)
+        #expect(result?.shouldDrainSession == false)
+    }
+
+    @Test func releasingLastTokenRequestsDrain() {
+        let book = DisplayCaptureLeaseBook()
+        let displayID = CGDirectDisplayID(21005)
+        let previewToken = book.registerToken(displayID: displayID, kind: .preview)
+
+        let result = book.releaseToken(previewToken, expectedKind: .preview)
+
+        #expect(result?.displayID == displayID)
+        #expect(result?.shouldStopSharing == false)
+        #expect(result?.shouldApplyDemand == false)
+        #expect(result?.shouldDrainSession == true)
+        #expect(book.hasActiveTokens(for: displayID) == false)
+    }
+}
+
+struct DisplayCaptureSessionStoreTests {
+    @Test func ensureSessionExistsReusesExistingActiveSession() async throws {
+        let store = DisplayCaptureSessionStore()
+        let displayID = CGDirectDisplayID(22001)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sendableDisplay = SendableDisplay(display)
+        let existingSession = SessionStoreFakeSession()
+        let factoryCallCount = Mutex(0)
+
+        store.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1920 × 1080",
+            session: existingSession
+        )
+
+        try await store.ensureSessionExists(
+            for: sendableDisplay,
+            initialProfileProvider: { _ in .shareOnly },
+            performanceMode: .automatic,
+            captureSessionFactory: { _, _, _ in
+                factoryCallCount.withLock { $0 += 1 }
+                return SessionStoreFakeSession()
+            }
+        )
+
+        #expect(factoryCallCount.withLock { $0 } == 0)
+        #expect(
+            ObjectIdentifier(store.record(for: displayID)?.session as AnyObject)
+                == ObjectIdentifier(existingSession)
+        )
+        #expect(store.sessionState(for: displayID) == .active)
+    }
+
+    @Test func ensureSessionExistsWaitsForDrainingSessionToFinishBeforeRecreating() async throws {
+        let store = DisplayCaptureSessionStore()
+        let displayID = CGDirectDisplayID(22002)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 2560, height: 1440)
+        let sendableDisplay = SendableDisplay(display)
+        let stopGate = SessionStoreStopGate()
+        let drainingSession = SessionStoreControlledStopSession(stopGate: stopGate)
+        let replacementSession = SessionStoreFakeSession()
+        let factoryCallCount = Mutex(0)
+        let finisher = SessionStoreDrainFinisher(store: store)
+
+        store.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "2560 × 1440",
+            session: drainingSession
+        )
+        store.beginDraining(displayID: displayID) { displayID in
+            await finisher.finish(displayID: displayID, hasActiveTokens: false)
+        }
+
+        let acquireTask = Task {
+            try await store.ensureSessionExists(
+                for: sendableDisplay,
+                initialProfileProvider: { _ in .previewOnly },
+                performanceMode: .automatic,
+                captureSessionFactory: { _, _, _ in
+                    factoryCallCount.withLock { $0 += 1 }
+                    return replacementSession
+                }
+            )
+        }
+
+        #expect(
+            await staysTrue(timeoutNanoseconds: 50_000_000) {
+                factoryCallCount.withLock { $0 } == 0
+            }
+        )
+
+        await stopGate.open()
+        try await acquireTask.value
+
+        #expect(factoryCallCount.withLock { $0 } == 1)
+        #expect(
+            ObjectIdentifier(store.record(for: displayID)?.session as AnyObject)
+                == ObjectIdentifier(replacementSession)
+        )
+        #expect(store.sessionState(for: displayID) == .active)
+    }
+
+    @Test func finishDrainingRemovesSessionWhenNoTokensRemain() async {
+        let store = DisplayCaptureSessionStore()
+        let displayID = CGDirectDisplayID(22003)
+        let session = SessionStoreFakeSession()
+        let finisher = SessionStoreDrainFinisher(store: store)
+
+        store.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1280 × 720",
+            session: session
+        )
+        store.beginDraining(displayID: displayID) { displayID in
+            await finisher.finish(displayID: displayID, hasActiveTokens: false)
+        }
+
+        let settled = await waitUntil {
+            store.sessionState(for: displayID) == .stopped
+        }
+
+        #expect(settled)
+        #expect(store.record(for: displayID) == nil)
+        #expect(session.stopCallCount == 1)
+    }
+
+    @Test func finishDrainingRestoresActiveStateWhenTokensReappear() async {
+        let store = DisplayCaptureSessionStore()
+        let displayID = CGDirectDisplayID(22004)
+        let session = SessionStoreFakeSession()
+        let finisher = SessionStoreDrainFinisher(store: store)
+
+        store.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1600 × 900",
+            session: session
+        )
+        store.beginDraining(displayID: displayID) { displayID in
+            await finisher.finish(displayID: displayID, hasActiveTokens: true)
+        }
+
+        let settled = await waitUntil {
+            store.sessionState(for: displayID) == .active
+        }
+
+        #expect(settled)
+        #expect(store.record(for: displayID) != nil)
+        #expect(session.stopCallCount == 1)
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @escaping () async -> Bool
     ) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout

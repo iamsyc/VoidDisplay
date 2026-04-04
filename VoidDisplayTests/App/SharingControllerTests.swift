@@ -17,13 +17,9 @@ private final class SharingControllerDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        _ = showsCursor
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }
@@ -189,7 +185,6 @@ struct SharingControllerTests {
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             sessionHub: WebRTCSessionHub(),
-            session: SharingControllerDummySession(),
             cancelClosure: {}
         )
         let sut = makeRealSharingController(
@@ -334,7 +329,7 @@ struct SharingControllerTests {
             sharingService: service,
             portPreferences: MockSharingPortPreferences()
         )
-        sut.startingDisplayIDs = [displayID]
+        sut.installStartingDisplayIDsForTesting([displayID])
 
         sut.stopSharing(displayID: displayID)
 
@@ -349,7 +344,6 @@ struct SharingControllerTests {
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             sessionHub: WebRTCSessionHub(),
-            session: SharingControllerDummySession(),
             cancelClosure: {}
         )
         let sut = makeRealSharingController(

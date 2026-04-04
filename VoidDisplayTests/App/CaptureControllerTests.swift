@@ -25,14 +25,10 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
         cursorUpdateCount += 1
-        lastShowsCursor = showsCursor
+        lastShowsCursor = demand.previewShowsCursor
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }
@@ -180,7 +176,15 @@ struct CaptureControllerTests {
             displayID: 77,
             resolutionText: "2560 × 1440",
             session: subscriptionSession,
-            cancelClosure: {}
+            cancelClosure: {},
+            setShowsCursorClosure: { showsCursor in
+                try await subscriptionSession.setDemand(
+                    DisplayCaptureDemandSnapshot(
+                        previewShowsCursor: showsCursor,
+                        performanceMode: .automatic
+                    )
+                )
+            }
         )
         let lifecycleService = CaptureMonitoringLifecycleService(
             captureMonitoringService: service,
@@ -542,7 +546,7 @@ struct CaptureControllerTests {
             captureMonitoringService: service,
             captureMonitoringLifecycleService: lifecycleService
         )
-        controller.startingDisplayIDs = [93]
+        controller.installStartingDisplayIDsForTesting([93])
 
         controller.removeMonitoringSessions(displayID: 93)
 
@@ -670,7 +674,15 @@ struct CaptureControllerTests {
                 displayID: displayID,
                 resolutionText: "1920 x 1080",
                 session: captureSession,
-                cancelClosure: {}
+                cancelClosure: {},
+                setShowsCursorClosure: { showsCursor in
+                    try await captureSession.setDemand(
+                        DisplayCaptureDemandSnapshot(
+                            previewShowsCursor: showsCursor,
+                            performanceMode: .automatic
+                        )
+                    )
+                }
             ),
             capturesCursor: false,
             state: .starting

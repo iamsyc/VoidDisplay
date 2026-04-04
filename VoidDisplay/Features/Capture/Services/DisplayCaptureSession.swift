@@ -46,6 +46,10 @@ private struct DisplayCaptureMetrics: Sendable {
     }
 }
 
+private final class DisplayCaptureMetricsStore: Sendable {
+    let value = Mutex(DisplayCaptureMetrics())
+}
+
 nonisolated struct DisplayCaptureStreamConfigurationState: Sendable, Equatable {
     let width: Int
     let height: Int
@@ -122,21 +126,10 @@ actor DisplayCaptureStreamConfigurationCoordinator {
         self.desiredState = initialState
     }
 
-    func setPreviewShowsCursor(_ showsCursor: Bool) async throws -> Bool {
+    func applyImmediateDemand(_ demand: DisplayCaptureDemandSnapshot) async throws -> Bool {
         try await applyMutation { state in
-            state.previewShowsCursor = showsCursor
-        }
-    }
-
-    func retainShareCursorOverride() async throws -> Bool {
-        try await applyMutation { state in
-            state.shareCursorOverrideCount += 1
-        }
-    }
-
-    func releaseShareCursorOverride() async throws -> Bool {
-        try await applyMutation { state in
-            state.shareCursorOverrideCount = max(0, state.shareCursorOverrideCount - 1)
+            state.previewShowsCursor = demand.previewShowsCursor
+            state.shareCursorOverrideCount = demand.shareCursorOverrideCount
         }
     }
 
@@ -304,14 +297,6 @@ actor DisplayCaptureStreamConfigurationCoordinator {
 }
 
 final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
-    private struct DemandState {
-        var configurationCoordinator: DisplayCaptureConfigurationCoordinatorState
-        var taskLifetime = DisplayCaptureTaskLifetimeState()
-        var pendingTaskNonce: UInt64 = 0
-        var pendingConfigurationTask: Task<Void, Never>?
-        var activeApplyTask: Task<Void, Never>?
-    }
-
     nonisolated private static let minimumConfigurationDwellNanoseconds: UInt64 = 5_000_000_000
 
     nonisolated let displayID: CGDirectDisplayID
@@ -321,9 +306,9 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
     private let output = DisplayStreamOutput()
     nonisolated private let captureQueue: DispatchQueue
     nonisolated private let fanout = DisplaySampleFanout()
-    nonisolated private let metrics = Mutex(DisplayCaptureMetrics())
+    nonisolated private let metrics: DisplayCaptureMetricsStore
     nonisolated private let streamConfigurationCoordinator: DisplayCaptureStreamConfigurationCoordinator
-    nonisolated private let demandState: Mutex<DemandState>
+    nonisolated private let demandDriver: DisplayCaptureDemandDriver
 
     nonisolated init(
         display: SCDisplay,
@@ -346,26 +331,50 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
         let filter = try await Self.makeContentFilter(display: display)
         self.stream = SCStream(filter: filter, configuration: config, delegate: output)
         self.sessionHub = WebRTCSessionHub()
-        self.streamConfigurationCoordinator = DisplayCaptureStreamConfigurationCoordinator(
+        let metrics = DisplayCaptureMetricsStore()
+        self.metrics = metrics
+        let streamConfigurationCoordinator = DisplayCaptureStreamConfigurationCoordinator(
             stream: self.stream,
             initialState: state
         )
-        self.demandState = Mutex(
-            DemandState(
-                configurationCoordinator: DisplayCaptureConfigurationCoordinatorState(
-                    committedConfiguration: .init(
-                        profile: state.profile,
-                        frameRateTier: state.frameRateTier
-                    ),
-                    performanceMode: initialPerformanceMode
+        self.streamConfigurationCoordinator = streamConfigurationCoordinator
+        self.demandDriver = DisplayCaptureDemandDriver(
+            initialConfiguration: .init(
+                profile: state.profile,
+                frameRateTier: state.frameRateTier
+            ),
+            initialDemand: DisplayCaptureDemandSnapshot(
+                performanceMode: initialPerformanceMode
+            ),
+            minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds,
+            applyImmediateDemand: { demand in
+                let changed = try await streamConfigurationCoordinator.applyImmediateDemand(demand)
+                guard changed else { return false }
+                metrics.value.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
+                return true
+            },
+            applyConfiguration: { configuration in
+                try await streamConfigurationCoordinator.applyDemandDrivenConfiguration(configuration)
+            },
+            onConfigurationApplied: { configuration in
+                metrics.value.withLock { metrics in
+                    metrics.currentProfile = configuration.profile
+                    metrics.currentFrameRateTier = configuration.frameRateTier
+                    metrics.profileReconfigurationCount &+= 1
+                }
+            },
+            onConfigurationFailure: { error in
+                AppErrorMapper.logFailure(
+                    "Update capture configuration",
+                    error: error,
+                    logger: AppLog.capture
                 )
-            )
+            }
         )
-        self.metrics.withLock {
+        metrics.value.withLock {
             $0.currentProfile = state.profile
             $0.currentFrameRateTier = state.frameRateTier
         }
-
         output.session = self
 
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
@@ -374,69 +383,30 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
         fanout.attachPreviewSink(sink)
-        scheduleDemandUpdate { state in
-            state.previewSinkCount += 1
-        }
     }
 
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
         fanout.detachPreviewSink(sink)
-        scheduleDemandUpdate { state in
-            state.previewSinkCount = max(
-                0,
-                state.previewSinkCount - 1
-            )
-        }
     }
 
     nonisolated func stopSharing() {
         sessionHub.stopSharing()
     }
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
-        let changed = try await streamConfigurationCoordinator.setPreviewShowsCursor(showsCursor)
-        guard changed else { return }
-        metrics.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
-    }
-
-    nonisolated func retainShareCursorOverride() async throws {
-        let changed = try await streamConfigurationCoordinator.retainShareCursorOverride()
-        guard changed else { return }
-        metrics.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
-    }
-
-    nonisolated func releaseShareCursorOverride() async throws {
-        let changed = try await streamConfigurationCoordinator.releaseShareCursorOverride()
-        guard changed else { return }
-        metrics.withLock { $0.cursorOverrideReconfigurationCount &+= 1 }
-    }
-
-    nonisolated func setSharingActive(_ isActive: Bool) async throws {
-        scheduleDemandUpdate { state in
-            state.sharingActive = isActive
-        }
-    }
-
-    nonisolated func setPerformanceMode(_ mode: CapturePerformanceMode) async throws {
-        schedulePerformanceModeUpdate(mode)
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        try await demandDriver.setDemand(demand)
     }
 
     nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        schedulePreviewPerformanceSample(sample)
+        demandDriver.recordPreviewPerformanceSample(sample)
     }
 
     nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
-        metrics.withLock { $0.snapshot() }
+        metrics.value.withLock { $0.snapshot() }
     }
 
     nonisolated func stop() async {
-        demandState.withLock { state in
-            _ = state.taskLifetime.invalidateAllTasks()
-            state.pendingConfigurationTask?.cancel()
-            state.pendingConfigurationTask = nil
-            state.activeApplyTask?.cancel()
-            state.activeApplyTask = nil
-        }
+        demandDriver.cancelAll()
         await streamConfigurationCoordinator.cancelPending()
         stopSharing()
         try? await stream.stopCapture()
@@ -444,180 +414,13 @@ final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning
 
     nonisolated func handle(sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
         guard type == .screen, let pixelBuffer = sampleBuffer.imageBuffer else { return }
-        metrics.withLock { $0.receivedFrameCount &+= 1 }
+        metrics.value.withLock { $0.receivedFrameCount &+= 1 }
 
         fanout.publishPreviewFrame(sampleBuffer)
 
         guard sessionHub.hasDemand else { return }
         let ptsUs = Self.microseconds(from: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         sessionHub.submitFrame(pixelBuffer: pixelBuffer, ptsUs: ptsUs)
-    }
-
-    nonisolated private func scheduleDemandUpdate(
-        _ mutation: (inout DisplayCaptureConfigurationCoordinatorState) -> Void
-    ) {
-        scheduleConfigurationDecision { state in
-            state.configurationCoordinator.mutateDemand(
-                nowNs: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds,
-                mutation: mutation
-            )
-        }
-    }
-
-    nonisolated private func schedulePerformanceModeUpdate(_ mode: CapturePerformanceMode) {
-        scheduleConfigurationDecision { state in
-            state.configurationCoordinator.updatePerformanceMode(
-                mode,
-                nowNs: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
-            )
-        }
-    }
-
-    nonisolated private func schedulePreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        scheduleConfigurationDecision { state in
-            state.configurationCoordinator.recordPreviewPerformanceSample(
-                sample,
-                nowNs: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
-            )
-        }
-    }
-
-    nonisolated private func scheduleConfigurationDecision(
-        _ decisionProvider: (inout DemandState) -> DisplayCaptureConfigurationDecision
-    ) {
-        let decision = demandState.withLock { state -> (DisplayCaptureConfigurationDecision, UInt64) in
-            state.pendingConfigurationTask?.cancel()
-            state.pendingConfigurationTask = nil
-            state.pendingTaskNonce &+= 1
-            let decision = decisionProvider(&state)
-            return (decision, state.pendingTaskNonce)
-        }
-        handleConfigurationDecision(decision.0, schedulingNonce: decision.1)
-    }
-
-    nonisolated private func handleConfigurationDecision(
-        _ decision: DisplayCaptureConfigurationDecision,
-        schedulingNonce: UInt64
-    ) {
-        switch decision {
-        case .noChange:
-            return
-        case .applyNow(let configuration):
-            let executionGeneration = demandState.withLock { $0.taskLifetime.currentGeneration }
-            let task = Task<Void, Never> { [weak self] in
-                guard let self else { return }
-                try? await self.applyDemandDrivenConfiguration(
-                    configuration: configuration,
-                    executionGeneration: executionGeneration
-                )
-            }
-            demandState.withLock { state in
-                if state.taskLifetime.allowsExecution(for: executionGeneration) {
-                    state.activeApplyTask = task
-                } else {
-                    task.cancel()
-                }
-            }
-        case .applyAfter(_, let delayNanoseconds):
-            let task = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: delayNanoseconds)
-                self?.resumeDemandDrivenConfigurationEvaluation(schedulingNonce: schedulingNonce)
-            }
-            demandState.withLock { state in
-                if state.pendingTaskNonce == schedulingNonce {
-                    state.pendingConfigurationTask = task
-                } else {
-                    task.cancel()
-                }
-            }
-        }
-    }
-
-    nonisolated private func resumeDemandDrivenConfigurationEvaluation(schedulingNonce: UInt64) {
-        let decision = demandState.withLock { state -> (DisplayCaptureConfigurationDecision, UInt64)? in
-            guard state.pendingTaskNonce == schedulingNonce else {
-                return nil
-            }
-            state.pendingConfigurationTask = nil
-            state.pendingTaskNonce &+= 1
-            let decision = state.configurationCoordinator.resumeScheduledTransition(
-                nowNs: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
-            )
-            return (decision, state.pendingTaskNonce)
-        }
-        guard let decision else { return }
-        handleConfigurationDecision(decision.0, schedulingNonce: decision.1)
-    }
-
-    nonisolated private func applyDemandDrivenConfiguration(
-        configuration: DisplayCaptureConfiguration,
-        executionGeneration: UInt64
-    ) async throws {
-        guard isExecutionAllowed(for: executionGeneration) else { return }
-
-        let changed: Bool
-
-        do {
-            try Task.checkCancellation()
-            guard isExecutionAllowed(for: executionGeneration) else { return }
-
-            changed = try await streamConfigurationCoordinator.applyDemandDrivenConfiguration(configuration)
-        } catch is CancellationError {
-            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
-            return
-        } catch {
-            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
-            AppErrorMapper.logFailure("Update capture configuration", error: error, logger: AppLog.capture)
-            return
-        }
-
-        guard changed else {
-            finishDemandDrivenConfigurationFailure(executionGeneration: executionGeneration)
-            return
-        }
-
-        guard isExecutionAllowed(for: executionGeneration) else { return }
-
-        metrics.withLock { metrics in
-            metrics.currentProfile = configuration.profile
-            metrics.currentFrameRateTier = configuration.frameRateTier
-            metrics.profileReconfigurationCount &+= 1
-        }
-
-        let decision = demandState.withLock { state -> (DisplayCaptureConfigurationDecision, UInt64)? in
-            guard state.taskLifetime.allowsExecution(for: executionGeneration) else {
-                return nil
-            }
-            state.pendingConfigurationTask?.cancel()
-            state.pendingConfigurationTask = nil
-            state.activeApplyTask = nil
-            state.pendingTaskNonce &+= 1
-            let decision = state.configurationCoordinator.finishAppliedTransition(
-                at: Self.currentTimeNanoseconds(),
-                minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds
-            )
-            return (decision, state.pendingTaskNonce)
-        }
-        guard let decision else { return }
-        handleConfigurationDecision(decision.0, schedulingNonce: decision.1)
-    }
-
-    nonisolated private func isExecutionAllowed(for generation: UInt64) -> Bool {
-        demandState.withLock { state in
-            state.taskLifetime.allowsExecution(for: generation)
-        }
-    }
-
-    nonisolated private func finishDemandDrivenConfigurationFailure(executionGeneration: UInt64) {
-        demandState.withLock { state in
-            guard state.taskLifetime.allowsExecution(for: executionGeneration) else { return }
-            state.activeApplyTask = nil
-            state.configurationCoordinator.failAppliedTransition()
-        }
     }
 }
 
@@ -641,10 +444,6 @@ extension DisplayCaptureSession {
         guard time.isValid, !time.isIndefinite, time.seconds.isFinite else { return 0 }
         let scaled = CMTimeConvertScale(time, timescale: 1_000_000, method: .default)
         return scaled.value > 0 ? UInt64(scaled.value) : 0
-    }
-
-    nonisolated private static func currentTimeNanoseconds() -> UInt64 {
-        DispatchTime.now().uptimeNanoseconds
     }
 
     nonisolated static func clampedPreviewFramesPerSecond(for refreshRate: Double) -> Int {

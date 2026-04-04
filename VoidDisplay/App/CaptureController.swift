@@ -12,12 +12,15 @@ import Observation
 @Observable
 final class CaptureController {
     var screenCaptureSessions: [ScreenMonitoringSession] = []
-    var startingDisplayIDs: Set<CGDirectDisplayID> = []
+    private(set) var startingDisplayIDs: Set<CGDirectDisplayID> = []
     @ObservationIgnored let catalogService: ScreenCaptureCatalogService
 
     @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
     @ObservationIgnored private let captureMonitoringLifecycleService: any CaptureMonitoringLifecycleServiceProtocol
-    @ObservationIgnored private var observedStartTokensByDisplayID: [CGDirectDisplayID: Set<UUID>] = [:]
+    @ObservationIgnored private let startTracker = DisplayStartTracker()
+    @ObservationIgnored private lazy var mutationRunner = SnapshotMutationRunner { [weak self] in
+        self?.syncCaptureMonitoringState()
+    }
 
     init(
         captureMonitoringService: any CaptureMonitoringServiceProtocol,
@@ -40,7 +43,7 @@ final class CaptureController {
     }
 
     func isStarting(displayID: CGDirectDisplayID) -> Bool {
-        startingDisplayIDs.contains(displayID)
+        startTracker.contains(displayID: displayID)
     }
 
     func startMonitoring(
@@ -48,9 +51,10 @@ final class CaptureController {
         metadata: CaptureMonitoringDisplayMetadata
     ) async throws -> DisplayStartOutcome<UUID> {
         let displayID = display.displayID
-        let startToken = beginObservedStart(displayID: displayID)
+        let startToken = startTracker.begin(displayID: displayID)
+        syncCaptureMonitoringState()
         defer {
-            endObservedStart(displayID: displayID, token: startToken)
+            startTracker.end(displayID: displayID, token: startToken)
             syncCaptureMonitoringState()
         }
 
@@ -61,13 +65,13 @@ final class CaptureController {
     }
 
     func activateMonitoringSession(id: UUID) {
-        mutateAndSync {
+        mutationRunner.run {
             captureMonitoringLifecycleService.activateMonitoringSession(id: id)
         }
     }
 
     func attachPreviewSink(_ sink: any DisplayPreviewSink, to id: UUID) {
-        mutateAndSync {
+        mutationRunner.run {
             captureMonitoringLifecycleService.attachPreviewSink(sink, to: id)
         }
     }
@@ -76,7 +80,7 @@ final class CaptureController {
         id: UUID,
         capturesCursor: Bool
     ) async throws {
-        try await mutateAndSyncAsync {
+        try await mutationRunner.run {
             try await captureMonitoringLifecycleService.setMonitoringSessionCapturesCursor(
                 id: id,
                 capturesCursor: capturesCursor
@@ -85,14 +89,14 @@ final class CaptureController {
     }
 
     func closeMonitoringSession(id: UUID) {
-        mutateAndSync {
+        mutationRunner.run {
             captureMonitoringLifecycleService.closeMonitoringSession(id: id)
         }
     }
 
     func removeMonitoringSessions(displayID: CGDirectDisplayID) {
-        clearObservedStarts(displayID: displayID)
-        mutateAndSync {
+        startTracker.clear(displayID: displayID)
+        mutationRunner.run {
             captureMonitoringLifecycleService.removeMonitoringSessions(displayID: displayID)
         }
     }
@@ -109,40 +113,16 @@ final class CaptureController {
 
     private func syncCaptureMonitoringState() {
         screenCaptureSessions = captureMonitoringService.currentSessions
+        startingDisplayIDs = startTracker.activeDisplayIDs
     }
 
-    private func beginObservedStart(displayID: CGDirectDisplayID) -> UUID {
-        let token = UUID()
-        var tokens = observedStartTokensByDisplayID[displayID] ?? []
-        tokens.insert(token)
-        observedStartTokensByDisplayID[displayID] = tokens
-        startingDisplayIDs.insert(displayID)
-        return token
-    }
-
-    private func endObservedStart(displayID: CGDirectDisplayID, token: UUID) {
-        guard var tokens = observedStartTokensByDisplayID[displayID] else { return }
-        tokens.remove(token)
-        if tokens.isEmpty {
-            observedStartTokensByDisplayID.removeValue(forKey: displayID)
-            startingDisplayIDs.remove(displayID)
-        } else {
-            observedStartTokensByDisplayID[displayID] = tokens
+#if DEBUG
+    func installStartingDisplayIDsForTesting(_ displayIDs: Set<CGDirectDisplayID>) {
+        startTracker.clearAll()
+        for displayID in displayIDs {
+            _ = startTracker.begin(displayID: displayID)
         }
-    }
-
-    private func clearObservedStarts(displayID: CGDirectDisplayID) {
-        observedStartTokensByDisplayID.removeValue(forKey: displayID)
-        startingDisplayIDs.remove(displayID)
-    }
-
-    private func mutateAndSync(_ mutation: () -> Void) {
-        mutation()
         syncCaptureMonitoringState()
     }
-
-    private func mutateAndSyncAsync<T>(_ mutation: () async throws -> T) async rethrows -> T {
-        defer { syncCaptureMonitoringState() }
-        return try await mutation()
-    }
+#endif
 }

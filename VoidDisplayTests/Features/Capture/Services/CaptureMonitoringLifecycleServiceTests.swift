@@ -26,17 +26,13 @@ private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessio
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws {
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
         cursorUpdateCount += 1
-        lastShowsCursor = showsCursor
+        lastShowsCursor = demand.previewShowsCursor
         if let cursorUpdateError {
             throw cursorUpdateError
         }
     }
-
-    nonisolated func retainShareCursorOverride() async throws {}
-
-    nonisolated func releaseShareCursorOverride() async throws {}
 
     nonisolated func stop() async {}
 }
@@ -633,7 +629,15 @@ struct CaptureMonitoringLifecycleServiceTests {
             displayID: displayID,
             resolutionText: "1920 × 1080",
             session: captureSession,
-            cancelClosure: { cancelCounter.value += 1 }
+            cancelClosure: { cancelCounter.value += 1 },
+            setShowsCursorClosure: { showsCursor in
+                try await captureSession.setDemand(
+                    DisplayCaptureDemandSnapshot(
+                        previewShowsCursor: showsCursor,
+                        performanceMode: .automatic
+                    )
+                )
+            }
         )
         return (subscription, captureSession, cancelCounter)
     }

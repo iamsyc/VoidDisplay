@@ -57,12 +57,43 @@ nonisolated enum DisplayCaptureProfileDecision: Sendable, Equatable {
     case applyAfter(DisplayCaptureProfile, delayNanoseconds: UInt64)
 }
 
+nonisolated struct DisplayCaptureDemandSnapshot: Sendable, Equatable {
+    var attachedPreviewSinkCount: Int
+    var shareTokenCount: Int
+    var previewShowsCursor: Bool
+    var shareCursorOverrideCount: Int
+    var performanceMode: CapturePerformanceMode
+
+    init(
+        attachedPreviewSinkCount: Int = 0,
+        shareTokenCount: Int = 0,
+        previewShowsCursor: Bool = false,
+        shareCursorOverrideCount: Int = 0,
+        performanceMode: CapturePerformanceMode
+    ) {
+        self.attachedPreviewSinkCount = max(0, attachedPreviewSinkCount)
+        self.shareTokenCount = max(0, shareTokenCount)
+        self.previewShowsCursor = previewShowsCursor
+        self.shareCursorOverrideCount = max(0, shareCursorOverrideCount)
+        self.performanceMode = performanceMode
+    }
+
+    nonisolated var desiredProfile: DisplayCaptureProfile? {
+        DisplayCaptureProfileStateMachine.desiredProfile(for: self)
+    }
+
+    nonisolated var showsCursor: Bool {
+        previewShowsCursor || shareCursorOverrideCount > 0
+    }
+
+    nonisolated var isEmpty: Bool {
+        attachedPreviewSinkCount == 0 && shareTokenCount == 0 && !showsCursor
+    }
+}
+
 nonisolated enum DisplayCaptureProfileStateMachine {
-    nonisolated static func desiredProfile(
-        previewSinkCount: Int,
-        sharingActive: Bool
-    ) -> DisplayCaptureProfile? {
-        switch (previewSinkCount > 0, sharingActive) {
+    nonisolated static func desiredProfile(for demand: DisplayCaptureDemandSnapshot) -> DisplayCaptureProfile? {
+        switch (demand.attachedPreviewSinkCount > 0, demand.shareTokenCount > 0) {
         case (true, false):
             .previewOnly
         case (false, true):
@@ -75,17 +106,13 @@ nonisolated enum DisplayCaptureProfileStateMachine {
     }
 
     nonisolated static func decideTransition(
-        previewSinkCount: Int,
-        sharingActive: Bool,
+        demand: DisplayCaptureDemandSnapshot,
         currentProfile: DisplayCaptureProfile,
         lastProfileSwitchTimeNs: UInt64?,
         nowNs: UInt64,
         minimumDwellNanoseconds: UInt64
     ) -> DisplayCaptureProfileDecision {
-        guard let desiredProfile = desiredProfile(
-            previewSinkCount: previewSinkCount,
-            sharingActive: sharingActive
-        ) else {
+        guard let desiredProfile = desiredProfile(for: demand) else {
             return .noChange
         }
         guard desiredProfile != currentProfile else {
@@ -107,26 +134,27 @@ nonisolated enum DisplayCaptureProfileStateMachine {
 }
 
 nonisolated struct DisplayCaptureProfileCoordinatorState: Sendable {
-    var previewSinkCount: Int = 0
-    var sharingActive = false
+    var demand: DisplayCaptureDemandSnapshot
     var committedProfile: DisplayCaptureProfile
     var inFlightProfile: DisplayCaptureProfile?
     var lastProfileSwitchTimeNs: UInt64?
 
     nonisolated init(
         committedProfile: DisplayCaptureProfile,
+        demand: DisplayCaptureDemandSnapshot,
         lastProfileSwitchTimeNs: UInt64? = nil
     ) {
+        self.demand = demand
         self.committedProfile = committedProfile
         self.lastProfileSwitchTimeNs = lastProfileSwitchTimeNs
     }
 
-    nonisolated mutating func mutateDemand(
+    nonisolated mutating func updateDemand(
+        _ demand: DisplayCaptureDemandSnapshot,
         nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64,
-        mutation: (inout DisplayCaptureProfileCoordinatorState) -> Void
+        minimumDwellNanoseconds: UInt64
     ) -> DisplayCaptureProfileDecision {
-        mutation(&self)
+        self.demand = demand
         return evaluateTransition(
             nowNs: nowNs,
             minimumDwellNanoseconds: minimumDwellNanoseconds
@@ -170,8 +198,7 @@ nonisolated struct DisplayCaptureProfileCoordinatorState: Sendable {
         }
 
         let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            previewSinkCount: previewSinkCount,
-            sharingActive: sharingActive,
+            demand: demand,
             currentProfile: committedProfile,
             lastProfileSwitchTimeNs: lastProfileSwitchTimeNs,
             nowNs: nowNs,
@@ -320,22 +347,17 @@ nonisolated enum DisplayCaptureConfigurationStateMachine {
     }
 
     nonisolated static func desiredConfiguration(
-        previewSinkCount: Int,
-        sharingActive: Bool,
-        performanceMode: CapturePerformanceMode,
+        for demand: DisplayCaptureDemandSnapshot,
         adaptivePolicy: DisplayCaptureAdaptivePolicyState
     ) -> DisplayCaptureConfiguration? {
-        guard let profile = DisplayCaptureProfileStateMachine.desiredProfile(
-            previewSinkCount: previewSinkCount,
-            sharingActive: sharingActive
-        ) else {
+        guard let profile = demand.desiredProfile else {
             return nil
         }
         return DisplayCaptureConfiguration(
             profile: profile,
             frameRateTier: defaultFrameRateTier(
                 for: profile,
-                performanceMode: performanceMode,
+                performanceMode: demand.performanceMode,
                 adaptivePolicy: adaptivePolicy
             )
         )
@@ -366,9 +388,7 @@ nonisolated enum DisplayCaptureConfigurationStateMachine {
 }
 
 nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equatable {
-    var previewSinkCount = 0
-    var sharingActive = false
-    var performanceMode: CapturePerformanceMode
+    var demand: DisplayCaptureDemandSnapshot
     var adaptivePolicy = DisplayCaptureAdaptivePolicyState()
     var committedConfiguration: DisplayCaptureConfiguration
     var inFlightConfiguration: DisplayCaptureConfiguration?
@@ -376,43 +396,27 @@ nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equata
 
     init(
         committedConfiguration: DisplayCaptureConfiguration,
-        performanceMode: CapturePerformanceMode,
+        demand: DisplayCaptureDemandSnapshot,
         lastConfigurationSwitchTimeNs: UInt64? = nil
     ) {
-        self.performanceMode = performanceMode
+        self.demand = demand
         self.committedConfiguration = committedConfiguration
         self.lastConfigurationSwitchTimeNs = lastConfigurationSwitchTimeNs
         adaptivePolicy.rebase(
             desiredProfile: committedConfiguration.profile,
-            performanceMode: performanceMode
+            performanceMode: demand.performanceMode
         )
     }
 
-    mutating func mutateDemand(
-        nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64,
-        mutation: (inout DisplayCaptureConfigurationCoordinatorState) -> Void
-    ) -> DisplayCaptureConfigurationDecision {
-        mutation(&self)
-        adaptivePolicy.rebase(
-            desiredProfile: currentDesiredProfile,
-            performanceMode: performanceMode
-        )
-        return evaluateTransition(
-            nowNs: nowNs,
-            minimumDwellNanoseconds: minimumDwellNanoseconds
-        )
-    }
-
-    mutating func updatePerformanceMode(
-        _ mode: CapturePerformanceMode,
+    mutating func updateDemand(
+        _ demand: DisplayCaptureDemandSnapshot,
         nowNs: UInt64,
         minimumDwellNanoseconds: UInt64
     ) -> DisplayCaptureConfigurationDecision {
-        performanceMode = mode
+        self.demand = demand
         adaptivePolicy.rebase(
             desiredProfile: currentDesiredProfile,
-            performanceMode: mode
+            performanceMode: demand.performanceMode
         )
         return evaluateTransition(
             nowNs: nowNs,
@@ -426,8 +430,8 @@ nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equata
         minimumDwellNanoseconds: UInt64
     ) -> DisplayCaptureConfigurationDecision {
         let desiredProfile = currentDesiredProfile
-        adaptivePolicy.rebase(desiredProfile: desiredProfile, performanceMode: performanceMode)
-        guard desiredProfile == .mixed, performanceMode == .automatic else {
+        adaptivePolicy.rebase(desiredProfile: desiredProfile, performanceMode: demand.performanceMode)
+        guard desiredProfile == .mixed, demand.performanceMode == .automatic else {
             return evaluateTransition(
                 nowNs: nowNs,
                 minimumDwellNanoseconds: minimumDwellNanoseconds
@@ -460,7 +464,7 @@ nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equata
         lastConfigurationSwitchTimeNs = nowNs
         adaptivePolicy.rebase(
             desiredProfile: committedConfiguration.profile,
-            performanceMode: performanceMode
+            performanceMode: demand.performanceMode
         )
         return evaluateTransition(
             nowNs: nowNs,
@@ -473,10 +477,7 @@ nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equata
     }
 
     private var currentDesiredProfile: DisplayCaptureProfile? {
-        DisplayCaptureProfileStateMachine.desiredProfile(
-            previewSinkCount: previewSinkCount,
-            sharingActive: sharingActive
-        )
+        demand.desiredProfile
     }
 
     private mutating func evaluateTransition(
@@ -488,9 +489,7 @@ nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equata
         }
         let decision = DisplayCaptureConfigurationStateMachine.decideTransition(
             desiredConfiguration: DisplayCaptureConfigurationStateMachine.desiredConfiguration(
-                previewSinkCount: previewSinkCount,
-                sharingActive: sharingActive,
-                performanceMode: performanceMode,
+                for: demand,
                 adaptivePolicy: adaptivePolicy
             ),
             currentConfiguration: committedConfiguration,
@@ -537,11 +536,7 @@ protocol DisplayCaptureSessioning: AnyObject, Sendable {
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink)
     nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample)
     nonisolated func stopSharing()
-    nonisolated func setPreviewShowsCursor(_ showsCursor: Bool) async throws
-    nonisolated func retainShareCursorOverride() async throws
-    nonisolated func releaseShareCursorOverride() async throws
-    nonisolated func setSharingActive(_ isActive: Bool) async throws
-    nonisolated func setPerformanceMode(_ mode: CapturePerformanceMode) async throws
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws
     nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot
     nonisolated func stop() async
 }
@@ -551,12 +546,8 @@ extension DisplayCaptureSessioning {
         _ = sample
     }
 
-    nonisolated func setSharingActive(_ isActive: Bool) async throws {
-        _ = isActive
-    }
-
-    nonisolated func setPerformanceMode(_ mode: CapturePerformanceMode) async throws {
-        _ = mode
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        _ = demand
     }
 
     nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {

@@ -12,7 +12,7 @@ struct AppEnvironment {
     let capture: CaptureController
     let sharing: SharingController
     let virtualDisplay: VirtualDisplayController
-    let topology: DisplayTopologyChangeCoordinator
+    let screenCatalog: ScreenCatalogOrchestrator
     let capturePerformancePreferences: CapturePerformancePreferences
 }
 
@@ -21,7 +21,7 @@ struct VoidDisplayApp: App {
     @State private var capture: CaptureController
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
-    @State private var topology: DisplayTopologyChangeCoordinator
+    @State private var screenCatalog: ScreenCatalogOrchestrator
     @State private var capturePerformancePreferences: CapturePerformancePreferences
 
     init() {
@@ -29,13 +29,13 @@ struct VoidDisplayApp: App {
         _capture = State(initialValue: env.capture)
         _sharing = State(initialValue: env.sharing)
         _virtualDisplay = State(initialValue: env.virtualDisplay)
-        _topology = State(initialValue: env.topology)
+        _screenCatalog = State(initialValue: env.screenCatalog)
         _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
     }
 
     var body: some Scene {
         WindowGroup {
-            HomeView(topologyCoordinator: topology)
+            HomeView(screenCatalogOrchestrator: screenCatalog)
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
@@ -193,11 +193,11 @@ enum AppBootstrap {
             capture: capture,
             sharing: sharing,
             virtualDisplay: virtualDisplay,
-            topology: DisplayTopologyChangeCoordinator(
+            screenCatalog: ScreenCatalogOrchestrator(
+                catalogService: catalogService,
                 capture: capture,
                 sharing: sharing,
-                virtualDisplay: virtualDisplay,
-                catalogService: catalogService
+                virtualDisplay: virtualDisplay
             ),
             capturePerformancePreferences: capturePerformancePreferences
         )

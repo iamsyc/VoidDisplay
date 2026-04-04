@@ -18,7 +18,7 @@ final class SharingController {
     }
 
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
-    var startingDisplayIDs: Set<CGDirectDisplayID> = []
+    private(set) var startingDisplayIDs: Set<CGDirectDisplayID> = []
     var sharingClientCount = 0
     var sharingClientCounts: [CGDirectDisplayID: Int] = [:]
     var isSharing = false
@@ -29,7 +29,10 @@ final class SharingController {
     @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
     @ObservationIgnored private let portPreferences: any SharingPortPreferencesProtocol
-    @ObservationIgnored private var observedStartTokensByDisplayID: [CGDirectDisplayID: Set<UUID>] = [:]
+    @ObservationIgnored private let startTracker = DisplayStartTracker()
+    @ObservationIgnored private lazy var mutationRunner = SnapshotMutationRunner { [weak self] in
+        self?.syncSharingState()
+    }
     @ObservationIgnored private var sharingStateSubscription: SharingStateSubscription?
 
     init(
@@ -55,7 +58,7 @@ final class SharingController {
 
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
-        await mutateAndSync {
+        await mutationRunner.run {
             let result = await sharingService.startWebService(requestedPort: requestedPort)
             if let binding = result.binding {
                 portPreferences.savePreferredPort(binding.requestedPort)
@@ -65,8 +68,8 @@ final class SharingController {
     }
 
     func stopWebService() {
-        clearAllObservedStarts()
-        mutateAndSync {
+        startTracker.clearAll()
+        mutationRunner.run {
             sharingService.stopWebService()
         }
     }
@@ -75,16 +78,17 @@ final class SharingController {
         _ displays: [SCDisplay],
         virtualSerialResolver: @escaping (CGDirectDisplayID) -> UInt32?
     ) {
-        mutateAndSync {
+        mutationRunner.run {
             sharingService.registerShareableDisplays(displays, virtualSerialResolver: virtualSerialResolver)
         }
     }
 
     func beginSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
         let displayID = display.displayID
-        let startToken = beginObservedStart(displayID: displayID)
+        let startToken = startTracker.begin(displayID: displayID)
+        syncSharingState()
         defer {
-            endObservedStart(displayID: displayID, token: startToken)
+            startTracker.end(displayID: displayID, token: startToken)
             syncSharingState()
         }
 
@@ -92,15 +96,15 @@ final class SharingController {
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {
-        clearObservedStarts(displayID: displayID)
-        mutateAndSync {
+        startTracker.clear(displayID: displayID)
+        mutationRunner.run {
             sharingService.stopSharing(displayID: displayID)
         }
     }
 
     func stopAllSharing() {
-        clearAllObservedStarts()
-        mutateAndSync {
+        startTracker.clearAll()
+        mutationRunner.run {
             sharingService.stopAllSharing()
         }
     }
@@ -122,7 +126,7 @@ final class SharingController {
     }
 
     func isStarting(displayID: CGDirectDisplayID) -> Bool {
-        startingDisplayIDs.contains(displayID)
+        startTracker.contains(displayID: displayID)
     }
 
     func sharePagePath(for displayID: CGDirectDisplayID) -> String? {
@@ -162,37 +166,8 @@ final class SharingController {
         isSharing = sharingService.hasAnyActiveSharing
         isWebServiceRunning = sharingService.isWebServiceRunning
         webServiceLifecycleState = sharingService.webServiceLifecycleState
+        startingDisplayIDs = startTracker.activeDisplayIDs
         refreshSharingCountsFromSnapshot()
-    }
-
-    private func beginObservedStart(displayID: CGDirectDisplayID) -> UUID {
-        let token = UUID()
-        var tokens = observedStartTokensByDisplayID[displayID] ?? []
-        tokens.insert(token)
-        observedStartTokensByDisplayID[displayID] = tokens
-        startingDisplayIDs.insert(displayID)
-        return token
-    }
-
-    private func endObservedStart(displayID: CGDirectDisplayID, token: UUID) {
-        guard var tokens = observedStartTokensByDisplayID[displayID] else { return }
-        tokens.remove(token)
-        if tokens.isEmpty {
-            observedStartTokensByDisplayID.removeValue(forKey: displayID)
-            startingDisplayIDs.remove(displayID)
-        } else {
-            observedStartTokensByDisplayID[displayID] = tokens
-        }
-    }
-
-    private func clearObservedStarts(displayID: CGDirectDisplayID) {
-        observedStartTokensByDisplayID.removeValue(forKey: displayID)
-        startingDisplayIDs.remove(displayID)
-    }
-
-    private func clearAllObservedStarts() {
-        observedStartTokensByDisplayID.removeAll()
-        startingDisplayIDs.removeAll()
     }
 
     private func refreshSharingCountsFromSnapshot() {
@@ -211,18 +186,13 @@ final class SharingController {
         sharingClientCounts = counts
     }
 
-    private func mutateAndSync(_ mutation: () -> Void) {
-        mutation()
+#if DEBUG
+    func installStartingDisplayIDsForTesting(_ displayIDs: Set<CGDirectDisplayID>) {
+        startTracker.clearAll()
+        for displayID in displayIDs {
+            _ = startTracker.begin(displayID: displayID)
+        }
         syncSharingState()
     }
-
-    private func mutateAndSync<T>(_ mutation: () async -> T) async -> T {
-        defer { syncSharingState() }
-        return await mutation()
-    }
-
-    private func mutateAndSync<T>(_ mutation: () async throws -> T) async rethrows -> T {
-        defer { syncSharingState() }
-        return try await mutation()
-    }
+#endif
 }
