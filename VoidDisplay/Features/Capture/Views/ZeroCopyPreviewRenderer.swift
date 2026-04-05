@@ -164,20 +164,20 @@ final class ZeroCopyHostView: NSView {
     private weak var displayLayer: AVSampleBufferDisplayLayer?
 
     func hostDisplayLayer(_ layer: AVSampleBufferDisplayLayer) {
+        if displayLayer === layer {
+            return
+        }
+
         wantsLayer = true
+        if self.layer == nil {
+            self.layer = CALayer()
+        }
         layerContentsRedrawPolicy = .duringViewResize
         layer.frame = bounds
+        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        displayLayer?.removeFromSuperlayer()
         self.layer?.addSublayer(layer)
         displayLayer = layer
-        syncLayerScale()
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        displayLayer?.frame = bounds
-        CATransaction.commit()
         syncLayerScale()
     }
 
@@ -193,7 +193,6 @@ final class ZeroCopyHostView: NSView {
 
     private func syncLayerScale() {
         let scale = max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
-        layer?.contentsScale = scale
         displayLayer?.contentsScale = scale
     }
 }

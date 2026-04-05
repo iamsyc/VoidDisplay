@@ -1,3 +1,5 @@
+import AppKit
+import AVFoundation
 import CoreGraphics
 import Testing
 @testable import VoidDisplay
@@ -90,6 +92,18 @@ struct ZeroCopyPreviewRendererTests {
         #expect(settled)
         #expect(metrics.renderedFrameCount == 0)
         #expect(renderer.hasReceivedFrame == false)
+    }
+
+    @Test func hostViewDoesNotDuplicateHostedLayer() {
+        let view = ZeroCopyHostView(frame: NSRect(x: 0, y: 0, width: 320, height: 180))
+        let layer = AVSampleBufferDisplayLayer()
+
+        view.hostDisplayLayer(layer)
+        view.hostDisplayLayer(layer)
+
+        #expect(view.layer != nil)
+        #expect(view.layer?.sublayers?.count == 1)
+        #expect(view.layer?.sublayers?.first === layer)
     }
 
     private func waitUntil(
