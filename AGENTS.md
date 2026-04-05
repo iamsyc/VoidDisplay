@@ -67,12 +67,15 @@
 - Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
 
 ## Execution Mode Recommendation
-- Provide an execution mode recommendation only before starting work on an actionable request and only when there is a meaningful choice between immediate execution and plan-first handling.
+- Provide an execution mode recommendation before starting implementation work on an actionable request whenever there is a meaningful choice between immediate execution and plan-first handling.
 - Do not provide this recommendation in completion handoff, commit summaries, verification summaries, or meta discussions about process, prompts, or repository policy.
-- Do not provide this recommendation for analysis-only or question-only requests, unless the current turn is a code review that produced actionable findings requiring follow-up implementation.
+- For analysis-only or question-only requests, do not provide this recommendation while the turn remains analysis-only.
+- If the turn changes from analysis, diagnosis, review, or explanation into proposed implementation, code modification, or execution of fixes, re-evaluate and provide an execution mode recommendation before the first implementation step unless the user has already explicitly chosen a mode.
 - For code review requests with actionable findings, append exactly one execution mode recommendation after the findings summary.
-- Do not provide this recommendation when the user has already explicitly chosen the mode for the current turn.
-- Once execution has started in the current turn, stop emitting execution mode recommendations.
+- Treat an explicit mode choice as a direct statement about the mode itself, for example `直接执行`, `现在改`, `先实现`, `开启计划模式`, `先给计划`, or another equally explicit instruction about execution style.
+- Do not treat short confirmations such as `要`, `继续`, `看看`, `查一下`, `修吧`, or agreement with a diagnosis as an explicit mode choice. These confirm the task and still require the agent to decide whether an execution mode recommendation is needed.
+- Once implementation has started in the current turn, stop emitting execution mode recommendations for that turn.
+- Starting implementation means making code or config edits, creating a branch for the task, running modification-oriented commands, or presenting a concrete change plan that the agent is about to execute immediately.
 - Use `建议：直接执行` only when implementation has not started, scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate.
 - Use `建议：开启计划模式` only when implementation has not started and the task is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
 - Keep the recommendation to one sentence and state the concrete reason.
