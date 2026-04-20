@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 struct AppEnvironment {
     let capture: CaptureController
+    let observability: ObservabilityCenter
     let sharing: SharingController
     let virtualDisplay: VirtualDisplayController
     let screenCatalog: ScreenCatalogOrchestrator
@@ -23,6 +24,9 @@ struct VoidDisplayApp: App {
     @State private var virtualDisplay: VirtualDisplayController
     @State private var screenCatalog: ScreenCatalogOrchestrator
     @State private var capturePerformancePreferences: CapturePerformancePreferences
+    @State private var navigation: AppNavigationController
+    @State private var feedbackController: AppSettingsFeedbackController
+    private let observability: ObservabilityCenter
 
     init() {
         let env = AppBootstrap.makeEnvironment()
@@ -31,6 +35,9 @@ struct VoidDisplayApp: App {
         _virtualDisplay = State(initialValue: env.virtualDisplay)
         _screenCatalog = State(initialValue: env.screenCatalog)
         _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
+        _navigation = State(initialValue: AppNavigationController())
+        _feedbackController = State(initialValue: AppSettingsFeedbackController())
+        observability = env.observability
     }
 
     var body: some Scene {
@@ -39,14 +46,24 @@ struct VoidDisplayApp: App {
                 if CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
                    let sessionID = capture.screenCaptureSessions.first?.id {
                     CaptureDisplayView(sessionId: sessionID)
+                } else if UITestRuntime.scenario == .settingsFeedback {
+                    AppSettingsView(
+                        observability: observability,
+                        feedbackController: feedbackController
+                    )
                 } else {
-                    HomeView(screenCatalogOrchestrator: screenCatalog)
+                    HomeView(
+                        screenCatalogOrchestrator: screenCatalog,
+                        observability: observability,
+                        feedbackController: feedbackController
+                    )
                 }
             }
             .environment(capture)
             .environment(sharing)
             .environment(virtualDisplay)
             .environment(capturePerformancePreferences)
+            .environment(navigation)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
 
@@ -59,11 +76,15 @@ struct VoidDisplayApp: App {
         .windowToolbarStyle(.unifiedCompact(showsTitle: true))
 
         Settings {
-            AppSettingsView()
+            AppSettingsView(
+                observability: observability,
+                feedbackController: feedbackController
+            )
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
                 .environment(capturePerformancePreferences)
+                .environment(navigation)
         }
     }
 }
@@ -139,6 +160,26 @@ enum AppBootstrap {
         let capturePerformancePreferences = CapturePerformancePreferences(
             defaults: persistenceContext.userDefaults
         )
+        let sanitizer = ObservabilitySanitizer()
+        let observability = ObservabilityCenter(
+            eventStore: EventStore(directoryURL: persistenceContext.observabilityEventsDirectoryURL),
+            issueStore: IssueStore(fileURL: persistenceContext.observabilityIssuesURL),
+            snapshotWriter: AgentSnapshotWriter(
+                currentStateURL: persistenceContext.observabilityCurrentStateURL,
+                healthSummaryURL: persistenceContext.observabilityHealthSummaryURL,
+                recentEventsURL: persistenceContext.observabilityRecentEventsURL
+            ),
+            exporter: FeedbackBundleExporter(
+                exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
+                appSupportRootURL: persistenceContext.appSupportRootURL,
+                virtualDisplayConfigsURL: persistenceContext.virtualDisplayConfigsURL,
+                displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
+                sanitizer: sanitizer
+            ),
+            transport: LocalExportTransport(),
+            observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
+            sanitizer: sanitizer
+        )
         let captureRegistry = DisplayCaptureRegistry(
             performanceMode: capturePerformancePreferences.mode
         )
@@ -178,12 +219,14 @@ enum AppBootstrap {
                 captureMonitoringService: resolvedCaptureMonitoringService,
                 captureRegistry: captureRegistry
             ),
-            catalogService: catalogService
+            catalogService: catalogService,
+            observability: observability
         )
         let sharing = SharingController(
             sharingService: resolvedSharingService,
             portPreferences: SharingPortPreferences(defaults: persistenceContext.userDefaults),
-            catalogService: catalogService
+            catalogService: catalogService,
+            observability: observability
         )
         let virtualDisplay = VirtualDisplayController(
             virtualDisplayFacade: resolvedVirtualDisplayFacade,
@@ -193,21 +236,55 @@ enum AppBootstrap {
                     displayID: displayID,
                     sharingController: sharing
                 )
-            }
+            },
+            observability: observability
         )
+        AppErrorMapper.installFailureBridge { error, subsystem, operation, context in
+            Task {
+                await observability.record(
+                    error: error,
+                    subsystem: subsystem,
+                    operation: operation,
+                    context: context
+                )
+            }
+        }
 
         let env = AppEnvironment(
             capture: capture,
+            observability: observability,
             sharing: sharing,
             virtualDisplay: virtualDisplay,
             screenCatalog: ScreenCatalogOrchestrator(
                 catalogService: catalogService,
                 capture: capture,
                 sharing: sharing,
-                virtualDisplay: virtualDisplay
+                virtualDisplay: virtualDisplay,
+                observability: observability
             ),
             capturePerformancePreferences: capturePerformancePreferences
         )
+        Task {
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(CaptureSnapshotProvider(controller: capture))
+            )
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(SharingSnapshotProvider(controller: sharing))
+            )
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(VirtualDisplaySnapshotProvider(controller: virtualDisplay))
+            )
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(ScreenCatalogSnapshotProvider(store: catalogService.store))
+            )
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(SystemSnapshotProvider(environment: persistenceEnvironment))
+            )
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(PersistenceSnapshotProvider(context: persistenceContext))
+            )
+            await observability.refreshSnapshot(reason: .startup)
+        }
 
         guard !preview else { return env }
 

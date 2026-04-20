@@ -30,6 +30,7 @@ final class SharingController {
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
     @ObservationIgnored private let portPreferences: any SharingPortPreferencesProtocol
     @ObservationIgnored private let startTracker = DisplayStartTracker()
+    @ObservationIgnored private weak var observability: ObservabilityCenter?
     @ObservationIgnored private lazy var mutationRunner = SnapshotMutationRunner { [weak self] in
         self?.syncSharingState()
     }
@@ -38,11 +39,13 @@ final class SharingController {
     init(
         sharingService: any SharingServiceProtocol,
         portPreferences: any SharingPortPreferencesProtocol,
-        catalogService: ScreenCaptureCatalogService? = nil
+        catalogService: ScreenCaptureCatalogService? = nil,
+        observability: ObservabilityCenter? = nil
     ) {
         self.sharingService = sharingService
         self.portPreferences = portPreferences
         self.catalogService = catalogService ?? ScreenCaptureCatalogService()
+        self.observability = observability
         self.sharingService.onWebServiceLifecycleStateChanged = { [weak self] _ in
             self?.syncSharingState()
         }
@@ -58,17 +61,56 @@ final class SharingController {
 
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
-        await mutationRunner.run {
+        await recordEvent(
+            severity: .info,
+            operation: "Start web service",
+            message: "Started web service request.",
+            metadata: ["requestedPort": "\(requestedPort)"],
+            deduplicationKey: "sharing.web.start.\(requestedPort)"
+        )
+        let result = await mutationRunner.run {
             let result = await sharingService.startWebService(requestedPort: requestedPort)
             if let binding = result.binding {
                 portPreferences.savePreferredPort(binding.requestedPort)
             }
             return result
         }
+        switch result {
+        case .started(let binding), .alreadyRunning(let binding):
+            await recordEvent(
+                severity: .notice,
+                operation: "Start web service",
+                message: "Web service is available.",
+                metadata: [
+                    "requestedPort": "\(binding.requestedPort)",
+                    "boundPort": "\(binding.boundPort)"
+                ],
+                deduplicationKey: "sharing.web.start.\(binding.requestedPort)"
+            )
+        case .failed(let failure):
+            await observability?.record(
+                error: failure,
+                subsystem: .sharing,
+                operation: "Start web service",
+                context: .init(
+                    metadata: ["requestedPort": "\(requestedPort)"],
+                    deduplicationKey: "sharing.web.start.\(requestedPort)"
+                )
+            )
+        }
+        return result
     }
 
     func stopWebService() {
         startTracker.clearAll()
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Stop web service",
+                message: "Stopped web service.",
+                metadata: [:]
+            )
+        }
         mutationRunner.run {
             sharingService.stopWebService()
         }
@@ -86,17 +128,58 @@ final class SharingController {
     func beginSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
         let displayID = display.displayID
         let startToken = startTracker.begin(displayID: displayID)
+        let correlationID = UUID().uuidString
         syncSharingState()
         defer {
             startTracker.end(displayID: displayID, token: startToken)
             syncSharingState()
         }
 
-        return try await sharingService.startSharing(display: display)
+        await recordEvent(
+            severity: .info,
+            operation: "Start sharing",
+            message: "Started sharing request.",
+            metadata: ["displayID": "\(displayID)"],
+            correlationID: correlationID,
+            deduplicationKey: "sharing.start.\(displayID)"
+        )
+        do {
+            let result = try await sharingService.startSharing(display: display)
+            await recordEvent(
+                severity: .notice,
+                operation: "Start sharing",
+                message: "Sharing request completed.",
+                metadata: ["displayID": "\(displayID)"],
+                correlationID: correlationID,
+                deduplicationKey: "sharing.start.\(displayID)"
+            )
+            return result
+        } catch {
+            await observability?.record(
+                error: error,
+                subsystem: .sharing,
+                operation: "Start sharing",
+                context: .init(
+                    metadata: ["displayID": "\(displayID)"],
+                    correlationID: correlationID,
+                    deduplicationKey: "sharing.start.\(displayID)"
+                )
+            )
+            throw error
+        }
     }
 
     func stopSharing(displayID: CGDirectDisplayID) {
         startTracker.clear(displayID: displayID)
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Stop sharing",
+                message: "Stopped sharing display.",
+                metadata: ["displayID": "\(displayID)"],
+                deduplicationKey: "sharing.stop.\(displayID)"
+            )
+        }
         mutationRunner.run {
             sharingService.stopSharing(displayID: displayID)
         }
@@ -104,9 +187,22 @@ final class SharingController {
 
     func stopAllSharing() {
         startTracker.clearAll()
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Stop all sharing",
+                message: "Stopped all active sharing sessions.",
+                metadata: [:]
+            )
+        }
         mutationRunner.run {
             sharingService.stopAllSharing()
         }
+    }
+
+    func configureObservability(_ observability: ObservabilityCenter?) {
+        self.observability = observability
+        requestSnapshotRefresh()
     }
 
     var webServicePortValue: UInt16 {
@@ -161,6 +257,7 @@ final class SharingController {
     }
 
     private func syncSharingState() {
+        let previousLifecycle = webServiceLifecycleState
         webServer = sharingService.currentWebServer
         activeSharingDisplayIDs = sharingService.activeSharingDisplayIDs
         isSharing = sharingService.hasAnyActiveSharing
@@ -168,6 +265,17 @@ final class SharingController {
         webServiceLifecycleState = sharingService.webServiceLifecycleState
         startingDisplayIDs = startTracker.activeDisplayIDs
         refreshSharingCountsFromSnapshot()
+        requestSnapshotRefresh()
+        if previousLifecycle != webServiceLifecycleState {
+            Task {
+                await recordEvent(
+                    severity: .info,
+                    operation: "Web service lifecycle changed",
+                    message: "Updated web service lifecycle state.",
+                    metadata: ["phase": lifecyclePhaseDescription(webServiceLifecycleState)]
+                )
+            }
+        }
     }
 
     private func refreshSharingCountsFromSnapshot() {
@@ -184,6 +292,49 @@ final class SharingController {
             }
         }
         sharingClientCounts = counts
+    }
+
+    private func lifecyclePhaseDescription(_ state: WebServiceLifecycleState) -> String {
+        switch state {
+        case .stopped:
+            "stopped"
+        case .starting:
+            "starting"
+        case .running:
+            "running"
+        case .stopping:
+            "stopping"
+        case .failed:
+            "failed"
+        }
+    }
+
+    private func requestSnapshotRefresh() {
+        guard let observability else { return }
+        Task {
+            await observability.refreshSnapshot(reason: .sharingStateChanged)
+        }
+    }
+
+    private func recordEvent(
+        severity: ObservabilitySeverity,
+        operation: String,
+        message: String,
+        metadata: [String: String],
+        correlationID: String? = nil,
+        deduplicationKey: String? = nil
+    ) async {
+        await observability?.record(
+            ObservabilityEvent(
+                severity: severity,
+                subsystem: .sharing,
+                operation: operation,
+                message: message,
+                metadata: metadata,
+                correlationID: correlationID,
+                deduplicationKey: deduplicationKey
+            )
+        )
     }
 
 #if DEBUG

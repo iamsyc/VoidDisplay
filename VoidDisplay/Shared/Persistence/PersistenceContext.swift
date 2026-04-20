@@ -132,6 +132,41 @@ struct PersistenceContext {
         return false
     }
 
+    var diagnosticsDirectoryURL: URL {
+        appSupportRootURL.appendingPathComponent("diagnostics", isDirectory: true)
+    }
+
+    var observabilityDirectoryURL: URL {
+        diagnosticsDirectoryURL.appendingPathComponent("observability", isDirectory: true)
+    }
+
+    var observabilityEventsDirectoryURL: URL {
+        observabilityDirectoryURL.appendingPathComponent("events", isDirectory: true)
+    }
+
+    var observabilityIssuesURL: URL {
+        observabilityDirectoryURL.appendingPathComponent("recent-issues.json", isDirectory: false)
+    }
+
+    var observabilityCurrentStateURL: URL {
+        observabilityDirectoryURL
+            .appendingPathComponent("current-state.json", isDirectory: false)
+    }
+
+    var observabilityHealthSummaryURL: URL {
+        observabilityDirectoryURL
+            .appendingPathComponent("health-summary.json", isDirectory: false)
+    }
+
+    var observabilityRecentEventsURL: URL {
+        observabilityDirectoryURL
+            .appendingPathComponent("recent-events.ndjson", isDirectory: false)
+    }
+
+    var observabilityExportsDirectoryURL: URL {
+        observabilityDirectoryURL.appendingPathComponent("exports", isDirectory: true)
+    }
+
     private static func resolveApplicationSupportDirectory(fileManager: FileManager) -> URL {
         do {
             return try fileManager.url(

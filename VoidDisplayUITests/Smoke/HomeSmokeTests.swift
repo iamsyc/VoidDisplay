@@ -89,6 +89,48 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testSupportCenterNavigationSmoke_baseline() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "home_sidebar",
+                "sidebar_support_center"
+            ],
+            timeout: 6
+        )
+
+        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 2)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_support_center",
+                "support_center_overview_panel",
+                "support_center_export_button",
+                "support_center_copy_summary_button",
+                "support_center_reveal_bundle_button",
+                "support_center_refresh_button",
+                "support_center_open_data_directory_button",
+                "support_bundle_draft_section",
+                "support_center_technical_details",
+                "support_center_recent_issues",
+                "support_center_recent_events"
+            ],
+            timeout: 3
+        )
+
+        let draftSection = assertExists(app, identifier: "support_bundle_draft_section", timeout: 1)
+        let technicalDetails = assertExists(app, identifier: "support_center_technical_details", timeout: 1)
+        XCTAssertLessThan(
+            draftSection.frame.minY,
+            technicalDetails.frame.minY,
+            "support bundle section should appear before technical details"
+        )
+    }
+
+    @MainActor
     func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
         let app = launchAppForSmoke(scenario: .baseline)
         let detail = openVirtualDisplayDetail(in: app)

@@ -7,49 +7,59 @@
 import SwiftUI
 
 struct HomeView: View {
+    @Environment(AppNavigationController.self) private var navigation
     @Environment(CaptureController.self) private var capture
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(\.openWindow) private var openWindow
     private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
+    private let observability: ObservabilityCenter
+    private let feedbackController: AppSettingsFeedbackController
 
-    private enum SidebarItem: Hashable {
-        case screen
-        case virtualDisplay
-        case monitorScreen
-        case screenSharing
-    }
-
-    @State private var selection: SidebarItem? = .screen
     @State private var hasAutoOpenedCapturePreview = false
 
-    init(screenCatalogOrchestrator: ScreenCatalogOrchestrator) {
+    init(
+        screenCatalogOrchestrator: ScreenCatalogOrchestrator,
+        observability: ObservabilityCenter,
+        feedbackController: AppSettingsFeedbackController
+    ) {
         self.screenCatalogOrchestrator = screenCatalogOrchestrator
+        self.observability = observability
+        self.feedbackController = feedbackController
     }
 
     var body: some View {
+        @Bindable var bindableNavigation = navigation
+
         NavigationSplitView {
-            List(selection: $selection) {
+            List(selection: $bindableNavigation.sidebarSelection) {
                 Section("Display") {
-                    NavigationLink(value: SidebarItem.screen) {
+                    NavigationLink(value: AppSidebarItem.screen) {
                         Label("Displays", systemImage: "display")
                     }
                         .accessibilityIdentifier("sidebar_screen")
-                    NavigationLink(value: SidebarItem.virtualDisplay) {
+                    NavigationLink(value: AppSidebarItem.virtualDisplay) {
                         Label("Virtual Displays", systemImage: "display.2")
                     }
                         .accessibilityIdentifier("sidebar_virtual_display")
-                    NavigationLink(value: SidebarItem.monitorScreen) {
+                    NavigationLink(value: AppSidebarItem.monitorScreen) {
                         Label("Screen Monitoring", systemImage: "dot.scope.display")
                     }
                         .accessibilityIdentifier("sidebar_monitor_screen")
                 }
 
                 Section("Sharing") {
-                    NavigationLink(value: SidebarItem.screenSharing) {
+                    NavigationLink(value: AppSidebarItem.screenSharing) {
                         Label("Screen Sharing", systemImage: "display")
                     }
                         .accessibilityIdentifier("sidebar_screen_sharing")
+                }
+
+                Section("Support") {
+                    NavigationLink(value: AppSidebarItem.supportCenter) {
+                        Label(String(localized: "Support Center"), systemImage: "stethoscope")
+                    }
+                    .accessibilityIdentifier("sidebar_support_center")
                 }
             }
             .listStyle(.sidebar)
@@ -58,7 +68,7 @@ struct HomeView: View {
         } detail: {
             NavigationStack {
                 Group {
-                    switch selection ?? .screen {
+                    switch bindableNavigation.sidebarSelection ?? .screen {
                     case .screen:
                         DisplaysView()
                             .navigationTitle("Displays")
@@ -90,9 +100,16 @@ struct HomeView: View {
                         )
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
+                    case .supportCenter:
+                        SupportCenterView(
+                            observability: observability,
+                            feedbackController: feedbackController
+                        )
+                            .navigationTitle(String(localized: "Support Center"))
+                            .accessibilityIdentifier("detail_support_center")
                     }
                 }
-                .id(selection ?? .screen)
+                .id(bindableNavigation.sidebarSelection ?? .screen)
             }
         }
         .onAppear {
@@ -108,7 +125,7 @@ struct HomeView: View {
             return
         }
 
-        selection = .monitorScreen
+        navigation.sidebarSelection = .monitorScreen
         openWindow(value: sessionID)
         hasAutoOpenedCapturePreview = true
     }
@@ -116,8 +133,14 @@ struct HomeView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    HomeView(screenCatalogOrchestrator: env.screenCatalog)
+    let feedbackController = AppSettingsFeedbackController()
+    HomeView(
+        screenCatalogOrchestrator: env.screenCatalog,
+        observability: env.observability,
+        feedbackController: feedbackController
+    )
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
+        .environment(AppNavigationController())
 }

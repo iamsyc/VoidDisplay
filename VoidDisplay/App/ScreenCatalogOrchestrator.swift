@@ -14,6 +14,7 @@ final class ScreenCatalogOrchestrator {
     private let capture: CaptureController
     private let sharing: SharingController
     private let virtualDisplay: VirtualDisplayController
+    private weak var observability: ObservabilityCenter?
     private let captureRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
     private let sharingRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
 
@@ -24,12 +25,14 @@ final class ScreenCatalogOrchestrator {
         catalogService: ScreenCaptureCatalogService,
         capture: CaptureController,
         sharing: SharingController,
-        virtualDisplay: VirtualDisplayController
+        virtualDisplay: VirtualDisplayController,
+        observability: ObservabilityCenter? = nil
     ) {
         self.catalogService = catalogService
         self.capture = capture
         self.sharing = sharing
         self.virtualDisplay = virtualDisplay
+        self.observability = observability
     }
 
     func handleAppear(source: ScreenCatalogSource) async {
@@ -85,8 +88,10 @@ final class ScreenCatalogOrchestrator {
                 ? String(localized: "Failed to load displays. Check permission and try again.")
                 : nil
             await clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
+            await recordPermissionEvent(granted: false, source: source)
             return
         }
+        await recordPermissionEvent(granted: true, source: source)
         await refreshAfterPermissionGranted(source: source)
     }
 
@@ -94,8 +99,10 @@ final class ScreenCatalogOrchestrator {
         let granted = catalogService.refreshPermission()
         guard granted else {
             await clearSnapshotForDeniedPermission()
+            await recordPermissionEvent(granted: false, source: source)
             return
         }
+        await recordPermissionEvent(granted: true, source: source)
         await refreshAfterPermissionGranted(source: source)
     }
 
@@ -167,6 +174,16 @@ final class ScreenCatalogOrchestrator {
     private func clearSnapshotForDeniedPermission(loadErrorMessage: String? = nil) async {
         await catalogService.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
         convergeToVisibleDisplays([])
+        await observability?.record(
+            ObservabilityEvent(
+                severity: .warning,
+                subsystem: .screenCatalog,
+                operation: "Clear denied screen capture snapshot",
+                message: "Cleared visible displays because screen capture permission is unavailable.",
+                metadata: ["source": loadErrorMessage == nil ? "capture" : "sharing"],
+                deduplicationKey: "screenCatalog.permission.denied"
+            )
+        )
     }
 
     private func drainTopologyRefreshQueue() async {
@@ -183,6 +200,7 @@ final class ScreenCatalogOrchestrator {
         }
 
         let result = await catalogService.submitRefresh(intent: .topologyChanged)
+        await observability?.refreshSnapshot(reason: .screenCatalogStateChanged)
         guard result != .failed else { return }
         convergeToVisibleDisplaysFromCurrentSnapshot()
     }
@@ -192,6 +210,7 @@ final class ScreenCatalogOrchestrator {
         owner: ScreenCaptureCatalogService.RefreshOwner? = nil
     ) async {
         let result = await catalogService.submitRefresh(intent: intent, owner: owner)
+        await observability?.refreshSnapshot(reason: .screenCatalogStateChanged)
         guard result != .failed else { return }
         convergeToVisibleDisplaysFromCurrentSnapshot()
     }
@@ -217,5 +236,23 @@ final class ScreenCatalogOrchestrator {
         for displayID in monitoredDisplayIDs where !visibleDisplayIDs.contains(displayID) {
             capture.removeMonitoringSessions(displayID: displayID)
         }
+    }
+
+    private func recordPermissionEvent(
+        granted: Bool,
+        source: ScreenCatalogSource
+    ) async {
+        await observability?.record(
+            ObservabilityEvent(
+                severity: granted ? .info : .warning,
+                subsystem: .screenCatalog,
+                operation: "Screen capture permission check",
+                message: granted
+                    ? "Screen capture permission available."
+                    : "Screen capture permission unavailable.",
+                metadata: ["source": source == .capturePage ? "capture" : "sharing"],
+                deduplicationKey: "screenCatalog.permission.\(source == .capturePage ? "capture" : "sharing")"
+            )
+        )
     }
 }
