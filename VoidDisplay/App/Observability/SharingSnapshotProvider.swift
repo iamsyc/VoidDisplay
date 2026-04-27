@@ -21,7 +21,7 @@ struct SharingSnapshotProvider: ObservabilitySnapshotProvider, @unchecked Sendab
     }
 
     let key = "sharing"
-    private unowned let controller: SharingController
+    private weak var controller: SharingController?
 
     init(controller: SharingController) {
         self.controller = controller
@@ -29,7 +29,25 @@ struct SharingSnapshotProvider: ObservabilitySnapshotProvider, @unchecked Sendab
 
     @MainActor
     func makeSnapshot() -> Snapshot {
-        Snapshot(
+        guard let controller else {
+            return Snapshot(
+                activeSharingDisplayIDs: [],
+                startingDisplayIDs: [],
+                isSharing: false,
+                isWebServiceRunning: false,
+                preferredPort: 0,
+                sharingClientCount: 0,
+                sharingClientCounts: [:],
+                lifecycle: .init(
+                    phase: "unavailable",
+                    requestedPort: nil,
+                    boundPort: nil,
+                    failureReason: nil,
+                    failureMessage: nil
+                )
+            )
+        }
+        return Snapshot(
             activeSharingDisplayIDs: controller.activeSharingDisplayIDs.sorted(),
             startingDisplayIDs: controller.startingDisplayIDs.sorted(),
             isSharing: controller.isSharing,

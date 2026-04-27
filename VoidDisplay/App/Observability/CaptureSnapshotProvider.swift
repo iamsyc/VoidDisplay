@@ -26,7 +26,7 @@ struct CaptureSnapshotProvider: ObservabilitySnapshotProvider, @unchecked Sendab
     }
 
     let key = "capture"
-    private unowned let controller: CaptureController
+    private weak var controller: CaptureController?
 
     init(controller: CaptureController) {
         self.controller = controller
@@ -34,7 +34,10 @@ struct CaptureSnapshotProvider: ObservabilitySnapshotProvider, @unchecked Sendab
 
     @MainActor
     func makeSnapshot() -> Snapshot {
-        Snapshot(
+        guard let controller else {
+            return Snapshot(startingDisplayIDs: [], sessions: [])
+        }
+        return Snapshot(
             startingDisplayIDs: controller.startingDisplayIDs.sorted(),
             sessions: controller.screenCaptureSessions.map { session in
                 let metrics = session.previewSubscription.captureMetricsSnapshot()

@@ -46,7 +46,7 @@ struct VirtualDisplaySnapshotProvider: ObservabilitySnapshotProvider, @unchecked
     }
 
     let key = "virtualDisplay"
-    private unowned let controller: VirtualDisplayController
+    private weak var controller: VirtualDisplayController?
 
     init(controller: VirtualDisplayController) {
         self.controller = controller
@@ -54,7 +54,22 @@ struct VirtualDisplaySnapshotProvider: ObservabilitySnapshotProvider, @unchecked
 
     @MainActor
     func makeSnapshot() -> Snapshot {
-        Snapshot(
+        guard let controller else {
+            return Snapshot(
+                rebuildRequestCount: 0,
+                rebuildingConfigIDs: [],
+                runningConfigIDs: [],
+                recentlyAppliedConfigIDs: [],
+                rebuildFailureMessages: [:],
+                configStoreHasLoadFailure: false,
+                configStoreLoadErrorMessage: nil,
+                configStoreDiagnosticsSummary: nil,
+                managedDisplays: [],
+                configs: [],
+                restoreFailures: []
+            )
+        }
+        return Snapshot(
             rebuildRequestCount: controller.rebuildRequestCount,
             rebuildingConfigIDs: controller.rebuildingConfigIds.sorted { $0.uuidString < $1.uuidString },
             runningConfigIDs: controller.runningConfigIds.sorted { $0.uuidString < $1.uuidString },

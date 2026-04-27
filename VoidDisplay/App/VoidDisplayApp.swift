@@ -269,7 +269,8 @@ enum AppBootstrap {
             observability: observability
         )
         AppErrorMapper.installFailureBridge { error, subsystem, operation, context in
-            Task {
+            Task { [weak observability] in
+                guard let observability else { return }
                 await observability.record(
                     error: error,
                     subsystem: subsystem,

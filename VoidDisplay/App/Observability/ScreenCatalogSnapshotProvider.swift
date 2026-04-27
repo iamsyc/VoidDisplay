@@ -31,7 +31,7 @@ struct ScreenCatalogSnapshotProvider: ObservabilitySnapshotProvider, @unchecked 
     }
 
     let key = "screenCatalog"
-    private unowned let store: ScreenCaptureCatalogStore
+    private weak var store: ScreenCaptureCatalogStore?
 
     init(store: ScreenCaptureCatalogStore) {
         self.store = store
@@ -39,7 +39,19 @@ struct ScreenCatalogSnapshotProvider: ObservabilitySnapshotProvider, @unchecked 
 
     @MainActor
     func makeSnapshot() -> Snapshot {
-        Snapshot(
+        guard let store else {
+            return Snapshot(
+                hasScreenCapturePermission: nil,
+                lastPreflightPermission: nil,
+                lastRequestPermission: nil,
+                isLoadingDisplays: false,
+                loadErrorMessage: nil,
+                lastLoadError: nil,
+                loadedDisplayIDs: [],
+                topologySignature: []
+            )
+        }
+        return Snapshot(
             hasScreenCapturePermission: store.hasScreenCapturePermission,
             lastPreflightPermission: store.lastPreflightPermission,
             lastRequestPermission: store.lastRequestPermission,

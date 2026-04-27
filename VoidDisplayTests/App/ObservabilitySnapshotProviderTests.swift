@@ -149,4 +149,43 @@ struct ObservabilitySnapshotProviderTests {
         #expect(snapshot.loadErrorMessage == "Permission missing.")
         #expect(snapshot.lastLoadError?.domain == "ScreenCapture")
     }
+
+    @Test func snapshotProvidersReturnEmptySnapshotsAfterOwnersRelease() {
+        var captureController: CaptureController? = CaptureController(
+            captureMonitoringService: MockCaptureMonitoringService()
+        )
+        let captureProvider = CaptureSnapshotProvider(controller: captureController!)
+        captureController = nil
+        let captureSnapshot = captureProvider.makeSnapshot()
+        #expect(captureSnapshot.startingDisplayIDs.isEmpty)
+        #expect(captureSnapshot.sessions.isEmpty)
+
+        var sharingController: SharingController? = SharingController(
+            sharingService: MockSharingService(),
+            portPreferences: SnapshotProviderMockSharingPortPreferences()
+        )
+        let sharingProvider = SharingSnapshotProvider(controller: sharingController!)
+        sharingController = nil
+        let sharingSnapshot = sharingProvider.makeSnapshot()
+        #expect(sharingSnapshot.lifecycle.phase == "unavailable")
+        #expect(sharingSnapshot.sharingClientCount == 0)
+
+        var virtualDisplayController: VirtualDisplayController? = VirtualDisplayController(
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            appliedBadgeDisplayDuration: .seconds(1),
+            stopDependentStreamsBeforeRebuild: { _ in }
+        )
+        let virtualDisplayProvider = VirtualDisplaySnapshotProvider(controller: virtualDisplayController!)
+        virtualDisplayController = nil
+        let virtualDisplaySnapshot = virtualDisplayProvider.makeSnapshot()
+        #expect(virtualDisplaySnapshot.configs.isEmpty)
+        #expect(virtualDisplaySnapshot.managedDisplays.isEmpty)
+
+        var screenCatalogStore: ScreenCaptureCatalogStore? = ScreenCaptureCatalogStore()
+        let screenCatalogProvider = ScreenCatalogSnapshotProvider(store: screenCatalogStore!)
+        screenCatalogStore = nil
+        let screenCatalogSnapshot = screenCatalogProvider.makeSnapshot()
+        #expect(screenCatalogSnapshot.loadedDisplayIDs.isEmpty)
+        #expect(screenCatalogSnapshot.topologySignature.isEmpty)
+    }
 }
