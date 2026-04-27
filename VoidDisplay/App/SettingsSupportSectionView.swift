@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsSupportSectionView: View {
     @Bindable var controller: AppSettingsFeedbackController
     let onOpenSupportCenter: () -> Void
-    let onExport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -11,38 +10,44 @@ struct SettingsSupportSectionView: View {
                 .font(.headline)
                 .accessibilityIdentifier("settings_support_section")
 
-            Text(String(localized: "Describe the problem in the support center first, then export a support package when needed."))
+            Text(String(localized: "Describe the issue, add diagnostics if needed, then export a support package."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier("settings_support_intro_text")
 
-            HStack(spacing: 10) {
-                Button(String(localized: "Open Support Center"), action: onOpenSupportCenter)
-                    .accessibilityIdentifier("settings_open_support_center_button")
+            Button(String(localized: "Open Support Center"), action: onOpenSupportCenter)
+                .appActionButtonStyle(variant: .primary)
+                .accessibilityIdentifier("settings_open_support_center_button")
 
-                Button(String(localized: "Export Support Bundle"), action: onExport)
-                    .disabled(controller.isExporting)
-                    .accessibilityIdentifier("settings_export_support_bundle_button")
+            if let latestRecord = controller.latestExportRecord {
+                latestSupportSummary(
+                    issueType: String(localized: latestRecord.issueType.presentation.titleKey),
+                    summary: latestRecord.displayInfo.summaryText
+                )
+            } else if let latestBundle = controller.lastBundleDisplayInfo {
+                latestSupportSummary(issueType: nil, summary: latestBundle.summaryText)
             }
+        }
+    }
 
-            if controller.exportCompleted {
-                Text(String(localized: "Support bundle exported."))
+    private func latestSupportSummary(issueType: String?, summary: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(String(localized: "Latest Support Package"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            if let issueType, issueType.isEmpty == false {
+                Text(issueType)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("settings_support_export_completed")
+                    .accessibilityIdentifier("settings_support_latest_issue_type")
             }
 
-            if let path = controller.lastBundleDisplayPath {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Latest Support Package"))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(path)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("settings_support_latest_bundle_path")
-                }
-            }
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("settings_support_latest_bundle_summary")
         }
     }
 }

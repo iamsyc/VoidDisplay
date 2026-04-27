@@ -1,30 +1,33 @@
+import Dispatch
 import Foundation
 
 nonisolated struct FeedbackBundleExporter {
+    typealias CommandRunner = (_ launchPath: String, _ arguments: [String], _ timeout: TimeInterval) -> String?
+
     private let exportsDirectoryURL: URL
-    private let appSupportRootURL: URL
     private let virtualDisplayConfigsURL: URL
     private let displayShareMappingsURL: URL
     private let sanitizer: ObservabilitySanitizer
     private let fileManager: FileManager
     private let dateProvider: () -> Date
+    private let commandRunner: CommandRunner
 
     init(
         exportsDirectoryURL: URL,
-        appSupportRootURL: URL,
         virtualDisplayConfigsURL: URL,
         displayShareMappingsURL: URL,
         sanitizer: ObservabilitySanitizer,
         fileManager: FileManager = .default,
-        dateProvider: @escaping () -> Date = Date.init
+        dateProvider: @escaping () -> Date = Date.init,
+        commandRunner: CommandRunner? = nil
     ) {
         self.exportsDirectoryURL = exportsDirectoryURL
-        self.appSupportRootURL = appSupportRootURL
         self.virtualDisplayConfigsURL = virtualDisplayConfigsURL
         self.displayShareMappingsURL = displayShareMappingsURL
         self.sanitizer = sanitizer
         self.fileManager = fileManager
         self.dateProvider = dateProvider
+        self.commandRunner = commandRunner ?? Self.runCommand
     }
 
     func exportBundle(
@@ -166,7 +169,7 @@ nonisolated struct FeedbackBundleExporter {
             "--last", "15m",
             "--predicate", "subsystem == \"\(bundleIdentifier)\""
         ]
-        return runCommand("/usr/bin/log", arguments: arguments)
+        return commandRunner("/usr/bin/log", arguments, 8)
             .map { String($0.split(whereSeparator: \.isNewline).suffix(300).joined(separator: "\n")) }
             .flatMap(sanitizer.sanitize(text:))
     }
@@ -202,7 +205,11 @@ nonisolated struct FeedbackBundleExporter {
         return sanitizer.sanitize(text: excerpt)
     }
 
-    private func runCommand(_ launchPath: String, arguments: [String]) -> String? {
+    private static func runCommand(
+        _ launchPath: String,
+        arguments: [String],
+        timeout: TimeInterval
+    ) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: launchPath)
         process.arguments = arguments
@@ -210,10 +217,19 @@ nonisolated struct FeedbackBundleExporter {
         let outputPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = Pipe()
+        let semaphore = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in
+            semaphore.signal()
+        }
 
         do {
             try process.run()
-            process.waitUntilExit()
+            let result = semaphore.wait(timeout: .now() + timeout)
+            guard result == .success else {
+                process.terminate()
+                process.waitUntilExit()
+                return nil
+            }
             guard process.terminationStatus == 0 else { return nil }
             let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
             guard !data.isEmpty else { return nil }

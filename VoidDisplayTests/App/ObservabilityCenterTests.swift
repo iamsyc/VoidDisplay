@@ -27,7 +27,6 @@ struct ObservabilityCenterTests {
             ),
             exporter: FeedbackBundleExporter(
                 exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
-                appSupportRootURL: persistenceContext.appSupportRootURL,
                 virtualDisplayConfigsURL: persistenceContext.virtualDisplayConfigsURL,
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
@@ -210,7 +209,6 @@ struct ObservabilityCenterTests {
             ),
             exporter: FeedbackBundleExporter(
                 exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
-                appSupportRootURL: persistenceContext.appSupportRootURL,
                 virtualDisplayConfigsURL: persistenceContext.virtualDisplayConfigsURL,
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
@@ -251,6 +249,63 @@ struct ObservabilityCenterTests {
 
         let dataDirectoryDisplayPath = await observability.dataDirectoryDisplayPath()
         #expect(dataDirectoryDisplayPath?.hasPrefix("~") == true)
+    }
+
+    @Test func summaryTextIncludesIssueTypeAndBundleFileName() async throws {
+        let isolationID = "observability-summary-\(UUID().uuidString)"
+        let environment = [
+            PersistenceContext.persistenceModeEnvironmentKey: PersistenceContext.testIsolatedModeValue,
+            PersistenceContext.testIsolationIDEnvironmentKey: isolationID,
+            PersistenceContext.xCTestConfigurationEnvironmentKey: "tests.xctest"
+        ]
+        let persistenceContext = PersistenceContext.resolve(environment: environment)
+        defer { try? FileManager.default.removeItem(at: persistenceContext.appSupportRootURL) }
+
+        let sanitizer = ObservabilitySanitizer()
+        let observability = ObservabilityCenter(
+            eventStore: EventStore(directoryURL: persistenceContext.observabilityEventsDirectoryURL),
+            issueStore: IssueStore(fileURL: persistenceContext.observabilityIssuesURL),
+            snapshotWriter: AgentSnapshotWriter(
+                currentStateURL: persistenceContext.observabilityCurrentStateURL,
+                healthSummaryURL: persistenceContext.observabilityHealthSummaryURL,
+                recentEventsURL: persistenceContext.observabilityRecentEventsURL,
+                debounceDuration: .zero
+            ),
+            exporter: FeedbackBundleExporter(
+                exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
+                virtualDisplayConfigsURL: persistenceContext.virtualDisplayConfigsURL,
+                displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
+                sanitizer: sanitizer
+            ),
+            transport: LocalExportTransport(),
+            observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
+            sanitizer: sanitizer
+        )
+
+        _ = try await observability.exportBundle(
+            draft: FeedbackDraft(
+                issueType: .blackScreen,
+                happened: "Black screen after launch"
+            ),
+            consent: FeedbackConsent()
+        )
+
+        let summary = await observability.summaryText(
+            for: FeedbackDraft(
+                issueType: .blackScreen,
+                happened: "Black screen after launch"
+            )
+        )
+
+        #expect(
+            summary.contains(
+                String(localized: SupportIssueType.blackScreen.presentation.summaryPrefixKey)
+            )
+        )
+        #expect(
+            summary.contains("\(String(localized: "Support Package")): support-bundle-")
+        )
+        #expect(summary.contains(persistenceContext.observabilityExportsDirectoryURL.path) == false)
     }
 }
 

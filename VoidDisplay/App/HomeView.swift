@@ -55,7 +55,7 @@ struct HomeView: View {
                         .accessibilityIdentifier("sidebar_screen_sharing")
                 }
 
-                Section("Support") {
+                Section(String(localized: "Support")) {
                     NavigationLink(value: AppSidebarItem.supportCenter) {
                         Label(String(localized: "Support Center"), systemImage: "stethoscope")
                     }
@@ -133,11 +133,10 @@ struct HomeView: View {
 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    let feedbackController = AppSettingsFeedbackController()
     HomeView(
         screenCatalogOrchestrator: env.screenCatalog,
         observability: env.observability,
-        feedbackController: feedbackController
+        feedbackController: env.feedbackController
     )
         .environment(env.capture)
         .environment(env.sharing)

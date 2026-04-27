@@ -9,4 +9,5 @@ nonisolated enum ObservabilityDomain: String, Codable, CaseIterable, Sendable {
     case persistence = "persistence"
     case web = "web"
     case observability = "observability"
+    case support = "support"
 }

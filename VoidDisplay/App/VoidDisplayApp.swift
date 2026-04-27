@@ -15,6 +15,7 @@ struct AppEnvironment {
     let virtualDisplay: VirtualDisplayController
     let screenCatalog: ScreenCatalogOrchestrator
     let capturePerformancePreferences: CapturePerformancePreferences
+    let feedbackController: AppSettingsFeedbackController
 }
 
 @main
@@ -36,7 +37,7 @@ struct VoidDisplayApp: App {
         _screenCatalog = State(initialValue: env.screenCatalog)
         _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
         _navigation = State(initialValue: AppNavigationController())
-        _feedbackController = State(initialValue: AppSettingsFeedbackController())
+        _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
     }
 
@@ -92,6 +93,14 @@ struct VoidDisplayApp: App {
 @MainActor
 enum AppBootstrap {
     private static let xCTestConfigurationEnvironmentKey = "XCTestConfigurationFilePath"
+
+    private struct UITestFeedbackExportFailure: LocalizedError {
+        let message: String
+
+        var errorDescription: String? {
+            message
+        }
+    }
 
     struct StartupPlan {
         var shouldRestoreVirtualDisplays: Bool
@@ -171,7 +180,6 @@ enum AppBootstrap {
             ),
             exporter: FeedbackBundleExporter(
                 exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
-                appSupportRootURL: persistenceContext.appSupportRootURL,
                 virtualDisplayConfigsURL: persistenceContext.virtualDisplayConfigsURL,
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
@@ -180,6 +188,27 @@ enum AppBootstrap {
             observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
             sanitizer: sanitizer
         )
+        let supportHistoryStore = SupportHistoryStore(
+            historyFileURL: persistenceContext.observabilityDirectoryURL
+                .appendingPathComponent("support-history.json", isDirectory: false),
+            exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
+            sanitizer: sanitizer
+        )
+        let feedbackController: AppSettingsFeedbackController
+        if let failureMessage = UITestRuntime.feedbackExportFailureMessage {
+            feedbackController = AppSettingsFeedbackController(
+                defaults: persistenceContext.userDefaults,
+                historyStore: supportHistoryStore,
+                exportAction: { _, _ in
+                    throw UITestFeedbackExportFailure(message: failureMessage)
+                }
+            )
+        } else {
+            feedbackController = AppSettingsFeedbackController(
+                defaults: persistenceContext.userDefaults,
+                historyStore: supportHistoryStore
+            )
+        }
         let captureRegistry = DisplayCaptureRegistry(
             performanceMode: capturePerformancePreferences.mode
         )
@@ -262,7 +291,8 @@ enum AppBootstrap {
                 virtualDisplay: virtualDisplay,
                 observability: observability
             ),
-            capturePerformancePreferences: capturePerformancePreferences
+            capturePerformancePreferences: capturePerformancePreferences,
+            feedbackController: feedbackController
         )
         Task {
             await observability.registerSnapshotProvider(

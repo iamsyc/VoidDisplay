@@ -231,6 +231,7 @@ actor ObservabilityCenter {
         let trimmed = draft.trimmedPayload()
         let issues = await issueStore.recentIssues(limit: 5)
         var lines: [String] = []
+        lines.append(String(localized: trimmed.issueType.presentation.summaryPrefixKey))
         if !trimmed.happened.isEmpty {
             lines.append(String(localized: "What happened:"))
             lines.append(trimmed.happened)
@@ -247,9 +248,9 @@ actor ObservabilityCenter {
             lines.append(String(localized: "Recent issues:"))
             lines.append(contentsOf: issues.prefix(3).map { "\($0.subsystem.rawValue): \($0.message)" })
         }
-        if let path = lastExportedBundleDisplayPath() {
-            lines.append(String(localized: "Latest support package:"))
-            lines.append(path)
+        if let bundleFileName = lastExportedBundleURL?.lastPathComponent,
+           !bundleFileName.isEmpty {
+            lines.append("\(String(localized: "Support Package")): \(bundleFileName)")
         }
         return lines.joined(separator: "\n")
     }

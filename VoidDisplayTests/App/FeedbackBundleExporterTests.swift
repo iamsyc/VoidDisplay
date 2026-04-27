@@ -10,7 +10,6 @@ struct FeedbackBundleExporterTests {
 
         let exporter = FeedbackBundleExporter(
             exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
-            appSupportRootURL: tempURL,
             virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
             displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
             sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
@@ -57,7 +56,6 @@ struct FeedbackBundleExporterTests {
 
         let exporter = FeedbackBundleExporter(
             exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
-            appSupportRootURL: tempURL,
             virtualDisplayConfigsURL: virtualDisplaysURL,
             displayShareMappingsURL: shareMappingsURL,
             sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
@@ -77,6 +75,46 @@ struct FeedbackBundleExporterTests {
 
         #expect(entries.contains(where: { $0.hasSuffix("/attachments/config/virtual-displays.json") }))
         #expect(entries.contains(where: { $0.hasSuffix("/attachments/config/display-share-id-mappings.json") }))
+    }
+
+    @Test func exportBundleContinuesWhenUnifiedLogCommandTimesOut() throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "support-bundle-log-timeout")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        var capturedCommand: (launchPath: String, arguments: [String], timeout: TimeInterval)?
+        let exporter = FeedbackBundleExporter(
+            exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
+            virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
+            displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
+            sanitizer: ObservabilitySanitizer(),
+            commandRunner: { launchPath, arguments, timeout in
+                capturedCommand = (launchPath, arguments, timeout)
+                return nil
+            }
+        )
+
+        let result = try exporter.exportBundle(
+            draft: FeedbackDraft(happened: "Sharing failed"),
+            consent: FeedbackConsent(includeUnifiedLogSummary: true),
+            state: makeStateSnapshot(),
+            health: makeHealthSummary(),
+            events: [],
+            issues: [],
+            transportCapability: FeedbackTransportCapability.localExportOnly
+        )
+
+        let entries = try archiveEntries(at: result.bundleURL)
+        let manifest = try decodeArchiveEntry(
+            SupportBundleManifest.self,
+            relativePathSuffix: "/manifest.json",
+            archiveURL: result.bundleURL
+        )
+
+        #expect(capturedCommand?.launchPath == "/usr/bin/log")
+        #expect(capturedCommand?.arguments.contains("--last") == true)
+        #expect(capturedCommand?.timeout == 8)
+        #expect(entries.contains(where: { $0.hasSuffix("/attachments/unified-log.txt") }) == false)
+        #expect(manifest.attachments.isEmpty)
     }
 
     @Test func latestExportedBundleURLReturnsMostRecentArchive() throws {
@@ -100,7 +138,6 @@ struct FeedbackBundleExporterTests {
 
         let exporter = FeedbackBundleExporter(
             exportsDirectoryURL: exportsURL,
-            appSupportRootURL: tempURL,
             virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
             displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
             sanitizer: ObservabilitySanitizer()

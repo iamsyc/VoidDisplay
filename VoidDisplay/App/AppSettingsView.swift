@@ -21,7 +21,6 @@ struct AppSettingsView: View {
 
     var body: some View {
         @Bindable var bindableVirtualDisplay = virtualDisplay
-        @Bindable var bindableFeedbackController = feedbackController
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -42,9 +41,8 @@ struct AppSettingsView: View {
                 }
 
                 SettingsSupportSectionView(
-                    controller: bindableFeedbackController,
-                    onOpenSupportCenter: openSupportCenter,
-                    onExport: exportSupportBundle
+                    controller: feedbackController,
+                    onOpenSupportCenter: openSupportCenter
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -74,7 +72,7 @@ struct AppSettingsView: View {
         .frame(width: 520, height: 620, alignment: .topLeading)
         .task {
             await feedbackController.prepare(observability: observability)
-            if let fixture = UITestRuntime.settingsFeedbackFixture {
+            if let fixture = UITestRuntime.feedbackFixture {
                 feedbackController.applyFixture(fixture)
             }
         }
@@ -101,15 +99,6 @@ struct AppSettingsView: View {
                 }
             )
         }
-        .alert(item: $bindableFeedbackController.alert) { alert in
-            Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                dismissButton: .default(Text("OK")) {
-                    feedbackController.dismissAlert()
-                }
-            )
-        }
     }
 
     private var performanceModeBinding: Binding<CapturePerformanceMode> {
@@ -117,12 +106,6 @@ struct AppSettingsView: View {
             get: { capturePerformancePreferences.mode },
             set: { capturePerformancePreferences.saveMode($0) }
         )
-    }
-
-    private func exportSupportBundle() {
-        Task {
-            await feedbackController.exportSupportBundle()
-        }
     }
 
     private func openSupportCenter() {

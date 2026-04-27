@@ -14,12 +14,14 @@ enum UITestScenario: String {
 enum UITestRuntime {
     nonisolated static let modeEnvironmentKey = "VOIDDISPLAY_UI_TEST_MODE"
     nonisolated static let scenarioEnvironmentKey = "VOIDDISPLAY_UI_TEST_SCENARIO"
+    nonisolated static let feedbackIssueTypeEnvironmentKey = "VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"
     nonisolated static let feedbackHappenedEnvironmentKey = "VOIDDISPLAY_FEEDBACK_HAPPENED"
     nonisolated static let feedbackReproductionEnvironmentKey = "VOIDDISPLAY_FEEDBACK_REPRODUCTION"
     nonisolated static let feedbackExpectedEnvironmentKey = "VOIDDISPLAY_FEEDBACK_EXPECTED"
     nonisolated static let feedbackIncludeLogsEnvironmentKey = "VOIDDISPLAY_FEEDBACK_INCLUDE_LOGS"
     nonisolated static let feedbackIncludeCrashEnvironmentKey = "VOIDDISPLAY_FEEDBACK_INCLUDE_CRASH"
     nonisolated static let feedbackIncludeConfigsEnvironmentKey = "VOIDDISPLAY_FEEDBACK_INCLUDE_CONFIGS"
+    nonisolated static let feedbackExportFailureMessageEnvironmentKey = "VOIDDISPLAY_FEEDBACK_EXPORT_FAILURE_MESSAGE"
 
     nonisolated static var isEnabled: Bool {
         ProcessInfo.processInfo.environment[modeEnvironmentKey] == "1"
@@ -35,8 +37,45 @@ enum UITestRuntime {
         return scenario
     }
 
+    nonisolated static var feedbackFixture: SettingsFeedbackFixture? {
+        feedbackFixture(environment: ProcessInfo.processInfo.environment)
+    }
+
     nonisolated static var settingsFeedbackFixture: SettingsFeedbackFixture? {
         settingsFeedbackFixture(environment: ProcessInfo.processInfo.environment)
+    }
+
+    nonisolated static var feedbackExportFailureMessage: String? {
+        feedbackExportFailureMessage(environment: ProcessInfo.processInfo.environment)
+    }
+
+    nonisolated static func feedbackFixture(
+        environment: [String: String]
+    ) -> SettingsFeedbackFixture? {
+        let issueType = environment[feedbackIssueTypeEnvironmentKey]
+            .flatMap(SupportIssueType.init(rawValue:))
+            ?? .other
+        let happened = environment[feedbackHappenedEnvironmentKey] ?? ""
+        let reproductionSteps = environment[feedbackReproductionEnvironmentKey] ?? ""
+        let expectedResult = environment[feedbackExpectedEnvironmentKey] ?? ""
+
+        guard !happened.isEmpty || !reproductionSteps.isEmpty || !expectedResult.isEmpty else {
+            return nil
+        }
+
+        return SettingsFeedbackFixture(
+            draft: FeedbackDraft(
+                issueType: issueType,
+                happened: happened,
+                reproductionSteps: reproductionSteps,
+                expectedResult: expectedResult
+            ),
+            consent: FeedbackConsent(
+                includeUnifiedLogSummary: environment[feedbackIncludeLogsEnvironmentKey] == "1",
+                includeCrashReportExcerpt: environment[feedbackIncludeCrashEnvironmentKey] == "1",
+                includeRelatedConfigSnapshots: environment[feedbackIncludeConfigsEnvironmentKey] == "1"
+            )
+        )
     }
 
     nonisolated static func settingsFeedbackFixture(
@@ -49,26 +88,18 @@ enum UITestRuntime {
         else {
             return nil
         }
-        let happened = environment[feedbackHappenedEnvironmentKey] ?? ""
-        let reproductionSteps = environment[feedbackReproductionEnvironmentKey] ?? ""
-        let expectedResult = environment[feedbackExpectedEnvironmentKey] ?? ""
+        return feedbackFixture(environment: environment)
+    }
 
-        guard !happened.isEmpty || !reproductionSteps.isEmpty || !expectedResult.isEmpty else {
+    nonisolated static func feedbackExportFailureMessage(
+        environment: [String: String]
+    ) -> String? {
+        let message = environment[feedbackExportFailureMessageEnvironmentKey]
+        guard let trimmedMessage = message?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmedMessage.isEmpty == false else {
             return nil
         }
-
-        return SettingsFeedbackFixture(
-            draft: FeedbackDraft(
-                happened: happened,
-                reproductionSteps: reproductionSteps,
-                expectedResult: expectedResult
-            ),
-            consent: FeedbackConsent(
-                includeUnifiedLogSummary: environment[feedbackIncludeLogsEnvironmentKey] == "1",
-                includeCrashReportExcerpt: environment[feedbackIncludeCrashEnvironmentKey] == "1",
-                includeRelatedConfigSnapshots: environment[feedbackIncludeConfigsEnvironmentKey] == "1"
-            )
-        )
+        return trimmedMessage
     }
 }
 

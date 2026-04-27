@@ -79,23 +79,6 @@
         }
       }
     },
-    "%lld active" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld active"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld 个进行中"
-          }
-        }
-      }
-    },
     "%lld connected" : {
       "localizations" : {
         "en" : {
@@ -204,16 +187,6 @@
         }
       }
     },
-    "Add context before you export a support package. The technical details below use the same live data." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在导出支持包前补充上下文。下方技术详情使用同一份实时数据。"
-          }
-        }
-      }
-    },
     "Add Virtual Display" : {
       "localizations" : {
         "zh-Hans" : {
@@ -274,6 +247,16 @@
         }
       }
     },
+    "Apply Recommended Diagnostics" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用推荐诊断"
+          }
+        }
+      }
+    },
     "Aspect Ratio" : {
       "localizations" : {
         "zh-Hans" : {
@@ -290,6 +273,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "至少需要一个分辨率模式"
+          }
+        }
+      }
+    },
+    "Attention Needed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要关注"
           }
         }
       }
@@ -324,22 +317,22 @@
         }
       }
     },
+    "Black Screen" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "黑屏"
+          }
+        }
+      }
+    },
     "Bundle ID" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "包标识符"
-          }
-        }
-      }
-    },
-    "Attention Needed" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要关注"
           }
         }
       }
@@ -364,12 +357,32 @@
         }
       }
     },
+    "Cannot Share" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法共享"
+          }
+        }
+      }
+    },
     "Capture Performance" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "采集性能"
+          }
+        }
+      }
+    },
+    "Capture Sessions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采集会话"
           }
         }
       }
@@ -384,6 +397,16 @@
         }
       }
     },
+    "Choose the closest issue type." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择最接近的问题类型。"
+          }
+        }
+      }
+    },
     "Click the + button in the top right to create a virtual display." : {
       "localizations" : {
         "zh-Hans" : {
@@ -394,12 +417,52 @@
         }
       }
     },
+    "Clients" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "客户端"
+          }
+        }
+      }
+    },
+    "Configs" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置项"
+          }
+        }
+      }
+    },
     "Copy display address" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制显示器地址"
+          }
+        }
+      }
+    },
+    "Copy Submission Summary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制提交摘要"
+          }
+        }
+      }
+    },
+    "Copy the submission summary and send it together with the support package." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制提交摘要，并与支持包一起发送。"
           }
         }
       }
@@ -444,6 +507,16 @@
         }
       }
     },
+    "Current Status" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前状态"
+          }
+        }
+      }
+    },
     "Cursor" : {
       "localizations" : {
         "zh-Hans" : {
@@ -470,6 +543,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自定义序列号"
+          }
+        }
+      }
+    },
+    "Data Directory" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据目录"
+          }
+        }
+      }
+    },
+    "Data directory:" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据目录："
           }
         }
       }
@@ -530,6 +623,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除虚拟显示器"
+          }
+        }
+      }
+    },
+    "Describe the Issue" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述问题"
+          }
+        }
+      }
+    },
+    "Describe the issue, add diagnostics if needed, then export a support package." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先描述问题，再按需附加诊断并导出支持包。"
+          }
+        }
+      }
+    },
+    "Describe the result you expected to see." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说明你原本希望看到的结果。"
           }
         }
       }
@@ -610,17 +733,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示器信息"
-          }
-        }
-      }
-    },
-    "Display sharing state changed. Try again." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示共享状态已变化，请重试。"
           }
         }
       }
@@ -725,6 +837,16 @@
         }
       }
     },
+    "Environment" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "环境"
+          }
+        }
+      }
+    },
     "Error" : {
       "localizations" : {
         "zh-Hans" : {
@@ -751,6 +873,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "错误域"
+          }
+        }
+      }
+    },
+    "Example: 1. Launch the app. 2. Open sharing. 3. Select a display." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例如：1. 启动应用。2. 打开共享。3. 选择显示器。"
+          }
+        }
+      }
+    },
+    "Example: The screen stays black after launch." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例如：启动后画面一直黑屏。"
+          }
+        }
+      }
+    },
+    "Example: The selected display should appear normally." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "例如：应当看到所选显示器的正常画面。"
+          }
+        }
+      }
+    },
+    "Expected Result" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "期望结果"
+          }
+        }
+      }
+    },
+    "Expected result:" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预期结果："
+          }
+        }
+      }
+    },
+    "Export Failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出失败"
+          }
+        }
+      }
+    },
+    "Export Support Bundle" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出支持包"
+          }
+        }
+      }
+    },
+    "Exporting Support Bundle…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在导出支持包…"
+          }
+        }
+      }
+    },
+    "Failed to export support bundle." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出支持包失败。"
           }
         }
       }
@@ -845,17 +1057,6 @@
         }
       }
     },
-    "Failed to start web service." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动 Web 服务失败。"
-          }
-        }
-      }
-    },
     "Failure Reason" : {
       "localizations" : {
         "zh-Hans" : {
@@ -896,6 +1097,16 @@
         }
       }
     },
+    "Highest Severity" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最高严重级别"
+          }
+        }
+      }
+    },
     "Hz" : {
       "localizations" : {
         "zh-Hans" : {
@@ -926,12 +1137,62 @@
         }
       }
     },
+    "If the issue happened recently, export a support package now." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果问题刚刚复现，可以现在直接导出支持包。"
+          }
+        }
+      }
+    },
     "inches" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "英寸"
+          }
+        }
+      }
+    },
+    "Include latest crash report excerpt" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含最近崩溃报告摘录"
+          }
+        }
+      }
+    },
+    "Include related config snapshots" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含相关配置快照"
+          }
+        }
+      }
+    },
+    "Include unified log summary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含统一日志摘要"
+          }
+        }
+      }
+    },
+    "Includes more runtime records and helps when the issue is hard to reproduce or needs deeper investigation." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会附带更多运行记录，适合问题难以稳定复现或需要进一步排查时开启。"
           }
         }
       }
@@ -952,12 +1213,112 @@
         }
       }
     },
+    "Issue Summary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题现象"
+          }
+        }
+      }
+    },
+    "Issue Type" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题类型"
+          }
+        }
+      }
+    },
+    "Issue Type: Black Screen" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题类型：黑屏"
+          }
+        }
+      }
+    },
+    "Issue Type: Cannot Share" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题类型：无法共享"
+          }
+        }
+      }
+    },
+    "Issue Type: Other" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题类型：其他"
+          }
+        }
+      }
+    },
+    "Issue Type: Performance Issue" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题类型：性能问题"
+          }
+        }
+      }
+    },
+    "Issue Type: Virtual Display Failure" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题类型：虚拟显示器异常"
+          }
+        }
+      }
+    },
     "Last Error" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近一次错误"
+          }
+        }
+      }
+    },
+    "Latest Support Package" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新支持包"
+          }
+        }
+      }
+    },
+    "Latest support package:" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新支持包："
+          }
+        }
+      }
+    },
+    "List the steps in order so the issue can be reproduced." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按发生顺序填写，便于复现。"
           }
         }
       }
@@ -988,6 +1349,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在加载…"
+          }
+        }
+      }
+    },
+    "Locale" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "区域设置"
+          }
+        }
+      }
+    },
+    "Looks Good" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态正常"
+          }
+        }
+      }
+    },
+    "Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模式"
           }
         }
       }
@@ -1058,6 +1449,16 @@
         }
       }
     },
+    "New Feedback" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建反馈"
+          }
+        }
+      }
+    },
     "No available display can be monitored right now." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1084,6 +1485,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无显示器"
+          }
+        }
+      }
+    },
+    "No recent events." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无最近事件。"
+          }
+        }
+      }
+    },
+    "No recent issues." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无最近问题。"
+          }
+        }
+      }
+    },
+    "No recent support records." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无最近支持记录。"
           }
         }
       }
@@ -1158,12 +1589,32 @@
         }
       }
     },
+    "Open Data Directory" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开数据目录"
+          }
+        }
+      }
+    },
     "Open Share Page" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开共享页面"
+          }
+        }
+      }
+    },
+    "Open Support Center" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开支持中心"
           }
         }
       }
@@ -1188,24 +1639,32 @@
         }
       }
     },
-    "Original Size" : {
-      "extractionState" : "stale",
+    "Optional enhanced diagnostics" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "原始大小"
+            "value" : "可选增强诊断"
           }
         }
       }
     },
-    "Performance" : {
-      "extractionState" : "stale",
+    "Other" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "性能模式"
+            "value" : "其他"
+          }
+        }
+      }
+    },
+    "Performance Issue" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能问题"
           }
         }
       }
@@ -1276,6 +1735,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请输入有效的分辨率值"
+          }
+        }
+      }
+    },
+    "Please fill in at least one problem field." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请至少填写一项问题信息。"
           }
         }
       }
@@ -1370,6 +1839,16 @@
         }
       }
     },
+    "Previous Support Packages" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更早的支持包"
+          }
+        }
+      }
+    },
     "Primary Action Glyph" : {
       "localizations" : {
         "en" : {
@@ -1426,6 +1905,106 @@
         }
       }
     },
+    "Recent Event Count" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近事件数"
+          }
+        }
+      }
+    },
+    "Recent Events" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近事件"
+          }
+        }
+      }
+    },
+    "Recent Issue Count" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近问题数"
+          }
+        }
+      }
+    },
+    "Recent Issues" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近问题"
+          }
+        }
+      }
+    },
+    "Recent issues:" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近问题："
+          }
+        }
+      }
+    },
+    "Recommended when screen sharing fails to start, stops quickly, or the remote side cannot connect." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议在屏幕共享无法启动、很快停止或远端无法连接时选择。"
+          }
+        }
+      }
+    },
+    "Recommended when the app stutters, drops frames, or uses too many resources." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议在应用卡顿、掉帧或资源占用过高时选择。"
+          }
+        }
+      }
+    },
+    "Recommended when the issue is hard to classify and needs more context." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议在问题难以归类且需要更多上下文时选择。"
+          }
+        }
+      }
+    },
+    "Recommended when the screen stays black or the image never appears." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议在画面一直黑屏或始终没有图像时选择。"
+          }
+        }
+      }
+    },
+    "Recommended when virtual displays fail to create, restore, or stay available." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议在虚拟显示器无法创建、恢复或保持可用时选择。"
+          }
+        }
+      }
+    },
     "Recovery Suggestion" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1442,6 +2021,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新"
+          }
+        }
+      }
+    },
+    "Refresh Reason" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新原因"
+          }
+        }
+      }
+    },
+    "Reproduction Steps" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复现步骤"
+          }
+        }
+      }
+    },
+    "Reproduction steps:" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复现步骤："
           }
         }
       }
@@ -1576,6 +2185,46 @@
         }
       }
     },
+    "Reveal Bundle" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在访达中显示支持包"
+          }
+        }
+      }
+    },
+    "Review the recent issues below, then export another support package if needed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以先查看下面的最近问题，再决定是否导出新的支持包。"
+          }
+        }
+      }
+    },
+    "Running" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行中"
+          }
+        }
+      }
+    },
+    "Runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行态"
+          }
+        }
+      }
+    },
     "Save" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1662,6 +2311,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "屏幕尺寸"
+          }
+        }
+      }
+    },
+    "Section Count" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分区数量"
           }
         }
       }
@@ -1772,12 +2431,32 @@
         }
       }
     },
+    "Shared Displays" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享显示器数"
+          }
+        }
+      }
+    },
     "Sharing" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "共享"
+          }
+        }
+      }
+    },
+    "Sharing cannot start, disconnects quickly, or the remote side cannot connect." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享无法启动、很快断开，或远端无法连接。"
           }
         }
       }
@@ -1852,6 +2531,16 @@
         }
       }
     },
+    "Status" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态"
+          }
+        }
+      }
+    },
     "Stop" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1888,6 +2577,96 @@
         }
       }
     },
+    "Suggested Action" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建议操作"
+          }
+        }
+      }
+    },
+    "Summarize what went wrong, the impact, and how often it happens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "概括你看到的问题、影响范围和出现频率。"
+          }
+        }
+      }
+    },
+    "Summary Preview" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摘要预览"
+          }
+        }
+      }
+    },
+    "Support" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持"
+          }
+        }
+      }
+    },
+    "Support Center" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持中心"
+          }
+        }
+      }
+    },
+    "Support Package" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持包"
+          }
+        }
+      }
+    },
+    "Support Package Path" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持包路径"
+          }
+        }
+      }
+    },
+    "Technical Details" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "技术详情"
+          }
+        }
+      }
+    },
+    "Technical Information" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "技术信息"
+          }
+        }
+      }
+    },
     "Test Edit" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1914,6 +2693,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "测试重建中"
+          }
+        }
+      }
+    },
+    "The app is slow, drops frames, uses too many resources, or responds late." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用运行缓慢、掉帧、占用资源过高，或响应延迟。"
+          }
+        }
+      }
+    },
+    "The app opens or starts sharing, but the content stays black." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用已打开或开始共享，但画面始终是黑的。"
           }
         }
       }
@@ -1994,12 +2793,32 @@
         }
       }
     },
+    "Time Zone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时区"
+          }
+        }
+      }
+    },
     "Tip" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "提示"
+          }
+        }
+      }
+    },
+    "Use this when the issue does not fit the common categories above." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当问题不属于以上常见类别时，请选择此项。"
           }
         }
       }
@@ -2034,12 +2853,32 @@
         }
       }
     },
+    "Virtual Display Failure" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器异常"
+          }
+        }
+      }
+    },
     "Virtual Displays" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟显示器"
+          }
+        }
+      }
+    },
+    "Virtual displays cannot be created, restored, enabled, or kept in sync." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器无法创建、恢复、启用，或无法保持同步。"
           }
         }
       }
@@ -2100,576 +2939,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 服务启动请求已被新的请求替代。"
-          }
-        }
-      }
-    },
-    "Copy Summary" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制摘要"
-          }
-        }
-      }
-    },
-    "Expected result:" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "预期结果："
-          }
-        }
-      }
-    },
-    "Export a support bundle before submitting a bug. The bundle includes a sanitized runtime snapshot, recent issues, and recent events." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "提交问题前请先导出支持包。支持包包含脱敏后的运行时快照、最近问题和最近事件。"
-          }
-        }
-      }
-    },
-    "Export Failed" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导出失败"
-          }
-        }
-      }
-    },
-    "Export Support Bundle" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导出支持包"
-          }
-        }
-      }
-    },
-    "Failed to export support bundle." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导出支持包失败。"
-          }
-        }
-      }
-    },
-    "Feedback & Diagnostics" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "反馈与诊断"
-          }
-        }
-      }
-    },
-    "How can this be reproduced?" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "如何复现？"
-          }
-        }
-      }
-    },
-    "Include latest crash report excerpt" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "包含最近崩溃报告摘录"
-          }
-        }
-      }
-    },
-    "Include related config snapshots" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "包含相关配置快照"
-          }
-        }
-      }
-    },
-    "Include unified log summary" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "包含统一日志摘要"
-          }
-        }
-      }
-    },
-    "Capture Sessions" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "采集会话"
-          }
-        }
-      }
-    },
-    "Clients" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "客户端"
-          }
-        }
-      }
-    },
-    "Configs" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配置项"
-          }
-        }
-      }
-    },
-    "Diagnostics" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "诊断"
-          }
-        }
-      }
-    },
-    "Current Status" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前状态"
-          }
-        }
-      }
-    },
-    "Data Directory" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "数据目录"
-          }
-        }
-      }
-    },
-    "Data directory:" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "数据目录："
-          }
-        }
-      }
-    },
-    "Describe the problem in the support center first, then export a support package when needed." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "先在支持中心描述问题，再在需要时导出支持包。"
-          }
-        }
-      }
-    },
-    "Environment" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "环境"
-          }
-        }
-      }
-    },
-    "Health" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "健康状态"
-          }
-        }
-      }
-    },
-    "Highest Severity" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最高严重级别"
-          }
-        }
-      }
-    },
-    "Latest Bundle" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新支持包"
-          }
-        }
-      }
-    },
-    "Latest Support Package" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新支持包"
-          }
-        }
-      }
-    },
-    "Latest bundle:" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新支持包："
-          }
-        }
-      }
-    },
-    "Latest support package:" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最新支持包："
-          }
-        }
-      }
-    },
-    "Locale" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "区域设置"
-          }
-        }
-      }
-    },
-    "Looks Good" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "状态正常"
-          }
-        }
-      }
-    },
-    "Mode" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "模式"
-          }
-        }
-      }
-    },
-    "No recent events." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无最近事件。"
-          }
-        }
-      }
-    },
-    "No recent issues." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无最近问题。"
-          }
-        }
-      }
-    },
-    "Optional enhanced diagnostics" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可选增强诊断"
-          }
-        }
-      }
-    },
-    "Open Data Directory" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开数据目录"
-          }
-        }
-      }
-    },
-    "Open Support Center" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开支持中心"
-          }
-        }
-      }
-    },
-    "Open the support center to review app status and technical details, or export a support package directly here." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开支持中心以查看应用状态和技术详情，或直接在此导出支持包。"
-          }
-        }
-      }
-    },
-    "Recent Event Count" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近事件数"
-          }
-        }
-      }
-    },
-    "Recent Events" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近事件"
-          }
-        }
-      }
-    },
-    "Recent Issue Count" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近问题数"
-          }
-        }
-      }
-    },
-    "Recent Issues" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近问题"
-          }
-        }
-      }
-    },
-    "Recent issues:" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近问题："
-          }
-        }
-      }
-    },
-    "Review app status, export a support package, and inspect technical details in one place." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在一个页面里查看应用状态、导出支持包，并检查技术详情。"
-          }
-        }
-      }
-    },
-    "Refresh Reason" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新原因"
-          }
-        }
-      }
-    },
-    "Refresh Snapshot" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新快照"
-          }
-        }
-      }
-    },
-    "Reproduction steps:" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复现步骤："
-          }
-        }
-      }
-    },
-    "Reveal Bundle" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在访达中显示支持包"
-          }
-        }
-      }
-    },
-    "Running" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行中"
-          }
-        }
-      }
-    },
-    "Runtime" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行态"
-          }
-        }
-      }
-    },
-    "Section Count" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分区数量"
-          }
-        }
-      }
-    },
-    "Shared Displays" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共享显示器数"
-          }
-        }
-      }
-    },
-    "Status" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "状态"
-          }
-        }
-      }
-    },
-    "Support Center" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "支持中心"
-          }
-        }
-      }
-    },
-    "Support Package Details" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "支持包详情"
-          }
-        }
-      }
-    },
-    "Support bundle exported." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "支持包已导出。"
-          }
-        }
-      }
-    },
-    "Technical Details" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "技术详情"
-          }
-        }
-      }
-    },
-    "Time Zone" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "时区"
-          }
-        }
-      }
-    },
-    "What did you expect?" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的预期结果是什么？"
-          }
-        }
-      }
-    },
-    "What happened?" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发生了什么？"
           }
         }
       }

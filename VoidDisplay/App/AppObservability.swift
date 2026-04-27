@@ -12,6 +12,7 @@ enum AppLog {
     nonisolated static let persistence = Logger(subsystem: subsystem, category: "persistence")
     nonisolated static let screenCatalog = Logger(subsystem: subsystem, category: "screen_catalog")
     nonisolated static let observability = Logger(subsystem: subsystem, category: "observability")
+    nonisolated static let support = Logger(subsystem: subsystem, category: "support")
 
     nonisolated static func logger(for domain: ObservabilityDomain) -> Logger {
         switch domain {
@@ -31,6 +32,8 @@ enum AppLog {
             web
         case .observability:
             observability
+        case .support:
+            support
         }
     }
 }
