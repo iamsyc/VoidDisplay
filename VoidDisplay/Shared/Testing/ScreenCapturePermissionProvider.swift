@@ -26,6 +26,8 @@ struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
             return true
         case .displayCatalogLoading:
             return true
+        case .settingsFeedback:
+            return true
         case .virtualDisplayRebuilding:
             return true
         case .virtualDisplayRebuildFailed:

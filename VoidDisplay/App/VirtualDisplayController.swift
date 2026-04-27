@@ -29,15 +29,18 @@ final class VirtualDisplayController {
     @ObservationIgnored private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
     @ObservationIgnored private let stopDependentStreamsBeforeRebuild: (CGDirectDisplayID) -> Void
+    @ObservationIgnored private weak var observability: ObservabilityCenter?
 
     init(
         virtualDisplayFacade: any VirtualDisplayFacade,
         appliedBadgeDisplayDuration: Duration,
-        stopDependentStreamsBeforeRebuild: @escaping (CGDirectDisplayID) -> Void
+        stopDependentStreamsBeforeRebuild: @escaping (CGDirectDisplayID) -> Void,
+        observability: ObservabilityCenter? = nil
     ) {
         self.virtualDisplayFacade = virtualDisplayFacade
         self.appliedBadgeDisplayDuration = appliedBadgeDisplayDuration
         self.stopDependentStreamsBeforeRebuild = stopDependentStreamsBeforeRebuild
+        self.observability = observability
         syncVirtualDisplayState()
     }
 
@@ -45,6 +48,33 @@ final class VirtualDisplayController {
         virtualDisplayFacade.loadPersistedConfigs()
         virtualDisplayFacade.restoreDesiredVirtualDisplays()
         syncVirtualDisplayState()
+        Task {
+            if restoreFailures.isEmpty {
+                await recordEvent(
+                    severity: .info,
+                    operation: "Restore virtual displays",
+                    message: "Loaded persisted virtual display state.",
+                    metadata: ["configCount": "\(displayConfigs.count)"]
+                )
+            } else {
+                for failure in restoreFailures {
+                    await observability?.record(
+                        error: NSError(
+                            domain: ObservabilityDomain.virtualDisplay.rawValue,
+                            code: 0,
+                            userInfo: [NSLocalizedDescriptionKey: failure.message]
+                        ),
+                        subsystem: .virtualDisplay,
+                        operation: "Restore virtual displays",
+                        context: .init(
+                            metadata: ["configID": failure.id.uuidString],
+                            deduplicationKey: "virtualDisplay.restore.\(failure.id.uuidString)",
+                            message: failure.message
+                        )
+                    )
+                }
+            }
+        }
     }
 
     func applyUITestPresentationState(scenario: UITestScenario) {
@@ -69,6 +99,8 @@ final class VirtualDisplayController {
         case .displayCatalogLoading:
             break
         case .permissionDenied:
+            break
+        case .settingsFeedback:
             break
         case .virtualDisplayRebuilding:
             if let firstID = displayConfigs.first?.id {
@@ -114,6 +146,11 @@ final class VirtualDisplayController {
         persistenceAlert = nil
     }
 
+    func configureObservability(_ observability: ObservabilityCenter?) {
+        self.observability = observability
+        requestSnapshotRefresh()
+    }
+
     func startRebuildFromSavedConfig(configId: UUID) {
         guard !rebuildingConfigIds.contains(configId) else { return }
         guard getConfig(configId) != nil else {
@@ -136,6 +173,15 @@ final class VirtualDisplayController {
         syncRebuildPresentationState()
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = nil
+        Task {
+            await recordEvent(
+                severity: .info,
+                operation: "Rebuild virtual display",
+                message: "Started rebuild request.",
+                metadata: ["configID": configId.uuidString],
+                deduplicationKey: "virtualDisplay.rebuild.\(configId.uuidString)"
+            )
+        }
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -150,13 +196,27 @@ final class VirtualDisplayController {
                 self.rebuildPresentationState.markRebuildSuccess(configId: configId)
                 self.syncRebuildPresentationState()
                 self.scheduleAppliedBadgeClear(configId: configId)
+                await self.recordEvent(
+                    severity: .notice,
+                    operation: "Rebuild virtual display",
+                    message: "Virtual display rebuild completed.",
+                    metadata: ["configID": configId.uuidString],
+                    deduplicationKey: "virtualDisplay.rebuild.\(configId.uuidString)"
+                )
             } catch is CancellationError {
                 return
             } catch {
                 if Task.isCancelled {
                     return
                 }
-                AppErrorMapper.logFailure("Rebuild virtual display", error: error, logger: AppLog.virtualDisplay)
+                AppErrorMapper.logFailure(
+                    "Rebuild virtual display",
+                    error: error,
+                    logger: AppLog.virtualDisplay,
+                    subsystem: .virtualDisplay,
+                    metadata: ["configID": configId.uuidString],
+                    deduplicationKey: "virtualDisplay.rebuild.\(configId.uuidString)"
+                )
                 let message = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
                 self.rebuildPresentationState.markRebuildFailure(configId: configId, message: message)
                 self.syncRebuildPresentationState()
@@ -198,7 +258,7 @@ final class VirtualDisplayController {
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
     ) throws -> UUID {
-        try performPersistenceAction(
+        let configID = try performPersistenceAction(
             title: String(localized: "Create Failed"),
             operation: "Create virtual display",
             fallback: String(localized: "Create failed.")
@@ -213,11 +273,31 @@ final class VirtualDisplayController {
                 )
             }
         }
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Create virtual display",
+                message: "Created virtual display configuration.",
+                metadata: [
+                    "configID": configID.uuidString,
+                    "serialNumber": "\(serialNum)"
+                ]
+            )
+        }
+        return configID
     }
 
     func disableDisplayByConfig(_ configId: UUID) throws {
         try mutateAndSync {
             try virtualDisplayFacade.disableDisplayByConfig(configId)
+        }
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Disable virtual display",
+                message: "Disabled virtual display.",
+                metadata: ["configID": configId.uuidString]
+            )
         }
     }
 
@@ -225,6 +305,12 @@ final class VirtualDisplayController {
         try await mutateAndSync {
             try await virtualDisplayFacade.enableDisplay(configId)
         }
+        await recordEvent(
+            severity: .notice,
+            operation: "Enable virtual display",
+            message: "Enabled virtual display.",
+            metadata: ["configID": configId.uuidString]
+        )
     }
 
     func destroyDisplay(_ configId: UUID) throws {
@@ -237,6 +323,14 @@ final class VirtualDisplayController {
                 try virtualDisplayFacade.destroyDisplay(configId)
                 clearRebuildPresentationState(configId: configId)
             }
+        }
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Delete virtual display",
+                message: "Deleted virtual display configuration.",
+                metadata: ["configID": configId.uuidString]
+            )
         }
     }
 
@@ -253,6 +347,16 @@ final class VirtualDisplayController {
             try mutateAndSync {
                 try virtualDisplayFacade.updateConfig(updated)
             }
+        }
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Update virtual display config",
+                message: "Updated virtual display configuration.",
+                metadata: [
+                    "configID": updated.id.uuidString
+                ]
+            )
         }
     }
 
@@ -323,7 +427,7 @@ final class VirtualDisplayController {
 
     @discardableResult
     func resetVirtualDisplayData() throws -> Int {
-        try performPersistenceAction(
+        let removed = try performPersistenceAction(
             title: String(localized: "Reset Failed"),
             operation: "Reset virtual display configurations",
             fallback: String(localized: "Failed to reset virtual display configurations.")
@@ -334,6 +438,15 @@ final class VirtualDisplayController {
             clearAllRebuildPresentationState()
             return removed
         }
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Reset virtual display configurations",
+                message: "Reset virtual display data.",
+                metadata: ["removedCount": "\(removed)"]
+            )
+        }
+        return removed
     }
 
     private func syncVirtualDisplayState() {
@@ -344,12 +457,14 @@ final class VirtualDisplayController {
         restoreFailures = snapshot.restoreFailures
         runtimeDisplayIDByConfigId = snapshot.runtimeDisplayIDByConfigId
         configStorePresentation = snapshot.configStorePresentation
+        requestSnapshotRefresh()
     }
 
     private func syncRebuildPresentationState() {
         rebuildingConfigIds = rebuildPresentationState.rebuildingConfigIds
         rebuildFailureMessageByConfigId = rebuildPresentationState.rebuildFailureMessageByConfigId
         recentlyAppliedConfigIds = rebuildPresentationState.recentlyAppliedConfigIds
+        requestSnapshotRefresh()
     }
 
     private func mutateAndSync(_ mutation: () -> Void) {
@@ -393,7 +508,12 @@ final class VirtualDisplayController {
         error: Error,
         fallback: String
     ) {
-        AppErrorMapper.logFailure(operation, error: error, logger: AppLog.virtualDisplay)
+        AppErrorMapper.logFailure(
+            operation,
+            error: error,
+            logger: AppLog.virtualDisplay,
+            subsystem: .virtualDisplay
+        )
         persistenceAlert = UserFacingAlertState(
             title: title,
             message: AppErrorMapper.userMessage(for: error, fallback: fallback)
@@ -446,10 +566,37 @@ final class VirtualDisplayController {
                 AppErrorMapper.logFailure(
                     "Reconcile virtual display main policy",
                     error: error,
-                    logger: AppLog.virtualDisplay
+                    logger: AppLog.virtualDisplay,
+                    subsystem: .virtualDisplay
                 )
             }
             self.syncVirtualDisplayState()
         }
+    }
+
+    private func requestSnapshotRefresh() {
+        guard let observability else { return }
+        Task {
+            await observability.refreshSnapshot(reason: .virtualDisplayStateChanged)
+        }
+    }
+
+    private func recordEvent(
+        severity: ObservabilitySeverity,
+        operation: String,
+        message: String,
+        metadata: [String: String],
+        deduplicationKey: String? = nil
+    ) async {
+        await observability?.record(
+            ObservabilityEvent(
+                severity: severity,
+                subsystem: .virtualDisplay,
+                operation: operation,
+                message: message,
+                metadata: metadata,
+                deduplicationKey: deduplicationKey
+            )
+        )
     }
 }

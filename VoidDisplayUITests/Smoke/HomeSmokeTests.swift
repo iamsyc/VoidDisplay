@@ -89,6 +89,161 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testSupportCenterNavigationSmoke_baseline() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "home_sidebar",
+                "sidebar_support_center"
+            ],
+            timeout: 6
+        )
+
+        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 2)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_support_center",
+                "support_center_intro_text",
+                "support_center_export_button",
+                "support_bundle_draft_panel",
+                "support_bundle_draft_section",
+                "support_center_issue_type_title",
+                "support_center_issue_type_picker",
+                "support_center_issue_type_selected_description",
+                "support_center_issue_type_recommendation",
+                "support_center_apply_recommended_diagnostics_button",
+                "support_bundle_happened_title",
+                "support_bundle_happened_description",
+                "support_bundle_reproduction_title",
+                "support_bundle_reproduction_description",
+                "support_bundle_expected_title",
+                "support_bundle_expected_description",
+                "support_bundle_diagnostics_description",
+                "support_center_technical_disclosure"
+            ],
+            timeout: 3
+        )
+
+        let draftSection = assertExists(app, identifier: "support_bundle_draft_panel", timeout: 1)
+        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 1)
+        let technicalDisclosure = assertExists(app, identifier: "support_center_technical_disclosure", timeout: 1)
+        XCTAssertLessThan(
+            draftSection.frame.minY,
+            technicalDisclosure.frame.minY,
+            "support bundle section should appear before technical information"
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["support_center_copy_summary_button"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["support_center_reveal_bundle_button"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["support_center_recent_issues"].exists)
+        XCTAssertFalse(exportButton.label.isEmpty)
+    }
+
+    @MainActor
+    func testSupportCenterEmptyExportShowsValidationNearExportButton() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+
+        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 6)
+        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 3)
+        tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
+
+        let validationMessage = assertExists(app, identifier: "support_center_validation_message", timeout: 2)
+        let issueTypeTitle = assertExists(app, identifier: "support_center_issue_type_title", timeout: 1)
+        XCTAssertLessThan(
+            validationMessage.frame.maxY,
+            issueTypeTitle.frame.minY,
+            "validation message should appear near the export button before the issue type controls"
+        )
+    }
+
+    @MainActor
+    func testSupportCenterExportShowsCompletionWithoutDuplicateHistory() throws {
+        let app = XCUIApplication()
+        configureAppForUITestLaunch(app)
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.baseline.rawValue
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"] = "cannotShare"
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_HAPPENED"] = "Remote side disconnects immediately."
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_REPRODUCTION"] = "1. Start sharing. 2. Open the remote URL."
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_EXPECTED"] = "The remote side should stay connected."
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_INCLUDE_LOGS"] = "1"
+        app.launch()
+        app.activate()
+
+        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 6)
+        let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
+        XCTAssertTrue(
+            waitForCondition(timeout: 5) {
+                (happenedField.value as? String) == "Remote side disconnects immediately."
+            }
+        )
+        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 3)
+        tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "support_center_completion_section",
+                "support_center_completion_next_step",
+                "support_center_copy_summary_button",
+                "support_center_reveal_bundle_button",
+                "support_center_new_feedback_button"
+            ],
+            timeout: 8
+        )
+
+        XCTAssertFalse(app.descendants(matching: .any)["support_center_history_section"].exists)
+    }
+
+    @MainActor
+    func testSupportCenterExportFailureShowsErrorBannerOnSupportCenter() throws {
+        let app = XCUIApplication()
+        configureAppForUITestLaunch(app)
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.baseline.rawValue
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_HAPPENED"] = "Export should fail."
+        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_EXPORT_FAILURE_MESSAGE"] = "Injected export failure"
+        app.launch()
+        app.activate()
+
+        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 6)
+        let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
+        XCTAssertTrue(
+            waitForCondition(timeout: 5) {
+                (happenedField.value as? String) == "Export should fail."
+            }
+        )
+        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 3)
+        tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "support_center_error_banner",
+                "support_center_error_title",
+                "support_center_error_message"
+            ],
+            timeout: 5
+        )
+        let titleText = accessibilityText(
+            for: smokeElement(app, identifier: "support_center_error_title")
+        )
+        XCTAssertTrue(
+            ["Export Failed", "导出失败"].contains(titleText),
+            "Unexpected support center error title: \(titleText)"
+        )
+        XCTAssertEqual(
+            accessibilityText(
+                for: smokeElement(app, identifier: "support_center_error_message")
+            ),
+            "Injected export failure"
+        )
+        XCTAssertFalse(app.alerts.element.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["detail_support_center"].exists)
+    }
+
+    @MainActor
     func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
         let app = launchAppForSmoke(scenario: .baseline)
         let detail = openVirtualDisplayDetail(in: app)
@@ -480,6 +635,22 @@ final class HomeSmokeTests: XCTestCase {
             return valueText
         }
         return nil
+    }
+
+    @MainActor
+    private func accessibilityText(for element: XCUIElement) -> String {
+        let labelText = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if labelText.isEmpty == false {
+            return labelText
+        }
+
+        if let valueText = (element.value as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           valueText.isEmpty == false {
+            return valueText
+        }
+
+        return ""
     }
 
     private func isRetryablePortInUseError(_ message: String?) -> Bool {

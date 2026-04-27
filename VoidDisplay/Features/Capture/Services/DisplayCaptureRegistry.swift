@@ -89,6 +89,10 @@ final class DisplayPreviewSubscription: Sendable {
         session.reportPreviewPerformanceSample(sample)
     }
 
+    nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
+        session.captureMetricsSnapshot()
+    }
+
     nonisolated func setShowsCursor(_ showsCursor: Bool) async throws {
         try await setShowsCursorClosure(showsCursor)
     }
