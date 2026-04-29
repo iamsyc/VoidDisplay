@@ -1,5 +1,4 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
@@ -11,27 +10,6 @@ import Foundation
 import CoreGraphics
 import ScreenCaptureKit
 import Testing
-
-private final class SharingControllerDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
-    nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
-
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
-
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
-
-    nonisolated func stop() async {}
-}
 
 private final class SharingControllerMockSCDisplayBox: NSObject {
     @objc let displayID: CGDirectDisplayID

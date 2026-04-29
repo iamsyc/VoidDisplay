@@ -7,19 +7,13 @@ import Testing
 private final class CaptureMonitoringDummySession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
 
     nonisolated func stop() async {}
 }

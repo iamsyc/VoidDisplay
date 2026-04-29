@@ -239,10 +239,9 @@ private final class FakeVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
 
     func createRuntimeDisplay(
         from config: VirtualDisplayConfig,
-        maxPixels: (width: UInt32, height: UInt32)?,
+        maxPixels _: (width: UInt32, height: UInt32)?,
         onTermination: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
-        _ = maxPixels
         createCallCount += 1
         terminationHandlersByConfigId[config.id] = onTermination
         let result: CreateResult

@@ -1,5 +1,4 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
@@ -22,13 +21,11 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
     nonisolated(unsafe) var cursorUpdateCount = 0
     nonisolated(unsafe) var lastShowsCursor: Bool?
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {
         attachedSinkCount += 1
     }
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {
         detachedSinkCount += 1
     }
 
@@ -43,9 +40,7 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 }
 
 private final class CaptureControllerPreviewSink: DisplayPreviewSink, @unchecked Sendable {
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
-    }
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
 private final class CaptureControllerMockSCDisplayBox: NSObject {

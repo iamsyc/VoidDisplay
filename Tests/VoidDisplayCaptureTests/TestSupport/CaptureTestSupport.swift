@@ -34,10 +34,7 @@ final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
 
     nonisolated func stopSharing() {}
 
-    nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
-        _ = pixelBuffer
-        _ = ptsUs
-    }
+    nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
 }
 
 enum AsyncTestTimeouts {

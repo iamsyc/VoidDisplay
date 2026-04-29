@@ -1,5 +1,4 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing

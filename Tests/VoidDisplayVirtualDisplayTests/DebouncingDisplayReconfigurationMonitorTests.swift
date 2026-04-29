@@ -21,10 +21,9 @@ private final class DebounceRegistrationHarness: @unchecked Sendable {
     }
 
     func remove(
-        callback: CGDisplayReconfigurationCallBack,
+        callback _: CGDisplayReconfigurationCallBack,
         userInfo: UnsafeMutableRawPointer
     ) {
-        _ = callback
         if self.userInfo == userInfo {
             removeCallCountValue += 1
         }

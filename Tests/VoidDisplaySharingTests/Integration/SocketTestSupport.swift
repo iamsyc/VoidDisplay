@@ -307,11 +307,6 @@ func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
 }
 
 @MainActor
-private final class StaticLiveHubStore {
-    let hub = WebRTCSessionHub()
-}
-
-@MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
     concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { target in
@@ -339,9 +334,8 @@ func startServerOnRandomPort(
                 return (server, boundPort)
             case .timedOut:
                 server.stopListener()
-            case .failed(let error):
+            case .failed:
                 server.stopListener()
-                _ = error
             }
         } catch {
             await Task.yield()

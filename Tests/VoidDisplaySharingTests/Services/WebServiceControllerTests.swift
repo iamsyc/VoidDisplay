@@ -338,12 +338,6 @@ struct WebServiceControllerTests {
         return (startTask, server)
     }
 
-    private func availablePort() throws -> UInt16 {
-        let (descriptor, port) = try openBoundSocket()
-        close(descriptor)
-        return port
-    }
-
     private func openBoundSocket() throws -> (Int32, UInt16) {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
         guard descriptor >= 0 else {
@@ -389,18 +383,13 @@ private final class WebServiceServerHarness {
     private(set) var createdServers: [ControlledWebServiceServer] = []
 
     func makeServer(
-        _ port: NWEndpoint.Port,
-        _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
-        _ sharingEventSink: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
+        _: NWEndpoint.Port,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {
-        _ = port
-        _ = targetStateProvider
-        _ = concreteTargetResolver
-        _ = sessionHubProvider
-        _ = sharingEventSink
         let server = ControlledWebServiceServer(onListenerStopped: onListenerStopped)
         createdServers.append(server)
         return server
@@ -459,8 +448,7 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
         disconnectedTargetsHistory.append(targets)
     }
 
-    func streamClientCount(for target: ShareTarget) -> Int {
-        _ = target
+    func streamClientCount(for _: ShareTarget) -> Int {
         return 0
     }
 }

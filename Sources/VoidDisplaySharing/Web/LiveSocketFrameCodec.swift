@@ -250,16 +250,6 @@ package nonisolated func encodeWebSocketCloseFrame(code: UInt16? = nil) -> Data 
     return encodeWebSocketFrame(opcode: 0x8, payload: payload)
 }
 
-@available(*, deprecated, message: "Use WebSocketFrameDecoder.ingest(_:) for incremental decoding.")
-package nonisolated func decodeWebSocketFrames(from input: Data) -> (frames: [DecodedWebSocketFrame], remainder: Data) {
-    let decoder = WebSocketFrameDecoder(
-        maxFramePayloadBytes: Int.max,
-        maxContinuationPayloadBytes: Int.max
-    )
-    let output = decoder.ingest(input)
-    return (output.frames, decoder.remainder)
-}
-
 nonisolated private func encodeWebSocketFrame(opcode: UInt8, payload: Data) -> Data {
     var frame = Data()
     frame.append(0x80 | opcode)

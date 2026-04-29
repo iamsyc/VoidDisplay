@@ -12,16 +12,11 @@ private final class IntegrationAutoConnectingPeer: @unchecked Sendable, WebRTCPe
         self.onConnected = onConnected
     }
 
-    nonisolated func handleRemoteOffer(sdp: String) {
-        _ = sdp
+    nonisolated func handleRemoteOffer(sdp _: String) {
         onConnected()
     }
 
-    nonisolated func addRemoteCandidate(sdp: String, sdpMid: String?, sdpMLineIndex: Int32) {
-        _ = sdp
-        _ = sdpMid
-        _ = sdpMLineIndex
-    }
+    nonisolated func addRemoteCandidate(sdp _: String, sdpMid _: String?, sdpMLineIndex _: Int32) {}
 
     nonisolated func close() {}
 }

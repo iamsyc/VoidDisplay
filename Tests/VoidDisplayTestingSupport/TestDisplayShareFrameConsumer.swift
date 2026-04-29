@@ -8,8 +8,5 @@ package final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
 
     package nonisolated func stopSharing() {}
 
-    package nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
-        _ = pixelBuffer
-        _ = ptsUs
-    }
+    package nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
 }

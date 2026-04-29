@@ -24,7 +24,6 @@ let package = Package(
                 "VoidDisplaySharing",
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
-                "VoidDisplayDesignSystem",
                 "VoidDisplayFoundation"
             ],
             swiftSettings: sharedSwiftSettings
@@ -113,7 +112,6 @@ let package = Package(
                 "VoidDisplaySharing",
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
-                "VoidDisplayDesignSystem",
                 "VoidDisplayFoundation",
                 "VoidDisplayTestingSupport"
             ],

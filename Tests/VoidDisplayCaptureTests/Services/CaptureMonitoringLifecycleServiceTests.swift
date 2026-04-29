@@ -15,13 +15,11 @@ private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessio
     nonisolated(unsafe) var lastShowsCursor: Bool?
     nonisolated(unsafe) var cursorUpdateError: Error?
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {
         attachedSinkCount += 1
     }
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {
         detachedSinkCount += 1
     }
 
@@ -39,9 +37,7 @@ private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessio
 }
 
 private final class CaptureMonitoringLifecyclePreviewSink: DisplayPreviewSink, @unchecked Sendable {
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
-    }
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
 private final class CaptureMonitoringLifecycleCancelCounter: @unchecked Sendable {

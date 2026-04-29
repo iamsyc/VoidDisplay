@@ -21,11 +21,9 @@ struct VirtualDisplayControllerTests {
         )
 
         let env = makeControllerEnvironment(
-            preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
@@ -57,11 +55,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentRunningConfigIds = [config.id]
 
         let sut = makeControllerEnvironment(
-            preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
@@ -100,11 +96,9 @@ struct VirtualDisplayControllerTests {
         sharing.activeSharingDisplayIDs = [displayID]
 
         let sut = makeControllerEnvironment(
-            preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
@@ -137,11 +131,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentRunningConfigIds = [config.id]
 
         let sut = makeControllerEnvironment(
-            preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
@@ -176,12 +168,10 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.rebuildVirtualDisplayError = NSError(domain: "test", code: 33)
 
         let sut = makeControllerEnvironment(
-            preview: false,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
-            appliedBadgeDisplayDuration: .milliseconds(50),
-            isRunningUnderXCTestOverride: true
+            appliedBadgeDisplayDuration: .milliseconds(50)
         )
 
         sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
@@ -237,11 +227,9 @@ struct VirtualDisplayControllerTests {
         ]
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         let moved = try sut.virtualDisplay.moveDisplayConfig(
@@ -291,11 +279,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [configA, configB, configC]
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
         sut.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
@@ -339,11 +325,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [disabled, configA, configB]
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         let changed = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configB.id)
@@ -382,11 +366,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [configA, configB]
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         let changed = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(configA.id)
@@ -422,11 +404,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [disabled, enabled]
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         let changed = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(disabled.id)
@@ -455,11 +435,9 @@ struct VirtualDisplayControllerTests {
         ]
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         let removed = try sut.virtualDisplay.resetVirtualDisplayData()
@@ -483,11 +461,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.resetAllVirtualDisplayDataError = NSError(domain: "VirtualDisplayControllerTests", code: 70)
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         #expect(throws: Error.self) {
@@ -515,11 +491,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.updateConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 71)
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         var updated = config
@@ -551,11 +525,9 @@ struct VirtualDisplayControllerTests {
         )
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         #expect(throws: Error.self) {
@@ -640,11 +612,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.moveConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 73)
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         #expect(throws: Error.self) {
@@ -683,11 +653,9 @@ struct VirtualDisplayControllerTests {
         )
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         #expect(throws: Error.self) {
@@ -705,11 +673,9 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.resetAllVirtualDisplayDataError = NSError(domain: "VirtualDisplayControllerTests", code: 75)
 
         let sut = makeControllerEnvironment(
-            preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            virtualDisplayFacade: virtualDisplay
         )
 
         #expect(throws: Error.self) {
@@ -730,15 +696,11 @@ private struct ControllerTestEnvironment {
 
 @MainActor
 private func makeControllerEnvironment(
-    preview: Bool,
     captureMonitoringService capture: MockCaptureMonitoringService,
     sharingService sharing: MockSharingService,
     virtualDisplayFacade: any VirtualDisplayFacade,
-    appliedBadgeDisplayDuration: Duration = .seconds(2.5),
-    isRunningUnderXCTestOverride: Bool
+    appliedBadgeDisplayDuration: Duration = .seconds(2.5)
 ) -> ControllerTestEnvironment {
-    _ = preview
-    _ = isRunningUnderXCTestOverride
     let controller = VirtualDisplayController(
         virtualDisplayFacade: virtualDisplayFacade,
         appliedBadgeDisplayDuration: appliedBadgeDisplayDuration,
@@ -777,11 +739,9 @@ private final class ControllerTestRuntimeDriver: VirtualDisplayRuntimeDriving {
 
     func createRuntimeDisplay(
         from config: VirtualDisplayConfig,
-        maxPixels: (width: UInt32, height: UInt32)?,
-        onTermination: @escaping @MainActor () -> Void
+        maxPixels _: (width: UInt32, height: UInt32)?,
+        onTermination _: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
-        _ = maxPixels
-        _ = onTermination
         let result: CreateResult
         if scriptedResults.indices.contains(nextIndex) {
             result = scriptedResults[nextIndex]

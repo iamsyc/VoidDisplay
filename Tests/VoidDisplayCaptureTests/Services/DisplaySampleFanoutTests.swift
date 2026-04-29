@@ -25,8 +25,7 @@ private final class SampleBufferCaptureSink: @unchecked Sendable, DisplayPreview
 private final class CountingPreviewSink: @unchecked Sendable, DisplayPreviewSink {
     private let submissionCount = Mutex(0)
 
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {
         submissionCount.withLock { $0 += 1 }
     }
 
@@ -62,8 +61,7 @@ private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink
     private let releaseSemaphore = DispatchSemaphore(value: 0)
     private let hasEntered = Mutex(false)
 
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {
         let shouldSignal = hasEntered.withLock { entered -> Bool in
             guard !entered else { return false }
             entered = true

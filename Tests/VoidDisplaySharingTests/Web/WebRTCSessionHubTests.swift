@@ -112,15 +112,9 @@ private final class MockPeerSession: @unchecked Sendable, WebRTCPeerSessioning {
         self.closeCalls = closeCalls
     }
 
-    nonisolated func handleRemoteOffer(sdp: String) {
-        _ = sdp
-    }
+    nonisolated func handleRemoteOffer(sdp _: String) {}
 
-    nonisolated func addRemoteCandidate(sdp: String, sdpMid: String?, sdpMLineIndex: Int32) {
-        _ = sdp
-        _ = sdpMid
-        _ = sdpMLineIndex
-    }
+    nonisolated func addRemoteCandidate(sdp _: String, sdpMid _: String?, sdpMLineIndex _: Int32) {}
 
     nonisolated func close() {
         closeCalls.increment()
@@ -136,8 +130,7 @@ private final class PeerFactoryBox: @unchecked Sendable {
         self.closeCalls = closeCalls
     }
 
-    func make(callbacks: WebRTCSessionHub.PeerCallbacks) -> (any WebRTCPeerSessioning)? {
-        _ = callbacks
+    func make(callbacks _: WebRTCSessionHub.PeerCallbacks) -> (any WebRTCPeerSessioning)? {
         if let hub, let client {
             hub.removeClient(client)
         }

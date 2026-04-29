@@ -1,5 +1,4 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
@@ -406,19 +405,13 @@ private final class ScreenCatalogOrchestratorDummySession: DisplayCaptureSession
     nonisolated let sessionHub = WebRTCSessionHub()
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
 
     nonisolated func stop() async {}
 }
