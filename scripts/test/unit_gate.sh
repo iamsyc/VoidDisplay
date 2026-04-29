@@ -2,48 +2,44 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
 
-SCHEME="${SCHEME:-VoidDisplay}"
-PROJECT_PATH="${PROJECT_PATH:-$ROOT_DIR/VoidDisplay.xcodeproj}"
-DESTINATION="${DESTINATION:-platform=macOS,arch=arm64}"
-DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$ROOT_DIR/.derivedData}"
-RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-$ROOT_DIR/UnitTests.xcresult}"
-ENABLE_CODE_COVERAGE="${ENABLE_CODE_COVERAGE:-YES}"
-ONLY_TESTING="${ONLY_TESTING:-VoidDisplayTests}"
-SKIP_TESTING="${SKIP_TESTING:-VoidDisplayUITests}"
+LOG_PATH="${LOG_PATH:-$ROOT_DIR/.ai-tmp/unit-gate/unit-tests.log}"
+PACKAGE_PATH="${PACKAGE_PATH:-$ROOT_DIR}"
+ENABLE_CODE_COVERAGE="${ENABLE_CODE_COVERAGE:-NO}"
+
+FILTERS=()
+
+normalize_filter() {
+    local value="$1"
+    value="${value#*:}"
+    value="${value##*/}"
+    printf '%s' "$value"
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --scheme)
-            SCHEME="$2"
+        --package-path)
+            PACKAGE_PATH="$2"
             shift 2
             ;;
-        --project)
-            PROJECT_PATH="$2"
+        --log-path)
+            LOG_PATH="$2"
             shift 2
             ;;
-        --destination)
-            DESTINATION="$2"
+        --filter)
+            FILTERS+=("$(normalize_filter "$2")")
             shift 2
             ;;
-        --derived-data-path)
-            DERIVED_DATA_PATH="$2"
-            shift 2
-            ;;
-        --result-bundle-path)
-            RESULT_BUNDLE_PATH="$2"
+        --only-testing)
+            FILTERS+=("$(normalize_filter "$2")")
             shift 2
             ;;
         --enable-code-coverage)
             ENABLE_CODE_COVERAGE="$2"
             shift 2
             ;;
-        --only-testing)
-            ONLY_TESTING="$2"
-            shift 2
-            ;;
-        --skip-testing)
-            SKIP_TESTING="$2"
+        --project|--scheme|--destination|--derived-data-path|--result-bundle-path|--skip-testing)
             shift 2
             ;;
         *)
@@ -53,87 +49,52 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-rm -rf "$RESULT_BUNDLE_PATH"
+mkdir -p "$(dirname "$LOG_PATH")"
+rm -f "$LOG_PATH"
 
-XCODEBUILD_CMD=(
-    xcodebuild
-    -scheme "$SCHEME"
-    -project "$PROJECT_PATH"
-    -destination "$DESTINATION"
-    -derivedDataPath "$DERIVED_DATA_PATH"
-    -resultBundlePath "$RESULT_BUNDLE_PATH"
-    -enableCodeCoverage "$ENABLE_CODE_COVERAGE"
-    CODE_SIGNING_ALLOWED=NO
-    CODE_SIGNING_REQUIRED=NO
-)
-
-if [[ -n "${EXTRA_OTHER_SWIFT_FLAGS:-}" ]]; then
-    XCODEBUILD_CMD+=("OTHER_SWIFT_FLAGS=$(printf '%s' "$EXTRA_OTHER_SWIFT_FLAGS")")
+SWIFT_TEST_CMD=(swift test --package-path "$PACKAGE_PATH")
+if [[ "$ENABLE_CODE_COVERAGE" == "YES" ]]; then
+    SWIFT_TEST_CMD+=(--enable-code-coverage)
 fi
-
-XCODEBUILD_CMD+=(
-    test
-    -only-testing:"$ONLY_TESTING"
-    -skip-testing:"$SKIP_TESTING"
-)
+for filter in "${FILTERS[@]}"; do
+    if [[ -n "$filter" ]]; then
+        SWIFT_TEST_CMD+=(--filter "$filter")
+    fi
+done
 
 set +e
-"${XCODEBUILD_CMD[@]}"
-xcodebuild_exit_code=$?
+"${SWIFT_TEST_CMD[@]}" 2>&1 | tee "$LOG_PATH"
+test_status=${PIPESTATUS[0]}
 set -e
 
-if [[ ! -d "$RESULT_BUNDLE_PATH" ]]; then
-    echo "Missing test result bundle: $RESULT_BUNDLE_PATH" >&2
+total_tests="$(
+    awk '
+        match($0, /Test run with [0-9]+ tests?/) {
+            line = substr($0, RSTART, RLENGTH)
+            sub("Test run with ", "", line)
+            sub(" tests?", "", line)
+            total = line
+        }
+        END {
+            if (total == "") {
+                print "0"
+            } else {
+                print total
+            }
+        }
+    ' "$LOG_PATH"
+)"
+
+if [[ "$total_tests" == "0" ]]; then
+    echo "Invalid SwiftPM test run: total test count is 0." >&2
     exit 1
 fi
 
-SUMMARY="$(xcrun xcresulttool get test-results summary --path "$RESULT_BUNDLE_PATH")"
-
-extract_metric() {
-    local key="$1"
-    local fallback="$2"
-    local line value
-    if command -v rg >/dev/null 2>&1; then
-        line="$(printf '%s\n' "$SUMMARY" | rg "\"$key\"" | tail -n 1)" || true
-    else
-        line="$(printf '%s\n' "$SUMMARY" | grep "\"$key\"" | tail -n 1)" || true
-    fi
-    if [[ -z "$line" ]]; then
-        printf '%s' "$fallback"
-        return 0
-    fi
-    value="$(printf '%s\n' "$line" | awk -F': ' '{print $2}' | tr -d ',\"')"
-    if [[ -z "$value" ]]; then
-        printf '%s' "$fallback"
-    else
-        printf '%s' "$value"
-    fi
-}
-
-TOTAL_TESTS="$(extract_metric totalTestCount 0)"
-PASSED_TESTS="$(extract_metric passedTests 0)"
-FAILED_TESTS="$(extract_metric failedTests 0)"
-SKIPPED_TESTS="$(extract_metric skippedTests 0)"
-RESULT_STATUS="$(extract_metric result unknown)"
-
-echo "Unit test summary:"
-echo "  result: $RESULT_STATUS"
-echo "  totalTestCount: $TOTAL_TESTS"
-echo "  passedTests: $PASSED_TESTS"
-echo "  failedTests: $FAILED_TESTS"
-echo "  skippedTests: $SKIPPED_TESTS"
-
-if [[ "$TOTAL_TESTS" == "0" ]]; then
-    echo "Invalid test run: totalTestCount == 0 (possible selector mismatch)." >&2
-    exit 1
+if [[ "$test_status" != "0" ]]; then
+    echo "swift test exited with non-zero status: $test_status" >&2
+    exit "$test_status"
 fi
 
-if [[ "$FAILED_TESTS" != "0" ]]; then
-    echo "Unit tests reported failures in xcresult summary." >&2
-    exit 1
-fi
-
-if [[ "$xcodebuild_exit_code" != "0" ]]; then
-    echo "xcodebuild exited with non-zero status: $xcodebuild_exit_code" >&2
-    exit "$xcodebuild_exit_code"
-fi
+echo "SwiftPM unit gate passed."
+echo "  total tests: $total_tests"
+echo "  log: $LOG_PATH"

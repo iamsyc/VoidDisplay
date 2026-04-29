@@ -1,0 +1,76 @@
+@testable import VoidDisplaySharing
+@testable import VoidDisplayFoundation
+import Foundation
+import Testing
+
+struct WebRoutingWorkflowSmokeTests {
+
+    @MainActor @Test func rootRouteWorkflowSmoke() throws {
+        let raw = """
+        GET / HTTP/1.1\r
+        Host: 127.0.0.1:8081\r
+        \r
+        """
+        let requestData = try #require(raw.data(using: .utf8))
+        let request = try #require(parseHTTPRequest(from: requestData))
+
+        let handler = WebRequestHandler()
+        let decision = handler.decision(
+            forMethod: request.method,
+            path: request.path,
+            targetStateProvider: { _ in .unknown }
+        )
+        #expect(decision == .showRootPage)
+
+        let html = "<html><body>ok</body></html>"
+        let response = handler.responseData(for: decision, htmlBody: html)
+        let text = try #require(String(data: response, encoding: .utf8))
+
+        #expect(text.contains("HTTP/1.1 200 OK"))
+        #expect(text.contains("Content-Type: text/html; charset=utf-8"))
+        #expect(text.contains(html))
+    }
+
+    @MainActor @Test func signalRouteWorkflowSmoke() throws {
+        let raw = """
+        GET /signal/2 HTTP/1.1\r
+        Host: 127.0.0.1:8081\r
+        \r
+        """
+        let requestData = try #require(raw.data(using: .utf8))
+        let request = try #require(parseHTTPRequest(from: requestData))
+
+        let handler = WebRequestHandler()
+
+        let unavailableDecision = handler.decision(
+            forMethod: request.method,
+            path: request.path,
+            targetStateProvider: { _ in .knownInactive }
+        )
+        #expect(unavailableDecision == .sharingUnavailable)
+        let unavailableResponse = handler.responseData(for: unavailableDecision, htmlBody: "")
+        let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
+        #expect(unavailableText.contains("503 Service Unavailable"))
+
+        let signalDecision = handler.decision(
+            forMethod: request.method,
+            path: request.path,
+            targetStateProvider: { _ in .active }
+        )
+        #expect(signalDecision == .openSignalSocket(.id(2)))
+    }
+
+    @MainActor @Test func streamRouteIsNotFound() throws {
+        let handler = WebRequestHandler()
+        let decision = handler.decision(
+            forMethod: "GET",
+            path: "/stream/2",
+            targetStateProvider: { _ in .active }
+        )
+        #expect(decision == .notFound)
+
+        let response = handler.responseData(for: decision, htmlBody: "")
+        let text = try #require(String(data: response, encoding: .utf8))
+        #expect(text.contains("404 Not Found"))
+    }
+}

@@ -272,14 +272,14 @@
 
 ## 相关实现位置（关键文件）
 
-- `/Users/syc/Project/VoidDisplay/VoidDisplay/Features/VirtualDisplay/Services/VirtualDisplayService.swift`
-- `/Users/syc/Project/VoidDisplay/VoidDisplay/App/VirtualDisplayController.swift`
-- `/Users/syc/Project/VoidDisplay/VoidDisplay/Features/VirtualDisplay/Logic/TopologyHealthEvaluator.swift`
-- `/Users/syc/Project/VoidDisplay/VoidDisplay/Features/VirtualDisplay/Services/DisplayTeardownCoordinator.swift`
-- `/Users/syc/Project/VoidDisplay/VoidDisplay/Features/VirtualDisplay/Services/DisplayReconfigurationMonitor.swift`
+- `/Users/syc/Project/VoidDisplay/Sources/VoidDisplayVirtualDisplay/Services/VirtualDisplayOrchestrator.swift`
+- `/Users/syc/Project/VoidDisplay/Sources/VoidDisplayVirtualDisplay/ViewModels/VirtualDisplayController.swift`
+- `/Users/syc/Project/VoidDisplay/Sources/VoidDisplayVirtualDisplay/Logic/TopologyHealthEvaluator.swift`
+- `/Users/syc/Project/VoidDisplay/Sources/VoidDisplayVirtualDisplay/Services/DisplayTeardownCoordinator.swift`
+- `/Users/syc/Project/VoidDisplay/Sources/VoidDisplayVirtualDisplay/Services/DisplayReconfigurationMonitor.swift`
 
 ## 推荐回归测试入口（自动化）
 
 - `/Users/syc/Project/VoidDisplay/scripts/test/virtual_display_regression_gate.sh`
-- `/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/VirtualDisplay/VirtualDisplayTopologyRecoveryTests.swift`
-- `/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/VirtualDisplay/VirtualDisplayServiceOfflineWaitTests.swift`
+- `/Users/syc/Project/VoidDisplay/Tests/VoidDisplayVirtualDisplayTests/VirtualDisplayTopologyRecoveryTests.swift`
+- `/Users/syc/Project/VoidDisplay/Tests/VoidDisplayVirtualDisplayTests/DisplayTeardownCoordinatorOfflineWaitTests.swift`

@@ -1,0 +1,24 @@
+import VoidDisplayDesignSystem
+import VoidDisplayFoundation
+import VoidDisplayObservability
+import Foundation
+import ScreenCaptureKit
+import CoreGraphics
+
+// Main-actor-owned runtime resources for active monitoring windows.
+// Do not pass across actors/threads.
+package struct ScreenMonitoringSession: Identifiable {
+    package enum State {
+        case starting
+        case active
+    }
+
+    package let id: UUID
+    package let displayID: CGDirectDisplayID
+    package let displayName: String
+    package let resolutionText: String
+    package let isVirtualDisplay: Bool
+    package let previewSubscription: DisplayPreviewSubscription
+    package var capturesCursor: Bool
+    package var state: State
+}

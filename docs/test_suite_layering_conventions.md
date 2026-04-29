@@ -1,7 +1,7 @@
 # 测试分层约定
 
-> 更新日期：2026-03-10  
-> 适用范围：`VoidDisplayTests`、`VoidDisplayUITests`
+> 更新日期：2026-04-28
+> 适用范围：`Tests/`、`UITests/VoidDisplayUITests`
 
 ## 目标
 
@@ -21,10 +21,10 @@
 
 当前代表实现：
 
-- [HomeSmokeTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayUITests/Smoke/HomeSmokeTests.swift)
-- [ShareViewBehaviorTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/Sharing/Views/ShareViewBehaviorTests.swift)
-- [EditVirtualDisplayWorkflowTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/VirtualDisplay/EditVirtualDisplayWorkflowTests.swift)
-- [VirtualDisplayRowPresentationTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayTests/Features/VirtualDisplay/VirtualDisplayRowPresentationTests.swift)
+- [HomeSmokeTests.swift](/Users/syc/Project/VoidDisplay/UITests/VoidDisplayUITests/Smoke/HomeSmokeTests.swift)
+- [ShareViewBehaviorTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplaySharingTests/Views/ShareViewBehaviorTests.swift)
+- [EditVirtualDisplayWorkflowTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplayVirtualDisplayTests/EditVirtualDisplayWorkflowTests.swift)
+- [VirtualDisplayRowPresentationTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplayVirtualDisplayTests/VirtualDisplayRowPresentationTests.swift)
 
 ### 2. 手工环境验证测试
 
@@ -32,13 +32,64 @@
 
 当前代表实现：
 
-- [RealEnvironmentE2ETests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayUITests/E2E/RealEnvironmentE2ETests.swift)
+- [RealEnvironmentE2ETests.swift](/Users/syc/Project/VoidDisplay/UITests/VoidDisplayUITests/E2E/RealEnvironmentE2ETests.swift)
 
 约定：
 
 - 必须通过显式环境变量开启
 - 默认 `xcodebuild test` 不应依赖它通过
 - 失败时按环境问题或现场问题处理，不直接视为默认回归阻断
+
+运行约定：
+
+- `VOIDDISPLAY_RUN_REAL_ENV_E2E=1` 只负责开启 `RealEnvironmentE2ETests`，必须进入 UI test runner 进程。
+- 直接在 shell 前缀设置 `VOIDDISPLAY_RUN_REAL_ENV_E2E=1 xcodebuild test ...` 可能只影响 `xcodebuild` 进程，不能作为可靠入口。
+- 推荐先执行 `xcodebuild build-for-testing`，复制生成的 `.xctestrun`，再把 `VOIDDISPLAY_RUN_REAL_ENV_E2E=1` 写入 `VoidDisplayUITests` 的 `EnvironmentVariables` 与 `TestingEnvironmentVariables` 后使用 `xcodebuild test-without-building -xctestrun ...`。
+- real E2E 启动 App 时使用 `VOIDDISPLAY_PERSISTENCE_MODE=test_isolated` 与 `VOIDDISPLAY_TEST_ISOLATION_ID` 做持久化隔离。
+- real E2E 不设置 `VOIDDISPLAY_UI_TEST_MODE`，该变量只用于默认 UI smoke 的 fixture 场景。
+
+推荐命令骨架：
+
+```sh
+DERIVED_DATA=.ai-tmp/real-e2e/DerivedData
+PROJECT=Apps/VoidDisplay/VoidDisplay.xcodeproj
+
+xcodebuild \
+  -project "$PROJECT" \
+  -scheme VoidDisplay \
+  -configuration Debug \
+  -derivedDataPath "$DERIVED_DATA" \
+  -destination 'platform=macOS,arch=arm64' \
+  build-for-testing
+
+cp "$DERIVED_DATA"/Build/Products/*.xctestrun \
+  "$DERIVED_DATA"/Build/Products/VoidDisplay-real-e2e.xctestrun
+```
+
+然后编辑复制出的 `VoidDisplay-real-e2e.xctestrun`，在 `VoidDisplayUITests` 对应条目下同时写入：
+
+```xml
+<key>EnvironmentVariables</key>
+<dict>
+  <key>VOIDDISPLAY_RUN_REAL_ENV_E2E</key>
+  <string>1</string>
+</dict>
+<key>TestingEnvironmentVariables</key>
+<dict>
+  <key>VOIDDISPLAY_RUN_REAL_ENV_E2E</key>
+  <string>1</string>
+</dict>
+```
+
+最后运行：
+
+```sh
+xcodebuild \
+  test-without-building \
+  -xctestrun "$DERIVED_DATA"/Build/Products/VoidDisplay-real-e2e.xctestrun \
+  -destination 'platform=macOS,arch=arm64' \
+  -only-testing:VoidDisplayUITests/RealEnvironmentE2ETests
+```
 
 ## 弱测试判定标准
 

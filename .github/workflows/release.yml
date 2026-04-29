@@ -96,10 +96,10 @@ jobs:
           set -euo pipefail
           xcodebuild \
             -scheme VoidDisplay \
-            -project VoidDisplay.xcodeproj \
+            -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
             -configuration Release \
             -destination 'generic/platform=macOS' \
-            -derivedDataPath ".derivedData-release-${LABEL}" \
+            -derivedDataPath ".ai-tmp/release-${LABEL}/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             ARCHS="${ARCH}" \
@@ -111,7 +111,7 @@ jobs:
           LABEL: ${{ matrix.label }}
         run: |
           set -euo pipefail
-          app_path=".derivedData-release-${LABEL}/Build/Products/Release/VoidDisplay.app"
+          app_path=".ai-tmp/release-${LABEL}/DerivedData/Build/Products/Release/VoidDisplay.app"
           if [ ! -d "${app_path}" ]; then
             echo "Expected app not found: ${app_path}"
             exit 1
@@ -125,7 +125,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          app_path=".derivedData-release-${LABEL}/Build/Products/Release/VoidDisplay.app"
+          app_path=".ai-tmp/release-${LABEL}/DerivedData/Build/Products/Release/VoidDisplay.app"
           if [ ! -d "${app_path}" ]; then
             echo "Expected app not found: ${app_path}"
             exit 1
