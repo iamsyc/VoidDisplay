@@ -67,9 +67,10 @@ sudo killall syspolicyd
 
 ```bash
 xcodebuild test \
-  -project VoidDisplay.xcodeproj \
+  -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
   -scheme VoidDisplay \
-  -destination 'platform=macOS' \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath .ai-tmp/syspolicy-playbook/DerivedData \
   -skip-testing:VoidDisplayUITests
 ```
 

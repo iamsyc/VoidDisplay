@@ -5,10 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'VoidDisplay/**'
-      - 'VoidDisplayTests/**'
-      - 'VoidDisplayUITests/**'
-      - 'VoidDisplay.xcodeproj/**'
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'UITests/**'
+      - 'Apps/VoidDisplay/VoidDisplay.xcodeproj/**'
+      - 'Package.swift'
       - 'scripts/**'
       - 'docs/testing/coverage-baseline.json'
       - '.github/workflows/**'
@@ -39,15 +40,16 @@ jobs:
         with:
           script: |
             const codePrefixes = [
-              'VoidDisplay/',
-              'VoidDisplayTests/',
-              'VoidDisplayUITests/',
-              'VoidDisplay.xcodeproj/',
+              'Sources/',
+              'Tests/',
+              'UITests/',
+              'Apps/VoidDisplay/VoidDisplay.xcodeproj/',
               'scripts/',
               '.github/workflows/',
               '.github/actions/',
             ];
             const exactMatches = new Set([
+              'Package.swift',
               'docs/testing/coverage-baseline.json',
             ]);
 
@@ -138,10 +140,10 @@ jobs:
           set -euo pipefail
           xcodebuild \
             -scheme VoidDisplay \
-            -project VoidDisplay.xcodeproj \
+            -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
             -configuration Release \
             -destination 'generic/platform=macOS' \
-            -derivedDataPath ".derivedData-release-check-${LABEL}" \
+            -derivedDataPath ".ai-tmp/release-check-${LABEL}/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             ARCHS="${ARCH}" \
@@ -153,7 +155,7 @@ jobs:
           LABEL: ${{ matrix.label }}
         run: |
           set -euo pipefail
-          app_path=".derivedData-release-check-${LABEL}/Build/Products/Release/VoidDisplay.app"
+          app_path=".ai-tmp/release-check-${LABEL}/DerivedData/Build/Products/Release/VoidDisplay.app"
           if [ ! -d "${app_path}" ]; then
             echo "Expected app not found: ${app_path}"
             exit 1

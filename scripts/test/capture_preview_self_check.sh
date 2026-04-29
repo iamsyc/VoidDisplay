@@ -32,11 +32,11 @@ run_mode() {
   mkdir -p "$mode_dir"
 
   xcodebuild \
-    -project "$ROOT_DIR/VoidDisplay.xcodeproj" \
+    -project "$ROOT_DIR/Apps/VoidDisplay/VoidDisplay.xcodeproj" \
     -scheme VoidDisplay \
     -configuration Debug \
     -derivedDataPath "$derived_data_dir" \
-    -destination 'platform=macOS' \
+    -destination 'platform=macOS,arch=arm64' \
     -only-testing:VoidDisplayUITests/CapturePreviewDiagnosticsTests/$test_name \
     test \
     > "$build_log" 2>&1

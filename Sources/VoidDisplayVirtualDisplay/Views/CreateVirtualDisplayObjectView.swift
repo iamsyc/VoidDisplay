@@ -1,0 +1,405 @@
+import Foundation
+import VoidDisplayDesignSystem
+import VoidDisplayFoundation
+import VoidDisplayObservability
+//
+//  CreateVirtualDisplayObjectView.swift
+//  VoidDisplay
+//
+//
+
+import SwiftUI
+import CoreGraphics
+package struct CreateVirtualDisplay: View {
+    // MARK: - State Properties
+    
+    // Basic info
+    @State private var name = String(localized: "Virtual Display")
+    @State private var serialNum: UInt32 = 1
+    @State private var customSerialNum = false
+    
+    // Physical display
+    @State private var screenDiagonal: Double = 14.0
+    @State private var selectedAspectRatio: AspectRatio = .ratio_16_9
+    
+    // Resolution modes
+    @State private var selectedModes: [ResolutionSelection] = []
+    
+    // Mode input
+    @State private var usePresetMode = true
+    @State private var presetResolution: DisplayResolutionPreset = .w1920h1080
+    @State private var customWidth: Int = 1920
+    @State private var customHeight: Int = 1080
+    @State private var customRefreshRate: Double = 60.0
+    
+    // Validation & alerts
+    @State private var localAlert: UserFacingAlertState?
+    
+    // Focus state
+    private enum FocusField: Hashable {
+        case name
+        case serialNum
+        case screenDiagonal
+        case customWidth
+        case customHeight
+        case customRefreshRate
+    }
+    @FocusState private var focusedField: FocusField?
+    
+    @Binding var isShow: Bool
+    @Environment(VirtualDisplayController.self) private var virtualDisplay
+
+    private func clearFocus() {
+        focusedField = nil
+    }
+
+    private var baseDisplayName: String {
+        String(localized: "Virtual Display")
+    }
+
+    private func defaultName(for serial: UInt32) -> String {
+        CreateVirtualDisplayInputValidator.defaultName(baseName: baseDisplayName, serialNum: serial)
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var physicalSize: (width: Int, height: Int) {
+        selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
+    }
+    
+    private var maxPixelDimensions: (width: UInt32, height: UInt32) {
+        CreateVirtualDisplayInputValidator.maxPixelDimensions(for: selectedModes)
+    }
+    
+    private var aspectPreviewRatio: CGFloat {
+        let components = selectedAspectRatio.components
+        return CGFloat(components.width / components.height)
+    }
+    
+    // MARK: - Body
+    
+    package var body: some View {
+        @Bindable var bindableVirtualDisplay = virtualDisplay
+
+        Form {
+            basicInfoSection
+            physicalDisplaySection
+            resolutionModesSection
+        }
+        .formStyle(.grouped)
+        .frame(width: 480, height: 580)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Create") {
+                    clearFocus()
+                    createDisplayAction()
+                }
+                .disabled(selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    clearFocus()
+                    isShow = false
+                }
+            }
+        }
+        .alert(item: $localAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message)
+            )
+        }
+        .alert(item: $bindableVirtualDisplay.persistenceAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    virtualDisplay.dismissPersistenceAlert()
+                }
+            )
+        }
+        .onAppear {
+            let initial = CreateVirtualDisplayInputValidator.initializeNameAndSerial(
+                currentName: name,
+                baseName: baseDisplayName,
+                nextSerial: virtualDisplay.nextAvailableSerialNumber()
+            )
+            serialNum = initial.serialNum
+            name = initial.name
+            focusedField = .name
+            // Add a default mode
+            if selectedModes.isEmpty {
+                selectedModes.append(ResolutionSelection(preset: .w1920h1080))
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var basicInfoSection: some View {
+        Section {
+            TextField("Name", text: $name)
+                .focused($focusedField, equals: .name)
+            
+            HStack {
+                Text("Serial Number")
+                Spacer()
+                if customSerialNum {
+                    TextField("", value: $serialNum, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                        .focused($focusedField, equals: .serialNum)
+                } else {
+                    Text(serialNum, format: .number)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Toggle("Custom Serial Number", isOn: $customSerialNum)
+        } header: {
+            Text("Basic Info")
+        }
+    }
+    
+    @ViewBuilder
+    private var physicalDisplaySection: some View {
+        Section {
+            HStack {
+                Text("Screen Size")
+                Spacer()
+                TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                    .focused($focusedField, equals: .screenDiagonal)
+                Text("inches")
+            }
+            
+            Picker("Aspect Ratio", selection: $selectedAspectRatio) {
+                ForEach(AspectRatio.allCases) { ratio in
+                    Text(ratio.rawValue).tag(ratio)
+                }
+            }
+            .onChange(of: selectedAspectRatio) { _, _ in
+                clearFocus()
+            }
+            
+            HStack {
+                Text("Physical Size")
+                Spacer()
+                Text(verbatim: "\(physicalSize.width) × \(physicalSize.height) mm")
+                    .foregroundStyle(.secondary)
+            }
+            
+            HStack {
+                Spacer()
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.accentColor, lineWidth: 2)
+                    .aspectRatio(aspectPreviewRatio, contentMode: .fit)
+                    .frame(height: 60)
+                    .overlay {
+                        Text(selectedAspectRatio.rawValue)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Physical Display")
+        }
+    }
+    
+    @ViewBuilder
+    private var resolutionModesSection: some View {
+        Section {
+            if selectedModes.isEmpty {
+                Text("No resolution modes added")
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                ForEach($selectedModes) { $mode in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: "\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
+                        }
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Text("HiDPI")
+                                .font(.caption)
+                                .foregroundStyle($mode.enableHiDPI.wrappedValue ? .green : .secondary)
+                            Toggle("", isOn: $mode.enableHiDPI)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .controlSize(.small)
+                        }
+                        .onChange(of: mode.enableHiDPI) { _, _ in
+                            clearFocus()
+                        }
+                        ResolutionModeActionButton(
+                            "Delete Resolution Mode",
+                            systemImage: "minus.circle.fill",
+                            tint: .red
+                        ) {
+                            removeMode(mode)
+                        }
+                    }
+                }
+            }
+            
+            Divider()
+            
+            Picker("Add Method", selection: $usePresetMode) {
+                Text("Preset").tag(true)
+                Text("Custom").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: usePresetMode) { _, _ in
+                clearFocus()
+            }
+            
+            if usePresetMode {
+                LabeledContent(String(localized: "Preset")) {
+                    HStack(spacing: 8) {
+                        Picker("Preset Resolution", selection: $presetResolution) {
+                            ForEach(DisplayResolutionPreset.allCases) { res in
+                                Text(verbatim: "\(res.displayText) @ 60Hz")
+                                    .tag(res)
+                            }
+                        }
+                        .labelsHidden()
+                        .onChange(of: presetResolution) { _, _ in
+                            clearFocus()
+                        }
+                        
+                        ResolutionModeActionButton(
+                            "Add Preset Resolution",
+                            systemImage: "plus.circle.fill",
+                            tint: .green
+                        ) {
+                            clearFocus()
+                            addPresetMode()
+                        }
+                    }
+                }
+            } else {
+                LabeledContent(String(localized: "Custom")) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        TextField("Width", value: $customWidth, format: .number)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .customWidth)
+                            .monospacedDigit()
+                            .controlSize(.small)
+
+                        Text("×")
+                            .foregroundStyle(.secondary)
+
+                        TextField("Height", value: $customHeight, format: .number)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .customHeight)
+                            .monospacedDigit()
+                            .controlSize(.small)
+
+                        Text("@")
+                            .foregroundStyle(.secondary)
+
+                        TextField("Hz", value: $customRefreshRate, format: .number)
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 44)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .customRefreshRate)
+                            .monospacedDigit()
+                            .controlSize(.small)
+
+                        Text("Hz")
+                            .foregroundStyle(.secondary)
+
+                        ResolutionModeActionButton(
+                            "Add Custom Resolution",
+                            systemImage: "plus.circle.fill",
+                            tint: .green
+                        ) {
+                            clearFocus()
+                            addCustomMode()
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Resolution Modes")
+        } footer: {
+            Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+    
+    // MARK: - Actions
+    
+    private func addPresetMode() {
+        switch CreateVirtualDisplayInputValidator.addPresetMode(
+            preset: presetResolution,
+            to: selectedModes
+        ) {
+        case .appended(let updated):
+            selectedModes = updated
+        case .duplicate:
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
+        case .invalidValues:
+            break
+        }
+    }
+    
+    private func addCustomMode() {
+        switch CreateVirtualDisplayInputValidator.addCustomMode(
+            width: customWidth,
+            height: customHeight,
+            refreshRate: customRefreshRate,
+            to: selectedModes
+        ) {
+        case .appended(let updated):
+            selectedModes = updated
+        case .duplicate:
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Tip"),
+                message: String(localized: "This resolution mode already exists.")
+            )
+        case .invalidValues:
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Please enter valid resolution values.")
+            )
+        }
+    }
+    
+    private func removeMode(_ mode: ResolutionSelection) {
+        selectedModes.removeAll { $0.id == mode.id }
+    }
+    
+    private func createDisplayAction() {
+        let size = physicalSize
+        
+        do {
+            _ = try virtualDisplay.createDisplay(
+                name: name,
+                serialNum: serialNum,
+                physicalSize: CGSize(width: size.width, height: size.height),
+                maxPixels: maxPixelDimensions,
+                modes: selectedModes
+            )
+            isShow = false
+        } catch {}
+    }
+}
+
+#Preview {
+//    CreateVirtualDisplay(isShow: .constant(true))
+}

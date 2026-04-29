@@ -39,7 +39,7 @@
 
 ## 根因
 
-根因在预览窗口初始 sizing 逻辑，位置见 [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L144)。
+根因在预览窗口初始 sizing 逻辑，位置见 [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L144)。
 
 旧逻辑的关键问题：
 
@@ -71,7 +71,7 @@
 
 ## 这次修复的原理
 
-修复点仍在 [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L144)。
+修复点仍在 [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L144)。
 
 核心思路：
 
@@ -161,10 +161,10 @@ window.frameRect(forContentRect: targetContentSize)
 
 相关文件：
 
-- [CapturePreviewDiagnosticsRuntime.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Shared/Testing/CapturePreviewDiagnosticsRuntime.swift)
-- [CapturePreviewDiagnosticsSession.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Shared/Testing/CapturePreviewDiagnosticsSession.swift)
-- [CapturePreviewRecordingSink.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Shared/Testing/CapturePreviewRecordingSink.swift)
-- [CapturePreviewDiagnosticsTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayUITests/Diagnostics/CapturePreviewDiagnosticsTests.swift)
+- [CapturePreviewDiagnosticsRuntime.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Services/CapturePreviewDiagnosticsRuntime.swift)
+- [CapturePreviewDiagnosticsSession.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Services/CapturePreviewDiagnosticsSession.swift)
+- [CapturePreviewRecordingSink.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Services/CapturePreviewRecordingSink.swift)
+- [CapturePreviewDiagnosticsTests.swift](/Users/syc/Project/VoidDisplay/UITests/VoidDisplayUITests/Diagnostics/CapturePreviewDiagnosticsTests.swift)
 - [capture_preview_self_check.sh](/Users/syc/Project/VoidDisplay/scripts/test/capture_preview_self_check.sh)
 - [capture_preview_analyze.swift](/Users/syc/Project/VoidDisplay/scripts/test/capture_preview_analyze.swift)
 
@@ -280,7 +280,7 @@ window.frameRect(forContentRect: targetContentSize)
 
 预览诊断链路依赖 macOS 的自动化与截图能力。
 
-如果在运行 [CapturePreviewDiagnosticsTests.swift](/Users/syc/Project/VoidDisplay/VoidDisplayUITests/Diagnostics/CapturePreviewDiagnosticsTests.swift) 或 `scripts/test/capture_preview_self_check.sh` 时，系统弹出与以下能力相关的授权窗口：
+如果在运行 [CapturePreviewDiagnosticsTests.swift](/Users/syc/Project/VoidDisplay/UITests/VoidDisplayUITests/Diagnostics/CapturePreviewDiagnosticsTests.swift) 或 `scripts/test/capture_preview_self_check.sh` 时，系统弹出与以下能力相关的授权窗口：
 
 - 屏幕录制
 - 辅助功能
@@ -410,9 +410,9 @@ window.frameRect(forContentRect: targetContentSize)
 
 相关代码位置：
 
-- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L45)
-- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L55)
-- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L272)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L45)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L55)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L272)
 
 透明化处理的核心是：
 
@@ -438,7 +438,7 @@ proposedOptions.union(.autoHideToolbar)
 
 对应代码位置：
 
-- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L241)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L241)
 
 这样进入全屏后，toolbar 会自动隐藏。  
 这个方案优先级高于在 SwiftUI 视图层硬做显隐控制，因为它直接走 `NSWindow` 的系统行为。
@@ -462,7 +462,7 @@ proposedOptions.union(.autoHideToolbar)
 
 对应代码位置：
 
-- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift#L258)
+- [CaptureDisplayView.swift](/Users/syc/Project/VoidDisplay/Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift#L258)
 
 这样有几个好处：
 

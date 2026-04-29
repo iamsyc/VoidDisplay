@@ -2,10 +2,10 @@
 
 ## 1. 背景与结论
 
-这份复盘文档对应的对象是未合并分支 `codex/capture-cursor-config-serialize`。  
+这份复盘文档对应的对象是未合并分支 `codex/capture-cursor-config-serialize`。
 截至 2026-03-19，`codex/extract-capture-cursor-config-serialize` 与 `main` 几乎没有实现差异，不能代表那次失败重构的主体。
 
-这次重构最终放弃合并，核心原因很直接：结构风险大于可保留收益。分支试图同时重写屏幕监听、屏幕共享、Web 服务生命周期、共享注册、主屏别名路由、窗口预览几何、测试隔离与回退机制，变更面过大，耦合面过密，后续只能靠连续补丁维持稳定。  
+这次重构最终放弃合并，核心原因很直接：结构风险大于可保留收益。分支试图同时重写屏幕监听、屏幕共享、Web 服务生命周期、共享注册、主屏别名路由、窗口预览几何、测试隔离与回退机制，变更面过大，耦合面过密，后续只能靠连续补丁维持稳定。
 这份复盘的重点是给下一轮重构划清边界，明确不可为方向，同时保留可以复用的做法与资产。
 
 可以直接作为证据的时间线如下：
@@ -21,8 +21,8 @@
 
 对照当前主线，风险更容易看清：
 
-1. 当前监听状态仍然由 [CaptureMonitoringService.swift](../VoidDisplay/Features/Capture/Services/CaptureMonitoringService.swift) 负责，职责边界单一。
-2. 当前共享注册与共享会话仍然由 [DisplaySharingCoordinator.swift](../VoidDisplay/Features/Sharing/Services/DisplaySharingCoordinator.swift) 负责，主屏解析和 shareID 分配也留在同一模块。
+1. 当前监听状态仍然由 [CaptureMonitoringService.swift](../Sources/VoidDisplayCapture/Services/CaptureMonitoringService.swift) 负责，职责边界单一。
+2. 当前共享注册与共享会话仍然由 [DisplaySharingCoordinator.swift](../Sources/VoidDisplaySharing/Services/DisplaySharingCoordinator.swift) 负责，主屏解析和 shareID 分配也留在同一模块。
 3. 当前预览窗口几何问题已经沉淀为单独说明文档 [capture_preview_black_bar_fix_notes.md](capture_preview_black_bar_fix_notes.md)，说明主线最终选择了分问题修复，不再继续沿用那套大一统 runtime。
 
 ## 2. 这次重构做错了什么
@@ -31,7 +31,7 @@
 
 结论分类：不应该做
 
-`42ee1d7` 引入 `VoidDisplay/Features/ScreenPipeline/ScreenPipelineRuntime.swift`，同次提交又删除 `CaptureMonitoringService.swift`、`SharingService.swift`、`DisplaySharingCoordinator.swift`。  
+`42ee1d7` 引入 `ScreenPipelineRuntime.swift`，同次提交又删除 `CaptureMonitoringService.swift`、`SharingService.swift`、`DisplaySharingCoordinator.swift`。
 证据很明确：`ScreenPipelineRuntime` 同时定义监听状态、共享状态、Web 服务状态、viewer 统计、注册更新、命令等待、错误语义和快照分发，文件体量与职责密度都明显过高。
 
 后续修补模式也很明显：
@@ -47,7 +47,7 @@
 
 结论分类：不应该做
 
-分支里的 `ScreenPipelineSnapshot` 把监听会话、共享状态、共享失败、主屏、Web 服务端口、viewer 数都揉进同一个快照模型。  
+分支里的 `ScreenPipelineSnapshot` 把监听会话、共享状态、共享失败、主屏、Web 服务端口、viewer 数都揉进同一个快照模型。
 `CaptureController.swift` 与 `SharingController.swift` 都改成订阅同一个 runtime 快照，再从中拆出自己关心的状态。
 
 证据：
@@ -65,7 +65,7 @@
 
 证据：
 
-1. `6226ceb` 新增 `VoidDisplay/App/ShareableDisplayRegistrationCoordinator.swift`。
+1. `6226ceb` 新增 `ShareableDisplayRegistrationCoordinator.swift`。
 2. 文件内同时存在 `fallbackPollingTask`、`recoveryRetryTask`、`pendingSync`、`lastAppliedTopologySignature`、`lastPermissionGranted`、`needsRetryAfterFailure`。
 3. `acca06c`、`962a5d5`、`a086cbf` 又继续围绕目录权限、目录状态、链路污染补丁。
 
@@ -115,7 +115,7 @@
 8. 快照流分发。
 9. 并发命令顺序控制。
 
-证据：`42ee1d7` 的 `VoidDisplay/Features/ScreenPipeline/ScreenPipelineRuntime.swift`。
+证据：`42ee1d7` 的 `ScreenPipelineRuntime.swift`。
 
 这类“总 runtime”看起来统一，实际把多个变化频率不同的问题绑到同一次改动里。监听和共享的修补无法独立演进。
 
@@ -125,7 +125,7 @@
 
 显示器注册本质上是共享页的输入刷新逻辑。分支把它上升成跨权限、跨拓扑、跨失败恢复的协调器，包含轮询、恢复重试、状态签名缓存、同步去抖与串行化执行。
 
-证据：`6226ceb` 的 `VoidDisplay/App/ShareableDisplayRegistrationCoordinator.swift`。
+证据：`6226ceb` 的 `ShareableDisplayRegistrationCoordinator.swift`。
 
 这会让一个本应短路径、短状态的输入同步问题，演变成新的长期运行状态机。
 
@@ -143,7 +143,7 @@
 
 结论分类：过度设计
 
-从 `6e78b11` 到 `7709f7a`，提交标题已经反复出现“收敛”“一致性”“回写”“误刷新”“并发收敛”。  
+从 `6e78b11` 到 `7709f7a`，提交标题已经反复出现“收敛”“一致性”“回写”“误刷新”“并发收敛”。
 这说明重构后的结构需要靠补偿路径维持一致性。补偿路径一旦成为常态，系统的真实语义就会越来越难推断。
 
 证据：
@@ -169,21 +169,21 @@
 
 证据：
 
-1. `codex/capture-cursor-config-serialize` 分支中的 `VoidDisplay/Features/Capture/Views/CaptureDisplayView.swift` 第 41 行到第 56 行。
+1. `codex/capture-cursor-config-serialize` 分支中的 `Sources/VoidDisplayCapture/Views/CaptureDisplayView.swift` 第 41 行到第 56 行。
 2. 同文件第 243 行到第 257 行。
 
-窗口计算又被抽到 `CapturePreviewWindowSupport.swift`，这里的 `CapturePreviewWindowMetrics` 同时接受 `aspect`、`framePixelSize`、`targetContentWidth`、`shouldLockAspect`。  
+窗口计算又被抽到 `CapturePreviewWindowSupport.swift`，这里的 `CapturePreviewWindowMetrics` 同时接受 `aspect`、`framePixelSize`、`targetContentWidth`、`shouldLockAspect`。
 初始窗口大小在 `applyInitialWindowSizeIfNeeded()` 中只应用一次，后续还要继续参与 `snapWindowToAspect()` 与 resize 过程。
 
 证据：
 
-1. 分支中的 `VoidDisplay/Features/Capture/Views/CapturePreviewWindowSupport.swift` 第 4 行到第 20 行。
+1. 分支中的 `CapturePreviewWindowSupport.swift` 第 4 行到第 20 行。
 2. 同文件第 68 行到第 135 行。
 3. 同文件第 149 行到第 193 行。
 
 ### 4.2 为什么会失稳
 
-`1:1` 模式真正需要的是一个稳定的几何基准：预览层承载区到底应该用哪组宽高。  
+`1:1` 模式真正需要的是一个稳定的几何基准：预览层承载区到底应该用哪组宽高。
 分支却把这个问题交给了“首帧像素尺寸”和“`resolutionText` 推断后的原生尺寸”共同决定。
 
 这会带来三个后果：
@@ -196,13 +196,13 @@
 
 ### 4.3 主线后来做对了什么
 
-主线修复预览问题时，重点放回到真实内容承载区几何。  
+主线修复预览问题时，重点放回到真实内容承载区几何。
 [capture_preview_black_bar_fix_notes.md](capture_preview_black_bar_fix_notes.md) 已经明确记录了两个关键点：
 
 1. 用 `contentRect` 与 `contentLayoutRect` 的差值计算真实布局 inset。
 2. 用真实预览承载区去反推窗口 frame。
 
-这条思路更稳，因为它把问题收回到了窗口几何本身。  
+这条思路更稳，因为它把问题收回到了窗口几何本身。
 几何由几何事实决定，采集元数据只负责提供可信的宽高比输入，不再参与多轮推断。
 
 ### 4.4 这类问题后续应该怎样处理
@@ -245,7 +245,7 @@
 1. 监听关心预览订阅、窗口、cursor、会话移除。
 2. 共享关心 shareID、路由、sessionHub、viewer 统计、服务启动状态。
 
-公共层只应保留低层原语，例如显示器描述、底层采集句柄、可测试的 registry 能力。  
+公共层只应保留低层原语，例如显示器描述、底层采集句柄、可测试的 registry 能力。
 禁止再引入一个同时替代监听服务和共享服务的总 runtime。
 
 ### 5.3 目录注册逻辑保持短路径
@@ -264,7 +264,7 @@
 
 结论分类：应该做
 
-`/display`、`/signal` 这类主屏别名只在共享主链路稳定后才有资格进入。  
+`/display`、`/signal` 这类主屏别名只在共享主链路稳定后才有资格进入。
 下一轮重构的第一批目标里不应包含这类语义扩展。
 
 ### 5.5 失败分支里可取且可复用的资产

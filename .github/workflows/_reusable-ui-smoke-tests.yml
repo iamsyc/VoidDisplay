@@ -75,9 +75,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: |
-            .derivedData/SourcePackages
-            .derivedData/ModuleCache.noindex
-          key: xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
+            .ai-tmp/ci-ui-smoke/DerivedData/SourcePackages
+            .ai-tmp/ci-ui-smoke/DerivedData/ModuleCache.noindex
+          key: xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('Apps/VoidDisplay/VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
           restore-keys: |
             xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
 
@@ -148,8 +148,9 @@ jobs:
             set +e
             xcodebuild \
               -scheme VoidDisplay \
+              -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
               -destination 'platform=macOS,arch=arm64' \
-              -derivedDataPath .derivedData \
+              -derivedDataPath .ai-tmp/ci-ui-smoke/DerivedData \
               -resultBundlePath UISmokeTests.xcresult \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \

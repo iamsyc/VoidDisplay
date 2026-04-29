@@ -42,11 +42,12 @@
 - user explicitly requests full suite
 
 ## Test Permission Prompt Isolation
-- Automated tests must not trigger app-driven macOS privacy prompts such as screen recording, microphone, or camera authorization dialogs.
-- Test runs must remain non-interactive and must not depend on a human waiting for app permission prompts during execution.
-- Any code path that may request app privacy permissions must switch to a test-specific provider, mock, stub, or equivalent isolation layer under test environments.
-- macOS authorization required by the test harness itself, such as Automation, Accessibility, Input Monitoring, or related administrator approval for UI automation, is environment setup and should be handled separately from app permission flows.
-- Reject any test change that can block local or CI execution by introducing new app-driven privacy authorization prompts.
+- Automated tests must not introduce product or app code paths that trigger avoidable macOS privacy prompts such as screen recording, microphone, camera, keyboard input, input method, or similar authorization dialogs.
+- Any product code path that may request app privacy permissions must switch to a test-specific provider, mock, stub, or equivalent isolation layer under test environments.
+- Test code must not rely on a human responding to app-driven privacy prompts, input method prompts, or avoidable local authorization dialogs to complete.
+- macOS authorization required by the test harness itself, such as Automation, Accessibility, Input Monitoring, or related administrator approval for UI automation, is environment setup. UI tests may run when this setup is available.
+- If a UI test fails, stalls, or times out because test harness authorization is missing or delayed, classify it as an environment setup failure and report it separately from product code or test code failures.
+- Reject any test change that can block local or CI execution by introducing new avoidable privacy authorization prompts.
 
 ## UI Test Port Injection
 - Preferred port key is `SharingPortPreferenceKeys.preferredPort` (`sharing.preferredPort`).
@@ -67,17 +68,16 @@
 - Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
 
 ## Execution Mode Recommendation
-- Provide an execution mode recommendation before starting implementation work on an actionable request whenever there is a meaningful choice between immediate execution and plan-first handling.
-- Do not provide this recommendation in completion handoff, commit summaries, verification summaries, or meta discussions about process, prompts, or repository policy.
-- For analysis-only or question-only requests, do not provide this recommendation while the turn remains analysis-only.
-- If the turn changes from analysis, diagnosis, review, or explanation into proposed implementation, code modification, or execution of fixes, re-evaluate and provide an execution mode recommendation before the first implementation step unless the user has already explicitly chosen a mode.
-- For code review requests with actionable findings, append exactly one execution mode recommendation after the findings summary.
+- Execution mode recommendation is a handoff hint at the end of a response, used only when the current turn stops at analysis, diagnosis, review, explanation, or planning, and the likely next turn would be an implementation or modification task.
+- Do not emit an execution mode recommendation as a preface to work that will be performed in the same turn.
+- Do not emit an execution mode recommendation after the user has already asked for direct execution in the current turn.
+- Do not emit an execution mode recommendation in completion handoff, commit summaries, verification summaries, or meta discussions about process, prompts, or repository policy.
+- For code review requests with actionable findings, append exactly one execution mode recommendation after the findings summary, so the user can choose the next turn's execution mode.
 - Treat an explicit mode choice as a direct statement about the mode itself, for example `直接执行`, `现在改`, `先实现`, `开启计划模式`, `先给计划`, or another equally explicit instruction about execution style.
-- Do not treat short confirmations such as `要`, `继续`, `看看`, `查一下`, `修吧`, or agreement with a diagnosis as an explicit mode choice. These confirm the task and still require the agent to decide whether an execution mode recommendation is needed.
-- Once implementation has started in the current turn, stop emitting execution mode recommendations for that turn.
-- Starting implementation means making code or config edits, creating a branch for the task, running modification-oriented commands, or presenting a concrete change plan that the agent is about to execute immediately.
-- Use `建议：直接执行` only when implementation has not started, scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate.
-- Use `建议：开启计划模式` only when implementation has not started and the task is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
+- Do not treat short confirmations such as `要`, `继续`, `看看`, `查一下`, `修吧`, or agreement with a diagnosis as an explicit mode choice. These confirm the task and may require an end-of-response recommendation if the current turn still stops before implementation.
+- Starting implementation means making code or config edits, creating a branch for the task, running modification-oriented commands, or presenting a concrete change plan that will be executed in the same turn.
+- Use `建议：直接执行` only at the end of a non-implementation response when the next implementation scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate.
+- Use `建议：开启计划模式` only at the end of a non-implementation response when the next implementation is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
 - Keep the recommendation to one sentence and state the concrete reason.
 
 ## Code Review Output Policy

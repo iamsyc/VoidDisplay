@@ -1,0 +1,192 @@
+import VoidDisplayDesignSystem
+import VoidDisplayFoundation
+import VoidDisplayObservability
+import CoreGraphics
+import Foundation
+import Observation
+import OSLog
+
+@MainActor
+@Observable
+package final class VirtualDisplayListViewModel {
+    package struct Dependencies {
+        var restoreFailures: @MainActor () -> [VirtualDisplayRestoreFailure]
+        var clearRestoreFailures: @MainActor () -> Void
+        var destroyDisplay: @MainActor (UUID) throws -> Void
+        var runtimeDisplayID: @MainActor (UUID) -> CGDirectDisplayID?
+        var isRebuilding: @MainActor (UUID) -> Bool
+        var isVirtualDisplayRunning: @MainActor (UUID) -> Bool
+        var disableDisplayByConfig: @MainActor (UUID) throws -> Void
+        var enableDisplay: @MainActor (UUID) async throws -> Void
+
+        static func live(controller: VirtualDisplayController) -> Self {
+            Self(
+                restoreFailures: { controller.restoreFailures },
+                clearRestoreFailures: { controller.clearRestoreFailures() },
+                destroyDisplay: { try controller.destroyDisplay($0) },
+                runtimeDisplayID: { controller.runtimeDisplayID(for: $0) },
+                isRebuilding: { controller.isRebuilding(configId: $0) },
+                isVirtualDisplayRunning: { controller.isVirtualDisplayRunning(configId: $0) },
+                disableDisplayByConfig: { try controller.disableDisplayByConfig($0) },
+                enableDisplay: { try await controller.enableDisplay($0) }
+            )
+        }
+    }
+
+    package var primaryDisplayRefreshTick: UInt64 = 0
+    package var togglingConfigIds: Set<UUID> = []
+    package var showDeleteConfirm = false
+    package var deleteCandidate: VirtualDisplayConfig?
+    package var showRestoreFailureAlert = false
+    package var userFacingAlert: UserFacingAlertState?
+
+    @ObservationIgnored private var primaryDisplayMonitor = DebouncingDisplayReconfigurationMonitor()
+    @ObservationIgnored private var primaryDisplayFallbackCoordinator = PrimaryDisplayFallbackCoordinator()
+    @ObservationIgnored private let dependencies: Dependencies
+
+    package init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    package convenience init(controller: VirtualDisplayController) {
+        self.init(dependencies: .live(controller: controller))
+    }
+
+    package func handleAppear() {
+        if !dependencies.restoreFailures().isEmpty {
+            showRestoreFailureAlert = true
+        }
+        startPrimaryDisplayMonitoring()
+    }
+
+    package func handleDisappear() {
+        stopPrimaryDisplayMonitoring()
+    }
+
+    package func handleRestoreFailuresChanged(_ failures: [VirtualDisplayRestoreFailure]) {
+        if !failures.isEmpty {
+            showRestoreFailureAlert = true
+        }
+    }
+
+    package func acknowledgeRestoreFailures() {
+        dependencies.clearRestoreFailures()
+    }
+
+    package func requestDelete(_ config: VirtualDisplayConfig) {
+        deleteCandidate = config
+        showDeleteConfirm = true
+    }
+
+    package func confirmDelete() {
+        guard let candidate = deleteCandidate else {
+            showDeleteConfirm = false
+            deleteCandidate = nil
+            return
+        }
+        do {
+            try dependencies.destroyDisplay(candidate.id)
+        } catch {
+            AppErrorMapper.logFailure("Delete virtual display", error: error, logger: AppLog.virtualDisplay)
+            userFacingAlert = UserFacingAlertState(
+                title: String(localized: "Delete Failed"),
+                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
+            )
+            return
+        }
+        deleteCandidate = nil
+        showDeleteConfirm = false
+    }
+
+    package func cancelDelete() {
+        deleteCandidate = nil
+        showDeleteConfirm = false
+    }
+
+    package func isToggling(configId: UUID) -> Bool {
+        togglingConfigIds.contains(configId)
+    }
+
+    package func isPrimaryDisplay(configID: UUID) -> Bool {
+        // Use the service-provided runtime display ID instead of requiring a live runtime
+        // object. Rebuild/teardown flows may temporarily clear the object while the display ID
+        // hint is still valid for UI presentation (for example, primary-display badges).
+        dependencies.runtimeDisplayID(configID) == CGMainDisplayID()
+    }
+
+    package func toggleDisplayState(_ config: VirtualDisplayConfig) {
+        guard !togglingConfigIds.contains(config.id),
+              !dependencies.isRebuilding(config.id) else { return }
+        togglingConfigIds.insert(config.id)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.togglingConfigIds.remove(config.id) }
+
+            if dependencies.isVirtualDisplayRunning(config.id) {
+                do {
+                    try dependencies.disableDisplayByConfig(config.id)
+                } catch {
+                    AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
+                    self.userFacingAlert = UserFacingAlertState(
+                        title: String(localized: "Disable Failed"),
+                        message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Disable failed."))
+                    )
+                }
+                return
+            }
+            do {
+                try await dependencies.enableDisplay(config.id)
+            } catch {
+                AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
+                self.userFacingAlert = UserFacingAlertState(
+                    title: String(localized: "Enable Failed"),
+                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Enable failed."))
+                )
+            }
+        }
+    }
+
+    package func dismissAlert() {
+        userFacingAlert = nil
+    }
+
+    private func startPrimaryDisplayMonitoring() {
+        let started = primaryDisplayMonitor.start { [weak self] in
+            self?.primaryDisplayRefreshTick &+= 1
+        }
+        if started {
+            primaryDisplayFallbackCoordinator.stop()
+            return
+        }
+
+        AppLog.virtualDisplay.error(
+            "Primary display monitor callback registration failed; enabling polling fallback."
+        )
+        startPrimaryDisplayFallback()
+    }
+
+    private func stopPrimaryDisplayMonitoring() {
+        primaryDisplayMonitor.stop()
+        primaryDisplayFallbackCoordinator.stop()
+    }
+
+    private func startPrimaryDisplayFallback() {
+        primaryDisplayFallbackCoordinator.startIfNeeded(
+            onTick: { [weak self] in
+                self?.primaryDisplayRefreshTick &+= 1
+            },
+            attemptRecovery: { [weak self] in
+                guard let self else { return false }
+                return self.primaryDisplayMonitor.start {
+                    self.primaryDisplayRefreshTick &+= 1
+                }
+            },
+            onRecovered: {
+                AppLog.virtualDisplay.notice(
+                    "Primary display monitor callback recovered; disabling polling fallback."
+                )
+            }
+        )
+    }
+}

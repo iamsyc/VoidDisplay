@@ -48,13 +48,12 @@ Release build check behavior:
 - It performs unsigned `Release` builds for `arm64` and `x86_64` through a 2-job matrix
 - It does not package DMG and does not publish artifacts
 
-Unit coverage guard behavior:
+SwiftPM unit gate behavior:
 
-- `unit-tests` only runs `VoidDisplayTests`
-- Coverage gating is based on behavior-layer tracked files plus their weighted aggregate coverage
-- Repository-wide `VoidDisplay.app` line coverage is reported for trend visibility
-- Repository-wide `VoidDisplay.app` line coverage is not a blocking threshold in the unit-only workflow
-- Large SwiftUI view files are excluded from the unit coverage hard gate unless they expose directly testable behavior logic
+- `unit-tests` runs `swift test` through `scripts/test/unit_gate.sh`
+- The unit gate fails selector mismatches by rejecting runs with `0` executed Swift tests
+- Xcode UI smoke and app build jobs own Xcode-specific validation
+- Coverage baseline files are kept for manual ratchet checks, but CI unit gating no longer depends on an Xcode `.xcresult`
 
 ## Change Classification
 
@@ -63,10 +62,10 @@ It exists so non-code PRs still produce a successful `ci-gate` result under bran
 
 Code-relevant paths:
 
-- `VoidDisplay/**`
-- `VoidDisplayTests/**`
-- `VoidDisplayUITests/**`
-- `VoidDisplay.xcodeproj/**`
+- `Sources/**`
+- `Tests/**`
+- `UITests/**`
+- `Apps/VoidDisplay/VoidDisplay.xcodeproj/**`
 - `scripts/**`
 - `.github/workflows/**`
 - `.github/actions/**`

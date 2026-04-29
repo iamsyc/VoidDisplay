@@ -56,7 +56,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 ### 从源码构建
 
 1. 克隆本仓库。
-2. 用 Xcode 26+ 打开 `VoidDisplay.xcodeproj`。
+2. 用 Xcode 26+ 打开 `Apps/VoidDisplay/VoidDisplay.xcodeproj`。
 3. 构建并运行（⌘R）。
 
 ## 🚀 快速上手
@@ -111,11 +111,16 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 环境要求：Xcode 26+，macOS Apple Silicon。
 
 ```bash
-# 运行单元测试（无需付费开发者证书）
+# 运行 SwiftPM 单元测试（无需付费开发者证书）
+swift test
+
+# 构建 App
 xcodebuild -scheme VoidDisplay \
-  -project VoidDisplay.xcodeproj \
-  -configuration Debug test \
-  -destination 'platform=macOS,arch=arm64'
+  -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
+  -configuration Debug \
+  -derivedDataPath .ai-tmp/readme-build/DerivedData \
+  -destination 'platform=macOS,arch=arm64' \
+  build
 ```
 
 ### 调试入口
@@ -126,7 +131,7 @@ UI 入口：`HomeView` 包含四个标签页 — **显示器**、**虚拟显示�
 
 | 功能区域 | 文件 |
 |---------|------|
-| 虚拟显示器 | `VirtualDisplayService.swift`、`CreateVirtualDisplayObjectView.swift`、`EditVirtualDisplayConfigView.swift` |
+| 虚拟显示器 | `VirtualDisplayOrchestrator.swift`、`CreateVirtualDisplayObjectView.swift`、`EditVirtualDisplayConfigView.swift` |
 | 屏幕采集 | `CaptureChooseViewModel.swift`、`DisplayCaptureRegistry.swift`、`DisplayCaptureSession.swift`、`DisplayStartCoordinator.swift` |
 | 局域网共享 | `ShareViewModel.swift`、`SharingService.swift`、`Features/Sharing/Web/WebServer.swift` |
 
