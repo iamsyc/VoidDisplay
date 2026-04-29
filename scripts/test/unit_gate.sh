@@ -56,11 +56,13 @@ SWIFT_TEST_CMD=(swift test --package-path "$PACKAGE_PATH")
 if [[ "$ENABLE_CODE_COVERAGE" == "YES" ]]; then
     SWIFT_TEST_CMD+=(--enable-code-coverage)
 fi
-for filter in "${FILTERS[@]}"; do
-    if [[ -n "$filter" ]]; then
-        SWIFT_TEST_CMD+=(--filter "$filter")
-    fi
-done
+if [[ "${#FILTERS[@]}" -gt 0 ]]; then
+    for filter in "${FILTERS[@]}"; do
+        if [[ -n "$filter" ]]; then
+            SWIFT_TEST_CMD+=(--filter "$filter")
+        fi
+    done
+fi
 
 set +e
 "${SWIFT_TEST_CMD[@]}" 2>&1 | tee "$LOG_PATH"
