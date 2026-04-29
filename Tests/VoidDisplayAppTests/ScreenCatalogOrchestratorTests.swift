@@ -2,8 +2,6 @@
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
-@testable import VoidDisplayObservability
-@testable import VoidDisplaySupport
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import CoreGraphics

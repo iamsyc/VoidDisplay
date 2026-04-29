@@ -1,14 +1,10 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
-@testable import VoidDisplayObservability
-@testable import VoidDisplaySupport
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import CoreGraphics
 import Foundation
-import ScreenCaptureKit
 import Testing
 
 private final class CaptureSharingIsolationDummySession: DisplayCaptureSessioning, @unchecked Sendable {
@@ -51,7 +47,7 @@ struct CaptureSharingIsolationTests {
             sharingService: sharingService,
             portPreferences: IsolationPortPreferences()
         )
-        _ = await sharingController.startWebService(requestedPort: 8081)
+        let startResult = await sharingController.startWebService(requestedPort: 8081)
 
         let captureService = MockCaptureMonitoringService()
         let captureSession = makeSession(id: UUID(), displayID: 777)
@@ -64,6 +60,7 @@ struct CaptureSharingIsolationTests {
             capturesCursor: true
         )
 
+        #expect(startResult == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
         #expect(sharingController.isWebServiceRunning)
         #expect(sharingController.isSharing)
         #expect(sharingController.sharingClientCount == 3)
@@ -90,10 +87,11 @@ struct CaptureSharingIsolationTests {
             sharingService: sharingService,
             portPreferences: IsolationPortPreferences()
         )
-        _ = await sharingController.startWebService(requestedPort: 8081)
+        let startResult = await sharingController.startWebService(requestedPort: 8081)
         sharingController.stopAllSharing()
         sharingController.stopWebService()
 
+        #expect(startResult == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
         #expect(captureController.screenCaptureSessions.map(\.id) == [first.id, second.id])
         #expect(captureController.monitoringSession(for: first.id)?.displayID == 1001)
         #expect(captureController.monitoringSession(for: second.id)?.displayID == 1002)

@@ -2,13 +2,10 @@
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
-@testable import VoidDisplayObservability
-@testable import VoidDisplaySupport
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import Foundation
 import Testing
-import CoreGraphics
 
 @MainActor
 @Suite(.serialized)
@@ -85,8 +82,9 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: false
         )
 
-        _ = await env.sharing.startWebService(requestedPort: requestedPort)
+        let startResult = await env.sharing.startWebService(requestedPort: requestedPort)
 
+        #expect(startResult == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         let currentValue = defaults.object(forKey: key)
         let valuesMatch: Bool
         if let previousObject = previousValue as? NSObject,

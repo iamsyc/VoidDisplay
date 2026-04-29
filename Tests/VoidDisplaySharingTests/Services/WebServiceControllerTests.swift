@@ -51,7 +51,7 @@ struct WebServiceControllerTests {
             states.append(state)
         }
 
-        _ = await sut.start(
+        let result = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
             concreteTargetResolver: { $0 },
@@ -63,6 +63,7 @@ struct WebServiceControllerTests {
             .starting(requestedPort: 999),
             .failed(.invalidPort(.outOfRange))
         ])
+        #expect(result == .failed(.invalidPort(.outOfRange)))
     }
 
     @Test
@@ -73,7 +74,7 @@ struct WebServiceControllerTests {
             states.append(state)
         }
 
-        _ = await sut.start(
+        let result = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
             concreteTargetResolver: { $0 },
@@ -88,6 +89,7 @@ struct WebServiceControllerTests {
             .stopping,
             .stopped
         ])
+        #expect(result == .failed(.invalidPort(.outOfRange)))
     }
 
     @Test
@@ -98,7 +100,7 @@ struct WebServiceControllerTests {
             runningStates.append(isRunning)
         }
 
-        _ = await sut.start(
+        let result = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
             concreteTargetResolver: { $0 },
@@ -108,6 +110,7 @@ struct WebServiceControllerTests {
         sut.stop()
 
         #expect(runningStates.isEmpty)
+        #expect(result == .failed(.invalidPort(.outOfRange)))
     }
 
     @Test

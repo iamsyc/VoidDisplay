@@ -1,9 +1,6 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
-@testable import VoidDisplayObservability
-@testable import VoidDisplaySupport
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import CoreGraphics
@@ -359,8 +356,8 @@ struct CaptureControllerTests {
         await gate.releaseOne()
 
         do {
-            _ = try await firstTask.value
-            Issue.record("Expected first monitoring start to be cancelled.")
+            let outcome = try await firstTask.value
+            Issue.record("Expected first monitoring start to be cancelled, got \(outcome).")
         } catch is CancellationError {
         } catch {
             Issue.record("Expected CancellationError, got \(error)")
@@ -400,8 +397,8 @@ struct CaptureControllerTests {
         )
 
         do {
-            _ = try await controller.startMonitoring(display: display, metadata: metadata)
-            Issue.record("Expected monitoring start to fail.")
+            let outcome = try await controller.startMonitoring(display: display, metadata: metadata)
+            Issue.record("Expected monitoring start to fail, got \(outcome).")
         } catch {
         }
 
@@ -440,8 +437,8 @@ struct CaptureControllerTests {
         await gate.releaseOne()
 
         do {
-            _ = try await task.value
-            Issue.record("Expected monitoring start to be cancelled.")
+            let outcome = try await task.value
+            Issue.record("Expected monitoring start to be cancelled, got \(outcome).")
         } catch is CancellationError {
         } catch {
             Issue.record("Expected CancellationError, got \(error)")
