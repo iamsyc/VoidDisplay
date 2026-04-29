@@ -68,7 +68,8 @@
 
 ## 💻 系统要求
 
-- macOS（Apple Silicon，M1 或更新）
+- macOS 15.6 或更高版本
+- Intel 或 Apple Silicon Mac
 
 ## 📥 安装
 
@@ -146,7 +147,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 ### 构建与测试
 
-环境要求：Xcode 26+，macOS Apple Silicon。
+环境要求：Xcode 26+，macOS 15.6 或更高版本，Intel 或 Apple Silicon Mac。
 
 ```bash
 # 运行 SwiftPM 单元测试（无需付费开发者证书）
@@ -157,7 +158,7 @@ xcodebuild -scheme VoidDisplay \
   -workspace VoidDisplay.xcworkspace \
   -configuration Debug \
   -derivedDataPath .ai-tmp/readme-build/DerivedData \
-  -destination 'platform=macOS,arch=arm64' \
+  -destination 'generic/platform=macOS' \
   build
 ```
 

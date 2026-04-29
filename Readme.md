@@ -68,7 +68,8 @@ Open the live page from another device to view the shared display in a browser.
 
 ## 💻 System Requirements
 
-- macOS on Apple Silicon (M1 or later)
+- macOS 15.6 or later
+- Intel or Apple Silicon Mac
 
 ## 📥 Installation
 
@@ -146,7 +147,7 @@ Notes:
 
 ### Build & Test
 
-Requirements: Xcode 26+, macOS Apple Silicon.
+Requirements: Xcode 26+, macOS 15.6 or later on an Intel or Apple Silicon Mac.
 
 ```bash
 # Run SwiftPM unit tests
@@ -157,7 +158,7 @@ xcodebuild -scheme VoidDisplay \
   -workspace VoidDisplay.xcworkspace \
   -configuration Debug \
   -derivedDataPath .ai-tmp/readme-build/DerivedData \
-  -destination 'platform=macOS,arch=arm64' \
+  -destination 'generic/platform=macOS' \
   build
 ```
 
