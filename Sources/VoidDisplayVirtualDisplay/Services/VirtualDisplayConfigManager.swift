@@ -103,13 +103,6 @@ package final class VirtualDisplayConfigManager {
         }
     }
 
-    package func removeConfig(serialNum: UInt32) throws {
-        guard configs.contains(where: { $0.serialNum == serialNum }) else { return }
-        try mutateConfigs(reason: .userDeletedConfig) { candidate in
-            candidate.removeAll { $0.serialNum == serialNum }
-        }
-    }
-
     /// Removes the config that was just appended on creation failure rollback.
     package func rollbackAppendedConfig(_ configId: UUID) throws {
         try removeConfig(configId)
