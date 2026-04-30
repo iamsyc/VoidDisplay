@@ -10,7 +10,6 @@ import OSLog
 package final class MainDisplayPolicyResolver {
     package enum PolicySource {
         case listOrder
-        case fallbackCurrentManagedMain
         case policyDisabledPhysicalPresent
         case policyDisabledTooFewEnabled
         case policyDisabledNoSnapshot
@@ -18,7 +17,6 @@ package final class MainDisplayPolicyResolver {
         var logDescription: String {
             switch self {
             case .listOrder: return "listOrder"
-            case .fallbackCurrentManagedMain: return "fallbackCurrentManagedMain"
             case .policyDisabledPhysicalPresent: return "disabledPhysicalPresent"
             case .policyDisabledTooFewEnabled: return "disabledTooFewEnabled"
             case .policyDisabledNoSnapshot: return "disabledNoSnapshot"
@@ -116,20 +114,7 @@ package final class MainDisplayPolicyResolver {
             return resolution
         }
 
-        guard let targetConfig = enabledDesiredConfigs.first else {
-            resolution = PolicyResolution(
-                applies: false,
-                source: .fallbackCurrentManagedMain,
-                targetConfigID: nil,
-                targetSerial: nil,
-                targetDisplayID: nil,
-                enabledDesiredCount: enabledDesiredCount,
-                hasPhysicalDisplay: false,
-                preferredMainDisplayID: fallbackCurrentManagedMain
-            )
-            if emitLog { logPolicyResolution(resolution) }
-            return resolution
-        }
+        let targetConfig = enabledDesiredConfigs[0]
 
         let targetDisplayID = runtimeDisplayIDProvider(targetConfig.id)
         resolution = PolicyResolution(

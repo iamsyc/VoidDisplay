@@ -90,10 +90,6 @@ package final class VirtualDisplayConfigManager {
         configs.first { $0.id == configId }
     }
 
-    package func configIndex(id configId: UUID) -> Int? {
-        configs.firstIndex(where: { $0.id == configId })
-    }
-
     package func appendConfig(_ config: VirtualDisplayConfig) throws {
         try mutateConfigs(reason: .userCreatedConfig) { candidate in
             candidate.append(config)

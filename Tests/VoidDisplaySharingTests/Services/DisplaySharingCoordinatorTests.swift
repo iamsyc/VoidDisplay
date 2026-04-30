@@ -107,7 +107,7 @@ struct DisplaySharingCoordinatorTests {
         let coordinator = DisplaySharingCoordinator(idStore: store)
 
         // Simulate a pre-existing physical mapping that previously consumed share ID 1.
-        #expect(store.assignID(for: "physical:mock-main") == 1)
+        #expect(store.assignID(for: "physical:mock-main", excluding: []) == 1)
 
         let physicalMain: CGDirectDisplayID = 100
         let virtualA: CGDirectDisplayID = 200

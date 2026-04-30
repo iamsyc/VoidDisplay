@@ -42,10 +42,6 @@ package final class DisplayShareIDStore {
         }
     }
 
-    package func assignID(for key: String) -> UInt32 {
-        assignID(for: key, excluding: [])
-    }
-
     package func assignID(for key: String, excluding excludedIDs: Set<UInt32>) -> UInt32 {
         if let existing = mappings[key], !excludedIDs.contains(existing) {
             return existing

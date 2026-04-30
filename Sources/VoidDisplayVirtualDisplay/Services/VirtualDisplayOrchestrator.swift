@@ -310,10 +310,9 @@ package final class VirtualDisplayOrchestrator {
     // MARK: - Disable
 
     package func disableDisplayByConfig(_ configId: UUID) throws {
-        guard configManager.configIndex(id: configId) != nil else { return }
+        guard let config = configManager.config(id: configId) else { return }
 
         try configManager.setDesiredEnabled(configId, enabled: false, reason: .userToggledDesiredEnabled)
-        guard let config = configManager.config(id: configId) else { return }
 
         let runtimeSerialNum = runtimeTracker.runtimeSerialNum(
             for: configId,
@@ -334,14 +333,11 @@ package final class VirtualDisplayOrchestrator {
     // MARK: - Enable
 
     package func enableDisplay(_ configId: UUID) async throws {
-        guard configManager.configIndex(id: configId) != nil else {
+        guard var config = configManager.config(id: configId) else {
             throw VirtualDisplayOperationError.configNotFound
         }
-
+        config.desiredEnabled = true
         try configManager.setDesiredEnabled(configId, enabled: true, reason: .userToggledDesiredEnabled)
-        guard let config = configManager.config(id: configId) else {
-            throw VirtualDisplayOperationError.configNotFound
-        }
 
         let enableStart = DispatchTime.now().uptimeNanoseconds
         let topologyBeforeEnable = currentTopologySnapshot()
