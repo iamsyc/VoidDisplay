@@ -225,8 +225,8 @@ struct SharingServiceTests {
         let sut = makeService(webServiceController: MockWebServiceController())
 
         do {
-            _ = try await sut.startSharing(display: display)
-            Issue.record("Expected displayNotRegistered error.")
+            let outcome = try await sut.startSharing(display: display)
+            Issue.record("Expected displayNotRegistered error, got \(outcome).")
         } catch let error as SharingStartError {
             #expect(error == .displayNotRegistered(displayID))
         } catch {

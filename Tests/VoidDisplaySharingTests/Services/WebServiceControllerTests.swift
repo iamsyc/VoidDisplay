@@ -1,5 +1,4 @@
 @testable import VoidDisplaySharing
-@testable import VoidDisplayFoundation
 import Foundation
 import Network
 import Darwin

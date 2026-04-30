@@ -68,10 +68,8 @@ struct DisplayShareSubscriptionTests {
         )
         let invalidationContext = DisplayStartInvalidationContext()
 
-        do {
-            _ = try await subscription.prepareForSharing(invalidationContext: invalidationContext)
-            Issue.record("Expected prepareForSharing to fail.")
-        } catch {
+        await #expect(throws: Error.self) {
+            try await subscription.prepareForSharing(invalidationContext: invalidationContext)
         }
 
         let settled = await waitUntil {
@@ -152,12 +150,10 @@ struct DisplayShareSubscriptionTests {
             Issue.record("Expected first retain to succeed.")
         }
 
-        do {
-            _ = try await secondSubscription.prepareForSharing(
+        await #expect(throws: Error.self) {
+            try await secondSubscription.prepareForSharing(
                 invalidationContext: DisplayStartInvalidationContext()
             )
-            Issue.record("Expected second retain to fail.")
-        } catch {
         }
 
         let secondFailureSettled = await waitUntil {

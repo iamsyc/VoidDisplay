@@ -371,8 +371,8 @@ struct WebServerSocketIntegrationTests {
 
         try sendAll(firstSocket, data: makeMaskedCloseFrame())
         try sendAll(secondSocket, data: makeMaskedCloseFrame())
-        _ = try await waitForSocketClose(firstSocket)
-        _ = try await waitForSocketClose(secondSocket)
+        #expect(try await waitForSocketClose(firstSocket))
+        #expect(try await waitForSocketClose(secondSocket))
 
         let cleared = await waitUntilAsync(timeout: .seconds(2)) {
             aggregator.currentSnapshot.signalingConnections == 0 &&
@@ -527,7 +527,7 @@ struct WebServerSocketIntegrationTests {
         mainShareIDBox.setValue(Self.replacementMainAliasShareID)
 
         try sendAll(socket, data: makeMaskedCloseFrame())
-        _ = try await waitForSocketClose(socket)
+        #expect(try await waitForSocketClose(socket))
 
         let clearedFromOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
             let snapshot = aggregator.currentSnapshot
@@ -609,7 +609,7 @@ struct WebServerSocketIntegrationTests {
         #expect(offerStillHandledByBoundHub)
 
         try sendAll(socket, data: makeMaskedCloseFrame())
-        _ = try await waitForSocketClose(socket)
+        #expect(try await waitForSocketClose(socket))
 
         let cleared = await waitUntilAsync(timeout: .seconds(2)) {
             let snapshot = aggregator.currentSnapshot
@@ -711,7 +711,7 @@ struct WebServerSocketIntegrationTests {
         #expect(targetedDisconnectObserved)
 
         try sendAll(secondarySocket, data: makeMaskedCloseFrame())
-        _ = try await waitForSocketClose(secondarySocket)
+        #expect(try await waitForSocketClose(secondarySocket))
     }
 
     @Test func tenClientsOnSameTargetCanConnectAndDisconnectCleanly() async throws {
@@ -773,7 +773,7 @@ struct WebServerSocketIntegrationTests {
             try sendAll(socket, data: makeMaskedCloseFrame())
         }
         for socket in sockets {
-            _ = try await waitForSocketClose(socket)
+            #expect(try await waitForSocketClose(socket))
         }
 
         let cleared = await waitUntilAsync(timeout: .seconds(4)) {

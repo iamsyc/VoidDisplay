@@ -573,7 +573,7 @@ struct DisplayCaptureLeaseBookTests {
         let previewToken = book.registerToken(displayID: displayID, kind: .preview)
         let shareToken = book.registerToken(displayID: displayID, kind: .share)
 
-        _ = book.recordAttachedPreviewSinkDelta(2, for: previewToken)
+        #expect(book.recordAttachedPreviewSinkDelta(2, for: previewToken) == displayID)
         let cursorMutation = book.setPreviewShowsCursor(true, for: previewToken)
         #expect(cursorMutation?.previousValue == false)
         #expect(book.prepareShareForSharing(shareToken) == displayID)

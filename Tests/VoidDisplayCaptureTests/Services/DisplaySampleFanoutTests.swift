@@ -2,7 +2,7 @@
 @testable import VoidDisplayFoundation
 import CoreGraphics
 import CoreMedia
-import Foundation
+import Dispatch
 import Testing
 import Synchronization
 
@@ -140,7 +140,7 @@ struct DisplaySampleFanoutTests {
         #expect(publishedWithoutBlocking)
 
         sink.release()
-        _ = await publishTask.value
+        await publishTask.value
     }
 
     nonisolated private func publishDetachedFrame(

@@ -154,7 +154,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func malformedSignalPayloadReturnsError() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection()
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
 
         hub.receiveSignalText("not-a-json", from: client)
 
@@ -232,7 +232,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func stopSharingBroadcastsStoppedAndDisconnectsClients() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection(autoCompleteSends: false)
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
         #expect(client.completeNextSend())
 
         hub.stopSharing()
@@ -246,7 +246,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func viewerReadyDoesNotEmitErrorResponse() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection()
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
         let baselinePayloadCount = client.decodedTextPayloads().count
 
         hub.receiveSignalText(#"{"type":"viewer_ready"}"#, from: client)
@@ -258,7 +258,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func queuedSignalingMessagesPreserveOrderUnderBackpressure() throws {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection(autoCompleteSends: false)
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
         #expect(client.completeNextSend())
 
         hub.receiveSignalText("not-a-json", from: client)
@@ -281,7 +281,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func signalingBacklogOverflowDisconnectsClient() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection(autoCompleteSends: false)
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
 
         for _ in 0..<600 where hub.activeClientCount > 0 {
             hub.receiveSignalText("not-a-json", from: client)
@@ -299,7 +299,7 @@ struct WebRTCSessionHubTests {
             return MockPeerSession(closeCalls: peerCloseCalls)
         })
         let client = MockSignalSocketConnection()
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
         hub.removeClient(client)
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
@@ -316,7 +316,7 @@ struct WebRTCSessionHubTests {
             return MockPeerSession(closeCalls: Counter())
         })
         let client = MockSignalSocketConnection(autoCompleteSends: false)
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
 
         hub.receiveSignalText("not-a-json", from: client)
         hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
@@ -344,7 +344,7 @@ struct WebRTCSessionHubTests {
         let client = MockSignalSocketConnection()
         box.hub = hub
         box.client = client
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
 
@@ -359,7 +359,7 @@ struct WebRTCSessionHubTests {
             return MockPeerSession(closeCalls: Counter())
         })
         let client = MockSignalSocketConnection()
-        _ = hub.addClient(client, target: .main, eventSink: { _ in })
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
         callbacksBox.callbacks?.onFailure("transient_peer_failure")

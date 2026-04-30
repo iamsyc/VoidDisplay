@@ -1,6 +1,5 @@
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
-import Foundation
 import CoreVideo
 import Testing
 
@@ -615,12 +614,10 @@ struct DisplayCaptureProfileStateMachineTests {
             }
         )
 
-        do {
-            _ = try await coordinator.applyImmediateDemand(
+        await #expect(throws: Error.self) {
+            try await coordinator.applyImmediateDemand(
                 makeDemand(previewShowsCursor: true)
             )
-            Issue.record("Expected first coordinator apply to fail")
-        } catch {
         }
 
         let retryChanged = try await coordinator.applyDemandDrivenConfiguration(

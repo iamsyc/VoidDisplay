@@ -342,15 +342,11 @@ struct CaptureMonitoringLifecycleServiceTests {
         service.currentSessions = [record.session]
         let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
 
-        do {
+        await #expect(throws: CaptureMonitoringLifecycleControlledError.self) {
             try await lifecycle.setMonitoringSessionCapturesCursor(
                 id: record.session.id,
                 capturesCursor: true
             )
-            Issue.record("Expected cursor update failure.")
-        } catch is CaptureMonitoringLifecycleControlledError {
-        } catch {
-            Issue.record("Expected CaptureMonitoringLifecycleControlledError, got \(error)")
         }
 
         #expect(record.captureSession.cursorUpdateCount == 1)
@@ -451,12 +447,8 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(await waitForAcquirePreviewCall(gate, count: 1))
         await gate.release(call: 1)
 
-        do {
-            _ = try await firstTask.value
-            Issue.record("Expected first start to fail.")
-        } catch is CaptureMonitoringLifecycleControlledError {
-        } catch {
-            Issue.record("Expected CaptureMonitoringLifecycleControlledError, got \(error)")
+        await #expect(throws: CaptureMonitoringLifecycleControlledError.self) {
+            try await firstTask.value
         }
 
         let retryTask = Task { @MainActor in
