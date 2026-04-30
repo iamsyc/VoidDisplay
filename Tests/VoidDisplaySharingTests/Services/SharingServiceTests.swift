@@ -449,21 +449,6 @@ struct SharingServiceTests {
         #expect(sut.sharingStateSnapshot.clientsByTarget[.main]?["client-1"] != nil)
     }
 
-    @MainActor @Test func forwardsWebServiceRunningStateCallbackFromController() {
-        let mock = MockWebServiceController()
-        let sut = makeService(webServiceController: mock)
-        var receivedStates: [Bool] = []
-
-        sut.onWebServiceRunningStateChanged = { isRunning in
-            receivedStates.append(isRunning)
-        }
-
-        mock.onRunningStateChanged?(true)
-        mock.onRunningStateChanged?(false)
-
-        #expect(receivedStates == [true, false])
-    }
-
     @MainActor @Test func forwardsWebServiceLifecycleStateCallbackFromController() {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
@@ -484,25 +469,6 @@ struct SharingServiceTests {
             .running(binding),
             .stopped
         ])
-    }
-
-    @MainActor @Test func startAndStopEmitRunningStateChanges() async {
-        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
-        let mock = MockWebServiceController()
-        mock.startResult = .started(
-            WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)
-        )
-        let sut = makeService(webServiceController: mock)
-        var receivedStates: [Bool] = []
-
-        sut.onWebServiceRunningStateChanged = { isRunning in
-            receivedStates.append(isRunning)
-        }
-
-        #expect(await sut.startWebService(requestedPort: requestedPort) == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
-        sut.stopWebService()
-
-        #expect(receivedStates == [true, false])
     }
 
     @MainActor @Test func closedClientTombstonesStayBounded() {

@@ -87,7 +87,6 @@ final class MockSharingService: SharingServiceProtocol {
     typealias StartSharingHandler = @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>
 
     var webServicePortValue: UInt16 = 8081
-    var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
     var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
     var webServiceLifecycleState: WebServiceLifecycleState = .stopped
     var isWebServiceRunning = false
@@ -153,7 +152,6 @@ final class MockSharingService: SharingServiceProtocol {
                 lastUpdatedAt: Date()
             )
         }
-        onWebServiceRunningStateChanged?(isWebServiceRunning)
         onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
         notifySharingStateObservers()
         return startResult
@@ -163,7 +161,6 @@ final class MockSharingService: SharingServiceProtocol {
         stopWebServiceCallCount += 1
         isWebServiceRunning = false
         webServiceLifecycleState = .stopped
-        onWebServiceRunningStateChanged?(false)
         onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
         sharingStateSnapshot = .empty
         notifySharingStateObservers()

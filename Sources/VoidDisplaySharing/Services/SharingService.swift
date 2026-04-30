@@ -19,7 +19,6 @@ package enum SharingStartError: LocalizedError, Equatable {
 @MainActor
 package protocol SharingServiceProtocol: AnyObject {
     var webServicePortValue: UInt16 { get }
-    var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? { get set }
     var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? { get set }
     var webServiceLifecycleState: WebServiceLifecycleState { get }
     var isWebServiceRunning: Bool { get }
@@ -67,11 +66,6 @@ package final class SharingService: SharingServiceProtocol {
 
     package var webServicePortValue: UInt16 {
         webServiceController.portValue
-    }
-
-    package var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? {
-        get { webServiceController.onRunningStateChanged }
-        set { webServiceController.onRunningStateChanged = newValue }
     }
 
     package var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? {
