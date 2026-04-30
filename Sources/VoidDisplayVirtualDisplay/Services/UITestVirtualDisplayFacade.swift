@@ -92,10 +92,13 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     package func disableDisplayByConfig(_ configId: UUID) throws {
-        guard configs.contains(where: { $0.id == configId }) else {
+        guard let index = configs.firstIndex(where: { $0.id == configId }) else {
             throw VirtualDisplayOperationError.configNotFound
         }
-        disableDisplayByConfigIfPresent(configId)
+        var updated = configs[index]
+        updated.desiredEnabled = false
+        configs[index] = updated
+        runningConfigIds.remove(configId)
     }
 
     package func enableDisplay(_ configId: UUID) async throws {
@@ -193,14 +196,6 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
             next += 1
         }
         return next
-    }
-
-    private func disableDisplayByConfigIfPresent(_ configId: UUID) {
-        guard let index = configs.firstIndex(where: { $0.id == configId }) else { return }
-        var updated = configs[index]
-        updated.desiredEnabled = false
-        configs[index] = updated
-        runningConfigIds.remove(configId)
     }
 
     private func runtimeDisplayIDs() -> [UUID: CGDirectDisplayID] {
