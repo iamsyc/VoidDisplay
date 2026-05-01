@@ -92,7 +92,6 @@ final class MockSharingService: SharingServiceProtocol {
     var isWebServiceRunning = false
     var activeStreamClientCount = 0
     var sharingStateSnapshot: SharingStateSnapshot = .empty
-    var currentWebServer: WebServer?
     var hasAnyActiveSharing = false
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
     var startingDisplayIDs: Set<CGDirectDisplayID> = []

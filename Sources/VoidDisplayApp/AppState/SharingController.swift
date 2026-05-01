@@ -20,16 +20,15 @@ package final class SharingController {
         case displayUnavailable
     }
 
-    package var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
-    private(set) var startingDisplayIDs: Set<CGDirectDisplayID> = []
-    package var sharingClientCount = 0
-    package var sharingClientCounts: [CGDirectDisplayID: Int] = [:]
-    package var isSharing = false
-    package var isWebServiceRunning = false
-    package var webServiceLifecycleState: WebServiceLifecycleState = .stopped
+    package var activeSharingDisplayIDs: Set<CGDirectDisplayID> { runtimeState.activeSharingDisplayIDs }
+    package var startingDisplayIDs: Set<CGDirectDisplayID> { runtimeState.startingDisplayIDs }
+    package var sharingClientCount: Int { runtimeState.sharingClientCount }
+    package var sharingClientCounts: [CGDirectDisplayID: Int] { runtimeState.sharingClientCounts }
+    package var isSharing: Bool { runtimeState.isSharing }
+    package var isWebServiceRunning: Bool { runtimeState.isWebServiceRunning }
+    package var webServiceLifecycleState: WebServiceLifecycleState { runtimeState.webServiceLifecycleState }
     @ObservationIgnored let catalogService: ScreenCaptureCatalogService
 
-    @ObservationIgnored private(set) var webServer: WebServer? = nil
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
     @ObservationIgnored private let portPreferences: any SharingPortPreferencesProtocol
     @ObservationIgnored private let startTracker = DisplayStartTracker()
@@ -53,10 +52,12 @@ package final class SharingController {
             self?.syncSharingState()
         }
         self.sharingStateSubscription = self.sharingService.subscribeSharingState { [weak self] _ in
-            self?.refreshSharingCountsFromSnapshot()
+            self?.syncSharingState()
         }
         syncSharingState()
     }
+
+    private var runtimeState = SharingControllerRuntimeState()
 
     package var displayCatalogState: ScreenCaptureDisplayCatalogState {
         catalogService.store
@@ -260,41 +261,42 @@ package final class SharingController {
     }
 
     private func syncSharingState() {
-        let previousLifecycle = webServiceLifecycleState
-        webServer = sharingService.currentWebServer
-        activeSharingDisplayIDs = sharingService.activeSharingDisplayIDs
-        isSharing = sharingService.hasAnyActiveSharing
-        isWebServiceRunning = sharingService.isWebServiceRunning
-        webServiceLifecycleState = sharingService.webServiceLifecycleState
-        startingDisplayIDs = startTracker.activeDisplayIDs
-        refreshSharingCountsFromSnapshot()
+        let previousLifecycle = runtimeState.webServiceLifecycleState
+        runtimeState = makeRuntimeState()
         requestSnapshotRefresh()
-        if previousLifecycle != webServiceLifecycleState {
+        if previousLifecycle != runtimeState.webServiceLifecycleState {
             Task {
                 await recordEvent(
                     severity: .info,
                     operation: "Web service lifecycle changed",
                     message: "Updated web service lifecycle state.",
-                    metadata: ["phase": lifecyclePhaseDescription(webServiceLifecycleState)]
+                    metadata: ["phase": lifecyclePhaseDescription(runtimeState.webServiceLifecycleState)]
                 )
             }
         }
     }
 
-    private func refreshSharingCountsFromSnapshot() {
+    private func makeRuntimeState() -> SharingControllerRuntimeState {
+        let activeDisplayIDs = sharingService.activeSharingDisplayIDs
+        let isServiceRunning = sharingService.isWebServiceRunning
         let snapshot = sharingService.sharingStateSnapshot
-        sharingClientCount = snapshot.streamingPeers
-        guard isWebServiceRunning else {
-            sharingClientCounts = [:]
-            return
-        }
         var counts: [CGDirectDisplayID: Int] = [:]
-        for displayID in sharingService.activeSharingDisplayIDs {
-            if let target = sharingService.shareTarget(for: displayID) {
-                counts[displayID] = snapshot.streamingPeersByTarget[target] ?? 0
+        if isServiceRunning {
+            for displayID in activeDisplayIDs {
+                if let target = sharingService.shareTarget(for: displayID) {
+                    counts[displayID] = snapshot.streamingPeersByTarget[target] ?? 0
+                }
             }
         }
-        sharingClientCounts = counts
+        return SharingControllerRuntimeState(
+            activeSharingDisplayIDs: activeDisplayIDs,
+            startingDisplayIDs: startTracker.activeDisplayIDs,
+            sharingClientCount: snapshot.streamingPeers,
+            sharingClientCounts: counts,
+            isSharing: sharingService.hasAnyActiveSharing,
+            isWebServiceRunning: isServiceRunning,
+            webServiceLifecycleState: sharingService.webServiceLifecycleState
+        )
     }
 
     private func lifecyclePhaseDescription(_ state: WebServiceLifecycleState) -> String {
@@ -349,4 +351,14 @@ package final class SharingController {
         syncSharingState()
     }
 #endif
+}
+
+private struct SharingControllerRuntimeState {
+    var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
+    var startingDisplayIDs: Set<CGDirectDisplayID> = []
+    var sharingClientCount = 0
+    var sharingClientCounts: [CGDirectDisplayID: Int] = [:]
+    var isSharing = false
+    var isWebServiceRunning = false
+    var webServiceLifecycleState: WebServiceLifecycleState = .stopped
 }

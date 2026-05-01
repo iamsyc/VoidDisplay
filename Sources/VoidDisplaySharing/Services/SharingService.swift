@@ -24,7 +24,6 @@ package protocol SharingServiceProtocol: AnyObject {
     var isWebServiceRunning: Bool { get }
     var sharingStateSnapshot: SharingStateSnapshot { get }
     var activeStreamClientCount: Int { get }
-    var currentWebServer: WebServer? { get }
     var hasAnyActiveSharing: Bool { get }
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> { get }
     func isStarting(displayID: CGDirectDisplayID) -> Bool
@@ -91,10 +90,6 @@ package final class SharingService: SharingServiceProtocol {
 
     package func streamClientCount(for target: ShareTarget) -> Int {
         sharingStateAggregator.currentSnapshot.streamingPeersByTarget[target] ?? 0
-    }
-
-    package var currentWebServer: WebServer? {
-        webServiceController.currentServer
     }
 
     package var hasAnyActiveSharing: Bool {

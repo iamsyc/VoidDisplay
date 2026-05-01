@@ -25,7 +25,6 @@ package enum WebServiceServerStopReason: Equatable {
 @MainActor
 package protocol WebServiceControllerProtocol: AnyObject {
     var portValue: UInt16 { get }
-    var currentServer: WebServer? { get }
     var lifecycleState: WebServiceLifecycleState { get }
     var isRunning: Bool { get }
     var activeStreamClientCount: Int { get }
@@ -82,7 +81,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
     ) throws -> any WebServiceServerProtocol
 
     private var activeServer: (any WebServiceServerProtocol)?
-    private var webServer: WebServer?
     private var activeServerToken: UUID?
     private var startingServer: (token: UUID, server: any WebServiceServerProtocol)?
     private var startupTask: Task<WebServiceStartResult, Never>?
@@ -125,10 +123,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
         default:
             return currentBinding?.boundPort ?? lastRequestedPort
         }
-    }
-
-    package var currentServer: WebServer? {
-        webServer
     }
 
     package var lifecycleState: WebServiceLifecycleState {
@@ -212,7 +206,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
         self.startingServer = nil
         activeServerToken = nil
         activeServer = nil
-        webServer = nil
         currentBinding = nil
 
         startingServer?.server.stopListener(reason: .requested)
@@ -298,7 +291,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
             switch startResult {
             case .ready(let boundPort):
                 activeServer = server
-                webServer = server as? WebServer
                 activeServerToken = serverToken
                 let binding = WebServiceBinding(
                     requestedPort: requestedPort,
@@ -359,7 +351,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
         guard let token else { return }
         guard activeServerToken == token else { return }
         activeServer = nil
-        webServer = nil
         activeServerToken = nil
         currentBinding = nil
     }

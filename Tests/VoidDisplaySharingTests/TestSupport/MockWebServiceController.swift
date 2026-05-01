@@ -5,7 +5,6 @@ import Foundation
 @MainActor
 final class MockWebServiceController: WebServiceControllerProtocol {
     var portValue: UInt16 = 9090
-    var currentServer: WebServer?
     var lifecycleState: WebServiceLifecycleState = .stopped
     var isRunning = false
     var activeStreamClientCount = 0
