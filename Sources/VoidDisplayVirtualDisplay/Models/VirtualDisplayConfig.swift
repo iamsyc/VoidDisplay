@@ -106,14 +106,28 @@ package struct VirtualDisplayConfig: Identifiable, Codable, Equatable {
     
     /// Get max pixel dimensions
     package var maxPixelDimensions: (width: UInt32, height: UInt32) {
-        guard let maxMode = modes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
-            return (1920, 1080)
-        }
+        precondition(!modes.isEmpty, "VirtualDisplayConfig requires at least one mode.")
+        precondition(
+            modes.allSatisfy { $0.width > 0 && $0.height > 0 && $0.refreshRate.isFinite && $0.refreshRate > 0 },
+            "VirtualDisplayConfig contains invalid modes."
+        )
+        let maxMode = modes.max(by: { pixelArea($0) < pixelArea($1) })!
         let anyHiDPI = modes.contains { $0.enableHiDPI }
-        if anyHiDPI {
-            return (UInt32(maxMode.width * 2), UInt32(maxMode.height * 2))
+        let scale: UInt64 = anyHiDPI ? 2 : 1
+        let (scaledWidth, widthOverflow) = UInt64(maxMode.width).multipliedReportingOverflow(by: scale)
+        let (scaledHeight, heightOverflow) = UInt64(maxMode.height).multipliedReportingOverflow(by: scale)
+        precondition(!widthOverflow && !heightOverflow, "VirtualDisplayConfig max pixel dimensions overflowed.")
+        guard let width = UInt32(exactly: scaledWidth),
+              let height = UInt32(exactly: scaledHeight) else {
+            preconditionFailure("VirtualDisplayConfig max pixel dimensions exceed UInt32.")
         }
-        return (UInt32(maxMode.width), UInt32(maxMode.height))
+        return (width, height)
+    }
+
+    private func pixelArea(_ mode: ModeConfig) -> UInt64 {
+        let (area, overflow) = UInt64(mode.width).multipliedReportingOverflow(by: UInt64(mode.height))
+        precondition(!overflow, "VirtualDisplayConfig mode pixel area overflowed.")
+        return area
     }
     
     /// Physical size as CGSize

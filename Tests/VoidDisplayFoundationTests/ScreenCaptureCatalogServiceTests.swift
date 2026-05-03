@@ -47,6 +47,18 @@ private actor SequencedCatalogServiceLoadGate {
 
 private struct CatalogServiceControlledFailure: Error, Sendable {}
 
+private actor CatalogServiceAsyncCallFlag {
+    private var value = false
+
+    func markCalled() {
+        value = true
+    }
+
+    func wasCalled() -> Bool {
+        value
+    }
+}
+
 @MainActor
 private final class CatalogServiceSignatureBox {
     var value: ScreenCaptureDisplayTopologySignature
@@ -104,6 +116,97 @@ struct ScreenCaptureCatalogServiceTests {
         let displays = try await loader()
 
         #expect(!displays.isEmpty)
+    }
+
+    @Test func requestPermissionDeniedUpdatesCatalogState() {
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: false, requestResult: false),
+            loadShareableDisplays: { [] },
+            activeDisplayIDsProvider: { [] }
+        )
+
+        let granted = sut.requestPermission()
+
+        #expect(granted == false)
+        #expect(sut.store.hasScreenCapturePermission == false)
+        #expect(sut.store.lastRequestPermission == false)
+        #expect(sut.store.lastPreflightPermission == false)
+    }
+
+    @Test func refreshFailurePersistsErrorDetails() async {
+        let expected = NSError(domain: "CatalogTests", code: 42)
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { throw expected },
+            activeDisplayIDsProvider: { [101] }
+        )
+        sut.store.hasScreenCapturePermission = true
+
+        let result = await sut.submitRefresh(intent: .userForcedRefresh)
+
+        #expect(result == .failed)
+        #expect(sut.store.isLoadingDisplays == false)
+        #expect(sut.store.loadErrorMessage != nil)
+        #expect(sut.store.lastLoadError?.domain == expected.domain)
+        #expect(sut.store.lastLoadError?.code == expected.code)
+        #expect(sut.store.displays == nil)
+    }
+
+    @Test func runtimeProbePermissionDeniedShortCircuitsLoad() async {
+        let callFlag = CatalogServiceAsyncCallFlag()
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                await callFlag.markCalled()
+                return []
+            },
+            activeDisplayIDsProvider: { [] },
+            runtimeScenarioProbe: .init(
+                shouldShortCircuitDisplayLoadAsPermissionDenied: { true }
+            )
+        )
+        sut.store.hasScreenCapturePermission = true
+
+        let result = await sut.submitRefresh(intent: .userForcedRefresh)
+
+        #expect(result == .clearedSnapshot)
+        #expect(await callFlag.wasCalled() == false)
+        #expect(sut.store.hasScreenCapturePermission == false)
+        #expect(sut.store.lastPreflightPermission == false)
+        #expect(sut.store.displays == nil)
+        #expect(sut.store.isLoadingDisplays == false)
+    }
+
+    @Test func runtimeProbeDisplayCatalogLoadingKeepsLoadingStateBeforeLoaderRuns() async {
+        let callFlag = CatalogServiceAsyncCallFlag()
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                await callFlag.markCalled()
+                return []
+            },
+            activeDisplayIDsProvider: { [] },
+            runtimeScenarioProbe: .init(
+                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
+                shouldDelayDisplayLoadForUITest: { true }
+            )
+        )
+        sut.store.hasScreenCapturePermission = true
+
+        let refresh = Task {
+            await sut.submitRefresh(intent: .userForcedRefresh)
+        }
+
+        #expect(await waitUntil { sut.store.isLoadingDisplays == true })
+        #expect(
+            await staysTrue(timeoutNanoseconds: 100_000_000) {
+                await callFlag.wasCalled() == false
+            }
+        )
+
+        await sut.cancelRefresh()
+        #expect(await refresh.value == .failed)
+        #expect(sut.store.isLoadingDisplays == false)
     }
 
     @Test func unchangedTopologyReusesSnapshotWithoutReload() async {

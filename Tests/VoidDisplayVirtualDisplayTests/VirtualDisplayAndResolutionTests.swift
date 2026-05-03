@@ -81,21 +81,6 @@ struct VirtualDisplayAndResolutionTests {
         #expect(maxPixels.height == 2880)
     }
 
-    @Test func maxPixelDimensionsFallbackForEmptyModes() {
-        let config = VirtualDisplayConfig(
-            displayName: "Fallback",
-            serialNum: 3,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [],
-            desiredEnabled: true
-        )
-
-        let maxPixels = config.maxPixelDimensions
-        #expect(maxPixels.width == 1920)
-        #expect(maxPixels.height == 1080)
-    }
-
     @MainActor @Test func decodingRequiresDesiredEnabledField() throws {
         let id = UUID().uuidString
         let json = """
@@ -188,7 +173,7 @@ struct VirtualDisplayAndResolutionTests {
         }
     }
 
-    @MainActor @Test func virtualDisplayStoreSanitizesInvalidAndDuplicateConfigs() throws {
+    @MainActor @Test func virtualDisplayStoreRejectsInvalidConfigs() throws {
         let duplicateID = UUID()
         let configs = [
             VirtualDisplayConfig(
@@ -212,22 +197,21 @@ struct VirtualDisplayAndResolutionTests {
         ]
 
         let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: configs))
-        let decoded = try makeStore().decodeConfigs(from: data)
-
-        #expect(decoded.count == 2)
-        #expect(decoded[0].serialNum == 1)
-        #expect(decoded[1].serialNum == 2)
-        #expect(decoded[0].displayName == "Virtual Display 1")
-        #expect(decoded[0].physicalWidth == 310)
-        #expect(decoded[0].physicalHeight == 174)
-        #expect(decoded[0].modes.first?.width == 1920)
-        #expect(decoded[0].modes.first?.height == 1080)
-        #expect(decoded[1].modes.first?.width == 1920)
-        #expect(decoded[1].modes.first?.height == 1080)
-        #expect(Set(decoded.map(\.id)).count == 2)
+        do {
+            _ = try makeStore().decodeConfigs(from: data)
+            Issue.record("Expected invalid configuration error")
+        } catch let error as VirtualDisplayConfigStoreError {
+            guard case .invalidConfiguration(let index, _) = error else {
+                Issue.record("Expected invalidConfiguration error")
+                return
+            }
+            #expect(index == 0)
+        } catch {
+            Issue.record("Unexpected error type: \(String(describing: error))")
+        }
     }
 
-    @MainActor @Test func virtualDisplayStoreResolvesDuplicateSerialNumbers() throws {
+    @MainActor @Test func virtualDisplayStoreRejectsDuplicateSerialNumbers() throws {
         let configs = [
             VirtualDisplayConfig(
                 displayName: "Display A",
@@ -256,12 +240,18 @@ struct VirtualDisplayAndResolutionTests {
         ]
 
         let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: configs))
-        let decoded = try makeStore().decodeConfigs(from: data)
-        let serials = decoded.map(\.serialNum)
-
-        #expect(decoded.count == 3)
-        #expect(Set(serials).count == 3)
-        #expect(serials == [1, 2, 3])
+        do {
+            _ = try makeStore().decodeConfigs(from: data)
+            Issue.record("Expected duplicate serial number rejection")
+        } catch let error as VirtualDisplayConfigStoreError {
+            guard case .invalidConfiguration(let index, _) = error else {
+                Issue.record("Expected invalidConfiguration error")
+                return
+            }
+            #expect(index == 1)
+        } catch {
+            Issue.record("Unexpected error type: \(String(describing: error))")
+        }
     }
 
     @MainActor @Test func virtualDisplayStoreSaveDoesNotRewriteDisplayNamesHeuristically() throws {
