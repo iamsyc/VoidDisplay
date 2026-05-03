@@ -395,6 +395,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
     }
 
     package nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        shareFrameConsumer.updatePerformanceMode(demand.performanceMode)
         try await demandDriver.setDemand(demand)
     }
 

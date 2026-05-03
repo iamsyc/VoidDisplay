@@ -105,6 +105,10 @@ package final class DisplayPreviewSubscription: Sendable {
 private final class NoopDisplayShareFrameConsumer: DisplayShareFrameConsumer {
     nonisolated var hasDemand: Bool { false }
 
+    package nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
+        _ = mode
+    }
+
     package nonisolated func stopSharing() {}
 
     package nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {

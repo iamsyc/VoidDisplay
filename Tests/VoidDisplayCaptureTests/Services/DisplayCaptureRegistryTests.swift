@@ -13,7 +13,8 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     }
 
     private let counters = Mutex(Counters())
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
+    nonisolated let testShareFrameConsumer = TestDisplayShareFrameConsumer()
+    nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { testShareFrameConsumer }
 
     nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
@@ -24,6 +25,7 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     }
 
     nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        shareFrameConsumer.updatePerformanceMode(demand.performanceMode)
         counters.withLock { $0.setDemandCalls.append(demand) }
     }
 
@@ -438,6 +440,7 @@ struct DisplayCaptureRegistryTests {
 
         await registry.updatePerformanceMode(.powerEfficient)
         #expect(installedSession.setDemandCalls.last?.performanceMode == .powerEfficient)
+        #expect(installedSession.testShareFrameConsumer.recordedPerformanceModes.last == .powerEfficient)
 
         let subscription = try await registry.acquireShare(display: sendableDisplay)
 

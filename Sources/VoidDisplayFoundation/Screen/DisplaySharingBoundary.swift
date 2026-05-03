@@ -5,6 +5,7 @@ import Synchronization
 
 package protocol DisplayShareFrameConsumer: AnyObject, Sendable {
     nonisolated var hasDemand: Bool { get }
+    nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode)
     nonisolated func stopSharing()
     nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64)
 }

@@ -64,6 +64,9 @@ package final class UITestCapturePreviewSession: @unchecked Sendable, DisplayCap
 
 private final class DiagnosticsShareFrameConsumer: DisplayShareFrameConsumer {
     nonisolated var hasDemand: Bool { false }
+    package nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
+        _ = mode
+    }
     package nonisolated func stopSharing() {}
     package nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
         _ = pixelBuffer

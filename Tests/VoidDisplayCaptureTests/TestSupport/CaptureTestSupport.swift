@@ -4,6 +4,7 @@ import CoreGraphics
 import CoreVideo
 import Foundation
 import ScreenCaptureKit
+import Synchronization
 
 final class CaptureTestSCDisplayBox: NSObject {
     @objc let displayID: CGDirectDisplayID
@@ -28,13 +29,23 @@ enum SharedMockSCDisplay {
 }
 
 final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
+    private let performanceModes = Mutex<[CapturePerformanceMode]>([])
+
     nonisolated init() {}
 
     nonisolated var hasDemand: Bool { false }
 
+    nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
+        performanceModes.withLock { $0.append(mode) }
+    }
+
     nonisolated func stopSharing() {}
 
     nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
+
+    var recordedPerformanceModes: [CapturePerformanceMode] {
+        performanceModes.withLock { $0 }
+    }
 }
 
 enum AsyncTestTimeouts {

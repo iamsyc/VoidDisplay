@@ -12,6 +12,10 @@ private final class IntegrationAutoConnectingPeer: @unchecked Sendable, WebRTCPe
         self.onConnected = onConnected
     }
 
+    nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
+        _ = profile
+    }
+
     nonisolated func handleRemoteOffer(sdp _: String) {
         onConnected()
     }
@@ -319,7 +323,7 @@ struct WebServerSocketIntegrationTests {
     @Test func sameTargetPeersAccumulateStreamingCounts() async throws {
         let aggregator = SharingStateAggregator()
         let sessionHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
@@ -384,12 +388,12 @@ struct WebServerSocketIntegrationTests {
     @Test func simultaneousTargetsKeepPerTargetSharingCountsIsolated() async throws {
         let aggregator = SharingStateAggregator()
         let mainHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
         let secondaryHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
@@ -459,12 +463,12 @@ struct WebServerSocketIntegrationTests {
     @Test func aliasConnectionCleanupStaysBoundToOriginalConcreteTargetAfterMainSwitch() async throws {
         let aggregator = SharingStateAggregator()
         let originalHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
         let replacementHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
@@ -544,7 +548,7 @@ struct WebServerSocketIntegrationTests {
     @Test func existingAliasConnectionKeepsBoundHubAfterMainMappingChanges() async throws {
         let aggregator = SharingStateAggregator()
         let sessionHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
@@ -623,12 +627,12 @@ struct WebServerSocketIntegrationTests {
     @Test func targetedDisconnectRemovesOnlyMatchingConnections() async throws {
         let aggregator = SharingStateAggregator()
         let mainHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
         let secondaryHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )
@@ -716,7 +720,7 @@ struct WebServerSocketIntegrationTests {
 
     @Test func tenClientsOnSameTargetCanConnectAndDisconnectCleanly() async throws {
         let sessionHub = WebRTCSessionHub(
-            peerFactory: { callbacks in
+            peerFactory: { callbacks, _ in
                 IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
             }
         )

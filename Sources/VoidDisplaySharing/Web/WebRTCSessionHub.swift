@@ -25,9 +25,87 @@ extension NWConnection: SignalSocketConnection {
     }
 }
 package protocol WebRTCPeerSessioning: AnyObject, Sendable {
+    nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile)
     nonisolated func handleRemoteOffer(sdp: String)
     nonisolated func addRemoteCandidate(sdp: String, sdpMid: String?, sdpMLineIndex: Int32)
     nonisolated func close()
+}
+
+package struct WebRTCStreamingProfile: Sendable, Equatable {
+    package let framesPerSecond: Int
+    package let minBitrateBps: Int
+    package let maxBitrateBps: Int
+
+    package init(
+        framesPerSecond: Int,
+        minBitrateBps: Int,
+        maxBitrateBps: Int
+    ) {
+        self.framesPerSecond = framesPerSecond
+        self.minBitrateBps = minBitrateBps
+        self.maxBitrateBps = maxBitrateBps
+    }
+
+    package init(performanceMode: CapturePerformanceMode) {
+        switch performanceMode {
+        case .automatic:
+            self.init(framesPerSecond: 60, minBitrateBps: 2_000_000, maxBitrateBps: 24_000_000)
+        case .smooth:
+            self.init(framesPerSecond: 60, minBitrateBps: 3_000_000, maxBitrateBps: 32_000_000)
+        case .powerEfficient:
+            self.init(framesPerSecond: 30, minBitrateBps: 1_000_000, maxBitrateBps: 12_000_000)
+        }
+    }
+}
+
+package final class WebRTCFrameMailbox<Frame: Sendable>: @unchecked Sendable {
+    package typealias Scheduler = @Sendable (@escaping @Sendable () -> Void) -> Void
+    package typealias Consumer = @Sendable (Frame) -> Void
+
+    private struct State {
+        var pendingFrame: Frame?
+        var isDraining = false
+    }
+
+    private let state = Mutex(State())
+    private let scheduler: Scheduler
+    private let consumer: Consumer
+
+    package init(
+        scheduler: @escaping Scheduler,
+        consumer: @escaping Consumer
+    ) {
+        self.scheduler = scheduler
+        self.consumer = consumer
+    }
+
+    package func submit(_ frame: Frame) {
+        let shouldStartDrain = state.withLock { state -> Bool in
+            state.pendingFrame = frame
+            guard !state.isDraining else { return false }
+            state.isDraining = true
+            return true
+        }
+        guard shouldStartDrain else { return }
+        scheduler { [weak self] in
+            self?.drain()
+        }
+    }
+
+    private func drain() {
+        while true {
+            let frame = state.withLock { state -> Frame? in
+                guard let pendingFrame = state.pendingFrame else {
+                    state.isDraining = false
+                    return nil
+                }
+                state.pendingFrame = nil
+                return pendingFrame
+            }
+            guard let frame else { return }
+            consumer(frame)
+        }
+    }
 }
 
 nonisolated private enum SignalingMessageType: String, Codable {
@@ -88,7 +166,7 @@ package final class WebRTCSessionHub: Sendable, DisplayShareFrameConsumer {
 
     typealias SharingEventSink = @Sendable (SharingSessionEvent) -> Void
 
-    typealias PeerFactory = @Sendable (PeerCallbacks) -> (any WebRTCPeerSessioning)?
+    typealias PeerFactory = @Sendable (PeerCallbacks, WebRTCStreamingProfile) -> (any WebRTCPeerSessioning)?
 
     private nonisolated struct QueuedSignal: Sendable {
         let text: String
@@ -124,6 +202,7 @@ package final class WebRTCSessionHub: Sendable, DisplayShareFrameConsumer {
         var clients: [ObjectIdentifier: ClientState] = [:]
         var nextSessionEpoch: UInt64 = 0
         var onDemandChanged: @Sendable (Bool) -> Void
+        var streamingProfile = WebRTCStreamingProfile(performanceMode: .automatic)
     }
 
     nonisolated private let state: Mutex<State>
@@ -144,9 +223,10 @@ package final class WebRTCSessionHub: Sendable, DisplayShareFrameConsumer {
     ) {
         self.state = Mutex(State(onDemandChanged: onDemandChanged))
 #if canImport(WebRTC)
-        let defaultPeerFactory: PeerFactory = { [mediaPipeline] callbacks in
+        let defaultPeerFactory: PeerFactory = { [mediaPipeline] callbacks, profile in
             WebRTCPeerSession(
                 mediaPipeline: mediaPipeline,
+                initialProfile: profile,
                 onAnswer: callbacks.onAnswer,
                 onLocalCandidate: { candidate in
                     callbacks.onLocalCandidate(
@@ -162,7 +242,7 @@ package final class WebRTCSessionHub: Sendable, DisplayShareFrameConsumer {
         }
         self.peerFactory = peerFactory ?? defaultPeerFactory
 #else
-        self.peerFactory = peerFactory ?? { _ in nil }
+        self.peerFactory = peerFactory ?? { _, _ in nil }
 #endif
     }
 
@@ -172,6 +252,22 @@ package final class WebRTCSessionHub: Sendable, DisplayShareFrameConsumer {
 
     package nonisolated var hasDemand: Bool {
         activeClientCount > 0
+    }
+
+    package nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
+        let profile = WebRTCStreamingProfile(performanceMode: mode)
+        let (didChange, peers) = state.withLock { state -> (Bool, [any WebRTCPeerSessioning]) in
+            guard state.streamingProfile != profile else { return (false, []) }
+            state.streamingProfile = profile
+            return (true, state.clients.values.compactMap(\.peer))
+        }
+        guard didChange else { return }
+#if canImport(WebRTC)
+        mediaPipeline.updateEncodingProfile(profile)
+#endif
+        for peer in peers {
+            peer.updateEncodingProfile(profile)
+        }
     }
 
     nonisolated func updateDemandHandler(_ onDemandChanged: @escaping @Sendable (Bool) -> Void) {
@@ -355,21 +451,25 @@ package final class WebRTCSessionHub: Sendable, DisplayShareFrameConsumer {
             }
         )
 
-        guard let peer = peerFactory(callbacks) else {
+        let profile = state.withLock { $0.streamingProfile }
+        guard let peer = peerFactory(callbacks, profile) else {
             send(message: SignalingOutboundMessage(type: .error, reason: "peer_connection_unavailable"), to: key)
             removeClient(for: key, cancelConnection: true)
             return nil
         }
 
-        let stored = state.withLock { state -> Bool in
-            guard var current = state.clients[key] else { return false }
+        let (stored, profileToRefresh) = state.withLock { state -> (Bool, WebRTCStreamingProfile?) in
+            guard var current = state.clients[key] else { return (false, nil) }
             current.peer = peer
             state.clients[key] = current
-            return true
+            return (true, state.streamingProfile == profile ? nil : state.streamingProfile)
         }
         guard stored else {
             peer.close()
             return nil
+        }
+        if let profileToRefresh {
+            peer.updateEncodingProfile(profileToRefresh)
         }
         return peer
 #else
@@ -648,11 +748,13 @@ private extension WebRTCIceServerProvider {
 }
 
 private final class WebRTCMediaPipeline: @unchecked Sendable {
-    private nonisolated struct SendablePixelBuffer: @unchecked Sendable {
-        nonisolated(unsafe) let value: CVPixelBuffer
+    private nonisolated struct PendingFrame: @unchecked Sendable {
+        nonisolated(unsafe) let pixelBuffer: CVPixelBuffer
+        let ptsUs: UInt64
 
-        nonisolated init(value: CVPixelBuffer) {
-            self.value = value
+        nonisolated init(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
+            self.pixelBuffer = pixelBuffer
+            self.ptsUs = ptsUs
         }
     }
 
@@ -671,12 +773,22 @@ private final class WebRTCMediaPipeline: @unchecked Sendable {
         label: "com.developerchen.voiddisplay.webrtc.media",
         qos: .userInitiated
     )
-    nonisolated(unsafe) private var lastFormat: (width: Int32, height: Int32)?
+    private let profile = Mutex(WebRTCStreamingProfile(performanceMode: .automatic))
+    nonisolated(unsafe) private var frameMailbox: WebRTCFrameMailbox<PendingFrame>!
+    nonisolated(unsafe) private var lastFormat: (width: Int32, height: Int32, framesPerSecond: Int)?
 
     nonisolated init() {
         self.videoSource = Self.factory.videoSource()
         self.videoTrack = Self.factory.videoTrack(with: videoSource, trackId: "screen-video-track")
         self.capturer = RTCVideoCapturer(delegate: videoSource)
+        self.frameMailbox = WebRTCFrameMailbox(
+            scheduler: { [weak self] operation in
+                self?.queue.async(execute: operation)
+            },
+            consumer: { [weak self] frame in
+                self?.consume(frame)
+            }
+        )
     }
 
     nonisolated static func makePeerConnection() -> RTCPeerConnection? {
@@ -691,38 +803,60 @@ private final class WebRTCMediaPipeline: @unchecked Sendable {
         return factory.peerConnection(with: configuration, constraints: constraints, delegate: nil)
     }
 
-    nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
-        let sendablePixelBuffer = SendablePixelBuffer(value: pixelBuffer)
-        queue.async { [weak self, sendablePixelBuffer] in
-            guard let self else { return }
-            let pixelBuffer = sendablePixelBuffer.value
-            let width = Int32(CVPixelBufferGetWidth(pixelBuffer))
-            let height = Int32(CVPixelBufferGetHeight(pixelBuffer))
-            if self.lastFormat?.width != width || self.lastFormat?.height != height {
-                self.videoSource.adaptOutputFormat(toWidth: width, height: height, fps: 60)
-                self.lastFormat = (width, height)
-            }
-
-            let rtcBuffer = RTCCVPixelBuffer(pixelBuffer: pixelBuffer)
-            let frame = RTCVideoFrame(
-                buffer: rtcBuffer,
-                rotation: ._0,
-                timeStampNs: Int64(ptsUs) * 1_000
+    nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
+        self.profile.withLock { $0 = profile }
+        queue.async { [weak self] in
+            guard let self, let lastFormat = self.lastFormat else { return }
+            self.videoSource.adaptOutputFormat(
+                toWidth: lastFormat.width,
+                height: lastFormat.height,
+                fps: Int32(profile.framesPerSecond)
             )
-            self.videoSource.capturer(self.capturer, didCapture: frame)
+            self.lastFormat = (
+                width: lastFormat.width,
+                height: lastFormat.height,
+                framesPerSecond: profile.framesPerSecond
+            )
         }
+    }
+
+    nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
+        frameMailbox.submit(PendingFrame(pixelBuffer: pixelBuffer, ptsUs: ptsUs))
+    }
+
+    private func consume(_ pendingFrame: PendingFrame) {
+        let pixelBuffer = pendingFrame.pixelBuffer
+        let width = Int32(CVPixelBufferGetWidth(pixelBuffer))
+        let height = Int32(CVPixelBufferGetHeight(pixelBuffer))
+        let currentProfile = profile.withLock { $0 }
+        if lastFormat?.width != width ||
+            lastFormat?.height != height ||
+            lastFormat?.framesPerSecond != currentProfile.framesPerSecond {
+            videoSource.adaptOutputFormat(
+                toWidth: width,
+                height: height,
+                fps: Int32(currentProfile.framesPerSecond)
+            )
+            lastFormat = (width, height, currentProfile.framesPerSecond)
+        }
+
+        let rtcBuffer = RTCCVPixelBuffer(pixelBuffer: pixelBuffer)
+        let frame = RTCVideoFrame(
+            buffer: rtcBuffer,
+            rotation: ._0,
+            timeStampNs: Int64(pendingFrame.ptsUs) * 1_000
+        )
+        videoSource.capturer(capturer, didCapture: frame)
     }
 }
 
 private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeerSessioning {
-    nonisolated private static let desktopMinBitrateBps = NSNumber(value: 2_000_000)
-    nonisolated private static let desktopMaxBitrateBps = NSNumber(value: 24_000_000)
-    nonisolated private static let desktopMaxFramerate = NSNumber(value: 60)
     nonisolated private static let maintainResolutionPreference = NSNumber(
         value: RTCDegradationPreference.maintainResolution.rawValue
     )
 
     nonisolated(unsafe) private let peerConnection: RTCPeerConnection
+    nonisolated(unsafe) private var sender: RTCRtpSender?
     private let onAnswer: @Sendable (String) -> Void
     private let onLocalCandidate: @Sendable (RTCIceCandidate) -> Void
     private let onConnected: @Sendable () -> Void
@@ -731,6 +865,7 @@ private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeer
 
     nonisolated init?(
         mediaPipeline: WebRTCMediaPipeline,
+        initialProfile: WebRTCStreamingProfile,
         onAnswer: @escaping @Sendable (String) -> Void,
         onLocalCandidate: @escaping @Sendable (RTCIceCandidate) -> Void,
         onConnected: @escaping @Sendable () -> Void,
@@ -746,25 +881,32 @@ private final class WebRTCPeerSession: NSObject, @unchecked Sendable, WebRTCPeer
         self.onDisconnected = onDisconnected
         super.init()
         self.peerConnection.delegate = self
-        let sender = self.peerConnection.add(mediaPipeline.videoTrack, streamIds: ["screen"])
-        configureDesktopVideoSender(sender)
-        _ = self.peerConnection.setBweMinBitrateBps(
-            Self.desktopMinBitrateBps,
+        self.sender = self.peerConnection.add(mediaPipeline.videoTrack, streamIds: ["screen"])
+        updateEncodingProfile(initialProfile)
+    }
+
+    nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
+        configureDesktopVideoSender(sender, profile: profile)
+        _ = peerConnection.setBweMinBitrateBps(
+            NSNumber(value: profile.minBitrateBps),
             currentBitrateBps: nil,
-            maxBitrateBps: Self.desktopMaxBitrateBps
+            maxBitrateBps: NSNumber(value: profile.maxBitrateBps)
         )
     }
 
-    nonisolated private func configureDesktopVideoSender(_ sender: RTCRtpSender?) {
+    nonisolated private func configureDesktopVideoSender(
+        _ sender: RTCRtpSender?,
+        profile: WebRTCStreamingProfile
+    ) {
         guard let sender else { return }
         let parameters = sender.parameters
         if parameters.encodings.isEmpty {
             parameters.encodings = [RTCRtpEncodingParameters()]
         }
         for encoding in parameters.encodings {
-            encoding.maxBitrateBps = Self.desktopMaxBitrateBps
-            encoding.minBitrateBps = Self.desktopMinBitrateBps
-            encoding.maxFramerate = Self.desktopMaxFramerate
+            encoding.maxBitrateBps = NSNumber(value: profile.maxBitrateBps)
+            encoding.minBitrateBps = NSNumber(value: profile.minBitrateBps)
+            encoding.maxFramerate = NSNumber(value: profile.framesPerSecond)
             encoding.scaleResolutionDownBy = NSNumber(value: 1.0)
             encoding.bitratePriority = 4.0
         }

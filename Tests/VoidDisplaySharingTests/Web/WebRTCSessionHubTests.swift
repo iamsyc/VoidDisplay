@@ -77,6 +77,32 @@ private final class Counter: @unchecked Sendable {
     }
 }
 
+private final class ScheduledOperations: @unchecked Sendable {
+    private let operations = Mutex<[@Sendable () -> Void]>([])
+
+    nonisolated func schedule(_ operation: @escaping @Sendable () -> Void) {
+        operations.withLock { $0.append(operation) }
+    }
+
+    func count() -> Int {
+        operations.withLock { $0.count }
+    }
+
+    @discardableResult
+    func runNext() -> Bool {
+        let operation = operations.withLock { operations -> (@Sendable () -> Void)? in
+            guard !operations.isEmpty else { return nil }
+            return operations.removeFirst()
+        }
+        operation?()
+        return operation != nil
+    }
+}
+
+private final class MailboxReference<Frame: Sendable>: @unchecked Sendable {
+    nonisolated(unsafe) var mailbox: WebRTCFrameMailbox<Frame>?
+}
+
 private final class SharingEventRecorder: @unchecked Sendable {
     private let events = Mutex<[SharingSessionEvent]>([])
 
@@ -105,11 +131,40 @@ private final class PeerCallbacksBox: @unchecked Sendable {
     nonisolated(unsafe) var callbacks: WebRTCSessionHub.PeerCallbacks?
 }
 
+private final class HubReference: @unchecked Sendable {
+    nonisolated(unsafe) weak var hub: WebRTCSessionHub?
+}
+
+private final class ProfileUpdateRecorder: @unchecked Sendable {
+    private let profiles = Mutex<[WebRTCStreamingProfile]>([])
+
+    nonisolated func record(_ profile: WebRTCStreamingProfile) {
+        profiles.withLock { $0.append(profile) }
+    }
+
+    func currentProfiles() -> [WebRTCStreamingProfile] {
+        profiles.withLock { $0 }
+    }
+}
+
 private final class MockPeerSession: @unchecked Sendable, WebRTCPeerSessioning {
     private let closeCalls: Counter
+    private let profileUpdates: ProfileUpdateRecorder
 
-    init(closeCalls: Counter) {
+    init(
+        closeCalls: Counter,
+        initialProfile: WebRTCStreamingProfile? = nil,
+        profileUpdates: ProfileUpdateRecorder = ProfileUpdateRecorder()
+    ) {
         self.closeCalls = closeCalls
+        self.profileUpdates = profileUpdates
+        if let initialProfile {
+            profileUpdates.record(initialProfile)
+        }
+    }
+
+    nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
+        profileUpdates.record(profile)
     }
 
     nonisolated func handleRemoteOffer(sdp _: String) {}
@@ -125,20 +180,87 @@ private final class PeerFactoryBox: @unchecked Sendable {
     nonisolated(unsafe) weak var hub: WebRTCSessionHub?
     nonisolated(unsafe) weak var client: MockSignalSocketConnection?
     let closeCalls: Counter
+    let profileUpdates = ProfileUpdateRecorder()
 
     init(closeCalls: Counter) {
         self.closeCalls = closeCalls
     }
 
-    func make(callbacks _: WebRTCSessionHub.PeerCallbacks) -> (any WebRTCPeerSessioning)? {
+    func make(
+        callbacks _: WebRTCSessionHub.PeerCallbacks,
+        profile: WebRTCStreamingProfile
+    ) -> (any WebRTCPeerSessioning)? {
         if let hub, let client {
             hub.removeClient(client)
         }
-        return MockPeerSession(closeCalls: closeCalls)
+        return MockPeerSession(
+            closeCalls: closeCalls,
+            initialProfile: profile,
+            profileUpdates: profileUpdates
+        )
     }
 }
 
 struct WebRTCSessionHubTests {
+    @Test func streamingProfilesMatchPerformanceModes() {
+        #expect(WebRTCStreamingProfile(performanceMode: .smooth) == WebRTCStreamingProfile(
+            framesPerSecond: 60,
+            minBitrateBps: 3_000_000,
+            maxBitrateBps: 32_000_000
+        ))
+        #expect(WebRTCStreamingProfile(performanceMode: .automatic) == WebRTCStreamingProfile(
+            framesPerSecond: 60,
+            minBitrateBps: 2_000_000,
+            maxBitrateBps: 24_000_000
+        ))
+        #expect(WebRTCStreamingProfile(performanceMode: .powerEfficient) == WebRTCStreamingProfile(
+            framesPerSecond: 30,
+            minBitrateBps: 1_000_000,
+            maxBitrateBps: 12_000_000
+        ))
+    }
+
+    @Test func frameMailboxKeepsOnlyLatestPendingFrameBeforeDrainStarts() {
+        let scheduler = ScheduledOperations()
+        let consumed = Mutex<[Int]>([])
+        let mailbox = WebRTCFrameMailbox<Int>(
+            scheduler: { operation in scheduler.schedule(operation) },
+            consumer: { frame in consumed.withLock { $0.append(frame) } }
+        )
+
+        mailbox.submit(1)
+        mailbox.submit(2)
+        mailbox.submit(3)
+
+        #expect(scheduler.count() == 1)
+        #expect(consumed.withLock { $0 } == [])
+        #expect(scheduler.runNext())
+        #expect(consumed.withLock { $0 } == [3])
+    }
+
+    @Test func frameMailboxCoalescesFramesSubmittedWhileDraining() {
+        let scheduler = ScheduledOperations()
+        let consumed = Mutex<[Int]>([])
+        let mailboxReference = MailboxReference<Int>()
+        let mailbox = WebRTCFrameMailbox<Int>(
+            scheduler: { operation in scheduler.schedule(operation) },
+            consumer: { frame in
+                consumed.withLock { $0.append(frame) }
+                if frame == 1 {
+                    mailboxReference.mailbox?.submit(2)
+                    mailboxReference.mailbox?.submit(3)
+                }
+            }
+        )
+        mailboxReference.mailbox = mailbox
+
+        mailbox.submit(1)
+
+        #expect(scheduler.runNext())
+        #expect(consumed.withLock { $0 } == [1, 3])
+        #expect(scheduler.count() == 0)
+    }
+
     @MainActor @Test func addClientSendsReadySignal() {
         let hub = WebRTCSessionHub()
         let client = MockSignalSocketConnection()
@@ -294,7 +416,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func removedClient_offer_doesNotCreatePeer() {
         let peerCreateCalls = Counter()
         let peerCloseCalls = Counter()
-        let hub = WebRTCSessionHub(peerFactory: { _ in
+        let hub = WebRTCSessionHub(peerFactory: { _, _ in
             peerCreateCalls.increment()
             return MockPeerSession(closeCalls: peerCloseCalls)
         })
@@ -309,9 +431,73 @@ struct WebRTCSessionHubTests {
     }
 
 #if canImport(WebRTC)
+    @MainActor @Test func performanceModeChangeUpdatesExistingPeerProfile() {
+        let profileUpdates = ProfileUpdateRecorder()
+        let hub = WebRTCSessionHub(peerFactory: { _, profile in
+            MockPeerSession(
+                closeCalls: Counter(),
+                initialProfile: profile,
+                profileUpdates: profileUpdates
+            )
+        })
+        let client = MockSignalSocketConnection()
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+        hub.updatePerformanceMode(.powerEfficient)
+
+        #expect(profileUpdates.currentProfiles() == [
+            WebRTCStreamingProfile(performanceMode: .automatic),
+            WebRTCStreamingProfile(performanceMode: .powerEfficient)
+        ])
+    }
+
+    @MainActor @Test func newPeerUsesLatestStreamingProfile() {
+        let profileUpdates = ProfileUpdateRecorder()
+        let hub = WebRTCSessionHub(peerFactory: { _, profile in
+            MockPeerSession(
+                closeCalls: Counter(),
+                initialProfile: profile,
+                profileUpdates: profileUpdates
+            )
+        })
+        let client = MockSignalSocketConnection()
+        hub.updatePerformanceMode(.powerEfficient)
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+
+        #expect(profileUpdates.currentProfiles() == [
+            WebRTCStreamingProfile(performanceMode: .powerEfficient)
+        ])
+    }
+
+    @MainActor @Test func peerCreatedDuringModeChangeReceivesLatestProfile() {
+        let profileUpdates = ProfileUpdateRecorder()
+        let hubReference = HubReference()
+        let hub = WebRTCSessionHub(peerFactory: { _, profile in
+            hubReference.hub?.updatePerformanceMode(.powerEfficient)
+            return MockPeerSession(
+                closeCalls: Counter(),
+                initialProfile: profile,
+                profileUpdates: profileUpdates
+            )
+        })
+        hubReference.hub = hub
+        let client = MockSignalSocketConnection()
+        #expect(isAccepted(hub.addClient(client, target: .main, eventSink: { _ in })))
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"v=0"}"#, from: client)
+
+        #expect(profileUpdates.currentProfiles() == [
+            WebRTCStreamingProfile(performanceMode: .automatic),
+            WebRTCStreamingProfile(performanceMode: .powerEfficient)
+        ])
+    }
+
     @MainActor @Test func answerMessagesCoalesceToLatestUnderBackpressure() throws {
         let callbacksBox = PeerCallbacksBox()
-        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+        let hub = WebRTCSessionHub(peerFactory: { callbacks, _ in
             callbacksBox.callbacks = callbacks
             return MockPeerSession(closeCalls: Counter())
         })
@@ -338,8 +524,8 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func clientRemovedDuringEnsurePeer_closesNewPeer() {
         let peerCloseCalls = Counter()
         let box = PeerFactoryBox(closeCalls: peerCloseCalls)
-        let hub = WebRTCSessionHub(peerFactory: { callbacks in
-            box.make(callbacks: callbacks)
+        let hub = WebRTCSessionHub(peerFactory: { callbacks, profile in
+            box.make(callbacks: callbacks, profile: profile)
         })
         let client = MockSignalSocketConnection()
         box.hub = hub
@@ -354,7 +540,7 @@ struct WebRTCSessionHubTests {
 
     @MainActor @Test func peerFailureClosesClientWithoutTerminalErrorSignal() {
         let callbacksBox = PeerCallbacksBox()
-        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+        let hub = WebRTCSessionHub(peerFactory: { callbacks, _ in
             callbacksBox.callbacks = callbacks
             return MockPeerSession(closeCalls: Counter())
         })
@@ -374,7 +560,7 @@ struct WebRTCSessionHubTests {
     @MainActor @Test func lifecycleEventsReflectOfferConnectAndClose() async throws {
         let eventRecorder = SharingEventRecorder()
         let callbacksBox = PeerCallbacksBox()
-        let hub = WebRTCSessionHub(peerFactory: { callbacks in
+        let hub = WebRTCSessionHub(peerFactory: { callbacks, _ in
             callbacksBox.callbacks = callbacks
             return MockPeerSession(closeCalls: Counter())
         })
