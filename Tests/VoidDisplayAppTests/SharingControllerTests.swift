@@ -168,7 +168,7 @@ struct SharingControllerTests {
         let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
-            shareFrameConsumer: WebRTCSessionHub(),
+            shareFrameConsumer: TestSignalSessionHub(),
             cancelClosure: {}
         )
         let sut = makeRealSharingController(
@@ -327,7 +327,7 @@ struct SharingControllerTests {
         let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
-            shareFrameConsumer: WebRTCSessionHub(),
+            shareFrameConsumer: TestSignalSessionHub(),
             cancelClosure: {}
         )
         let sut = makeRealSharingController(

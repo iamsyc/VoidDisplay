@@ -52,6 +52,7 @@ package final class SharingService: SharingServiceProtocol {
     private let sharingCoordinator: DisplaySharingCoordinator
     private let webServiceController: any WebServiceControllerProtocol
     private let sharingStateAggregator: SharingStateAggregator
+    private var externalWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
 
     package init(
         webServiceController: (any WebServiceControllerProtocol)? = nil,
@@ -61,6 +62,9 @@ package final class SharingService: SharingServiceProtocol {
         self.webServiceController = webServiceController ?? WebServiceController()
         self.sharingCoordinator = sharingCoordinator
         self.sharingStateAggregator = sharingStateAggregator
+        self.webServiceController.onLifecycleStateChanged = { [weak self] state in
+            self?.handleWebServiceLifecycleStateChanged(state)
+        }
     }
 
     package var webServicePortValue: UInt16 {
@@ -68,8 +72,8 @@ package final class SharingService: SharingServiceProtocol {
     }
 
     package var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? {
-        get { webServiceController.onLifecycleStateChanged }
-        set { webServiceController.onLifecycleStateChanged = newValue }
+        get { externalWebServiceLifecycleStateChanged }
+        set { externalWebServiceLifecycleStateChanged = newValue }
     }
 
     package var webServiceLifecycleState: WebServiceLifecycleState {
@@ -188,5 +192,13 @@ package final class SharingService: SharingServiceProtocol {
 
     private func recordSharingEvent(_ event: SharingSessionEvent) {
         sharingStateAggregator.record(event)
+    }
+
+    private func handleWebServiceLifecycleStateChanged(_ state: WebServiceLifecycleState) {
+        if case .failed = state {
+            stopAllSharing()
+            sharingStateAggregator.reset()
+        }
+        externalWebServiceLifecycleStateChanged?(state)
     }
 }

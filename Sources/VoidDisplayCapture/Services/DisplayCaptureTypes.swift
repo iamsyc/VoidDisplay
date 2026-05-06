@@ -13,27 +13,37 @@ package nonisolated enum DisplayCaptureFrameRateTier: Int, CaseIterable, Sendabl
     package var framesPerSecond: Int {
         rawValue
     }
+}
 
-    package var nextLowerTier: DisplayCaptureFrameRateTier? {
-        switch self {
-        case .fps60:
-            .fps45
-        case .fps45:
-            .fps30
-        case .fps30:
-            nil
-        }
+package typealias DisplayCaptureDimensions = CapturePixelDimensions
+
+package nonisolated struct DisplayCaptureSizeContext: Sendable, Equatable {
+    package static let defaultShared = DisplayCaptureSizeContext(
+        logicalSize: .defaultShared,
+        physicalSize: .defaultShared
+    )
+
+    package let logicalSize: DisplayCaptureDimensions
+    package let physicalSize: DisplayCaptureDimensions
+
+    package init(
+        logicalSize: DisplayCaptureDimensions,
+        physicalSize: DisplayCaptureDimensions
+    ) {
+        self.logicalSize = logicalSize
+        self.physicalSize = physicalSize
     }
 
-    package var nextHigherTier: DisplayCaptureFrameRateTier? {
-        switch self {
-        case .fps30:
-            .fps45
-        case .fps45:
-            .fps60
-        case .fps60:
-            nil
+    package func captureSize(
+        for profile: DisplayCaptureProfile,
+        performanceMode: CapturePerformanceMode
+    ) -> DisplayCaptureDimensions {
+        guard profile != .previewOnly else {
+            return physicalSize
         }
+
+        return SharedCapturePerformanceBudget(performanceMode: performanceMode)
+            .captureDimensions(for: physicalSize)
     }
 }
 package nonisolated enum DisplayCaptureProfile: String, Sendable, Equatable {
@@ -242,93 +252,32 @@ package nonisolated struct DisplayPreviewPerformanceSample: Sendable, Equatable 
 package nonisolated struct DisplayCaptureConfiguration: Sendable, Equatable {
     package let profile: DisplayCaptureProfile
     package let frameRateTier: DisplayCaptureFrameRateTier
+
+    package let captureSize: DisplayCaptureDimensions
+
+    package init(
+        profile: DisplayCaptureProfile,
+        frameRateTier: DisplayCaptureFrameRateTier,
+        captureSize: DisplayCaptureDimensions = .defaultShared
+    ) {
+        self.profile = profile
+        self.frameRateTier = frameRateTier
+        self.captureSize = captureSize
+    }
 }
 package nonisolated enum DisplayCaptureConfigurationDecision: Sendable, Equatable {
     case noChange
     case applyNow(DisplayCaptureConfiguration)
     case applyAfter(DisplayCaptureConfiguration, delayNanoseconds: UInt64)
 }
-package nonisolated struct DisplayCaptureAdaptivePolicyState: Sendable, Equatable {
-    private(set) var currentAutomaticMixedTier: DisplayCaptureFrameRateTier = .fps45
-    private(set) var stableWindowCount = 0
-    private(set) var pressureWindowCount = 0
-
-    mutating func resetToDefaultAutomaticMixedTier() {
-        currentAutomaticMixedTier = .fps45
-        stableWindowCount = 0
-        pressureWindowCount = 0
-    }
-
-    mutating func rebase(
-        desiredProfile: DisplayCaptureProfile?,
-        performanceMode: CapturePerformanceMode
-    ) {
-        guard desiredProfile == .mixed, performanceMode == .automatic else {
-            resetToDefaultAutomaticMixedTier()
-            return
-        }
-    }
-
-    mutating func recordAutomaticMixedSample(
-        _ sample: DisplayPreviewPerformanceSample
-    ) -> DisplayCaptureFrameRateTier? {
-        guard sample.totalFrameCount > 0 else {
-            stableWindowCount = 0
-            pressureWindowCount = 0
-            return nil
-        }
-        let isPressureWindow = sample.droppedFrameRatio >= 0.08
-            || sample.latestRenderLatencyMilliseconds >= 35
-            || sample.pendingSlotOccupied
-        let isStableWindow = sample.droppedFrameRatio < 0.02
-            && sample.latestRenderLatencyMilliseconds < 20
-            && !sample.pendingSlotOccupied
-
-        if isPressureWindow {
-            pressureWindowCount += 1
-            stableWindowCount = 0
-            if pressureWindowCount >= 2, let nextLowerTier = currentAutomaticMixedTier.nextLowerTier {
-                currentAutomaticMixedTier = nextLowerTier
-                stableWindowCount = 0
-                pressureWindowCount = 0
-                return nextLowerTier
-            }
-            return nil
-        }
-
-        if isStableWindow {
-            stableWindowCount += 1
-            pressureWindowCount = 0
-            if stableWindowCount >= 4, let nextHigherTier = currentAutomaticMixedTier.nextHigherTier {
-                currentAutomaticMixedTier = nextHigherTier
-                stableWindowCount = 0
-                pressureWindowCount = 0
-                return nextHigherTier
-            }
-            return nil
-        }
-
-        stableWindowCount = 0
-        pressureWindowCount = 0
-        return nil
-    }
-}
 package nonisolated enum DisplayCaptureConfigurationStateMachine {
     nonisolated static func defaultFrameRateTier(
         for profile: DisplayCaptureProfile,
-        performanceMode: CapturePerformanceMode,
-        adaptivePolicy: DisplayCaptureAdaptivePolicyState = .init()
+        performanceMode: CapturePerformanceMode
     ) -> DisplayCaptureFrameRateTier {
         switch performanceMode {
         case .automatic:
-            switch profile {
-            case .previewOnly:
-                .fps60
-            case .shareOnly:
-                .fps60
-            case .mixed:
-                adaptivePolicy.currentAutomaticMixedTier
-            }
+            .fps60
         case .smooth:
             .fps60
         case .powerEfficient:
@@ -343,7 +292,7 @@ package nonisolated enum DisplayCaptureConfigurationStateMachine {
 
     nonisolated static func desiredConfiguration(
         for demand: DisplayCaptureDemandSnapshot,
-        adaptivePolicy: DisplayCaptureAdaptivePolicyState
+        captureSizeContext: DisplayCaptureSizeContext
     ) -> DisplayCaptureConfiguration? {
         guard let profile = demand.desiredProfile else {
             return nil
@@ -352,8 +301,11 @@ package nonisolated enum DisplayCaptureConfigurationStateMachine {
             profile: profile,
             frameRateTier: defaultFrameRateTier(
                 for: profile,
-                performanceMode: demand.performanceMode,
-                adaptivePolicy: adaptivePolicy
+                performanceMode: demand.performanceMode
+            ),
+            captureSize: captureSizeContext.captureSize(
+                for: profile,
+                performanceMode: demand.performanceMode
             )
         )
     }
@@ -383,7 +335,7 @@ package nonisolated enum DisplayCaptureConfigurationStateMachine {
 }
 package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable, Equatable {
     package var demand: DisplayCaptureDemandSnapshot
-    package var adaptivePolicy = DisplayCaptureAdaptivePolicyState()
+    package var captureSizeContext: DisplayCaptureSizeContext
     package var committedConfiguration: DisplayCaptureConfiguration
     package var inFlightConfiguration: DisplayCaptureConfiguration?
     package var lastConfigurationSwitchTimeNs: UInt64?
@@ -391,15 +343,13 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
     package init(
         committedConfiguration: DisplayCaptureConfiguration,
         demand: DisplayCaptureDemandSnapshot,
+        captureSizeContext: DisplayCaptureSizeContext = .defaultShared,
         lastConfigurationSwitchTimeNs: UInt64? = nil
     ) {
         self.demand = demand
+        self.captureSizeContext = captureSizeContext
         self.committedConfiguration = committedConfiguration
         self.lastConfigurationSwitchTimeNs = lastConfigurationSwitchTimeNs
-        adaptivePolicy.rebase(
-            desiredProfile: committedConfiguration.profile,
-            performanceMode: demand.performanceMode
-        )
     }
 
     mutating func updateDemand(
@@ -408,10 +358,6 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
         minimumDwellNanoseconds: UInt64
     ) -> DisplayCaptureConfigurationDecision {
         self.demand = demand
-        adaptivePolicy.rebase(
-            desiredProfile: currentDesiredProfile,
-            performanceMode: demand.performanceMode
-        )
         return evaluateTransition(
             nowNs: nowNs,
             minimumDwellNanoseconds: minimumDwellNanoseconds
@@ -423,15 +369,6 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
         nowNs: UInt64,
         minimumDwellNanoseconds: UInt64
     ) -> DisplayCaptureConfigurationDecision {
-        let desiredProfile = currentDesiredProfile
-        adaptivePolicy.rebase(desiredProfile: desiredProfile, performanceMode: demand.performanceMode)
-        guard desiredProfile == .mixed, demand.performanceMode == .automatic else {
-            return evaluateTransition(
-                nowNs: nowNs,
-                minimumDwellNanoseconds: minimumDwellNanoseconds
-            )
-        }
-        _ = adaptivePolicy.recordAutomaticMixedSample(sample)
         return evaluateTransition(
             nowNs: nowNs,
             minimumDwellNanoseconds: minimumDwellNanoseconds
@@ -456,10 +393,6 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
         committedConfiguration = inFlightConfiguration
         self.inFlightConfiguration = nil
         lastConfigurationSwitchTimeNs = nowNs
-        adaptivePolicy.rebase(
-            desiredProfile: committedConfiguration.profile,
-            performanceMode: demand.performanceMode
-        )
         return evaluateTransition(
             nowNs: nowNs,
             minimumDwellNanoseconds: minimumDwellNanoseconds
@@ -484,7 +417,7 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
         let decision = DisplayCaptureConfigurationStateMachine.decideTransition(
             desiredConfiguration: DisplayCaptureConfigurationStateMachine.desiredConfiguration(
                 for: demand,
-                adaptivePolicy: adaptivePolicy
+                captureSizeContext: captureSizeContext
             ),
             currentConfiguration: committedConfiguration,
             lastConfigurationSwitchTimeNs: lastConfigurationSwitchTimeNs,

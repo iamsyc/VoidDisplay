@@ -323,13 +323,13 @@
         }
       }
     },
-    "Automatic adapts frame rate for mixed preview and sharing." : {
+    "Automatic balances 60 fps clarity and encoder load using a shared pixel budget." : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动模式会在监听和共享同时开启时动态调整帧率。"
+            "value" : "自动模式会按 60fps 像素预算平衡清晰度与编码负载。"
           }
         }
       }
@@ -2653,6 +2653,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共享失败"
+          }
+        }
+      }
+    },
+    "Share links are reachable from devices on the same local network. Send them only to trusted viewers." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同一局域网内可访问这台 Mac 的设备都能打开共享链接。请只发送给可信观看者。"
           }
         }
       }

@@ -222,9 +222,12 @@ package enum AppBootstrap {
                 historyStore: supportHistoryStore
             )
         }
+        let relayProcessController = RelayProcessController()
         let captureRegistry = DisplayCaptureRegistry(
             performanceMode: capturePerformancePreferences.mode,
-            makeShareFrameConsumer: { WebRTCSessionHub() }
+            makeShareFrameConsumer: {
+                RelaySessionHub(relayProcessController: relayProcessController)
+            }
         )
         capturePerformancePreferences.onModeChanged = { mode in
             Task {
@@ -246,7 +249,10 @@ package enum AppBootstrap {
                     )
                 }
             )
-            resolvedSharingService = SharingService(sharingCoordinator: sharingCoordinator)
+            resolvedSharingService = SharingService(
+                webServiceController: WebServiceController(relayProcessController: relayProcessController),
+                sharingCoordinator: sharingCoordinator
+            )
         }
 
         let resolvedVirtualDisplayFacade: any VirtualDisplayFacade

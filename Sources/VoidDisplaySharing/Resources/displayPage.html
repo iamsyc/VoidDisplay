@@ -463,9 +463,42 @@
             socket.send(JSON.stringify(payload));
         }
 
+        function localOfferSDPWithIceCredentials() {
+            const localDescription = peer?.localDescription;
+            if (
+                !localDescription ||
+                localDescription.type !== "offer" ||
+                typeof localDescription.sdp !== "string" ||
+                localDescription.sdp.length === 0
+            ) {
+                return null;
+            }
+            if (!/(^|\r?\n)a=ice-ufrag:/u.test(localDescription.sdp)) {
+                return null;
+            }
+            return localDescription.sdp;
+        }
+
+        async function waitForLocalOfferSDP() {
+            const startedAt = performance.now();
+            while (performance.now() - startedAt < 1000) {
+                const sdp = localOfferSDPWithIceCredentials();
+                if (sdp) {
+                    return sdp;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 25));
+            }
+            throw new Error("Local WebRTC offer is missing ICE credentials.");
+        }
+
         async function startPeerConnection() {
             closePeer();
             peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });
+            let usesTransceiverOffer = false;
+            if (typeof peer.addTransceiver === "function") {
+                peer.addTransceiver("video", { direction: "recvonly" });
+                usesTransceiverOffer = true;
+            }
 
             peer.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
@@ -500,12 +533,14 @@
                 }
             };
 
-            const offer = await peer.createOffer({
-                offerToReceiveAudio: false,
-                offerToReceiveVideo: true
-            });
+            const offer = usesTransceiverOffer
+                ? await peer.createOffer()
+                : await peer.createOffer({
+                    offerToReceiveAudio: false,
+                    offerToReceiveVideo: true
+                });
             await peer.setLocalDescription(offer);
-            await sendSignal({ type: "offer", sdp: offer.sdp });
+            await sendSignal({ type: "offer", sdp: await waitForLocalOfferSDP() });
             transition("negotiating");
         }
 

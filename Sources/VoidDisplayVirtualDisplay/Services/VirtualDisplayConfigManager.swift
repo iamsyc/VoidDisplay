@@ -109,7 +109,9 @@ package final class VirtualDisplayConfigManager {
     }
 
     package func updateConfig(_ updated: VirtualDisplayConfig) throws {
-        guard let index = configs.firstIndex(where: { $0.id == updated.id }) else { return }
+        guard let index = configs.firstIndex(where: { $0.id == updated.id }) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
         try mutateConfigs(reason: .userEditedConfig) { candidate in
             candidate[index] = updated
         }
@@ -122,7 +124,9 @@ package final class VirtualDisplayConfigManager {
         enabled: Bool,
         reason: VirtualDisplayConfigRepository.PersistReason
     ) throws {
-        guard let index = configs.firstIndex(where: { $0.id == configId }) else { return }
+        guard let index = configs.firstIndex(where: { $0.id == configId }) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
         try mutateConfigs(reason: reason) { candidate in
             var updated = candidate[index]
             updated.desiredEnabled = enabled

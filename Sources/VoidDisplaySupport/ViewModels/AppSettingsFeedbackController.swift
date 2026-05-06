@@ -277,7 +277,7 @@ package final class AppSettingsFeedbackController {
         } else {
             copyAction?(activeRecord.historyCopyText)
         }
-        exportHistory = historyStore?.markSummaryCopied(recordID: activeRecord.id, at: dateProvider()) ?? markSummaryCopied(recordID: activeRecord.id)
+        exportHistory = markSummaryCopiedPersisting(recordID: activeRecord.id, at: dateProvider())
         completionRecord = exportHistory.first(where: { $0.id == activeRecord.id }) ?? activeRecord
         await recordEvent(
             .summaryCopied,
@@ -288,7 +288,7 @@ package final class AppSettingsFeedbackController {
     package func copyHistorySummary(recordID: UUID) async {
         guard let record = exportHistory.first(where: { $0.id == recordID }) else { return }
         copyAction?(record.historyCopyText)
-        exportHistory = historyStore?.markSummaryCopied(recordID: recordID, at: dateProvider()) ?? markSummaryCopied(recordID: recordID)
+        exportHistory = markSummaryCopiedPersisting(recordID: recordID, at: dateProvider())
         await recordEvent(
             .historySummaryCopied,
             extraMetadata: ["bundleFileName": record.bundleFileName]
@@ -413,31 +413,71 @@ package final class AppSettingsFeedbackController {
     }
 
     private func appendExportRecord(_ record: SupportExportRecord) -> [SupportExportRecord] {
-        if let historyStore {
-            return historyStore.appendRecord(record)
-        }
-        var records = exportHistory
-        records.removeAll { $0.id == record.id }
-        records.insert(record, at: 0)
-        return Array(records.prefix(10))
+        persistHistory(
+            operation: { try historyStore?.appendRecord(record) },
+            fallback: {
+                var records = exportHistory
+                records.removeAll { $0.bundleFileName == record.bundleFileName }
+                records.insert(record, at: 0)
+                return Array(records.prefix(10))
+            }
+        )
     }
 
-    private func markSummaryCopied(recordID: UUID) -> [SupportExportRecord] {
+    private func markSummaryCopiedPersisting(recordID: UUID, at date: Date) -> [SupportExportRecord] {
+        persistHistory(
+            operation: { try historyStore?.markSummaryCopied(recordID: recordID, at: date) },
+            fallback: { markSummaryCopied(recordID: recordID, at: date) }
+        )
+    }
+
+    private func markRevealedPersisting(recordID: UUID, at date: Date) -> [SupportExportRecord] {
+        persistHistory(
+            operation: { try historyStore?.markRevealed(recordID: recordID, at: date) },
+            fallback: { markRevealed(recordID: recordID, at: date) }
+        )
+    }
+
+    private func markSummaryCopied(recordID: UUID, at date: Date) -> [SupportExportRecord] {
         var records = exportHistory
         guard let index = records.firstIndex(where: { $0.id == recordID }) else {
             return records
         }
-        records[index].summaryCopiedAt = dateProvider()
+        records[index].summaryCopiedAt = date
         return records
     }
 
-    private func markRevealed(recordID: UUID) -> [SupportExportRecord] {
+    private func markRevealed(recordID: UUID, at date: Date) -> [SupportExportRecord] {
         var records = exportHistory
         guard let index = records.firstIndex(where: { $0.id == recordID }) else {
             return records
         }
-        records[index].revealedAt = dateProvider()
+        records[index].revealedAt = date
         return records
+    }
+
+    private func recordHistoryPersistenceFailure(_ error: Error) {
+        AppErrorMapper.logFailure(
+            "Persist support export history",
+            error: error,
+            logger: AppLog.support,
+            subsystem: .support,
+            deduplicationKey: "support.history.persist"
+        )
+    }
+
+    private func persistHistory(
+        operation: () throws -> [SupportExportRecord]?,
+        fallback: () -> [SupportExportRecord]
+    ) -> [SupportExportRecord] {
+        do {
+            if let records = try operation() {
+                return records
+            }
+        } catch {
+            recordHistoryPersistenceFailure(error)
+        }
+        return fallback()
     }
 
     private func makeExportRecord(
@@ -495,7 +535,7 @@ package final class AppSettingsFeedbackController {
         let url = record.resolvedBundleURL
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         revealAction?(url)
-        exportHistory = historyStore?.markRevealed(recordID: record.id, at: dateProvider()) ?? markRevealed(recordID: record.id)
+        exportHistory = markRevealedPersisting(recordID: record.id, at: dateProvider())
         if completionRecord?.id == record.id {
             completionRecord = exportHistory.first(where: { $0.id == record.id }) ?? completionRecord
         }

@@ -313,7 +313,7 @@ func startServerOnRandomPort(
         guard case .id(let id) = target else { return nil }
         return .id(id)
     },
-    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
     sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
 ) async throws -> (server: WebServer, port: UInt16) {
     for candidate in TestPortAllocator.randomPortCandidates(count: 60) {

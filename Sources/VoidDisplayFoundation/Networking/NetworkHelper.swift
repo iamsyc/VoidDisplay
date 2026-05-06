@@ -16,12 +16,78 @@ package nonisolated struct LANIPv4Candidate: Equatable, Sendable {
 nonisolated private let preferredLANInterfaces = ["en0", "en1", "en2", "en3", "bridge0", "pdp_ip0"]
 
 package nonisolated func selectPreferredLANIPv4Address(from candidates: [LANIPv4Candidate]) -> String? {
-    for preferred in preferredLANInterfaces {
-        if let match = candidates.first(where: { $0.name == preferred }) {
-            return match.address
-        }
+    candidates.enumerated()
+        .min { lhs, rhs in
+            let lhsRank = lanIPv4CandidateRank(lhs.element)
+            let rhsRank = lanIPv4CandidateRank(rhs.element)
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            let lhsPreferredIndex = preferredLANInterfaceIndex(lhs.element.name)
+            let rhsPreferredIndex = preferredLANInterfaceIndex(rhs.element.name)
+            if lhsPreferredIndex != rhsPreferredIndex {
+                return lhsPreferredIndex < rhsPreferredIndex
+            }
+
+            return lhs.offset < rhs.offset
+        }?
+        .element
+        .address
+}
+
+private nonisolated func lanIPv4CandidateRank(_ candidate: LANIPv4Candidate) -> Int {
+    let name = candidate.name
+    let isPrivate = isRFC1918IPv4Address(candidate.address)
+
+    if isTunnelInterface(name) {
+        return 5
     }
-    return candidates.first?.address
+    if isPrivate, isEthernetInterface(name) {
+        return 0
+    }
+    if isPrivate, isPhysicalOrBridgeInterface(name) {
+        return 1
+    }
+    if isPrivate {
+        return 2
+    }
+    if preferredLANInterfaceIndex(name) != Int.max {
+        return 3
+    }
+    return 4
+}
+
+private nonisolated func preferredLANInterfaceIndex(_ name: String) -> Int {
+    preferredLANInterfaces.firstIndex(of: name) ?? Int.max
+}
+
+private nonisolated func isEthernetInterface(_ name: String) -> Bool {
+    name.hasPrefix("en")
+}
+
+private nonisolated func isPhysicalOrBridgeInterface(_ name: String) -> Bool {
+    name.hasPrefix("bridge") || name.hasPrefix("pdp_ip")
+}
+
+private nonisolated func isTunnelInterface(_ name: String) -> Bool {
+    name.hasPrefix("utun")
+}
+
+private nonisolated func isRFC1918IPv4Address(_ address: String) -> Bool {
+    let octets = address.split(separator: ".").compactMap { Int($0) }
+    guard octets.count == 4 else { return false }
+
+    switch (octets[0], octets[1]) {
+    case (10, _):
+        return true
+    case (172, 16...31):
+        return true
+    case (192, 168):
+        return true
+    default:
+        return false
+    }
 }
 
 /// Returns a best-effort LAN IPv4 address for opening the local share page.

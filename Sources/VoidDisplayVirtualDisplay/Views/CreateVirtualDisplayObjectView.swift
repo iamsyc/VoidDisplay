@@ -67,7 +67,7 @@ package struct CreateVirtualDisplay: View {
         selectedAspectRatio.sizeInMillimeters(diagonalInches: screenDiagonal)
     }
     
-    private var maxPixelDimensions: (width: UInt32, height: UInt32) {
+    private var maxPixelDimensions: CreateVirtualDisplayInputValidator.MaxPixelDimensionsResult {
         CreateVirtualDisplayInputValidator.maxPixelDimensions(for: selectedModes)
     }
     
@@ -386,13 +386,20 @@ package struct CreateVirtualDisplay: View {
     
     private func createDisplayAction() {
         let size = physicalSize
+        guard case .resolved(let maxPixelWidth, let maxPixelHeight) = maxPixelDimensions else {
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Error"),
+                message: String(localized: "Please enter valid resolution values.")
+            )
+            return
+        }
         
         do {
             _ = try virtualDisplay.createDisplay(
                 name: name,
                 serialNum: serialNum,
                 physicalSize: CGSize(width: size.width, height: size.height),
-                maxPixels: maxPixelDimensions,
+                maxPixels: (width: maxPixelWidth, height: maxPixelHeight),
                 modes: selectedModes
             )
             isShow = false

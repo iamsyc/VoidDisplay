@@ -400,7 +400,7 @@ struct ScreenCatalogOrchestratorTests {
 }
 
 private final class ScreenCatalogOrchestratorDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
 
     nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}

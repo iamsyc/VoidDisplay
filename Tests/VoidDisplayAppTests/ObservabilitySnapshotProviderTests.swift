@@ -17,7 +17,7 @@ private final class SnapshotProviderMockSharingPortPreferences: SharingPortPrefe
 }
 
 private final class SnapshotProviderDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
     nonisolated let metricsSnapshot: DisplayCaptureMetricsSnapshot
 

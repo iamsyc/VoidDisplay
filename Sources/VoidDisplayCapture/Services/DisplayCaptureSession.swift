@@ -53,8 +53,8 @@ private final class DisplayCaptureMetricsStore: Sendable {
     package let value = Mutex(DisplayCaptureMetrics())
 }
 package nonisolated struct DisplayCaptureStreamConfigurationState: Sendable, Equatable {
-    package let width: Int
-    package let height: Int
+    package var width: Int
+    package var height: Int
     package let maximumPreviewFramesPerSecond: Int
     package let queueDepth: Int
     package let capturesAudio: Bool
@@ -136,6 +136,8 @@ package actor DisplayCaptureStreamConfigurationCoordinator {
 
     package func applyDemandDrivenConfiguration(_ configuration: DisplayCaptureConfiguration) async throws -> Bool {
         try await applyMutation { state in
+            state.width = configuration.captureSize.width
+            state.height = configuration.captureSize.height
             state.profile = configuration.profile
             state.frameRateTier = configuration.frameRateTier
         }
@@ -322,8 +324,12 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
             qos: .userInitiated
         )
 
+        let displayMode = CGDisplayCopyDisplayMode(display.displayID)
+        let captureSizeContext = Self.captureSizeContext(display: display, displayMode: displayMode)
         let state = try await Self.makeStreamConfigurationState(
             display: display,
+            displayMode: displayMode,
+            captureSizeContext: captureSizeContext,
             showsCursor: false,
             initialProfile: initialProfile,
             initialPerformanceMode: initialPerformanceMode
@@ -342,11 +348,13 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         self.demandDriver = DisplayCaptureDemandDriver(
             initialConfiguration: .init(
                 profile: state.profile,
-                frameRateTier: state.frameRateTier
+                frameRateTier: state.frameRateTier,
+                captureSize: DisplayCaptureDimensions(width: state.width, height: state.height)
             ),
             initialDemand: DisplayCaptureDemandSnapshot(
                 performanceMode: initialPerformanceMode
             ),
+            captureSizeContext: captureSizeContext,
             minimumDwellNanoseconds: Self.minimumConfigurationDwellNanoseconds,
             applyImmediateDemand: { demand in
                 let changed = try await streamConfigurationCoordinator.applyImmediateDemand(demand)
@@ -411,7 +419,16 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         demandDriver.cancelAll()
         await streamConfigurationCoordinator.cancelPending()
         stopSharing()
-        try? await stream.stopCapture()
+        do {
+            try await stream.stopCapture()
+        } catch {
+            AppErrorMapper.logFailure(
+                "Stop screen capture stream",
+                error: error,
+                logger: AppLog.capture,
+                subsystem: .capture
+            )
+        }
     }
 
     nonisolated func handle(sampleBuffer: CMSampleBuffer, type: SCStreamOutputType) {
@@ -455,13 +472,16 @@ package extension DisplayCaptureSession {
 
     nonisolated private static func makeStreamConfigurationState(
         display: SCDisplay,
+        displayMode: CGDisplayMode?,
+        captureSizeContext: DisplayCaptureSizeContext,
         showsCursor: Bool,
         initialProfile: DisplayCaptureProfile,
         initialPerformanceMode: CapturePerformanceMode
     ) async throws -> DisplayCaptureStreamConfigurationState {
-        let displayMode = CGDisplayCopyDisplayMode(display.displayID)
-
-        let captureSize = preferredCaptureSize(display: display, displayMode: displayMode)
+        let captureSize = captureSizeContext.captureSize(
+            for: initialProfile,
+            performanceMode: initialPerformanceMode
+        )
         let previewFramesPerSecond = clampedPreviewFramesPerSecond(for: displayMode?.refreshRate ?? 60.0)
         let initialFrameRateTier = DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
             for: initialProfile,
@@ -481,15 +501,15 @@ package extension DisplayCaptureSession {
             shareCursorOverrideCount: 0
         )
         AppLog.capture.notice(
-            "Capture config display=\(display.displayID, privacy: .public) size=\(captureSize.width)x\(captureSize.height, privacy: .public)"
+            "Capture config display=\(display.displayID, privacy: .public) size=\(captureSize.width)x\(captureSize.height, privacy: .public) logical=\(captureSizeContext.logicalSize.width)x\(captureSizeContext.logicalSize.height, privacy: .public) physical=\(captureSizeContext.physicalSize.width)x\(captureSizeContext.physicalSize.height, privacy: .public)"
         )
         return state
     }
 
-    nonisolated private static func preferredCaptureSize(
+    nonisolated private static func captureSizeContext(
         display: SCDisplay,
         displayMode: CGDisplayMode?
-    ) -> (width: Int, height: Int) {
+    ) -> DisplayCaptureSizeContext {
         let modePixelWidth = displayMode.map { Int($0.pixelWidth) } ?? display.width
         let modePixelHeight = displayMode.map { Int($0.pixelHeight) } ?? display.height
         let modeLogicalWidth = displayMode.map { $0.width } ?? modePixelWidth
@@ -499,9 +519,15 @@ package extension DisplayCaptureSession {
         let scaledLogicalWidth = max(1, Int((CGFloat(modeLogicalWidth) * backingScale).rounded()))
         let scaledLogicalHeight = max(1, Int((CGFloat(modeLogicalHeight) * backingScale).rounded()))
 
-        return (
-            width: max(modePixelWidth, scaledLogicalWidth),
-            height: max(modePixelHeight, scaledLogicalHeight)
+        return DisplayCaptureSizeContext(
+            logicalSize: DisplayCaptureDimensions(
+                width: display.width > 0 ? display.width : modeLogicalWidth,
+                height: display.height > 0 ? display.height : modeLogicalHeight
+            ),
+            physicalSize: DisplayCaptureDimensions(
+                width: max(modePixelWidth, scaledLogicalWidth),
+                height: max(modePixelHeight, scaledLogicalHeight)
+            )
         )
     }
 

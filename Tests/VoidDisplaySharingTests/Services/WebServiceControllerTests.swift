@@ -146,7 +146,7 @@ struct WebServiceControllerTests {
             sut: sut,
             requestedPort: port,
             targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         ) else {
             return
         }
@@ -262,7 +262,7 @@ struct WebServiceControllerTests {
             sut: sut,
             requestedPort: secondPort,
             targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         ) else {
             return
         }
@@ -307,7 +307,7 @@ struct WebServiceControllerTests {
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState = { _ in .unknown },
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { $0 },
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub? = { _ in nil }
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)? = { _ in nil }
     ) async -> (startTask: Task<WebServiceStartResult, Never>, server: ControlledWebServiceServer)? {
         let existingServerCount = harness.createdServers.count
         let startTask = Task {
@@ -388,7 +388,7 @@ private final class WebServiceServerHarness {
         _: NWEndpoint.Port,
         _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        _: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         _: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {

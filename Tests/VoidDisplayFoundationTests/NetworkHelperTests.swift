@@ -28,7 +28,7 @@ struct NetworkHelperTests {
         #expect(selected == "192.168.1.99")
     }
 
-    @Test func selectPreferredLANIPv4AddressFallsBackToFirstCandidate() {
+    @Test func selectPreferredLANIPv4AddressFallsBackToFirstTunnelCandidateWhenOnlyTunnelsExist() {
         let candidates = [
             LANIPv4Candidate(name: "utun3", address: "100.64.0.3"),
             LANIPv4Candidate(name: "utun4", address: "100.64.0.4")
@@ -37,6 +37,39 @@ struct NetworkHelperTests {
         let selected = selectPreferredLANIPv4Address(from: candidates)
 
         #expect(selected == "100.64.0.3")
+    }
+
+    @Test func selectPreferredLANIPv4AddressPrefersPrivateEthernetOverEarlierTunnel() {
+        let candidates = [
+            LANIPv4Candidate(name: "utun3", address: "10.8.0.2"),
+            LANIPv4Candidate(name: "en1", address: "192.168.1.20")
+        ]
+
+        let selected = selectPreferredLANIPv4Address(from: candidates)
+
+        #expect(selected == "192.168.1.20")
+    }
+
+    @Test func selectPreferredLANIPv4AddressPrefersPrivateBridgeOverPublicPreferredInterface() {
+        let candidates = [
+            LANIPv4Candidate(name: "en0", address: "203.0.113.5"),
+            LANIPv4Candidate(name: "bridge0", address: "192.168.64.1")
+        ]
+
+        let selected = selectPreferredLANIPv4Address(from: candidates)
+
+        #expect(selected == "192.168.64.1")
+    }
+
+    @Test func selectPreferredLANIPv4AddressPrefersOtherPrivateAddressOverPublicPreferredInterface() {
+        let candidates = [
+            LANIPv4Candidate(name: "en0", address: "203.0.113.5"),
+            LANIPv4Candidate(name: "usb0", address: "172.16.0.5")
+        ]
+
+        let selected = selectPreferredLANIPv4Address(from: candidates)
+
+        #expect(selected == "172.16.0.5")
     }
 
     @Test func selectPreferredLANIPv4AddressReturnsNilForEmptyCandidates() {

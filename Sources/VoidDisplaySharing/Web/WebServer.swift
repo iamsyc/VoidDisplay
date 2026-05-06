@@ -83,7 +83,7 @@ package final class WebServer {
         let target: ShareTarget
         let clientID: String
         let connection: NWConnection
-        let sessionHub: WebRTCSessionHub
+        let sessionHub: any SignalSessionHub
     }
 
     private var listener: NWListener?
@@ -93,7 +93,7 @@ package final class WebServer {
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
     private let concreteTargetResolver: @MainActor @Sendable (ShareTarget) -> ShareTarget?
-    private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?
+    private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?
     private let sharingEventSink: @Sendable (SharingSessionEvent) -> Void
     private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     private var didNotifyListenerStopped = false
@@ -108,7 +108,7 @@ package final class WebServer {
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
@@ -299,7 +299,7 @@ package final class WebServer {
         }
     }
 
-    private func sessionHub(for target: ShareTarget) -> WebRTCSessionHub? {
+    private func sessionHub(for target: ShareTarget) -> (any SignalSessionHub)? {
         sessionHubProvider(target)
     }
 
@@ -491,7 +491,7 @@ package final class WebServer {
     nonisolated private func startSignalReceiveLoop(
         on connection: NWConnection,
         target: ShareTarget,
-        sessionHub: WebRTCSessionHub
+        sessionHub: any SignalSessionHub
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             if let error = error {

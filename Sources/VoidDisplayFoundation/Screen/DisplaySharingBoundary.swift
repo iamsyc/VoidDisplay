@@ -86,8 +86,9 @@ package final class DisplayShareSubscription: Sendable {
             return current
         }
         guard let closure else { return }
+        let releasePreparedShare = releasePreparedShareClosure
         if let pendingRetainTask {
-            Task.detached { [self] in
+            Task.detached {
                 var needsRelease = hasRetained
                 do {
                     let didRetain = try await pendingRetainTask.value
@@ -95,7 +96,7 @@ package final class DisplayShareSubscription: Sendable {
                 } catch {
                 }
                 if needsRelease {
-                    await releasePreparedShareClosure()
+                    await releasePreparedShare()
                 }
                 closure()
             }
@@ -103,7 +104,7 @@ package final class DisplayShareSubscription: Sendable {
         }
         Task {
             if hasRetained {
-                await releasePreparedShareClosure()
+                await releasePreparedShare()
             }
             closure()
         }

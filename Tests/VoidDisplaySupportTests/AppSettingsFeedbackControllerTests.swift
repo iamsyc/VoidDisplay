@@ -237,7 +237,7 @@ struct AppSettingsFeedbackControllerTests {
             historyFileURL: tempURL.appendingPathComponent("support-history.json"),
             exportsDirectoryURL: exportsURL
         )
-        historyStore.saveRecords([
+        try historyStore.saveRecords([
             SupportExportRecord(
                 exportedAt: Date(timeIntervalSince1970: 1_713_613_500),
                 issueType: .performanceIssue,
@@ -264,6 +264,38 @@ struct AppSettingsFeedbackControllerTests {
         #expect(controller.latestExportRecord?.bundleFileName == bundleURL.lastPathComponent)
         #expect(controller.completionRecord?.bundleFileName == bundleURL.lastPathComponent)
         #expect(controller.exportCompleted)
+    }
+
+    @Test func exportHistoryWriteFailureKeepsInMemoryCompletionState() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "feedback-controller-history-write-failure")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
+        let historyFileURL = tempURL.appendingPathComponent("support-history.json")
+        try FileManager.default.createDirectory(at: historyFileURL, withIntermediateDirectories: false)
+        let bundleURL = exportsURL.appendingPathComponent("support-bundle-history-write-failure.zip")
+        let controller = AppSettingsFeedbackController(
+            historyStore: SupportHistoryStore(
+                historyFileURL: historyFileURL,
+                exportsDirectoryURL: exportsURL
+            ),
+            exportAction: { _, _ in
+                try FileManager.default.createDirectory(
+                    at: exportsURL,
+                    withIntermediateDirectories: true
+                )
+                try Data("bundle".utf8).write(to: bundleURL)
+                return bundleURL
+            }
+        )
+        controller.happened = "History write fails"
+
+        await controller.exportSupportBundle()
+
+        #expect(controller.exportCompleted)
+        #expect(controller.completionRecord?.bundleFileName == bundleURL.lastPathComponent)
+        #expect(controller.exportHistory.map(\.bundleFileName) == [bundleURL.lastPathComponent])
+        #expect(FileManager.default.fileExists(atPath: historyFileURL.path))
     }
 
     @Test func supportEventsUseSupportDomainAndMetadata() async throws {

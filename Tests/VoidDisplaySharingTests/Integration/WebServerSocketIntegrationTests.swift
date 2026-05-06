@@ -5,26 +5,6 @@ import Darwin
 import JavaScriptCore
 import Testing
 
-private final class IntegrationAutoConnectingPeer: @unchecked Sendable, WebRTCPeerSessioning {
-    private let onConnected: @Sendable () -> Void
-
-    init(onConnected: @escaping @Sendable () -> Void) {
-        self.onConnected = onConnected
-    }
-
-    nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
-        _ = profile
-    }
-
-    nonisolated func handleRemoteOffer(sdp _: String) {
-        onConnected()
-    }
-
-    nonisolated func addRemoteCandidate(sdp _: String, sdpMid _: String?, sdpMLineIndex _: Int32) {}
-
-    nonisolated func close() {}
-}
-
 @MainActor
 @Suite(.serialized)
 struct WebServerSocketIntegrationTests {
@@ -51,7 +31,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func liveRouteUpgradesToWebSocketWhenTargetActive() async throws {
-        let sessionHub = WebRTCSessionHub()
+        let sessionHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
@@ -86,7 +66,7 @@ struct WebServerSocketIntegrationTests {
     @Test func streamRouteReturnsNotFound() async throws {
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         )
         let server = setup.server
         let portValue = setup.port
@@ -116,7 +96,7 @@ struct WebServerSocketIntegrationTests {
                     nil
                 }
             },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         )
         let server = setup.server
         let portValue = setup.port
@@ -138,6 +118,11 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains(#"document.title = t("pageTitle");"#))
         #expect(responseText.contains(#"function applyScaleMode() {"#))
         #expect(responseText.contains(#"function syncFullscreenButtonLabel() {"#))
+        #expect(responseText.contains(#"function localOfferSDPWithIceCredentials() {"#))
+        #expect(responseText.contains(#"async function waitForLocalOfferSDP() {"#))
+        #expect(responseText.contains(#"peer.addTransceiver("video", { direction: "recvonly" });"#))
+        #expect(responseText.contains(#"sdp: await waitForLocalOfferSDP()"#))
+        #expect(!responseText.contains(#"sdp: offer.sdp"#))
         #expect(responseText.contains(#"const reconnectDelays = [250, 500, 1000, 2000, 4000];"#))
         #expect(responseText.contains(#"function scheduleReconnect() {"#))
         #expect(responseText.contains(#"peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });"#))
@@ -162,7 +147,7 @@ struct WebServerSocketIntegrationTests {
     @Test func secondaryDisplayRouteAlsoUsesGenericPageTitle() async throws {
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         )
         let server = setup.server
         let portValue = setup.port
@@ -193,7 +178,7 @@ struct WebServerSocketIntegrationTests {
                     nil
                 }
             },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         )
         let server = setup.server
         let portValue = setup.port
@@ -214,7 +199,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
-        let sessionHub = WebRTCSessionHub()
+        let sessionHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
@@ -243,7 +228,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func clientCloseFrameRemovesActiveClient() async throws {
-        let sessionHub = WebRTCSessionHub()
+        let sessionHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
@@ -277,7 +262,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func clientCloseFrameLeavesNoGhostClientsInSharingSnapshot() async throws {
-        let sessionHub = WebRTCSessionHub()
+        let sessionHub = TestSignalSessionHub()
         let aggregator = SharingStateAggregator()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
@@ -322,11 +307,7 @@ struct WebServerSocketIntegrationTests {
 
     @Test func sameTargetPeersAccumulateStreamingCounts() async throws {
         let aggregator = SharingStateAggregator()
-        let sessionHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
+        let sessionHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
@@ -387,16 +368,8 @@ struct WebServerSocketIntegrationTests {
 
     @Test func simultaneousTargetsKeepPerTargetSharingCountsIsolated() async throws {
         let aggregator = SharingStateAggregator()
-        let mainHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
-        let secondaryHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
+        let mainHub = TestSignalSessionHub()
+        let secondaryHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 switch target {
@@ -462,16 +435,8 @@ struct WebServerSocketIntegrationTests {
 
     @Test func aliasConnectionCleanupStaysBoundToOriginalConcreteTargetAfterMainSwitch() async throws {
         let aggregator = SharingStateAggregator()
-        let originalHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
-        let replacementHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
+        let originalHub = TestSignalSessionHub()
+        let replacementHub = TestSignalSessionHub()
         let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
@@ -547,11 +512,7 @@ struct WebServerSocketIntegrationTests {
 
     @Test func existingAliasConnectionKeepsBoundHubAfterMainMappingChanges() async throws {
         let aggregator = SharingStateAggregator()
-        let sessionHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
+        let sessionHub = TestSignalSessionHub()
         let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
@@ -626,16 +587,8 @@ struct WebServerSocketIntegrationTests {
 
     @Test func targetedDisconnectRemovesOnlyMatchingConnections() async throws {
         let aggregator = SharingStateAggregator()
-        let mainHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
-        let secondaryHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
+        let mainHub = TestSignalSessionHub()
+        let secondaryHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 switch target {
@@ -719,11 +672,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func tenClientsOnSameTargetCanConnectAndDisconnectCleanly() async throws {
-        let sessionHub = WebRTCSessionHub(
-            peerFactory: { callbacks, _ in
-                IntegrationAutoConnectingPeer(onConnected: callbacks.onConnected)
-            }
-        )
+        let sessionHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
@@ -789,7 +738,7 @@ struct WebServerSocketIntegrationTests {
     }
 
     @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
-        let sessionHub = WebRTCSessionHub()
+        let sessionHub = TestSignalSessionHub()
         let setup = try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown

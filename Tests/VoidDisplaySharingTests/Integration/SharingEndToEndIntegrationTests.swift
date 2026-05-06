@@ -6,7 +6,7 @@ import ScreenCaptureKit
 import Testing
 
 private final class EndToEndFakeShare: @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
 }
 
 private final class EndToEndMockSCDisplayBox: NSObject {

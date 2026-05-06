@@ -4,14 +4,16 @@ import CoreVideo
 import Testing
 
 private func makeTestStreamConfigurationState(
+    width: Int = 1920,
+    height: Int = 1080,
     profile: DisplayCaptureProfile = .mixed,
     frameRateTier: DisplayCaptureFrameRateTier = .fps45,
     previewShowsCursor: Bool = false,
     shareCursorOverrideCount: Int = 0
 ) -> DisplayCaptureStreamConfigurationState {
     DisplayCaptureStreamConfigurationState(
-        width: 1920,
-        height: 1080,
+        width: width,
+        height: height,
         maximumPreviewFramesPerSecond: 60,
         queueDepth: 2,
         capturesAudio: false,
@@ -244,7 +246,7 @@ struct DisplayCaptureProfileStateMachineTests {
             DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
                 for: .mixed,
                 performanceMode: .automatic
-            ) == .fps45
+            ) == .fps60
         )
         #expect(
             DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
@@ -260,9 +262,45 @@ struct DisplayCaptureProfileStateMachineTests {
         )
     }
 
-    @Test func automaticMixedModeDropsTo30AfterTwoPressureWindows() {
+    @Test func captureSizeContextAppliesSharedPixelBudgetByPerformanceMode() {
+        let context = DisplayCaptureSizeContext(
+            logicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080),
+            physicalSize: DisplayCaptureDimensions(width: 3_840, height: 2_160)
+        )
+
+        #expect(context.captureSize(for: .previewOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
+        #expect(context.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_560, height: 1_440))
+        #expect(context.captureSize(for: .mixed, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_560, height: 1_440))
+        #expect(context.captureSize(for: .shareOnly, performanceMode: .powerEfficient) == DisplayCaptureDimensions(width: 1_920, height: 1_080))
+        #expect(context.captureSize(for: .shareOnly, performanceMode: .smooth) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
+    }
+
+    @Test func captureSizeContextKeepsSharedDimensionsUnderPixelBudget() {
+        let context = DisplayCaptureSizeContext(
+            logicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080),
+            physicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080)
+        )
+
+        #expect(context.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 1_920, height: 1_080))
+    }
+
+    @Test func captureSizeContextPreservesAspectRatioAndEvenDimensions() {
+        let wideContext = DisplayCaptureSizeContext(
+            logicalSize: DisplayCaptureDimensions(width: 3_440, height: 1_440),
+            physicalSize: DisplayCaptureDimensions(width: 3_440, height: 1_440)
+        )
+        let portraitContext = DisplayCaptureSizeContext(
+            logicalSize: DisplayCaptureDimensions(width: 1_081, height: 1_921),
+            physicalSize: DisplayCaptureDimensions(width: 2_161, height: 3_841)
+        )
+
+        #expect(wideContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_968, height: 1_242))
+        #expect(portraitContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 1_440, height: 2_560))
+    }
+
+    @Test func automaticMixedModeKeeps60AcrossPreviewPressureWindows() {
         var coordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
             demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
         )
 
@@ -290,18 +328,12 @@ struct DisplayCaptureProfileStateMachineTests {
             nowNs: 2,
             minimumDwellNanoseconds: 0
         )
-        switch secondDecision {
-        case .applyNow(let configuration):
-            #expect(configuration.profile == .mixed)
-            #expect(configuration.frameRateTier == .fps30)
-        default:
-            Issue.record("Expected automatic mixed mode to drop to 30fps, got \(String(describing: secondDecision))")
-        }
+        #expect(secondDecision == .noChange)
     }
 
-    @Test func automaticMixedModeRisesBackTo60AcrossStableWindows() {
+    @Test func automaticMixedModeKeeps60AcrossStableWindows() {
         var coordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
+            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
             demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
         )
 
@@ -317,7 +349,7 @@ struct DisplayCaptureProfileStateMachineTests {
             minimumDwellNanoseconds: 0
         )
         #expect(pressureDecision == .noChange)
-        let downgradeDecision = coordinator.recordPreviewPerformanceSample(
+        let secondPressureDecision = coordinator.recordPreviewPerformanceSample(
             .init(
                 renderedFrameCount: 70,
                 droppedFrameCount: 30,
@@ -328,19 +360,9 @@ struct DisplayCaptureProfileStateMachineTests {
             nowNs: 2,
             minimumDwellNanoseconds: 0
         )
-        guard case .applyNow(let downgradedConfiguration) = downgradeDecision else {
-            Issue.record("Expected downgrade to 30fps before stable-window recovery.")
-            return
-        }
-        #expect(downgradedConfiguration.frameRateTier == .fps30)
+        #expect(secondPressureDecision == .noChange)
 
-        let postDowngradeDecision = coordinator.finishAppliedTransition(
-            at: 3,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(postDowngradeDecision == .noChange)
-
-        for index in 0..<3 {
+        for index in 0..<4 {
             let stableDecision = coordinator.recordPreviewPerformanceSample(
                 .init(
                     renderedFrameCount: 100,
@@ -353,65 +375,6 @@ struct DisplayCaptureProfileStateMachineTests {
                 minimumDwellNanoseconds: 0
             )
             #expect(stableDecision == .noChange)
-        }
-
-        let fourthStableDecision = coordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 100,
-                droppedFrameCount: 0,
-                latestRenderLatencyMilliseconds: 10,
-                pendingSlotOccupied: false,
-                capturedAt: 14
-            ),
-            nowNs: 14,
-            minimumDwellNanoseconds: 0
-        )
-        switch fourthStableDecision {
-        case .applyNow(let configuration):
-            #expect(configuration.profile == .mixed)
-            #expect(configuration.frameRateTier == .fps45)
-        default:
-            Issue.record("Expected recovery to 45fps after four stable windows, got \(String(describing: fourthStableDecision))")
-        }
-
-        let postRecoveryDecision = coordinator.finishAppliedTransition(
-            at: 15,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(postRecoveryDecision == .noChange)
-
-        for index in 0..<3 {
-            let stableDecision = coordinator.recordPreviewPerformanceSample(
-                .init(
-                    renderedFrameCount: 100,
-                    droppedFrameCount: 0,
-                    latestRenderLatencyMilliseconds: 10,
-                    pendingSlotOccupied: false,
-                    capturedAt: UInt64(20 + index)
-                ),
-                nowNs: UInt64(20 + index),
-                minimumDwellNanoseconds: 0
-            )
-            #expect(stableDecision == .noChange)
-        }
-
-        let eighthStableDecision = coordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 100,
-                droppedFrameCount: 0,
-                latestRenderLatencyMilliseconds: 10,
-                pendingSlotOccupied: false,
-                capturedAt: 24
-            ),
-            nowNs: 24,
-            minimumDwellNanoseconds: 0
-        )
-        switch eighthStableDecision {
-        case .applyNow(let configuration):
-            #expect(configuration.profile == .mixed)
-            #expect(configuration.frameRateTier == .fps60)
-        default:
-            Issue.record("Expected recovery to 60fps after another four stable windows, got \(String(describing: eighthStableDecision))")
         }
     }
 
@@ -508,6 +471,63 @@ struct DisplayCaptureProfileStateMachineTests {
         }
     }
 
+    @Test func performanceModeUpdateRecomputesSharedCaptureSize() {
+        let context = DisplayCaptureSizeContext(
+            logicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080),
+            physicalSize: DisplayCaptureDimensions(width: 3_840, height: 2_160)
+        )
+        var coordinator = DisplayCaptureConfigurationCoordinatorState(
+            committedConfiguration: .init(
+                profile: .mixed,
+                frameRateTier: .fps60,
+                captureSize: DisplayCaptureDimensions(width: 2_560, height: 1_440)
+            ),
+            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1),
+            captureSizeContext: context
+        )
+
+        let smoothDecision = coordinator.updateDemand(
+            makeDemand(
+                attachedPreviewSinkCount: 1,
+                shareTokenCount: 1,
+                performanceMode: .smooth
+            ),
+            nowNs: 1,
+            minimumDwellNanoseconds: 0
+        )
+        switch smoothDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps60)
+            #expect(configuration.captureSize == DisplayCaptureDimensions(width: 3_840, height: 2_160))
+        default:
+            Issue.record("Expected smooth mode update to apply full capture size, got \(String(describing: smoothDecision))")
+        }
+
+        _ = coordinator.finishAppliedTransition(
+            at: 2,
+            minimumDwellNanoseconds: 0
+        )
+
+        let powerDecision = coordinator.updateDemand(
+            makeDemand(
+                attachedPreviewSinkCount: 1,
+                shareTokenCount: 1,
+                performanceMode: .powerEfficient
+            ),
+            nowNs: 3,
+            minimumDwellNanoseconds: 0
+        )
+        switch powerDecision {
+        case .applyNow(let configuration):
+            #expect(configuration.profile == .mixed)
+            #expect(configuration.frameRateTier == .fps30)
+            #expect(configuration.captureSize == DisplayCaptureDimensions(width: 1_920, height: 1_080))
+        default:
+            Issue.record("Expected power mode update to apply budgeted capture size, got \(String(describing: powerDecision))")
+        }
+    }
+
     @Test func committedTransitionUpdatesDwellBeforeReevaluatingPendingDemand() {
         var coordinator = DisplayCaptureProfileCoordinatorState(
             committedProfile: .previewOnly,
@@ -562,6 +582,29 @@ struct DisplayCaptureProfileStateMachineTests {
 
         #expect(lifetime.allowsExecution(for: initialGeneration) == false)
         #expect(lifetime.allowsExecution(for: lifetime.currentGeneration))
+    }
+
+    @Test func streamConfigurationCoordinatorUpdatesCaptureDimensionsFromDemandConfiguration() async throws {
+        let recorder = StreamConfigurationRecorder()
+        let coordinator = DisplayCaptureStreamConfigurationCoordinator(
+            initialState: makeTestStreamConfigurationState(),
+            applier: { state in
+                await recorder.record(state)
+            }
+        )
+
+        let changed = try await coordinator.applyDemandDrivenConfiguration(
+            .init(
+                profile: .mixed,
+                frameRateTier: .fps60,
+                captureSize: DisplayCaptureDimensions(width: 2_560, height: 1_440)
+            )
+        )
+        let committedState = await coordinator.committedStateSnapshot()
+
+        #expect(changed)
+        #expect(committedState == makeTestStreamConfigurationState(width: 2_560, height: 1_440, frameRateTier: .fps60))
+        #expect(await recorder.snapshot() == [makeTestStreamConfigurationState(width: 2_560, height: 1_440, frameRateTier: .fps60)])
     }
 
     @Test func streamConfigurationCoordinatorPreservesOverlappingChanges() async throws {

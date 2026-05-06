@@ -17,6 +17,7 @@ target_arch="$2"
 webrtc_framework="${app_path}/Contents/Frameworks/WebRTC.framework"
 root_webrtc_binary="${webrtc_framework}/WebRTC"
 root_webrtc_was_symlink=false
+relay_binary="${app_path}/Contents/Resources/voiddisplay-relay"
 
 if [ ! -d "${app_path}" ]; then
   echo "Expected app not found: ${app_path}" >&2
@@ -25,6 +26,16 @@ fi
 
 if [ ! -d "${webrtc_framework}" ]; then
   echo "Expected WebRTC framework not found: ${webrtc_framework}" >&2
+  exit 1
+fi
+
+if [ ! -f "${relay_binary}" ]; then
+  echo "Expected relay binary not found: ${relay_binary}" >&2
+  exit 1
+fi
+
+if [ ! -x "${relay_binary}" ]; then
+  echo "Expected relay binary to be executable: ${relay_binary}" >&2
   exit 1
 fi
 
@@ -89,9 +100,17 @@ if [ "${root_webrtc_was_symlink}" = true ] && [ ! -L "${root_webrtc_binary}" ]; 
   exit 1
 fi
 
+relay_archs="$(lipo -archs "${relay_binary}")"
+if [ "${relay_archs}" != "${target_arch}" ]; then
+  echo "Relay binary arch mismatch. Expected ${target_arch}, got ${relay_archs}" >&2
+  exit 1
+fi
+
+codesign --force --sign - --timestamp=none "${relay_binary}"
 codesign --force --sign - --timestamp=none "${webrtc_framework}"
 codesign --force --sign - --timestamp=none --deep "${app_path}"
 codesign --verify --deep --strict --verbose=2 "${app_path}"
+codesign --verify --strict --verbose=2 "${relay_binary}"
 
 if [ ! -f "${app_path}/Contents/Info.plist" ]; then
   echo "Expected Info.plist not found under app bundle: ${app_path}" >&2
@@ -118,8 +137,10 @@ fi
 
 app_archs="$(lipo -archs "${app_binary}")"
 webrtc_archs="$(lipo -archs "${webrtc_binary_real}")"
+relay_archs="$(lipo -archs "${relay_binary}")"
 echo "App binary archs: ${app_archs}"
 echo "WebRTC binary archs: ${webrtc_archs}"
+echo "Relay binary archs: ${relay_archs}"
 
 if [ "${app_archs}" != "${target_arch}" ]; then
   echo "App binary arch mismatch. Expected ${target_arch}, got ${app_archs}" >&2
@@ -128,5 +149,10 @@ fi
 
 if [ "${webrtc_archs}" != "${target_arch}" ]; then
   echo "WebRTC binary arch mismatch. Expected ${target_arch}, got ${webrtc_archs}" >&2
+  exit 1
+fi
+
+if [ "${relay_archs}" != "${target_arch}" ]; then
+  echo "Relay binary arch mismatch. Expected ${target_arch}, got ${relay_archs}" >&2
   exit 1
 fi

@@ -10,7 +10,7 @@ import ScreenCaptureKit
 import Testing
 
 private final class CaptureControllerDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
 
     nonisolated(unsafe) var attachedSinkCount = 0

@@ -7,7 +7,11 @@ package struct CreateVirtualDisplayInputValidator {
     package static let maxPixelHeightLimit: UInt32 = 8_192
     package static let maxPixelCountLimit: UInt64 = 67_108_864
 
-    private static let fallbackMaxPixels: (width: UInt32, height: UInt32) = (1920, 1080)
+    package enum MaxPixelDimensionsResult: Equatable {
+        case resolved(width: UInt32, height: UInt32)
+        case invalidValues
+    }
+
     package enum AddModeResult: Equatable {
         case appended([ResolutionSelection])
         case duplicate
@@ -41,10 +45,10 @@ package struct CreateVirtualDisplayInputValidator {
         return appendIfUnique(mode: newMode, to: modes)
     }
 
-    package static func maxPixelDimensions(for modes: [ResolutionSelection]) -> (width: UInt32, height: UInt32) {
+    package static func maxPixelDimensions(for modes: [ResolutionSelection]) -> MaxPixelDimensionsResult {
         let validModes = modes.filter { $0.width > 0 && $0.height > 0 }
         guard let maxMode = validModes.max(by: { pixelArea(of: $0) < pixelArea(of: $1) }) else {
-            return fallbackMaxPixels
+            return .invalidValues
         }
 
         let scale: UInt64 = validModes.contains { $0.enableHiDPI } ? 2 : 1
@@ -53,13 +57,13 @@ package struct CreateVirtualDisplayInputValidator {
         let (scaledWidth, widthOverflow) = baseWidth.multipliedReportingOverflow(by: scale)
         let (scaledHeight, heightOverflow) = baseHeight.multipliedReportingOverflow(by: scale)
         guard !widthOverflow, !heightOverflow else {
-            return fallbackMaxPixels
+            return .invalidValues
         }
         guard isWithinMaxPixelLimits(width: scaledWidth, height: scaledHeight) else {
-            return fallbackMaxPixels
+            return .invalidValues
         }
 
-        return (UInt32(scaledWidth), UInt32(scaledHeight))
+        return .resolved(width: UInt32(scaledWidth), height: UInt32(scaledHeight))
     }
 
     package static func defaultName(baseName: String, serialNum: UInt32) -> String {

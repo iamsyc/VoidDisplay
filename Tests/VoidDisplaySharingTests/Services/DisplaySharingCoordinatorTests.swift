@@ -6,7 +6,7 @@ import ScreenCaptureKit
 import Testing
 
 private final class DisplaySharingCoordinatorDummyShare: @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
 
     private let retainGate: DisplaySharingCoordinatorAsyncGate?
     private let releaseCounter: DisplaySharingCoordinatorCounter?

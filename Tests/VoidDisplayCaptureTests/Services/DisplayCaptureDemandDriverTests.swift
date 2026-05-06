@@ -114,8 +114,8 @@ struct DisplayCaptureDemandDriverTests {
         #expect(recorder.immediateDemands.last == demand)
         #expect(
             await waitUntil {
-                recorder.configurations == [.init(profile: .mixed, frameRateTier: .fps45)] &&
-                    recorder.appliedConfigurations == [.init(profile: .mixed, frameRateTier: .fps45)]
+                recorder.configurations == [.init(profile: .mixed, frameRateTier: .fps60)] &&
+                    recorder.appliedConfigurations == [.init(profile: .mixed, frameRateTier: .fps60)]
             }
         )
         #expect(recorder.failureCount == 0)
@@ -165,7 +165,7 @@ struct DisplayCaptureDemandDriverTests {
             await waitUntil {
                 recorder.configurations == [
                     .init(profile: .shareOnly, frameRateTier: .fps60),
-                    .init(profile: .mixed, frameRateTier: .fps45)
+                    .init(profile: .mixed, frameRateTier: .fps60)
                 ]
             }
         )
@@ -260,11 +260,11 @@ struct DisplayCaptureDemandDriverTests {
         )
     }
 
-    @Test func previewPressureSamplesDriveAutomaticMixedDowngrade() async {
+    @Test func previewPressureSamplesKeepAutomaticMixedAt60() async {
         let timeSource = DemandDriverTimeSource(1)
         let recorder = DemandDriverRecorder()
         let driver = DisplayCaptureDemandDriver(
-            initialConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
+            initialConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
             initialDemand: makeDriverDemand(
                 attachedPreviewSinkCount: 1,
                 shareTokenCount: 1
@@ -305,8 +305,8 @@ struct DisplayCaptureDemandDriverTests {
         )
 
         #expect(
-            await waitUntil {
-                recorder.configurations == [.init(profile: .mixed, frameRateTier: .fps30)]
+            await staysTrue(timeoutNanoseconds: 10_000_000) {
+                recorder.configurations.isEmpty
             }
         )
     }

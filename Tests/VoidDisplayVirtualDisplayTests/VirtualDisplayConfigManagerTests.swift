@@ -55,6 +55,21 @@ struct VirtualDisplayConfigManagerTests {
     }
 
     @Test
+    func updateConfigMissingConfigThrowsConfigNotFound() {
+        let store = FakeVirtualDisplayStore()
+        let manager = makeManager(store: store)
+
+        do {
+            try manager.updateConfig(makeConfig(serial: 11, name: "Missing"))
+            Issue.record("Expected configNotFound")
+        } catch VirtualDisplayOperationError.configNotFound {
+        } catch {
+            Issue.record("Expected configNotFound, got \(error)")
+        }
+        #expect(store.savedConfigs.isEmpty)
+    }
+
+    @Test
     func moveConfigSwapsAndPersists() throws {
         let store = FakeVirtualDisplayStore()
         let manager = makeManager(store: store)
@@ -101,6 +116,25 @@ struct VirtualDisplayConfigManagerTests {
         #expect(changed)
         #expect(manager.config(id: configA.id)?.desiredEnabled == false)
         #expect(manager.config(id: configB.id)?.desiredEnabled == true)
+    }
+
+    @Test
+    func setDesiredEnabledMissingConfigThrowsConfigNotFound() {
+        let store = FakeVirtualDisplayStore()
+        let manager = makeManager(store: store)
+
+        do {
+            try manager.setDesiredEnabled(
+                UUID(),
+                enabled: true,
+                reason: .userToggledDesiredEnabled
+            )
+            Issue.record("Expected configNotFound")
+        } catch VirtualDisplayOperationError.configNotFound {
+        } catch {
+            Issue.record("Expected configNotFound, got \(error)")
+        }
+        #expect(store.savedConfigs.isEmpty)
     }
 
     @Test
