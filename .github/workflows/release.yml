@@ -104,13 +104,19 @@ jobs:
             local target_sha="$2"
             local existing_tag_sha=""
 
-            git fetch --tags --force
-            existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${release_tag}^{commit}" 2>/dev/null || true)"
+            existing_tag_sha="$(find_existing_tag_sha "${release_tag}")"
 
             if [ -n "${existing_tag_sha}" ] && [ "${existing_tag_sha}" != "${target_sha}" ]; then
               echo "Tag ${release_tag} already points to ${existing_tag_sha}, expected ${target_sha}." >&2
               exit 1
             fi
+          }
+
+          find_existing_tag_sha() {
+            local release_tag="$1"
+
+            git fetch --tags --force
+            git rev-parse -q --verify "refs/tags/${release_tag}^{commit}" 2>/dev/null || true
           }
 
           if [ ! -f "${project_file}" ]; then
@@ -172,24 +178,30 @@ jobs:
                 previous_build_number="$(read_single_value_from_git CURRENT_PROJECT_VERSION "${BEFORE_SHA}" "${project_file}")"
 
                 if [ "${previous_version}" = "${version}" ]; then
-                  echo "should_release=false" >> "${GITHUB_OUTPUT}"
-                  echo "MARKETING_VERSION is unchanged at ${version}; skipping release."
-                  exit 0
-                fi
+                  existing_tag_sha="$(find_existing_tag_sha "${release_tag}")"
 
-                if [[ ! "${previous_build_number}" =~ ^[0-9]+$ ]]; then
-                  echo "Previous CURRENT_PROJECT_VERSION is invalid: ${previous_build_number}." >&2
-                  exit 1
-                fi
+                  if [ -n "${existing_tag_sha}" ]; then
+                    echo "should_release=false" >> "${GITHUB_OUTPUT}"
+                    echo "MARKETING_VERSION is unchanged at ${version}; ${release_tag} already exists at ${existing_tag_sha}. Skipping release."
+                    exit 0
+                  fi
 
-                if [ "${previous_build_number}" = "${build_number}" ]; then
-                  echo "CURRENT_PROJECT_VERSION must change when MARKETING_VERSION changes." >&2
-                  exit 1
-                fi
+                  echo "MARKETING_VERSION is unchanged at ${version}, but ${release_tag} does not exist. Continuing release."
+                else
+                  if [[ ! "${previous_build_number}" =~ ^[0-9]+$ ]]; then
+                    echo "Previous CURRENT_PROJECT_VERSION is invalid: ${previous_build_number}." >&2
+                    exit 1
+                  fi
 
-                if [ "${build_number}" -le "${previous_build_number}" ]; then
-                  echo "CURRENT_PROJECT_VERSION must increase from ${previous_build_number} to ${build_number}." >&2
-                  exit 1
+                  if [ "${previous_build_number}" = "${build_number}" ]; then
+                    echo "CURRENT_PROJECT_VERSION must change when MARKETING_VERSION changes." >&2
+                    exit 1
+                  fi
+
+                  if [ "${build_number}" -le "${previous_build_number}" ]; then
+                    echo "CURRENT_PROJECT_VERSION must increase from ${previous_build_number} to ${build_number}." >&2
+                    exit 1
+                  fi
                 fi
 
                 ensure_tag_matches_target_if_present "${release_tag}" "${target_sha}"
