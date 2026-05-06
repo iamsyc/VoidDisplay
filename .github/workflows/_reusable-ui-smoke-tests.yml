@@ -71,6 +71,12 @@ jobs:
         id: xcode
         uses: ./.github/actions/xcode-select
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: Tools/VoidDisplayRelay/go.mod
+          cache-dependency-path: Tools/VoidDisplayRelay/go.sum
+
       - name: Cache Xcode metadata
         uses: actions/cache@v5
         with:
