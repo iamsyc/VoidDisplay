@@ -77,6 +77,22 @@ jobs:
           go-version-file: Tools/VoidDisplayRelay/go.mod
           cache-dependency-path: Tools/VoidDisplayRelay/go.sum
 
+      - name: Download relay Go modules
+        working-directory: Tools/VoidDisplayRelay
+        env:
+          GOPROXY: https://proxy.golang.org|https://goproxy.cn|direct
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if go mod download; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
+
       - name: Cache Xcode metadata
         uses: actions/cache@v5
         with:
