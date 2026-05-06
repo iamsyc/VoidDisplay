@@ -15,13 +15,11 @@ private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessio
     nonisolated(unsafe) var lastShowsCursor: Bool?
     nonisolated(unsafe) var cursorUpdateError: Error?
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {
         attachedSinkCount += 1
     }
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {
         detachedSinkCount += 1
     }
 
@@ -39,9 +37,7 @@ private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessio
 }
 
 private final class CaptureMonitoringLifecyclePreviewSink: DisplayPreviewSink, @unchecked Sendable {
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
-    }
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
 private final class CaptureMonitoringLifecycleCancelCounter: @unchecked Sendable {
@@ -346,15 +342,11 @@ struct CaptureMonitoringLifecycleServiceTests {
         service.currentSessions = [record.session]
         let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
 
-        do {
+        await #expect(throws: CaptureMonitoringLifecycleControlledError.self) {
             try await lifecycle.setMonitoringSessionCapturesCursor(
                 id: record.session.id,
                 capturesCursor: true
             )
-            Issue.record("Expected cursor update failure.")
-        } catch is CaptureMonitoringLifecycleControlledError {
-        } catch {
-            Issue.record("Expected CaptureMonitoringLifecycleControlledError, got \(error)")
         }
 
         #expect(record.captureSession.cursorUpdateCount == 1)
@@ -455,12 +447,8 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(await waitForAcquirePreviewCall(gate, count: 1))
         await gate.release(call: 1)
 
-        do {
-            _ = try await firstTask.value
-            Issue.record("Expected first start to fail.")
-        } catch is CaptureMonitoringLifecycleControlledError {
-        } catch {
-            Issue.record("Expected CaptureMonitoringLifecycleControlledError, got \(error)")
+        await #expect(throws: CaptureMonitoringLifecycleControlledError.self) {
+            try await firstTask.value
         }
 
         let retryTask = Task { @MainActor in

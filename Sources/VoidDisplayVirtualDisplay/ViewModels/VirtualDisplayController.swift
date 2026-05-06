@@ -14,22 +14,23 @@ import OSLog
 @MainActor
 @Observable
 package final class VirtualDisplayController {
-    package private(set) var managedDisplays: [ManagedVirtualDisplayRuntimeSnapshot] = []
-    package private(set) var displayConfigs: [VirtualDisplayConfig] = []
-    package private(set) var runningConfigIds: Set<UUID> = []
-    package private(set) var restoreFailures: [VirtualDisplayRestoreFailure] = []
+    package var managedDisplays: [ManagedVirtualDisplayRuntimeSnapshot] { virtualDisplaySnapshot.managedDisplays }
+    package var displayConfigs: [VirtualDisplayConfig] { virtualDisplaySnapshot.configs }
+    package var runningConfigIds: Set<UUID> { virtualDisplaySnapshot.runningConfigIds }
+    package var restoreFailures: [VirtualDisplayRestoreFailure] { virtualDisplaySnapshot.restoreFailures }
     package var persistenceAlert: UserFacingAlertState?
-    package private(set) var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] = [:]
-    package private(set) var rebuildingConfigIds: Set<UUID> = []
-    package private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
-    package private(set) var recentlyAppliedConfigIds: Set<UUID> = []
-    package private(set) var configStorePresentation = VirtualDisplayConfigStorePresentation()
+    package var runtimeDisplayIDByConfigId: [UUID: CGDirectDisplayID] { virtualDisplaySnapshot.runtimeDisplayIDByConfigId }
+    package var rebuildingConfigIds: Set<UUID> { rebuildPresentationState.rebuildingConfigIds }
+    package var rebuildFailureMessageByConfigId: [UUID: String] { rebuildPresentationState.rebuildFailureMessageByConfigId }
+    package var recentlyAppliedConfigIds: Set<UUID> { rebuildPresentationState.recentlyAppliedConfigIds }
+    package var configStorePresentation: VirtualDisplayConfigStorePresentation { virtualDisplaySnapshot.configStorePresentation }
     package private(set) var rebuildRequestCount = 0
 
     @ObservationIgnored private let virtualDisplayFacade: any VirtualDisplayFacade
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
-    @ObservationIgnored private var rebuildPresentationState = RebuildPresentationState()
+    private var virtualDisplaySnapshot: VirtualDisplaySnapshot
+    private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
     @ObservationIgnored private let stopDependentStreamsBeforeRebuild: (CGDirectDisplayID) -> Void
     @ObservationIgnored private weak var observability: ObservabilityCenter?
@@ -41,10 +42,11 @@ package final class VirtualDisplayController {
         observability: ObservabilityCenter? = nil
     ) {
         self.virtualDisplayFacade = virtualDisplayFacade
+        self.virtualDisplaySnapshot = virtualDisplayFacade.snapshot
         self.appliedBadgeDisplayDuration = appliedBadgeDisplayDuration
         self.stopDependentStreamsBeforeRebuild = stopDependentStreamsBeforeRebuild
         self.observability = observability
-        syncVirtualDisplayState()
+        requestSnapshotRefresh()
     }
 
     package func loadPersistedConfigsAndRestoreDesiredVirtualDisplays() {
@@ -453,20 +455,11 @@ package final class VirtualDisplayController {
     }
 
     private func syncVirtualDisplayState() {
-        let snapshot = virtualDisplayFacade.snapshot
-        managedDisplays = snapshot.managedDisplays
-        displayConfigs = snapshot.configs
-        runningConfigIds = snapshot.runningConfigIds
-        restoreFailures = snapshot.restoreFailures
-        runtimeDisplayIDByConfigId = snapshot.runtimeDisplayIDByConfigId
-        configStorePresentation = snapshot.configStorePresentation
+        virtualDisplaySnapshot = virtualDisplayFacade.snapshot
         requestSnapshotRefresh()
     }
 
     private func syncRebuildPresentationState() {
-        rebuildingConfigIds = rebuildPresentationState.rebuildingConfigIds
-        rebuildFailureMessageByConfigId = rebuildPresentationState.rebuildFailureMessageByConfigId
-        recentlyAppliedConfigIds = rebuildPresentationState.recentlyAppliedConfigIds
         requestSnapshotRefresh()
     }
 

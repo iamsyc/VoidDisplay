@@ -8,13 +8,9 @@ import Testing
 private final class CaptureChooseDummySession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {}
 

@@ -1,10 +1,6 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
-@testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
-@testable import VoidDisplayObservability
-@testable import VoidDisplaySupport
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import CoreGraphics
@@ -14,7 +10,7 @@ import ScreenCaptureKit
 import Testing
 
 private final class CaptureControllerDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
 
     nonisolated(unsafe) var attachedSinkCount = 0
@@ -22,13 +18,11 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
     nonisolated(unsafe) var cursorUpdateCount = 0
     nonisolated(unsafe) var lastShowsCursor: Bool?
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {
         attachedSinkCount += 1
     }
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {
         detachedSinkCount += 1
     }
 
@@ -43,9 +37,7 @@ private final class CaptureControllerDummySession: DisplayCaptureSessioning, @un
 }
 
 private final class CaptureControllerPreviewSink: DisplayPreviewSink, @unchecked Sendable {
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
-    }
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
 private final class CaptureControllerMockSCDisplayBox: NSObject {
@@ -364,8 +356,8 @@ struct CaptureControllerTests {
         await gate.releaseOne()
 
         do {
-            _ = try await firstTask.value
-            Issue.record("Expected first monitoring start to be cancelled.")
+            let outcome = try await firstTask.value
+            Issue.record("Expected first monitoring start to be cancelled, got \(outcome).")
         } catch is CancellationError {
         } catch {
             Issue.record("Expected CancellationError, got \(error)")
@@ -405,8 +397,8 @@ struct CaptureControllerTests {
         )
 
         do {
-            _ = try await controller.startMonitoring(display: display, metadata: metadata)
-            Issue.record("Expected monitoring start to fail.")
+            let outcome = try await controller.startMonitoring(display: display, metadata: metadata)
+            Issue.record("Expected monitoring start to fail, got \(outcome).")
         } catch {
         }
 
@@ -445,8 +437,8 @@ struct CaptureControllerTests {
         await gate.releaseOne()
 
         do {
-            _ = try await task.value
-            Issue.record("Expected monitoring start to be cancelled.")
+            let outcome = try await task.value
+            Issue.record("Expected monitoring start to be cancelled, got \(outcome).")
         } catch is CancellationError {
         } catch {
             Issue.record("Expected CancellationError, got \(error)")

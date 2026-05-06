@@ -7,11 +7,6 @@ import Observation
 public enum CapturePerformancePreferenceKeys {
     public static let mode = "capture.performanceMode"
 }
-package enum CapturePerformanceMode: String, CaseIterable, Sendable {
-    case automatic
-    case smooth
-    case powerEfficient
-}
 
 @MainActor
 package protocol CapturePerformancePreferencesProtocol: AnyObject {

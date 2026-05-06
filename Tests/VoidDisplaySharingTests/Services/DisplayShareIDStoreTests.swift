@@ -14,13 +14,13 @@ struct DisplayShareIDStoreTests {
             .appendingPathComponent("display-share-id-mappings.json", isDirectory: false)
 
         let firstStore = DisplayShareIDStore(storeURL: storeURL)
-        let mainID = firstStore.assignID(for: "physical:main")
-        let virtualID = firstStore.assignID(for: "virtual:42")
+        let mainID = firstStore.assignID(for: "physical:main", excluding: [])
+        let virtualID = firstStore.assignID(for: "virtual:42", excluding: [])
 
         let secondStore = DisplayShareIDStore(storeURL: storeURL)
-        let mainIDReloaded = secondStore.assignID(for: "physical:main")
-        let virtualIDReloaded = secondStore.assignID(for: "virtual:42")
-        let newDisplayID = secondStore.assignID(for: "physical:new")
+        let mainIDReloaded = secondStore.assignID(for: "physical:main", excluding: [])
+        let virtualIDReloaded = secondStore.assignID(for: "virtual:42", excluding: [])
+        let newDisplayID = secondStore.assignID(for: "physical:new", excluding: [])
 
         #expect(mainIDReloaded == mainID)
         #expect(virtualIDReloaded == virtualID)

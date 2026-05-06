@@ -6,7 +6,7 @@ import ScreenCaptureKit
 import Testing
 
 private final class DisplaySharingCoordinatorDummyShare: @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
 
     private let retainGate: DisplaySharingCoordinatorAsyncGate?
     private let releaseCounter: DisplaySharingCoordinatorCounter?
@@ -107,7 +107,7 @@ struct DisplaySharingCoordinatorTests {
         let coordinator = DisplaySharingCoordinator(idStore: store)
 
         // Simulate a pre-existing physical mapping that previously consumed share ID 1.
-        _ = store.assignID(for: "physical:mock-main")
+        #expect(store.assignID(for: "physical:mock-main", excluding: []) == 1)
 
         let physicalMain: CGDirectDisplayID = 100
         let virtualA: CGDirectDisplayID = 200
@@ -178,8 +178,8 @@ struct DisplaySharingCoordinatorTests {
         let coordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
 
         do {
-            _ = try await coordinator.startSharing(display: display)
-            Issue.record("Expected displayNotRegistered error.")
+            let outcome = try await coordinator.startSharing(display: display)
+            Issue.record("Expected displayNotRegistered error, got \(outcome).")
         } catch let error as SharingStartError {
             #expect(error == .displayNotRegistered(displayID))
         } catch {

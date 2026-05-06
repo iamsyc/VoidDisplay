@@ -45,11 +45,6 @@ package enum AppUI {
         package static let borderWidth: CGFloat = 1
     }
 
-    // Kept for call-site compat (appActionButtonStyle `state:` parameter).
-    package enum InteractionState {
-        case normal, hover, active, disabled
-    }
-
     // MARK: - Surface helpers
     package enum Surface {
         // -- Panel (standalone container: empty-state, start-service panel)
@@ -279,10 +274,7 @@ package extension View {
         modifier(AppSidebarSelectionPill(isSelected: isSelected))
     }
 
-    func appActionButtonStyle(
-        variant: AppActionVariant = .default,
-        state _: AppUI.InteractionState = .normal
-    ) -> some View {
+    func appActionButtonStyle(variant: AppActionVariant = .default) -> some View {
         modifier(AppActionButton(variant: variant))
     }
 

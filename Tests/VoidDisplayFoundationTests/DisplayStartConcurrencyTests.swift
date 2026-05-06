@@ -1,7 +1,7 @@
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import CoreGraphics
-import Foundation
+import Dispatch
 import Testing
 
 private actor DisplayStartCoordinatorGate {
@@ -88,7 +88,7 @@ struct DisplayStartInvalidationContextTests {
         #expect(await waitUntil { context.waiterCountForTesting == 1 })
 
         task.cancel()
-        _ = await task.value
+        await task.value
 
         #expect(await waitUntil { context.waiterCountForTesting == 0 })
     }

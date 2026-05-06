@@ -58,11 +58,11 @@ struct VirtualDisplayRuntimeTrackerTests {
         let config = makeConfig(serial: 44)
 
         do {
-            _ = try await tracker.createRuntimeDisplayWithRetries(
+            let record = try await tracker.createRuntimeDisplayWithRetries(
                 from: config,
                 terminationConfirmed: false
             )
-            Issue.record("Expected invalidConfiguration error")
+            Issue.record("Expected invalidConfiguration error, got \(record).")
         } catch let error as VirtualDisplayOperationError {
             guard case .invalidConfiguration = error else {
                 Issue.record("Unexpected error: \(error)")
@@ -239,10 +239,9 @@ private final class FakeVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
 
     func createRuntimeDisplay(
         from config: VirtualDisplayConfig,
-        maxPixels: (width: UInt32, height: UInt32)?,
+        maxPixels _: (width: UInt32, height: UInt32)?,
         onTermination: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
-        _ = maxPixels
         createCallCount += 1
         terminationHandlersByConfigId[config.id] = onTermination
         let result: CreateResult

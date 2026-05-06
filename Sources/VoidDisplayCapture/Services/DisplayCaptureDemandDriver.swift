@@ -28,6 +28,7 @@ package final class DisplayCaptureDemandDriver: @unchecked Sendable {
     nonisolated init(
         initialConfiguration: DisplayCaptureConfiguration,
         initialDemand: DisplayCaptureDemandSnapshot,
+        captureSizeContext: DisplayCaptureSizeContext = .defaultShared,
         minimumDwellNanoseconds: UInt64,
         currentTimeNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
         applyImmediateDemand: @escaping ImmediateDemandApplier,
@@ -45,7 +46,8 @@ package final class DisplayCaptureDemandDriver: @unchecked Sendable {
             State(
                 configurationCoordinator: DisplayCaptureConfigurationCoordinatorState(
                     committedConfiguration: initialConfiguration,
-                    demand: initialDemand
+                    demand: initialDemand,
+                    captureSizeContext: captureSizeContext
                 )
             )
         )

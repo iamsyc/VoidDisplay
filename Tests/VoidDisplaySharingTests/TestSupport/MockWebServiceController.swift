@@ -5,7 +5,6 @@ import Foundation
 @MainActor
 final class MockWebServiceController: WebServiceControllerProtocol {
     var portValue: UInt16 = 9090
-    var currentServer: WebServer?
     var lifecycleState: WebServiceLifecycleState = .stopped
     var isRunning = false
     var activeStreamClientCount = 0
@@ -24,14 +23,14 @@ final class MockWebServiceController: WebServiceControllerProtocol {
     var disconnectedTargetsHistory: [Set<ShareTarget>] = []
     var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
     var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
-    var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?)?
+    var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?)?
     var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
 
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         startCallCount += 1

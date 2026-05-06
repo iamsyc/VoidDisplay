@@ -230,14 +230,14 @@ package final class DisplaySharingCoordinator {
         }
     }
 
-    package func sessionHub(for target: ShareTarget) -> WebRTCSessionHub? {
+    package func sessionHub(for target: ShareTarget) -> (any SignalSessionHub)? {
         switch target {
         case .main:
             guard let resolvedMainID = resolvedMainDisplayID() else { return nil }
-            return sessionsByDisplayID[resolvedMainID]?.subscription.shareFrameConsumer as? WebRTCSessionHub
+            return sessionsByDisplayID[resolvedMainID]?.subscription.shareFrameConsumer as? any SignalSessionHub
         case .id(let id):
             guard let displayID = displayIDsByShareID[id] else { return nil }
-            return sessionsByDisplayID[displayID]?.subscription.shareFrameConsumer as? WebRTCSessionHub
+            return sessionsByDisplayID[displayID]?.subscription.shareFrameConsumer as? any SignalSessionHub
         }
     }
 

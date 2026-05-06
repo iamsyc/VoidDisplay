@@ -25,7 +25,7 @@ package struct SharePerformanceModePicker: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            Text("Automatic adapts frame rate for mixed preview and sharing.")
+            Text("Automatic balances 60 fps clarity and encoder load using a shared pixel budget.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

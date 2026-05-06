@@ -13,21 +13,19 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     }
 
     private let counters = Mutex(Counters())
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
+    nonisolated let testShareFrameConsumer = TestDisplayShareFrameConsumer()
+    nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { testShareFrameConsumer }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {
         counters.withLock { $0.stopSharingCalls += 1 }
     }
 
     nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        shareFrameConsumer.updatePerformanceMode(demand.performanceMode)
         counters.withLock { $0.setDemandCalls.append(demand) }
     }
 
@@ -79,21 +77,15 @@ private final class ControlledStopCaptureSession: DisplayCaptureSessioning, @unc
         self.stopGate = stopGate
     }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {
         counters.withLock { $0.stopSharing += 1 }
     }
 
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
 
     nonisolated func stop() async {
         counters.withLock { $0.stop += 1 }
@@ -157,13 +149,9 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
         self.gate = gate
     }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {
         counters.withLock { $0.stopSharingCalls += 1 }
@@ -452,6 +440,7 @@ struct DisplayCaptureRegistryTests {
 
         await registry.updatePerformanceMode(.powerEfficient)
         #expect(installedSession.setDemandCalls.last?.performanceMode == .powerEfficient)
+        #expect(installedSession.testShareFrameConsumer.recordedPerformanceModes.last == .powerEfficient)
 
         let subscription = try await registry.acquireShare(display: sendableDisplay)
 
@@ -521,19 +510,13 @@ private final class SessionStoreFakeSession: DisplayCaptureSessioning, @unchecke
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
     private let stopCallCountValue = Mutex(0)
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
 
     nonisolated func stop() async {
         stopCallCountValue.withLock { $0 += 1 }
@@ -553,19 +536,13 @@ private final class SessionStoreControlledStopSession: DisplayCaptureSessioning,
         self.stopGate = stopGate
     }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
 
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
 
     nonisolated func stopSharing() {}
 
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
 
     nonisolated func stop() async {
         stopCallCountValue.withLock { $0 += 1 }
@@ -599,7 +576,7 @@ struct DisplayCaptureLeaseBookTests {
         let previewToken = book.registerToken(displayID: displayID, kind: .preview)
         let shareToken = book.registerToken(displayID: displayID, kind: .share)
 
-        _ = book.recordAttachedPreviewSinkDelta(2, for: previewToken)
+        #expect(book.recordAttachedPreviewSinkDelta(2, for: previewToken) == displayID)
         let cursorMutation = book.setPreviewShowsCursor(true, for: previewToken)
         #expect(cursorMutation?.previousValue == false)
         #expect(book.prepareShareForSharing(shareToken) == displayID)

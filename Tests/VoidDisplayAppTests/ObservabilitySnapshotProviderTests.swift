@@ -1,14 +1,11 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
-import CoreGraphics
 import Foundation
-import ScreenCaptureKit
 import Testing
 
 private final class SnapshotProviderMockSharingPortPreferences: SharingPortPreferencesProtocol {
@@ -20,7 +17,7 @@ private final class SnapshotProviderMockSharingPortPreferences: SharingPortPrefe
 }
 
 private final class SnapshotProviderDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
+    nonisolated let sessionHub = TestSignalSessionHub()
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
     nonisolated let metricsSnapshot: DisplayCaptureMetricsSnapshot
 
@@ -36,10 +33,10 @@ private final class SnapshotProviderDummySession: DisplayCaptureSessioning, @unc
         self.metricsSnapshot = metricsSnapshot
     }
 
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) { _ = sink }
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) { _ = sink }
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
     nonisolated func stopSharing() {}
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws { _ = demand }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
     nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot { metricsSnapshot }
     nonisolated func stop() async {}
 }

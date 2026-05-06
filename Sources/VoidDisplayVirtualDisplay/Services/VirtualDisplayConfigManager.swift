@@ -90,10 +90,6 @@ package final class VirtualDisplayConfigManager {
         configs.first { $0.id == configId }
     }
 
-    package func configIndex(id configId: UUID) -> Int? {
-        configs.firstIndex(where: { $0.id == configId })
-    }
-
     package func appendConfig(_ config: VirtualDisplayConfig) throws {
         try mutateConfigs(reason: .userCreatedConfig) { candidate in
             candidate.append(config)
@@ -107,22 +103,16 @@ package final class VirtualDisplayConfigManager {
         }
     }
 
-    package func removeConfig(serialNum: UInt32) throws {
-        guard configs.contains(where: { $0.serialNum == serialNum }) else { return }
-        try mutateConfigs(reason: .userDeletedConfig) { candidate in
-            candidate.removeAll { $0.serialNum == serialNum }
-        }
-    }
-
     /// Removes the config that was just appended on creation failure rollback.
     package func rollbackAppendedConfig(_ configId: UUID) throws {
         try removeConfig(configId)
     }
 
     package func updateConfig(_ updated: VirtualDisplayConfig) throws {
-        guard configs.contains(where: { $0.id == updated.id }) else { return }
+        guard let index = configs.firstIndex(where: { $0.id == updated.id }) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
         try mutateConfigs(reason: .userEditedConfig) { candidate in
-            guard let index = candidate.firstIndex(where: { $0.id == updated.id }) else { return }
             candidate[index] = updated
         }
     }
@@ -134,9 +124,10 @@ package final class VirtualDisplayConfigManager {
         enabled: Bool,
         reason: VirtualDisplayConfigRepository.PersistReason
     ) throws {
-        guard configs.contains(where: { $0.id == configId }) else { return }
+        guard let index = configs.firstIndex(where: { $0.id == configId }) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
         try mutateConfigs(reason: reason) { candidate in
-            guard let index = candidate.firstIndex(where: { $0.id == configId }) else { return }
             var updated = candidate[index]
             updated.desiredEnabled = enabled
             candidate[index] = updated

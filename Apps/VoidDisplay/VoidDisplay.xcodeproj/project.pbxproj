@@ -21,6 +21,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		191C03A82FA7A470003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
+		191C052B2FA9B0B6003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
+		191C06AC2FA9B215003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
+		191C082F2FAA014B003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
 		191CF8352F9FDDA7003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
 		191CFBFB2FA0AC5E003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
 		BA0465D02E90E53C00012958 /* VoidDisplay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoidDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -69,6 +73,26 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		191C03AA2FA7A470003F7F65 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		191C052D2FA9B0B6003F7F65 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		191C06AE2FA9B215003F7F65 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
+		191C08312FAA014B003F7F65 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
 		191CF8372F9FDDA7003F7F65 /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
@@ -108,6 +132,7 @@
 			buildPhases = (
 				BA0465CC2E90E53C00012958 /* Sources */,
 				BA0465CD2E90E53C00012958 /* Frameworks */,
+				CDAA20012F05000100000001 /* Build Relay */,
 				BA0465CE2E90E53C00012958 /* Resources */,
 			);
 			buildRules = (
@@ -181,12 +206,28 @@
 			projectDirPath = "";
 			projectReferences = (
 				{
+					ProductGroup = 191C052D2FA9B0B6003F7F65 /* Products */;
+					ProjectRef = 191C052B2FA9B0B6003F7F65 /* VoidDisplay.xcodeproj */;
+				},
+				{
+					ProductGroup = 191C08312FAA014B003F7F65 /* Products */;
+					ProjectRef = 191C082F2FAA014B003F7F65 /* VoidDisplay.xcodeproj */;
+				},
+				{
 					ProductGroup = 191CF8372F9FDDA7003F7F65 /* Products */;
 					ProjectRef = 191CF8352F9FDDA7003F7F65 /* VoidDisplay.xcodeproj */;
 				},
 				{
+					ProductGroup = 191C06AE2FA9B215003F7F65 /* Products */;
+					ProjectRef = 191C06AC2FA9B215003F7F65 /* VoidDisplay.xcodeproj */;
+				},
+				{
 					ProductGroup = 191CFBFD2FA0AC5E003F7F65 /* Products */;
 					ProjectRef = 191CFBFB2FA0AC5E003F7F65 /* VoidDisplay.xcodeproj */;
+				},
+				{
+					ProductGroup = 191C03AA2FA7A470003F7F65 /* Products */;
+					ProjectRef = 191C03A82FA7A470003F7F65 /* VoidDisplay.xcodeproj */;
 				},
 			);
 			projectRoot = "";
@@ -209,6 +250,30 @@
 			);
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		CDAA20012F05000100000001 /* Build Relay */ = {
+			isa = PBXShellScriptBuildPhase;
+			inputPaths = (
+				"$(SRCROOT)/../../scripts/build-relay.sh",
+				"$(SRCROOT)/../../Tools/VoidDisplayRelay/go.mod",
+				"$(SRCROOT)/../../Tools/VoidDisplayRelay/go.sum",
+				"$(SRCROOT)/../../Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main.go",
+				"$(SRCROOT)/../../Tools/VoidDisplayRelay/internal/relay/server.go",
+				"$(SRCROOT)/../../Tools/VoidDisplayRelay/internal/relay/server_test.go",
+			);
+			name = "Build Relay";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay",
+			);
+			shellPath = /bin/zsh;
+			shellScript = (
+				"cd \"$SRCROOT/../..\"",
+				"./scripts/build-relay.sh",
+				"",
+			);
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		BA0465CC2E90E53C00012958 /* Sources */ = {
@@ -403,7 +468,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -469,7 +534,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -505,7 +570,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -539,7 +604,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(inherited)";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

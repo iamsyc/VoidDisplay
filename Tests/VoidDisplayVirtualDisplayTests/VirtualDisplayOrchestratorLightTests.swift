@@ -529,13 +529,10 @@ private final class StableTopologyInspector: DisplayTopologyInspecting {
     }
 
     func snapshot(
-        trackedManagedSerials: Set<UInt32>,
-        managedVendorID: UInt32,
-        managedProductID: UInt32
+        trackedManagedSerials _: Set<UInt32>,
+        managedVendorID _: UInt32,
+        managedProductID _: UInt32
     ) -> DisplayTopologySnapshot? {
-        _ = trackedManagedSerials
-        _ = managedVendorID
-        _ = managedProductID
         return snapshotValue
     }
 }
@@ -558,11 +555,9 @@ private final class FakeOrchestratorRuntimeDriver: VirtualDisplayRuntimeDriving 
 
     func createRuntimeDisplay(
         from config: VirtualDisplayConfig,
-        maxPixels: (width: UInt32, height: UInt32)?,
-        onTermination: @escaping @MainActor () -> Void
+        maxPixels _: (width: UInt32, height: UInt32)?,
+        onTermination _: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
-        _ = maxPixels
-        _ = onTermination
         createCallCount += 1
         let result: CreateResult
         if scriptedResults.indices.contains(nextIndex) {

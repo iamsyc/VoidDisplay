@@ -43,6 +43,10 @@ package struct ShareDisplayList: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
                 Divider()
+                Text("Share links are reachable from devices on the same local network. Send them only to trusted viewers.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
                 Text("If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)

@@ -25,7 +25,6 @@ package enum WebServiceServerStopReason: Equatable {
 @MainActor
 package protocol WebServiceControllerProtocol: AnyObject {
     var portValue: UInt16 { get }
-    var currentServer: WebServer? { get }
     var lifecycleState: WebServiceLifecycleState { get }
     var isRunning: Bool { get }
     var activeStreamClientCount: Int { get }
@@ -38,7 +37,7 @@ package protocol WebServiceControllerProtocol: AnyObject {
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult
     func stop()
@@ -76,13 +75,12 @@ package final class WebServiceController: WebServiceControllerProtocol {
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         _ sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol
 
     private var activeServer: (any WebServiceServerProtocol)?
-    private var webServer: WebServer?
     private var activeServerToken: UUID?
     private var startingServer: (token: UUID, server: any WebServiceServerProtocol)?
     private var startupTask: Task<WebServiceStartResult, Never>?
@@ -91,11 +89,13 @@ package final class WebServiceController: WebServiceControllerProtocol {
     private var state: WebServiceLifecycleState = .stopped
     private var lifecycleNonce: UInt64 = 0
     private let webServiceServerFactory: WebServiceServerFactory
+    private let relayProcessController: RelayProcessController?
 
     package var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
     package var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
 
     package init(
+        relayProcessController: RelayProcessController? = nil,
         webServiceServerFactory: @escaping WebServiceServerFactory = {
             port,
             targetStateProvider,
@@ -113,7 +113,13 @@ package final class WebServiceController: WebServiceControllerProtocol {
             )
         }
     ) {
+        self.relayProcessController = relayProcessController
         self.webServiceServerFactory = webServiceServerFactory
+        self.relayProcessController?.onUnexpectedExit = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleRelayUnexpectedExit()
+            }
+        }
     }
 
     package var portValue: UInt16 {
@@ -125,10 +131,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
         default:
             return currentBinding?.boundPort ?? lastRequestedPort
         }
-    }
-
-    package var currentServer: WebServer? {
-        webServer
     }
 
     package var lifecycleState: WebServiceLifecycleState {
@@ -152,7 +154,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         if case .running(let binding) = state, activeServer != nil {
@@ -212,11 +214,11 @@ package final class WebServiceController: WebServiceControllerProtocol {
         self.startingServer = nil
         activeServerToken = nil
         activeServer = nil
-        webServer = nil
         currentBinding = nil
 
         startingServer?.server.stopListener(reason: .requested)
         runningServer?.stopListener(reason: .requested)
+        relayProcessController?.stop()
         setLifecycleState(.stopped)
     }
 
@@ -234,7 +236,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
         operationNonce: UInt64,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         lastRequestedPort = requestedPort
@@ -260,6 +262,20 @@ package final class WebServiceController: WebServiceControllerProtocol {
                 setLifecycleState(.failed(preflightFailure))
             }
             return .failed(preflightFailure)
+        }
+
+        if let relayProcessController {
+            do {
+                _ = try await relayProcessController.client()
+            } catch {
+                let failure = WebServiceStartFailure.listenerFailed(
+                    port: requestedPort,
+                    message: String(localized: "Failed to start relay process.")
+                )
+                setLifecycleState(.failed(failure))
+                AppErrorMapper.logFailure("Start relay process", error: error, logger: AppLog.web)
+                return .failed(failure)
+            }
         }
 
         do {
@@ -298,7 +314,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
             switch startResult {
             case .ready(let boundPort):
                 activeServer = server
-                webServer = server as? WebServer
                 activeServerToken = serverToken
                 let binding = WebServiceBinding(
                     requestedPort: requestedPort,
@@ -313,6 +328,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
 
             case .timedOut:
                 server.stopListener(reason: .requested)
+                relayProcessController?.stop()
                 let failure: WebServiceStartFailure = .timedOut(port: requestedPort)
                 setLifecycleState(.failed(failure))
                 AppLog.web.error(
@@ -321,6 +337,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
                 return .failed(failure)
 
             case .failed(let error):
+                relayProcessController?.stop()
                 let failure = mapStartFailure(error: error, requestedPort: requestedPort)
                 setLifecycleState(.failed(failure))
                 AppLog.web.error(
@@ -330,6 +347,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
             }
         } catch {
             clearRunningServerIfTokenMatches(activeServerToken)
+            relayProcessController?.stop()
             let failure = mapStartFailure(error: error, requestedPort: requestedPort)
             setLifecycleState(.failed(failure))
             AppErrorMapper.logFailure("Start web service", error: error, logger: AppLog.web)
@@ -355,11 +373,34 @@ package final class WebServiceController: WebServiceControllerProtocol {
         }
     }
 
+    private func handleRelayUnexpectedExit() {
+        guard state.isRunning || startupTask != nil else { return }
+        AppLog.web.warning("Relay process stopped unexpectedly; transitioning web service state to failed.")
+        lifecycleNonce &+= 1
+        let runningServer = activeServer
+        let startingServer = startingServer
+        startupTask?.cancel()
+        startupTask = nil
+        self.startingServer = nil
+        activeServer = nil
+        activeServerToken = nil
+        currentBinding = nil
+        startingServer?.server.stopListener(reason: .listenerFailed)
+        runningServer?.stopListener(reason: .listenerFailed)
+        setLifecycleState(
+            .failed(
+                .listenerFailed(
+                    port: lastRequestedPort,
+                    message: String(localized: "Relay process stopped unexpectedly.")
+                )
+            )
+        )
+    }
+
     private func clearRunningServerIfTokenMatches(_ token: UUID?) {
         guard let token else { return }
         guard activeServerToken == token else { return }
         activeServer = nil
-        webServer = nil
         activeServerToken = nil
         currentBinding = nil
     }

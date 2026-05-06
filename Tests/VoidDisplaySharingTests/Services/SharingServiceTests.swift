@@ -157,7 +157,7 @@ struct SharingServiceTests {
             acquireShare: { _, _ in
                 .started(DisplayShareSubscription(
                     displayID: displayID,
-                    shareFrameConsumer: WebRTCSessionHub(),
+                    shareFrameConsumer: TestSignalSessionHub(),
                     cancelClosure: { cancelCounter.increment() }
                 ))
             }
@@ -177,6 +177,63 @@ struct SharingServiceTests {
         #expect(mock.stopCallCount == 1)
     }
 
+    @MainActor @Test func failedWebServiceLifecycleStopsSharingAndResetsConnectionSnapshot() async throws {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let mock = MockWebServiceController()
+        let aggregator = SharingStateAggregator()
+        let displayID = CGDirectDisplayID(25)
+        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let cancelCounter = SharingServiceCounter()
+        let sut = makeService(
+            webServiceController: mock,
+            acquireShare: { _, _ in
+                .started(DisplayShareSubscription(
+                    displayID: displayID,
+                    shareFrameConsumer: TestSignalSessionHub(),
+                    cancelClosure: { cancelCounter.increment() }
+                ))
+            },
+            sharingStateAggregator: aggregator
+        )
+        sut.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
+        aggregator.record(
+            SharingSessionEvent(
+                target: .main,
+                clientID: "client-1",
+                sequence: 1,
+                phase: .peerConnected,
+                source: .peerConnection
+            )
+        )
+        var receivedStates: [WebServiceLifecycleState] = []
+        sut.onWebServiceLifecycleStateChanged = { state in
+            receivedStates.append(state)
+        }
+
+        let outcome = try await sut.startSharing(display: display)
+        guard case .started = outcome else {
+            Issue.record("Expected sharing start to succeed.")
+            return
+        }
+        let failure = WebServiceLifecycleState.failed(
+            .listenerFailed(port: requestedPort, message: "listener_failed")
+        )
+
+        mock.isRunning = false
+        mock.lifecycleState = failure
+        mock.onLifecycleStateChanged?(failure)
+
+        #expect(await waitUntil { cancelCounter.value == 1 })
+        #expect(sut.hasAnyActiveSharing == false)
+        #expect(sut.activeSharingDisplayIDs.isEmpty)
+        #expect(sut.activeStreamClientCount == 0)
+        #expect(sut.sharingStateSnapshot == .empty)
+        #expect(sut.webServiceLifecycleState == failure)
+        #expect(receivedStates == [failure])
+        #expect(mock.disconnectCallCount == 1)
+        #expect(mock.stopCallCount == 0)
+    }
+
     @MainActor @Test func stopWebServiceInvalidatesInFlightSharingStart() async throws {
         let mock = MockWebServiceController()
         let gate = SharingServiceAsyncGate()
@@ -189,7 +246,7 @@ struct SharingServiceTests {
                 await gate.wait()
                 return .started(DisplayShareSubscription(
                     displayID: displayID,
-                    shareFrameConsumer: WebRTCSessionHub(),
+                    shareFrameConsumer: TestSignalSessionHub(),
                     cancelClosure: { cancelCounter.increment() }
                 ))
             }
@@ -225,8 +282,8 @@ struct SharingServiceTests {
         let sut = makeService(webServiceController: MockWebServiceController())
 
         do {
-            _ = try await sut.startSharing(display: display)
-            Issue.record("Expected displayNotRegistered error.")
+            let outcome = try await sut.startSharing(display: display)
+            Issue.record("Expected displayNotRegistered error, got \(outcome).")
         } catch let error as SharingStartError {
             #expect(error == .displayNotRegistered(displayID))
         } catch {
@@ -449,21 +506,6 @@ struct SharingServiceTests {
         #expect(sut.sharingStateSnapshot.clientsByTarget[.main]?["client-1"] != nil)
     }
 
-    @MainActor @Test func forwardsWebServiceRunningStateCallbackFromController() {
-        let mock = MockWebServiceController()
-        let sut = makeService(webServiceController: mock)
-        var receivedStates: [Bool] = []
-
-        sut.onWebServiceRunningStateChanged = { isRunning in
-            receivedStates.append(isRunning)
-        }
-
-        mock.onRunningStateChanged?(true)
-        mock.onRunningStateChanged?(false)
-
-        #expect(receivedStates == [true, false])
-    }
-
     @MainActor @Test func forwardsWebServiceLifecycleStateCallbackFromController() {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
@@ -484,25 +526,6 @@ struct SharingServiceTests {
             .running(binding),
             .stopped
         ])
-    }
-
-    @MainActor @Test func startAndStopEmitRunningStateChanges() async {
-        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
-        let mock = MockWebServiceController()
-        mock.startResult = .started(
-            WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)
-        )
-        let sut = makeService(webServiceController: mock)
-        var receivedStates: [Bool] = []
-
-        sut.onWebServiceRunningStateChanged = { isRunning in
-            receivedStates.append(isRunning)
-        }
-
-        #expect(await sut.startWebService(requestedPort: requestedPort) == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
-        sut.stopWebService()
-
-        #expect(receivedStates == [true, false])
     }
 
     @MainActor @Test func closedClientTombstonesStayBounded() {

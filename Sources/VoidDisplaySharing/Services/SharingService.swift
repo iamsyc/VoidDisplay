@@ -19,13 +19,11 @@ package enum SharingStartError: LocalizedError, Equatable {
 @MainActor
 package protocol SharingServiceProtocol: AnyObject {
     var webServicePortValue: UInt16 { get }
-    var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? { get set }
     var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? { get set }
     var webServiceLifecycleState: WebServiceLifecycleState { get }
     var isWebServiceRunning: Bool { get }
     var sharingStateSnapshot: SharingStateSnapshot { get }
     var activeStreamClientCount: Int { get }
-    var currentWebServer: WebServer? { get }
     var hasAnyActiveSharing: Bool { get }
     var activeSharingDisplayIDs: Set<CGDirectDisplayID> { get }
     func isStarting(displayID: CGDirectDisplayID) -> Bool
@@ -54,6 +52,7 @@ package final class SharingService: SharingServiceProtocol {
     private let sharingCoordinator: DisplaySharingCoordinator
     private let webServiceController: any WebServiceControllerProtocol
     private let sharingStateAggregator: SharingStateAggregator
+    private var externalWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
 
     package init(
         webServiceController: (any WebServiceControllerProtocol)? = nil,
@@ -63,20 +62,18 @@ package final class SharingService: SharingServiceProtocol {
         self.webServiceController = webServiceController ?? WebServiceController()
         self.sharingCoordinator = sharingCoordinator
         self.sharingStateAggregator = sharingStateAggregator
+        self.webServiceController.onLifecycleStateChanged = { [weak self] state in
+            self?.handleWebServiceLifecycleStateChanged(state)
+        }
     }
 
     package var webServicePortValue: UInt16 {
         webServiceController.portValue
     }
 
-    package var onWebServiceRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)? {
-        get { webServiceController.onRunningStateChanged }
-        set { webServiceController.onRunningStateChanged = newValue }
-    }
-
     package var onWebServiceLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)? {
-        get { webServiceController.onLifecycleStateChanged }
-        set { webServiceController.onLifecycleStateChanged = newValue }
+        get { externalWebServiceLifecycleStateChanged }
+        set { externalWebServiceLifecycleStateChanged = newValue }
     }
 
     package var webServiceLifecycleState: WebServiceLifecycleState {
@@ -97,10 +94,6 @@ package final class SharingService: SharingServiceProtocol {
 
     package func streamClientCount(for target: ShareTarget) -> Int {
         sharingStateAggregator.currentSnapshot.streamingPeersByTarget[target] ?? 0
-    }
-
-    package var currentWebServer: WebServer? {
-        webServiceController.currentServer
     }
 
     package var hasAnyActiveSharing: Bool {
@@ -199,5 +192,13 @@ package final class SharingService: SharingServiceProtocol {
 
     private func recordSharingEvent(_ event: SharingSessionEvent) {
         sharingStateAggregator.record(event)
+    }
+
+    private func handleWebServiceLifecycleStateChanged(_ state: WebServiceLifecycleState) {
+        if case .failed = state {
+            stopAllSharing()
+            sharingStateAggregator.reset()
+        }
+        externalWebServiceLifecycleStateChanged?(state)
     }
 }

@@ -1,37 +1,11 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayApp
-@testable import VoidDisplayVirtualDisplay
-@testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
-@testable import VoidDisplayObservability
-@testable import VoidDisplaySupport
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import Foundation
 import CoreGraphics
 import ScreenCaptureKit
 import Testing
-
-private final class SharingControllerDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = WebRTCSessionHub()
-    nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
-
-    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
-
-    nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink) {
-        _ = sink
-    }
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
-
-    nonisolated func stop() async {}
-}
 
 private final class SharingControllerMockSCDisplayBox: NSObject {
     @objc let displayID: CGDirectDisplayID
@@ -126,8 +100,9 @@ struct SharingControllerTests {
             portPreferences: preferences
         )
 
-        _ = await sut.startWebService(requestedPort: requestedPort)
+        let startResult = await sut.startWebService(requestedPort: requestedPort)
 
+        #expect(startResult == .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort)))
         #expect(preferences.savedPorts == [requestedPort])
         #expect(sut.preferredWebServicePort == requestedPort)
     }
@@ -193,7 +168,7 @@ struct SharingControllerTests {
         let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
-            shareFrameConsumer: WebRTCSessionHub(),
+            shareFrameConsumer: TestSignalSessionHub(),
             cancelClosure: {}
         )
         let sut = makeRealSharingController(
@@ -271,8 +246,8 @@ struct SharingControllerTests {
         await gate.releaseOne()
 
         do {
-            _ = try await firstTask.value
-            Issue.record("Expected first sharing start to be cancelled.")
+            let outcome = try await firstTask.value
+            Issue.record("Expected first sharing start to be cancelled, got \(outcome).")
         } catch is CancellationError {
         } catch {
             Issue.record("Expected CancellationError, got \(error)")
@@ -305,8 +280,8 @@ struct SharingControllerTests {
         )
 
         do {
-            _ = try await sut.beginSharing(display: display)
-            Issue.record("Expected sharing start to fail.")
+            let outcome = try await sut.beginSharing(display: display)
+            Issue.record("Expected sharing start to fail, got \(outcome).")
         } catch {
         }
 
@@ -352,7 +327,7 @@ struct SharingControllerTests {
         let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
-            shareFrameConsumer: WebRTCSessionHub(),
+            shareFrameConsumer: TestSignalSessionHub(),
             cancelClosure: {}
         )
         let sut = makeRealSharingController(

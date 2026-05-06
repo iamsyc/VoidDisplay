@@ -6,9 +6,7 @@ import Synchronization
 import Testing
 
 private final class TestPreviewSink: @unchecked Sendable, DisplayPreviewSink {
-    nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
-        _ = sampleBuffer
-    }
+    nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
 private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
@@ -48,9 +46,7 @@ private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptu
         state.withLock { $0.stopSharingCallCount += 1 }
     }
 
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        _ = demand
-    }
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
 
     nonisolated func stop() async {
         state.withLock { $0.stopCallCount += 1 }

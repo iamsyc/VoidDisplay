@@ -86,28 +86,24 @@ struct CreateVirtualDisplayInputValidatorTests {
         }
     }
 
-    @Test func maxPixelDimensionsReflectsHiDPIAndFallback() {
-        let fallback = CreateVirtualDisplayInputValidator.maxPixelDimensions(for: [])
-        #expect(fallback.width == 1920)
-        #expect(fallback.height == 1080)
+    @Test func maxPixelDimensionsReflectsHiDPIAndRejectsInvalidValues() {
+        let empty = CreateVirtualDisplayInputValidator.maxPixelDimensions(for: [])
+        #expect(empty == .invalidValues)
 
         let normal = CreateVirtualDisplayInputValidator.maxPixelDimensions(
             for: [.init(width: 2560, height: 1440, refreshRate: 60, enableHiDPI: false)]
         )
-        #expect(normal.width == 2560)
-        #expect(normal.height == 1440)
+        #expect(normal == .resolved(width: 2560, height: 1440))
 
         let hiDPI = CreateVirtualDisplayInputValidator.maxPixelDimensions(
             for: [.init(width: 2560, height: 1440, refreshRate: 60, enableHiDPI: true)]
         )
-        #expect(hiDPI.width == 5120)
-        #expect(hiDPI.height == 2880)
+        #expect(hiDPI == .resolved(width: 5120, height: 2880))
 
         let oversizedHiDPI = CreateVirtualDisplayInputValidator.maxPixelDimensions(
             for: [.init(width: 5000, height: 3000, refreshRate: 60, enableHiDPI: true)]
         )
-        #expect(oversizedHiDPI.width == 1920)
-        #expect(oversizedHiDPI.height == 1080)
+        #expect(oversizedHiDPI == .invalidValues)
     }
 
     @Test func initializeNameAndSerialUsesDefaultOnlyForUntouchedBaseName() {

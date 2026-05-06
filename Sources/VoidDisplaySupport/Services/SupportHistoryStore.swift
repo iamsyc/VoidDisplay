@@ -43,47 +43,45 @@ package nonisolated struct SupportHistoryStore {
         }
 
         if fileExists == false || filteredRecords != decodedRecords {
-            saveRecords(filteredRecords)
+            try? saveRecords(filteredRecords)
         }
         return filteredRecords
     }
 
-    package func saveRecords(_ records: [SupportExportRecord]) {
-        do {
-            try fileManager.createDirectory(at: historyFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try ObservabilityCodec.encode(records)
-            try data.write(to: historyFileURL, options: [.atomic])
-        } catch {}
+    package func saveRecords(_ records: [SupportExportRecord]) throws {
+        try fileManager.createDirectory(at: historyFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try ObservabilityCodec.encode(records)
+        try data.write(to: historyFileURL, options: [.atomic])
     }
 
-    package func appendRecord(_ record: SupportExportRecord) -> [SupportExportRecord] {
+    package func appendRecord(_ record: SupportExportRecord) throws -> [SupportExportRecord] {
         var records = loadRecords()
         records.removeAll { $0.bundleFileName == record.bundleFileName }
         records.insert(record, at: 0)
         records.sort { $0.exportedAt > $1.exportedAt }
         let trimmed = Array(records.prefix(10))
-        saveRecords(trimmed)
+        try saveRecords(trimmed)
         return trimmed
     }
 
-    package func markSummaryCopied(recordID: UUID, at date: Date) -> [SupportExportRecord] {
-        mutateRecords(recordID: recordID) { $0.summaryCopiedAt = date }
+    package func markSummaryCopied(recordID: UUID, at date: Date) throws -> [SupportExportRecord] {
+        try mutateRecords(recordID: recordID) { $0.summaryCopiedAt = date }
     }
 
-    package func markRevealed(recordID: UUID, at date: Date) -> [SupportExportRecord] {
-        mutateRecords(recordID: recordID) { $0.revealedAt = date }
+    package func markRevealed(recordID: UUID, at date: Date) throws -> [SupportExportRecord] {
+        try mutateRecords(recordID: recordID) { $0.revealedAt = date }
     }
 
     private func mutateRecords(
         recordID: UUID,
         mutation: (inout SupportExportRecord) -> Void
-    ) -> [SupportExportRecord] {
+    ) throws -> [SupportExportRecord] {
         var records = loadRecords()
         guard let index = records.firstIndex(where: { $0.id == recordID }) else {
             return records
         }
         mutation(&records[index])
-        saveRecords(records)
+        try saveRecords(records)
         return records
     }
 

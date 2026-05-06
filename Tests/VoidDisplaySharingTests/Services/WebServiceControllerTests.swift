@@ -1,5 +1,4 @@
 @testable import VoidDisplaySharing
-@testable import VoidDisplayFoundation
 import Foundation
 import Network
 import Darwin
@@ -51,7 +50,7 @@ struct WebServiceControllerTests {
             states.append(state)
         }
 
-        _ = await sut.start(
+        let result = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
             concreteTargetResolver: { $0 },
@@ -63,6 +62,7 @@ struct WebServiceControllerTests {
             .starting(requestedPort: 999),
             .failed(.invalidPort(.outOfRange))
         ])
+        #expect(result == .failed(.invalidPort(.outOfRange)))
     }
 
     @Test
@@ -73,7 +73,7 @@ struct WebServiceControllerTests {
             states.append(state)
         }
 
-        _ = await sut.start(
+        let result = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
             concreteTargetResolver: { $0 },
@@ -88,6 +88,7 @@ struct WebServiceControllerTests {
             .stopping,
             .stopped
         ])
+        #expect(result == .failed(.invalidPort(.outOfRange)))
     }
 
     @Test
@@ -98,7 +99,7 @@ struct WebServiceControllerTests {
             runningStates.append(isRunning)
         }
 
-        _ = await sut.start(
+        let result = await sut.start(
             requestedPort: 999,
             targetStateProvider: { _ in .unknown },
             concreteTargetResolver: { $0 },
@@ -108,6 +109,7 @@ struct WebServiceControllerTests {
         sut.stop()
 
         #expect(runningStates.isEmpty)
+        #expect(result == .failed(.invalidPort(.outOfRange)))
     }
 
     @Test
@@ -144,7 +146,7 @@ struct WebServiceControllerTests {
             sut: sut,
             requestedPort: port,
             targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         ) else {
             return
         }
@@ -260,7 +262,7 @@ struct WebServiceControllerTests {
             sut: sut,
             requestedPort: secondPort,
             targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in WebRTCSessionHub() }
+            sessionHubProvider: { _ in TestSignalSessionHub() }
         ) else {
             return
         }
@@ -305,7 +307,7 @@ struct WebServiceControllerTests {
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState = { _ in .unknown },
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { $0 },
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub? = { _ in nil }
+        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)? = { _ in nil }
     ) async -> (startTask: Task<WebServiceStartResult, Never>, server: ControlledWebServiceServer)? {
         let existingServerCount = harness.createdServers.count
         let startTask = Task {
@@ -336,12 +338,6 @@ struct WebServiceControllerTests {
         }
 
         return (startTask, server)
-    }
-
-    private func availablePort() throws -> UInt16 {
-        let (descriptor, port) = try openBoundSocket()
-        close(descriptor)
-        return port
     }
 
     private func openBoundSocket() throws -> (Int32, UInt16) {
@@ -389,18 +385,13 @@ private final class WebServiceServerHarness {
     private(set) var createdServers: [ControlledWebServiceServer] = []
 
     func makeServer(
-        _ port: NWEndpoint.Port,
-        _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
-        _ sharingEventSink: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
+        _: NWEndpoint.Port,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
+        _: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
+        _: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {
-        _ = port
-        _ = targetStateProvider
-        _ = concreteTargetResolver
-        _ = sessionHubProvider
-        _ = sharingEventSink
         let server = ControlledWebServiceServer(onListenerStopped: onListenerStopped)
         createdServers.append(server)
         return server
@@ -459,8 +450,7 @@ private final class ControlledWebServiceServer: WebServiceServerProtocol {
         disconnectedTargetsHistory.append(targets)
     }
 
-    func streamClientCount(for target: ShareTarget) -> Int {
-        _ = target
+    func streamClientCount(for _: ShareTarget) -> Int {
         return 0
     }
 }

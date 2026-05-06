@@ -1,4 +1,5 @@
 import VoidDisplayCapture
+import VoidDisplayFoundation
 import VoidDisplaySharing
 import VoidDisplayVirtualDisplay
 

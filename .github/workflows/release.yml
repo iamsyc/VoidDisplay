@@ -232,6 +232,12 @@ jobs:
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
 
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: Tools/VoidDisplayRelay/go.mod
+          cache-dependency-path: Tools/VoidDisplayRelay/go.sum
+
       - name: Build Release app (unsigned)
         env:
           ARCH: ${{ matrix.arch }}

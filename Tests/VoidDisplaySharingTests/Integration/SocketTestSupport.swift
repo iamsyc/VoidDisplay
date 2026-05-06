@@ -307,18 +307,13 @@ func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
 }
 
 @MainActor
-private final class StaticLiveHubStore {
-    let hub = WebRTCSessionHub()
-}
-
-@MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
     concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { target in
         guard case .id(let id) = target else { return nil }
         return .id(id)
     },
-    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> WebRTCSessionHub?,
+    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
     sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
 ) async throws -> (server: WebServer, port: UInt16) {
     for candidate in TestPortAllocator.randomPortCandidates(count: 60) {
@@ -339,9 +334,8 @@ func startServerOnRandomPort(
                 return (server, boundPort)
             case .timedOut:
                 server.stopListener()
-            case .failed(let error):
+            case .failed:
                 server.stopListener()
-                _ = error
             }
         } catch {
             await Task.yield()
