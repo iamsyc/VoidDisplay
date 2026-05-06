@@ -176,6 +176,7 @@ func TestRoomStalePublisherStopAndRTPDoNotAffectCurrentPublisher(t *testing.T) {
 func TestRoomSlowViewerDropsOnlyThatViewer(t *testing.T) {
 	room := newRoomForTest("2", nil)
 	slow := newBlockingSink()
+	defer slow.release()
 	active := &recordingSink{}
 	room.subscribers["slow"] = newViewerRTPWriter("2", "slow", slow, nil)
 	room.subscribers["active"] = newViewerRTPWriter("2", "active", active, nil)
@@ -186,9 +187,10 @@ func TestRoomSlowViewerDropsOnlyThatViewer(t *testing.T) {
 			Header:  rtp.Header{Timestamp: uint32(index)},
 			Payload: []byte{1},
 		})
+		expectedActivePackets := index + 1
+		waitFor(t, func() bool { return active.count() >= expectedActivePackets })
 	}
 
-	waitFor(t, func() bool { return active.count() > 0 })
 	snapshot := room.Snapshot()
 	if snapshot.DroppedPacketCount == 0 {
 		t.Fatal("slow viewer did not record dropped packets")
@@ -199,7 +201,6 @@ func TestRoomSlowViewerDropsOnlyThatViewer(t *testing.T) {
 	if active.count() == 0 {
 		t.Fatal("active viewer did not receive RTP while slow viewer queue was full")
 	}
-	slow.release()
 }
 
 func TestViewerWriterRejectsEnqueueAfterClose(t *testing.T) {
