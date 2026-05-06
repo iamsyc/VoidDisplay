@@ -19,6 +19,10 @@ on:
       - 'v*.*.*'
     paths:
       - 'Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj'
+      - 'Tools/VoidDisplayRelay/**'
+      - 'scripts/build-relay.sh'
+      - 'scripts/release/**'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
