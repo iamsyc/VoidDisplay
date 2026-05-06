@@ -10,7 +10,7 @@ case "$TARGET_DIR" in
 esac
 OUTPUT_DIR="$TARGET_DIR/${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}"
 OUTPUT_PATH="$OUTPUT_DIR/voiddisplay-relay"
-GOPROXY_VALUE="${GOPROXY:-direct}"
+GOPROXY_VALUE="${GOPROXY:-https://proxy.golang.org|https://goproxy.cn|direct}"
 
 resolve_target_arch() {
   local arch="${CURRENT_ARCH:-}"
