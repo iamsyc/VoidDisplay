@@ -11,10 +11,21 @@ let package = Package(
     products: [
         .library(name: "VoidDisplayApp", targets: ["VoidDisplayApp"])
     ],
-    dependencies: [
-        .package(url: "https://github.com/stasel/WebRTC.git", from: "140.0.0")
-    ],
+    dependencies: [],
     targets: [
+        .binaryTarget(
+            name: "WebRTCBinary",
+            url: "https://github.com/stasel/WebRTC/releases/download/147.0.0/WebRTC-M147.xcframework.zip",
+            checksum: "49f9b1713432c19f408e3218fc8526c7692fafca5869f7ec5f5991614276ed40"
+        ),
+        .target(
+            name: "WebRTC",
+            dependencies: [
+                "WebRTCBinary"
+            ],
+            path: "Vendor/WebRTCHeaders/M147",
+            publicHeadersPath: "include"
+        ),
         .target(
             name: "VoidDisplayApp",
             dependencies: [
@@ -61,7 +72,7 @@ let package = Package(
                 "VoidDisplayDesignSystem",
                 "VoidDisplayFoundation",
                 "VoidDisplayObservability",
-                .product(name: "WebRTC", package: "WebRTC")
+                "WebRTC"
             ],
             resources: [
                 .process("Resources")

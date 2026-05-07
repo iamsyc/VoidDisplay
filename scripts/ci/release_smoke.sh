@@ -11,6 +11,8 @@ source "$TOOL_ROOT/scripts/lib/xcode.sh"
 source "$TOOL_ROOT/scripts/lib/architecture.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release_binaries.sh
+source "$TOOL_ROOT/scripts/lib/release_binaries.sh"
 
 cd "$ROOT_DIR"
 
@@ -72,6 +74,7 @@ env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" bash "$TOOL_ROOT/scripts/ci/rele
 	--log-path "$OUT_DIR/xcode-release-build.log"
 
 app_path="$(cat "$APP_OUTPUT_FILE")"
+validate_release_app_binaries "$app_path" "$ARCH"
 write_json_file "$SUMMARY_PATH" \
 	--arg status "passed" \
 	--arg arch "$ARCH" \
