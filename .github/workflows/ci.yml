@@ -225,6 +225,9 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
 
+      - name: Select Xcode
+        uses: ./.github/actions/xcode-select
+
       - name: Bootstrap tools
         shell: bash
         run: |
