@@ -118,8 +118,10 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     }
 
     private nonisolated func startInternal() async throws {
-        guard let vp8Codecs = mediaPipeline.preferredVP8Codecs() else {
-            throw PublisherSessionError.vp8Unavailable
+        let capabilitySummary = mediaPipeline.senderVideoCodecCapabilitySummary()
+        AppLog.web.info("WebRTC sender video capabilities \(capabilitySummary, privacy: .public).")
+        guard let h264Codecs = mediaPipeline.requiredH264Codecs() else {
+            throw PublisherSessionError.h264Unavailable
         }
         let transceiverInit = RTCRtpTransceiverInit()
         transceiverInit.direction = .sendOnly
@@ -128,19 +130,22 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
             throw PublisherSessionError.videoTransceiverUnavailable
         }
         do {
-            try transceiver.setCodecPreferences(vp8Codecs, error: ())
+            try transceiver.setCodecPreferences(h264Codecs, error: ())
         } catch {
             throw PublisherSessionError.codecPreferencesFailed(String(describing: error))
         }
         videoTransceiver = transceiver
         configureDesktopVideoSender(transceiver.sender, profile: profileState.withLock { $0 })
-        AppLog.web.info("WebRTC publisher transceiver configured codecs=\(vp8Codecs.count, privacy: .public).")
+        AppLog.web.info("WebRTC publisher transceiver configured H264 codecs=\(h264Codecs.count, privacy: .public).")
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let offer = try await createOffer(constraints: constraints)
         try await setLocalDescription(offer)
+        await waitForInitialIceGathering()
         try throwIfClosed()
         let finalOffer = peerConnection.localDescription ?? offer
+        let localCodecSummary = WebRTCCodecPreference.sdpVideoCodecSummary(from: finalOffer.sdp)
+        AppLog.web.info("WebRTC publisher local SDP video codecs \(localCodecSummary, privacy: .public).")
         let response = try await relayClient.publisherOffer(roomID: roomID, sdp: finalOffer.sdp)
         publisherIDState.withLock { $0 = response.publisherID }
         flushPendingPublisherCandidates(publisherID: response.publisherID)
@@ -207,6 +212,18 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
             if shouldResumeImmediately {
                 continuation.resume(returning: ())
             }
+        }
+    }
+
+    private nonisolated func waitForInitialIceGathering() async {
+        let deadline = Date().addingTimeInterval(1)
+        while peerConnection.iceGatheringState != .complete, !isClosed, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        if peerConnection.iceGatheringState != .complete {
+            AppLog.web.info(
+                "WebRTC publisher continuing before ICE gathering complete state=\(String(describing: self.peerConnection.iceGatheringState), privacy: .public)."
+            )
         }
     }
 
@@ -299,8 +316,13 @@ extension WebRTCPublisherSession: RTCPeerConnectionDelegate {
     package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
     package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
     package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
-        if newState == .failed || newState == .closed || newState == .disconnected {
+        switch newState {
+        case .connected:
+            AppLog.web.info("WebRTC publisher state changed to \(String(describing: newState), privacy: .public).")
+        case .failed, .closed, .disconnected:
             AppLog.web.warning("WebRTC publisher state changed to \(String(describing: newState), privacy: .public).")
+        default:
+            break
         }
     }
     package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
@@ -320,7 +342,7 @@ extension WebRTCPublisherSession: RTCPeerConnectionDelegate {
 
 package enum PublisherSessionError: Error, LocalizedError, Equatable {
     case closed
-    case vp8Unavailable
+    case h264Unavailable
     case videoTransceiverUnavailable
     case codecPreferencesFailed(String)
     case offerMissing
@@ -329,8 +351,8 @@ package enum PublisherSessionError: Error, LocalizedError, Equatable {
         switch self {
         case .closed:
             "Publisher session is closed."
-        case .vp8Unavailable:
-            "WebRTC VP8 codec preference is unavailable."
+        case .h264Unavailable:
+            String(localized: "This Mac's WebRTC stack did not expose H.264 video encoding.")
         case .videoTransceiverUnavailable:
             "WebRTC publisher video transceiver is unavailable."
         case .codecPreferencesFailed(let reason):

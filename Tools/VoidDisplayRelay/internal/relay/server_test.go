@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
@@ -281,6 +283,111 @@ func TestRoomInvalidPublisherOfferPreservesCurrentPublisher(t *testing.T) {
 	}
 }
 
+func TestRoomPublisherRejectsVP8OnlyOffer(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("2", nil, server.newPeerConnection)
+
+	if _, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeVP8)); err == nil {
+		t.Fatal("SetPublisherOffer accepted VP8-only SDP")
+	}
+}
+
+func TestRoomPublisherAcceptsH264Offer(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("2", nil, server.newPeerConnection)
+
+	result, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeH264))
+	if err != nil {
+		t.Fatalf("SetPublisherOffer returned error: %v", err)
+	}
+	assertVideoSDPOnlyH264(t, result.SDP)
+}
+
+func TestRoomPublisherAcceptsSwiftH264HighProfileOffer(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("2", nil, server.newPeerConnection)
+
+	result, err := room.SetPublisherOffer(createPublisherOfferWithH264Fmtp(
+		t,
+		"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640c1f",
+	))
+	if err != nil {
+		t.Fatalf("SetPublisherOffer returned error: %v", err)
+	}
+	assertVideoSDPOnlyH264(t, result.SDP)
+	if !strings.Contains(result.SDP, "profile-level-id=640c1f") {
+		t.Fatalf("publisher answer did not retain Swift H264 profile 640c1f:\n%s", result.SDP)
+	}
+}
+
+func TestRoomViewerAnswerUsesOnlyH264(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("2", nil, server.newPeerConnection)
+
+	answer, err := room.SetViewerOffer("viewer", createViewerOffer(t))
+	if err != nil {
+		t.Fatalf("SetViewerOffer returned error: %v", err)
+	}
+	assertVideoSDPOnlyH264(t, answer)
+}
+
+func TestRoomForwardRTPRewritesViewerPayloadTypeFromNegotiatedH264Binding(t *testing.T) {
+	room := newRoomForTest("2", nil)
+	track, err := webrtc.NewTrackLocalStaticRTP(h264TrackCapability(), "screen", "voiddisplay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := &capturingTrackLocalWriter{}
+	_, err = track.Bind(fakeTrackLocalContext{
+		codecs: []webrtc.RTPCodecParameters{{
+			RTPCodecCapability: h264TrackCapability(),
+			PayloadType:        124,
+		}},
+		ssrc:        5678,
+		writeStream: stream,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", track, nil)
+	defer room.Close()
+
+	room.ForwardRTP(&rtp.Packet{
+		Header: rtp.Header{
+			PayloadType:    102,
+			SSRC:           1234,
+			Timestamp:      42,
+			SequenceNumber: 7,
+		},
+		Payload: []byte{1, 2, 3},
+	})
+
+	waitFor(t, func() bool { return stream.count() == 1 })
+	header := stream.onlyHeader(t)
+	if header.PayloadType != 124 {
+		t.Fatalf("viewer RTP payload type = %d, want 124", header.PayloadType)
+	}
+	if header.SSRC != 5678 {
+		t.Fatalf("viewer RTP SSRC = %d, want 5678", header.SSRC)
+	}
+}
+
 func TestServerListenUDPBindsSocketAndEventsExposeAddress(t *testing.T) {
 	loopback, stopServer := startTestServer(t)
 	defer stopServer()
@@ -500,15 +607,91 @@ func startTestServer(t *testing.T) (string, func()) {
 
 func createPublisherOffer(t *testing.T) string {
 	t.Helper()
-	pc, _ := createPublisherPeer(t)
+	pc, _ := createPublisherPeerWithCodec(t, webrtc.MimeTypeH264)
 	defer pc.Close()
 	return pc.LocalDescription().SDP
 }
 
-func createPublisherPeer(t *testing.T) (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP) {
+func createPublisherOfferWithCodec(t *testing.T, mimeType string) string {
+	t.Helper()
+	pc, _ := createPublisherPeerWithCodec(t, mimeType)
+	defer pc.Close()
+	return pc.LocalDescription().SDP
+}
+
+func createPublisherOfferWithH264Fmtp(t *testing.T, fmtp string) string {
 	t.Helper()
 	mediaEngine := &webrtc.MediaEngine{}
-	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+	videoRTCPFeedback := []webrtc.RTCPFeedback{
+		{Type: "goog-remb"},
+		{Type: "ccm", Parameter: "fir"},
+		{Type: "nack"},
+		{Type: "nack", Parameter: "pli"},
+	}
+	if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  fmtp,
+			RTCPFeedback: videoRTCPFeedback,
+		},
+		PayloadType: 96,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		t.Fatal(err)
+	}
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
+	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	track, err := webrtc.NewTrackLocalStaticRTP(
+		webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeH264,
+			ClockRate:   90000,
+			SDPFmtpLine: fmtp,
+		},
+		"screen",
+		"voiddisplay",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pc.AddTrack(track); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := pc.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatherComplete := webrtc.GatheringCompletePromise(pc)
+	if err := pc.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	<-gatherComplete
+	localDescription := pc.LocalDescription()
+	if localDescription == nil {
+		t.Fatal("publisher local description missing")
+	}
+	return localDescription.SDP
+}
+
+func createPublisherPeerWithCodec(t *testing.T, mimeType string) (*webrtc.PeerConnection, *webrtc.TrackLocalStaticRTP) {
+	t.Helper()
+	mediaEngine := &webrtc.MediaEngine{}
+	var codec webrtc.RTPCodecCapability
+	var err error
+	switch mimeType {
+	case webrtc.MimeTypeH264:
+		err = registerH264Codecs(mediaEngine)
+		codec = h264TrackCapability()
+	case webrtc.MimeTypeVP8:
+		err = registerVP8CodecsForTest(mediaEngine)
+		codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000}
+	default:
+		t.Fatalf("unsupported test codec: %s", mimeType)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
@@ -517,7 +700,7 @@ func createPublisherPeer(t *testing.T) (*webrtc.PeerConnection, *webrtc.TrackLoc
 		t.Fatal(err)
 	}
 	track, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
+		codec,
 		"screen",
 		"voiddisplay",
 	)
@@ -541,4 +724,198 @@ func createPublisherPeer(t *testing.T) (*webrtc.PeerConnection, *webrtc.TrackLoc
 		t.Fatal("publisher local description missing")
 	}
 	return pc, track
+}
+
+func createViewerOffer(t *testing.T) string {
+	t.Helper()
+	mediaEngine := &webrtc.MediaEngine{}
+	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+		t.Fatal(err)
+	}
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
+	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	if _, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionRecvonly,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	offer, err := pc.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatherComplete := webrtc.GatheringCompletePromise(pc)
+	if err := pc.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	<-gatherComplete
+	localDescription := pc.LocalDescription()
+	if localDescription == nil {
+		t.Fatal("viewer local description missing")
+	}
+	return localDescription.SDP
+}
+
+func registerVP8CodecsForTest(mediaEngine *webrtc.MediaEngine) error {
+	videoRTCPFeedback := []webrtc.RTCPFeedback{
+		{Type: "goog-remb"},
+		{Type: "ccm", Parameter: "fir"},
+		{Type: "nack"},
+		{Type: "nack", Parameter: "pli"},
+	}
+	for _, codec := range []webrtc.RTPCodecParameters{
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     webrtc.MimeTypeVP8,
+				ClockRate:    90000,
+				RTCPFeedback: videoRTCPFeedback,
+			},
+			PayloadType: 96,
+		},
+		{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:    webrtc.MimeTypeRTX,
+				ClockRate:   90000,
+				SDPFmtpLine: "apt=96",
+			},
+			PayloadType: 97,
+		},
+	} {
+		if err := mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func assertVideoSDPOnlyH264(t *testing.T, sdp string) {
+	t.Helper()
+	codecs := videoCodecNamesFromSDP(sdp)
+	if len(codecs) == 0 {
+		t.Fatalf("SDP video codecs empty:\n%s", sdp)
+	}
+	hasH264 := false
+	for _, codec := range codecs {
+		switch strings.ToLower(codec) {
+		case "h264":
+			hasH264 = true
+		case "rtx":
+		default:
+			t.Fatalf("SDP contains non-H264 video codec %q in codecs %v:\n%s", codec, codecs, sdp)
+		}
+	}
+	if !hasH264 {
+		t.Fatalf("SDP did not contain H264 in video codecs %v:\n%s", codecs, sdp)
+	}
+}
+
+func videoCodecNamesFromSDP(sdp string) []string {
+	var payloadTypes []string
+	payloadNames := make(map[string]string)
+	inVideo := false
+	for _, line := range strings.Split(sdp, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "m=") {
+			inVideo = strings.HasPrefix(line, "m=video ")
+			if inVideo {
+				parts := strings.Fields(line)
+				if len(parts) > 3 {
+					payloadTypes = append(payloadTypes[:0], parts[3:]...)
+				}
+			}
+			continue
+		}
+		if !inVideo || !strings.HasPrefix(line, "a=rtpmap:") {
+			continue
+		}
+		mapping := strings.TrimPrefix(line, "a=rtpmap:")
+		parts := strings.Fields(mapping)
+		if len(parts) < 2 {
+			continue
+		}
+		payloadType := parts[0]
+		codecName := strings.SplitN(parts[1], "/", 2)[0]
+		payloadNames[payloadType] = codecName
+	}
+	codecs := make([]string, 0, len(payloadTypes))
+	for _, payloadType := range payloadTypes {
+		if codecName, ok := payloadNames[payloadType]; ok {
+			codecs = append(codecs, codecName)
+		}
+	}
+	return codecs
+}
+
+type capturingTrackLocalWriter struct {
+	mu      sync.Mutex
+	headers []rtp.Header
+}
+
+func (w *capturingTrackLocalWriter) WriteRTP(header *rtp.Header, payload []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	headerCopy := *header
+	w.headers = append(w.headers, headerCopy)
+	return len(payload), nil
+}
+
+func (w *capturingTrackLocalWriter) Write(payload []byte) (int, error) {
+	return len(payload), nil
+}
+
+func (w *capturingTrackLocalWriter) count() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.headers)
+}
+
+func (w *capturingTrackLocalWriter) onlyHeader(t *testing.T) rtp.Header {
+	t.Helper()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.headers) != 1 {
+		t.Fatalf("captured header count = %d, want 1", len(w.headers))
+	}
+	return w.headers[0]
+}
+
+type fakeTrackLocalContext struct {
+	codecs      []webrtc.RTPCodecParameters
+	ssrc        webrtc.SSRC
+	writeStream webrtc.TrackLocalWriter
+}
+
+func (c fakeTrackLocalContext) CodecParameters() []webrtc.RTPCodecParameters {
+	return c.codecs
+}
+
+func (c fakeTrackLocalContext) HeaderExtensions() []webrtc.RTPHeaderExtensionParameter {
+	return nil
+}
+
+func (c fakeTrackLocalContext) SSRC() webrtc.SSRC {
+	return c.ssrc
+}
+
+func (c fakeTrackLocalContext) SSRCRetransmission() webrtc.SSRC {
+	return 0
+}
+
+func (c fakeTrackLocalContext) SSRCForwardErrorCorrection() webrtc.SSRC {
+	return 0
+}
+
+func (c fakeTrackLocalContext) WriteStream() webrtc.TrackLocalWriter {
+	return c.writeStream
+}
+
+func (c fakeTrackLocalContext) ID() string {
+	return "fake-track-local-context"
+}
+
+func (c fakeTrackLocalContext) RTCPReader() interceptor.RTCPReader {
+	return nil
 }

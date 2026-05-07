@@ -30,6 +30,12 @@ package enum SignalSessionClientAddResult: Sendable, Equatable {
 }
 
 package struct WebRTCStreamingProfile: Sendable, Equatable {
+    package static let h264AutomaticPixelBudgetPerSecond: Int64 = 26_542_080
+    package static let h264SmoothPixelBudgetPerSecond: Int64 = 26_542_080
+    package static let h264PowerEfficientPixelBudgetPerSecond: Int64 = 15_552_000
+    private static let h264Level31MaxMacroblocksPerFrame = 3_600
+    private static let h264Level31MaxMacroblocksPerSecond = 108_000
+
     package let framesPerSecond: Int
     package let minBitrateBps: Int
     package let maxBitrateBps: Int
@@ -52,24 +58,24 @@ package struct WebRTCStreamingProfile: Sendable, Equatable {
         switch performanceMode {
         case .automatic:
             self.init(
-                framesPerSecond: budget.framesPerSecond,
-                minBitrateBps: 2_000_000,
-                maxBitrateBps: 24_000_000,
-                pixelBudgetPerSecond: budget.pixelBudgetPerSecond
+                framesPerSecond: 30,
+                minBitrateBps: 1_500_000,
+                maxBitrateBps: 8_000_000,
+                pixelBudgetPerSecond: Self.h264AutomaticPixelBudgetPerSecond
             )
         case .smooth:
             self.init(
                 framesPerSecond: budget.framesPerSecond,
-                minBitrateBps: 3_000_000,
-                maxBitrateBps: 32_000_000,
-                pixelBudgetPerSecond: budget.pixelBudgetPerSecond
+                minBitrateBps: 1_500_000,
+                maxBitrateBps: 8_000_000,
+                pixelBudgetPerSecond: Self.h264SmoothPixelBudgetPerSecond
             )
         case .powerEfficient:
             self.init(
                 framesPerSecond: budget.framesPerSecond,
-                minBitrateBps: 1_000_000,
-                maxBitrateBps: 12_000_000,
-                pixelBudgetPerSecond: budget.pixelBudgetPerSecond
+                minBitrateBps: 800_000,
+                maxBitrateBps: 5_000_000,
+                pixelBudgetPerSecond: Self.h264PowerEfficientPixelBudgetPerSecond
             )
         }
     }
@@ -86,10 +92,53 @@ package struct WebRTCStreamingProfile: Sendable, Equatable {
         let dimensions = budget.captureDimensions(
             for: CapturePixelDimensions(width: Int(width), height: Int(height))
         )
-        return (
-            width: Int32(dimensions.width),
-            height: Int32(dimensions.height)
+        let h264Dimensions = Self.constrainToH264Level31(
+            dimensions,
+            framesPerSecond: framesPerSecond
         )
+        return (
+            width: Int32(h264Dimensions.width),
+            height: Int32(h264Dimensions.height)
+        )
+    }
+
+    private static func constrainToH264Level31(
+        _ dimensions: CapturePixelDimensions,
+        framesPerSecond: Int
+    ) -> CapturePixelDimensions {
+        let framesPerSecond = max(1, framesPerSecond)
+        let frameMacroblockBudget = min(
+            h264Level31MaxMacroblocksPerFrame,
+            h264Level31MaxMacroblocksPerSecond / framesPerSecond
+        )
+        guard frameMacroblockBudget > 0,
+              macroblockCount(for: dimensions) > frameMacroblockBudget else {
+            return dimensions
+        }
+
+        var constrained = dimensions.constrained(
+            toFramePixelBudget: Int64(frameMacroblockBudget * 16 * 16)
+        )
+        while macroblockCount(for: constrained) > frameMacroblockBudget {
+            if constrained.width >= constrained.height {
+                constrained = CapturePixelDimensions(
+                    width: constrained.width - 2,
+                    height: constrained.height
+                )
+            } else {
+                constrained = CapturePixelDimensions(
+                    width: constrained.width,
+                    height: constrained.height - 2
+                )
+            }
+        }
+        return constrained
+    }
+
+    private static func macroblockCount(for dimensions: CapturePixelDimensions) -> Int {
+        let macroblockWidth = (dimensions.width + 15) / 16
+        let macroblockHeight = (dimensions.height + 15) / 16
+        return macroblockWidth * macroblockHeight
     }
 }
 
@@ -271,27 +320,27 @@ package struct WebRTCCodecPreferenceDescriptor: Sendable, Equatable {
 }
 
 package enum WebRTCCodecPreference {
-    package nonisolated static func preferredVP8DescriptorIndexes(
+    package nonisolated static func requiredH264DescriptorIndexes(
         from descriptors: [WebRTCCodecPreferenceDescriptor]
     ) -> [Int]? {
-        let vp8Indexes = descriptors.indices.filter {
-            descriptors[$0].name.caseInsensitiveCompare(kRTCVp8CodecName) == .orderedSame
+        let h264Indexes = descriptors.indices.filter {
+            descriptors[$0].name.caseInsensitiveCompare(kRTCH264CodecName) == .orderedSame
         }
-        guard !vp8Indexes.isEmpty else { return nil }
+        guard !h264Indexes.isEmpty else { return nil }
 
-        let vp8PayloadTypes = Set(vp8Indexes.compactMap { descriptors[$0].payloadType })
+        let h264PayloadTypes = Set(h264Indexes.compactMap { descriptors[$0].payloadType })
         let rtxIndexes = descriptors.indices.filter { index in
             let descriptor = descriptors[index]
             guard descriptor.name.caseInsensitiveCompare(kRTCRtxCodecName) == .orderedSame,
                   let apt = descriptor.parameters["apt"].flatMap(Int.init) else {
                 return false
             }
-            return vp8PayloadTypes.contains(apt)
+            return h264PayloadTypes.contains(apt)
         }
-        return vp8Indexes + rtxIndexes
+        return h264Indexes + rtxIndexes
     }
 
-    package nonisolated static func preferredVP8Codecs(
+    package nonisolated static func requiredH264Codecs(
         from codecs: [RTCRtpCodecCapability]
     ) -> [RTCRtpCodecCapability]? {
         let descriptors = codecs.map {
@@ -301,10 +350,76 @@ package enum WebRTCCodecPreference {
                 parameters: $0.parameters
             )
         }
-        guard let indexes = preferredVP8DescriptorIndexes(from: descriptors) else {
+        guard let indexes = requiredH264DescriptorIndexes(from: descriptors) else {
             return nil
         }
         return indexes.map { codecs[$0] }
+    }
+
+    package nonisolated static func capabilitySummary(
+        from codecs: [RTCRtpCodecCapability]
+    ) -> String {
+        let descriptors = codecs.map {
+            WebRTCCodecPreferenceDescriptor(
+                name: $0.name,
+                payloadType: $0.preferredPayloadType?.intValue,
+                parameters: $0.parameters
+            )
+        }
+        return capabilitySummary(from: descriptors)
+    }
+
+    package nonisolated static func capabilitySummary(
+        from descriptors: [WebRTCCodecPreferenceDescriptor]
+    ) -> String {
+        let h264Descriptors = descriptors.filter {
+            $0.name.caseInsensitiveCompare(kRTCH264CodecName) == .orderedSame
+        }
+        let h264Summary = h264Descriptors.map { descriptor in
+            let payloadType = descriptor.payloadType.map(String.init) ?? "none"
+            let parameters = descriptor.parameters
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: ";")
+            return "\(descriptor.name)(pt=\(payloadType),params=\(parameters))"
+        }
+        .joined(separator: ",")
+        let h264Text = h264Summary.isEmpty ? "none" : h264Summary
+        return "\(h264Text); nonH264CodecCount=\(descriptors.count - h264Descriptors.count)"
+    }
+
+    package nonisolated static func sdpVideoCodecSummary(from sdp: String) -> String {
+        let lines = sdp.split(whereSeparator: \.isNewline).map(String.init)
+        var videoPayloadTypes: [String] = []
+        var payloadNames: [String: String] = [:]
+        var isVideoMedia = false
+
+        for line in lines {
+            if line.hasPrefix("m=") {
+                isVideoMedia = line.hasPrefix("m=video ")
+                if isVideoMedia {
+                    let parts = line.split(separator: " ").map(String.init)
+                    videoPayloadTypes = parts.count > 3 ? Array(parts.dropFirst(3)) : []
+                }
+                continue
+            }
+
+            guard isVideoMedia, line.hasPrefix("a=rtpmap:") else { continue }
+            let mapping = line.dropFirst("a=rtpmap:".count)
+            guard let separator = mapping.firstIndex(of: " ") else { continue }
+            let payloadType = String(mapping[..<separator])
+            let codecName = mapping[mapping.index(after: separator)...]
+                .split(separator: "/", maxSplits: 1)
+                .first
+                .map(String.init) ?? ""
+            payloadNames[payloadType] = codecName
+        }
+
+        let summary = videoPayloadTypes.compactMap { payloadType -> String? in
+            guard let name = payloadNames[payloadType] else { return nil }
+            return "\(payloadType):\(name)"
+        }
+        return summary.isEmpty ? "none" : summary.joined(separator: ",")
     }
 }
 
@@ -373,9 +488,14 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
         return factory.peerConnection(with: configuration, constraints: constraints, delegate: nil)
     }
 
-    nonisolated package func preferredVP8Codecs() -> [RTCRtpCodecCapability]? {
+    nonisolated package func requiredH264Codecs() -> [RTCRtpCodecCapability]? {
         let capabilities = factory.rtpSenderCapabilities(forKind: kRTCMediaStreamTrackKindVideo)
-        return WebRTCCodecPreference.preferredVP8Codecs(from: capabilities.codecs)
+        return WebRTCCodecPreference.requiredH264Codecs(from: capabilities.codecs)
+    }
+
+    nonisolated package func senderVideoCodecCapabilitySummary() -> String {
+        let capabilities = factory.rtpSenderCapabilities(forKind: kRTCMediaStreamTrackKindVideo)
+        return WebRTCCodecPreference.capabilitySummary(from: capabilities.codecs)
     }
 
     nonisolated package func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
