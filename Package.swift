@@ -12,7 +12,7 @@ let package = Package(
         .library(name: "VoidDisplayApp", targets: ["VoidDisplayApp"])
     ],
     dependencies: [
-        .package(url: "https://github.com/stasel/WebRTC.git", from: "140.0.0")
+        .package(url: "https://github.com/stasel/WebRTC.git", from: "147.0.0")
     ],
     targets: [
         .target(
