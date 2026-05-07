@@ -251,6 +251,10 @@
                 overlayWebSocketRequiredBody: "This browser cannot open signaling transport.",
                 overlayWebRTCRequiredTitle: "WebRTC required",
                 overlayWebRTCRequiredBody: "This browser does not support RTCPeerConnection.",
+                overlayH264RequiredTitle: "H.264 required",
+                overlayH264RequiredBody: "This browser or device did not expose H.264 for WebRTC playback.",
+                overlayH264AnswerRequiredBody: "The WebRTC answer did not negotiate H.264 video.",
+                overlayH264StatsRequiredBody: "The browser did not confirm an H.264 decoder in WebRTC stats.",
                 overlayNegotiationFailedTitle: "Negotiation failed",
                 overlayNegotiationFailedFallback: "Failed to create WebRTC offer.",
                 overlaySharingStoppedTitle: "Sharing stopped",
@@ -291,6 +295,10 @@
                 overlayWebSocketRequiredBody: "当前浏览器无法建立信令传输通道。",
                 overlayWebRTCRequiredTitle: "需要 WebRTC",
                 overlayWebRTCRequiredBody: "当前浏览器不支持 RTCPeerConnection。",
+                overlayH264RequiredTitle: "需要 H.264",
+                overlayH264RequiredBody: "当前浏览器或设备未暴露 WebRTC H.264 播放能力。",
+                overlayH264AnswerRequiredBody: "WebRTC answer 未协商到 H.264 视频。",
+                overlayH264StatsRequiredBody: "浏览器 WebRTC stats 未确认 H.264 解码器。",
                 overlayNegotiationFailedTitle: "协商失败",
                 overlayNegotiationFailedFallback: "创建 WebRTC offer 失败。",
                 overlaySharingStoppedTitle: "共享已停止",
@@ -342,6 +350,9 @@
                 return { iceServers: [] };
             }
         })();
+        const localOfferIceTimeoutMs = 2000;
+        const h264StatsConfirmationTimeoutMs = 10000;
+        const h264StatsPollIntervalMs = 100;
 
         function applyStaticCopy() {
             document.title = t("pageTitle");
@@ -481,7 +492,7 @@
 
         async function waitForLocalOfferSDP() {
             const startedAt = performance.now();
-            while (performance.now() - startedAt < 1000) {
+            while (performance.now() - startedAt < localOfferIceTimeoutMs) {
                 const sdp = localOfferSDPWithIceCredentials();
                 if (sdp) {
                     return sdp;
@@ -491,21 +502,133 @@
             throw new Error("Local WebRTC offer is missing ICE credentials.");
         }
 
+        function isH264Codec(codec) {
+            return String(codec?.mimeType || "").toLowerCase() === "video/h264";
+        }
+
+        function h264ReceiverCodecPreferences() {
+            if (!window.RTCRtpReceiver || typeof RTCRtpReceiver.getCapabilities !== "function") {
+                return null;
+            }
+            const capabilities = RTCRtpReceiver.getCapabilities("video");
+            const codecs = Array.isArray(capabilities?.codecs)
+                ? capabilities.codecs.filter(isH264Codec)
+                : [];
+            if (codecs.length === 0) {
+                throw new Error(t("overlayH264RequiredBody"));
+            }
+            return codecs;
+        }
+
+        function videoCodecNamesFromSDP(sdp) {
+            const lines = String(sdp || "").split(/\r?\n/u);
+            const payloadTypes = [];
+            const namesByPayloadType = new Map();
+            let inVideo = false;
+
+            for (const line of lines) {
+                if (line.startsWith("m=")) {
+                    inVideo = line.startsWith("m=video ");
+                    if (inVideo) {
+                        payloadTypes.length = 0;
+                        const parts = line.trim().split(/\s+/u);
+                        payloadTypes.push(...parts.slice(3));
+                    }
+                    continue;
+                }
+                if (!inVideo || !line.startsWith("a=rtpmap:")) continue;
+                const match = /^a=rtpmap:(\d+)\s+([^/\s]+)/iu.exec(line);
+                if (match) {
+                    namesByPayloadType.set(match[1], match[2].toLowerCase());
+                }
+            }
+
+            return payloadTypes
+                .map((payloadType) => namesByPayloadType.get(payloadType))
+                .filter(Boolean);
+        }
+
+        function assertH264AnswerSDP(sdp) {
+            const codecNames = videoCodecNamesFromSDP(sdp);
+            const hasH264 = codecNames.some((name) => name === "h264");
+            const hasUnexpectedVideoCodec = codecNames.some((name) => name !== "h264" && name !== "rtx");
+            if (!hasH264 || hasUnexpectedVideoCodec) {
+                throw new Error(t("overlayH264AnswerRequiredBody"));
+            }
+        }
+
+        function failH264Requirement(error) {
+            terminalStop = true;
+            setStatus(t("statusNegotiationFailed"));
+            setOverlay(
+                t("overlayH264RequiredTitle"),
+                error?.message || t("overlayH264RequiredBody"),
+                true
+            );
+            clearReconnectTimer();
+            closePeer();
+            closeSocketAndClearReference();
+            transition("closed");
+        }
+
+        async function verifySelectedH264Codec() {
+            if (!peer || typeof peer.getStats !== "function") {
+                throw new Error(t("overlayH264StatsRequiredBody"));
+            }
+
+            const startedAt = performance.now();
+            while (performance.now() - startedAt < h264StatsConfirmationTimeoutMs) {
+                const stats = await peer.getStats();
+                const reports = new Map();
+                stats.forEach((report) => reports.set(report.id, report));
+                for (const report of reports.values()) {
+                    const reportKind = report.kind || report.mediaType;
+                    if (
+                        report.type !== "inbound-rtp" ||
+                        reportKind !== "video" ||
+                        !report.codecId
+                    ) {
+                        continue;
+                    }
+                    const codec = reports.get(report.codecId);
+                    if (!codec?.mimeType) continue;
+                    if (String(codec.mimeType).toLowerCase() === "video/h264") {
+                        return;
+                    }
+                    throw new Error(t("overlayH264StatsRequiredBody"));
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, h264StatsPollIntervalMs));
+            }
+            throw new Error(t("overlayH264StatsRequiredBody"));
+        }
+
         async function startPeerConnection() {
             closePeer();
             peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });
             let usesTransceiverOffer = false;
+            const h264Preferences = h264ReceiverCodecPreferences();
             if (typeof peer.addTransceiver === "function") {
-                peer.addTransceiver("video", { direction: "recvonly" });
+                const transceiver = peer.addTransceiver("video", { direction: "recvonly" });
+                if (
+                    h264Preferences &&
+                    typeof transceiver.setCodecPreferences === "function"
+                ) {
+                    transceiver.setCodecPreferences(h264Preferences);
+                }
                 usesTransceiverOffer = true;
             }
 
-            peer.ontrack = (event) => {
+            peer.ontrack = async (event) => {
                 if (event.streams && event.streams[0]) {
                     player.srcObject = event.streams[0];
-                    setStatus(t("statusLive"));
-                    setOverlay(t("overlayLiveTitle"), t("overlayLiveBody"), false);
-                    transition("streaming");
+                    try {
+                        await verifySelectedH264Codec();
+                        setStatus(t("statusLive"));
+                        setOverlay(t("overlayLiveTitle"), t("overlayLiveBody"), false);
+                        transition("streaming");
+                    } catch (error) {
+                        failH264Requirement(error);
+                    }
                 }
             };
 
@@ -614,11 +737,16 @@
                 switch (payload.type) {
                     case "answer":
                         if (!peer || typeof payload.sdp !== "string") return;
-                        await peer.setRemoteDescription({
-                            type: "answer",
-                            sdp: payload.sdp
-                        });
-                        setStatus(t("statusConnected"));
+                        try {
+                            assertH264AnswerSDP(payload.sdp);
+                            await peer.setRemoteDescription({
+                                type: "answer",
+                                sdp: payload.sdp
+                            });
+                            setStatus(t("statusConnected"));
+                        } catch (error) {
+                            failH264Requirement(error);
+                        }
                         break;
                     case "ice_candidate":
                         if (!peer || typeof payload.candidate !== "string") return;

@@ -25,7 +25,7 @@ package struct SharePerformanceModePicker: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            Text("Automatic balances 60 fps clarity and encoder load using a shared pixel budget.")
+            Text("Automatic balances H.264 compatibility, clarity, and encoder load.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"github.com/pion/ice/v4"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	pionsdp "github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -86,6 +88,184 @@ type RoomSnapshot struct {
 	SlowSubscriberCount  int    `json:"slowSubscriberCount"`
 	PLIForwardCount      uint64 `json:"pliForwardCount"`
 	FIRForwardCount      uint64 `json:"firForwardCount"`
+}
+
+var errH264VideoCodecMissing = errors.New("h264_video_codec_missing")
+
+var h264RTCPFeedback = []webrtc.RTCPFeedback{
+	{Type: "goog-remb"},
+	{Type: "ccm", Parameter: "fir"},
+	{Type: "nack"},
+	{Type: "nack", Parameter: "pli"},
+}
+
+var h264CodecParameters = []webrtc.RTPCodecParameters{
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 102,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=102",
+		},
+		PayloadType: 103,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 104,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=104",
+		},
+		PayloadType: 105,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 106,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=106",
+		},
+		PayloadType: 107,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 108,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=108",
+		},
+		PayloadType: 109,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 127,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=127",
+		},
+		PayloadType: 125,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 39,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=39",
+		},
+		PayloadType: 40,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:     webrtc.MimeTypeH264,
+			ClockRate:    90000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640c1f",
+			RTCPFeedback: h264RTCPFeedback,
+		},
+		PayloadType: 112,
+	},
+	{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeRTX,
+			ClockRate:   90000,
+			SDPFmtpLine: "apt=112",
+		},
+		PayloadType: 113,
+	},
+}
+
+func registerH264Codecs(mediaEngine *webrtc.MediaEngine) error {
+	for _, codec := range h264CodecParameters {
+		if err := mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func h264TrackCapability() webrtc.RTPCodecCapability {
+	return webrtc.RTPCodecCapability{
+		MimeType:     webrtc.MimeTypeH264,
+		ClockRate:    90000,
+		RTCPFeedback: h264RTCPFeedback,
+	}
+}
+
+func requireH264VideoCodec(sdp string) error {
+	var description pionsdp.SessionDescription
+	if err := description.UnmarshalString(sdp); err != nil {
+		return err
+	}
+	for _, media := range description.MediaDescriptions {
+		if !strings.EqualFold(media.MediaName.Media, "video") {
+			continue
+		}
+		payloadTypes := make([]uint8, 0, len(media.MediaName.Formats))
+		for _, format := range media.MediaName.Formats {
+			payloadType, err := strconv.ParseUint(format, 10, 8)
+			if err != nil {
+				continue
+			}
+			payloadTypes = append(payloadTypes, uint8(payloadType))
+		}
+		codecs, err := description.GetCodecsForPayloadTypes(payloadTypes)
+		if err != nil {
+			return err
+		}
+		for _, codec := range codecs {
+			if strings.EqualFold(codec.Name, "H264") {
+				return nil
+			}
+		}
+	}
+	return errH264VideoCodecMissing
 }
 
 func NewServer(config Config) *Server {
@@ -228,7 +408,7 @@ func (s *Server) startWebRTC() error {
 	}
 	udpMux := ice.NewUDPMuxDefault(ice.UDPMuxParams{UDPConn: udpConn})
 	mediaEngine := &webrtc.MediaEngine{}
-	if err := mediaEngine.RegisterDefaultCodecs(); err != nil {
+	if err := registerH264Codecs(mediaEngine); err != nil {
 		_ = udpMux.Close()
 		_ = udpConn.Close()
 		return err
@@ -636,6 +816,9 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 	if r.newPeerConnection == nil {
 		return publisherOfferResult{}, errors.New("room_peer_connection_factory_missing")
 	}
+	if err := requireH264VideoCodec(sdp); err != nil {
+		return publisherOfferResult{}, err
+	}
 	pc, err := r.newPeerConnection()
 	if err != nil {
 		return publisherOfferResult{}, err
@@ -725,12 +908,15 @@ func (r *Room) SetViewerOffer(clientID string, sdp string) (string, error) {
 	if r.newPeerConnection == nil {
 		return "", errors.New("room_peer_connection_factory_missing")
 	}
+	if err := requireH264VideoCodec(sdp); err != nil {
+		return "", err
+	}
 	pc, err := r.newPeerConnection()
 	if err != nil {
 		return "", err
 	}
 	track, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
+		h264TrackCapability(),
 		"screen",
 		"voiddisplay",
 	)
