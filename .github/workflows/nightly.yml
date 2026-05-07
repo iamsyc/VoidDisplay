@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 concurrency:
   group: nightly-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false

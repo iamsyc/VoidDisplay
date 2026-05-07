@@ -31,6 +31,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -180,22 +183,22 @@ jobs:
             --arch '${{ matrix.arch }}'
 
       - name: Attest DMG provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
 
       - name: Attest checksum provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
 
       - name: Attest SBOM provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
           sbom-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json

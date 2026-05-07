@@ -112,6 +112,13 @@ xcode_cmd=(
 	"TOOL_ROOT=$TOOL_ROOT"
 )
 
+if [[ "$ACTION" == "build" ]]; then
+	xcode_cmd+=(
+		"CODE_SIGNING_ALLOWED=NO"
+		"CODE_SIGNING_REQUIRED=NO"
+	)
+fi
+
 if [[ "$ACTION" == "test" ]]; then
 	xcode_cmd+=("-resultBundlePath" "$RESULT_BUNDLE_PATH")
 	if [[ -n "$TEST_PLAN" ]]; then
