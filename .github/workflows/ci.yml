@@ -26,6 +26,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -166,11 +169,11 @@ jobs:
               scripts/ci/download_relay_modules.sh \
               scripts/release/thin_webrtc_and_sign.sh \
               scripts/ci/fixtures/xcode-log-scanner/negative-ordinary-text.log \
+              scripts/ci/fixtures/xcode-log-scanner/positive-build-failed.log \
               scripts/ci/fixtures/xcode-log-scanner/positive-clang.log \
               scripts/ci/fixtures/xcode-log-scanner/positive-linker.log \
               scripts/ci/fixtures/xcode-log-scanner/positive-swift.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-xcode-build.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-xcode-test.log; do
+              scripts/ci/fixtures/xcode-log-scanner/positive-test-failed.log; do
               if [ ! -e "$tool_root/$required" ]; then
                 echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
                 exit 1

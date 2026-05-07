@@ -48,6 +48,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 jobs:
   ui_smoke_tests:
     runs-on: macos-26

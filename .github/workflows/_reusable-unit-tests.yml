@@ -28,6 +28,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 jobs:
   unit_tests:
     runs-on: macos-26
