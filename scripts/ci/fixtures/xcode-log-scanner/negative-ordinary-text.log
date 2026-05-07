@@ -1,0 +1,4 @@
+[WARN] release notes mention warning: for user documentation.
+[ERROR] release notes mention error: for user documentation.
+The phrase warning: appears in ordinary diagnostic prose.
+The phrase error: appears in ordinary diagnostic prose.

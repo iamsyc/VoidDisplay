@@ -1,0 +1,47 @@
+[tools]
+go = "1.26.2"
+"aqua:rhysd/actionlint" = "1.7.12"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"aqua:mvdan/sh" = "3.13.1"
+swiftformat = "0.61.1"
+"aqua:realm/SwiftLint" = "0.63.2"
+"aqua:jqlang/jq" = "1.8.1"
+"aqua:BurntSushi/ripgrep" = "15.1.0"
+"aqua:anchore/syft" = "1.44.0"
+"aqua:cli/cli" = "2.92.0"
+
+[tasks.bootstrap]
+run = "scripts/dev/bootstrap.sh"
+
+[tasks.doctor]
+run = "scripts/dev/doctor.sh"
+
+[tasks."ci:static"]
+run = "scripts/ci/static.sh"
+
+[tasks."ci:unit"]
+run = "scripts/ci/unit.sh"
+
+[tasks."ci:xcode"]
+run = "scripts/ci/xcode.sh"
+
+[tasks."ci:ui-smoke"]
+run = "scripts/ci/ui_smoke.sh"
+
+[tasks."ci:release-smoke"]
+run = "scripts/ci/release_smoke.sh"
+
+[tasks."ci:coverage"]
+run = "scripts/ci/coverage.sh"
+
+[tasks."ci:full"]
+run = "scripts/ci/full_regression.sh"
+
+[tasks."release:verify"]
+run = "scripts/release/verify.sh"
+
+[tasks."release:prepare"]
+run = "scripts/release/prepare.sh"
+
+[tasks."release:publish"]
+run = "scripts/release/publish.sh"

@@ -12,12 +12,18 @@ on:
       unit_status:
         description: Final unit test job status.
         value: ${{ jobs.unit_tests.outputs.unit_status }}
-      coverage_artifact_name:
-        description: Coverage artifact name.
-        value: ${{ jobs.unit_tests.outputs.coverage_artifact_name }}
-      xcresult_artifact_name:
-        description: SwiftPM test log artifact name.
-        value: ${{ jobs.unit_tests.outputs.xcresult_artifact_name }}
+      artifact_name:
+        description: Unit gate artifact name.
+        value: ${{ jobs.unit_tests.outputs.artifact_name }}
+      swift_test_count:
+        description: SwiftPM test count parsed from the unit log.
+        value: ${{ jobs.unit_tests.outputs.swift_test_count }}
+      go_package_count:
+        description: Go package count parsed from the unit log.
+        value: ${{ jobs.unit_tests.outputs.go_package_count }}
+      unit_reason:
+        description: Unit gate failure classification.
+        value: ${{ jobs.unit_tests.outputs.unit_reason }}
 
 permissions:
   contents: read
@@ -25,41 +31,74 @@ permissions:
 jobs:
   unit_tests:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
     outputs:
       unit_status: ${{ steps.finalize.outputs.unit_status }}
-      coverage_artifact_name: ${{ steps.finalize.outputs.coverage_artifact_name }}
-      xcresult_artifact_name: ${{ steps.finalize.outputs.xcresult_artifact_name }}
+      artifact_name: ${{ steps.finalize.outputs.artifact_name }}
+      swift_test_count: ${{ steps.finalize.outputs.swift_test_count }}
+      go_package_count: ${{ steps.finalize.outputs.go_package_count }}
+      unit_reason: ${{ steps.finalize.outputs.unit_reason }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Select Xcode
-        id: xcode
-        uses: ./.github/actions/xcode-select
+      - name: Checkout trusted scripts
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .ai-tmp/trusted-ci
+
+      - name: Bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
+            for required in \
+              scripts/lib/contract.sh \
+              scripts/lib/common.sh \
+              scripts/lib/artifacts.sh \
+              scripts/dev/bootstrap.sh \
+              scripts/ci/unit.sh; do
+              if [ ! -e "$tool_root/$required" ]; then
+                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
+                exit 1
+              fi
+            done
+          fi
+
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Cache SwiftPM build artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             .build
-          key: swiftpm-unit-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**', 'Tests/**', 'scripts/test/**') }}
+          key: swiftpm-unit-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**', 'Tests/**', 'Tools/VoidDisplayRelay/**') }}
           restore-keys: |
-            swiftpm-unit-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
+            swiftpm-unit-${{ runner.os }}-
 
-      - name: Run unit tests (no signing)
+      - name: Run SwiftPM and Go unit gate
+        shell: bash
         run: |
-          chmod +x scripts/test/unit_gate.sh
-          scripts/test/unit_gate.sh \
-            --log-path .ai-tmp/unit-gate/unit-tests.log
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
+          fi
 
-      - name: Upload unit test log
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/unit.sh" --out-dir .ai-tmp/unit-gate
+
+      - name: Upload unit artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: unit-tests-log
-          path: .ai-tmp/unit-gate/unit-tests.log
+          name: unit-gate
+          path: .ai-tmp/unit-gate
+          if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days }}
 
       - name: Set reusable outputs
@@ -67,8 +106,21 @@ jobs:
         if: always()
         shell: bash
         run: |
+          summary_file=".ai-tmp/unit-gate/unit-summary.json"
+          swift_test_count="0"
+          go_package_count="0"
+          unit_reason="not_run"
+
+          if [ -f "$summary_file" ] && jq -e . "$summary_file" >/dev/null 2>&1; then
+            swift_test_count="$(jq -r '.swift_test_count // 0' "$summary_file")"
+            go_package_count="$(jq -r '.go_package_count // 0' "$summary_file")"
+            unit_reason="$(jq -r '.reason // "unit_failed"' "$summary_file")"
+          fi
+
           {
             echo "unit_status=${{ job.status }}"
-            echo "coverage_artifact_name="
-            echo "xcresult_artifact_name=unit-tests-log"
+            echo "artifact_name=unit-gate"
+            echo "swift_test_count=${swift_test_count}"
+            echo "go_package_count=${go_package_count}"
+            echo "unit_reason=${unit_reason}"
           } >> "$GITHUB_OUTPUT"

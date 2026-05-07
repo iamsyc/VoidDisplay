@@ -32,7 +32,7 @@ jobs:
     if: always()
     needs:
       - ui_smoke_tests
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     permissions:
       contents: read
     steps:

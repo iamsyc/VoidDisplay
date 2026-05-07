@@ -15,17 +15,21 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*.*.*'
     paths:
       - 'Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj'
       - 'Tools/VoidDisplayRelay/**'
       - 'scripts/build-relay.sh'
+      - 'scripts/ci/**'
+      - 'scripts/dev/**'
+      - 'scripts/lib/**'
       - 'scripts/release/**'
+      - 'mise.toml'
+      - 'Brewfile'
       - '.github/workflows/release.yml'
+      - '.github/actions/xcode-select/action.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
@@ -34,194 +38,79 @@ concurrency:
 jobs:
   prepare_release:
     name: prepare-release
-    runs-on: ubuntu-latest
+    runs-on: macos-26
+    timeout-minutes: 10
     outputs:
       should_release: ${{ steps.prepare.outputs.should_release }}
       tag: ${{ steps.prepare.outputs.tag }}
       target_sha: ${{ steps.prepare.outputs.target_sha }}
       version: ${{ steps.prepare.outputs.version }}
       build_number: ${{ steps.prepare.outputs.build_number }}
+    permissions:
+      contents: read
     steps:
-      - name: Checkout target
-        uses: actions/checkout@v6
+      - name: Validate workflow ref
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            echo "Manual release dispatch must run from main. Use target_ref to select the release target."
+            exit 1
+          fi
+
+      - name: Checkout trusted release scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Checkout release target
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}
+          path: target
+          fetch-depth: 0
+
+      - name: Bootstrap prepare tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Prepare release metadata
         id: prepare
+        shell: bash
         env:
-          BEFORE_SHA: ${{ github.event.before }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/prepare.sh" \
+            --event-name "$EVENT_NAME" \
+            --target-repo-dir "$GITHUB_WORKSPACE/target" \
+            --before-sha "$BEFORE_SHA" \
+            --input-tag "$INPUT_TAG" \
+            --ref-name "$REF_NAME" \
+            --ref-type "$REF_TYPE" \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_WORKSPACE/target/.ai-tmp/release-prepare/prepare-summary.json"
 
-          project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
-
-          read_single_value() {
-            local key="$1"
-            local source="$2"
-            local values=()
-
-            mapfile -t values < <(
-              sed -nE "s/^[[:space:]]*${key} = ([^;]+);/\1/p" "${source}" | sort -u
-            )
-
-            if [ "${#values[@]}" -ne 1 ]; then
-              echo "Expected exactly one unique ${key}; found: ${values[*]:-<none>}" >&2
-              exit 1
-            fi
-
-            printf '%s\n' "${values[0]}"
-          }
-
-          read_single_value_from_git() {
-            local key="$1"
-            local commit="$2"
-            local path="$3"
-            local values=()
-
-            if ! git cat-file -e "${commit}:${path}" 2>/dev/null; then
-              echo "Unable to read ${path} at ${commit}." >&2
-              exit 1
-            fi
-
-            mapfile -t values < <(
-              git show "${commit}:${path}" |
-                sed -nE "s/^[[:space:]]*${key} = ([^;]+);/\1/p" |
-                sort -u
-            )
-
-            if [ "${#values[@]}" -ne 1 ]; then
-              echo "Expected exactly one unique ${key} at ${commit}; found: ${values[*]:-<none>}" >&2
-              exit 1
-            fi
-
-            printf '%s\n' "${values[0]}"
-          }
-
-          ensure_tag_matches_target_if_present() {
-            local release_tag="$1"
-            local target_sha="$2"
-            local existing_tag_sha=""
-
-            existing_tag_sha="$(find_existing_tag_sha "${release_tag}")"
-
-            if [ -n "${existing_tag_sha}" ] && [ "${existing_tag_sha}" != "${target_sha}" ]; then
-              echo "Tag ${release_tag} already points to ${existing_tag_sha}, expected ${target_sha}." >&2
-              exit 1
-            fi
-          }
-
-          find_existing_tag_sha() {
-            local release_tag="$1"
-
-            git fetch --tags --force
-            git rev-parse -q --verify "refs/tags/${release_tag}^{commit}" 2>/dev/null || true
-          }
-
-          if [ ! -f "${project_file}" ]; then
-            echo "Expected project file not found: ${project_file}" >&2
-            exit 1
-          fi
-
-          target_sha="$(git rev-parse HEAD)"
-          version="$(read_single_value MARKETING_VERSION "${project_file}")"
-          build_number="$(read_single_value CURRENT_PROJECT_VERSION "${project_file}")"
-
-          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid MARKETING_VERSION: ${version}. Expected format: MAJOR.MINOR.PATCH" >&2
-            exit 1
-          fi
-
-          if [[ ! "${build_number}" =~ ^[0-9]+$ ]]; then
-            echo "Invalid CURRENT_PROJECT_VERSION: ${build_number}. Expected a positive integer." >&2
-            exit 1
-          fi
-
-          release_tag="v${version}"
-
-          {
-            echo "tag=${release_tag}"
-            echo "target_sha=${target_sha}"
-            echo "version=${version}"
-            echo "build_number=${build_number}"
-          } >> "${GITHUB_OUTPUT}"
-
-          case "${EVENT_NAME}" in
-            workflow_dispatch)
-              if [[ ! "${INPUT_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                echo "Invalid input tag: ${INPUT_TAG}. Expected format: vMAJOR.MINOR.PATCH" >&2
-                exit 1
-              fi
-
-              if [ "${INPUT_TAG}" != "${release_tag}" ]; then
-                echo "Input tag ${INPUT_TAG} does not match MARKETING_VERSION ${version}." >&2
-                exit 1
-              fi
-
-              ensure_tag_matches_target_if_present "${release_tag}" "${target_sha}"
-              ;;
-            push)
-              if [ "${REF_TYPE}" = "tag" ]; then
-                if [ "${REF_NAME}" != "${release_tag}" ]; then
-                  echo "Tag ${REF_NAME} does not match MARKETING_VERSION ${version}." >&2
-                  exit 1
-                fi
-                ensure_tag_matches_target_if_present "${release_tag}" "${target_sha}"
-              elif [ "${REF_TYPE}" = "branch" ] && [ "${REF_NAME}" = "main" ]; then
-                if [ -z "${BEFORE_SHA}" ] || [[ "${BEFORE_SHA}" =~ ^0+$ ]]; then
-                  echo "Unable to compare against the previous main commit." >&2
-                  exit 1
-                fi
-
-                previous_version="$(read_single_value_from_git MARKETING_VERSION "${BEFORE_SHA}" "${project_file}")"
-                previous_build_number="$(read_single_value_from_git CURRENT_PROJECT_VERSION "${BEFORE_SHA}" "${project_file}")"
-
-                if [ "${previous_version}" = "${version}" ]; then
-                  existing_tag_sha="$(find_existing_tag_sha "${release_tag}")"
-
-                  if [ -n "${existing_tag_sha}" ]; then
-                    echo "should_release=false" >> "${GITHUB_OUTPUT}"
-                    echo "MARKETING_VERSION is unchanged at ${version}; ${release_tag} already exists at ${existing_tag_sha}. Skipping release."
-                    exit 0
-                  fi
-
-                  echo "MARKETING_VERSION is unchanged at ${version}, but ${release_tag} does not exist. Continuing release."
-                else
-                  if [[ ! "${previous_build_number}" =~ ^[0-9]+$ ]]; then
-                    echo "Previous CURRENT_PROJECT_VERSION is invalid: ${previous_build_number}." >&2
-                    exit 1
-                  fi
-
-                  if [ "${previous_build_number}" = "${build_number}" ]; then
-                    echo "CURRENT_PROJECT_VERSION must change when MARKETING_VERSION changes." >&2
-                    exit 1
-                  fi
-
-                  if [ "${build_number}" -le "${previous_build_number}" ]; then
-                    echo "CURRENT_PROJECT_VERSION must increase from ${previous_build_number} to ${build_number}." >&2
-                    exit 1
-                  fi
-                fi
-
-                ensure_tag_matches_target_if_present "${release_tag}" "${target_sha}"
-              else
-                echo "Unsupported push ref: ${REF_TYPE}/${REF_NAME}" >&2
-                exit 1
-              fi
-              ;;
-            *)
-              echo "Unsupported event: ${EVENT_NAME}" >&2
-              exit 1
-              ;;
-          esac
-
-          echo "should_release=true" >> "${GITHUB_OUTPUT}"
-          echo "Prepared release ${release_tag} from MARKETING_VERSION ${version}."
+      - name: Upload prepare summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-prepare-summary
+          path: target/.ai-tmp/release-prepare
+          if-no-files-found: warn
+          retention-days: 14
 
   build_dmg:
     name: build-dmg (${{ matrix.label }})
@@ -229,6 +118,11 @@ jobs:
       - prepare_release
     if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
     runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -240,97 +134,81 @@ jobs:
             arch: x86_64
             runs_on: macos-26-intel
     steps:
-      - name: Checkout release tag
-        uses: actions/checkout@v6
+      - name: Checkout trusted release scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Checkout release target
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
+          path: target
+          fetch-depth: 0
 
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Bootstrap release tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Build ad hoc DMG and SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
+            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --arch '${{ matrix.arch }}' \
+            --label '${{ matrix.label }}' \
+            --out-dir "$GITHUB_WORKSPACE/target/.ai-tmp/release-${{ matrix.label }}"
+
+      - name: Verify local release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+            --assets-dir "$GITHUB_WORKSPACE/target/.ai-tmp/release-${{ matrix.label }}/release-assets" \
+            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --label '${{ matrix.label }}' \
+            --arch '${{ matrix.arch }}'
+
+      - name: Attest DMG provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
-          go-version-file: Tools/VoidDisplayRelay/go.mod
-          cache-dependency-path: Tools/VoidDisplayRelay/go.sum
+          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
 
-      - name: Download relay Go modules
-        working-directory: Tools/VoidDisplayRelay
-        env:
-          GOPROXY: https://proxy.golang.org|https://goproxy.cn|direct
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if go mod download; then
-              exit 0
-            fi
-            if [ "${attempt}" -eq 3 ]; then
-              exit 1
-            fi
-            sleep "$((attempt * 10))"
-          done
-
-      - name: Build Release app (unsigned)
-        env:
-          ARCH: ${{ matrix.arch }}
-          LABEL: ${{ matrix.label }}
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -scheme VoidDisplay \
-            -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
-            -configuration Release \
-            -destination 'generic/platform=macOS' \
-            -derivedDataPath ".ai-tmp/release-${LABEL}/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            ARCHS="${ARCH}" \
-            build
-
-      - name: Thin/sign/verify for target arch
-        env:
-          ARCH: ${{ matrix.arch }}
-          LABEL: ${{ matrix.label }}
-        run: |
-          set -euo pipefail
-          app_path=".ai-tmp/release-${LABEL}/DerivedData/Build/Products/Release/VoidDisplay.app"
-          if [ ! -d "${app_path}" ]; then
-            echo "Expected app not found: ${app_path}"
-            exit 1
-          fi
-
-          bash scripts/release/thin_webrtc_and_sign.sh "${app_path}" "${ARCH}"
-
-      - name: Create DMG and checksum
-        env:
-          LABEL: ${{ matrix.label }}
-          TAG: ${{ needs.prepare_release.outputs.tag }}
-        run: |
-          set -euo pipefail
-          app_path=".ai-tmp/release-${LABEL}/DerivedData/Build/Products/Release/VoidDisplay.app"
-          if [ ! -d "${app_path}" ]; then
-            echo "Expected app not found: ${app_path}"
-            exit 1
-          fi
-
-          dmg_name="VoidDisplay-${TAG}-${LABEL}.dmg"
-          rm -rf release-assets
-          mkdir -p release-assets
-          chmod +x scripts/release/create_dmg.sh
-          scripts/release/create_dmg.sh \
-            "${app_path}" \
-            "release-assets/${dmg_name}" \
-            "VoidDisplay"
-
-          shasum -a 256 "release-assets/${dmg_name}" > "release-assets/${dmg_name}.sha256"
-
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v7
+      - name: Attest checksum provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
-          name: release-dmg-${{ matrix.label }}
+          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
+
+      - name: Attest SBOM provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
+          sbom-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-assets-${{ matrix.label }}
           path: |
-            release-assets/*.dmg
-            release-assets/*.sha256
+            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
+            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
+            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
+            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.json
           if-no-files-found: error
           retention-days: 14
 
@@ -340,63 +218,83 @@ jobs:
       - prepare_release
       - build_dmg
     if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      attestations: read
     steps:
-      - name: Checkout release commit
-        uses: actions/checkout@v6
+      - name: Checkout trusted release scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare_release.outputs.target_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Download packaged DMGs
-        uses: actions/download-artifact@v8
+      - name: Checkout release target
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          pattern: release-dmg-*
+          ref: ${{ needs.prepare_release.outputs.target_sha }}
+          path: target
+          fetch-depth: 0
+
+      - name: Bootstrap publish tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-assets-*
           merge-multiple: true
           path: release-assets
 
-      - name: Verify release assets
+      - name: Verify downloaded release assets and attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ls -lah release-assets
-          test -n "$(ls -1 release-assets/*.dmg 2>/dev/null)"
-          test -n "$(ls -1 release-assets/*.sha256 2>/dev/null)"
+          tool_root="$GITHUB_WORKSPACE"
 
-      - name: Ensure release tag
-        env:
-          TAG: ${{ needs.prepare_release.outputs.tag }}
-          TARGET_SHA: ${{ needs.prepare_release.outputs.target_sha }}
-        run: |
-          set -euo pipefail
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+            --assets-dir "$GITHUB_WORKSPACE/release-assets" \
+            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --label arm64 \
+            --arch arm64 \
+            --repository '${{ github.repository }}' \
+            --require-attestation true
 
-          git fetch --tags --force
-          existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
-
-          if [ -n "${existing_tag_sha}" ]; then
-            if [ "${existing_tag_sha}" != "${TARGET_SHA}" ]; then
-              echo "Tag ${TAG} already points to ${existing_tag_sha}, expected ${TARGET_SHA}." >&2
-              exit 1
-            fi
-
-            echo "Tag ${TAG} already points to ${TARGET_SHA}; continuing."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${TAG}" "${TARGET_SHA}" -m "Release ${TAG}"
-          git push origin "refs/tags/${TAG}"
-          echo "Created and pushed tag ${TAG}."
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+            --assets-dir "$GITHUB_WORKSPACE/release-assets" \
+            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --label intel64 \
+            --arch x86_64 \
+            --repository '${{ github.repository }}' \
+            --require-attestation true
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v3
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/publish.sh" \
+            --assets-dir "$GITHUB_WORKSPACE/release-assets" \
+            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --target-sha '${{ needs.prepare_release.outputs.target_sha }}' \
+            --repository '${{ github.repository }}' \
+            --out-dir "$GITHUB_WORKSPACE/target/.ai-tmp/release-publish"
+
+      - name: Upload publish summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          tag_name: ${{ needs.prepare_release.outputs.tag }}
-          target_commitish: ${{ needs.prepare_release.outputs.target_sha }}
-          files: |
-            release-assets/*.dmg
-            release-assets/*.sha256
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          make_latest: true
-          overwrite_files: false
+          name: release-publish-summary
+          path: target/.ai-tmp/release-publish
+          if-no-files-found: warn
+          retention-days: 14

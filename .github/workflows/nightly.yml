@@ -1,0 +1,183 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full_regression:
+    name: full-regression
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Run full regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/full_regression.sh" --out-dir .ai-tmp/nightly-full-regression
+
+      - name: Upload full regression artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly-full-regression
+          path: .ai-tmp/nightly-full-regression
+          if-no-files-found: warn
+          retention-days: 7
+
+  coverage:
+    name: coverage
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Run coverage unit gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/coverage.sh" --out-dir .ai-tmp/nightly-coverage
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly-coverage
+          path: |
+            .ai-tmp/nightly-coverage
+            .build/debug/codecov
+          if-no-files-found: warn
+          retention-days: 7
+
+  nightly_summary:
+    name: nightly-summary
+    if: always()
+    needs:
+      - full_regression
+      - coverage
+      - ui_smoke_matrix
+      - release_dry_run
+    runs-on: macos-26
+    timeout-minutes: 5
+    steps:
+      - name: Write nightly summary
+        env:
+          FULL_RESULT: ${{ needs.full_regression.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          UI_RESULT: ${{ needs.ui_smoke_matrix.result }}
+          RELEASE_RESULT: ${{ needs.release_dry_run.result }}
+        run: |
+          {
+            echo "## Nightly Summary"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| Full regression | ${FULL_RESULT} |"
+            echo "| Coverage | ${COVERAGE_RESULT} |"
+            echo "| UI smoke matrix | ${UI_RESULT} |"
+            echo "| Release dry run | ${RELEASE_RESULT} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ui_smoke_matrix:
+    name: ui-smoke (${{ matrix.case_name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case_name: baseline
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
+          - case_name: supportCenter
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testSupportCenterNavigationSmoke_baseline
+          - case_name: permissionDenied
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPermissionDeniedSmoke_captureAndShare
+          - case_name: loading
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testLoadingSmoke_captureAndShareShowVisibleLoadingState
+          - case_name: rebuildFailed
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testVirtualDisplaySmoke_rebuildFailedRowShowsRetry
+    uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
+    with:
+      only_testing: ${{ matrix.only_testing }}
+      max_attempts: 2
+      artifact_retention_days: 7
+      artifact_name_suffix: nightly-${{ matrix.case_name }}
+      enforce_failure: true
+
+  release_dry_run:
+    name: release-dry-run (${{ matrix.label }})
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: arm64
+            arch: arm64
+            runs_on: macos-26
+          - label: intel64
+            arch: x86_64
+            runs_on: macos-26-intel
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Build and verify release dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj | sort -u)"
+          test -n "$version"
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
+            --tag "v${version}" \
+            --arch '${{ matrix.arch }}' \
+            --label '${{ matrix.label }}' \
+            --out-dir '.ai-tmp/nightly-release-${{ matrix.label }}'
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+            --assets-dir '.ai-tmp/nightly-release-${{ matrix.label }}/release-assets' \
+            --tag "v${version}" \
+            --label '${{ matrix.label }}' \
+            --arch '${{ matrix.arch }}'
+
+      - name: Upload release dry run artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly-release-${{ matrix.label }}
+          path: .ai-tmp/nightly-release-${{ matrix.label }}/release-assets
+          if-no-files-found: warn
+          retention-days: 7

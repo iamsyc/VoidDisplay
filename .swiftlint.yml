@@ -1,0 +1,13 @@
+included:
+  - Sources
+  - Tests
+  - UITests
+  - Package.swift
+
+excluded:
+  - .build
+  - .ai-tmp
+  - DerivedData
+
+only_rules:
+  - duplicate_imports

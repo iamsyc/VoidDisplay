@@ -689,7 +689,6 @@ struct VirtualDisplayControllerTests {
     }
 }
 
-
 private struct ControllerTestEnvironment {
     let virtualDisplay: VirtualDisplayController
 }

@@ -150,17 +150,25 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 环境要求：Xcode 26+，macOS 15.6 或更高版本，Intel 或 Apple Silicon Mac。
 
 ```bash
-# 运行 SwiftPM 单元测试（无需付费开发者证书）
-swift test
+# 安装并检查本地工具
+scripts/dev/bootstrap.sh
+scripts/dev/doctor.sh
 
-# 构建 App
-xcodebuild -scheme VoidDisplay \
-  -workspace VoidDisplay.xcworkspace \
-  -configuration Debug \
-  -derivedDataPath .ai-tmp/readme-build/DerivedData \
-  -destination 'generic/platform=macOS' \
-  build
+# 静态检查、SwiftPM 测试、Go 测试和 Xcode 构建
+scripts/ci/static.sh
+scripts/ci/unit.sh
+scripts/ci/xcode.sh --action build --configuration Debug
 ```
+
+完整项目回归入口（打开或合并 PR 前推荐执行）：
+
+```bash
+scripts/ci/full_regression.sh
+```
+
+该脚本会执行静态检查、SwiftPM 测试、Go 测试、Xcode Debug 构建、Xcode Debug 测试和 arm64 release smoke，并在 `.ai-tmp/full-regression/` 写入日志。
+
+CI 工作流细节与手动 UI smoke dispatch 入口见 `docs/testing/ci-workflows.md`。
 
 ### 调试入口
 

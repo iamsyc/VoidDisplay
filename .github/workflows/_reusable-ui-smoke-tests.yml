@@ -19,7 +19,7 @@ on:
         type: number
         default: 7
       enforce_failure:
-        description: Whether UI smoke failures (including unstable after retries) should fail the job.
+        description: Whether UI smoke failures should fail the job.
         required: false
         type: boolean
         default: true
@@ -30,7 +30,7 @@ on:
         default: default
     outputs:
       ui_status:
-        description: Business-level UI smoke status (passed/failed/unstable/unknown).
+        description: Business-level UI smoke status.
         value: ${{ jobs.ui_smoke_tests.outputs.ui_status }}
       ui_reason:
         description: Failure classification reason.
@@ -44,9 +44,6 @@ on:
       ui_log_file:
         description: Last attempt log filename.
         value: ${{ jobs.ui_smoke_tests.outputs.ui_log_file }}
-      ui_enforced_exit_code:
-        description: Final enforced exit code for the UI smoke job semantics.
-        value: ${{ jobs.ui_smoke_tests.outputs.ui_enforced_exit_code }}
 
 permissions:
   contents: read
@@ -54,187 +51,86 @@ permissions:
 jobs:
   ui_smoke_tests:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
     outputs:
       ui_status: ${{ steps.parse_summary.outputs.ui_status }}
       ui_reason: ${{ steps.parse_summary.outputs.ui_reason }}
       ui_attempt: ${{ steps.parse_summary.outputs.ui_attempt }}
       ui_max_attempts: ${{ steps.parse_summary.outputs.ui_max_attempts }}
       ui_log_file: ${{ steps.parse_summary.outputs.ui_log_file }}
-      ui_enforced_exit_code: ${{ steps.parse_summary.outputs.ui_enforced_exit_code }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Select Xcode
-        id: xcode
-        uses: ./.github/actions/xcode-select
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Checkout trusted scripts
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          go-version-file: Tools/VoidDisplayRelay/go.mod
-          cache-dependency-path: Tools/VoidDisplayRelay/go.sum
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .ai-tmp/trusted-ci
 
-      - name: Download relay Go modules
-        working-directory: Tools/VoidDisplayRelay
-        env:
-          GOPROXY: https://proxy.golang.org|https://goproxy.cn|direct
+      - name: Bootstrap tools
+        shell: bash
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            if go mod download; then
-              exit 0
-            fi
-            if [ "${attempt}" -eq 3 ]; then
-              exit 1
-            fi
-            sleep "$((attempt * 10))"
-          done
+          tool_root="$GITHUB_WORKSPACE"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
+            for required in \
+              scripts/build-relay.sh \
+              scripts/lib/contract.sh \
+              scripts/lib/common.sh \
+              scripts/lib/artifacts.sh \
+              scripts/lib/xcode.sh \
+              scripts/lib/xcresult.sh \
+              scripts/lib/architecture.sh \
+              scripts/lib/release_binaries.sh \
+              scripts/dev/bootstrap.sh \
+              scripts/ci/download_relay_modules.sh \
+              scripts/ci/ui_smoke.sh; do
+              if [ ! -e "$tool_root/$required" ]; then
+                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
+                exit 1
+              fi
+            done
+          fi
+
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Cache Xcode metadata
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: |
             .ai-tmp/ci-ui-smoke/DerivedData/SourcePackages
             .ai-tmp/ci-ui-smoke/DerivedData/ModuleCache.noindex
-          key: xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-${{ hashFiles('Apps/VoidDisplay/VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
+          key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('Apps/VoidDisplay/VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
           restore-keys: |
-            xcode-meta-ui-${{ runner.os }}-${{ steps.xcode.outputs.xcode_cache_suffix }}-
+            xcode-meta-ui-${{ runner.os }}-
 
-      - name: Run UI smoke test (no signing)
-        id: run-ui
+      - name: Run UI smoke
+        id: run_ui
         continue-on-error: true
         shell: bash
-        env:
-          ONLY_TESTING: ${{ inputs.only_testing }}
-          MAX_ATTEMPTS: ${{ inputs.max_attempts }}
         run: |
-          classify_failure() {
-            local log_file="$1"
-            if grep -Eq "Early unexpected exit, operation never finished bootstrapping|Test crashed with signal kill before establishing connection" "$log_file"; then
-              echo "runner_bootstrap_failure"
-              return
-            fi
-            if grep -Eq "Assertion Failure|XCTAssert|Test Case '.*' failed" "$log_file"; then
-              echo "assertion_failure"
-              return
-            fi
-            if grep -Eq "XCTSkip|skip real-environment|environment not stable" "$log_file"; then
-              echo "environment_unstable"
-              return
-            fi
-            echo "unknown_failure"
-          }
-
-          write_summary() {
-            local summary_status="$1"
-            local summary_reason="$2"
-            local summary_attempt="$3"
-            local summary_log_file="$4"
-            jq -n \
-              --arg status "$summary_status" \
-              --arg reason "$summary_reason" \
-              --arg attempt "$summary_attempt" \
-              --arg max_attempts "$max_attempts" \
-              --arg log_file "$summary_log_file" \
-              '{
-                status: $status,
-                reason: $reason,
-                attempt: ($attempt | tonumber),
-                max_attempts: ($max_attempts | tonumber),
-                log_file: $log_file
-              }' > "$summary_file"
-          }
-
-          summary_file="ui-smoke-summary.json"
-          max_attempts="${MAX_ATTEMPTS}"
-          if ! [[ "$max_attempts" =~ ^[0-9]+$ ]] || [ "$max_attempts" -lt 1 ] || [ "$max_attempts" -gt 5 ]; then
-            echo "Invalid MAX_ATTEMPTS=${MAX_ATTEMPTS}; falling back to 2 (allowed range: 1-5)."
-            max_attempts=2
-          fi
-          if [ -z "${ONLY_TESTING}" ]; then
-            echo "ONLY_TESTING input is empty." >&2
-            exit 1
-          fi
-          attempt=1
-          last_reason="not_run"
-          last_log_file=""
-
-          while [ "$attempt" -le "$max_attempts" ]; do
-            echo "UI smoke attempt ${attempt}/${max_attempts}"
-            log_file="ui-smoke-attempt-${attempt}.log"
-            rm -rf UISmokeTests.xcresult
-
-            set +e
-            xcodebuild \
-              -scheme VoidDisplay \
-              -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
-              -destination 'platform=macOS,arch=arm64' \
-              -derivedDataPath .ai-tmp/ci-ui-smoke/DerivedData \
-              -resultBundlePath UISmokeTests.xcresult \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              test \
-              -only-testing:"${ONLY_TESTING}" \
-              2>&1 | tee "$log_file"
-            status=${PIPESTATUS[0]}
-            set -e
-
-            if [ "$status" -eq 0 ]; then
-              if ! bash scripts/test/xcresult_test_count_guard.sh \
-                --xcresult UISmokeTests.xcresult \
-                --label "UI smoke attempt ${attempt}/${max_attempts}"; then
-                write_summary "failed" "selector_mismatch" "$attempt" "$log_file"
-                echo "UI smoke selector mismatch detected (0 tests executed)."
-                exit 1
-              fi
-              write_summary "passed" "none" "$attempt" "$log_file"
-              exit 0
-            fi
-
-            last_reason="$(classify_failure "$log_file")"
-            last_log_file="$log_file"
-            if [[ "$last_reason" == "assertion_failure" || "$last_reason" == "unknown_failure" ]]; then
-              write_summary "failed" "$last_reason" "$attempt" "$log_file"
-              echo "UI smoke failed (reason=${last_reason}); deterministic failure -> no retry."
-              exit 1
-            fi
-
-            attempt=$((attempt + 1))
-            if [ "$attempt" -le "$max_attempts" ]; then
-              echo "UI smoke failed (reason=${last_reason}), retrying once..."
-            fi
-          done
-
-          write_summary "failed" "$last_reason" "$((attempt - 1))" "$last_log_file"
-
-          if [[ "$last_reason" == "environment_unstable" || "$last_reason" == "runner_bootstrap_failure" ]]; then
-            echo "UI smoke marked unstable (reason=${last_reason}); retries exhausted -> failing this run."
-            exit 1
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
           fi
 
-          echo "UI smoke failed after ${max_attempts} attempts."
-          exit 1
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/ui_smoke.sh" \
+            --only-testing '${{ inputs.only_testing }}' \
+            --max-attempts '${{ inputs.max_attempts }}' \
+            --enforce-failure '${{ inputs.enforce_failure }}' \
+            --out-dir .ai-tmp/ci-ui-smoke
 
-      - name: Upload UI smoke test result bundle
+      - name: Upload UI smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ui-smoke-tests-xcresult-${{ inputs.artifact_name_suffix }}
-          path: UISmokeTests.xcresult
-          if-no-files-found: warn
-          retention-days: ${{ inputs.artifact_retention_days }}
-
-      - name: Upload UI smoke failure summary
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ui-smoke-summary-${{ inputs.artifact_name_suffix }}
-          path: |
-            ui-smoke-summary.json
-            ui-smoke-attempt-*.log
+          name: ui-smoke-${{ inputs.artifact_name_suffix }}
+          path: .ai-tmp/ci-ui-smoke
           if-no-files-found: warn
           retention-days: ${{ inputs.artifact_retention_days }}
 
@@ -244,58 +140,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          summary_file="ui-smoke-summary.json"
+          summary_file=".ai-tmp/ci-ui-smoke/ui-smoke-summary.json"
           ui_status="unknown"
           ui_reason="not_run"
           ui_attempt="0"
-          default_max_attempts='${{ inputs.max_attempts }}'
-          ui_max_attempts="${default_max_attempts}"
+          ui_max_attempts="${{ inputs.max_attempts }}"
           ui_log_file=""
-          ui_enforced_exit_code="1"
 
           if [ -f "$summary_file" ] && jq -e . "$summary_file" >/dev/null 2>&1; then
             raw_status="$(jq -r '.status // "unknown"' "$summary_file")"
             raw_reason="$(jq -r '.reason // "not_run"' "$summary_file")"
             ui_attempt="$(jq -r '.attempt // 0' "$summary_file")"
-            ui_max_attempts="$(jq -r --argjson default_max_attempts "${default_max_attempts}" '.max_attempts // $default_max_attempts' "$summary_file")"
+            ui_max_attempts="$(jq -r '.max_attempts // "${{ inputs.max_attempts }}"' "$summary_file")"
             ui_log_file="$(jq -r '.log_file // ""' "$summary_file")"
-
             case "$raw_status" in
               passed)
                 ui_status="passed"
                 ui_reason="none"
-                ui_enforced_exit_code="0"
                 ;;
               failed)
                 case "$raw_reason" in
                   runner_bootstrap_failure|environment_unstable)
                     ui_status="unstable"
                     ui_reason="$raw_reason"
-                    ui_enforced_exit_code="1"
-                    ;;
-                  assertion_failure|unknown_failure)
-                    ui_status="failed"
-                    ui_reason="$raw_reason"
-                    ui_enforced_exit_code="1"
                     ;;
                   *)
-                    ui_status="unknown"
+                    ui_status="failed"
                     ui_reason="$raw_reason"
-                    ui_enforced_exit_code="1"
                     ;;
                 esac
                 ;;
               *)
                 ui_status="unknown"
                 ui_reason="$raw_reason"
-                ui_enforced_exit_code="1"
                 ;;
             esac
-          else
-            if [ -f "$summary_file" ]; then
-              ui_reason="invalid_summary_json"
-            fi
           fi
 
           {
@@ -304,7 +183,6 @@ jobs:
             echo "ui_attempt=${ui_attempt}"
             echo "ui_max_attempts=${ui_max_attempts}"
             echo "ui_log_file=${ui_log_file}"
-            echo "ui_enforced_exit_code=${ui_enforced_exit_code}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Enforce UI smoke job semantics
@@ -313,16 +191,12 @@ jobs:
         env:
           ENFORCE_FAILURE: ${{ inputs.enforce_failure }}
           UI_STATUS: ${{ steps.parse_summary.outputs.ui_status }}
-          UI_REASON: ${{ steps.parse_summary.outputs.ui_reason }}
-          UI_ENFORCED_EXIT_CODE: ${{ steps.parse_summary.outputs.ui_enforced_exit_code }}
         run: |
           set -euo pipefail
-          echo "UI smoke summary status=${UI_STATUS} reason=${UI_REASON} enforced_exit_code=${UI_ENFORCED_EXIT_CODE}"
-          if [ "${ENFORCE_FAILURE}" != "true" ]; then
-            echo "Failure enforcement disabled by caller; leaving job successful for informational mode."
+          if [ "$ENFORCE_FAILURE" != "true" ]; then
             exit 0
           fi
-          if [ "${UI_ENFORCED_EXIT_CODE}" = "0" ]; then
+          if [ "$UI_STATUS" = "passed" ]; then
             exit 0
           fi
           exit 1

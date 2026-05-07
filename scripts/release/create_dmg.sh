@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=scripts/lib/contract.sh
+source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
+# shellcheck source=scripts/lib/common.sh
+source "$TOOL_ROOT/scripts/lib/common.sh"
+
 usage() {
-  cat <<'EOF'
+	cat <<'EOF'
 Usage: create_dmg.sh <app-path> <output-dmg> <volume-name>
 EOF
 }
 
 if [ "$#" -ne 3 ]; then
-  usage >&2
-  exit 1
+	usage >&2
+	exit 1
 fi
 
 app_path="$1"
@@ -17,11 +22,10 @@ output_dmg="$2"
 volume_name="$3"
 
 if [ ! -d "${app_path}" ]; then
-  echo "App bundle not found: ${app_path}" >&2
-  exit 1
+	echo "App bundle not found: ${app_path}" >&2
+	exit 1
 fi
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 output_dir="$(dirname "${output_dmg}")"
 app_name="$(basename "${app_path}")"
 
@@ -36,36 +40,36 @@ mount_path=""
 device=""
 
 cleanup() {
-  if [ -n "${device}" ]; then
-    hdiutil detach "${device}" -quiet >/dev/null 2>&1 || hdiutil detach "${device}" -force -quiet >/dev/null 2>&1 || true
-  fi
-  rm -rf "${work_dir}"
+	if [ -n "${device}" ]; then
+		hdiutil detach "${device}" -quiet >/dev/null 2>&1 || hdiutil detach "${device}" -force -quiet >/dev/null 2>&1 || true
+	fi
+	rm -rf "${work_dir}"
 }
 
 trap cleanup EXIT
 
 detach_volume() {
-  local target_device="$1"
+	local target_device="$1"
 
-  if [ -z "${target_device}" ]; then
-    return
-  fi
+	if [ -z "${target_device}" ]; then
+		return
+	fi
 
-  for _ in 1 2 3 4 5; do
-    if hdiutil detach "${target_device}" -quiet >/dev/null 2>&1; then
-      return
-    fi
-    sleep 1
-  done
+	for _ in 1 2 3 4 5; do
+		if hdiutil detach "${target_device}" -quiet >/dev/null 2>&1; then
+			return
+		fi
+		sleep 1
+	done
 
-  hdiutil detach "${target_device}" -force -quiet >/dev/null 2>&1 || true
+	hdiutil detach "${target_device}" -force -quiet >/dev/null 2>&1 || true
 }
 
 run_with_timeout() {
-  local timeout_seconds="$1"
-  shift
+	local timeout_seconds="$1"
+	shift
 
-  python3 - "$timeout_seconds" "$@" <<'PY'
+	python3 - "$timeout_seconds" "$@" <<'PY'
 import subprocess
 import sys
 
@@ -82,7 +86,7 @@ PY
 
 mkdir -p "${background_dir}"
 # Render the DMG background at build time from a fixed template.
-swift "${script_dir}/render_dmg_background.swift" "${background_path}"
+swift "$TOOL_ROOT/scripts/release/render_dmg_background.swift" "${background_path}"
 
 cp -R "${app_path}" "${stage_dir}/"
 ln -s /Applications "${stage_dir}/Applications"
@@ -93,36 +97,36 @@ background_kb="$(du -sk "${background_path}" | awk '{print $1}')"
 size_kb="$((app_kb + background_kb + 65536))"
 
 hdiutil create \
-  -srcfolder "${stage_dir}" \
-  -volname "${volume_name}" \
-  -fs HFS+ \
-  -fsargs "-c c=64,a=16,e=16" \
-  -format UDRW \
-  -size "${size_kb}k" \
-  -ov \
-  "${rw_dmg}"
+	-srcfolder "${stage_dir}" \
+	-volname "${volume_name}" \
+	-fs HFS+ \
+	-fsargs "-c c=64,a=16,e=16" \
+	-format UDRW \
+	-size "${size_kb}k" \
+	-ov \
+	"${rw_dmg}"
 
 attach_output="$(hdiutil attach -readwrite -noverify -noautoopen "${rw_dmg}")"
 device="$(printf '%s\n' "${attach_output}" | awk '/^\/dev\// {print $1; exit}')"
 mount_path="$(printf '%s\n' "${attach_output}" | sed -n 's#.*\(/Volumes/.*\)$#\1#p' | tail -n 1)"
 
 if [ -z "${device}" ] || [ -z "${mount_path}" ]; then
-  echo "Failed to mount DMG." >&2
-  printf '%s\n' "${attach_output}" >&2
-  exit 1
+	echo "Failed to mount DMG." >&2
+	printf '%s\n' "${attach_output}" >&2
+	exit 1
 fi
 
 mounted_volume_name="$(basename "${mount_path}")"
 
 layout_exit_code=0
-run_with_timeout 45 osascript "${script_dir}/apply_dmg_layout.applescript" "${mounted_volume_name}" "${app_name}" || layout_exit_code="$?"
+run_with_timeout 45 osascript "$TOOL_ROOT/scripts/release/apply_dmg_layout.applescript" "${mounted_volume_name}" "${app_name}" || layout_exit_code="$?"
 if [ "${layout_exit_code}" -ne 0 ]; then
-  if [ "${layout_exit_code}" -eq 124 ]; then
-    echo "DMG layout timed out after 45 seconds." >&2
-  else
-    echo "DMG layout failed with exit code ${layout_exit_code}." >&2
-  fi
-  exit 1
+	if [ "${layout_exit_code}" -eq 124 ]; then
+		echo "DMG layout timed out after 45 seconds." >&2
+	else
+		echo "DMG layout failed with exit code ${layout_exit_code}." >&2
+	fi
+	exit 1
 fi
 
 SetFile -a V "${mount_path}/.background" || true

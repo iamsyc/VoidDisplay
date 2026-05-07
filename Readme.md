@@ -79,7 +79,7 @@ Check the [Releases](https://github.com/iamsyc/VoidDisplay/releases) page for th
 
 ### Unsigned Build Notice (First Launch)
 
-Current release builds are unsigned and not notarized yet, so macOS may block first launch with messages like:
+Current release builds use ad hoc signing and are not notarized, so macOS may block first launch with messages like:
 - "cannot be opened because Apple cannot check it for malicious software"
 - "is damaged and can't be opened"
 
@@ -150,22 +150,20 @@ Notes:
 Requirements: Xcode 26+, macOS 15.6 or later on an Intel or Apple Silicon Mac.
 
 ```bash
-# Run SwiftPM unit tests
-swift test
+# Install pinned local tooling with mise or Homebrew fallback
+scripts/dev/bootstrap.sh
+scripts/dev/doctor.sh
 
-# Build the app
-xcodebuild -scheme VoidDisplay \
-  -workspace VoidDisplay.xcworkspace \
-  -configuration Debug \
-  -derivedDataPath .ai-tmp/readme-build/DerivedData \
-  -destination 'generic/platform=macOS' \
-  build
+# Static checks, SwiftPM tests, Go tests, and Xcode build
+scripts/ci/static.sh
+scripts/ci/unit.sh
+scripts/ci/xcode.sh --action build --configuration Debug
 ```
 
 Full project regression gate (recommended before opening/merging PR):
 
 ```bash
-scripts/test/full_regression_gate.sh
+scripts/ci/full_regression.sh
 ```
 
 This script runs end-to-end test/build gates and fails fast when:
@@ -173,6 +171,20 @@ This script runs end-to-end test/build gates and fails fast when:
 - any test failed
 - Debug/Release build has warnings
 - Debug/Release build failed
+
+CI workflow details and manual UI smoke dispatch are documented in `docs/testing/ci-workflows.md`.
+
+Release assets include a DMG, SHA256 checksum, SPDX SBOM, and GitHub artifact attestation. To verify downloaded release assets:
+
+```bash
+scripts/release/verify.sh \
+  --assets-dir release-assets \
+  --tag vX.Y.Z \
+  --label arm64 \
+  --arch arm64 \
+  --repository iamsyc/VoidDisplay \
+  --require-attestation true
+```
 
 ### Debug Entry Points
 

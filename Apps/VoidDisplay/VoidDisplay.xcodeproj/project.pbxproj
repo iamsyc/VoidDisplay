@@ -253,23 +253,30 @@
 
 /* Begin PBXShellScriptBuildPhase section */
 		CDAA20012F05000100000001 /* Build Relay */ = {
+			alwaysOutOfDate = 1;
 			isa = PBXShellScriptBuildPhase;
 			inputPaths = (
-				"$(SRCROOT)/../../scripts/build-relay.sh",
-				"$(SRCROOT)/../../Tools/VoidDisplayRelay/go.mod",
-				"$(SRCROOT)/../../Tools/VoidDisplayRelay/go.sum",
-				"$(SRCROOT)/../../Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main.go",
-				"$(SRCROOT)/../../Tools/VoidDisplayRelay/internal/relay/server.go",
-				"$(SRCROOT)/../../Tools/VoidDisplayRelay/internal/relay/server_test.go",
+				"$(TOOL_ROOT)/scripts/build-relay.sh",
+				"$(TOOL_ROOT)/scripts/lib/contract.sh",
+				"$(TOOL_ROOT)/scripts/lib/common.sh",
+				"$(TOOL_ROOT)/scripts/lib/architecture.sh",
+				"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.mod",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.sum",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main.go",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server.go",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server_test.go",
 			);
 			name = "Build Relay";
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay",
 			);
-			shellPath = /bin/zsh;
+			shellPath = /bin/bash;
 			shellScript = (
 				"cd \"$SRCROOT/../..\"",
-				"./scripts/build-relay.sh",
+				"export ROOT_DIR=\"${ROOT_DIR:-$PWD}\"",
+				"export TOOL_ROOT=\"${TOOL_ROOT:-$ROOT_DIR}\"",
+				"\"$TOOL_ROOT/scripts/build-relay.sh\"",
 				"",
 			);
 		};
@@ -428,6 +435,7 @@
 		BA0465F22E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplay" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
@@ -478,6 +486,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.developerchen.voiddisplay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
+				ROOT_DIR = "$(SRCROOT)/../..";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
@@ -488,12 +497,14 @@
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				TOOL_ROOT = "$(ROOT_DIR)";
 			};
 			name = Debug;
 		};
 		BA0465F32E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplay" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
@@ -544,6 +555,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.developerchen.voiddisplay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
+				ROOT_DIR = "$(SRCROOT)/../..";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
@@ -554,12 +566,14 @@
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
+				TOOL_ROOT = "$(ROOT_DIR)";
 			};
 			name = Release;
 		};
 		BA0465F82E90E53D00012958 /* Debug configuration for PBXNativeTarget "VoidDisplayUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
@@ -594,6 +608,7 @@
 		BA0465F92E90E53D00012958 /* Release configuration for PBXNativeTarget "VoidDisplayUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;

@@ -1,0 +1,80 @@
+name: CodeQL
+
+on:
+  pull_request:
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Tools/VoidDisplayRelay/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '**/Package.resolved'
+      - '.github/workflows/codeql.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Tools/VoidDisplayRelay/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '**/Package.resolved'
+      - '.github/workflows/codeql.yml'
+  schedule:
+    - cron: '31 17 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: swift
+            runs_on: macos-26
+            build_command: swift build
+          - language: go
+            runs_on: macos-26
+            build_command: cd Tools/VoidDisplayRelay && go test ./...
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Go
+        if: ${{ matrix.language == 'go' }}
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: Tools/VoidDisplayRelay/go.mod
+          cache-dependency-path: Tools/VoidDisplayRelay/go.sum
+
+      - name: Select Xcode
+        if: ${{ matrix.language == 'swift' }}
+        uses: ./.github/actions/xcode-select
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: manual
+
+      - name: Manual build
+        shell: bash
+        run: |
+          set -euo pipefail
+          ${{ matrix.build_command }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
