@@ -8,7 +8,7 @@ source "$TOOL_ROOT/scripts/lib/common.sh"
 
 cd "$ROOT_DIR"
 
-require_command actionlint shellcheck shfmt swiftformat swiftlint rg
+require_command actionlint jq shellcheck shfmt shasum swift swiftformat swiftlint rg
 
 validate_runner_labels() {
 	local invalid
@@ -281,6 +281,152 @@ validate_xcode_log_scanner() {
 	scan_xcode_log_for_diagnostics "Xcode negative log fixture" "$fixture_dir/negative-ordinary-text.log"
 }
 
+validate_webrtc_header_overlay() {
+	local overlay_root="$ROOT_DIR/Vendor/WebRTCHeaders/M147"
+	local include_dir="$overlay_root/include/WebRTC"
+	local checksum_file="$overlay_root/SHA256SUMS"
+	local forbidden_header
+	local invalid
+	local expected_paths
+	local actual_paths
+	local required_source
+	local manifest_json
+
+	if ! manifest_json="$(swift package dump-package 2>/dev/null)"; then
+		die "Package.swift must be readable by SwiftPM."
+	fi
+
+	if ! jq -e \
+		--arg url 'https://github.com/stasel/WebRTC/releases/download/147.0.0/WebRTC-M147.xcframework.zip' \
+		--arg checksum '49f9b1713432c19f408e3218fc8526c7692fafca5869f7ec5f5991614276ed40' \
+		'.targets[] | select(.name == "WebRTCBinary" and .type == "binary" and .url == $url and .checksum == $checksum)' \
+		<<<"$manifest_json" >/dev/null; then
+		die "Package.swift must define WebRTCBinary from the stasel/WebRTC 147.0.0 asset."
+	fi
+	if ! jq -e \
+		'.targets[] | select(.name == "WebRTC" and .type == "regular" and .path == "Vendor/WebRTCHeaders/M147" and .publicHeadersPath == "include" and any(.dependencies[]?; .byName[0] == "WebRTCBinary"))' \
+		<<<"$manifest_json" >/dev/null; then
+		die "Package.swift must expose the WebRTC M147 overlay through the local WebRTC target."
+	fi
+	if ! jq -e \
+		'.targets[] | select(.name == "VoidDisplaySharing" and any(.dependencies[]?; .byName[0] == "WebRTC"))' \
+		<<<"$manifest_json" >/dev/null; then
+		die "VoidDisplaySharing must depend on the local WebRTC wrapper target."
+	fi
+	if ! jq -e '(.dependencies // []) | length == 0' <<<"$manifest_json" >/dev/null; then
+		die "Package.swift must not retain remote source package dependencies."
+	fi
+	if rg -F 'https://github.com/stasel/WebRTC.git' "$ROOT_DIR/Package.swift" >/dev/null; then
+		die "Package.swift must use the local WebRTC wrapper target instead of the remote stasel package."
+	fi
+	invalid="$(rg -n 'https://github.com/stasel/WebRTC.git|\"identity\"[[:space:]]*:[[:space:]]*\"webrtc\"' \
+		"$ROOT_DIR/Package.resolved" \
+		"$ROOT_DIR/Apps/VoidDisplay/VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" \
+		"$ROOT_DIR/VoidDisplay.xcworkspace/xcshareddata/swiftpm/Package.resolved" || true)"
+	if [[ -n "$invalid" ]]; then
+		printf '%s\n' "$invalid" >&2
+		die "Package.resolved files must not retain stale stasel/WebRTC source pins."
+	fi
+
+	[[ -f "$overlay_root/SOURCES.md" ]] || die "WebRTC M147 header overlay must document sources."
+	[[ -f "$checksum_file" ]] || die "WebRTC M147 header overlay must include SHA256SUMS."
+	[[ -f "$overlay_root/WebRTCHeaderOverlayAnchor.c" ]] || die "WebRTC M147 header overlay target must include its anchor C file."
+	[[ -f "$include_dir/WebRTC.h" ]] || die "WebRTC M147 header overlay must include WebRTC.h."
+	[[ -f "$include_dir/RTCMTLNSVideoView.h" ]] || die "WebRTC M147 header overlay must include RTCMTLNSVideoView.h."
+
+	for required_source in \
+		'https://github.com/stasel/WebRTC/releases/download/147.0.0/WebRTC-M147.xcframework.zip' \
+		'49f9b1713432c19f408e3218fc8526c7692fafca5869f7ec5f5991614276ed40' \
+		'refs/branch-heads/7727' \
+		'macos-x86_64_arm64/WebRTC.framework/Versions/A/Headers/WebRTC.h' \
+		'RTCMTLNSVideoView.h'; do
+		if ! rg -F "$required_source" "$overlay_root/SOURCES.md" >/dev/null; then
+			die "WebRTC M147 SOURCES.md is missing required source detail: $required_source"
+		fi
+	done
+
+	invalid="$(
+		find "$overlay_root" -type f \
+			! -path "$include_dir/*.h" \
+			! -path "$overlay_root/SOURCES.md" \
+			! -path "$overlay_root/SHA256SUMS" \
+			! -path "$overlay_root/WebRTCHeaderOverlayAnchor.c" \
+			-print
+	)"
+	if [[ -n "$invalid" ]]; then
+		printf '%s\n' "$invalid" >&2
+		die "WebRTC M147 overlay may only contain headers, source metadata, checksums, and the anchor C file."
+	fi
+
+	if ! rg -F '#import <WebRTC/RTCVideoRenderer.h>' "$include_dir/RTCMTLNSVideoView.h" >/dev/null; then
+		die "RTCMTLNSVideoView.h must import RTCVideoRenderer.h through the WebRTC framework path."
+	fi
+
+	for forbidden_header in RTCEAGLVideoView.h RTCCameraPreviewView.h UIDevice+RTCDevice.h; do
+		[[ ! -e "$include_dir/$forbidden_header" ]] || die "WebRTC M147 overlay must not include iOS-only header: $forbidden_header"
+	done
+
+	invalid="$(rg -n '^[[:space:]]*#(import|include)[[:space:]]+"[^"]+"' "$include_dir" || true)"
+	if [[ -n "$invalid" ]]; then
+		printf '%s\n' "$invalid" >&2
+		die "WebRTC M147 overlay must not use WebRTC-local quoted imports."
+	fi
+
+	invalid="$(
+		while IFS=: read -r file line_number import_path; do
+			[[ -n "$import_path" ]] || continue
+			import_path="${import_path#<WebRTC/}"
+			import_path="${import_path%>}"
+			[[ -f "$include_dir/$import_path" ]] || printf '%s:%s missing <%s>\n' "$file" "$line_number" "WebRTC/$import_path"
+		done < <(rg -n -o '<WebRTC/[^>]+>' "$include_dir" || true)
+	)"
+	if [[ -n "$invalid" ]]; then
+		printf '%s\n' "$invalid" >&2
+		die "WebRTC M147 overlay has unresolved recursive WebRTC imports."
+	fi
+
+	invalid="$(
+		awk '
+			FNR == 1 {
+				depth = 0
+				iphone_guard_depth = 0
+			}
+			/^[[:space:]]*#[[:space:]]*if/ {
+				depth += 1
+				if ($0 ~ /TARGET_OS_IPHONE/) {
+					iphone_guard_depth = depth
+				}
+			}
+			/UIKit/ && iphone_guard_depth == 0 {
+				print FILENAME ":" FNR ":" $0
+			}
+			/^[[:space:]]*#[[:space:]]*endif/ {
+				if (iphone_guard_depth == depth) {
+					iphone_guard_depth = 0
+				}
+				if (depth > 0) {
+					depth -= 1
+				}
+			}
+		' "$include_dir"/*.h
+	)"
+	if [[ -n "$invalid" ]]; then
+		printf '%s\n' "$invalid" >&2
+		die "WebRTC M147 overlay may only reference UIKit inside TARGET_OS_IPHONE guards."
+	fi
+
+	if ! (cd "$overlay_root" && shasum -a 256 -c SHA256SUMS >/dev/null); then
+		(cd "$overlay_root" && shasum -a 256 -c SHA256SUMS) >&2 || true
+		die "WebRTC M147 overlay checksums do not match."
+	fi
+
+	expected_paths="$(awk '{ print $2 }' "$checksum_file" | sort)"
+	actual_paths="$(cd "$overlay_root" && find include/WebRTC -type f -name '*.h' -print | sort)"
+	if ! diff -u <(printf '%s\n' "$expected_paths") <(printf '%s\n' "$actual_paths") >&2; then
+		die "WebRTC M147 overlay SHA256SUMS must cover every header and only headers."
+	fi
+}
+
 validate_swift_style() {
 	swiftformat --lint --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Package.swift
 	swiftlint lint --config "$ROOT_DIR/.swiftlint.yml" --quiet
@@ -294,6 +440,7 @@ validate_script_contract
 validate_workflow_script_contract
 validate_xcode_shell_build_phase
 validate_xcode_log_scanner
+validate_webrtc_header_overlay
 validate_swift_style
 
 info "Static gate passed."
