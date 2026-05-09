@@ -108,6 +108,58 @@ validate_script_contract() {
 	fi
 }
 
+validate_workflow_required_file_references() {
+	local missing
+	local workflow_files=("$@")
+
+	missing="$(
+		awk '
+			function emit_required_paths(line, tokens, token_count, token_index, token) {
+				sub(/[[:space:]]*;[[:space:]]*do.*$/, "", line)
+				gsub(/\\/, " ", line)
+				token_count = split(line, tokens, /[[:space:]]+/)
+				for (token_index = 1; token_index <= token_count; token_index += 1) {
+					token = tokens[token_index]
+					gsub(/^["\047]+/, "", token)
+					gsub(/["\047]+$/, "", token)
+					if (token ~ /^(scripts|\.github)\//) {
+						print FILENAME ":" FNR ":" token
+					}
+				}
+			}
+
+			/for required in/ {
+				raw = $0
+				sub(/^.*for required in[[:space:]]*/, "", raw)
+				emit_required_paths(raw)
+				in_required = 1
+				if ($0 ~ /;[[:space:]]*do/) {
+					in_required = 0
+				}
+				next
+			}
+			in_required {
+				raw = $0
+				emit_required_paths(raw)
+				if (raw ~ /;[[:space:]]*do[[:space:]]*$/) {
+					in_required = 0
+				}
+			}
+		' "${workflow_files[@]}" |
+			while IFS=: read -r workflow_file line_number required_path; do
+				[[ -n "$required_path" ]] || continue
+				if [[ ! -e "$ROOT_DIR/$required_path" ]]; then
+					printf '%s:%s missing required file: %s\n' "$workflow_file" "$line_number" "$required_path"
+				fi
+			done
+	)"
+
+	if [[ -n "$missing" ]]; then
+		printf '%s\n' "$missing" >&2
+		die "Workflow trusted-script required lists must only reference existing repository files."
+	fi
+}
+
 validate_workflow_script_contract() {
 	local invalid
 	local workflow_files=()
@@ -115,6 +167,8 @@ validate_workflow_script_contract() {
 	while IFS= read -r workflow_file; do
 		workflow_files+=("$workflow_file")
 	done < <(find .github/workflows .github/actions -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
+
+	validate_workflow_required_file_references "${workflow_files[@]}"
 
 	invalid="$(rg -n 'inline_first_rollout|static-validated head scripts|inline_name_status_fallback|first rollout|steps\.ci_scripts|ci_scripts\.outputs|using head scripts' .github/workflows .github/actions scripts --glob '!scripts/ci/static.sh' || true)"
 	if [[ -n "$invalid" ]]; then
