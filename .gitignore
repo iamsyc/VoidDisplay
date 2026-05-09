@@ -121,6 +121,7 @@ Temporary Items
 .derivedData
 
 # Local test artifacts
+*.log
 *.xcresult/
 UnitTests.xcresult/
 UISmokeTests.xcresult/

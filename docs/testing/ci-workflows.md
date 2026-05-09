@@ -31,8 +31,9 @@ Gate behavior:
 - UI-relevant PRs run the UI smoke matrix.
 - Code-relevant PRs targeting `main` also run arm64 and x86_64 release smoke.
 - Code PRs run Dependency Review and block high or critical dependency vulnerabilities.
+- Script or workflow PRs also run `head-script-self-test` without checkout credentials or exported `GITHUB_TOKEN`.
 
-Candidate workflow and script changes are validated from the PR head. Critical gate execution uses trusted base checkout scripts while building or testing the PR head source. During the first rollout where the base branch lacks the new script tree, `script-static-checks` uses workflow inline static checks and does not run PR head bootstrap or static orchestration scripts. Downstream critical jobs depend on `script-static-checks` first and then use the static-validated head scripts for this rollout exception.
+Candidate workflow and script changes are validated from the PR head, while critical gate execution uses trusted base checkout scripts to build or test the PR head source. `ci-gate` remains the single required branch protection check and requires the head self-test only when the change is script/tooling relevant.
 
 ## Local Entrypoints
 
@@ -73,6 +74,8 @@ scripts/ci/coverage.sh --out-dir .ai-tmp/coverage
 - `zsh -n`
 - `swiftformat --lint`
 - `swiftlint lint`
+- SwiftPM/Xcode log scanner fixtures
+- Swift script typecheck for release helper scripts
 
 All external action references must use a full 40-character commit SHA. Keep a tag comment after the SHA for maintainability, for example:
 
@@ -82,9 +85,11 @@ uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
 ## Release Verification
 
-Release builds remain ad hoc signed. They are not Developer ID signed, notarized, or stapled.
+Release builds are ad hoc signed only. They are not Developer ID signed, notarized, stapled, or certified by Apple.
 
 Release decision logic lives in `scripts/release/prepare.sh`. The workflow passes event metadata and the target checkout path into that script, then uses its JSON summary and outputs to decide whether build and publish jobs should run.
+
+Before build or publish jobs run, `scripts/release/require_ci_gate.sh` verifies that the target commit has a successful `ci-gate` check. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary.
 
 Release assets per architecture:
 

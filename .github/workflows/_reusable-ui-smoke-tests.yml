@@ -48,9 +48,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GITHUB_TOKEN: ${{ github.token }}
-
 jobs:
   ui_smoke_tests:
     runs-on: macos-26
@@ -72,9 +69,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
+          persist-credentials: false
 
       - name: Bootstrap tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"

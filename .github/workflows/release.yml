@@ -31,9 +31,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GITHUB_TOKEN: ${{ github.token }}
-
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -79,6 +76,8 @@ jobs:
 
       - name: Bootstrap prepare tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -119,6 +118,7 @@ jobs:
     name: build-dmg (${{ matrix.label }})
     needs:
       - prepare_release
+      - require_ci_gate
     if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
     runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 40
@@ -155,6 +155,8 @@ jobs:
 
       - name: Bootstrap release tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -203,6 +205,15 @@ jobs:
           subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
           sbom-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
 
+      - name: Upload release summaries
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-summaries-${{ matrix.label }}
+          path: target/.ai-tmp/release-${{ matrix.label }}/**/*summary.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -219,6 +230,7 @@ jobs:
     name: publish-github-release
     needs:
       - prepare_release
+      - require_ci_gate
       - build_dmg
     if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
     runs-on: macos-26
@@ -242,6 +254,8 @@ jobs:
 
       - name: Bootstrap publish tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -299,5 +313,65 @@ jobs:
         with:
           name: release-publish-summary
           path: target/.ai-tmp/release-publish
-          if-no-files-found: warn
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload publish verification summaries
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-publish-verify-summaries
+          path: release-assets/*.verify-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  require_ci_gate:
+    name: require-ci-gate
+    needs:
+      - prepare_release
+    if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      checks: read
+      statuses: read
+    steps:
+      - name: Checkout trusted release scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bootstrap release gate tools
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Require target ci-gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/require_ci_gate.sh" \
+            --repository '${{ github.repository }}' \
+            --sha '${{ needs.prepare_release.outputs.target_sha }}' \
+            --check-name ci-gate \
+            --timeout-seconds 900 \
+            --poll-interval-seconds 20 \
+            --summary '.ai-tmp/release-ci-gate/require-ci-gate-summary.json'
+
+      - name: Upload release ci-gate summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-ci-gate
+          path: .ai-tmp/release-ci-gate
+          if-no-files-found: error
           retention-days: 14

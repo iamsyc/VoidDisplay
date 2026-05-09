@@ -2,6 +2,8 @@ included:
   - Sources
   - Tests
   - UITests
+  - Apps
+  - scripts/release/render_dmg_background.swift
   - Package.swift
 
 excluded:

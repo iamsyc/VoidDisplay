@@ -46,26 +46,71 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-[[ -d "$ASSETS_DIR" ]] || die "--assets-dir must point to an existing directory."
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--tag must match vMAJOR.MINOR.PATCH."
-[[ -n "$TARGET_SHA" ]] || die "--target-sha is required."
-
 require_command gh git jq
 mkdir -p "$OUT_DIR"
 
+publish_stage="input_validation"
+publish_summary_written="false"
+version=""
+build_number=""
+release_files=()
+
+write_publish_summary() {
+	local status="$1"
+	local reason="$2"
+	local detail="$3"
+	local file_count="${4:-${#release_files[@]}}"
+
+	write_json_file "$OUT_DIR/publish-summary.json" \
+		--arg status "$status" \
+		--arg reason "$reason" \
+		--arg detail "$detail" \
+		--arg tag "$TAG" \
+		--arg target_sha "$TARGET_SHA" \
+		--arg repository "$REPOSITORY" \
+		--arg version "$version" \
+		--arg build_number "$build_number" \
+		--argjson file_count "$file_count" \
+		'{status: $status, reason: $reason, detail: $detail, tag: $tag, target_sha: $target_sha, repository: $repository, version: $version, build_number: $build_number, file_count: $file_count}'
+	publish_summary_written="true"
+}
+
+fail_publish() {
+	local reason="$1"
+	local detail="$2"
+
+	write_publish_summary "failed" "$reason" "$detail"
+	die "$detail"
+}
+
+handle_publish_exit() {
+	local exit_code="$?"
+
+	if [[ "$exit_code" -ne 0 && "$publish_summary_written" != "true" ]]; then
+		write_publish_summary "failed" "${publish_stage}_failed" "Release publish failed in stage ${publish_stage}."
+	fi
+}
+trap handle_publish_exit EXIT
+
+[[ -d "$ASSETS_DIR" ]] || fail_publish "missing_assets_dir" "--assets-dir must point to an existing directory."
+[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail_publish "invalid_tag" "--tag must match vMAJOR.MINOR.PATCH."
+[[ -n "$TARGET_SHA" ]] || fail_publish "missing_target_sha" "--target-sha is required."
+
 project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
+publish_stage="version_metadata"
 version="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' "$project_file" | sort -u)"
 build_number="$(sed -nE 's/^[[:space:]]*CURRENT_PROJECT_VERSION = ([^;]+);/\1/p' "$project_file" | sort -u)"
 arm64_label="$(release_label_for_arch arm64)"
 x86_64_label="$(release_label_for_arch x86_64)"
 
-[[ "$TAG" == "v$version" ]] || die "Tag $TAG does not match MARKETING_VERSION $version."
-[[ "$build_number" =~ ^[0-9]+$ ]] || die "Invalid CURRENT_PROJECT_VERSION: $build_number"
+[[ "$TAG" == "v$version" ]] || fail_publish "version_mismatch" "Tag $TAG does not match MARKETING_VERSION $version."
+[[ "$build_number" =~ ^[0-9]+$ ]] || fail_publish "invalid_build_number" "Invalid CURRENT_PROJECT_VERSION: $build_number"
 
+publish_stage="git_tag"
 git fetch --tags --force
 existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
 if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$TARGET_SHA" ]]; then
-	die "Tag $TAG already points to $existing_tag_sha, expected $TARGET_SHA."
+	fail_publish "tag_conflict" "Tag $TAG already points to $existing_tag_sha, expected $TARGET_SHA."
 fi
 if [[ -z "$existing_tag_sha" ]]; then
 	git config user.name "github-actions[bot]"
@@ -75,6 +120,7 @@ if [[ -z "$existing_tag_sha" ]]; then
 fi
 
 notes_path="$OUT_DIR/release-notes.md"
+publish_stage="release_notes"
 cat >"$notes_path" <<NOTES
 VoidDisplay $TAG
 
@@ -97,10 +143,10 @@ gh attestation verify VoidDisplay-$TAG-$arm64_label.dmg --repo $REPOSITORY
 gh attestation verify VoidDisplay-$TAG-$x86_64_label.dmg --repo $REPOSITORY
 \`\`\`
 
-This build is ad hoc signed. It is not Developer ID signed, notarized, or stapled. macOS may require manual confirmation the first time the app is opened.
+This build is ad hoc signed only. It is not Developer ID signed, notarized, or stapled, and Apple has not certified it. macOS may require manual confirmation the first time the app is opened.
 NOTES
 
-release_files=()
+publish_stage="collect_assets"
 while IFS= read -r file_path; do
 	[[ -n "$file_path" ]] && release_files+=("$file_path")
 done < <(
@@ -114,25 +160,20 @@ done < <(
 )
 
 if [[ "${#release_files[@]}" -eq 0 ]]; then
-	die "No release files found in $ASSETS_DIR."
+	fail_publish "missing_release_files" "No release files found in $ASSETS_DIR."
 fi
 
-gh release create "$TAG" "${release_files[@]}" \
+publish_stage="gh_release_create"
+if ! gh release create "$TAG" "${release_files[@]}" \
 	--repo "$REPOSITORY" \
 	--target "$TARGET_SHA" \
 	--title "VoidDisplay $TAG" \
 	--notes-file "$notes_path" \
-	--latest
+	--latest; then
+	fail_publish "gh_release_create_failed" "GitHub release creation failed."
+fi
 
-write_json_file "$OUT_DIR/publish-summary.json" \
-	--arg status "published" \
-	--arg tag "$TAG" \
-	--arg target_sha "$TARGET_SHA" \
-	--arg repository "$REPOSITORY" \
-	--arg version "$version" \
-	--arg build_number "$build_number" \
-	--argjson file_count "${#release_files[@]}" \
-	'{status: $status, tag: $tag, target_sha: $target_sha, repository: $repository, version: $version, build_number: $build_number, file_count: $file_count}'
+write_publish_summary "published" "published" "Release published." "${#release_files[@]}"
 
 info "Release published: $TAG"
 info "Summary: $OUT_DIR/publish-summary.json"

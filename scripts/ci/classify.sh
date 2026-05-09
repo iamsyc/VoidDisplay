@@ -63,9 +63,21 @@ ui_prefixes=(
 	Sources/VoidDisplaySupport/
 	Sources/VoidDisplayVirtualDisplay/
 )
+script_prefixes=(
+	scripts/
+	.github/workflows/
+	.github/actions/
+)
 exact_matches=(
 	Package.swift
 	Package.resolved
+	mise.toml
+	Brewfile
+	.swiftformat
+	.swiftlint.yml
+	.github/dependabot.yml
+)
+script_exact_matches=(
 	mise.toml
 	Brewfile
 	.swiftformat
@@ -112,6 +124,13 @@ is_code_path() {
 is_ui_path() {
 	local file_path="$1"
 	path_has_prefix "$file_path" "${ui_prefixes[@]}"
+}
+
+is_script_path() {
+	local file_path="$1"
+	path_in_list "$file_path" "${script_exact_matches[@]}" && return 0
+	path_has_prefix "$file_path" "${script_prefixes[@]}" && return 0
+	return 1
 }
 
 changed_files=()
@@ -179,11 +198,13 @@ if is_zero_sha "$BASE_SHA" || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/nu
 	classification_reason="full_scan"
 	code_relevant="true"
 	ui_relevant="true"
+	script_relevant="true"
 else
 	collect_changed_entries
 	deduplicate_changed_files
 	code_relevant="false"
 	ui_relevant="false"
+	script_relevant="false"
 	if [[ "${#changed_files[@]}" -gt 0 ]]; then
 		for file_path in "${changed_files[@]}"; do
 			if is_code_path "$file_path"; then
@@ -191,6 +212,9 @@ else
 			fi
 			if is_ui_path "$file_path"; then
 				ui_relevant="true"
+			fi
+			if is_script_path "$file_path"; then
+				script_relevant="true"
 			fi
 		done
 	fi
@@ -205,6 +229,7 @@ fi
 
 append_github_output code_relevant "$code_relevant" "$GITHUB_OUTPUT_PATH"
 append_github_output ui_relevant "$ui_relevant" "$GITHUB_OUTPUT_PATH"
+append_github_output script_relevant "$script_relevant" "$GITHUB_OUTPUT_PATH"
 append_github_output change_scope "$change_scope" "$GITHUB_OUTPUT_PATH"
 
 if [[ "${#changed_files[@]}" -gt 0 ]]; then
@@ -232,6 +257,7 @@ write_json_file "$SUMMARY_PATH" \
 	--arg head "$HEAD_SHA" \
 	--arg code_relevant "$code_relevant" \
 	--arg ui_relevant "$ui_relevant" \
+	--arg script_relevant "$script_relevant" \
 	--arg change_scope "$change_scope" \
 	--arg reason "$classification_reason" \
 	--argjson changed_files "$changed_files_json" \
@@ -239,9 +265,10 @@ write_json_file "$SUMMARY_PATH" \
 	'{
 	  base: $base,
 	  head: $head,
-	  code_relevant: ($code_relevant == "true"),
-	  ui_relevant: ($ui_relevant == "true"),
-	  change_scope: $change_scope,
+		  code_relevant: ($code_relevant == "true"),
+		  ui_relevant: ($ui_relevant == "true"),
+		  script_relevant: ($script_relevant == "true"),
+		  change_scope: $change_scope,
 	  reason: $reason,
 	  changed_files: $changed_files,
 	  changed_entries: $changed_entries

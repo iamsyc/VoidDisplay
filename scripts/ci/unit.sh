@@ -5,12 +5,15 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/xcode.sh
+source "$TOOL_ROOT/scripts/lib/xcode.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
 require_command go jq
+select_required_xcode
 
 OUT_DIR="${OUT_DIR:-$(make_artifact_dir ci-unit)}"
 SWIFT_LOG="${SWIFT_LOG:-$OUT_DIR/swift-test.log}"
@@ -102,6 +105,20 @@ if [[ "$swift_status" != "0" ]]; then
 		--arg go_log "$GO_LOG" \
 		'{status: $status, reason: $reason, swift_test_count: $swift_test_count, go_package_count: $go_package_count, swift_log: $swift_log, go_log: $go_log}'
 	die "swift test exited with non-zero status: $swift_status"
+fi
+
+swift_diagnostics="$(collect_build_log_diagnostics "$SWIFT_LOG")"
+if [[ -n "$swift_diagnostics" ]]; then
+	printf '%s\n' "$swift_diagnostics" >&2
+	write_json_file "$SUMMARY_PATH" \
+		--arg status "failed" \
+		--arg reason "swiftpm_diagnostics" \
+		--argjson swift_test_count "$total_tests" \
+		--argjson go_package_count 0 \
+		--arg swift_log "$SWIFT_LOG" \
+		--arg go_log "$GO_LOG" \
+		'{status: $status, reason: $reason, swift_test_count: $swift_test_count, go_package_count: $go_package_count, swift_log: $swift_log, go_log: $go_log}'
+	die "swift test log contains compiler/linker diagnostic markers."
 fi
 
 set +e
