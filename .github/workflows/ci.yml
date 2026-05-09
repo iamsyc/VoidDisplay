@@ -41,7 +41,7 @@ jobs:
     outputs:
       code_relevant: ${{ steps.classify.outputs.code_relevant }}
       ui_relevant: ${{ steps.classify.outputs.ui_relevant }}
-      script_relevant: ${{ steps.classify_scripts.outputs.script_relevant }}
+      script_relevant: ${{ steps.classify.outputs.script_relevant }}
       change_scope: ${{ steps.classify.outputs.change_scope }}
     steps:
       - name: Checkout
@@ -93,30 +93,6 @@ jobs:
             --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT" \
             --summary .ai-tmp/classify/classify-summary.json
-
-      - name: Classify script changes
-        id: classify_scripts
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          script_relevant=false
-          script_dir=scripts
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            script_relevant=true
-          else
-            while IFS= read -r file_path; do
-              case "$file_path" in
-              "$script_dir"/* | .github/workflows/* | .github/actions/* | mise.toml | Brewfile | .swiftformat | .swiftlint.yml | .github/dependabot.yml)
-                script_relevant=true
-                break
-                ;;
-              esac
-            done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-          fi
-          echo "script_relevant=$script_relevant" >>"$GITHUB_OUTPUT"
 
       - name: Upload classify artifacts
         if: always()
@@ -193,13 +169,7 @@ jobs:
               scripts/ci/release_smoke.sh \
               scripts/ci/release_arch_check.sh \
               scripts/ci/download_relay_modules.sh \
-              scripts/release/thin_webrtc_and_sign.sh \
-              scripts/ci/fixtures/xcode-log-scanner/negative-ordinary-text.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-build-failed.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-clang.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-linker.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-swift.log \
-              scripts/ci/fixtures/xcode-log-scanner/positive-test-failed.log; do
+              scripts/release/thin_webrtc_and_sign.sh; do
               if [ ! -e "$tool_root/$required" ]; then
                 echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
                 exit 1
