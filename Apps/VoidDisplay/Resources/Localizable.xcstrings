@@ -323,13 +323,13 @@
         }
       }
     },
-    "Automatic balances H.264 compatibility, clarity, and encoder load." : {
+    "Automatic and Smooth send AV1 at source resolution on LAN. Actual frame rate follows encoder capability." : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动模式会平衡 H.264 兼容性、清晰度与编码负载。"
+            "value" : "自动和流畅会在局域网按源分辨率发送 AV1。实际帧率取决于编码能力。"
           }
         }
       }
@@ -2916,16 +2916,6 @@
         }
       }
     },
-    "This Mac's WebRTC stack did not expose H.264 video encoding." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机 WebRTC 链路未暴露 H.264 视频编码能力。"
-          }
-        }
-      }
-    },
     "Technical Details" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3054,6 +3044,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "This Mac's WebRTC stack did not expose AV1 video encoding." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机 WebRTC 链路未暴露 AV1 视频编码能力。"
           }
         }
       }

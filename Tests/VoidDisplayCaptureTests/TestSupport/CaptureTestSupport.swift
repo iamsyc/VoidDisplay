@@ -35,6 +35,8 @@ final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
 
     nonisolated var hasDemand: Bool { false }
 
+    nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
+
     nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
         performanceModes.withLock { $0.append(mode) }
     }

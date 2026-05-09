@@ -486,6 +486,21 @@ package final class WebServiceController: WebServiceControllerProtocol {
         }
         defer { close(socketDescriptor) }
 
+        var reuseAddress = Int32(1)
+        let optionResult = setsockopt(
+            socketDescriptor,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &reuseAddress,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
+        guard optionResult == 0 else {
+            return .listenerFailed(
+                port: requestedPort,
+                message: String(localized: "Failed to prepare web service socket for port \(requestedPort).")
+            )
+        }
+
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)

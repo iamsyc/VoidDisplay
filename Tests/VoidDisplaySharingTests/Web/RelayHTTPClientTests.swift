@@ -60,6 +60,53 @@ struct RelayHTTPClientTests {
         #expect(requests.map(\.method) == ["POST", "DELETE"])
         #expect(requests.first?.body.contains(#""candidate":"candidate:1""#) == true)
     }
+
+    @Test func viewerOfferExposesRelayErrorReason() async throws {
+        let transport = RelayHTTPClientMockTransport(
+            responses: [
+                MockHTTPResponse(
+                    statusCode: 400,
+                    body: #"{"type":"error","reason":"publisher_codec_pending"}"#
+                )
+            ]
+        )
+        let client = RelayHTTPClient(
+            baseURL: URL(string: "http://relay.test")!,
+            controlToken: "token",
+            session: transport.session
+        )
+
+        do {
+            _ = try await client.viewerOffer(roomID: "2", clientID: "viewer-1", sdp: "viewer-offer")
+            Issue.record("viewerOffer succeeded for relay error response")
+        } catch let error as RelayHTTPError {
+            #expect(error == .httpStatus(400, "publisher_codec_pending"))
+            #expect(error.relayReason == "publisher_codec_pending")
+        }
+    }
+
+    @Test func viewerOfferDecodesSelectedCodec() async throws {
+        let transport = RelayHTTPClientMockTransport(
+            responses: [
+                MockHTTPResponse(
+                    statusCode: 200,
+                    body: #"{"type":"answer","sdp":"viewer-answer","codec":"av1"}"#
+                )
+            ]
+        )
+        let client = RelayHTTPClient(
+            baseURL: URL(string: "http://relay.test")!,
+            controlToken: "token",
+            session: transport.session
+        )
+
+        let response = try await client.viewerOffer(roomID: "2", clientID: "viewer-1", sdp: "viewer-offer")
+
+        #expect(response == RelayViewerOfferResponse(sdp: "viewer-answer", codec: .av1))
+        let request = try #require(transport.requests().first)
+        #expect(request.path == "/room/2/viewer/viewer-1")
+        #expect(request.body.contains(#""sdp":"viewer-offer""#))
+    }
 }
 
 private struct MockHTTPResponse: Sendable {

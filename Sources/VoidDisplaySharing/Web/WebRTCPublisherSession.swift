@@ -18,16 +18,23 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
         case closed
     }
 
+    private struct VideoTransceiverBinding {
+        let codec: WebRTCVideoCodec
+        let transceiver: RTCRtpTransceiver
+    }
+
     nonisolated(unsafe) private let peerConnection: RTCPeerConnection
     private let mediaPipeline: WebRTCMediaPipeline
     private let relayClient: any RelayHTTPClienting
     private let roomID: String
     private let stateLock = Mutex<State>(.idle)
     private let profileState: Mutex<WebRTCStreamingProfile>
+    private let activeCodecsState = Mutex<Set<WebRTCVideoCodec>>([])
     private let publisherIDState = Mutex<String?>(nil)
     private let iceGatheringWaiters = Mutex<[CheckedContinuation<Void, Never>]>([])
     private let pendingPublisherCandidates = Mutex<[RTCIceCandidate]>([])
-    nonisolated(unsafe) private var videoTransceiver: RTCRtpTransceiver?
+    nonisolated(unsafe) private var videoTransceivers: [VideoTransceiverBinding] = []
+    nonisolated(unsafe) private var diagnosticsTask: Task<Void, Never>?
 
     package nonisolated init?(
         roomID: String,
@@ -89,12 +96,35 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     package nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
         profileState.withLock { $0 = profile }
         mediaPipeline.updateEncodingProfile(profile)
-        configureDesktopVideoSender(videoTransceiver?.sender, profile: profile)
-        _ = peerConnection.setBweMinBitrateBps(
-            NSNumber(value: profile.minBitrateBps),
-            currentBitrateBps: nil,
-            maxBitrateBps: NSNumber(value: profile.maxBitrateBps)
-        )
+        let activeCodecs = activeCodecsState.withLock { $0 }
+        for binding in videoTransceivers {
+            configureDesktopVideoSender(
+                binding.transceiver.sender,
+                codec: binding.codec,
+                profile: profile,
+                isActive: activeCodecs.contains(binding.codec)
+            )
+        }
+        updateBandwidthEstimate(profile: profile, activeCodecs: activeCodecs)
+    }
+
+    package nonisolated func updateActiveCodecs(_ activeCodecs: Set<WebRTCVideoCodec>) {
+        let configuredCodecs = Set(videoTransceivers.map(\.codec))
+        let nextActiveCodecs = activeCodecs.intersection(configuredCodecs)
+        activeCodecsState.withLock { $0 = nextActiveCodecs }
+        mediaPipeline.updateActiveCodecs(nextActiveCodecs)
+        let profile = profileState.withLock { $0 }
+        for binding in videoTransceivers {
+            configureDesktopVideoSender(
+                binding.transceiver.sender,
+                codec: binding.codec,
+                profile: profile,
+                isActive: nextActiveCodecs.contains(binding.codec)
+            )
+        }
+        updateBandwidthEstimate(profile: profile, activeCodecs: nextActiveCodecs)
+        let activeSummary = nextActiveCodecs.map(\.logName).sorted().joined(separator: ",")
+        AppLog.web.info("WebRTC publisher active codecs updated active=\(activeSummary, privacy: .public).")
     }
 
     package nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
@@ -109,6 +139,8 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
             return current
         }
         pendingPublisherCandidates.withLock { $0.removeAll() }
+        diagnosticsTask?.cancel()
+        diagnosticsTask = nil
         resumeIceGatheringWaiters()
         peerConnection.close()
         guard let publisherID else { return }
@@ -120,23 +152,30 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     private nonisolated func startInternal() async throws {
         let capabilitySummary = mediaPipeline.senderVideoCodecCapabilitySummary()
         AppLog.web.info("WebRTC sender video capabilities \(capabilitySummary, privacy: .public).")
-        guard let h264Codecs = mediaPipeline.requiredH264Codecs() else {
-            throw PublisherSessionError.h264Unavailable
+        guard let av1Codecs = mediaPipeline.requiredCodecs(for: .av1) else {
+            throw PublisherSessionError.av1Unavailable
         }
-        let transceiverInit = RTCRtpTransceiverInit()
-        transceiverInit.direction = .sendOnly
-        transceiverInit.streamIds = ["screen"]
-        guard let transceiver = peerConnection.addTransceiver(with: mediaPipeline.videoTrack, init: transceiverInit) else {
-            throw PublisherSessionError.videoTransceiverUnavailable
+        let av1Transceiver = try addVideoTransceiver(
+            codec: .av1,
+            track: mediaPipeline.av1VideoTrack,
+            codecs: av1Codecs
+        )
+        let configuredTransceivers = [VideoTransceiverBinding(codec: .av1, transceiver: av1Transceiver)]
+        let configuredCodecs: Set<WebRTCVideoCodec> = [.av1]
+        videoTransceivers = configuredTransceivers
+        let initialActiveCodecs = activeCodecsState.withLock { $0.intersection(configuredCodecs) }
+        mediaPipeline.updateActiveCodecs(initialActiveCodecs)
+        let initialProfile = profileState.withLock { $0 }
+        for binding in configuredTransceivers {
+            configureDesktopVideoSender(
+                binding.transceiver.sender,
+                codec: binding.codec,
+                profile: initialProfile,
+                isActive: initialActiveCodecs.contains(binding.codec)
+            )
         }
-        do {
-            try transceiver.setCodecPreferences(h264Codecs, error: ())
-        } catch {
-            throw PublisherSessionError.codecPreferencesFailed(String(describing: error))
-        }
-        videoTransceiver = transceiver
-        configureDesktopVideoSender(transceiver.sender, profile: profileState.withLock { $0 })
-        AppLog.web.info("WebRTC publisher transceiver configured H264 codecs=\(h264Codecs.count, privacy: .public).")
+        updateBandwidthEstimate(profile: initialProfile, activeCodecs: initialActiveCodecs)
+        AppLog.web.info("WebRTC publisher transceiver configured AV1 codecs=\(av1Codecs.count, privacy: .public).")
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let offer = try await createOffer(constraints: constraints)
@@ -157,7 +196,27 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
         }
         let answer = RTCSessionDescription(type: .answer, sdp: response.sdp)
         try await setRemoteDescription(answer)
+        startDiagnosticsLoop()
         AppLog.web.info("WebRTC publisher connected to relay room \(self.roomID, privacy: .public).")
+    }
+
+    private nonisolated func addVideoTransceiver(
+        codec: WebRTCVideoCodec,
+        track: RTCVideoTrack,
+        codecs: [RTCRtpCodecCapability]
+    ) throws -> RTCRtpTransceiver {
+        let transceiverInit = RTCRtpTransceiverInit()
+        transceiverInit.direction = .sendOnly
+        transceiverInit.streamIds = ["screen"]
+        guard let transceiver = peerConnection.addTransceiver(with: track, init: transceiverInit) else {
+            throw PublisherSessionError.videoTransceiverUnavailable(codec)
+        }
+        do {
+            try transceiver.setCodecPreferences(codecs, error: ())
+        } catch {
+            throw PublisherSessionError.codecPreferencesFailed("\(codec.logName): \(String(describing: error))")
+        }
+        return transceiver
     }
 
     private nonisolated func createOffer(constraints: RTCMediaConstraints) async throws -> RTCSessionDescription {
@@ -253,22 +312,113 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
 
     private nonisolated func configureDesktopVideoSender(
         _ sender: RTCRtpSender?,
-        profile: WebRTCStreamingProfile
+        codec: WebRTCVideoCodec,
+        profile: WebRTCStreamingProfile,
+        isActive: Bool
     ) {
         guard let sender else { return }
         let parameters = sender.parameters
         if parameters.encodings.isEmpty {
             parameters.encodings = [RTCRtpEncodingParameters()]
         }
+        let sourceDimensions = profile.sourceVideoSpec.dimensions
+        let outputDimensions = profile.outputDimensions(
+            for: codec,
+            width: Int32(sourceDimensions.width),
+            height: Int32(sourceDimensions.height)
+        )
+        let bitrateLimits = profile.bitrateLimits(
+            for: codec,
+            outputWidth: outputDimensions.width,
+            outputHeight: outputDimensions.height
+        )
+        let framesPerSecond = profile.framesPerSecond(for: codec)
         for encoding in parameters.encodings {
-            encoding.maxBitrateBps = NSNumber(value: profile.maxBitrateBps)
-            encoding.minBitrateBps = NSNumber(value: profile.minBitrateBps)
-            encoding.maxFramerate = NSNumber(value: profile.framesPerSecond)
+            encoding.isActive = isActive
+            encoding.maxBitrateBps = NSNumber(value: bitrateLimits.maxBitrateBps)
+            encoding.minBitrateBps = NSNumber(value: bitrateLimits.minBitrateBps)
+            encoding.maxFramerate = NSNumber(value: framesPerSecond)
             encoding.scaleResolutionDownBy = NSNumber(value: 1.0)
             encoding.bitratePriority = 4.0
+            encoding.networkPriority = .high
         }
         parameters.degradationPreference = Self.maintainResolutionPreference
         sender.parameters = parameters
+    }
+
+    private nonisolated func updateBandwidthEstimate(
+        profile: WebRTCStreamingProfile,
+        activeCodecs: Set<WebRTCVideoCodec>
+    ) {
+        let sourceDimensions = profile.sourceVideoSpec.dimensions
+        let codecsForBudget = activeCodecs.isEmpty ? Set(WebRTCVideoCodec.allCases) : activeCodecs
+        let limits = codecsForBudget.map { codec in
+            let outputDimensions = profile.outputDimensions(
+                for: codec,
+                width: Int32(sourceDimensions.width),
+                height: Int32(sourceDimensions.height)
+            )
+            return profile.bitrateLimits(
+                for: codec,
+                outputWidth: outputDimensions.width,
+                outputHeight: outputDimensions.height
+            )
+        }
+        let minBitrateBps = limits.map(\.minBitrateBps).min() ?? profile.minBitrateBps
+        let maxBitrateBps = limits.map(\.maxBitrateBps).reduce(0, +)
+        _ = peerConnection.setBweMinBitrateBps(
+            NSNumber(value: minBitrateBps),
+            currentBitrateBps: nil,
+            maxBitrateBps: NSNumber(value: max(maxBitrateBps, profile.maxBitrateBps))
+        )
+    }
+
+    private nonisolated func startDiagnosticsLoop() {
+        diagnosticsTask?.cancel()
+        diagnosticsTask = Task { [weak self] in
+            await self?.runDiagnosticsLoop()
+        }
+    }
+
+    private nonisolated func runDiagnosticsLoop() async {
+        while !Task.isCancelled, !isClosed {
+            await logSenderDiagnostics()
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+    }
+
+    private nonisolated func logSenderDiagnostics() async {
+        let bindings = videoTransceivers
+        for binding in bindings {
+            let report = await statistics(for: binding.transceiver.sender)
+            logOutboundVideoStats(report: report, codec: binding.codec)
+        }
+    }
+
+    private nonisolated func statistics(for sender: RTCRtpSender) async -> RTCStatisticsReport {
+        await withCheckedContinuation { continuation in
+            peerConnection.statistics(for: sender) { report in
+                continuation.resume(returning: report)
+            }
+        }
+    }
+
+    private nonisolated func logOutboundVideoStats(report: RTCStatisticsReport, codec: WebRTCVideoCodec) {
+        for statistic in report.statistics.values where statistic.type == "outbound-rtp" {
+            let values = statistic.values
+            let kind = (values["kind"] ?? values["mediaType"])?.description.lowercased()
+            guard kind == nil || kind == "video" else { continue }
+            let width = values["frameWidth"]?.description ?? "unknown"
+            let height = values["frameHeight"]?.description ?? "unknown"
+            let fps = values["framesPerSecond"]?.description ?? "unknown"
+            let targetBitrate = values["targetBitrate"]?.description ?? "unknown"
+            let qualityLimitationReason = values["qualityLimitationReason"]?.description ?? "unknown"
+            let encoderImplementation = values["encoderImplementation"]?.description ?? "unknown"
+            AppLog.web.info(
+                "WebRTC publisher outbound stats codec=\(codec.logName, privacy: .public) encoded=\(width, privacy: .public)x\(height, privacy: .public) fps=\(fps, privacy: .public) targetBitrate=\(targetBitrate, privacy: .public) qualityLimitationReason=\(qualityLimitationReason, privacy: .public) encoder=\(encoderImplementation, privacy: .public)."
+            )
+            return
+        }
     }
 
     private nonisolated func sendPublisherCandidate(_ candidate: RTCIceCandidate) {
@@ -342,8 +492,8 @@ extension WebRTCPublisherSession: RTCPeerConnectionDelegate {
 
 package enum PublisherSessionError: Error, LocalizedError, Equatable {
     case closed
-    case h264Unavailable
-    case videoTransceiverUnavailable
+    case av1Unavailable
+    case videoTransceiverUnavailable(WebRTCVideoCodec)
     case codecPreferencesFailed(String)
     case offerMissing
 
@@ -351,10 +501,10 @@ package enum PublisherSessionError: Error, LocalizedError, Equatable {
         switch self {
         case .closed:
             "Publisher session is closed."
-        case .h264Unavailable:
-            String(localized: "This Mac's WebRTC stack did not expose H.264 video encoding.")
-        case .videoTransceiverUnavailable:
-            "WebRTC publisher video transceiver is unavailable."
+        case .av1Unavailable:
+            String(localized: "This Mac's WebRTC stack did not expose AV1 video encoding.")
+        case .videoTransceiverUnavailable(let codec):
+            "WebRTC publisher \(codec.logName) video transceiver is unavailable."
         case .codecPreferencesFailed(let reason):
             "Failed to set publisher codec preferences: \(reason)"
         case .offerMissing:

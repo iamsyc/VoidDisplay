@@ -83,6 +83,8 @@ final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
         }
     }
 
+    nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
+
     nonisolated func updatePerformanceMode(_: CapturePerformanceMode) {}
 
     nonisolated func receiveSignalText(_ text: String, from connection: any SignalSocketConnection) {

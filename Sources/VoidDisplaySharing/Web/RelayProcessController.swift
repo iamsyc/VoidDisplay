@@ -156,6 +156,7 @@ package final class RelayProcessController: @unchecked Sendable {
             "--control-token", controlToken,
             "--listen-udp", ":0",
             "--loopback-http", "127.0.0.1:0",
+            "--parent-pid", "\(ProcessInfo.processInfo.processIdentifier)",
         ]
         process.standardOutput = stdout
         process.standardError = stderr

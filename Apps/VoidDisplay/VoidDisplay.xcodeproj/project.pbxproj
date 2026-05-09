@@ -264,6 +264,7 @@
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.mod",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.sum",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main.go",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main_test.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server_test.go",
 			);

@@ -311,6 +311,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
     nonisolated private let metrics: DisplayCaptureMetricsStore
     nonisolated private let streamConfigurationCoordinator: DisplayCaptureStreamConfigurationCoordinator
     nonisolated private let demandDriver: DisplayCaptureDemandDriver
+    nonisolated private let sourceVideoSpec: SourceVideoSpec
 
     nonisolated init(
         display: SCDisplay,
@@ -338,6 +339,8 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         let filter = try await Self.makeContentFilter(display: display)
         self.stream = SCStream(filter: filter, configuration: config, delegate: output)
         self.shareFrameConsumer = makeShareFrameConsumer()
+        self.sourceVideoSpec = captureSizeContext.sourceVideoSpec
+        self.shareFrameConsumer.updateSourceVideoSpec(captureSizeContext.sourceVideoSpec)
         let metrics = DisplayCaptureMetricsStore()
         self.metrics = metrics
         let streamConfigurationCoordinator = DisplayCaptureStreamConfigurationCoordinator(
@@ -403,6 +406,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
     }
 
     package nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        shareFrameConsumer.updateSourceVideoSpec(sourceVideoSpec)
         shareFrameConsumer.updatePerformanceMode(demand.performanceMode)
         try await demandDriver.setDemand(demand)
     }
@@ -466,8 +470,12 @@ package extension DisplayCaptureSession {
     }
 
     nonisolated static func clampedPreviewFramesPerSecond(for refreshRate: Double) -> Int {
+        sourceFramesPerSecond(for: refreshRate)
+    }
+
+    nonisolated static func sourceFramesPerSecond(for refreshRate: Double) -> Int {
         let normalizedRefreshRate = refreshRate > 0 ? refreshRate : 60.0
-        return max(1, Int(min(normalizedRefreshRate, 60.0).rounded()))
+        return max(1, Int(normalizedRefreshRate.rounded()))
     }
 
     nonisolated private static func makeStreamConfigurationState(
@@ -482,10 +490,11 @@ package extension DisplayCaptureSession {
             for: initialProfile,
             performanceMode: initialPerformanceMode
         )
-        let previewFramesPerSecond = clampedPreviewFramesPerSecond(for: displayMode?.refreshRate ?? 60.0)
+        let previewFramesPerSecond = sourceFramesPerSecond(for: displayMode?.refreshRate ?? 60.0)
         let initialFrameRateTier = DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
             for: initialProfile,
-            performanceMode: initialPerformanceMode
+            performanceMode: initialPerformanceMode,
+            sourceFramesPerSecond: captureSizeContext.sourceVideoSpec.framesPerSecond
         )
 
         let state = DisplayCaptureStreamConfigurationState(
@@ -501,7 +510,7 @@ package extension DisplayCaptureSession {
             shareCursorOverrideCount: 0
         )
         AppLog.capture.notice(
-            "Capture config display=\(display.displayID, privacy: .public) size=\(captureSize.width)x\(captureSize.height, privacy: .public) logical=\(captureSizeContext.logicalSize.width)x\(captureSizeContext.logicalSize.height, privacy: .public) physical=\(captureSizeContext.physicalSize.width)x\(captureSizeContext.physicalSize.height, privacy: .public)"
+            "Capture config display=\(display.displayID, privacy: .public) size=\(captureSize.width)x\(captureSize.height, privacy: .public) logical=\(captureSizeContext.logicalSize.width)x\(captureSizeContext.logicalSize.height, privacy: .public) physical=\(captureSizeContext.physicalSize.width)x\(captureSizeContext.physicalSize.height, privacy: .public) sourceFps=\(captureSizeContext.sourceVideoSpec.framesPerSecond, privacy: .public)"
         )
         return state
     }
@@ -515,6 +524,7 @@ package extension DisplayCaptureSession {
         let modeLogicalWidth = displayMode.map { $0.width } ?? modePixelWidth
         let modeLogicalHeight = displayMode.map { $0.height } ?? modePixelHeight
         let backingScale = screenBackingScaleFactor(for: display.displayID)
+        let sourceFramesPerSecond = sourceFramesPerSecond(for: displayMode?.refreshRate ?? 60.0)
 
         let scaledLogicalWidth = max(1, Int((CGFloat(modeLogicalWidth) * backingScale).rounded()))
         let scaledLogicalHeight = max(1, Int((CGFloat(modeLogicalHeight) * backingScale).rounded()))
@@ -527,7 +537,8 @@ package extension DisplayCaptureSession {
             physicalSize: DisplayCaptureDimensions(
                 width: max(modePixelWidth, scaledLogicalWidth),
                 height: max(modePixelHeight, scaledLogicalHeight)
-            )
+            ),
+            sourceFramesPerSecond: sourceFramesPerSecond
         )
     }
 
