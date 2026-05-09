@@ -4,7 +4,7 @@
 
 本方案只使用 GitHub hosted runner，不引入自托管 runner。CI 默认运行在 GitHub 提供的 macOS runner 上，架构覆盖 `macos-26` 和 `macos-26-intel`。
 
-本方案不依赖 Apple Developer Program。Release 产物继续使用 ad hoc DMG，不做 Developer ID 签名、公证或 stapling。发布页必须清楚说明安装包未经过 Apple Developer ID 签名，用户首次打开时可能需要手动确认。
+本方案不依赖 Apple Developer Program。Release 产物继续使用 ad hoc signed DMG，不做 Developer ID 签名、公证或 stapling。发布页必须清楚说明安装包仅使用 ad hoc signing，未经过 Apple Developer ID 签名或 Apple 认证，用户首次打开时可能需要手动确认。
 
 自动发版继续由 Xcode project 中的 `MARKETING_VERSION` 和 `CURRENT_PROJECT_VERSION` 驱动。合入 `main` 后，只要版本条件满足，Release workflow 自动生成 tag、构建产物、校验产物并发布 GitHub Release。
 
@@ -18,7 +18,7 @@ CI 和脚本体系的核心目标是可复现、可审计、低误报、低人�
 
 所有关键输出都要可机器解析。测试数量、失败分类、产物路径、checksum、SBOM、release verify 结果都生成 JSON summary，并上传 artifact。
 
-所有关键门禁都要能解释失败原因。失败类型至少区分编译失败、warning 失败、0 测试失败、断言失败、runner 启动不稳定、权限环境问题、依赖安全问题、release 校验失败。
+所有关键门禁都要能解释失败原因。失败类型至少区分编译失败、warning 失败、0 测试失败、断言失败、runner 启动不稳定、权限环境问题、依赖安全问题、release 目标 `ci-gate` 未通过、release 校验失败。
 
 ## 3. 脚本入口
 
@@ -36,7 +36,7 @@ CI 和脚本体系的核心目标是可复现、可审计、低误报、低人�
 
 `scripts/ci/static.sh` 运行 actionlint、shellcheck、shfmt、SwiftFormat、SwiftLint、workflow runner label 检查、外部 action SHA 固定检查。
 
-`scripts/ci/unit.sh` 运行 SwiftPM unit 和 Go relay unit，强制校验 SwiftPM 测试数量大于 0。
+`scripts/ci/unit.sh` 运行 SwiftPM unit 和 Go relay unit，强制校验 SwiftPM 测试数量大于 0，并把 SwiftPM build/test warning 或 error 视为失败。
 
 `scripts/ci/xcode.sh` 统一封装 Xcode build、build for testing、test。`test` 动作必须显式传入 `--only-testing` 或 `--test-plan`。
 
@@ -55,6 +55,8 @@ CI 和脚本体系的核心目标是可复现、可审计、低误报、低人�
 `scripts/release/build.sh` 构建指定 tag 和架构的 release assets，包括 DMG、SHA256、SBOM、summary。
 
 `scripts/release/verify.sh` 校验 DMG 可挂载、app 存在、bundle id 正确、版本匹配、架构匹配、checksum 有效、SBOM 有效、ad hoc codesign 可验证、attestation 可选有效。
+
+`scripts/release/require_ci_gate.sh` 在发布前验证目标 commit 的 `ci-gate` 已成功，防止绕过分支保护或手动 dispatch 发布未验证 commit。
 
 `scripts/release/publish.sh` 只封装发布前最终校验和 GitHub Release 上传。本地默认不调用，CI release job 调用。
 
@@ -97,7 +99,7 @@ UI 相关 PR 额外运行 UI smoke matrix。初始矩阵覆盖首页导航、权
 
 目标分支是 `main` 的代码 PR 额外运行双架构 release smoke，覆盖 `arm64` 和 `x86_64`。
 
-脚本和 workflow 改动采用 trusted scripts 策略。关键 job 优先 checkout base commit 中的脚本执行；当 base 尚无新脚本时，先要求 head 脚本通过 static gate，再用 head 脚本执行首轮迁移。
+脚本和 workflow 改动采用 trusted scripts 策略。关键 job 优先 checkout base commit 中的脚本执行。脚本或 workflow 相关 PR 额外运行低权限 `head-script-self-test`，该 job 不导出 `GITHUB_TOKEN`、不使用 checkout credentials、不发布产物，只验证 head 脚本的静态门禁。
 
 ## 6. Main CI
 
@@ -114,7 +116,7 @@ UI 相关 PR 额外运行 UI smoke matrix。初始矩阵覆盖首页导航、权
 7. CodeQL
 8. artifact summary
 
-Main CI 允许触发自动 release 检查。release 条件由 `release.yml` 内部判断，不由普通 CI job 决定。
+Main CI 允许触发自动 release 检查。release 条件由 `release.yml` 内部判断，不由普通 CI job 决定。真正构建和发布前，release workflow 必须确认目标 commit 的 `ci-gate` 已成功。
 
 ## 7. Nightly CI
 
@@ -134,7 +136,7 @@ Nightly 失败不应直接阻断普通 PR，但必须在仓库首页、issue 或
 
 ## 8. Release 触发规则
 
-Release workflow 支持两种入口。workflow 只负责 checkout、runner 权限和 job 编排，版本判断、tag 判断、build number 规则都由 `scripts/release/prepare.sh` 执行。
+Release workflow 支持两种入口。workflow 只负责 checkout、runner 权限和 job 编排，版本判断、tag 判断、build number 规则都由 `scripts/release/prepare.sh` 执行。`prepare` 输出 `should_release=true` 后，workflow 先调用 `scripts/release/require_ci_gate.sh` 验证目标 SHA 的 `ci-gate`，成功后才允许 build 和 publish。
 
 第一种是 push 到 `main`。当 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj` 中的版本字段变化时触发 release 判断。
 
@@ -178,7 +180,7 @@ GitHub Release body 必须包含：
 4. 两个架构安装包
 5. SHA256 校验方式
 6. attestation 验证命令
-7. 未签名和未公证说明
+7. 仅 ad hoc signing、非 Developer ID 签名、未公证、未 Apple 认证说明
 8. 用户首次打开 app 的安全提示
 
 ## 10. 安全与供应链
@@ -189,7 +191,7 @@ Dependabot 覆盖 GitHub Actions、SwiftPM、Go modules。
 
 CodeQL 覆盖 Swift 和 Go。
 
-所有 workflow 使用最小权限。默认 `contents: read`，release 发布 job 才允许 `contents: write`。attestation job 才允许 `id-token: write` 和 `attestations: write`。
+所有 workflow 使用最小权限。默认 `contents: read`，release 发布 job 才允许 `contents: write`。attestation job 才允许 `id-token: write` 和 `attestations: write`。release 前置 gate 只允许 `checks: read` 和 `statuses: read`。
 
 所有 release 资产必须有 checksum、SBOM 和 attestation。
 
@@ -225,7 +227,7 @@ CI summary 在 PR 上维护 sticky comment，并在 workflow summary 中显示�
 
 ## 13. Branch Protection
 
-Branch protection 只要求 `ci-gate`。
+Branch protection 只要求 `ci-gate`。由于管理员可以绕过分支保护，release workflow 不信任分支保护本身，必须独立验证目标 SHA 的 `ci-gate` 状态。
 
 `ci-gate` 根据改动范围解释哪些 job 必须成功。这样 workflow 内部可以扩展矩阵和拆分 job，同时保护规则保持稳定。
 

@@ -75,19 +75,29 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 		done
 	}
 
-	scan_xcode_log_for_diagnostics() {
+	collect_build_log_diagnostics() {
+		local log_path="$1"
+
+		if [[ ! -f "$log_path" ]]; then
+			die "Build log not found: $log_path"
+		fi
+
+		rg -n '([A-Za-z0-9_./ -]+\.(swift|m|mm|c|cc|cpp|h|hpp):[0-9]+:[0-9]+: (warning|error):|(^|[[:space:]])ld: (warning|error):|(^|[[:space:]])clang: (warning|error):|\*\* (BUILD|TEST) FAILED \*\*)' "$log_path" || true
+	}
+
+	scan_build_log_for_diagnostics() {
 		local label="$1"
 		local log_path="$2"
 		local matches
 
-		if [[ ! -f "$log_path" ]]; then
-			die "$label log not found: $log_path"
-		fi
-
-		matches="$(rg -n '([A-Za-z0-9_./ -]+\.(swift|m|mm|c|cc|cpp|h|hpp):[0-9]+:[0-9]+: (warning|error):|(^|[[:space:]])ld: (warning|error):|(^|[[:space:]])clang: (warning|error):|\*\* (BUILD|TEST) FAILED \*\*)' "$log_path" || true)"
+		matches="$(collect_build_log_diagnostics "$log_path")"
 		if [[ -n "$matches" ]]; then
 			printf '%s\n' "$matches" >&2
-			die "$label log contains Xcode diagnostic markers."
+			die "$label log contains compiler/linker diagnostic markers."
 		fi
+	}
+
+	scan_xcode_log_for_diagnostics() {
+		scan_build_log_for_diagnostics "$@"
 	}
 fi

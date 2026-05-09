@@ -26,9 +26,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GITHUB_TOKEN: ${{ github.token }}
-
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -44,6 +41,7 @@ jobs:
     outputs:
       code_relevant: ${{ steps.classify.outputs.code_relevant }}
       ui_relevant: ${{ steps.classify.outputs.ui_relevant }}
+      script_relevant: ${{ steps.classify_scripts.outputs.script_relevant }}
       change_scope: ${{ steps.classify.outputs.change_scope }}
     steps:
       - name: Checkout
@@ -57,6 +55,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
+          persist-credentials: false
 
       - name: Classify changed files
         id: classify
@@ -94,6 +93,30 @@ jobs:
             --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT" \
             --summary .ai-tmp/classify/classify-summary.json
+
+      - name: Classify script changes
+        id: classify_scripts
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          script_relevant=false
+          script_dir=scripts
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            script_relevant=true
+          else
+            while IFS= read -r file_path; do
+              case "$file_path" in
+              "$script_dir"/* | .github/workflows/* | .github/actions/* | mise.toml | Brewfile | .swiftformat | .swiftlint.yml | .github/dependabot.yml)
+                script_relevant=true
+                break
+                ;;
+              esac
+            done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          fi
+          echo "script_relevant=$script_relevant" >>"$GITHUB_OUTPUT"
 
       - name: Upload classify artifacts
         if: always()
@@ -140,9 +163,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
+          persist-credentials: false
 
       - name: Bootstrap static tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -194,6 +220,49 @@ jobs:
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/static.sh"
 
+  head_script_self_test:
+    name: head-script-self-test
+    needs:
+      - classify_changes
+    if: ${{ github.event_name == 'pull_request' && needs.classify_changes.outputs.script_relevant == 'true' }}
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout head without credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Checkout trusted bootstrap scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .ai-tmp/trusted-ci
+          persist-credentials: false
+
+      - name: Bootstrap trusted head-test tools
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Validate head scripts
+        shell: bash
+        env:
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+          MISE_GITHUB_TOKEN: ''
+          AQUA_GITHUB_TOKEN: ''
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/static.sh"
+
   unit_tests:
     name: unit-tests
     needs:
@@ -224,12 +293,15 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
+          persist-credentials: false
 
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
 
       - name: Bootstrap tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -345,9 +417,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
+          persist-credentials: false
 
       - name: Bootstrap tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -405,6 +480,7 @@ jobs:
       - classify_changes
       - dependency_review
       - script_static_checks
+      - head_script_self_test
       - unit_tests
       - xcode_build
       - ui_smoke_tests
@@ -421,8 +497,10 @@ jobs:
           CHANGE_SCOPE: ${{ needs.classify_changes.outputs.change_scope }}
           CODE_RELEVANT: ${{ needs.classify_changes.outputs.code_relevant }}
           UI_RELEVANT: ${{ needs.classify_changes.outputs.ui_relevant }}
+          SCRIPT_RELEVANT: ${{ needs.classify_changes.outputs.script_relevant }}
           DEPENDENCY_RESULT: ${{ needs.dependency_review.result }}
           SCRIPT_RESULT: ${{ needs.script_static_checks.result }}
+          HEAD_SCRIPT_RESULT: ${{ needs.head_script_self_test.result }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           XCODE_RESULT: ${{ needs.xcode_build.result }}
           UI_RESULT: ${{ needs.ui_smoke_tests.result }}
@@ -450,8 +528,10 @@ jobs:
           echo "Change scope: ${CHANGE_SCOPE}"
           echo "Code relevant: ${CODE_RELEVANT}"
           echo "UI relevant: ${UI_RELEVANT}"
+          echo "Script relevant: ${SCRIPT_RELEVANT}"
           echo "Dependency review: ${DEPENDENCY_RESULT}"
           echo "Static: ${SCRIPT_RESULT}"
+          echo "Head script self-test: ${HEAD_SCRIPT_RESULT}"
           echo "Unit: ${UNIT_RESULT}"
           echo "Xcode build: ${XCODE_RESULT}"
           echo "UI smoke: ${UI_RESULT}"
@@ -468,6 +548,10 @@ jobs:
           fi
           if [ "$SCRIPT_RESULT" != "success" ]; then
             echo "Gate failed because script-static-checks result is ${SCRIPT_RESULT}."
+            exit 1
+          fi
+          if [ "$is_code_pr" = "true" ] && [ "$SCRIPT_RELEVANT" = "true" ] && [ "$HEAD_SCRIPT_RESULT" != "success" ]; then
+            echo "Gate failed because script-relevant PR requires head-script-self-test."
             exit 1
           fi
           if [ "$UNIT_RESULT" != "success" ]; then
@@ -504,6 +588,7 @@ jobs:
       - classify_changes
       - dependency_review
       - script_static_checks
+      - head_script_self_test
       - unit_tests
       - xcode_build
       - ui_smoke_tests
@@ -524,8 +609,10 @@ jobs:
           CHANGE_SCOPE: ${{ needs.classify_changes.outputs.change_scope }}
           CODE_RELEVANT: ${{ needs.classify_changes.outputs.code_relevant }}
           UI_RELEVANT: ${{ needs.classify_changes.outputs.ui_relevant }}
+          SCRIPT_RELEVANT: ${{ needs.classify_changes.outputs.script_relevant }}
           DEPENDENCY_RESULT: ${{ needs.dependency_review.result }}
           SCRIPT_RESULT: ${{ needs.script_static_checks.result }}
+          HEAD_SCRIPT_RESULT: ${{ needs.head_script_self_test.result }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UNIT_ARTIFACT: ${{ needs.unit_tests.outputs.artifact_name }}
           UNIT_SWIFT_TEST_COUNT: ${{ needs.unit_tests.outputs.swift_test_count }}
@@ -563,6 +650,7 @@ jobs:
               ['Change Scope', process.env.CHANGE_SCOPE || 'unknown', `code=${process.env.CODE_RELEVANT}, ui=${process.env.UI_RELEVANT}`],
               ['Dependency Review', process.env.DEPENDENCY_RESULT || 'unknown', 'code PR gate; high and critical vulnerabilities block'],
               ['Static Checks', process.env.SCRIPT_RESULT || 'unknown', 'actionlint, shellcheck, shfmt, SwiftFormat, SwiftLint, action pinning'],
+              ['Head Script Self-Test', process.env.HEAD_SCRIPT_RESULT || 'unknown', `runs for script/tooling PRs; script=${process.env.SCRIPT_RELEVANT}`],
               ['Unit Tests', process.env.UNIT_RESULT || 'unknown', unitDetails],
               ['Xcode Build', process.env.XCODE_RESULT || 'unknown', 'Debug build with zero warning scan<br>Artifact: xcode-build'],
               ['UI Smoke', process.env.UI_RESULT || 'unknown', uiDetails],

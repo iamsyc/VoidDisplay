@@ -79,7 +79,7 @@ Check the [Releases](https://github.com/iamsyc/VoidDisplay/releases) page for th
 
 ### Unsigned Build Notice (First Launch)
 
-Current release builds use ad hoc signing and are not notarized, so macOS may block first launch with messages like:
+Current release builds are ad hoc signed only. They are not Developer ID signed, notarized, or certified by Apple, so macOS may block first launch with messages like:
 - "cannot be opened because Apple cannot check it for malicious software"
 - "is damaged and can't be opened"
 

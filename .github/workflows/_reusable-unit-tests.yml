@@ -28,9 +28,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GITHUB_TOKEN: ${{ github.token }}
-
 jobs:
   unit_tests:
     runs-on: macos-26
@@ -52,9 +49,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: .ai-tmp/trusted-ci
+          persist-credentials: false
 
       - name: Bootstrap tools
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
@@ -63,6 +63,7 @@ jobs:
             for required in \
               scripts/lib/contract.sh \
               scripts/lib/common.sh \
+              scripts/lib/xcode.sh \
               scripts/lib/artifacts.sh \
               scripts/dev/bootstrap.sh \
               scripts/ci/unit.sh; do

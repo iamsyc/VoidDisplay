@@ -8,7 +8,7 @@ source "$TOOL_ROOT/scripts/lib/common.sh"
 
 cd "$ROOT_DIR"
 
-require_command actionlint jq shellcheck shfmt shasum swift swiftformat swiftlint rg
+require_command actionlint jq shellcheck shfmt shasum swift swiftformat swiftlint rg xcrun
 
 validate_runner_labels() {
 	local invalid
@@ -272,13 +272,26 @@ validate_xcode_log_scanner() {
 	local fixture_dir="$TOOL_ROOT/scripts/ci/fixtures/xcode-log-scanner"
 	local positive_fixture
 
-	for positive_fixture in "$fixture_dir"/positive-*.log; do
+	for positive_fixture in "$fixture_dir"/positive-*.fixture; do
 		if (scan_xcode_log_for_diagnostics "Xcode log fixture" "$positive_fixture" >/dev/null 2>&1); then
 			die "Xcode log scanner missed fixture: $positive_fixture"
 		fi
 	done
 
-	scan_xcode_log_for_diagnostics "Xcode negative log fixture" "$fixture_dir/negative-ordinary-text.log"
+	scan_xcode_log_for_diagnostics "Xcode negative log fixture" "$fixture_dir/negative-ordinary-text.fixture"
+}
+
+validate_swiftpm_log_scanner() {
+	local fixture_dir="$TOOL_ROOT/scripts/ci/fixtures/swiftpm-log-scanner"
+	local positive_fixture
+
+	for positive_fixture in "$fixture_dir"/positive-*.fixture; do
+		if (scan_build_log_for_diagnostics "SwiftPM log fixture" "$positive_fixture" >/dev/null 2>&1); then
+			die "SwiftPM log scanner missed fixture: $positive_fixture"
+		fi
+	done
+
+	scan_build_log_for_diagnostics "SwiftPM negative log fixture" "$fixture_dir/negative-ordinary-text.fixture"
 }
 
 validate_webrtc_header_overlay() {
@@ -428,8 +441,37 @@ validate_webrtc_header_overlay() {
 }
 
 validate_swift_style() {
-	swiftformat --lint --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Package.swift
+	swiftformat --lint --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift scripts/release/render_dmg_background.swift
 	swiftlint lint --config "$ROOT_DIR/.swiftlint.yml" --quiet
+}
+
+validate_swift_scripts() {
+	xcrun swiftc -typecheck "$ROOT_DIR/scripts/release/render_dmg_background.swift"
+}
+
+validate_create_dmg_failure_summary() {
+	local out_dir
+	local summary_path
+	local missing_app_path
+	local status
+
+	out_dir="$AI_TMP_DIR/static-dmg-summary/$(timestamp)"
+	summary_path="$out_dir/create-dmg-summary.json"
+	missing_app_path="$out_dir/Missing.app"
+	mkdir -p "$out_dir"
+
+	set +e
+	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/release/create_dmg.sh" \
+		--summary "$summary_path" \
+		"$missing_app_path" \
+		"$out_dir/Missing.dmg" \
+		"VoidDisplay" >/dev/null 2>&1
+	status="$?"
+	set -e
+
+	[[ "$status" -ne 0 ]] || die "create_dmg missing-app fixture unexpectedly passed."
+	jq -e '.status == "failed" and .reason == "missing_app" and .stage == "argument_validation"' "$summary_path" >/dev/null ||
+		die "create_dmg missing-app fixture did not write the expected summary."
 }
 
 actionlint
@@ -440,7 +482,10 @@ validate_script_contract
 validate_workflow_script_contract
 validate_xcode_shell_build_phase
 validate_xcode_log_scanner
+validate_swiftpm_log_scanner
 validate_webrtc_header_overlay
 validate_swift_style
+validate_swift_scripts
+validate_create_dmg_failure_summary
 
 info "Static gate passed."

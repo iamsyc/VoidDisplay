@@ -79,7 +79,7 @@
 
 ### 无签名版本首次启动说明
 
-当前 release 构建暂未签名和公证，macOS 首次启动时可能出现以下提示：
+当前 release 构建仅使用 ad hoc signing，未使用 Apple Developer ID 签名，未公证，也未经过 Apple 认证。macOS 首次启动时可能出现以下提示：
 - “无法验证开发者”
 - “已损坏，无法打开”
 
