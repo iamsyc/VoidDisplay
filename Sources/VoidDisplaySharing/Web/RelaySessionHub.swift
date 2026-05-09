@@ -8,6 +8,7 @@ import Synchronization
 package protocol RelayPublisherSessioning: AnyObject, Sendable {
     nonisolated func start() async throws
     nonisolated func updateEncodingProfile(_ profile: WebRTCStreamingProfile)
+    nonisolated func updateActiveCodecs(_ activeCodecs: Set<WebRTCVideoCodec>)
     nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64)
     nonisolated func close()
 }
@@ -48,6 +49,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         let sessionEpoch: UInt64
         let target: ShareTarget
         let eventSink: @Sendable (SharingSessionEvent) -> Void
+        var selectedCodec: WebRTCVideoCodec?
         var nextEventSequence: UInt64 = 0
         var isSending = false
         var pendingSignals: [QueuedSignal] = []
@@ -57,7 +59,9 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         var clients: [ObjectIdentifier: ClientState] = [:]
         var nextSessionEpoch: UInt64 = 0
         var onDemandChanged: @Sendable (Bool) -> Void
-        var streamingProfile = WebRTCStreamingProfile(performanceMode: .automatic)
+        var performanceMode: CapturePerformanceMode = .automatic
+        var sourceVideoSpec: SourceVideoSpec = .defaultShared
+        var streamingProfile = WebRTCStreamingProfile(performanceMode: .automatic, sourceVideoSpec: .defaultShared)
         var publisher: (any RelayPublisherSessioning)?
         var publisherTask: Task<Void, Never>?
         var publisherGeneration: UInt64 = 0
@@ -114,12 +118,29 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
     }
 
     package nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
-        let profile = WebRTCStreamingProfile(performanceMode: mode)
-        let publisher = state.withLock { state -> (any RelayPublisherSessioning)? in
-            guard state.streamingProfile != profile else { return nil }
+        let (publisher, profile) = state.withLock { state -> ((any RelayPublisherSessioning)?, WebRTCStreamingProfile?) in
+            let profile = WebRTCStreamingProfile(performanceMode: mode, sourceVideoSpec: state.sourceVideoSpec)
+            guard state.streamingProfile != profile else { return (nil, nil) }
+            state.performanceMode = mode
             state.streamingProfile = profile
-            return state.publisher
+            return (state.publisher, profile)
         }
+        guard let profile else { return }
+        publisher?.updateEncodingProfile(profile)
+    }
+
+    package nonisolated func updateSourceVideoSpec(_ spec: SourceVideoSpec) {
+        let (publisher, profile) = state.withLock { state -> ((any RelayPublisherSessioning)?, WebRTCStreamingProfile?) in
+            guard state.sourceVideoSpec != spec else { return (nil, nil) }
+            state.sourceVideoSpec = spec
+            let profile = WebRTCStreamingProfile(
+                performanceMode: state.performanceMode,
+                sourceVideoSpec: spec
+            )
+            state.streamingProfile = profile
+            return (state.publisher, profile)
+        }
+        guard let profile else { return }
         publisher?.updateEncodingProfile(profile)
     }
 
@@ -350,17 +371,19 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         roomID: String,
         generation: UInt64
     ) {
-        let decision = state.withLock { state -> (shouldClose: Bool, profile: WebRTCStreamingProfile?) in
+        let decision = state.withLock {
+            state -> (shouldClose: Bool, profile: WebRTCStreamingProfile?, activeCodecs: Set<WebRTCVideoCodec>) in
             guard state.publisherGeneration == generation else {
-                return (true, nil)
+                return (true, nil, [])
             }
             state.publisherTask = nil
             guard !state.clients.isEmpty, state.roomID == roomID else {
-                return (true, nil)
+                return (true, nil, [])
             }
             let profile = state.streamingProfile
+            let activeCodecs = Self.activeCodecs(from: state.clients)
             state.publisher = publisher
-            return (false, profile)
+            return (false, profile, activeCodecs)
         }
         if decision.shouldClose {
             publisher.close()
@@ -368,6 +391,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         }
         if let profile = decision.profile {
             publisher.updateEncodingProfile(profile)
+            publisher.updateActiveCodecs(decision.activeCodecs)
         }
         AppLog.web.info("Relay publisher started for room \(roomID, privacy: .public).")
     }
@@ -409,15 +433,54 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
                 await relayClient.removeViewer(roomID: roomID, clientID: clientID)
                 return
             }
-            send(message: SignalingOutboundMessage(type: .answer, sdp: answer), to: key)
+            let update = state.withLock {
+                state -> (
+                    publisher: (any RelayPublisherSessioning)?,
+                    activeCodecs: Set<WebRTCVideoCodec>,
+                    sourceVideoSpec: SourceVideoSpec
+                ) in
+                guard var client = state.clients[key],
+                      client.clientID == clientID,
+                      client.sessionEpoch == sessionEpoch,
+                      Self.roomID(for: client.target) == roomID else {
+                    return (nil, [], state.sourceVideoSpec)
+                }
+                client.selectedCodec = answer.codec
+                state.clients[key] = client
+                return (state.publisher, Self.activeCodecs(from: state.clients), state.sourceVideoSpec)
+            }
+            update.publisher?.updateActiveCodecs(update.activeCodecs)
+            send(
+                message: SignalingOutboundMessage(
+                    type: .answer,
+                    sdp: answer.sdp,
+                    sourceVideoSpec: SourceVideoSpecSignalPayload(spec: update.sourceVideoSpec)
+                ),
+                to: key
+            )
             emitEvent(phase: .peerConnected, source: .peerConnection, for: key)
         } catch {
             guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
                 return
             }
             AppLog.web.warning("Relay viewer offer failed: \(String(describing: error), privacy: .public)")
-            send(message: SignalingOutboundMessage(type: .error, reason: "relay_viewer_offer_failed"), to: key)
-            removeClient(for: key, cancelConnection: true)
+            let relayReason = (error as? RelayHTTPError)?.relayReason
+            if relayReason == "publisher_codec_pending" {
+                enqueue(
+                    message: SignalingOutboundMessage(type: .codecPending, reason: "publisher_codec_pending"),
+                    to: key,
+                    disconnectAfterSend: false,
+                    replacePending: true
+                )
+                return
+            }
+            let message: SignalingOutboundMessage
+            if relayReason == "unsupported_video_codec_offered" || relayReason == "supported_video_codec_missing" {
+                message = SignalingOutboundMessage(type: .error, reason: relayReason)
+            } else {
+                message = SignalingOutboundMessage(type: .error, reason: "relay_viewer_offer_failed")
+            }
+            enqueue(message: message, to: key, disconnectAfterSend: true, replacePending: true)
         }
     }
 
@@ -598,13 +661,28 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
     }
 
     private nonisolated func removeClient(for key: ObjectIdentifier, cancelConnection: Bool) {
-        let (removed, shouldSignalDemandOff, callback, roomID) = state.withLock {
-            state -> (ClientState?, Bool, @Sendable (Bool) -> Void, String?) in
+        let (removed, shouldSignalDemandOff, callback, roomID, publisher, activeCodecs) = state.withLock {
+            state -> (
+                ClientState?,
+                Bool,
+                @Sendable (Bool) -> Void,
+                String?,
+                (any RelayPublisherSessioning)?,
+                Set<WebRTCVideoCodec>
+            ) in
             let removed = state.clients.removeValue(forKey: key)
-            return (removed, state.clients.isEmpty, state.onDemandChanged, state.roomID)
+            return (
+                removed,
+                state.clients.isEmpty,
+                state.onDemandChanged,
+                state.roomID,
+                state.publisher,
+                Self.activeCodecs(from: state.clients)
+            )
         }
 
         guard let removed else { return }
+        publisher?.updateActiveCodecs(activeCodecs)
         removed.eventSink(
             SharingSessionEvent(
                 target: removed.target,
@@ -670,6 +748,10 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
             state.clients[key] = client
             return sequence
         }
+    }
+
+    private nonisolated static func activeCodecs(from clients: [ObjectIdentifier: ClientState]) -> Set<WebRTCVideoCodec> {
+        Set(clients.values.compactMap(\.selectedCodec))
     }
 
     private nonisolated static func roomID(for target: ShareTarget) -> String {

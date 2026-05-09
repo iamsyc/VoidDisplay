@@ -34,68 +34,47 @@ private final class MailboxReference<Frame: Sendable>: @unchecked Sendable {
 }
 
 struct WebRTCSessionSupportTests {
-    @Test func streamingProfilesMatchPerformanceModes() {
-        #expect(WebRTCStreamingProfile(performanceMode: .smooth) == WebRTCStreamingProfile(
-            framesPerSecond: 60,
-            minBitrateBps: 1_500_000,
-            maxBitrateBps: 8_000_000,
-            pixelBudgetPerSecond: WebRTCStreamingProfile.h264SmoothPixelBudgetPerSecond
-        ))
-        #expect(WebRTCStreamingProfile(performanceMode: .automatic) == WebRTCStreamingProfile(
-            framesPerSecond: 30,
-            minBitrateBps: 1_500_000,
-            maxBitrateBps: 8_000_000,
-            pixelBudgetPerSecond: WebRTCStreamingProfile.h264AutomaticPixelBudgetPerSecond
-        ))
-        #expect(WebRTCStreamingProfile(performanceMode: .powerEfficient) == WebRTCStreamingProfile(
-            framesPerSecond: 30,
-            minBitrateBps: 800_000,
-            maxBitrateBps: 5_000_000,
-            pixelBudgetPerSecond: WebRTCStreamingProfile.h264PowerEfficientPixelBudgetPerSecond
-        ))
-    }
+    @Test func automaticAndSmoothProfilesUseSourceSpecForAV1() {
+        let sourceSpec = SourceVideoSpec(width: 2_560, height: 1_440, framesPerSecond: 60)
+        for mode in [CapturePerformanceMode.automatic, .smooth] {
+            let profile = WebRTCStreamingProfile(performanceMode: mode, sourceVideoSpec: sourceSpec)
+            let av1Dimensions = profile.outputDimensions(for: .av1, width: 2_560, height: 1_440)
 
-    @Test func streamingProfilesApplyPixelBudgetByMode() {
-        let smoothDimensions = WebRTCStreamingProfile(performanceMode: .smooth)
-            .outputDimensions(forWidth: 3_840, height: 2_160)
-        let automaticDimensions = WebRTCStreamingProfile(performanceMode: .automatic)
-            .outputDimensions(forWidth: 3_840, height: 2_160)
-        let powerEfficientDimensions = WebRTCStreamingProfile(performanceMode: .powerEfficient)
-            .outputDimensions(forWidth: 3_840, height: 2_160)
-        let wideDimensions = WebRTCStreamingProfile(performanceMode: .automatic)
-            .outputDimensions(forWidth: 3_440, height: 1_440)
-        let portraitDimensions = WebRTCStreamingProfile(performanceMode: .automatic)
-            .outputDimensions(forWidth: 2_160, height: 3_840)
-
-        #expect(smoothDimensions.width == 886)
-        #expect(smoothDimensions.height == 498)
-        #expect(automaticDimensions.width == 1_254)
-        #expect(automaticDimensions.height == 704)
-        #expect(powerEfficientDimensions.width == 960)
-        #expect(powerEfficientDimensions.height == 540)
-        #expect(wideDimensions.width == 1_454)
-        #expect(wideDimensions.height == 608)
-        #expect(portraitDimensions.width == 704)
-        #expect(portraitDimensions.height == 1_254)
-    }
-
-    @Test func streamingProfileOutputFitsH264Level31MacroblockBudget() {
-        let samples: [(WebRTCStreamingProfile, Int32, Int32)] = [
-            (WebRTCStreamingProfile(performanceMode: .smooth), 3_840, 2_160),
-            (WebRTCStreamingProfile(performanceMode: .automatic), 3_840, 2_160),
-            (WebRTCStreamingProfile(performanceMode: .powerEfficient), 3_840, 2_160),
-            (WebRTCStreamingProfile(performanceMode: .automatic), 2_428, 1_518),
-            (WebRTCStreamingProfile(performanceMode: .smooth), 2_428, 1_518),
-            (WebRTCStreamingProfile(performanceMode: .automatic), 2_160, 3_840),
-        ]
-
-        for (profile, width, height) in samples {
-            let dimensions = profile.outputDimensions(forWidth: width, height: height)
-            let macroblocks = macroblockCount(width: dimensions.width, height: dimensions.height)
-
-            #expect(macroblocks <= 3_600)
-            #expect(macroblocks * profile.framesPerSecond <= 108_000)
+            #expect(profile.framesPerSecond == 60)
+            #expect(profile.framesPerSecond(for: .av1) == 60)
+            #expect(profile.pixelBudgetPerSecond == nil)
+            #expect(av1Dimensions.width == 2_560)
+            #expect(av1Dimensions.height == 1_440)
+            #expect(profile.outputVideoSpec(for: .av1) == sourceSpec)
         }
+    }
+
+    @Test func powerEfficientProfileKeepsOnlyActiveDowngradeBudget() {
+        let sourceSpec = SourceVideoSpec(width: 2_560, height: 1_440, framesPerSecond: 60)
+        let profile = WebRTCStreamingProfile(performanceMode: .powerEfficient, sourceVideoSpec: sourceSpec)
+        let dimensions = profile.outputDimensions(for: .av1, width: 2_560, height: 1_440)
+
+        #expect(profile.framesPerSecond == 30)
+        #expect(profile.pixelBudgetPerSecond == SharedCapturePerformanceBudget.powerEfficientPixelBudgetPerSecond)
+        #expect(dimensions.width == 1_920)
+        #expect(dimensions.height == 1_080)
+    }
+
+    @Test func bitrateProfilesScaleWithAV1PixelRate() {
+        let profile1440p60 = WebRTCStreamingProfile(
+            performanceMode: .automatic,
+            sourceVideoSpec: SourceVideoSpec(width: 2_560, height: 1_440, framesPerSecond: 60)
+        )
+        let profile4K60 = WebRTCStreamingProfile(
+            performanceMode: .automatic,
+            sourceVideoSpec: SourceVideoSpec(width: 3_840, height: 2_160, framesPerSecond: 60)
+        )
+
+        let av1Limits = profile1440p60.bitrateLimits(for: .av1, outputWidth: 2_560, outputHeight: 1_440)
+        let av14KLimits = profile4K60.bitrateLimits(for: .av1, outputWidth: 3_840, outputHeight: 2_160)
+
+        #expect(av1Limits.maxBitrateBps == 22_118_400)
+        #expect(av14KLimits.maxBitrateBps == 49_766_400)
     }
 
 #if canImport(WebRTC)
@@ -114,7 +93,7 @@ struct WebRTCSessionSupportTests {
         #expect(sequencer.nextTimestampNs(ptsUs: 0, framesPerSecond: 30) == 49_999_999)
     }
 
-    @Test func h264CodecPreferenceKeepsOnlyH264AndMatchingRtx() {
+    @Test func codecPreferenceKeepsOnlyRequestedCodecAndMatchingRtx() {
         let descriptors = [
             WebRTCCodecPreferenceDescriptor(
                 name: kRTCVp8CodecName,
@@ -127,19 +106,19 @@ struct WebRTCSessionSupportTests {
                 parameters: ["apt": "96"]
             ),
             WebRTCCodecPreferenceDescriptor(
-                name: kRTCH264CodecName,
-                payloadType: 102,
+                name: "AV1",
+                payloadType: 104,
                 parameters: [:]
             ),
             WebRTCCodecPreferenceDescriptor(
                 name: kRTCRtxCodecName,
-                payloadType: 103,
-                parameters: ["apt": "102"]
+                payloadType: 105,
+                parameters: ["apt": "104"]
             ),
         ]
 
-        #expect(WebRTCCodecPreference.requiredH264DescriptorIndexes(from: descriptors) == [2, 3])
-        #expect(WebRTCCodecPreference.requiredH264DescriptorIndexes(from: Array(descriptors.prefix(2))) == nil)
+        #expect(WebRTCCodecPreference.requiredDescriptorIndexes(for: .av1, from: descriptors) == [2, 3])
+        #expect(WebRTCCodecPreference.requiredDescriptorIndexes(for: .av1, from: Array(descriptors.prefix(2))) == nil)
     }
 
     @Test func sdpVideoCodecSummaryListsVideoPayloadNames() {
@@ -147,20 +126,33 @@ struct WebRTCSessionSupportTests {
         v=0
         m=audio 9 UDP/TLS/RTP/SAVPF 111
         a=rtpmap:111 opus/48000/2
+        m=video 9 UDP/TLS/RTP/SAVPF 104 105
+        a=rtpmap:104 AV1/90000
+        a=rtpmap:105 rtx/90000
         m=video 9 UDP/TLS/RTP/SAVPF 102 103
-        a=rtpmap:102 H264/90000
+        a=rtpmap:102 VP8/90000
         a=rtpmap:103 rtx/90000
         """
 
-        #expect(WebRTCCodecPreference.sdpVideoCodecSummary(from: sdp) == "102:H264,103:rtx")
+        #expect(WebRTCCodecPreference.sdpVideoCodecSummary(from: sdp) == "104:AV1,105:rtx,103:rtx; unexpectedVideoCodecCount=1")
+
+        let reusedPayloadTypeSDP = """
+        v=0
+        m=video 9 UDP/TLS/RTP/SAVPF 96
+        a=rtpmap:96 AV1/90000
+        m=video 9 UDP/TLS/RTP/SAVPF 96
+        a=rtpmap:96 VP8/90000
+        """
+
+        #expect(WebRTCCodecPreference.sdpVideoCodecSummary(from: reusedPayloadTypeSDP) == "96:AV1; unexpectedVideoCodecCount=1")
     }
 
-    @Test func capabilitySummaryDoesNotPrintNonH264CodecNames() {
+    @Test func capabilitySummaryPrintsAV1ProbeWithoutUnsupportedCodecNames() {
         let descriptors = [
             WebRTCCodecPreferenceDescriptor(
-                name: kRTCH264CodecName,
-                payloadType: 102,
-                parameters: ["profile-level-id": "42e01f"]
+                name: "AV1",
+                payloadType: 35,
+                parameters: [:]
             ),
             WebRTCCodecPreferenceDescriptor(
                 name: kRTCVp8CodecName,
@@ -171,9 +163,18 @@ struct WebRTCSessionSupportTests {
 
         let summary = WebRTCCodecPreference.capabilitySummary(from: descriptors)
 
-        #expect(summary.contains("H264"))
-        #expect(summary.contains("nonH264CodecCount=1"))
+        #expect(summary.contains("AV1=AV1(pt=35,fmtp=none)"))
+        #expect(summary.contains("unsupportedVideoCodecCount=1"))
         #expect(!summary.contains("VP8"))
+    }
+
+    @Test func runtimeSenderCapabilityProbePrintsCurrentWebRTCBinaryCodecs() {
+        let pipeline = WebRTCMediaPipeline()
+        let summary = pipeline.senderVideoCodecCapabilitySummary()
+
+        print("VoidDisplay WebRTC sender codec capability probe: \(summary)")
+        #expect(summary.contains("AV1="))
+        #expect(summary.contains("unsupportedVideoCodecCount="))
     }
 #endif
 
@@ -217,10 +218,4 @@ struct WebRTCSessionSupportTests {
         #expect(consumed.withLock { $0 } == [1, 3])
         #expect(scheduler.count() == 0)
     }
-}
-
-private func macroblockCount(width: Int32, height: Int32) -> Int {
-    let macroblockWidth = (Int(width) + 15) / 16
-    let macroblockHeight = (Int(height) + 15) / 16
-    return macroblockWidth * macroblockHeight
 }

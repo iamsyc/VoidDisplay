@@ -58,8 +58,27 @@ package nonisolated struct CapturePixelDimensions: Sendable, Equatable {
     }
 }
 
+package nonisolated struct SourceVideoSpec: Sendable, Equatable {
+    package let dimensions: CapturePixelDimensions
+    package let framesPerSecond: Int
+
+    package init(width: Int, height: Int, framesPerSecond: Int) {
+        self.dimensions = CapturePixelDimensions(width: width, height: height)
+        self.framesPerSecond = max(1, framesPerSecond)
+    }
+
+    package init(dimensions: CapturePixelDimensions, framesPerSecond: Int) {
+        self.dimensions = dimensions
+        self.framesPerSecond = max(1, framesPerSecond)
+    }
+
+    package static let defaultShared = SourceVideoSpec(
+        dimensions: .defaultShared,
+        framesPerSecond: 60
+    )
+}
+
 package nonisolated struct SharedCapturePerformanceBudget: Sendable, Equatable {
-    package static let automaticPixelBudgetPerSecond: Int64 = 221_184_000
     package static let powerEfficientPixelBudgetPerSecond: Int64 = 62_208_000
 
     package let framesPerSecond: Int
@@ -78,7 +97,7 @@ package nonisolated struct SharedCapturePerformanceBudget: Sendable, Equatable {
         case .automatic:
             self.init(
                 framesPerSecond: 60,
-                pixelBudgetPerSecond: Self.automaticPixelBudgetPerSecond
+                pixelBudgetPerSecond: nil
             )
         case .smooth:
             self.init(

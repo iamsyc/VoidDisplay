@@ -53,11 +53,11 @@ private final class FakeRelayClient: RelayHTTPClienting, @unchecked Sendable {
     }
 
     private let state = Mutex(State())
-    private let onViewerOffer: (@Sendable () async -> Void)?
+    private let onViewerOffer: (@Sendable () async throws -> Void)?
     private let onViewerCandidate: (@Sendable () async -> Void)?
 
     init(
-        onViewerOffer: (@Sendable () async -> Void)? = nil,
+        onViewerOffer: (@Sendable () async throws -> Void)? = nil,
         onViewerCandidate: (@Sendable () async -> Void)? = nil
     ) {
         self.onViewerOffer = onViewerOffer
@@ -79,10 +79,10 @@ private final class FakeRelayClient: RelayHTTPClienting, @unchecked Sendable {
         state.withLock { $0.publisherCandidates.append((roomID, publisherID, candidate)) }
     }
 
-    nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> String {
+    nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> RelayViewerOfferResponse {
         state.withLock { $0.viewerOffers.append((roomID, clientID, sdp)) }
-        await onViewerOffer?()
-        return "relay-viewer-answer-\(clientID)"
+        try await onViewerOffer?()
+        return RelayViewerOfferResponse(sdp: "relay-viewer-answer-\(clientID)", codec: .av1)
     }
 
     nonisolated func viewerCandidate(
@@ -126,6 +126,7 @@ private final class FakePublisherSession: RelayPublisherSessioning, @unchecked S
         var startCallCount = 0
         var closeCallCount = 0
         var profiles: [WebRTCStreamingProfile] = []
+        var activeCodecs: [Set<WebRTCVideoCodec>] = []
     }
 
     private let state = Mutex(State())
@@ -150,6 +151,10 @@ private final class FakePublisherSession: RelayPublisherSessioning, @unchecked S
         state.withLock { $0.profiles.append(profile) }
     }
 
+    nonisolated func updateActiveCodecs(_ activeCodecs: Set<WebRTCVideoCodec>) {
+        state.withLock { $0.activeCodecs.append(activeCodecs) }
+    }
+
     nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
 
     nonisolated func close() {
@@ -166,6 +171,10 @@ private final class FakePublisherSession: RelayPublisherSessioning, @unchecked S
 
     func profiles() -> [WebRTCStreamingProfile] {
         state.withLock { $0.profiles }
+    }
+
+    func activeCodecs() -> [Set<WebRTCVideoCodec>] {
+        state.withLock { $0.activeCodecs }
     }
 }
 
@@ -200,6 +209,10 @@ private final class RelayHubBox: @unchecked Sendable {
 
     func updatePerformanceMode(_ mode: CapturePerformanceMode) {
         state.withLock { $0 }?.updatePerformanceMode(mode)
+    }
+
+    func updateSourceVideoSpec(_ spec: SourceVideoSpec) {
+        state.withLock { $0 }?.updateSourceVideoSpec(spec)
     }
 }
 
@@ -285,6 +298,11 @@ struct RelaySessionHubTests {
         #expect(client.viewerOffers().first?.sdp == "viewer-offer")
         let answer = try #require(socket.decodedTextPayloads().first(where: { $0.contains(#""type":"answer""#) }))
         #expect(answer.contains(#""sdp":"relay-viewer-answer-viewer-1""#))
+        #expect(answer.contains(#""sourceVideoSpec""#))
+        #expect(answer.contains(#""width":1920"#))
+        #expect(answer.contains(#""height":1080"#))
+        #expect(answer.contains(#""framesPerSecond":60"#))
+        #expect(await waitUntil { factory.records().first?.publisher.activeCodecs().contains(Set([.av1])) == true })
     }
 
     @MainActor @Test func staleViewerOfferCleansRelayViewerAndDoesNotSendAnswer() async {
@@ -307,6 +325,54 @@ struct RelaySessionHubTests {
 
         #expect(await waitUntil { client.removedViewers().count >= 2 })
         #expect(socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"answer""#) }) == false)
+    }
+
+    @MainActor @Test func publisherCodecPendingSendsRetryMessageAndKeepsViewerConnected() async throws {
+        let client = FakeRelayClient(onViewerOffer: {
+            throw RelayHTTPError.httpStatus(400, "publisher_codec_pending")
+        })
+        let factory = PublisherFactoryRecorder()
+        let demandEvents = Mutex<[Bool]>([])
+        let hub = RelaySessionHub(
+            onDemandChanged: { value in demandEvents.withLock { $0.append(value) } },
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+
+        #expect(await waitUntil { client.viewerOffers().count == 1 })
+        #expect(await waitUntil { socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"codec_pending""#) }) })
+        #expect(await waitUntil { factory.records().count == 1 })
+        #expect(socket.cancelCallCount == 0)
+        #expect(hub.activeClientCount == 1)
+        #expect(factory.records().first?.publisher.closeCallCount() == 0)
+        #expect(demandEvents.withLock { $0 } == [true])
+        let codecPending = try #require(socket.decodedTextPayloads().first(where: { $0.contains(#""type":"codec_pending""#) }))
+        #expect(codecPending.contains(#""reason":"publisher_codec_pending""#))
+        #expect(socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"error""#) }) == false)
+    }
+
+    @MainActor @Test func viewerCodecRelayErrorForwardsSpecificReason() async throws {
+        let client = FakeRelayClient(onViewerOffer: {
+            throw RelayHTTPError.httpStatus(400, "unsupported_video_codec_offered")
+        })
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+
+        #expect(await waitUntil { client.viewerOffers().count == 1 })
+        #expect(await waitUntil { socket.cancelCallCount == 1 })
+        let error = try #require(socket.decodedTextPayloads().first(where: { $0.contains(#""type":"error""#) }))
+        #expect(error.contains(#""reason":"unsupported_video_codec_offered""#))
     }
 
     @MainActor @Test func tenViewersCreateOnePublisherSession() async {
@@ -347,6 +413,28 @@ struct RelaySessionHubTests {
         let publisher = factory.records().first?.publisher
         #expect(publisher?.profiles().contains(WebRTCStreamingProfile(performanceMode: .powerEfficient)) == true)
         #expect(factory.records().count == 1)
+    }
+
+    @MainActor @Test func sourceSpecChangeUpdatesPublisherProfile() async {
+        let client = FakeRelayClient()
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+        #expect(await waitUntil { factory.records().count == 1 })
+
+        let sourceSpec = SourceVideoSpec(width: 2_560, height: 1_440, framesPerSecond: 120)
+        hub.updateSourceVideoSpec(sourceSpec)
+
+        let expectedProfile = WebRTCStreamingProfile(
+            performanceMode: .automatic,
+            sourceVideoSpec: sourceSpec
+        )
+        let publisher = factory.records().first?.publisher
+        #expect(publisher?.profiles().contains(expectedProfile) == true)
     }
 
     @MainActor @Test func publisherStartupRefreshesProfileOutsideStateLock() async {

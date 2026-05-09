@@ -9,13 +9,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/pion/ice/v4"
+	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	pionsdp "github.com/pion/sdp/v3"
@@ -56,6 +56,7 @@ type candidateRequest struct {
 type signalResponse struct {
 	Type   string `json:"type"`
 	SDP    string `json:"sdp,omitempty"`
+	Codec  string `json:"codec,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -77,152 +78,61 @@ type Snapshot struct {
 }
 
 type RoomSnapshot struct {
-	ID                   string `json:"id"`
-	HasPublisher         bool   `json:"hasPublisher"`
-	PublisherID          string `json:"publisherID,omitempty"`
-	SubscriberCount      int    `json:"subscriberCount"`
-	PublisherPacketCount uint64 `json:"publisherPacketCount"`
-	ForwardedPacketCount uint64 `json:"forwardedPacketCount"`
-	WrittenPacketCount   uint64 `json:"writtenPacketCount"`
-	DroppedPacketCount   uint64 `json:"droppedPacketCount"`
-	SlowSubscriberCount  int    `json:"slowSubscriberCount"`
-	PLIForwardCount      uint64 `json:"pliForwardCount"`
-	FIRForwardCount      uint64 `json:"firForwardCount"`
+	ID                    string         `json:"id"`
+	HasPublisher          bool           `json:"hasPublisher"`
+	PublisherID           string         `json:"publisherID,omitempty"`
+	PublisherCodecs       []string       `json:"publisherCodecs,omitempty"`
+	SubscriberCodecCounts map[string]int `json:"subscriberCodecCounts,omitempty"`
+	SubscriberCount       int            `json:"subscriberCount"`
+	PublisherPacketCount  uint64         `json:"publisherPacketCount"`
+	ForwardedPacketCount  uint64         `json:"forwardedPacketCount"`
+	WrittenPacketCount    uint64         `json:"writtenPacketCount"`
+	DroppedPacketCount    uint64         `json:"droppedPacketCount"`
+	SlowSubscriberCount   int            `json:"slowSubscriberCount"`
+	PLIForwardCount       uint64         `json:"pliForwardCount"`
+	FIRForwardCount       uint64         `json:"firForwardCount"`
+	NACKForwardCount      uint64         `json:"nackForwardCount"`
 }
 
-var errH264VideoCodecMissing = errors.New("h264_video_codec_missing")
+type videoCodec string
 
-var h264RTCPFeedback = []webrtc.RTCPFeedback{
+const (
+	videoCodecAV1 videoCodec = "av1"
+)
+
+var errSupportedVideoCodecMissing = errors.New("supported_video_codec_missing")
+var errUnsupportedVideoCodecOffered = errors.New("unsupported_video_codec_offered")
+var errPublisherCodecPending = errors.New("publisher_codec_pending")
+var errPublisherCodecDuplicate = errors.New("publisher_video_codec_duplicate")
+
+var av1RTCPFeedback = []webrtc.RTCPFeedback{
 	{Type: "goog-remb"},
 	{Type: "ccm", Parameter: "fir"},
 	{Type: "nack"},
 	{Type: "nack", Parameter: "pli"},
 }
 
-var h264CodecParameters = []webrtc.RTPCodecParameters{
+var av1CodecParameters = []webrtc.RTPCodecParameters{
 	{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
+			MimeType:     webrtc.MimeTypeAV1,
 			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f",
-			RTCPFeedback: h264RTCPFeedback,
+			RTCPFeedback: av1RTCPFeedback,
 		},
-		PayloadType: 102,
+		PayloadType: 45,
 	},
 	{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType:    webrtc.MimeTypeRTX,
 			ClockRate:   90000,
-			SDPFmtpLine: "apt=102",
+			SDPFmtpLine: "apt=45",
 		},
-		PayloadType: 103,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42001f",
-			RTCPFeedback: h264RTCPFeedback,
-		},
-		PayloadType: 104,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeRTX,
-			ClockRate:   90000,
-			SDPFmtpLine: "apt=104",
-		},
-		PayloadType: 105,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-			RTCPFeedback: h264RTCPFeedback,
-		},
-		PayloadType: 106,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeRTX,
-			ClockRate:   90000,
-			SDPFmtpLine: "apt=106",
-		},
-		PayloadType: 107,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
-			RTCPFeedback: h264RTCPFeedback,
-		},
-		PayloadType: 108,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeRTX,
-			ClockRate:   90000,
-			SDPFmtpLine: "apt=108",
-		},
-		PayloadType: 109,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
-			RTCPFeedback: h264RTCPFeedback,
-		},
-		PayloadType: 127,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeRTX,
-			ClockRate:   90000,
-			SDPFmtpLine: "apt=127",
-		},
-		PayloadType: 125,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
-			RTCPFeedback: h264RTCPFeedback,
-		},
-		PayloadType: 39,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeRTX,
-			ClockRate:   90000,
-			SDPFmtpLine: "apt=39",
-		},
-		PayloadType: 40,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640c1f",
-			RTCPFeedback: h264RTCPFeedback,
-		},
-		PayloadType: 112,
-	},
-	{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeRTX,
-			ClockRate:   90000,
-			SDPFmtpLine: "apt=112",
-		},
-		PayloadType: 113,
+		PayloadType: 46,
 	},
 }
 
-func registerH264Codecs(mediaEngine *webrtc.MediaEngine) error {
-	for _, codec := range h264CodecParameters {
+func registerVideoCodecs(mediaEngine *webrtc.MediaEngine) error {
+	for _, codec := range av1CodecParameters {
 		if err := mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
 			return err
 		}
@@ -230,42 +140,220 @@ func registerH264Codecs(mediaEngine *webrtc.MediaEngine) error {
 	return nil
 }
 
-func h264TrackCapability() webrtc.RTPCodecCapability {
+func trackCapability(codec videoCodec) (webrtc.RTPCodecCapability, error) {
+	if codec != videoCodecAV1 {
+		return webrtc.RTPCodecCapability{}, errUnsupportedVideoCodecOffered
+	}
 	return webrtc.RTPCodecCapability{
-		MimeType:     webrtc.MimeTypeH264,
+		MimeType:     webrtc.MimeTypeAV1,
 		ClockRate:    90000,
-		RTCPFeedback: h264RTCPFeedback,
+		RTCPFeedback: av1RTCPFeedback,
+	}, nil
+}
+
+func codecParametersForVideoCodec(codec videoCodec) ([]webrtc.RTPCodecParameters, error) {
+	if codec != videoCodecAV1 {
+		return nil, errUnsupportedVideoCodecOffered
+	}
+	return append([]webrtc.RTPCodecParameters(nil), av1CodecParameters...), nil
+}
+
+func codecFromName(name string) (videoCodec, bool) {
+	switch {
+	case strings.EqualFold(name, "AV1"), strings.EqualFold(name, webrtc.MimeTypeAV1):
+		return videoCodecAV1, true
+	default:
+		return "", false
 	}
 }
 
-func requireH264VideoCodec(sdp string) error {
+type videoMediaCodecSet struct {
+	codecs                  map[videoCodec]struct{}
+	unsupportedPrimaryCount int
+}
+
+func videoMediaCodecSets(sdp string) ([]videoMediaCodecSet, error) {
 	var description pionsdp.SessionDescription
 	if err := description.UnmarshalString(sdp); err != nil {
-		return err
+		return nil, err
 	}
-	for _, media := range description.MediaDescriptions {
-		if !strings.EqualFold(media.MediaName.Media, "video") {
-			continue
+	mediaCodecSets := make([]videoMediaCodecSet, 0)
+	payloadTypes := make(map[string]struct{})
+	payloadNames := make(map[string]string)
+	inVideo := false
+	flush := func() {
+		if !inVideo {
+			return
 		}
-		payloadTypes := make([]uint8, 0, len(media.MediaName.Formats))
-		for _, format := range media.MediaName.Formats {
-			payloadType, err := strconv.ParseUint(format, 10, 8)
-			if err != nil {
+		codecSet := make(map[videoCodec]struct{})
+		unsupportedPrimaryCount := 0
+		for payloadType := range payloadTypes {
+			name := payloadNames[payloadType]
+			if videoCodec, ok := codecFromName(name); ok {
+				codecSet[videoCodec] = struct{}{}
 				continue
 			}
-			payloadTypes = append(payloadTypes, uint8(payloadType))
-		}
-		codecs, err := description.GetCodecsForPayloadTypes(payloadTypes)
-		if err != nil {
-			return err
-		}
-		for _, codec := range codecs {
-			if strings.EqualFold(codec.Name, "H264") {
-				return nil
+			if !strings.EqualFold(name, "rtx") {
+				unsupportedPrimaryCount++
 			}
 		}
+		mediaCodecSets = append(mediaCodecSets, videoMediaCodecSet{
+			codecs:                  codecSet,
+			unsupportedPrimaryCount: unsupportedPrimaryCount,
+		})
 	}
-	return errH264VideoCodecMissing
+	for _, line := range strings.Split(sdp, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "m=") {
+			flush()
+			inVideo = strings.HasPrefix(line, "m=video ")
+			payloadTypes = make(map[string]struct{})
+			payloadNames = make(map[string]string)
+			if inVideo {
+				parts := strings.Fields(line)
+				for _, payloadType := range parts[3:] {
+					payloadTypes[payloadType] = struct{}{}
+				}
+			}
+			continue
+		}
+		if !inVideo || !strings.HasPrefix(line, "a=rtpmap:") {
+			continue
+		}
+		parts := strings.Fields(strings.TrimPrefix(line, "a=rtpmap:"))
+		if len(parts) < 2 {
+			continue
+		}
+		payloadType := parts[0]
+		payloadNames[payloadType] = strings.SplitN(parts[1], "/", 2)[0]
+	}
+	flush()
+	return mediaCodecSets, nil
+}
+
+func publisherVideoCodecs(sdp string) ([]videoCodec, error) {
+	mediaCodecSets, err := videoMediaCodecSets(sdp)
+	if err != nil {
+		return nil, err
+	}
+	codecs := make([]videoCodec, 0, len(mediaCodecSets))
+	seen := make(map[videoCodec]struct{})
+	for _, mediaCodecSet := range mediaCodecSets {
+		if mediaCodecSet.unsupportedPrimaryCount > 0 {
+			return nil, errUnsupportedVideoCodecOffered
+		}
+		if len(mediaCodecSet.codecs) == 0 {
+			return nil, errSupportedVideoCodecMissing
+		}
+		if _, ok := mediaCodecSet.codecs[videoCodecAV1]; ok && len(mediaCodecSet.codecs) == 1 {
+			if _, duplicate := seen[videoCodecAV1]; duplicate {
+				return nil, errPublisherCodecDuplicate
+			}
+			seen[videoCodecAV1] = struct{}{}
+			codecs = append(codecs, videoCodecAV1)
+			continue
+		}
+		return nil, errUnsupportedVideoCodecOffered
+	}
+	if len(codecs) == 0 {
+		return nil, errSupportedVideoCodecMissing
+	}
+	return codecs, nil
+}
+
+func codecSetFromList(codecs []videoCodec) map[videoCodec]struct{} {
+	result := make(map[videoCodec]struct{}, len(codecs))
+	for _, codec := range codecs {
+		result[codec] = struct{}{}
+	}
+	return result
+}
+
+func codecListFromSet(codecSet map[videoCodec]struct{}) []videoCodec {
+	codecs := make([]videoCodec, 0, len(codecSet))
+	if _, ok := codecSet[videoCodecAV1]; ok {
+		codecs = append(codecs, videoCodecAV1)
+	}
+	return codecs
+}
+
+func codecStrings(codecs []videoCodec) []string {
+	result := make([]string, 0, len(codecs))
+	for _, codec := range codecs {
+		result = append(result, string(codec))
+	}
+	return result
+}
+
+func headerExtensionIDs(parameters []webrtc.RTPHeaderExtensionParameter) map[string]uint8 {
+	result := make(map[string]uint8, len(parameters))
+	for _, parameter := range parameters {
+		if parameter.ID <= 0 || parameter.ID > 255 || parameter.URI == "" {
+			continue
+		}
+		result[parameter.URI] = uint8(parameter.ID)
+	}
+	return result
+}
+
+func headerExtensionRewrites(
+	publisherExtensions map[string]uint8,
+	viewerExtensions map[string]uint8,
+) map[uint8]uint8 {
+	rewrites := make(map[uint8]uint8)
+	for uri, publisherID := range publisherExtensions {
+		viewerID, ok := viewerExtensions[uri]
+		if !ok {
+			rewrites[publisherID] = 0
+			continue
+		}
+		rewrites[publisherID] = viewerID
+	}
+	return rewrites
+}
+
+func copyHeaderExtensionMap(input map[string]uint8) map[string]uint8 {
+	output := make(map[string]uint8, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+func copyExtensionRewriteMap(input map[uint8]uint8) map[uint8]uint8 {
+	output := make(map[uint8]uint8, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+func selectViewerCodec(sdp string, available map[videoCodec]struct{}) (videoCodec, error) {
+	mediaCodecSets, err := videoMediaCodecSets(sdp)
+	if err != nil {
+		return "", err
+	}
+	if len(available) == 0 {
+		return "", errPublisherCodecPending
+	}
+	offered := make(map[videoCodec]struct{})
+	for _, mediaCodecSet := range mediaCodecSets {
+		if mediaCodecSet.unsupportedPrimaryCount > 0 {
+			return "", errUnsupportedVideoCodecOffered
+		}
+		if len(mediaCodecSet.codecs) == 0 {
+			return "", errSupportedVideoCodecMissing
+		}
+		for codec := range mediaCodecSet.codecs {
+			offered[codec] = struct{}{}
+		}
+	}
+	if _, publisherHasAV1 := available[videoCodecAV1]; publisherHasAV1 {
+		if _, viewerHasAV1 := offered[videoCodecAV1]; viewerHasAV1 {
+			return videoCodecAV1, nil
+		}
+	}
+	return "", errSupportedVideoCodecMissing
 }
 
 func NewServer(config Config) *Server {
@@ -408,7 +496,23 @@ func (s *Server) startWebRTC() error {
 	}
 	udpMux := ice.NewUDPMuxDefault(ice.UDPMuxParams{UDPConn: udpConn})
 	mediaEngine := &webrtc.MediaEngine{}
-	if err := registerH264Codecs(mediaEngine); err != nil {
+	if err := registerVideoCodecs(mediaEngine); err != nil {
+		_ = udpMux.Close()
+		_ = udpConn.Close()
+		return err
+	}
+	interceptorRegistry := &interceptor.Registry{}
+	if err := webrtc.ConfigureNack(mediaEngine, interceptorRegistry); err != nil {
+		_ = udpMux.Close()
+		_ = udpConn.Close()
+		return err
+	}
+	if err := webrtc.ConfigureRTCPReports(interceptorRegistry); err != nil {
+		_ = udpMux.Close()
+		_ = udpConn.Close()
+		return err
+	}
+	if err := webrtc.ConfigureStatsInterceptor(interceptorRegistry); err != nil {
 		_ = udpMux.Close()
 		_ = udpConn.Close()
 		return err
@@ -419,6 +523,7 @@ func (s *Server) startWebRTC() error {
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(mediaEngine),
 		webrtc.WithSettingEngine(settingEngine),
+		webrtc.WithInterceptorRegistry(interceptorRegistry),
 	)
 
 	listenAddresses := make([]string, 0)
@@ -537,7 +642,7 @@ func (s *Server) handleViewerOffer(w http.ResponseWriter, r *http.Request, roomI
 		writeJSON(w, http.StatusBadRequest, signalResponse{Type: "error", Reason: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, signalResponse{Type: "answer", SDP: answer})
+	writeJSON(w, http.StatusOK, signalResponse{Type: "answer", SDP: answer.SDP, Codec: string(answer.Codec)})
 }
 
 func (s *Server) handleViewerCandidate(w http.ResponseWriter, r *http.Request, roomID string, clientID string) {
@@ -632,11 +737,14 @@ type Room struct {
 	viewers              map[string]*viewerSession
 	subscribers          map[string]*viewerRTPWriter
 	pendingViewerICE     map[string][]webrtc.ICECandidateInit
-	publisherSSRC        uint32
+	publisherCodecs      map[videoCodec]struct{}
+	publisherSSRCs       map[videoCodec]uint32
+	publisherExtensions  map[videoCodec]map[string]uint8
 	publisherPacketCount atomic.Uint64
 	forwardedPacketCount atomic.Uint64
 	pliForwardCount      atomic.Uint64
 	firForwardCount      atomic.Uint64
+	nackForwardCount     atomic.Uint64
 }
 
 type rtpSink interface {
@@ -654,6 +762,11 @@ type publisherOfferResult struct {
 	PublisherID string
 }
 
+type viewerOfferResult struct {
+	SDP   string
+	Codec videoCodec
+}
+
 type publisherSession struct {
 	id string
 	pc peerConnection
@@ -663,6 +776,7 @@ type viewerSession struct {
 	pc     peerConnection
 	sender *webrtc.RTPSender
 	writer *viewerRTPWriter
+	codec  videoCodec
 }
 
 type peerConnection interface {
@@ -674,29 +788,35 @@ type peerConnection interface {
 const subscriberRTPQueueSize = 512
 
 type viewerRTPWriter struct {
-	roomID   string
-	clientID string
-	logger   *slog.Logger
-	sink     rtpSink
-	queue    chan *rtp.Packet
-	done     chan struct{}
-	mu       sync.Mutex
-	closed   bool
-	written  atomic.Uint64
-	dropped  atomic.Uint64
+	roomID            string
+	clientID          string
+	codec             videoCodec
+	logger            *slog.Logger
+	sink              rtpSink
+	queue             chan *rtp.Packet
+	done              chan struct{}
+	mu                sync.Mutex
+	closed            bool
+	viewerExtensions  map[string]uint8
+	extensionRewrites map[uint8]uint8
+	written           atomic.Uint64
+	dropped           atomic.Uint64
 }
 
-func newViewerRTPWriter(roomID string, clientID string, sink rtpSink, logger *slog.Logger) *viewerRTPWriter {
+func newViewerRTPWriter(roomID string, clientID string, codec videoCodec, sink rtpSink, logger *slog.Logger) *viewerRTPWriter {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	writer := &viewerRTPWriter{
-		roomID:   roomID,
-		clientID: clientID,
-		logger:   logger,
-		sink:     sink,
-		queue:    make(chan *rtp.Packet, subscriberRTPQueueSize),
-		done:     make(chan struct{}),
+		roomID:            roomID,
+		clientID:          clientID,
+		codec:             codec,
+		logger:            logger,
+		sink:              sink,
+		queue:             make(chan *rtp.Packet, subscriberRTPQueueSize),
+		done:              make(chan struct{}),
+		viewerExtensions:  make(map[string]uint8),
+		extensionRewrites: make(map[uint8]uint8),
 	}
 	go writer.run()
 	return writer
@@ -709,6 +829,7 @@ func (w *viewerRTPWriter) enqueue(packet *rtp.Packet) bool {
 		return false
 	}
 	packetCopy := packet.Clone()
+	w.rewriteHeaderExtensions(packetCopy)
 	select {
 	case w.queue <- packetCopy:
 		return true
@@ -716,6 +837,49 @@ func (w *viewerRTPWriter) enqueue(packet *rtp.Packet) bool {
 		w.dropped.Add(1)
 		w.logger.Debug("viewer RTP queue full", "room", w.roomID, "clientID", w.clientID)
 		return false
+	}
+}
+
+func (w *viewerRTPWriter) setViewerExtensions(extensions map[string]uint8) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.viewerExtensions = copyHeaderExtensionMap(extensions)
+}
+
+func (w *viewerRTPWriter) setExtensionRewrites(rewrites map[uint8]uint8) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.extensionRewrites = copyExtensionRewriteMap(rewrites)
+}
+
+func (w *viewerRTPWriter) setPublisherExtensions(extensions map[string]uint8) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.extensionRewrites = headerExtensionRewrites(extensions, w.viewerExtensions)
+}
+
+func (w *viewerRTPWriter) rewriteHeaderExtensions(packet *rtp.Packet) {
+	type pendingRewrite struct {
+		viewerID uint8
+		payload  []byte
+	}
+	pendingRewrites := make([]pendingRewrite, 0, len(w.extensionRewrites))
+	for publisherID, viewerID := range w.extensionRewrites {
+		payload := packet.GetExtension(publisherID)
+		if payload == nil {
+			continue
+		}
+		payloadCopy := append([]byte(nil), payload...)
+		_ = packet.DelExtension(publisherID)
+		if viewerID != 0 {
+			pendingRewrites = append(pendingRewrites, pendingRewrite{
+				viewerID: viewerID,
+				payload:  payloadCopy,
+			})
+		}
+	}
+	for _, rewrite := range pendingRewrites {
+		_ = packet.SetExtension(rewrite.viewerID, rewrite.payload)
 	}
 }
 
@@ -753,12 +917,15 @@ func NewRoom(id string, logger *slog.Logger, newPeerConnection peerConnectionFac
 		logger = slog.Default()
 	}
 	return &Room{
-		id:                id,
-		logger:            logger,
-		newPeerConnection: newPeerConnection,
-		viewers:           make(map[string]*viewerSession),
-		subscribers:       make(map[string]*viewerRTPWriter),
-		pendingViewerICE:  make(map[string][]webrtc.ICECandidateInit),
+		id:                  id,
+		logger:              logger,
+		newPeerConnection:   newPeerConnection,
+		viewers:             make(map[string]*viewerSession),
+		subscribers:         make(map[string]*viewerRTPWriter),
+		pendingViewerICE:    make(map[string][]webrtc.ICECandidateInit),
+		publisherCodecs:     make(map[videoCodec]struct{}),
+		publisherSSRCs:      make(map[videoCodec]uint32),
+		publisherExtensions: make(map[videoCodec]map[string]uint8),
 	}
 }
 
@@ -767,11 +934,14 @@ func newRoomForTest(id string, logger *slog.Logger) *Room {
 		logger = slog.Default()
 	}
 	return &Room{
-		id:               id,
-		logger:           logger,
-		viewers:          make(map[string]*viewerSession),
-		subscribers:      make(map[string]*viewerRTPWriter),
-		pendingViewerICE: make(map[string][]webrtc.ICECandidateInit),
+		id:                  id,
+		logger:              logger,
+		viewers:             make(map[string]*viewerSession),
+		subscribers:         make(map[string]*viewerRTPWriter),
+		pendingViewerICE:    make(map[string][]webrtc.ICECandidateInit),
+		publisherCodecs:     make(map[videoCodec]struct{}),
+		publisherSSRCs:      make(map[videoCodec]uint32),
+		publisherExtensions: make(map[videoCodec]map[string]uint8),
 	}
 }
 
@@ -781,9 +951,12 @@ func (r *Room) Snapshot() RoomSnapshot {
 	if r.publisher != nil {
 		publisherID = r.publisher.id
 	}
+	publisherCodecs := codecStrings(codecListFromSet(r.publisherCodecs))
 	writers := make([]*viewerRTPWriter, 0, len(r.subscribers))
+	subscriberCodecCounts := make(map[string]int)
 	for _, writer := range r.subscribers {
 		writers = append(writers, writer)
+		subscriberCodecCounts[string(writer.codec)]++
 	}
 	r.mu.Unlock()
 	var writtenPacketCount uint64
@@ -798,17 +971,20 @@ func (r *Room) Snapshot() RoomSnapshot {
 		}
 	}
 	return RoomSnapshot{
-		ID:                   r.id,
-		HasPublisher:         publisherID != "",
-		PublisherID:          publisherID,
-		SubscriberCount:      len(writers),
-		PublisherPacketCount: r.publisherPacketCount.Load(),
-		ForwardedPacketCount: r.forwardedPacketCount.Load(),
-		WrittenPacketCount:   writtenPacketCount,
-		DroppedPacketCount:   droppedPacketCount,
-		SlowSubscriberCount:  slowSubscriberCount,
-		PLIForwardCount:      r.pliForwardCount.Load(),
-		FIRForwardCount:      r.firForwardCount.Load(),
+		ID:                    r.id,
+		HasPublisher:          publisherID != "",
+		PublisherID:           publisherID,
+		PublisherCodecs:       publisherCodecs,
+		SubscriberCodecCounts: subscriberCodecCounts,
+		SubscriberCount:       len(writers),
+		PublisherPacketCount:  r.publisherPacketCount.Load(),
+		ForwardedPacketCount:  r.forwardedPacketCount.Load(),
+		WrittenPacketCount:    writtenPacketCount,
+		DroppedPacketCount:    droppedPacketCount,
+		SlowSubscriberCount:   slowSubscriberCount,
+		PLIForwardCount:       r.pliForwardCount.Load(),
+		FIRForwardCount:       r.firForwardCount.Load(),
+		NACKForwardCount:      r.nackForwardCount.Load(),
 	}
 }
 
@@ -816,38 +992,37 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 	if r.newPeerConnection == nil {
 		return publisherOfferResult{}, errors.New("room_peer_connection_factory_missing")
 	}
-	if err := requireH264VideoCodec(sdp); err != nil {
+	if _, err := publisherVideoCodecs(sdp); err != nil {
 		return publisherOfferResult{}, err
 	}
 	pc, err := r.newPeerConnection()
 	if err != nil {
 		return publisherOfferResult{}, err
 	}
-	_, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
-		Direction: webrtc.RTPTransceiverDirectionRecvonly,
-	})
-	if err != nil {
-		_ = pc.Close()
-		return publisherOfferResult{}, err
-	}
 	publisherID := r.nextPublisherIdentifier()
 	r.mu.Lock()
 	previous := r.publisher
-	previousSSRC := r.publisherSSRC
+	previousCodecs := r.publisherCodecs
+	previousSSRCs := r.publisherSSRCs
+	previousExtensions := r.publisherExtensions
 	r.publisher = &publisherSession{id: publisherID, pc: pc}
-	r.publisherSSRC = 0
+	r.publisherCodecs = make(map[videoCodec]struct{})
+	r.publisherSSRCs = make(map[videoCodec]uint32)
+	r.publisherExtensions = make(map[videoCodec]map[string]uint8)
 	r.mu.Unlock()
 	rollbackPublisher := func() {
 		r.mu.Lock()
 		if r.publisher != nil && r.publisher.id == publisherID {
 			r.publisher = previous
-			r.publisherSSRC = previousSSRC
+			r.publisherCodecs = previousCodecs
+			r.publisherSSRCs = previousSSRCs
+			r.publisherExtensions = previousExtensions
 		}
 		r.mu.Unlock()
 		_ = pc.Close()
 	}
 	pc.OnTrack(func(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		r.publisherTrackStarted(publisherID, remote)
+		r.publisherTrackStarted(publisherID, remote, receiver)
 	})
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		if state == webrtc.PeerConnectionStateFailed ||
@@ -877,11 +1052,22 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 		rollbackPublisher()
 		return publisherOfferResult{}, errors.New("publisher_local_description_missing")
 	}
+	negotiatedCodecs, err := publisherVideoCodecs(localDescription.SDP)
+	if err != nil {
+		rollbackPublisher()
+		return publisherOfferResult{}, err
+	}
+	negotiatedCodecSet := codecSetFromList(negotiatedCodecs)
+	r.mu.Lock()
+	if r.publisher != nil && r.publisher.id == publisherID {
+		r.publisherCodecs = negotiatedCodecSet
+	}
+	r.mu.Unlock()
 
 	if previous != nil {
 		_ = previous.pc.Close()
 	}
-	r.logger.Info("publisher ready", "room", r.id, "publisherID", publisherID)
+	r.logger.Info("publisher ready", "room", r.id, "publisherID", publisherID, "codecs", codecStrings(negotiatedCodecs))
 	return publisherOfferResult{SDP: localDescription.SDP, PublisherID: publisherID}, nil
 }
 
@@ -904,30 +1090,58 @@ func (r *Room) AddPublisherCandidate(publisherID string, candidate webrtc.ICECan
 	return publisher.pc.AddICECandidate(candidate)
 }
 
-func (r *Room) SetViewerOffer(clientID string, sdp string) (string, error) {
+func (r *Room) SetViewerOffer(clientID string, sdp string) (viewerOfferResult, error) {
 	if r.newPeerConnection == nil {
-		return "", errors.New("room_peer_connection_factory_missing")
+		return viewerOfferResult{}, errors.New("room_peer_connection_factory_missing")
 	}
-	if err := requireH264VideoCodec(sdp); err != nil {
-		return "", err
+	r.mu.Lock()
+	publisherCodecs := make(map[videoCodec]struct{}, len(r.publisherCodecs))
+	for codec := range r.publisherCodecs {
+		publisherCodecs[codec] = struct{}{}
+	}
+	r.mu.Unlock()
+	selectedCodec, err := selectViewerCodec(sdp, publisherCodecs)
+	if err != nil {
+		return viewerOfferResult{}, err
 	}
 	pc, err := r.newPeerConnection()
 	if err != nil {
-		return "", err
+		return viewerOfferResult{}, err
+	}
+	capability, err := trackCapability(selectedCodec)
+	if err != nil {
+		_ = pc.Close()
+		return viewerOfferResult{}, err
 	}
 	track, err := webrtc.NewTrackLocalStaticRTP(
-		h264TrackCapability(),
-		"screen",
+		capability,
+		"screen-"+string(selectedCodec),
 		"voiddisplay",
 	)
 	if err != nil {
 		_ = pc.Close()
-		return "", err
+		return viewerOfferResult{}, err
 	}
-	sender, err := pc.AddTrack(track)
+	transceiver, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionSendonly,
+	})
 	if err != nil {
 		_ = pc.Close()
-		return "", err
+		return viewerOfferResult{}, err
+	}
+	codecParameters, err := codecParametersForVideoCodec(selectedCodec)
+	if err != nil {
+		_ = pc.Close()
+		return viewerOfferResult{}, err
+	}
+	if err := transceiver.SetCodecPreferences(codecParameters); err != nil {
+		_ = pc.Close()
+		return viewerOfferResult{}, err
+	}
+	sender := transceiver.Sender()
+	if sender == nil {
+		_ = pc.Close()
+		return viewerOfferResult{}, errors.New("viewer_sender_missing")
 	}
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		if state == webrtc.PeerConnectionStateFailed ||
@@ -939,29 +1153,34 @@ func (r *Room) SetViewerOffer(clientID string, sdp string) (string, error) {
 	offer := webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: sdp}
 	if err := pc.SetRemoteDescription(offer); err != nil {
 		_ = pc.Close()
-		return "", err
+		return viewerOfferResult{}, err
 	}
 	answer, err := pc.CreateAnswer(nil)
 	if err != nil {
 		_ = pc.Close()
-		return "", err
+		return viewerOfferResult{}, err
 	}
 	gatherComplete := webrtc.GatheringCompletePromise(pc)
 	if err := pc.SetLocalDescription(answer); err != nil {
 		_ = pc.Close()
-		return "", err
+		return viewerOfferResult{}, err
 	}
 	<-gatherComplete
 	localDescription := pc.LocalDescription()
 	if localDescription == nil {
 		_ = pc.Close()
-		return "", errors.New("viewer_local_description_missing")
+		return viewerOfferResult{}, errors.New("viewer_local_description_missing")
 	}
 
-	writer := newViewerRTPWriter(r.id, clientID, track, r.logger)
+	writer := newViewerRTPWriter(r.id, clientID, selectedCodec, track, r.logger)
+	viewerExtensions := headerExtensionIDs(sender.GetParameters().HeaderExtensions)
+	writer.setViewerExtensions(viewerExtensions)
 	r.mu.Lock()
 	previous := r.viewers[clientID]
-	r.viewers[clientID] = &viewerSession{pc: pc, sender: sender, writer: writer}
+	if publisherExtensions := r.publisherExtensions[selectedCodec]; len(publisherExtensions) > 0 {
+		writer.setExtensionRewrites(headerExtensionRewrites(publisherExtensions, viewerExtensions))
+	}
+	r.viewers[clientID] = &viewerSession{pc: pc, sender: sender, writer: writer, codec: selectedCodec}
 	r.subscribers[clientID] = writer
 	pending := append([]webrtc.ICECandidateInit(nil), r.pendingViewerICE[clientID]...)
 	delete(r.pendingViewerICE, clientID)
@@ -972,9 +1191,9 @@ func (r *Room) SetViewerOffer(clientID string, sdp string) (string, error) {
 	}
 	r.applyICECandidates(clientID, pc, pending)
 
-	r.logger.Info("viewer ready", "room", r.id, "clientID", clientID, "subscribers", subscriberCount)
-	go r.readViewerRTCP(clientID, sender)
-	return localDescription.SDP, nil
+	r.logger.Info("viewer ready", "room", r.id, "clientID", clientID, "codec", selectedCodec, "subscribers", subscriberCount)
+	go r.readViewerRTCP(clientID, selectedCodec, sender)
+	return viewerOfferResult{SDP: localDescription.SDP, Codec: selectedCodec}, nil
 }
 
 func (r *Room) AddViewerCandidate(clientID string, candidate webrtc.ICECandidateInit) error {
@@ -1015,7 +1234,9 @@ func (r *Room) Close() {
 	r.viewers = make(map[string]*viewerSession)
 	r.subscribers = make(map[string]*viewerRTPWriter)
 	r.pendingViewerICE = make(map[string][]webrtc.ICECandidateInit)
-	r.publisherSSRC = 0
+	r.publisherCodecs = make(map[videoCodec]struct{})
+	r.publisherSSRCs = make(map[videoCodec]uint32)
+	r.publisherExtensions = make(map[videoCodec]map[string]uint8)
 	r.mu.Unlock()
 	if publisher != nil {
 		_ = publisher.pc.Close()
@@ -1031,7 +1252,9 @@ func (r *Room) StopPublisher(publisherID string) {
 	if r.publisher != nil && r.publisher.id == publisherID {
 		publisher = r.publisher
 		r.publisher = nil
-		r.publisherSSRC = 0
+		r.publisherCodecs = make(map[videoCodec]struct{})
+		r.publisherSSRCs = make(map[videoCodec]uint32)
+		r.publisherExtensions = make(map[videoCodec]map[string]uint8)
 	}
 	r.mu.Unlock()
 	if publisher == nil {
@@ -1079,15 +1302,32 @@ func (r *Room) handlePublisherDisconnected(publisherID string, state webrtc.Peer
 	r.Close()
 }
 
-func (r *Room) publisherTrackStarted(publisherID string, remote *webrtc.TrackRemote) {
+func (r *Room) publisherTrackStarted(publisherID string, remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+	codec, ok := codecFromName(remote.Codec().MimeType)
+	if !ok {
+		r.logger.Warn("publisher track ignored unsupported codec", "room", r.id, "publisherID", publisherID, "codec", remote.Codec().MimeType)
+		return
+	}
 	r.mu.Lock()
 	if r.publisher == nil || r.publisher.id != publisherID {
 		r.mu.Unlock()
 		r.logger.Debug("ignored stale publisher track", "room", r.id, "publisherID", publisherID)
 		return
 	}
-	r.publisherSSRC = uint32(remote.SSRC())
+	ssrc := uint32(remote.SSRC())
+	r.publisherSSRCs[codec] = ssrc
+	publisherExtensions := headerExtensionIDs(receiver.GetParameters().HeaderExtensions)
+	r.publisherExtensions[codec] = publisherExtensions
+	writers := make([]*viewerRTPWriter, 0, len(r.subscribers))
+	for _, writer := range r.subscribers {
+		if writer.codec == codec {
+			writers = append(writers, writer)
+		}
+	}
 	r.mu.Unlock()
+	for _, writer := range writers {
+		writer.setPublisherExtensions(publisherExtensions)
+	}
 	r.logger.Info(
 		"publisher track started",
 		"room",
@@ -1097,8 +1337,9 @@ func (r *Room) publisherTrackStarted(publisherID string, remote *webrtc.TrackRem
 		"codec",
 		remote.Codec().MimeType,
 		"ssrc",
-		uint32(remote.SSRC()),
+		ssrc,
 	)
+	defer r.publisherTrackStopped(publisherID, codec, ssrc)
 	for {
 		packet, _, err := remote.ReadRTP()
 		if err != nil {
@@ -1107,18 +1348,35 @@ func (r *Room) publisherTrackStarted(publisherID string, remote *webrtc.TrackRem
 			}
 			return
 		}
-		if !r.ForwardRTPFromPublisher(publisherID, packet) {
+		if !r.ForwardRTPFromPublisher(publisherID, codec, packet) {
 			return
 		}
 		r.publisherPacketCount.Add(1)
 	}
 }
 
-func (r *Room) ForwardRTP(packet *rtp.Packet) {
-	r.forwardRTP(packet)
+func (r *Room) publisherTrackStopped(publisherID string, codec videoCodec, ssrc uint32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.publisher == nil || r.publisher.id != publisherID {
+		return
+	}
+	if r.publisherSSRCs[codec] != ssrc {
+		return
+	}
+	delete(r.publisherSSRCs, codec)
+	delete(r.publisherExtensions, codec)
 }
 
-func (r *Room) ForwardRTPFromPublisher(publisherID string, packet *rtp.Packet) bool {
+func (r *Room) ForwardRTP(packet *rtp.Packet) {
+	r.forwardRTPToSubscribers("", packet)
+}
+
+func (r *Room) ForwardRTPForCodec(codec videoCodec, packet *rtp.Packet) {
+	r.forwardRTPToSubscribers(codec, packet)
+}
+
+func (r *Room) ForwardRTPFromPublisher(publisherID string, codec videoCodec, packet *rtp.Packet) bool {
 	r.mu.Lock()
 	isCurrent := r.publisher != nil && r.publisher.id == publisherID
 	r.mu.Unlock()
@@ -1126,14 +1384,17 @@ func (r *Room) ForwardRTPFromPublisher(publisherID string, packet *rtp.Packet) b
 		r.logger.Debug("ignored stale publisher RTP", "room", r.id, "publisherID", publisherID)
 		return false
 	}
-	r.forwardRTP(packet)
+	r.forwardRTPToSubscribers(codec, packet)
 	return true
 }
 
-func (r *Room) forwardRTP(packet *rtp.Packet) {
+func (r *Room) forwardRTPToSubscribers(codec videoCodec, packet *rtp.Packet) {
 	r.mu.Lock()
 	subscribers := make([]*viewerRTPWriter, 0, len(r.subscribers))
 	for _, subscriber := range r.subscribers {
+		if codec != "" && subscriber.codec != codec {
+			continue
+		}
 		subscribers = append(subscribers, subscriber)
 	}
 	r.mu.Unlock()
@@ -1144,7 +1405,7 @@ func (r *Room) forwardRTP(packet *rtp.Packet) {
 	}
 }
 
-func (r *Room) readViewerRTCP(clientID string, sender *webrtc.RTPSender) {
+func (r *Room) readViewerRTCP(clientID string, codec videoCodec, sender *webrtc.RTPSender) {
 	for {
 		packets, _, err := sender.ReadRTCP()
 		if err != nil {
@@ -1153,14 +1414,14 @@ func (r *Room) readViewerRTCP(clientID string, sender *webrtc.RTPSender) {
 			}
 			return
 		}
-		r.forwardFeedback(packets)
+		r.forwardFeedback(codec, packets)
 	}
 }
 
-func (r *Room) forwardFeedback(packets []rtcp.Packet) {
+func (r *Room) forwardFeedback(codec videoCodec, packets []rtcp.Packet) {
 	r.mu.Lock()
 	publisher := r.publisher
-	publisherSSRC := r.publisherSSRC
+	publisherSSRC := r.publisherSSRCs[codec]
 	r.mu.Unlock()
 	if publisher == nil || publisherSSRC == 0 {
 		return
@@ -1186,6 +1447,15 @@ func (r *Room) forwardFeedback(packets []rtcp.Packet) {
 				SenderSSRC: value.SenderSSRC,
 				MediaSSRC:  publisherSSRC,
 				FIR:        entries,
+			})
+		case *rtcp.TransportLayerNack:
+			r.nackForwardCount.Add(1)
+			nacks := make([]rtcp.NackPair, len(value.Nacks))
+			copy(nacks, value.Nacks)
+			forwarded = append(forwarded, &rtcp.TransportLayerNack{
+				SenderSSRC: value.SenderSSRC,
+				MediaSSRC:  publisherSSRC,
+				Nacks:      nacks,
 			})
 		}
 	}

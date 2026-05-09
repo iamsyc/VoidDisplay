@@ -199,8 +199,8 @@ struct DisplayCaptureProfileStateMachineTests {
         }
     }
 
-    @Test func previewFrameRateClampCapsHighRefreshAndPreservesLowerRefresh() {
-        #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 144) == 60)
+    @Test func previewFrameRateKeepsHighRefreshAndPreservesFallback() {
+        #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 144) == 144)
         #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 50) == 50)
         #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 0) == 60)
     }
@@ -260,6 +260,27 @@ struct DisplayCaptureProfileStateMachineTests {
                 performanceMode: .powerEfficient
             ) == .fps30
         )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .shareOnly,
+                performanceMode: .automatic,
+                sourceFramesPerSecond: 90
+            ).framesPerSecond == 90
+        )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .mixed,
+                performanceMode: .smooth,
+                sourceFramesPerSecond: 120
+            ).framesPerSecond == 120
+        )
+        #expect(
+            DisplayCaptureConfigurationStateMachine.defaultFrameRateTier(
+                for: .mixed,
+                performanceMode: .powerEfficient,
+                sourceFramesPerSecond: 120
+            ) == .fps30
+        )
     }
 
     @Test func captureSizeContextAppliesSharedPixelBudgetByPerformanceMode() {
@@ -269,8 +290,8 @@ struct DisplayCaptureProfileStateMachineTests {
         )
 
         #expect(context.captureSize(for: .previewOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
-        #expect(context.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_560, height: 1_440))
-        #expect(context.captureSize(for: .mixed, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_560, height: 1_440))
+        #expect(context.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
+        #expect(context.captureSize(for: .mixed, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
         #expect(context.captureSize(for: .shareOnly, performanceMode: .powerEfficient) == DisplayCaptureDimensions(width: 1_920, height: 1_080))
         #expect(context.captureSize(for: .shareOnly, performanceMode: .smooth) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
     }
@@ -294,8 +315,8 @@ struct DisplayCaptureProfileStateMachineTests {
             physicalSize: DisplayCaptureDimensions(width: 2_161, height: 3_841)
         )
 
-        #expect(wideContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_968, height: 1_242))
-        #expect(portraitContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 1_440, height: 2_560))
+        #expect(wideContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_440, height: 1_440))
+        #expect(portraitContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_161, height: 3_841))
     }
 
     @Test func automaticMixedModeKeeps60AcrossPreviewPressureWindows() {

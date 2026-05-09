@@ -5,13 +5,15 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
-package nonisolated enum DisplayCaptureFrameRateTier: Int, CaseIterable, Sendable, Equatable {
-    case fps30 = 30
-    case fps45 = 45
-    case fps60 = 60
+package nonisolated struct DisplayCaptureFrameRateTier: Sendable, Equatable, Hashable {
+    package static let fps30 = DisplayCaptureFrameRateTier(framesPerSecond: 30)
+    package static let fps45 = DisplayCaptureFrameRateTier(framesPerSecond: 45)
+    package static let fps60 = DisplayCaptureFrameRateTier(framesPerSecond: 60)
 
-    package var framesPerSecond: Int {
-        rawValue
+    package let framesPerSecond: Int
+
+    package init(framesPerSecond: Int) {
+        self.framesPerSecond = max(1, framesPerSecond)
     }
 }
 
@@ -20,18 +22,37 @@ package typealias DisplayCaptureDimensions = CapturePixelDimensions
 package nonisolated struct DisplayCaptureSizeContext: Sendable, Equatable {
     package static let defaultShared = DisplayCaptureSizeContext(
         logicalSize: .defaultShared,
-        physicalSize: .defaultShared
+        physicalSize: .defaultShared,
+        sourceVideoSpec: .defaultShared
     )
 
     package let logicalSize: DisplayCaptureDimensions
     package let physicalSize: DisplayCaptureDimensions
+    package let sourceVideoSpec: SourceVideoSpec
 
     package init(
         logicalSize: DisplayCaptureDimensions,
-        physicalSize: DisplayCaptureDimensions
+        physicalSize: DisplayCaptureDimensions,
+        sourceFramesPerSecond: Int = 60
+    ) {
+        self.init(
+            logicalSize: logicalSize,
+            physicalSize: physicalSize,
+            sourceVideoSpec: SourceVideoSpec(
+                dimensions: physicalSize,
+                framesPerSecond: sourceFramesPerSecond
+            )
+        )
+    }
+
+    package init(
+        logicalSize: DisplayCaptureDimensions,
+        physicalSize: DisplayCaptureDimensions,
+        sourceVideoSpec: SourceVideoSpec
     ) {
         self.logicalSize = logicalSize
         self.physicalSize = physicalSize
+        self.sourceVideoSpec = sourceVideoSpec
     }
 
     package func captureSize(
@@ -273,19 +294,21 @@ package nonisolated enum DisplayCaptureConfigurationDecision: Sendable, Equatabl
 package nonisolated enum DisplayCaptureConfigurationStateMachine {
     nonisolated static func defaultFrameRateTier(
         for profile: DisplayCaptureProfile,
-        performanceMode: CapturePerformanceMode
+        performanceMode: CapturePerformanceMode,
+        sourceFramesPerSecond: Int = 60
     ) -> DisplayCaptureFrameRateTier {
-        switch performanceMode {
+        let sourceFramesPerSecond = max(1, sourceFramesPerSecond)
+        return switch performanceMode {
         case .automatic:
-            .fps60
+            DisplayCaptureFrameRateTier(framesPerSecond: sourceFramesPerSecond)
         case .smooth:
-            .fps60
+            DisplayCaptureFrameRateTier(framesPerSecond: sourceFramesPerSecond)
         case .powerEfficient:
             switch profile {
             case .previewOnly:
-                .fps45
+                DisplayCaptureFrameRateTier(framesPerSecond: min(sourceFramesPerSecond, 45))
             case .shareOnly, .mixed:
-                .fps30
+                DisplayCaptureFrameRateTier(framesPerSecond: min(sourceFramesPerSecond, 30))
             }
         }
     }
@@ -301,7 +324,8 @@ package nonisolated enum DisplayCaptureConfigurationStateMachine {
             profile: profile,
             frameRateTier: defaultFrameRateTier(
                 for: profile,
-                performanceMode: demand.performanceMode
+                performanceMode: demand.performanceMode,
+                sourceFramesPerSecond: captureSizeContext.sourceVideoSpec.framesPerSecond
             ),
             captureSize: captureSizeContext.captureSize(
                 for: profile,

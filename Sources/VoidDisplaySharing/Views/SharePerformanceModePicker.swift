@@ -25,7 +25,7 @@ package struct SharePerformanceModePicker: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            Text("Automatic balances H.264 compatibility, clarity, and encoder load.")
+            Text("Automatic and Smooth send AV1 at source resolution on LAN. Actual frame rate follows encoder capability.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

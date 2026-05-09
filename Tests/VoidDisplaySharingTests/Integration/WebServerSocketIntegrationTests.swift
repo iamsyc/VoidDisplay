@@ -121,23 +121,46 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains(#"function localOfferSDPWithIceCredentials() {"#))
         #expect(responseText.contains(#"async function waitForLocalOfferSDP() {"#))
         #expect(responseText.contains(#"RTCRtpReceiver.getCapabilities("video")"#))
-        #expect(responseText.contains(#"transceiver.setCodecPreferences(h264Preferences);"#))
-        #expect(responseText.contains(#"assertH264AnswerSDP(payload.sdp);"#))
-        #expect(responseText.contains(#"await verifySelectedH264Codec();"#))
+        #expect(responseText.contains(#"function receiverCodecPreferences() {"#))
+        #expect(responseText.contains(#"function receiverVideoCodecCapabilitySummary() {"#))
+        #expect(responseText.contains(#""unsupportedVideoCodecCount=" + String(allCodecs.length - probedCodecCount)"#))
+        #expect(responseText.contains(#"WebRTC receiver video capabilities "#))
+        #expect(!responseText.contains(#"function initialForceH264Only() {"#))
+        #expect(!responseText.contains(#"forceH264Only"#))
+        #expect(responseText.contains(#"return normalizedVideoCodecName(codec) === "video/av1";"#))
+        #expect(responseText.contains(#"function isRetransmissionCodec(codec) {"#))
+        #expect(!responseText.contains(#"function receiverSupportsCodec(mimeType) {"#))
+        #expect(responseText.contains(#"function matchingRtxCodecs(allCodecs, primaryCodecs) {"#))
+        #expect(responseText.contains(#"return supportedCodecs.concat(matchingRtxCodecs(allCodecs, supportedCodecs));"#))
+        #expect(responseText.contains(#"transceiver.setCodecPreferences(codecPreferences);"#))
+        #expect(responseText.contains(#"const supportedPrimaryCodecs = [...new Set("#))
+        #expect(responseText.contains(#"negotiatedVideoCodec = selectedCodecFromAnswerSDP(payload.sdp);"#))
+        #expect(responseText.contains(#"await verifySelectedCodec(negotiatedVideoCodec || "av1");"#))
+        #expect(responseText.contains(#"function isCodecErrorReason(reason) {"#))
+        #expect(!responseText.contains(#"function shouldRetryWithH264Fallback() {"#))
+        #expect(!responseText.contains(#"function retryWithH264Fallback() {"#))
+        #expect(responseText.contains(#"reason === "unsupported_video_codec_offered" || reason === "supported_video_codec_missing""#))
+        #expect(responseText.contains(#"if (codecMimeType === "video/rtx") {"#))
         #expect(responseText.contains(#"peer.addTransceiver("video", { direction: "recvonly" });"#))
         #expect(responseText.contains(#"sdp: await waitForLocalOfferSDP()"#))
         #expect(!responseText.contains(#"sdp: offer.sdp"#))
         #expect(responseText.contains(#"const reconnectDelays = [250, 500, 1000, 2000, 4000];"#))
-        #expect(responseText.contains(#"function scheduleReconnect() {"#))
+        #expect(responseText.contains(#"function scheduleReconnect(overlayTitle = t("overlayReconnectTitle"), overlayBody = t("overlayReconnectBody")) {"#))
+        #expect(responseText.contains(#"function schedulePeerRetry(overlayTitle, overlayBody) {"#))
         #expect(responseText.contains(#"peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });"#))
-        #expect(responseText.contains(#"setOverlay(t("overlayReconnectTitle"), t("overlayReconnectBody"), true);"#))
+        #expect(responseText.contains(#"setOverlay(overlayTitle, overlayBody, true);"#))
         #expect(responseText.contains(#"setOverlay(t("overlaySharingStoppedTitle"), t("overlaySharingStoppedBody"), true);"#))
         #expect(responseText.contains(#"case "stopped":"#))
+        #expect(responseText.contains(#"case "codec_pending":"#))
+        #expect(responseText.contains(#"schedulePeerRetry(t("overlayCodecPendingTitle"), t("overlayCodecPendingBody"));"#))
         #expect(responseText.contains(#"case "error":"#))
         #expect(responseText.contains(#"connect();"#))
         #expect(responseText.contains(#"heroEyebrow: "VOIDDISPLAY 实时画面""#))
-        #expect(responseText.contains(#"overlayH264RequiredTitle: "H.264 required""#))
-        #expect(responseText.contains(#"overlayH264RequiredTitle: "需要 H.264""#))
+        #expect(responseText.contains(#"overlayCodecRequiredTitle: "AV1 required""#))
+        #expect(responseText.contains(#"overlayCodecRequiredTitle: "需要 AV1""#))
+        #expect(responseText.contains(#"overlayCodecPendingTitle: "Preparing video codec""#))
+        #expect(responseText.contains(#"overlayCodecPendingTitle: "正在准备视频编码""#))
+        #expect(!responseText.contains(#"overlayCodecFallbackTitle"#))
         #expect(responseText.contains(#"fullscreenEnter: "全屏""#))
         #expect(responseText.contains(#"pageTitle: "Screen Share""#))
         #expect(responseText.contains("hero-eyebrow"))
@@ -202,6 +225,15 @@ struct WebServerSocketIntegrationTests {
         #expect(smokeResult.documentTitle == "Screen Share")
         #expect(smokeResult.scaleButtonText == "Fit")
         #expect(smokeResult.toggleCallCount >= 2)
+        #expect(smokeResult.codecPreferenceMimeTypes == ["video/AV1", "video/rtx"])
+        #expect(smokeResult.codecPreferenceFmtpLines == ["", "apt=98"])
+        #expect(smokeResult.receiverCapabilitySummary.contains("AV1=video/av1(pt=98,fmtp=none)"))
+        #expect(smokeResult.receiverCapabilitySummary.contains("unsupportedVideoCodecCount=7"))
+        #expect(smokeResult.selectedCodec == "av1")
+        #expect(smokeResult.rejectsUnexpectedCodec)
+        #expect(smokeResult.marksMissingCodecAsRequirementError)
+        #expect(smokeResult.marksMissingCapabilitiesAsRequirementError)
+        #expect(smokeResult.belowSourceStatus.contains("source 2560×1440 60fps"))
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
@@ -832,6 +864,14 @@ private struct DisplayPageScriptSmokeResult: Equatable {
     let documentTitle: String
     let scaleButtonText: String
     let toggleCallCount: Int
+    let codecPreferenceMimeTypes: [String]
+    let codecPreferenceFmtpLines: [String]
+    let receiverCapabilitySummary: String
+    let selectedCodec: String
+    let rejectsUnexpectedCodec: Bool
+    let marksMissingCodecAsRequirementError: Bool
+    let marksMissingCapabilitiesAsRequirementError: Bool
+    let belowSourceStatus: String
 }
 
 @MainActor
@@ -946,7 +986,8 @@ private func evaluateDisplayPageRuntimeScript(
             RTCPeerConnection: RTCPeerConnection,
             location: {
                 protocol: "http:",
-                host: "127.0.0.1"
+                host: "127.0.0.1",
+                search: ""
             },
             setTimeout: function() { return 1; },
             clearTimeout: function() {},
@@ -955,6 +996,7 @@ private func evaluateDisplayPageRuntimeScript(
 
         var console = {
             log: function() {},
+            info: function() {},
             warn: function() {},
             error: function() {}
         };
@@ -973,6 +1015,81 @@ private func evaluateDisplayPageRuntimeScript(
         """
         transition("streaming");
         __elements["scale-mode-btn"].__handlers["click"]();
+        function RTCRtpReceiver() {}
+        RTCRtpReceiver.getCapabilities = function() {
+            return {
+                codecs: [
+                    { mimeType: "video/VP8", payloadType: 96 },
+                    { mimeType: "video/AV1", payloadType: 98 },
+                    { mimeType: "video/H264", payloadType: 102 },
+                    { mimeType: "video/H265", payloadType: 116, sdpFmtpLine: "profile-id=1;tx-mode=SRST" },
+                    { mimeType: "video/rtx", sdpFmtpLine: "apt=96" },
+                    { mimeType: "video/rtx", sdpFmtpLine: "apt=98" },
+                    { mimeType: "video/rtx", sdpFmtpLine: "apt=102" },
+                    { mimeType: "video/rtx", sdpFmtpLine: "apt=116" }
+                ]
+            };
+        };
+        window.RTCRtpReceiver = RTCRtpReceiver;
+        var __codecPreferenceMimeTypes = receiverCodecPreferences().map(function(codec) {
+            return codec.mimeType;
+        });
+        var __codecPreferenceFmtpLines = receiverCodecPreferences().map(function(codec) {
+            return codec.sdpFmtpLine || "";
+        });
+        var __receiverCapabilitySummary = receiverVideoCodecCapabilitySummary();
+        var __selectedCodec = selectedCodecFromAnswerSDP(
+            "v=0\\r\\n" +
+            "m=video 9 UDP/TLS/RTP/SAVPF 98 99\\r\\n" +
+            "a=rtpmap:98 AV1/90000\\r\\n" +
+            "a=rtpmap:99 rtx/90000\\r\\n"
+        );
+        var __rejectsUnexpectedCodec = false;
+        try {
+            selectedCodecFromAnswerSDP(
+                "v=0\\r\\n" +
+                "m=video 9 UDP/TLS/RTP/SAVPF 96\\r\\n" +
+                "a=rtpmap:96 VP8/90000\\r\\n" +
+                "m=video 9 UDP/TLS/RTP/SAVPF 102\\r\\n" +
+                "a=rtpmap:102 H264/90000\\r\\n"
+            );
+        } catch (error) {
+            __rejectsUnexpectedCodec = true;
+        }
+        RTCRtpReceiver.getCapabilities = function() {
+            return {
+                codecs: [
+                    { mimeType: "video/VP8" }
+                ]
+            };
+        };
+        var __marksMissingCodecAsRequirementError = false;
+        try {
+            receiverCodecPreferences();
+        } catch (error) {
+            __marksMissingCodecAsRequirementError = isCodecRequirementError(error);
+        }
+        delete window.RTCRtpReceiver;
+        var __marksMissingCapabilitiesAsRequirementError = false;
+        try {
+            receiverCodecPreferences();
+        } catch (error) {
+            __marksMissingCapabilitiesAsRequirementError = isCodecRequirementError(error);
+        }
+        expectedSourceVideoSpec = sourceSpecFromSignal({ width: 2560, height: 1440, framesPerSecond: 60 });
+        logBrowserVideoStats(
+            {
+                frameWidth: 1280,
+                frameHeight: 720,
+                framesPerSecond: 30,
+                framesDropped: 0,
+                jitter: 0,
+                packetsLost: 0
+            },
+            { mimeType: "video/AV1" },
+            { bitrateBps: 4000000 }
+        );
+        var __belowSourceStatus = __elements["status"].textContent;
         """
     )
     if let exceptionMessage {
@@ -982,10 +1099,32 @@ private func evaluateDisplayPageRuntimeScript(
     let documentTitle = context.evaluateScript("document.title")?.toString() ?? ""
     let scaleButtonText = context.evaluateScript("__elements['scale-mode-btn'].textContent")?.toString() ?? ""
     let toggleCallCount = Int(context.evaluateScript("__toggleCount")?.toInt32() ?? 0)
+    let codecPreferenceMimeTypesJSON = context.evaluateScript("JSON.stringify(__codecPreferenceMimeTypes)")?.toString() ?? "[]"
+    let codecPreferenceMimeTypesData = Data(codecPreferenceMimeTypesJSON.utf8)
+    let codecPreferenceMimeTypes = (try? JSONDecoder().decode([String].self, from: codecPreferenceMimeTypesData)) ?? []
+    let codecPreferenceFmtpLinesJSON = context.evaluateScript("JSON.stringify(__codecPreferenceFmtpLines)")?.toString() ?? "[]"
+    let codecPreferenceFmtpLinesData = Data(codecPreferenceFmtpLinesJSON.utf8)
+    let codecPreferenceFmtpLines = (try? JSONDecoder().decode([String].self, from: codecPreferenceFmtpLinesData)) ?? []
+    let receiverCapabilitySummary = context.evaluateScript("__receiverCapabilitySummary")?.toString() ?? ""
+    let selectedCodec = context.evaluateScript("__selectedCodec")?.toString() ?? ""
+    let rejectsUnexpectedCodec = context.evaluateScript("__rejectsUnexpectedCodec")?.toBool() ?? false
+    let marksMissingCodecAsRequirementError =
+        context.evaluateScript("__marksMissingCodecAsRequirementError")?.toBool() ?? false
+    let marksMissingCapabilitiesAsRequirementError =
+        context.evaluateScript("__marksMissingCapabilitiesAsRequirementError")?.toBool() ?? false
+    let belowSourceStatus = context.evaluateScript("__belowSourceStatus")?.toString() ?? ""
     return DisplayPageScriptSmokeResult(
         documentTitle: documentTitle,
         scaleButtonText: scaleButtonText,
-        toggleCallCount: toggleCallCount
+        toggleCallCount: toggleCallCount,
+        codecPreferenceMimeTypes: codecPreferenceMimeTypes,
+        codecPreferenceFmtpLines: codecPreferenceFmtpLines,
+        receiverCapabilitySummary: receiverCapabilitySummary,
+        selectedCodec: selectedCodec,
+        rejectsUnexpectedCodec: rejectsUnexpectedCodec,
+        marksMissingCodecAsRequirementError: marksMissingCodecAsRequirementError,
+        marksMissingCapabilitiesAsRequirementError: marksMissingCapabilitiesAsRequirementError,
+        belowSourceStatus: belowSourceStatus
     )
 }
 

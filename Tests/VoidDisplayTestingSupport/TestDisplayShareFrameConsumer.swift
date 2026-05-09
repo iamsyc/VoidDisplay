@@ -6,6 +6,10 @@ package final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
 
     package nonisolated var hasDemand: Bool { false }
 
+    package nonisolated func updateSourceVideoSpec(_ spec: SourceVideoSpec) {
+        _ = spec
+    }
+
     package nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
         _ = mode
     }

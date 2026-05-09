@@ -70,6 +70,10 @@
             font-size: 13px;
             background: rgba(255, 255, 255, 0.08);
             color: var(--muted);
+            max-width: min(62vw, 560px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .controls {
             display: flex;
@@ -215,8 +219,17 @@
         let reconnectIndex = 0;
         let reconnectTimer = null;
         var terminalStop = false;
-        let state = "idle";
+        var state = "idle";
         let originalScaleEnabled = false;
+        var negotiatedVideoCodec = null;
+        let expectedSourceVideoSpec = null;
+        const browserStatsLogInterval = 2000;
+        const browserStatsState = {
+            timer: null,
+            lastBytesReceived: null,
+            lastFramesDecoded: null,
+            lastTimestamp: null
+        };
         const reconnectDelays = [250, 500, 1000, 2000, 4000];
         const messages = {
             en: {
@@ -233,6 +246,9 @@
                 statusError: "Error",
                 statusConnectionError: "Connection error",
                 statusReconnecting: (delay) => `Reconnecting in ${delay}ms`,
+                statusLiveWithStats: (codec, width, height, fps) => `Live ${codec} ${width}×${height} ${fps}fps`,
+                statusLiveBelowSource: (codec, width, height, fps, sourceWidth, sourceHeight, sourceFps) =>
+                    `Live ${codec} ${width}×${height} ${fps}fps, source ${sourceWidth}×${sourceHeight} ${sourceFps}fps`,
                 scaleFit: "Fit",
                 scaleOriginal: "1:1",
                 fullscreenEnter: "Fullscreen",
@@ -251,10 +267,12 @@
                 overlayWebSocketRequiredBody: "This browser cannot open signaling transport.",
                 overlayWebRTCRequiredTitle: "WebRTC required",
                 overlayWebRTCRequiredBody: "This browser does not support RTCPeerConnection.",
-                overlayH264RequiredTitle: "H.264 required",
-                overlayH264RequiredBody: "This browser or device did not expose H.264 for WebRTC playback.",
-                overlayH264AnswerRequiredBody: "The WebRTC answer did not negotiate H.264 video.",
-                overlayH264StatsRequiredBody: "The browser did not confirm an H.264 decoder in WebRTC stats.",
+                overlayCodecRequiredTitle: "AV1 required",
+                overlayCodecRequiredBody: "This browser or device did not expose AV1 for WebRTC playback.",
+                overlayCodecAnswerRequiredBody: "The WebRTC answer did not negotiate AV1 video.",
+                overlayCodecStatsRequiredBody: "The browser did not confirm the selected AV1 decoder in WebRTC stats.",
+                overlayCodecPendingTitle: "Preparing video codec",
+                overlayCodecPendingBody: "The source stream is still preparing AV1. Retrying automatically.",
                 overlayNegotiationFailedTitle: "Negotiation failed",
                 overlayNegotiationFailedFallback: "Failed to create WebRTC offer.",
                 overlaySharingStoppedTitle: "Sharing stopped",
@@ -277,6 +295,9 @@
                 statusError: "发生错误",
                 statusConnectionError: "连接出错",
                 statusReconnecting: (delay) => `${delay}ms 后重连`,
+                statusLiveWithStats: (codec, width, height, fps) => `直播中 ${codec} ${width}×${height} ${fps}fps`,
+                statusLiveBelowSource: (codec, width, height, fps, sourceWidth, sourceHeight, sourceFps) =>
+                    `直播中 ${codec} ${width}×${height} ${fps}fps，源 ${sourceWidth}×${sourceHeight} ${sourceFps}fps`,
                 scaleFit: "适应",
                 scaleOriginal: "1:1",
                 fullscreenEnter: "全屏",
@@ -295,10 +316,12 @@
                 overlayWebSocketRequiredBody: "当前浏览器无法建立信令传输通道。",
                 overlayWebRTCRequiredTitle: "需要 WebRTC",
                 overlayWebRTCRequiredBody: "当前浏览器不支持 RTCPeerConnection。",
-                overlayH264RequiredTitle: "需要 H.264",
-                overlayH264RequiredBody: "当前浏览器或设备未暴露 WebRTC H.264 播放能力。",
-                overlayH264AnswerRequiredBody: "WebRTC answer 未协商到 H.264 视频。",
-                overlayH264StatsRequiredBody: "浏览器 WebRTC stats 未确认 H.264 解码器。",
+                overlayCodecRequiredTitle: "需要 AV1",
+                overlayCodecRequiredBody: "当前浏览器或设备未暴露 WebRTC AV1 播放能力。",
+                overlayCodecAnswerRequiredBody: "WebRTC answer 未协商到 AV1 视频。",
+                overlayCodecStatsRequiredBody: "浏览器 WebRTC stats 未确认选中的 AV1 解码器。",
+                overlayCodecPendingTitle: "正在准备视频编码",
+                overlayCodecPendingBody: "源端仍在准备 AV1，正在自动重试。",
                 overlayNegotiationFailedTitle: "协商失败",
                 overlayNegotiationFailedFallback: "创建 WebRTC offer 失败。",
                 overlaySharingStoppedTitle: "共享已停止",
@@ -351,8 +374,8 @@
             }
         })();
         const localOfferIceTimeoutMs = 2000;
-        const h264StatsConfirmationTimeoutMs = 10000;
-        const h264StatsPollIntervalMs = 100;
+        const codecStatsConfirmationTimeoutMs = 10000;
+        const codecStatsPollIntervalMs = 100;
 
         function applyStaticCopy() {
             document.title = t("pageTitle");
@@ -418,6 +441,7 @@
         syncFullscreenButtonLabel();
 
         function closePeer() {
+            stopBrowserStatsLoop();
             if (peer) {
                 peer.ontrack = null;
                 peer.onicecandidate = null;
@@ -451,7 +475,7 @@
             }
         }
 
-        function scheduleReconnect() {
+        function scheduleReconnect(overlayTitle = t("overlayReconnectTitle"), overlayBody = t("overlayReconnectBody")) {
             if (terminalStop || state === "stopping" || state === "closed") {
                 return;
             }
@@ -461,11 +485,52 @@
             const delay = reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)];
             reconnectIndex += 1;
             setStatus(t("statusReconnecting", delay));
-            setOverlay(t("overlayReconnectTitle"), t("overlayReconnectBody"), true);
+            setOverlay(overlayTitle, overlayBody, true);
             transition("handshaking");
             reconnectTimer = window.setTimeout(() => {
                 reconnectTimer = null;
                 connect();
+            }, delay);
+        }
+
+        function schedulePeerRetry(overlayTitle, overlayBody) {
+            if (terminalStop || state === "stopping" || state === "closed") {
+                return;
+            }
+            if (reconnectTimer) {
+                return;
+            }
+            const delay = reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)];
+            reconnectIndex += 1;
+            setStatus(t("statusReconnecting", delay));
+            setOverlay(overlayTitle, overlayBody, true);
+            transition("signalingReady");
+            reconnectTimer = window.setTimeout(async () => {
+                reconnectTimer = null;
+                if (terminalStop || state === "stopping" || state === "closed") {
+                    return;
+                }
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                    scheduleReconnect(overlayTitle, overlayBody);
+                    return;
+                }
+                try {
+                    await startPeerConnection();
+                    setOverlay(t("overlayNegotiatingTitle"), t("overlayNegotiatingBody"), true);
+                } catch (error) {
+                    if (isCodecRequirementError(error)) {
+                        failCodecRequirement(error);
+                        return;
+                    }
+                    setStatus(t("statusNegotiationFailed"));
+                    setOverlay(
+                        t("overlayNegotiationFailedTitle"),
+                        error?.message || t("overlayNegotiationFailedFallback"),
+                        true
+                    );
+                    closeSocketAndClearReference();
+                    scheduleReconnect();
+                }
             }, delay);
         }
 
@@ -502,35 +567,126 @@
             throw new Error("Local WebRTC offer is missing ICE credentials.");
         }
 
-        function isH264Codec(codec) {
-            return String(codec?.mimeType || "").toLowerCase() === "video/h264";
+        function normalizedVideoCodecName(codec) {
+            return String(codec?.mimeType || "").toLowerCase();
         }
 
-        function h264ReceiverCodecPreferences() {
+        function isProbedReceiverVideoCodec(codec) {
+            return normalizedVideoCodecName(codec) === "video/av1";
+        }
+
+        function receiverCapabilityEntry(codec) {
+            const payloadType = codecPayloadType(codec);
+            const fmtpLine = String(codec?.sdpFmtpLine || "");
+            return normalizedVideoCodecName(codec) +
+                "(pt=" + (payloadType === null ? "none" : String(payloadType)) +
+                ",fmtp=" + (fmtpLine.length === 0 ? "none" : fmtpLine) + ")";
+        }
+
+        function receiverCapabilityProbeGroup(allCodecs, mimeTypes) {
+            const entries = allCodecs
+                .filter((codec) => mimeTypes.includes(normalizedVideoCodecName(codec)))
+                .map(receiverCapabilityEntry);
+            return entries.length === 0 ? "missing" : entries.join(",");
+        }
+
+        function receiverVideoCodecCapabilitySummary() {
             if (!window.RTCRtpReceiver || typeof RTCRtpReceiver.getCapabilities !== "function") {
-                return null;
+                return "unavailable";
             }
             const capabilities = RTCRtpReceiver.getCapabilities("video");
-            const codecs = Array.isArray(capabilities?.codecs)
-                ? capabilities.codecs.filter(isH264Codec)
-                : [];
-            if (codecs.length === 0) {
-                throw new Error(t("overlayH264RequiredBody"));
+            const allCodecs = Array.isArray(capabilities?.codecs) ? capabilities.codecs : [];
+            const probedCodecCount = allCodecs.filter(isProbedReceiverVideoCodec).length;
+            return [
+                "AV1=" + receiverCapabilityProbeGroup(allCodecs, ["video/av1"]),
+                "unsupportedVideoCodecCount=" + String(allCodecs.length - probedCodecCount)
+            ].join("; ");
+        }
+
+        function isSupportedPlaybackCodec(codec) {
+            return normalizedVideoCodecName(codec) === "video/av1";
+        }
+
+        function isRetransmissionCodec(codec) {
+            return normalizedVideoCodecName(codec) === "video/rtx";
+        }
+
+        function codecPayloadType(codec) {
+            const value = Number(codec?.payloadType ?? codec?.preferredPayloadType ?? NaN);
+            return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+        }
+
+        function rtxAptPayloadType(codec) {
+            const parameterApt = Number(codec?.parameters?.apt ?? NaN);
+            if (Number.isFinite(parameterApt) && parameterApt >= 0) {
+                return Math.round(parameterApt);
             }
-            return codecs;
+            const fmtpLine = String(codec?.sdpFmtpLine || "");
+            const match = /(?:^|;)\s*apt=(\d+)\s*(?:;|$)/u.exec(fmtpLine);
+            return match ? Number(match[1]) : null;
+        }
+
+        function matchingRtxCodecs(allCodecs, primaryCodecs) {
+            const primaryPayloadTypes = new Set(primaryCodecs
+                .map(codecPayloadType)
+                .filter((payloadType) => payloadType !== null));
+            if (primaryPayloadTypes.size === 0) {
+                return [];
+            }
+            return allCodecs.filter((codec) => {
+                if (!isRetransmissionCodec(codec)) return false;
+                const apt = rtxAptPayloadType(codec);
+                return apt !== null && primaryPayloadTypes.has(apt);
+            });
+        }
+
+        function codecRequirementError(message) {
+            const error = new Error(message);
+            error.codecRequirement = true;
+            return error;
+        }
+
+        function isCodecRequirementError(error) {
+            return Boolean(error?.codecRequirement);
+        }
+
+        function receiverCodecPreferences() {
+            if (!window.RTCRtpReceiver || typeof RTCRtpReceiver.getCapabilities !== "function") {
+                throw codecRequirementError(t("overlayCodecRequiredBody"));
+            }
+            const capabilities = RTCRtpReceiver.getCapabilities("video");
+            const allCodecs = Array.isArray(capabilities?.codecs) ? capabilities.codecs : [];
+            const supportedCodecs = allCodecs.filter(isSupportedPlaybackCodec);
+            if (supportedCodecs.length === 0) {
+                throw codecRequirementError(t("overlayCodecRequiredBody"));
+            }
+            return supportedCodecs.concat(matchingRtxCodecs(allCodecs, supportedCodecs));
         }
 
         function videoCodecNamesFromSDP(sdp) {
             const lines = String(sdp || "").split(/\r?\n/u);
-            const payloadTypes = [];
-            const namesByPayloadType = new Map();
+            let payloadTypes = [];
+            let namesByPayloadType = new Map();
             let inVideo = false;
+            const codecNames = [];
+
+            function flushVideoMedia() {
+                if (!inVideo) return;
+                for (const payloadType of payloadTypes) {
+                    const codecName = namesByPayloadType.get(payloadType);
+                    if (codecName) {
+                        codecNames.push(codecName);
+                    }
+                }
+            }
 
             for (const line of lines) {
                 if (line.startsWith("m=")) {
+                    flushVideoMedia();
                     inVideo = line.startsWith("m=video ");
+                    payloadTypes = [];
+                    namesByPayloadType = new Map();
                     if (inVideo) {
-                        payloadTypes.length = 0;
                         const parts = line.trim().split(/\s+/u);
                         payloadTypes.push(...parts.slice(3));
                     }
@@ -542,27 +698,28 @@
                     namesByPayloadType.set(match[1], match[2].toLowerCase());
                 }
             }
+            flushVideoMedia();
 
-            return payloadTypes
-                .map((payloadType) => namesByPayloadType.get(payloadType))
-                .filter(Boolean);
+            return codecNames;
         }
 
-        function assertH264AnswerSDP(sdp) {
+        function selectedCodecFromAnswerSDP(sdp) {
             const codecNames = videoCodecNamesFromSDP(sdp);
-            const hasH264 = codecNames.some((name) => name === "h264");
-            const hasUnexpectedVideoCodec = codecNames.some((name) => name !== "h264" && name !== "rtx");
-            if (!hasH264 || hasUnexpectedVideoCodec) {
-                throw new Error(t("overlayH264AnswerRequiredBody"));
+            const primaryCodecs = codecNames.filter((name) => name !== "rtx");
+            const supportedPrimaryCodecs = [...new Set(primaryCodecs.filter((name) => name === "av1"))];
+            const hasUnexpectedVideoCodec = primaryCodecs.some((name) => name !== "av1");
+            if (supportedPrimaryCodecs.length !== 1 || hasUnexpectedVideoCodec) {
+                throw new Error(t("overlayCodecAnswerRequiredBody"));
             }
+            return supportedPrimaryCodecs[0];
         }
 
-        function failH264Requirement(error) {
+        function failCodecRequirement(error) {
             terminalStop = true;
             setStatus(t("statusNegotiationFailed"));
             setOverlay(
-                t("overlayH264RequiredTitle"),
-                error?.message || t("overlayH264RequiredBody"),
+                t("overlayCodecRequiredTitle"),
+                error?.message || t("overlayCodecRequiredBody"),
                 true
             );
             clearReconnectTimer();
@@ -571,13 +728,18 @@
             transition("closed");
         }
 
-        async function verifySelectedH264Codec() {
+        function isCodecErrorReason(reason) {
+            return reason === "unsupported_video_codec_offered" || reason === "supported_video_codec_missing";
+        }
+
+        async function verifySelectedCodec(expectedCodec) {
             if (!peer || typeof peer.getStats !== "function") {
-                throw new Error(t("overlayH264StatsRequiredBody"));
+                throw new Error(t("overlayCodecStatsRequiredBody"));
             }
 
             const startedAt = performance.now();
-            while (performance.now() - startedAt < h264StatsConfirmationTimeoutMs) {
+            const expectedMimeType = `video/${expectedCodec}`;
+            while (performance.now() - startedAt < codecStatsConfirmationTimeoutMs) {
                 const stats = await peer.getStats();
                 const reports = new Map();
                 stats.forEach((report) => reports.set(report.id, report));
@@ -592,28 +754,182 @@
                     }
                     const codec = reports.get(report.codecId);
                     if (!codec?.mimeType) continue;
-                    if (String(codec.mimeType).toLowerCase() === "video/h264") {
+                    const codecMimeType = String(codec.mimeType).toLowerCase();
+                    if (codecMimeType === expectedMimeType) {
+                        logBrowserVideoStats(report, codec, null);
                         return;
                     }
-                    throw new Error(t("overlayH264StatsRequiredBody"));
+                    if (codecMimeType === "video/rtx") {
+                        continue;
+                    }
+                    throw new Error(t("overlayCodecStatsRequiredBody"));
                 }
-                await new Promise((resolve) => window.setTimeout(resolve, h264StatsPollIntervalMs));
+                await new Promise((resolve) => window.setTimeout(resolve, codecStatsPollIntervalMs));
             }
-            throw new Error(t("overlayH264StatsRequiredBody"));
+            throw new Error(t("overlayCodecStatsRequiredBody"));
+        }
+
+        function browserStatsCodecName(codec) {
+            const mimeType = String(codec?.mimeType || "").toLowerCase();
+            if (mimeType === "video/av1") return "AV1";
+            return mimeType || "unknown";
+        }
+
+        function sourceSpecFromSignal(value) {
+            const width = Number(value?.width || 0);
+            const height = Number(value?.height || 0);
+            const framesPerSecond = Number(value?.framesPerSecond || 0);
+            if (width <= 0 || height <= 0 || framesPerSecond <= 0) {
+                return null;
+            }
+            return {
+                width: Math.round(width),
+                height: Math.round(height),
+                framesPerSecond: Math.round(framesPerSecond)
+            };
+        }
+
+        function resetBrowserStatsState() {
+            browserStatsState.lastBytesReceived = null;
+            browserStatsState.lastFramesDecoded = null;
+            browserStatsState.lastTimestamp = null;
+        }
+
+        function stopBrowserStatsLoop() {
+            if (browserStatsState.timer) {
+                window.clearInterval(browserStatsState.timer);
+                browserStatsState.timer = null;
+            }
+            resetBrowserStatsState();
+        }
+
+        function videoInboundStatsFromReport(stats) {
+            const reports = new Map();
+            stats.forEach((report) => reports.set(report.id, report));
+            for (const report of reports.values()) {
+                const reportKind = report.kind || report.mediaType;
+                if (
+                    report.type !== "inbound-rtp" ||
+                    reportKind !== "video" ||
+                    !report.codecId
+                ) {
+                    continue;
+                }
+                const codec = reports.get(report.codecId);
+                if (!codec?.mimeType) continue;
+                const mimeType = String(codec.mimeType).toLowerCase();
+                if (mimeType !== "video/av1") continue;
+                return { report, codec };
+            }
+            return null;
+        }
+
+        function logBrowserVideoStats(report, codec, derived) {
+            const codecName = browserStatsCodecName(codec);
+            const width = Number(report.frameWidth || player.videoWidth || 0);
+            const height = Number(report.frameHeight || player.videoHeight || 0);
+            const fps = Number(report.framesPerSecond || derived?.framesPerSecond || 0);
+            const bitrateBps = Number(derived?.bitrateBps || 0);
+            const droppedFrames = Number(report.framesDropped || 0);
+            const jitter = Number(report.jitter || 0);
+            const packetsLost = Number(report.packetsLost || 0);
+            const sourceSpec = expectedSourceVideoSpec;
+            const isBelowSourceSpec = Boolean(sourceSpec && (
+                (width > 0 && width < sourceSpec.width) ||
+                (height > 0 && height < sourceSpec.height) ||
+                (fps > 0 && Math.round(fps) < sourceSpec.framesPerSecond)
+            ));
+            console.info(
+                "[VoidDisplay] WebRTC browser stats",
+                {
+                    selectedCodec: codecName,
+                    decodedWidth: width,
+                    decodedHeight: height,
+                    framesPerSecond: Math.round(fps),
+                    sourceWidth: sourceSpec?.width || null,
+                    sourceHeight: sourceSpec?.height || null,
+                    sourceFramesPerSecond: sourceSpec?.framesPerSecond || null,
+                    belowSourceSpec: isBelowSourceSpec,
+                    bitrateBps: Math.round(bitrateBps),
+                    droppedFrames,
+                    jitter,
+                    packetsLost
+                }
+            );
+            if (state === "streaming" && width > 0 && height > 0) {
+                const roundedFps = Math.max(0, Math.round(fps));
+                if (isBelowSourceSpec) {
+                    setStatus(t(
+                        "statusLiveBelowSource",
+                        codecName,
+                        width,
+                        height,
+                        roundedFps,
+                        sourceSpec.width,
+                        sourceSpec.height,
+                        sourceSpec.framesPerSecond
+                    ));
+                } else {
+                    setStatus(t("statusLiveWithStats", codecName, width, height, roundedFps));
+                }
+            }
+        }
+
+        async function pollBrowserStats() {
+            if (!peer || typeof peer.getStats !== "function") return;
+            const stats = await peer.getStats();
+            const selected = videoInboundStatsFromReport(stats);
+            if (!selected) return;
+            const now = Number(selected.report.timestamp || performance.now());
+            const bytesReceived = Number(selected.report.bytesReceived || 0);
+            const framesDecoded = Number(selected.report.framesDecoded || 0);
+            let derived = null;
+            if (
+                browserStatsState.lastTimestamp !== null &&
+                now > browserStatsState.lastTimestamp
+            ) {
+                const elapsedSeconds = (now - browserStatsState.lastTimestamp) / 1000;
+                const byteDelta = Math.max(0, bytesReceived - browserStatsState.lastBytesReceived);
+                const frameDelta = Math.max(0, framesDecoded - browserStatsState.lastFramesDecoded);
+                derived = {
+                    bitrateBps: elapsedSeconds > 0 ? (byteDelta * 8) / elapsedSeconds : 0,
+                    framesPerSecond: elapsedSeconds > 0 ? frameDelta / elapsedSeconds : 0
+                };
+            }
+            browserStatsState.lastTimestamp = now;
+            browserStatsState.lastBytesReceived = bytesReceived;
+            browserStatsState.lastFramesDecoded = framesDecoded;
+            logBrowserVideoStats(selected.report, selected.codec, derived);
+        }
+
+        function startBrowserStatsLoop() {
+            stopBrowserStatsLoop();
+            browserStatsState.timer = window.setInterval(() => {
+                pollBrowserStats().catch((error) => {
+                    console.warn("[VoidDisplay] WebRTC browser stats failed", error);
+                });
+            }, browserStatsLogInterval);
+            pollBrowserStats().catch(() => {});
         }
 
         async function startPeerConnection() {
             closePeer();
             peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });
             let usesTransceiverOffer = false;
-            const h264Preferences = h264ReceiverCodecPreferences();
+            negotiatedVideoCodec = null;
+            console.info("[VoidDisplay] WebRTC receiver video capabilities " + receiverVideoCodecCapabilitySummary());
+            const codecPreferences = receiverCodecPreferences();
             if (typeof peer.addTransceiver === "function") {
                 const transceiver = peer.addTransceiver("video", { direction: "recvonly" });
                 if (
-                    h264Preferences &&
+                    codecPreferences &&
                     typeof transceiver.setCodecPreferences === "function"
                 ) {
-                    transceiver.setCodecPreferences(h264Preferences);
+                    try {
+                        transceiver.setCodecPreferences(codecPreferences);
+                    } catch (error) {
+                        throw codecRequirementError(error?.message || t("overlayCodecRequiredBody"));
+                    }
                 }
                 usesTransceiverOffer = true;
             }
@@ -622,12 +938,14 @@
                 if (event.streams && event.streams[0]) {
                     player.srcObject = event.streams[0];
                     try {
-                        await verifySelectedH264Codec();
+                        await verifySelectedCodec(negotiatedVideoCodec || "av1");
                         setStatus(t("statusLive"));
                         setOverlay(t("overlayLiveTitle"), t("overlayLiveBody"), false);
+                        reconnectIndex = 0;
                         transition("streaming");
+                        startBrowserStatsLoop();
                     } catch (error) {
-                        failH264Requirement(error);
+                        failCodecRequirement(error);
                     }
                 }
             };
@@ -706,6 +1024,10 @@
                     await startPeerConnection();
                     setOverlay(t("overlayNegotiatingTitle"), t("overlayNegotiatingBody"), true);
                 } catch (error) {
+                    if (isCodecRequirementError(error)) {
+                        failCodecRequirement(error);
+                        return;
+                    }
                     setStatus(t("statusNegotiationFailed"));
                     setOverlay(
                         t("overlayNegotiationFailedTitle"),
@@ -738,14 +1060,15 @@
                     case "answer":
                         if (!peer || typeof payload.sdp !== "string") return;
                         try {
-                            assertH264AnswerSDP(payload.sdp);
+                            negotiatedVideoCodec = selectedCodecFromAnswerSDP(payload.sdp);
+                            expectedSourceVideoSpec = sourceSpecFromSignal(payload.sourceVideoSpec);
                             await peer.setRemoteDescription({
                                 type: "answer",
                                 sdp: payload.sdp
                             });
                             setStatus(t("statusConnected"));
                         } catch (error) {
-                            failH264Requirement(error);
+                            failCodecRequirement(error);
                         }
                         break;
                     case "ice_candidate":
@@ -766,7 +1089,17 @@
                         closeSocketAndClearReference();
                         transition("closed");
                         break;
+                    case "codec_pending":
+                        setStatus(t("statusReconnecting", reconnectDelays[Math.min(reconnectIndex, reconnectDelays.length - 1)]));
+                        setOverlay(t("overlayCodecPendingTitle"), t("overlayCodecPendingBody"), true);
+                        closePeer();
+                        schedulePeerRetry(t("overlayCodecPendingTitle"), t("overlayCodecPendingBody"));
+                        break;
                     case "error":
+                        if (isCodecErrorReason(payload.reason)) {
+                            failCodecRequirement(new Error(t("overlayCodecAnswerRequiredBody")));
+                            break;
+                        }
                         terminalStop = true;
                         setStatus(t("statusError"));
                         setOverlay(t("overlayStreamErrorTitle"), payload.reason || t("overlayStreamErrorFallback"), true);

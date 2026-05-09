@@ -9,7 +9,7 @@ package protocol RelayHTTPClienting: Sendable {
         sdpMid: String?,
         sdpMLineIndex: Int32
     ) async throws
-    nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> String
+    nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> RelayViewerOfferResponse
     nonisolated func viewerCandidate(
         roomID: String,
         clientID: String,
@@ -28,6 +28,16 @@ package struct RelayPublisherOfferResponse: Sendable, Equatable {
     package init(sdp: String, publisherID: String) {
         self.sdp = sdp
         self.publisherID = publisherID
+    }
+}
+
+package struct RelayViewerOfferResponse: Sendable, Equatable {
+    package let sdp: String
+    package let codec: WebRTCVideoCodec
+
+    package init(sdp: String, codec: WebRTCVideoCodec) {
+        self.sdp = sdp
+        self.codec = codec
     }
 }
 
@@ -51,6 +61,12 @@ package final class RelayHTTPClient: RelayHTTPClienting, @unchecked Sendable {
     private struct SignalResponse: Decodable {
         let type: String
         let sdp: String?
+        let codec: String?
+        let reason: String?
+    }
+
+    private struct ErrorResponse: Decodable {
+        let type: String?
         let reason: String?
     }
 
@@ -100,7 +116,7 @@ package final class RelayHTTPClient: RelayHTTPClienting, @unchecked Sendable {
         )
     }
 
-    package nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> String {
+    package nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> RelayViewerOfferResponse {
         try await postOffer(path: ["room", roomID, "viewer", clientID], sdp: sdp)
     }
 
@@ -127,7 +143,7 @@ package final class RelayHTTPClient: RelayHTTPClienting, @unchecked Sendable {
         try? await sendEmpty(method: "DELETE", path: ["room", roomID, "publisher", publisherID])
     }
 
-    private nonisolated func postOffer(path: [String], sdp: String) async throws -> String {
+    private nonisolated func postOffer(path: [String], sdp: String) async throws -> RelayViewerOfferResponse {
         let response: SignalResponse = try await sendJSON(
             method: "POST",
             path: path,
@@ -136,7 +152,11 @@ package final class RelayHTTPClient: RelayHTTPClienting, @unchecked Sendable {
         guard response.type == "answer", let answerSDP = response.sdp else {
             throw RelayHTTPError.unexpectedResponse(response.reason ?? response.type)
         }
-        return answerSDP
+        guard let rawCodec = response.codec,
+              let codec = WebRTCVideoCodec(rawValue: rawCodec) else {
+            throw RelayHTTPError.unexpectedResponse(response.codec ?? "missing_codec")
+        }
+        return RelayViewerOfferResponse(sdp: answerSDP, codec: codec)
     }
 
     private nonisolated func postCandidate(
@@ -209,7 +229,9 @@ package final class RelayHTTPClient: RelayHTTPClienting, @unchecked Sendable {
             throw RelayHTTPError.invalidHTTPResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            let reason = String(data: data, encoding: .utf8) ?? "status_\(httpResponse.statusCode)"
+            let reason = (try? JSONDecoder().decode(ErrorResponse.self, from: data).reason)
+                ?? String(data: data, encoding: .utf8)
+                ?? "status_\(httpResponse.statusCode)"
             throw RelayHTTPError.httpStatus(httpResponse.statusCode, reason)
         }
     }
@@ -219,6 +241,15 @@ package enum RelayHTTPError: Error, LocalizedError, Equatable {
     case invalidHTTPResponse
     case httpStatus(Int, String)
     case unexpectedResponse(String)
+
+    package var relayReason: String? {
+        switch self {
+        case .httpStatus(_, let reason), .unexpectedResponse(let reason):
+            reason
+        case .invalidHTTPResponse:
+            nil
+        }
+    }
 
     package var errorDescription: String? {
         switch self {
