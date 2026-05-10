@@ -250,7 +250,7 @@ jobs:
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile release-smoke
 
       - name: Release smoke
         shell: bash
@@ -294,7 +294,7 @@ jobs:
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile release-smoke
 
       - name: Release smoke
         shell: bash
