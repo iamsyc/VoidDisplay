@@ -50,9 +50,13 @@ static)
 		aqua:BurntSushi/ripgrep
 	)
 	;;
-unit | ui-smoke)
+unit)
 	required_commands=(go jq)
 	mise_targets=(go aqua:jqlang/jq)
+	;;
+ui-smoke)
+	required_commands=(go jq rg)
+	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
 	;;
 xcode)
 	required_commands=(go jq rg)
