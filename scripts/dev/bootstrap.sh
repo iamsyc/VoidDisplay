@@ -38,6 +38,26 @@ done
 
 case "$PROFILE" in
 full) ;;
+static)
+	required_commands=(actionlint shellcheck shfmt swiftformat swiftlint jq rg)
+	mise_targets=(
+		aqua:rhysd/actionlint
+		aqua:koalaman/shellcheck
+		aqua:mvdan/sh
+		swiftformat
+		aqua:realm/SwiftLint
+		aqua:jqlang/jq
+		aqua:BurntSushi/ripgrep
+	)
+	;;
+unit | ui-smoke)
+	required_commands=(go jq)
+	mise_targets=(go aqua:jqlang/jq)
+	;;
+xcode)
+	required_commands=(go jq rg)
+	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
+	;;
 release-smoke)
 	required_commands=(go jq rg)
 	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)

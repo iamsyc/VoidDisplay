@@ -71,7 +71,7 @@ jobs:
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile ui-smoke
 
       - name: Cache Xcode metadata
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
