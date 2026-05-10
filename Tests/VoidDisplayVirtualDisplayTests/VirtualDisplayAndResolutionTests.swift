@@ -13,7 +13,7 @@ import Foundation
 struct VirtualDisplayAndResolutionTests {
 
     @Test func resolutionsParsing() {
-        let res = DisplayResolutionPreset.w1920h1080.resolutions
+        let res = DisplayResolutionPreset.w1920h1080.logicalSize
         #expect(res.0 == 1920)
         #expect(res.1 == 1080)
     }

@@ -1,5 +1,6 @@
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayVirtualDisplayTestingSupport
 import CoreGraphics
 import Foundation
 import Testing

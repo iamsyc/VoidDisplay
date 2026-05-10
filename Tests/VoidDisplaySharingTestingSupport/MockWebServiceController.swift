@@ -3,30 +3,32 @@ import VoidDisplayFoundation
 import Foundation
 
 @MainActor
-final class MockWebServiceController: WebServiceControllerProtocol {
-    var portValue: UInt16 = 9090
-    var lifecycleState: WebServiceLifecycleState = .stopped
-    var isRunning = false
-    var activeStreamClientCount = 0
-    var streamClientCountByTarget: [ShareTarget: Int] = [:]
-    var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
-    var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
+package final class MockWebServiceController: WebServiceControllerProtocol {
+    package var portValue: UInt16 = 9090
+    package var lifecycleState: WebServiceLifecycleState = .stopped
+    package var isRunning = false
+    package var activeStreamClientCount = 0
+    package var streamClientCountByTarget: [ShareTarget: Int] = [:]
+    package var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
+    package var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
 
-    var startResult: WebServiceStartResult = .started(
+    package var startResult: WebServiceStartResult = .started(
         WebServiceBinding(requestedPort: 9090, boundPort: 9090)
     )
-    var lastRequestedPort: UInt16?
-    var startCallCount = 0
-    var stopCallCount = 0
-    var disconnectCallCount = 0
-    var disconnectTargetCallCount = 0
-    var disconnectedTargetsHistory: [Set<ShareTarget>] = []
-    var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
-    var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
-    var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?)?
-    var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
+    package var lastRequestedPort: UInt16?
+    package var startCallCount = 0
+    package var stopCallCount = 0
+    package var disconnectCallCount = 0
+    package var disconnectTargetCallCount = 0
+    package var disconnectedTargetsHistory: [Set<ShareTarget>] = []
+    package var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
+    package var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
+    package var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?)?
+    package var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
 
-    func start(
+    package init() {}
+
+    package func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
@@ -53,7 +55,7 @@ final class MockWebServiceController: WebServiceControllerProtocol {
         return startResult
     }
 
-    func stop() {
+    package func stop() {
         stopCallCount += 1
         isRunning = false
         lifecycleState = .stopped
@@ -61,16 +63,16 @@ final class MockWebServiceController: WebServiceControllerProtocol {
         onLifecycleStateChanged?(lifecycleState)
     }
 
-    func disconnectAllStreamClients() {
+    package func disconnectAllStreamClients() {
         disconnectCallCount += 1
     }
 
-    func disconnectStreamClients(for targets: Set<ShareTarget>) {
+    package func disconnectStreamClients(for targets: Set<ShareTarget>) {
         disconnectTargetCallCount += 1
         disconnectedTargetsHistory.append(targets)
     }
 
-    func streamClientCount(for target: ShareTarget) -> Int {
+    package func streamClientCount(for target: ShareTarget) -> Int {
         streamClientCountByTarget[target] ?? 0
     }
 }

@@ -1,14 +1,13 @@
-@testable import VoidDisplayFoundation
 import Foundation
 
-enum TestPortAllocator {
+package enum TestPortAllocator {
     private static let portRange: ClosedRange<UInt16> = 20_000...59_999
 
-    static func randomUnprivilegedPort() -> UInt16 {
+    package static func randomUnprivilegedPort() -> UInt16 {
         randomPortCandidates(count: 1).first ?? 20_000
     }
 
-    static func randomPortCandidates(count: Int) -> [UInt16] {
+    package static func randomPortCandidates(count: Int) -> [UInt16] {
         guard count > 0 else { return [] }
 
         let boundedCount = min(

@@ -1,5 +1,6 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+@testable import VoidDisplaySharingTestingSupport
 import Foundation
 import Darwin
 import JavaScriptCore

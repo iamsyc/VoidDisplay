@@ -1,5 +1,6 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayTestingSupport
 import Darwin
 import Foundation
 import Network

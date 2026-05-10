@@ -1,5 +1,6 @@
 @testable import VoidDisplayFoundation
 @testable import VoidDisplaySharing
+@testable import VoidDisplayTestingSupport
 import CoreVideo
 import Foundation
 import Synchronization
@@ -551,18 +552,4 @@ private func isRelayAccepted(_ result: SignalSessionClientAddResult) -> Bool {
         return true
     }
     return false
-}
-
-private func waitUntil(
-    timeoutNanoseconds: UInt64 = AsyncTestTimeouts.defaultAsyncAssertion,
-    condition: @escaping @Sendable () -> Bool
-) async -> Bool {
-    let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
-    while DispatchTime.now().uptimeNanoseconds < deadline {
-        if condition() {
-            return true
-        }
-        await Task.yield()
-    }
-    return condition()
 }

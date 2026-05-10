@@ -43,5 +43,3 @@ package enum DisplayResolutionPreset: String, CaseIterable, Identifiable {
         return "\(size.width) × \(size.height)"
     }
 }
-
-package typealias Resolutions = DisplayResolutionPreset

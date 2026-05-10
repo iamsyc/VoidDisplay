@@ -1,5 +1,7 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+@testable import VoidDisplaySharingTestingSupport
+@testable import VoidDisplayTestingSupport
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
@@ -149,7 +151,7 @@ struct SharingEndToEndIntegrationTests {
 
         service.stopWebService()
 
-        let fullyStopped = await waitUntil(timeout: .seconds(2)) {
+        let fullyStopped = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
             service.activeSharingDisplayIDs.isEmpty &&
             service.hasAnyActiveSharing == false &&
             service.isSharing(displayID: displayID) == false &&
@@ -215,18 +217,6 @@ struct SharingEndToEndIntegrationTests {
         } catch {
             return true
         }
-    }
-
-    private func waitUntil(timeout: Duration, condition: @escaping @MainActor () -> Bool) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now + timeout
-        while clock.now < deadline {
-            if await condition() {
-                return true
-            }
-            await Task.yield()
-        }
-        return await condition()
     }
 
     private func temporaryStoreURL() -> URL {
