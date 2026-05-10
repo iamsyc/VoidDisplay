@@ -27,7 +27,7 @@ write_fixture_file() {
 	local full_path="$FIXTURE_REPO/$file_path"
 	mkdir -p "$(dirname "$full_path")"
 	case "$file_path" in
-	mise.toml)
+	mise.toml | mise.lock)
 		printf '[tools]\n' >"$full_path"
 		;;
 	*)
@@ -126,6 +126,9 @@ run_file_case codeql_workflow pull_request main \
 run_file_case mise_config pull_request main \
 	"tooling_config_relevant=true ci_config_relevant=true requires_static=true requires_dependency_review=false requires_unit=false" \
 	mise.toml
+run_file_case mise_lock pull_request main \
+	"tooling_config_relevant=true ci_config_relevant=true requires_static=true requires_dependency_review=false requires_unit=false" \
+	mise.lock
 run_file_case package_manifest pull_request main \
 	"product_code_relevant=true dependency_manifest_relevant=true requires_dependency_review=true requires_unit=true requires_xcode_build=true" \
 	Package.swift

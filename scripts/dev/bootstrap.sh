@@ -62,6 +62,9 @@ install_pinned_tools_with_mise() {
 	info "Installing pinned tools with mise."
 	cd "$TOOL_ROOT"
 	export MISE_YES=1
+	if [[ "$CI_REQUIRES_MISE" == "true" ]]; then
+		export MISE_LOCKED="${MISE_LOCKED:-1}"
+	fi
 	export MISE_TRUSTED_CONFIG_PATHS="$TOOL_ROOT"
 	if ((${#mise_targets[@]})); then
 		mise install "${mise_targets[@]}"

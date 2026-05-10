@@ -24,6 +24,7 @@ on:
       - 'scripts/lib/**'
       - 'scripts/release/**'
       - 'mise.toml'
+      - 'mise.lock'
       - 'Brewfile'
       - '.github/workflows/release.yml'
       - '.github/actions/xcode-select/action.yml'
