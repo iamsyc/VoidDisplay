@@ -89,6 +89,8 @@ package final class WebServiceController: WebServiceControllerProtocol {
     private var lifecycleNonce: UInt64 = 0
     private let webServiceServerFactory: WebServiceServerFactory
     private let relayProcessController: RelayProcessController?
+    private static let addressReuseRetryLimit = 10
+    private static let addressReuseRetryDelay = Duration.milliseconds(50)
 
     package var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
     package var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
@@ -267,81 +269,119 @@ package final class WebServiceController: WebServiceControllerProtocol {
             }
         }
 
-        do {
+        for startupAttempt in 0...Self.addressReuseRetryLimit {
             let serverToken = UUID()
-            let server = try webServiceServerFactory(
-                port,
-                targetStateProvider,
-                concreteTargetResolver,
-                sessionHubProvider,
-                sharingEventSink,
-                { [weak self] reason in
-                    self?.handleServerStop(serverToken: serverToken, reason: reason)
-                }
-            )
-            guard isCurrentOperation(operationNonce) else {
-                server.stopListener(reason: .superseded)
-                return supersededFailure(port: requestedPort)
-            }
-
-            startingServer = (serverToken, server)
-            defer {
-                if self.startingServer?.token == serverToken {
-                    self.startingServer = nil
-                }
-            }
-
-            let startResult = await server.startListener()
-            let stillOwnsStartupSlot = startingServer?.token == serverToken
-            guard isCurrentOperation(operationNonce), stillOwnsStartupSlot else {
-                if stillOwnsStartupSlot {
+            do {
+                let server = try webServiceServerFactory(
+                    port,
+                    targetStateProvider,
+                    concreteTargetResolver,
+                    sessionHubProvider,
+                    sharingEventSink,
+                    { [weak self] reason in
+                        self?.handleServerStop(serverToken: serverToken, reason: reason)
+                    }
+                )
+                guard isCurrentOperation(operationNonce) else {
                     server.stopListener(reason: .superseded)
+                    return supersededFailure(port: requestedPort)
                 }
-                return supersededFailure(port: requestedPort)
-            }
 
-            switch startResult {
-            case .ready(let boundPort):
-                activeServer = server
-                activeServerToken = serverToken
-                let binding = WebServiceBinding(
+                startingServer = (serverToken, server)
+                defer {
+                    if self.startingServer?.token == serverToken {
+                        self.startingServer = nil
+                    }
+                }
+
+                let startResult = await server.startListener()
+                let stillOwnsStartupSlot = startingServer?.token == serverToken
+                guard isCurrentOperation(operationNonce), stillOwnsStartupSlot else {
+                    if stillOwnsStartupSlot {
+                        server.stopListener(reason: .superseded)
+                    }
+                    return supersededFailure(port: requestedPort)
+                }
+
+                switch startResult {
+                case .ready(let boundPort):
+                    activeServer = server
+                    activeServerToken = serverToken
+                    let binding = WebServiceBinding(
+                        requestedPort: requestedPort,
+                        boundPort: boundPort
+                    )
+                    currentBinding = binding
+                    setLifecycleState(.running(binding))
+                    AppLog.web.info(
+                        "Web service started (requestedPort: \(requestedPort, privacy: .public), boundPort: \(boundPort, privacy: .public))."
+                    )
+                    return .started(binding)
+
+                case .timedOut:
+                    server.stopListener(reason: .requested)
+                    relayProcessController?.stop()
+                    let failure: WebServiceStartFailure = .timedOut(port: requestedPort)
+                    setLifecycleState(.failed(failure))
+                    AppLog.web.error(
+                        "Web service failed to become ready in time (requestedPort: \(requestedPort, privacy: .public))."
+                    )
+                    return .failed(failure)
+
+                case .failed(let error):
+                    if await retryAfterAddressInUseIfNeeded(
+                        error: error,
+                        requestedPort: requestedPort,
+                        startupAttempt: startupAttempt,
+                        operationNonce: operationNonce
+                    ) {
+                        server.stopListener(reason: .requested)
+                        continue
+                    }
+                    relayProcessController?.stop()
+                    let failure = mapStartFailure(error: error, requestedPort: requestedPort)
+                    setLifecycleState(.failed(failure))
+                    AppLog.web.error(
+                        "Web service listener failed (requestedPort: \(requestedPort, privacy: .public)): \(String(describing: error), privacy: .public)"
+                    )
+                    return .failed(failure)
+                }
+            } catch {
+                if await retryAfterAddressInUseIfNeeded(
+                    error: error,
                     requestedPort: requestedPort,
-                    boundPort: boundPort
-                )
-                currentBinding = binding
-                setLifecycleState(.running(binding))
-                AppLog.web.info(
-                    "Web service started (requestedPort: \(requestedPort, privacy: .public), boundPort: \(boundPort, privacy: .public))."
-                )
-                return .started(binding)
-
-            case .timedOut:
-                server.stopListener(reason: .requested)
-                relayProcessController?.stop()
-                let failure: WebServiceStartFailure = .timedOut(port: requestedPort)
-                setLifecycleState(.failed(failure))
-                AppLog.web.error(
-                    "Web service failed to become ready in time (requestedPort: \(requestedPort, privacy: .public))."
-                )
-                return .failed(failure)
-
-            case .failed(let error):
+                    startupAttempt: startupAttempt,
+                    operationNonce: operationNonce
+                ) {
+                    continue
+                }
+                clearRunningServerIfTokenMatches(activeServerToken)
                 relayProcessController?.stop()
                 let failure = mapStartFailure(error: error, requestedPort: requestedPort)
                 setLifecycleState(.failed(failure))
-                AppLog.web.error(
-                    "Web service listener failed (requestedPort: \(requestedPort, privacy: .public)): \(String(describing: error), privacy: .public)"
-                )
+                AppErrorMapper.logFailure("Start web service", error: error, logger: AppLog.web)
                 return .failed(failure)
             }
-        } catch {
-            clearRunningServerIfTokenMatches(activeServerToken)
-            relayProcessController?.stop()
-            let failure = mapStartFailure(error: error, requestedPort: requestedPort)
-            setLifecycleState(.failed(failure))
-            AppErrorMapper.logFailure("Start web service", error: error, logger: AppLog.web)
-            return .failed(failure)
         }
+
+        let failure = WebServiceStartFailure.portInUse(port: requestedPort)
+        relayProcessController?.stop()
+        setLifecycleState(.failed(failure))
+        return .failed(failure)
+    }
+
+    private func retryAfterAddressInUseIfNeeded(
+        error: Error,
+        requestedPort: UInt16,
+        startupAttempt: Int,
+        operationNonce: UInt64
+    ) async -> Bool {
+        guard startupAttempt < Self.addressReuseRetryLimit,
+              Self.isAddressInUse(error, requestedPort: requestedPort) else {
+            return false
+        }
+        try? await Task.sleep(for: Self.addressReuseRetryDelay)
+        return isCurrentOperation(operationNonce)
     }
 
     private func handleServerStop(serverToken: UUID, reason: WebServiceServerStopReason) {
@@ -432,6 +472,13 @@ package final class WebServiceController: WebServiceControllerProtocol {
 
     private func mapStartFailure(error: Error, requestedPort: UInt16) -> WebServiceStartFailure {
         Self.classifyStartFailure(error: error, requestedPort: requestedPort)
+    }
+
+    private static func isAddressInUse(_ error: Error, requestedPort: UInt16) -> Bool {
+        if case .portInUse = classifyStartFailure(error: error, requestedPort: requestedPort) {
+            return true
+        }
+        return false
     }
 
     package static func classifyStartFailure(error: Error, requestedPort: UInt16) -> WebServiceStartFailure {

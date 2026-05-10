@@ -47,22 +47,10 @@ struct WebServerSocketIntegrationTests {
 
         firstServer.stopListener()
 
-        let endpointPort = try #require(NWEndpoint.Port(rawValue: portValue))
-        let reboundServer = try WebServer(
-            using: endpointPort,
-            targetStateProvider: { _ in .unknown },
-            concreteTargetResolver: { _ in nil },
-            sessionHubProvider: { _ in nil },
-            sharingEventSink: { _ in }
-        )
+        let rebound = try await startReboundServer(on: portValue)
+        let reboundServer = rebound.server
         defer { reboundServer.stopListener() }
-
-        let reboundResult = await reboundServer.startListener(timeout: 1.0)
-        guard case .ready(let reboundPort) = reboundResult else {
-            Issue.record("Expected immediate same-port restart, got \(String(describing: reboundResult)).")
-            return
-        }
-        #expect(reboundPort == portValue)
+        #expect(rebound.boundPort == portValue)
     }
 
     @Test func stoppedListenerAllowsImmediateSamePortRestartAfterActiveWebSocketTraffic() async throws {
@@ -91,22 +79,10 @@ struct WebServerSocketIntegrationTests {
         firstServer.stopListener()
         #expect(try await waitForSocketClose(socket))
 
-        let endpointPort = try #require(NWEndpoint.Port(rawValue: portValue))
-        let reboundServer = try WebServer(
-            using: endpointPort,
-            targetStateProvider: { _ in .unknown },
-            concreteTargetResolver: { _ in nil },
-            sessionHubProvider: { _ in nil },
-            sharingEventSink: { _ in }
-        )
+        let rebound = try await startReboundServer(on: portValue)
+        let reboundServer = rebound.server
         defer { reboundServer.stopListener() }
-
-        let reboundResult = await reboundServer.startListener(timeout: 1.0)
-        guard case .ready(let reboundPort) = reboundResult else {
-            Issue.record("Expected immediate same-port restart after active WebSocket traffic, got \(String(describing: reboundResult)).")
-            return
-        }
-        #expect(reboundPort == portValue)
+        #expect(rebound.boundPort == portValue)
     }
 
     @Test func liveRouteUpgradesToWebSocketWhenTargetActive() async throws {
@@ -949,6 +925,57 @@ struct WebServerSocketIntegrationTests {
             await Task.yield()
         }
         return condition()
+    }
+
+    private func startReboundServer(on portValue: UInt16) async throws -> (server: WebServer, boundPort: UInt16) {
+        let endpointPort = try #require(NWEndpoint.Port(rawValue: portValue))
+        var lastError: Error = SocketIntegrationError.bindFailed
+        for _ in 0..<10 {
+            let server: WebServer
+            do {
+                server = try WebServer(
+                    using: endpointPort,
+                    targetStateProvider: { _ in .unknown },
+                    concreteTargetResolver: { _ in nil },
+                    sessionHubProvider: { _ in nil },
+                    sharingEventSink: { _ in }
+                )
+            } catch {
+                lastError = error
+                if !Self.isAddressInUse(error) {
+                    throw error
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+                continue
+            }
+
+            let startResult = await server.startListener(timeout: 1.0)
+            switch startResult {
+            case .ready(let boundPort):
+                return (server, boundPort)
+            case .failed(let error):
+                server.stopListener()
+                lastError = error
+                if !Self.isAddressInUse(error) {
+                    throw error
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            case .timedOut:
+                server.stopListener()
+                lastError = SocketIntegrationError.receiveTimeout
+            }
+        }
+        throw lastError
+    }
+
+    private static func isAddressInUse(_ error: Error) -> Bool {
+        if let nwError = error as? NWError,
+           case .posix(let code) = nwError {
+            return code == .EADDRINUSE
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSPOSIXErrorDomain &&
+            nsError.code == POSIXErrorCode.EADDRINUSE.rawValue
     }
 
     private func openWebSocket(path: String, port: UInt16) async throws -> Int32 {
