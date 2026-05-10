@@ -43,6 +43,21 @@ jobs:
       ui_relevant: ${{ steps.classify.outputs.ui_relevant }}
       script_relevant: ${{ steps.classify.outputs.script_relevant }}
       change_scope: ${{ steps.classify.outputs.change_scope }}
+      product_code_relevant: ${{ steps.classify.outputs.product_code_relevant }}
+      test_code_relevant: ${{ steps.classify.outputs.test_code_relevant }}
+      ci_config_relevant: ${{ steps.classify.outputs.ci_config_relevant }}
+      release_relevant: ${{ steps.classify.outputs.release_relevant }}
+      dependency_manifest_relevant: ${{ steps.classify.outputs.dependency_manifest_relevant }}
+      tooling_config_relevant: ${{ steps.classify.outputs.tooling_config_relevant }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      unknown_relevant: ${{ steps.classify.outputs.unknown_relevant }}
+      requires_static: ${{ steps.classify.outputs.requires_static }}
+      requires_head_script_self_test: ${{ steps.classify.outputs.requires_head_script_self_test }}
+      requires_dependency_review: ${{ steps.classify.outputs.requires_dependency_review }}
+      requires_unit: ${{ steps.classify.outputs.requires_unit }}
+      requires_xcode_build: ${{ steps.classify.outputs.requires_xcode_build }}
+      requires_ui_smoke: ${{ steps.classify.outputs.requires_ui_smoke }}
+      requires_release_smoke: ${{ steps.classify.outputs.requires_release_smoke }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -62,6 +77,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -107,7 +123,7 @@ jobs:
     name: dependency-review
     needs:
       - classify_changes
-    if: ${{ github.event_name == 'pull_request' && needs.classify_changes.outputs.code_relevant == 'true' }}
+    if: ${{ github.event_name == 'pull_request' && needs.classify_changes.outputs.requires_dependency_review == 'true' }}
     runs-on: macos-26
     timeout-minutes: 10
     permissions:
@@ -124,7 +140,7 @@ jobs:
     name: script-static-checks
     needs:
       - classify_changes
-    if: ${{ github.event_name != 'pull_request' || needs.classify_changes.outputs.code_relevant == 'true' }}
+    if: ${{ needs.classify_changes.outputs.requires_static == 'true' }}
     runs-on: macos-26
     timeout-minutes: 15
     permissions:
@@ -194,7 +210,7 @@ jobs:
     name: head-script-self-test
     needs:
       - classify_changes
-    if: ${{ github.event_name == 'pull_request' && needs.classify_changes.outputs.script_relevant == 'true' }}
+    if: ${{ github.event_name == 'pull_request' && needs.classify_changes.outputs.requires_head_script_self_test == 'true' }}
     runs-on: macos-26
     timeout-minutes: 15
     permissions:
@@ -238,7 +254,7 @@ jobs:
     needs:
       - classify_changes
       - script_static_checks
-    if: ${{ github.event_name != 'pull_request' || needs.classify_changes.outputs.code_relevant == 'true' }}
+    if: ${{ needs.classify_changes.outputs.requires_unit == 'true' }}
     uses: ./.github/workflows/_reusable-unit-tests.yml
     with:
       artifact_retention_days: 7
@@ -248,7 +264,7 @@ jobs:
     needs:
       - classify_changes
       - script_static_checks
-    if: ${{ github.event_name != 'pull_request' || needs.classify_changes.outputs.code_relevant == 'true' }}
+    if: ${{ needs.classify_changes.outputs.requires_xcode_build == 'true' }}
     runs-on: macos-26
     timeout-minutes: 25
     permissions:
@@ -339,7 +355,7 @@ jobs:
     needs:
       - classify_changes
       - script_static_checks
-    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && needs.classify_changes.outputs.code_relevant == 'true' && needs.classify_changes.outputs.ui_relevant == 'true') }}
+    if: ${{ needs.classify_changes.outputs.requires_ui_smoke == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -362,7 +378,7 @@ jobs:
     needs:
       - classify_changes
       - script_static_checks
-    if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.base_ref == 'main' && needs.classify_changes.outputs.code_relevant == 'true') }}
+    if: ${{ needs.classify_changes.outputs.requires_release_smoke == 'true' }}
     runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 30
     strategy:
@@ -462,12 +478,28 @@ jobs:
     steps:
       - name: Enforce CI gate
         env:
+          CLASSIFY_RESULT: ${{ needs.classify_changes.result }}
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           CHANGE_SCOPE: ${{ needs.classify_changes.outputs.change_scope }}
           CODE_RELEVANT: ${{ needs.classify_changes.outputs.code_relevant }}
           UI_RELEVANT: ${{ needs.classify_changes.outputs.ui_relevant }}
           SCRIPT_RELEVANT: ${{ needs.classify_changes.outputs.script_relevant }}
+          PRODUCT_CODE_RELEVANT: ${{ needs.classify_changes.outputs.product_code_relevant }}
+          TEST_CODE_RELEVANT: ${{ needs.classify_changes.outputs.test_code_relevant }}
+          CI_CONFIG_RELEVANT: ${{ needs.classify_changes.outputs.ci_config_relevant }}
+          RELEASE_RELEVANT: ${{ needs.classify_changes.outputs.release_relevant }}
+          DEPENDENCY_MANIFEST_RELEVANT: ${{ needs.classify_changes.outputs.dependency_manifest_relevant }}
+          TOOLING_CONFIG_RELEVANT: ${{ needs.classify_changes.outputs.tooling_config_relevant }}
+          DOCS_ONLY: ${{ needs.classify_changes.outputs.docs_only }}
+          UNKNOWN_RELEVANT: ${{ needs.classify_changes.outputs.unknown_relevant }}
+          REQUIRES_STATIC: ${{ needs.classify_changes.outputs.requires_static }}
+          REQUIRES_HEAD_SCRIPT_SELF_TEST: ${{ needs.classify_changes.outputs.requires_head_script_self_test }}
+          REQUIRES_DEPENDENCY_REVIEW: ${{ needs.classify_changes.outputs.requires_dependency_review }}
+          REQUIRES_UNIT: ${{ needs.classify_changes.outputs.requires_unit }}
+          REQUIRES_XCODE_BUILD: ${{ needs.classify_changes.outputs.requires_xcode_build }}
+          REQUIRES_UI_SMOKE: ${{ needs.classify_changes.outputs.requires_ui_smoke }}
+          REQUIRES_RELEASE_SMOKE: ${{ needs.classify_changes.outputs.requires_release_smoke }}
           DEPENDENCY_RESULT: ${{ needs.dependency_review.result }}
           SCRIPT_RESULT: ${{ needs.script_static_checks.result }}
           HEAD_SCRIPT_RESULT: ${{ needs.head_script_self_test.result }}
@@ -477,28 +509,13 @@ jobs:
           RELEASE_RESULT: ${{ needs.release_build_check.result }}
         run: |
           set -euo pipefail
-          is_non_code_pr=false
-          is_code_pr=false
-          is_main_code_pr=false
-          is_main_push=false
 
-          if [ "$EVENT_NAME" = "pull_request" ] && [ "$CODE_RELEVANT" = "false" ]; then
-            is_non_code_pr=true
-          fi
-          if [ "$EVENT_NAME" = "pull_request" ] && [ "$CODE_RELEVANT" = "true" ]; then
-            is_code_pr=true
-          fi
-          if [ "$is_code_pr" = "true" ] && [ "$BASE_REF" = "main" ]; then
-            is_main_code_pr=true
-          fi
-          if [ "$EVENT_NAME" = "push" ]; then
-            is_main_push=true
-          fi
-
+          echo "Classify result: ${CLASSIFY_RESULT}"
+          echo "Event: ${EVENT_NAME}"
+          echo "Base ref: ${BASE_REF:-n/a}"
           echo "Change scope: ${CHANGE_SCOPE}"
-          echo "Code relevant: ${CODE_RELEVANT}"
-          echo "UI relevant: ${UI_RELEVANT}"
-          echo "Script relevant: ${SCRIPT_RELEVANT}"
+          echo "Relevant: code=${CODE_RELEVANT} ui=${UI_RELEVANT} script=${SCRIPT_RELEVANT} product=${PRODUCT_CODE_RELEVANT} test=${TEST_CODE_RELEVANT} ci=${CI_CONFIG_RELEVANT} release=${RELEASE_RELEVANT} dependency=${DEPENDENCY_MANIFEST_RELEVANT} tooling=${TOOLING_CONFIG_RELEVANT} docs_only=${DOCS_ONLY} unknown=${UNKNOWN_RELEVANT}"
+          echo "Required: static=${REQUIRES_STATIC} head_script=${REQUIRES_HEAD_SCRIPT_SELF_TEST} dependency=${REQUIRES_DEPENDENCY_REVIEW} unit=${REQUIRES_UNIT} xcode=${REQUIRES_XCODE_BUILD} ui=${REQUIRES_UI_SMOKE} release=${REQUIRES_RELEASE_SMOKE}"
           echo "Dependency review: ${DEPENDENCY_RESULT}"
           echo "Static: ${SCRIPT_RESULT}"
           echo "Head script self-test: ${HEAD_SCRIPT_RESULT}"
@@ -507,47 +524,34 @@ jobs:
           echo "UI smoke: ${UI_RESULT}"
           echo "Release smoke: ${RELEASE_RESULT}"
 
-          if [ "$is_non_code_pr" = "true" ]; then
-            echo "Gate passed through non-code fast path."
-            exit 0
+          if [ "$CLASSIFY_RESULT" != "success" ]; then
+            echo "Gate failed because classify-changes result is ${CLASSIFY_RESULT}."
+            exit 1
           fi
 
-          if [ "$is_code_pr" = "true" ] && [ "$DEPENDENCY_RESULT" != "success" ]; then
-            echo "Gate failed because dependency-review result is ${DEPENDENCY_RESULT}."
-            exit 1
-          fi
-          if [ "$SCRIPT_RESULT" != "success" ]; then
-            echo "Gate failed because script-static-checks result is ${SCRIPT_RESULT}."
-            exit 1
-          fi
-          if [ "$is_code_pr" = "true" ] && [ "$SCRIPT_RELEVANT" = "true" ] && [ "$HEAD_SCRIPT_RESULT" != "success" ]; then
-            echo "Gate failed because script-relevant PR requires head-script-self-test."
-            exit 1
-          fi
-          if [ "$UNIT_RESULT" != "success" ]; then
-            echo "Gate failed because unit-tests result is ${UNIT_RESULT}."
-            exit 1
-          fi
-          if [ "$XCODE_RESULT" != "success" ]; then
-            echo "Gate failed because xcode-build result is ${XCODE_RESULT}."
-            exit 1
-          fi
-          if [ "$is_code_pr" = "true" ] && [ "$UI_RELEVANT" = "true" ] && [ "$UI_RESULT" != "success" ]; then
-            echo "Gate failed because UI-relevant PR requires ui-smoke-tests."
-            exit 1
-          fi
-          if [ "$is_main_push" = "true" ] && [ "$UI_RESULT" != "success" ]; then
-            echo "Gate failed because main push requires ui-smoke-tests."
-            exit 1
-          fi
-          if [ "$is_main_code_pr" = "true" ] && [ "$RELEASE_RESULT" != "success" ]; then
-            echo "Gate failed because target-main code PR requires release-build-check."
-            exit 1
-          fi
-          if [ "$is_main_push" = "true" ] && [ "$RELEASE_RESULT" != "success" ]; then
-            echo "Gate failed because main push requires release-build-check."
-            exit 1
-          fi
+          check_required() {
+            local requirement="$1"
+            local result="$2"
+            local label="$3"
+
+            if [ "$requirement" = "true" ] && [ "$result" != "success" ]; then
+              echo "Gate failed because ${label} is required but result is ${result}."
+              exit 1
+            fi
+            if [ "$requirement" = "true" ]; then
+              echo "Gate accepted ${label}: required and passed."
+            else
+              echo "Gate accepted ${label}: not required, result is ${result}."
+            fi
+          }
+
+          check_required "$REQUIRES_DEPENDENCY_REVIEW" "$DEPENDENCY_RESULT" "dependency-review"
+          check_required "$REQUIRES_STATIC" "$SCRIPT_RESULT" "script-static-checks"
+          check_required "$REQUIRES_HEAD_SCRIPT_SELF_TEST" "$HEAD_SCRIPT_RESULT" "head-script-self-test"
+          check_required "$REQUIRES_UNIT" "$UNIT_RESULT" "unit-tests"
+          check_required "$REQUIRES_XCODE_BUILD" "$XCODE_RESULT" "xcode-build"
+          check_required "$REQUIRES_UI_SMOKE" "$UI_RESULT" "ui-smoke-tests"
+          check_required "$REQUIRES_RELEASE_SMOKE" "$RELEASE_RESULT" "release-build-check"
 
           exit 0
 
@@ -580,6 +584,21 @@ jobs:
           CODE_RELEVANT: ${{ needs.classify_changes.outputs.code_relevant }}
           UI_RELEVANT: ${{ needs.classify_changes.outputs.ui_relevant }}
           SCRIPT_RELEVANT: ${{ needs.classify_changes.outputs.script_relevant }}
+          PRODUCT_CODE_RELEVANT: ${{ needs.classify_changes.outputs.product_code_relevant }}
+          TEST_CODE_RELEVANT: ${{ needs.classify_changes.outputs.test_code_relevant }}
+          CI_CONFIG_RELEVANT: ${{ needs.classify_changes.outputs.ci_config_relevant }}
+          RELEASE_RELEVANT: ${{ needs.classify_changes.outputs.release_relevant }}
+          DEPENDENCY_MANIFEST_RELEVANT: ${{ needs.classify_changes.outputs.dependency_manifest_relevant }}
+          TOOLING_CONFIG_RELEVANT: ${{ needs.classify_changes.outputs.tooling_config_relevant }}
+          DOCS_ONLY: ${{ needs.classify_changes.outputs.docs_only }}
+          UNKNOWN_RELEVANT: ${{ needs.classify_changes.outputs.unknown_relevant }}
+          REQUIRES_STATIC: ${{ needs.classify_changes.outputs.requires_static }}
+          REQUIRES_HEAD_SCRIPT_SELF_TEST: ${{ needs.classify_changes.outputs.requires_head_script_self_test }}
+          REQUIRES_DEPENDENCY_REVIEW: ${{ needs.classify_changes.outputs.requires_dependency_review }}
+          REQUIRES_UNIT: ${{ needs.classify_changes.outputs.requires_unit }}
+          REQUIRES_XCODE_BUILD: ${{ needs.classify_changes.outputs.requires_xcode_build }}
+          REQUIRES_UI_SMOKE: ${{ needs.classify_changes.outputs.requires_ui_smoke }}
+          REQUIRES_RELEASE_SMOKE: ${{ needs.classify_changes.outputs.requires_release_smoke }}
           DEPENDENCY_RESULT: ${{ needs.dependency_review.result }}
           SCRIPT_RESULT: ${{ needs.script_static_checks.result }}
           HEAD_SCRIPT_RESULT: ${{ needs.head_script_self_test.result }}
@@ -616,17 +635,40 @@ jobs:
               'Artifacts: release-smoke-arm64, release-smoke-intel64',
               'Release verify summaries are produced by release.yml before publishing.',
             ].join('<br>');
+            const classificationDetails = [
+              `code=${value('CODE_RELEVANT')}`,
+              `ui=${value('UI_RELEVANT')}`,
+              `script=${value('SCRIPT_RELEVANT')}`,
+              `product=${value('PRODUCT_CODE_RELEVANT')}`,
+              `test=${value('TEST_CODE_RELEVANT')}`,
+              `ci=${value('CI_CONFIG_RELEVANT')}`,
+              `release=${value('RELEASE_RELEVANT')}`,
+              `dependency=${value('DEPENDENCY_MANIFEST_RELEVANT')}`,
+              `tooling=${value('TOOLING_CONFIG_RELEVANT')}`,
+              `docs_only=${value('DOCS_ONLY')}`,
+              `unknown=${value('UNKNOWN_RELEVANT')}`,
+            ].join('<br>');
+            const requirementDetails = [
+              `static=${value('REQUIRES_STATIC')}`,
+              `head_script=${value('REQUIRES_HEAD_SCRIPT_SELF_TEST')}`,
+              `dependency=${value('REQUIRES_DEPENDENCY_REVIEW')}`,
+              `unit=${value('REQUIRES_UNIT')}`,
+              `xcode=${value('REQUIRES_XCODE_BUILD')}`,
+              `ui=${value('REQUIRES_UI_SMOKE')}`,
+              `release=${value('REQUIRES_RELEASE_SMOKE')}`,
+            ].join('<br>');
             const rows = [
-              ['Change Scope', process.env.CHANGE_SCOPE || 'unknown', `code=${process.env.CODE_RELEVANT}, ui=${process.env.UI_RELEVANT}`],
-              ['Dependency Review', process.env.DEPENDENCY_RESULT || 'unknown', 'code PR gate; high and critical vulnerabilities block'],
-              ['Static Checks', process.env.SCRIPT_RESULT || 'unknown', 'actionlint, shellcheck, shfmt, SwiftFormat, SwiftLint, action pinning'],
-              ['Head Script Self-Test', process.env.HEAD_SCRIPT_RESULT || 'unknown', `runs for script/tooling PRs; script=${process.env.SCRIPT_RELEVANT}`],
-              ['Unit Tests', process.env.UNIT_RESULT || 'unknown', unitDetails],
-              ['Xcode Build', process.env.XCODE_RESULT || 'unknown', 'Debug build with zero warning scan<br>Artifact: xcode-build'],
-              ['UI Smoke', process.env.UI_RESULT || 'unknown', uiDetails],
-              ['Release Smoke', process.env.RELEASE_RESULT || 'unknown', releaseDetails],
+              ['Change Scope', value('CHANGE_SCOPE', 'unknown'), classificationDetails],
+              ['Required Gates', 'derived', requirementDetails],
+              ['Dependency Review', value('DEPENDENCY_RESULT', 'unknown'), `required=${value('REQUIRES_DEPENDENCY_REVIEW')}<br>high and critical vulnerabilities block`],
+              ['Static Checks', value('SCRIPT_RESULT', 'unknown'), `required=${value('REQUIRES_STATIC')}<br>actionlint, shellcheck, shfmt, SwiftFormat, SwiftLint, action pinning`],
+              ['Head Script Self-Test', value('HEAD_SCRIPT_RESULT', 'unknown'), `required=${value('REQUIRES_HEAD_SCRIPT_SELF_TEST')}`],
+              ['Unit Tests', value('UNIT_RESULT', 'unknown'), `required=${value('REQUIRES_UNIT')}<br>${unitDetails}`],
+              ['Xcode Build', value('XCODE_RESULT', 'unknown'), `required=${value('REQUIRES_XCODE_BUILD')}<br>Debug build with zero warning scan<br>Artifact: xcode-build`],
+              ['UI Smoke', value('UI_RESULT', 'unknown'), `required=${value('REQUIRES_UI_SMOKE')}<br>${uiDetails}`],
+              ['Release Smoke', value('RELEASE_RESULT', 'unknown'), `required=${value('REQUIRES_RELEASE_SMOKE')}<br>${releaseDetails}`],
               ['Artifacts', 'link', `[Open artifacts](${artifactsUrl})`],
-              ['CI Gate', process.env.GATE_RESULT || 'unknown', 'single branch protection check'],
+              ['CI Gate', value('GATE_RESULT', 'unknown'), 'single branch protection check'],
             ];
             const summaryLines = [
               '## CI Summary',
