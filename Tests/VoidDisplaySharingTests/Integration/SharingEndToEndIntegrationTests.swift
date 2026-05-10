@@ -195,6 +195,36 @@ struct SharingEndToEndIntegrationTests {
         #expect(signalText.contains("503 Service Unavailable"))
     }
 
+    @MainActor
+    @Test
+    func webServiceRestartsSamePortImmediatelyAfterStop() async throws {
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL())
+        )
+        let webServiceController = WebServiceController()
+        let service = SharingService(
+            webServiceController: webServiceController,
+            sharingCoordinator: coordinator
+        )
+
+        let firstStart = await startWebServiceWithDynamicPorts(service: service)
+        let firstBinding = try requireBinding(firstStart)
+        let port = firstBinding.boundPort
+
+        let rootRequest = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\n\r\n".utf8)
+        _ = try await Task.detached {
+            try await sendRequestAndReadUntilClose(port: port, request: rootRequest)
+        }.value
+
+        service.stopWebService()
+
+        let secondStart = await service.startWebService(requestedPort: port)
+        defer {
+            service.stopWebService()
+        }
+        #expect(secondStart == .started(WebServiceBinding(requestedPort: port, boundPort: port)))
+    }
+
     private func waitForConnectionFailure(
         port: UInt16,
         path: String,

@@ -11,6 +11,7 @@ import VoidDisplayFoundation
 //
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -26,6 +27,7 @@ package struct AppEnvironment {
 }
 
 public struct VoidDisplayApplication: App {
+    @NSApplicationDelegateAdaptor(VoidDisplayApplicationDelegate.self) private var appDelegate
     @State private var capture: CaptureController
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
@@ -45,6 +47,9 @@ public struct VoidDisplayApplication: App {
         _navigation = State(initialValue: AppNavigationController())
         _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
+        AppTerminationCleanup.install {
+            env.sharing.stopWebService()
+        }
     }
 
     public var body: some Scene {
@@ -101,6 +106,28 @@ public struct VoidDisplayApplication: App {
                 .environment(capturePerformancePreferences)
                 .environment(navigation)
         }
+    }
+}
+
+@MainActor
+private enum AppTerminationCleanup {
+    private static var handler: (() -> Void)?
+
+    static func install(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    static func run() {
+        guard let handler else { return }
+        self.handler = nil
+        handler()
+    }
+}
+
+@MainActor
+private final class VoidDisplayApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_: Notification) {
+        AppTerminationCleanup.run()
     }
 }
 

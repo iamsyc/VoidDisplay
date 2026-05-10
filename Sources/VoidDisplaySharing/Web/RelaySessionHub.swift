@@ -43,6 +43,12 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         case dropped
     }
 
+    private nonisolated enum PublisherStartupWaitResult {
+        case ready
+        case timedOut
+        case failed
+    }
+
     private nonisolated struct ClientState {
         nonisolated(unsafe) let connection: any SignalSocketConnection
         let clientID: String
@@ -71,6 +77,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
     private let state: Mutex<State>
     private let relayClientProvider: RelayClientProvider
     private let publisherFactory: PublisherFactory
+    private let publisherStartupWaitTimeout: Duration
     nonisolated private static let maxPendingSignalsPerClient = 256
 
 #if canImport(WebRTC)
@@ -86,7 +93,8 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
     package init(
         onDemandChanged: @escaping @Sendable (Bool) -> Void = { _ in },
         relayClientProvider: @escaping RelayClientProvider,
-        publisherFactory: PublisherFactory? = nil
+        publisherFactory: PublisherFactory? = nil,
+        publisherStartupWaitTimeout: Duration = .seconds(2)
     ) {
         self.state = Mutex(State(onDemandChanged: onDemandChanged))
 #if canImport(WebRTC)
@@ -103,6 +111,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         self.publisherFactory = publisherFactory ?? { _, _, _ in nil }
 #endif
         self.relayClientProvider = relayClientProvider
+        self.publisherStartupWaitTimeout = publisherStartupWaitTimeout
     }
 
     package nonisolated var activeClientCount: Int {
@@ -423,6 +432,36 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
             guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
                 return
             }
+            ensurePublisher(roomID: roomID)
+            switch await waitForPublisherStartup(roomID: roomID) {
+            case .ready:
+                break
+            case .timedOut:
+                guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
+                    return
+                }
+                enqueue(
+                    message: SignalingOutboundMessage(type: .codecPending, reason: "publisher_codec_pending"),
+                    to: key,
+                    disconnectAfterSend: false,
+                    replacePending: true
+                )
+                return
+            case .failed:
+                guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
+                    return
+                }
+                enqueue(
+                    message: SignalingOutboundMessage(type: .error, reason: "relay_publisher_unavailable"),
+                    to: key,
+                    disconnectAfterSend: true,
+                    replacePending: true
+                )
+                return
+            }
+            guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
+                return
+            }
             let relayClient = try await relayClientProvider()
             guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
                 await relayClient.removeViewer(roomID: roomID, clientID: clientID)
@@ -481,6 +520,30 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
                 message = SignalingOutboundMessage(type: .error, reason: "relay_viewer_offer_failed")
             }
             enqueue(message: message, to: key, disconnectAfterSend: true, replacePending: true)
+        }
+    }
+
+    private nonisolated func waitForPublisherStartup(roomID: String) async -> PublisherStartupWaitResult {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: publisherStartupWaitTimeout)
+        while true {
+            let waitResult = state.withLock { state -> PublisherStartupWaitResult? in
+                guard state.roomID == roomID else { return .failed }
+                if state.publisher != nil {
+                    return .ready
+                }
+                guard state.publisherTask != nil else {
+                    return .failed
+                }
+                return nil
+            }
+            if let waitResult {
+                return waitResult
+            }
+            if clock.now >= deadline {
+                return .timedOut
+            }
+            try? await Task.sleep(for: .milliseconds(25))
         }
     }
 

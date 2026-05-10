@@ -306,6 +306,57 @@ struct RelaySessionHubTests {
         #expect(await waitUntil { factory.records().first?.publisher.activeCodecs().contains(Set([.av1])) == true })
     }
 
+    @MainActor @Test func viewerOfferWaitsForPublisherStartupBeforeForwardingToRelay() async throws {
+        let startGate = AsyncGate()
+        let publisher = FakePublisherSession(onStart: {
+            await startGate.wait()
+        })
+        let client = FakeRelayClient()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: { _, _, _ in publisher }
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+        #expect(await waitUntil { startGate.waitCallCount() == 1 })
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(client.viewerOffers().isEmpty)
+
+        startGate.open()
+
+        #expect(await waitUntil { client.viewerOffers().count == 1 })
+        #expect(client.viewerOffers().first?.sdp == "viewer-offer")
+        #expect(await waitUntil { socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"answer""#) }) })
+    }
+
+    @MainActor @Test func viewerOfferTimesOutWhenPublisherStartupDoesNotComplete() async throws {
+        let startGate = AsyncGate()
+        let publisher = FakePublisherSession(onStart: {
+            await startGate.wait()
+        })
+        let client = FakeRelayClient()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: { _, _, _ in publisher },
+            publisherStartupWaitTimeout: .milliseconds(30)
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+        #expect(await waitUntil { startGate.waitCallCount() == 1 })
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+
+        #expect(await waitUntil { socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"codec_pending""#) }) })
+        #expect(socket.decodedTextPayloads().contains(where: { $0.contains(#""reason":"publisher_codec_pending""#) }))
+        #expect(client.viewerOffers().isEmpty)
+        #expect(socket.cancelCallCount == 0)
+
+        startGate.open()
+        hub.removeClient(socket)
+    }
+
     @MainActor @Test func staleViewerOfferCleansRelayViewerAndDoesNotSendAnswer() async {
         let offerGate = AsyncGate()
         let client = FakeRelayClient(onViewerOffer: {

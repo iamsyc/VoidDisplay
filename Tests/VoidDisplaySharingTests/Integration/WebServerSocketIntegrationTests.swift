@@ -4,6 +4,7 @@
 import Foundation
 import Darwin
 import JavaScriptCore
+import Network
 import Testing
 
 @MainActor
@@ -29,6 +30,83 @@ struct WebServerSocketIntegrationTests {
         let responseText = try #require(String(data: responseData, encoding: .utf8))
         #expect(responseText.contains("HTTP/1.1 200 OK"))
         #expect(responseText.contains("VoidDisplay Share"))
+    }
+
+    @Test func stoppedListenerAllowsImmediateSamePortRestartAfterHTTPClientTraffic() async throws {
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { _ in .unknown },
+            sessionHubProvider: { _ in nil }
+        )
+        let firstServer = setup.server
+        let portValue = setup.port
+
+        let request = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+        _ = try await Task.detached {
+            try await sendRequestAndReadUntilServerClose(port: portValue, request: request)
+        }.value
+
+        firstServer.stopListener()
+
+        let endpointPort = try #require(NWEndpoint.Port(rawValue: portValue))
+        let reboundServer = try WebServer(
+            using: endpointPort,
+            targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { _ in nil },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
+        )
+        defer { reboundServer.stopListener() }
+
+        let reboundResult = await reboundServer.startListener(timeout: 1.0)
+        guard case .ready(let reboundPort) = reboundResult else {
+            Issue.record("Expected immediate same-port restart, got \(String(describing: reboundResult)).")
+            return
+        }
+        #expect(reboundPort == portValue)
+    }
+
+    @Test func stoppedListenerAllowsImmediateSamePortRestartAfterActiveWebSocketTraffic() async throws {
+        let sessionHub = TestSignalSessionHub()
+        let setup = try await startServerOnRandomPort(
+            targetStateProvider: { target in
+                target == .main ? .active : .unknown
+            },
+            concreteTargetResolver: { target in
+                target == .main ? .id(Self.mainAliasShareID) : nil
+            },
+            sessionHubProvider: { target in
+                target == .id(Self.mainAliasShareID) ? sessionHub : nil
+            }
+        )
+        let firstServer = setup.server
+        let portValue = setup.port
+
+        let socket = try await openWebSocket(path: "/signal", port: portValue)
+        defer { close(socket) }
+        let connected = await waitUntilAsync(timeout: .seconds(2)) {
+            firstServer.activeStreamClientCount == 1 && sessionHub.activeClientCount == 1
+        }
+        #expect(connected)
+
+        firstServer.stopListener()
+        #expect(try await waitForSocketClose(socket))
+
+        let endpointPort = try #require(NWEndpoint.Port(rawValue: portValue))
+        let reboundServer = try WebServer(
+            using: endpointPort,
+            targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { _ in nil },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
+        )
+        defer { reboundServer.stopListener() }
+
+        let reboundResult = await reboundServer.startListener(timeout: 1.0)
+        guard case .ready(let reboundPort) = reboundResult else {
+            Issue.record("Expected immediate same-port restart after active WebSocket traffic, got \(String(describing: reboundResult)).")
+            return
+        }
+        #expect(reboundPort == portValue)
     }
 
     @Test func liveRouteUpgradesToWebSocketWhenTargetActive() async throws {
@@ -123,25 +201,30 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains(#"async function waitForLocalOfferSDP() {"#))
         #expect(responseText.contains(#"RTCRtpReceiver.getCapabilities("video")"#))
         #expect(responseText.contains(#"function receiverCodecPreferences() {"#))
-        #expect(responseText.contains(#"function receiverVideoCodecCapabilitySummary() {"#))
-        #expect(responseText.contains(#""unsupportedVideoCodecCount=" + String(allCodecs.length - probedCodecCount)"#))
-        #expect(responseText.contains(#"WebRTC receiver video capabilities "#))
+        #expect(responseText.contains(#"WebRTC receiver video capabilities "#) == false)
+        #expect(responseText.contains(#"WebRTC browser stats"#) == false)
         #expect(!responseText.contains(#"function initialForceH264Only() {"#))
         #expect(!responseText.contains(#"forceH264Only"#))
         #expect(responseText.contains(#"return normalizedVideoCodecName(codec) === "video/av1";"#))
         #expect(responseText.contains(#"function isRetransmissionCodec(codec) {"#))
         #expect(!responseText.contains(#"function receiverSupportsCodec(mimeType) {"#))
-        #expect(responseText.contains(#"function matchingRtxCodecs(allCodecs, primaryCodecs) {"#))
-        #expect(responseText.contains(#"return supportedCodecs.concat(matchingRtxCodecs(allCodecs, supportedCodecs));"#))
+        #expect(responseText.contains(#"function rtxCodecsForPrimaryCodecs(allCodecs, primaryCodecs) {"#))
+        #expect(responseText.contains(#"return av1Codecs.concat(rtxCodecsForPrimaryCodecs(allCodecs, av1Codecs));"#))
         #expect(responseText.contains(#"transceiver.setCodecPreferences(codecPreferences);"#))
         #expect(responseText.contains(#"const supportedPrimaryCodecs = [...new Set("#))
-        #expect(responseText.contains(#"negotiatedVideoCodec = selectedCodecFromAnswerSDP(payload.sdp);"#))
-        #expect(responseText.contains(#"await verifySelectedCodec(negotiatedVideoCodec || "av1");"#))
+        #expect(responseText.contains(#"selectedCodecFromAnswerSDP(payload.sdp);"#))
+        #expect(responseText.contains(#"function setVideoInfo(text) {"#))
+        #expect(responseText.contains(#"function setConnectionStatus(title, detail = "") {"#))
+        #expect(responseText.contains(#"function startBrowserStatsLoop(targetPeer) {"#))
+        #expect(responseText.contains(#"expectedSourceVideoSpec = sourceSpecFromSignal(payload.sourceVideoSpec);"#))
+        #expect(responseText.contains(#"statusLiveWithStats"#))
+        #expect(responseText.contains(#"statusLiveBelowSource"#))
+        #expect(responseText.contains(#"verifySelectedCodec"#) == false)
+        #expect(responseText.contains(#"offerToReceiveVideo"#) == false)
         #expect(responseText.contains(#"function isCodecErrorReason(reason) {"#))
         #expect(!responseText.contains(#"function shouldRetryWithH264Fallback() {"#))
         #expect(!responseText.contains(#"function retryWithH264Fallback() {"#))
         #expect(responseText.contains(#"reason === "unsupported_video_codec_offered" || reason === "supported_video_codec_missing""#))
-        #expect(responseText.contains(#"if (codecMimeType === "video/rtx") {"#))
         #expect(responseText.contains(#"peer.addTransceiver("video", { direction: "recvonly" });"#))
         #expect(responseText.contains(#"sdp: await waitForLocalOfferSDP()"#))
         #expect(!responseText.contains(#"sdp: offer.sdp"#))
@@ -149,25 +232,61 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains(#"function scheduleReconnect(overlayTitle = t("overlayReconnectTitle"), overlayBody = t("overlayReconnectBody")) {"#))
         #expect(responseText.contains(#"function schedulePeerRetry(overlayTitle, overlayBody) {"#))
         #expect(responseText.contains(#"peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });"#))
-        #expect(responseText.contains(#"setOverlay(overlayTitle, overlayBody, true);"#))
-        #expect(responseText.contains(#"setOverlay(t("overlaySharingStoppedTitle"), t("overlaySharingStoppedBody"), true);"#))
+        #expect(responseText.contains(#"function setStartupOverlay() {"#) == false)
+        #expect(responseText.contains(#"function setProgressOverlay(title, body) {"#))
+        #expect(responseText.contains(#"function waitForFirstVideoFrame(timeoutMs = firstVideoFrameTimeoutMs) {"#))
+        #expect(responseText.contains(#"await waitForFirstVideoFrame();"#))
+        #expect(responseText.contains(#"const firstVideoFrameTimeoutMs = 10000;"#))
+        #expect(responseText.contains(#"function streamStartupTimeoutError() {"#))
+        #expect(responseText.contains(#"schedulePeerRetry(t("overlayFirstFrameTimeoutTitle"), error.message || t("overlayFirstFrameTimeoutBody"));"#))
+        #expect(responseText.contains(#"setProgressOverlay(t("overlayConnectionLostTitle"), t("overlayConnectionLostBody"));"#))
+        #expect(responseText.contains(#"setConnectionStatus(t("overlaySharingStoppedTitle"), t("overlaySharingStoppedBody"));"#))
         #expect(responseText.contains(#"case "stopped":"#))
         #expect(responseText.contains(#"case "codec_pending":"#))
         #expect(responseText.contains(#"schedulePeerRetry(t("overlayCodecPendingTitle"), t("overlayCodecPendingBody"));"#))
         #expect(responseText.contains(#"case "error":"#))
         #expect(responseText.contains(#"connect();"#))
         #expect(responseText.contains(#"heroEyebrow: "VOIDDISPLAY 实时画面""#))
+        #expect(responseText.contains(#"overlayStartupTitle"#) == false)
+        #expect(responseText.contains(#"statusReconnecting"#) == false)
+        #expect(responseText.contains(#"ms 后重连"#) == false)
         #expect(responseText.contains(#"overlayCodecRequiredTitle: "AV1 required""#))
         #expect(responseText.contains(#"overlayCodecRequiredTitle: "需要 AV1""#))
+        #expect(responseText.contains(#"overlayFirstFrameTimeoutTitle: "Waiting for video""#))
+        #expect(responseText.contains(#"overlayFirstFrameTimeoutTitle: "正在等待画面""#))
         #expect(responseText.contains(#"overlayCodecPendingTitle: "Preparing video codec""#))
         #expect(responseText.contains(#"overlayCodecPendingTitle: "正在准备视频编码""#))
         #expect(!responseText.contains(#"overlayCodecFallbackTitle"#))
         #expect(responseText.contains(#"fullscreenEnter: "全屏""#))
         #expect(responseText.contains(#"pageTitle: "Screen Share""#))
         #expect(responseText.contains("hero-eyebrow"))
+        #expect(responseText.contains("video-info"))
+        #expect(responseText.contains("connection-status"))
+        #expect(responseText.contains("loading-spinner"))
+        #expect(responseText.contains("justify-items: start;"))
+        #expect(responseText.contains("width: clamp(14rem, 24vw, 24rem);"))
+        #expect(responseText.contains("margin-left: auto;"))
+        #expect(responseText.contains("background: rgba(8, 11, 17, 0.62);") == false)
+        #expect(responseText.contains("border-radius: 10px;") == false)
+        #expect(responseText.contains("<div class=\"hero-brand\">\n                <p class=\"eyebrow\" id=\"hero-eyebrow\">VoidDisplay Live</p>\n            </div>\n            <div class=\"hero-metadata\">\n                <div class=\"video-info\" id=\"video-info\"></div>\n                <div class=\"hero-actions\">"))
+        #expect(responseText.contains("grid-template-columns: minmax(12rem, 1fr) minmax(0, auto);"))
+        #expect(responseText.contains(".hero-metadata"))
+        #expect(responseText.contains("justify-self: end;"))
+        #expect(responseText.contains("text-align: right;"))
+        #expect(responseText.contains("width: clamp(28rem, 42vw, 42rem);"))
+        #expect(responseText.contains("font-variant-numeric: tabular-nums;"))
+        #expect(responseText.contains(#"font-feature-settings: "tnum" 1;"#))
+        #expect(responseText.contains(".video-info:empty"))
+        #expect(responseText.contains("<section class=\"stage\">\n            <video id=\"player\" autoplay playsinline muted></video>\n            <div class=\"overlay\" id=\"overlay\">"))
+        #expect(responseText.contains("<footer class=\"footer\">\n            <p class=\"footnote\" id=\"footnote\">Use"))
+        #expect(responseText.contains("message-title") == false)
+        #expect(responseText.contains("message-body") == false)
         #expect(responseText.contains("footnote"))
         #expect(responseText.contains("__PAGE_TITLE__") == false)
         #expect(responseText.contains("__SIGNAL_PATH__") == false)
+        #expect(responseText.contains("__DISPLAY_PAGE_STYLES__") == false)
+        #expect(responseText.contains("__DISPLAY_PAGE_MESSAGES_SCRIPT__") == false)
+        #expect(responseText.contains("__DISPLAY_PAGE_RUNTIME_SCRIPT__") == false)
         #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
         #expect(responseText.contains(#"new WebSocket((window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/signal");"#) == false)
         #expect(responseText.contains("Main Display") == false)
@@ -228,13 +347,19 @@ struct WebServerSocketIntegrationTests {
         #expect(smokeResult.toggleCallCount >= 2)
         #expect(smokeResult.codecPreferenceMimeTypes == ["video/AV1", "video/rtx"])
         #expect(smokeResult.codecPreferenceFmtpLines == ["", "apt=98"])
-        #expect(smokeResult.receiverCapabilitySummary.contains("AV1=video/av1(pt=98,fmtp=none)"))
-        #expect(smokeResult.receiverCapabilitySummary.contains("unsupportedVideoCodecCount=7"))
         #expect(smokeResult.selectedCodec == "av1")
         #expect(smokeResult.rejectsUnexpectedCodec)
         #expect(smokeResult.marksMissingCodecAsRequirementError)
         #expect(smokeResult.marksMissingCapabilitiesAsRequirementError)
-        #expect(smokeResult.belowSourceStatus.contains("source 2560×1440 60fps"))
+        #expect(smokeResult.videoInfoWithoutSource == "Live AV1 1920×1080 60fps")
+        #expect(smokeResult.videoInfoWithSource == "Live AV1 1920×1080 58fps, source 1920×1080 60fps")
+        #expect(smokeResult.videoInfoLowMotionSource == "Live AV1 1920×1080, source 1920×1080 60fps, low-motion screen updates on change")
+        #expect(smokeResult.videoInfoBelowSource == "Live AV1 1280×720 30fps, source 1920×1080 60fps")
+        #expect(smokeResult.connectionStatusTitle == "Specific setup")
+        #expect(smokeResult.connectionStatusDetail == "Specific body")
+        #expect(smokeResult.loadingOverlayVisibleAfterProgress)
+        #expect(smokeResult.streamStartupTimeoutIsRecoverable)
+        #expect(smokeResult.streamStartupTimeoutMessage == "Timed out waiting for the first video frame. Retrying automatically.")
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
@@ -867,12 +992,19 @@ private struct DisplayPageScriptSmokeResult: Equatable {
     let toggleCallCount: Int
     let codecPreferenceMimeTypes: [String]
     let codecPreferenceFmtpLines: [String]
-    let receiverCapabilitySummary: String
     let selectedCodec: String
     let rejectsUnexpectedCodec: Bool
     let marksMissingCodecAsRequirementError: Bool
     let marksMissingCapabilitiesAsRequirementError: Bool
-    let belowSourceStatus: String
+    let videoInfoWithoutSource: String
+    let videoInfoWithSource: String
+    let videoInfoLowMotionSource: String
+    let videoInfoBelowSource: String
+    let connectionStatusTitle: String
+    let connectionStatusDetail: String
+    let loadingOverlayVisibleAfterProgress: Bool
+    let streamStartupTimeoutIsRecoverable: Bool
+    let streamStartupTimeoutMessage: String
 }
 
 @MainActor
@@ -896,15 +1028,10 @@ private enum DisplayPageScriptSmokeError: Error {
 private func evaluateDisplayPageRuntimeScript(
     in responseText: String
 ) throws -> DisplayPageScriptSmokeResult {
-    guard let scriptOpenRange = responseText.range(of: "<script>", options: .backwards),
-          let scriptCloseRange = responseText.range(
-              of: "</script>",
-              range: scriptOpenRange.upperBound..<responseText.endIndex
-          ) else {
+    let script = inlineRuntimeScripts(in: responseText).joined(separator: "\n")
+    guard !script.isEmpty else {
         throw DisplayPageScriptSmokeError.missingRuntimeScript
     }
-
-    let script = String(responseText[scriptOpenRange.upperBound..<scriptCloseRange.lowerBound])
     let context = JSContext()!
     var exceptionMessage: String?
     context.exceptionHandler = { _, exception in
@@ -992,6 +1119,8 @@ private func evaluateDisplayPageRuntimeScript(
             },
             setTimeout: function() { return 1; },
             clearTimeout: function() {},
+            setInterval: function() { return 1; },
+            clearInterval: function() {},
             addEventListener: function() {}
         };
 
@@ -1038,7 +1167,6 @@ private func evaluateDisplayPageRuntimeScript(
         var __codecPreferenceFmtpLines = receiverCodecPreferences().map(function(codec) {
             return codec.sdpFmtpLine || "";
         });
-        var __receiverCapabilitySummary = receiverVideoCodecCapabilitySummary();
         var __selectedCodec = selectedCodecFromAnswerSDP(
             "v=0\\r\\n" +
             "m=video 9 UDP/TLS/RTP/SAVPF 98 99\\r\\n" +
@@ -1077,20 +1205,43 @@ private func evaluateDisplayPageRuntimeScript(
         } catch (error) {
             __marksMissingCapabilitiesAsRequirementError = isCodecRequirementError(error);
         }
-        expectedSourceVideoSpec = sourceSpecFromSignal({ width: 2560, height: 1440, framesPerSecond: 60 });
-        logBrowserVideoStats(
-            {
-                frameWidth: 1280,
-                frameHeight: 720,
-                framesPerSecond: 30,
-                framesDropped: 0,
-                jitter: 0,
-                packetsLost: 0
-            },
+        expectedSourceVideoSpec = null;
+        updateLiveStatusFromStats(
+            { frameWidth: 1920, frameHeight: 1080, framesPerSecond: 60 },
             { mimeType: "video/AV1" },
-            { bitrateBps: 4000000 }
+            null
         );
-        var __belowSourceStatus = __elements["status"].textContent;
+        var __videoInfoWithoutSource = __elements["video-info"].textContent;
+        expectedSourceVideoSpec = sourceSpecFromSignal({
+            width: 1920,
+            height: 1080,
+            framesPerSecond: 60
+        });
+        updateLiveStatusFromStats(
+            { frameWidth: 1920, frameHeight: 1080, framesPerSecond: 58, framesDropped: 0, packetsLost: 0 },
+            { mimeType: "video/AV1" },
+            { framesPerSecond: 58, bitrateBps: 4000000 }
+        );
+        var __videoInfoWithSource = __elements["video-info"].textContent;
+        updateLiveStatusFromStats(
+            { frameWidth: 1920, frameHeight: 1080, framesPerSecond: 6, framesDropped: 0, packetsLost: 0 },
+            { mimeType: "video/AV1" },
+            { framesPerSecond: 6, bitrateBps: 42000 }
+        );
+        var __videoInfoLowMotionSource = __elements["video-info"].textContent;
+        updateLiveStatusFromStats(
+            { frameWidth: 1280, frameHeight: 720 },
+            { mimeType: "video/AV1" },
+            { framesPerSecond: 30 }
+        );
+        var __videoInfoBelowSource = __elements["video-info"].textContent;
+        setProgressOverlay("Specific setup", "Specific body");
+        var __connectionStatusTitle = __elements["connection-status-title"].textContent;
+        var __connectionStatusDetail = __elements["connection-status-detail"].textContent;
+        var __loadingOverlayVisibleAfterProgress = __elements["overlay"].hidden === false;
+        var __streamStartupTimeoutError = streamStartupTimeoutError();
+        var __streamStartupTimeoutIsRecoverable = isStreamStartupTimeoutError(__streamStartupTimeoutError);
+        var __streamStartupTimeoutMessage = __streamStartupTimeoutError.message;
         """
     )
     if let exceptionMessage {
@@ -1106,27 +1257,71 @@ private func evaluateDisplayPageRuntimeScript(
     let codecPreferenceFmtpLinesJSON = context.evaluateScript("JSON.stringify(__codecPreferenceFmtpLines)")?.toString() ?? "[]"
     let codecPreferenceFmtpLinesData = Data(codecPreferenceFmtpLinesJSON.utf8)
     let codecPreferenceFmtpLines = (try? JSONDecoder().decode([String].self, from: codecPreferenceFmtpLinesData)) ?? []
-    let receiverCapabilitySummary = context.evaluateScript("__receiverCapabilitySummary")?.toString() ?? ""
     let selectedCodec = context.evaluateScript("__selectedCodec")?.toString() ?? ""
     let rejectsUnexpectedCodec = context.evaluateScript("__rejectsUnexpectedCodec")?.toBool() ?? false
     let marksMissingCodecAsRequirementError =
         context.evaluateScript("__marksMissingCodecAsRequirementError")?.toBool() ?? false
     let marksMissingCapabilitiesAsRequirementError =
         context.evaluateScript("__marksMissingCapabilitiesAsRequirementError")?.toBool() ?? false
-    let belowSourceStatus = context.evaluateScript("__belowSourceStatus")?.toString() ?? ""
+    let videoInfoWithoutSource = context.evaluateScript("__videoInfoWithoutSource")?.toString() ?? ""
+    let videoInfoWithSource = context.evaluateScript("__videoInfoWithSource")?.toString() ?? ""
+    let videoInfoLowMotionSource = context.evaluateScript("__videoInfoLowMotionSource")?.toString() ?? ""
+    let videoInfoBelowSource = context.evaluateScript("__videoInfoBelowSource")?.toString() ?? ""
+    let connectionStatusTitle = context.evaluateScript("__connectionStatusTitle")?.toString() ?? ""
+    let connectionStatusDetail = context.evaluateScript("__connectionStatusDetail")?.toString() ?? ""
+    let loadingOverlayVisibleAfterProgress =
+        context.evaluateScript("__loadingOverlayVisibleAfterProgress")?.toBool() ?? false
+    let streamStartupTimeoutIsRecoverable =
+        context.evaluateScript("__streamStartupTimeoutIsRecoverable")?.toBool() ?? false
+    let streamStartupTimeoutMessage = context.evaluateScript("__streamStartupTimeoutMessage")?.toString() ?? ""
     return DisplayPageScriptSmokeResult(
         documentTitle: documentTitle,
         scaleButtonText: scaleButtonText,
         toggleCallCount: toggleCallCount,
         codecPreferenceMimeTypes: codecPreferenceMimeTypes,
         codecPreferenceFmtpLines: codecPreferenceFmtpLines,
-        receiverCapabilitySummary: receiverCapabilitySummary,
         selectedCodec: selectedCodec,
         rejectsUnexpectedCodec: rejectsUnexpectedCodec,
         marksMissingCodecAsRequirementError: marksMissingCodecAsRequirementError,
         marksMissingCapabilitiesAsRequirementError: marksMissingCapabilitiesAsRequirementError,
-        belowSourceStatus: belowSourceStatus
+        videoInfoWithoutSource: videoInfoWithoutSource,
+        videoInfoWithSource: videoInfoWithSource,
+        videoInfoLowMotionSource: videoInfoLowMotionSource,
+        videoInfoBelowSource: videoInfoBelowSource,
+        connectionStatusTitle: connectionStatusTitle,
+        connectionStatusDetail: connectionStatusDetail,
+        loadingOverlayVisibleAfterProgress: loadingOverlayVisibleAfterProgress,
+        streamStartupTimeoutIsRecoverable: streamStartupTimeoutIsRecoverable,
+        streamStartupTimeoutMessage: streamStartupTimeoutMessage
     )
+}
+
+private func inlineRuntimeScripts(in responseText: String) -> [String] {
+    var scripts: [String] = []
+    var searchStart = responseText.startIndex
+    while let scriptOpenRange = responseText.range(
+        of: "<script>",
+        range: searchStart..<responseText.endIndex
+    ), let scriptCloseRange = responseText.range(
+        of: "</script>",
+        range: scriptOpenRange.upperBound..<responseText.endIndex
+    ) {
+        scripts.append(String(responseText[scriptOpenRange.upperBound..<scriptCloseRange.lowerBound]))
+        searchStart = scriptCloseRange.upperBound
+    }
+    return scripts
+}
+
+private func sendRequestAndReadUntilServerClose(
+    port: UInt16,
+    request: Data,
+    timeoutMilliseconds: Int = 5000
+) async throws -> Data {
+    let fd = try await connectLoopbackSocket(port: port)
+    defer { close(fd) }
+    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
+    try sendAll(fd, data: request)
+    return try readAll(from: fd)
 }
 
 private extension String {
