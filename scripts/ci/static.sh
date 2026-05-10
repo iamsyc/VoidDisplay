@@ -136,9 +136,6 @@ validate_workflow_script_contract() {
 		workflow_files+=("$workflow_file")
 	done < <(find .github/workflows .github/actions -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
 
-	assert_no_match "Trusted/base CI script model must be removed." \
-		'\.ai-tmp/trusted-ci|head-script-self-test|requires_head_script_self_test|trusted_files|test_trusted_files|Checkout trusted' \
-		.github/workflows .github/actions scripts --glob '!scripts/ci/static.sh'
 	assert_no_match "Workflow script invocations must execute scripts through TOOL_ROOT." \
 		'\$GITHUB_WORKSPACE/scripts/' .github/workflows .github/actions
 

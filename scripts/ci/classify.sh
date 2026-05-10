@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034,SC2154
 set -euo pipefail
 
 # shellcheck source=scripts/lib/contract.sh
@@ -48,18 +49,28 @@ SUMMARY_PATH="${SUMMARY_PATH:-$(make_artifact_dir classify)/classify-summary.jso
 require_command git jq
 
 RULES_PATH="$TOOL_ROOT/scripts/ci/classification-rules.json"
-classification_categories=(
-	code
-	ui
-	script
-	product_code
-	test_code
-	ci_config
-	release
-	dependency_manifest
-	tooling_config
-	docs
+classification_categories=(code ui script product_code test_code ci_config release dependency_manifest tooling_config docs)
+relevant_flags=()
+for category in "${classification_categories[@]}"; do
+	[[ "$category" == "docs" ]] || relevant_flags+=("${category}_relevant")
+done
+classification_flags=("${relevant_flags[@]}" docs_only unknown_relevant)
+requirement_flags=(
+	requires_static
+	requires_dependency_review
+	requires_unit
+	requires_xcode_build
+	requires_ui_smoke
+	requires_release_smoke
 )
+push_required_flags=(
+	requires_static
+	requires_unit
+	requires_xcode_build
+	requires_ui_smoke
+	requires_release_smoke
+)
+output_fields=("${classification_flags[@]:0:3}" change_scope "${classification_flags[@]:3}" "${requirement_flags[@]}")
 
 [[ -f "$RULES_PATH" ]] || die "Missing classification rules: $RULES_PATH"
 jq -e '.categories | type == "object"' "$RULES_PATH" >/dev/null || die "Invalid classification rules: $RULES_PATH"
@@ -112,61 +123,19 @@ path_matches_category() {
 	return 1
 }
 
-is_code_path() {
-	path_matches_category code "$1"
-}
-
-is_ui_path() {
-	path_matches_category ui "$1"
-}
-
-is_script_path() {
-	path_matches_category script "$1"
-}
-
-is_product_code_path() {
-	path_matches_category product_code "$1"
-}
-
-is_test_code_path() {
-	path_matches_category test_code "$1"
-}
-
-is_ci_config_path() {
-	path_matches_category ci_config "$1"
-}
-
-is_release_path() {
-	path_matches_category release "$1"
-}
-
-is_dependency_manifest_path() {
-	path_matches_category dependency_manifest "$1"
-}
-
-is_tooling_config_path() {
-	path_matches_category tooling_config "$1"
-}
-
-is_docs_path() {
-	path_matches_category docs "$1"
-}
-
-is_known_path() {
-	local file_path="$1"
-	local category
-
-	for category in "${classification_categories[@]}"; do
-		path_matches_category "$category" "$file_path" && return 0
-	done
-	return 1
-}
-
 changed_files=()
-changed_entry_status=()
-changed_entry_old_path=()
-changed_entry_new_path=()
+changed_entry_json_items=()
 classification_reason="diff"
+
+set_flags() {
+	local value="$1"
+	local flag
+	shift
+
+	for flag in "$@"; do
+		printf -v "$flag" '%s' "$value"
+	done
+}
 
 append_changed_file() {
 	local file_path="$1"
@@ -180,9 +149,11 @@ append_changed_entry() {
 	local old_path="$2"
 	local new_path="${3:-}"
 
-	changed_entry_status+=("$status")
-	changed_entry_old_path+=("$old_path")
-	changed_entry_new_path+=("$new_path")
+	changed_entry_json_items+=("$(jq -cn \
+		--arg status "$status" \
+		--arg old_path "$old_path" \
+		--arg new_path "$new_path" \
+		'{status: $status, old_path: $old_path, new_path: (if $new_path == "" then null else $new_path end)}')")
 	append_changed_file "$old_path"
 	append_changed_file "$new_path"
 }
@@ -225,71 +196,36 @@ deduplicate_changed_files() {
 
 if is_zero_sha "$BASE_SHA" || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
 	classification_reason="full_scan"
-	code_relevant="true"
-	ui_relevant="true"
-	script_relevant="true"
-	product_code_relevant="true"
-	test_code_relevant="true"
-	ci_config_relevant="true"
-	release_relevant="true"
-	dependency_manifest_relevant="true"
-	tooling_config_relevant="true"
+	set_flags true "${relevant_flags[@]}"
 	docs_only="false"
 	unknown_relevant="false"
 else
 	collect_changed_entries
 	deduplicate_changed_files
-	code_relevant="false"
-	ui_relevant="false"
-	script_relevant="false"
-	product_code_relevant="false"
-	test_code_relevant="false"
-	ci_config_relevant="false"
-	release_relevant="false"
-	dependency_manifest_relevant="false"
-	tooling_config_relevant="false"
-	docs_only="false"
-	unknown_relevant="false"
+	set_flags false "${classification_flags[@]}"
 	if [[ "${#changed_files[@]}" -gt 0 ]]; then
 		all_docs="true"
 		for file_path in "${changed_files[@]}"; do
-			if is_code_path "$file_path"; then
-				code_relevant="true"
-			fi
-			if is_ui_path "$file_path"; then
-				ui_relevant="true"
-			fi
-			if is_script_path "$file_path"; then
-				script_relevant="true"
-			fi
-			if is_product_code_path "$file_path"; then
-				product_code_relevant="true"
-			fi
-			if is_test_code_path "$file_path"; then
-				test_code_relevant="true"
-			fi
-			if is_ci_config_path "$file_path"; then
-				ci_config_relevant="true"
-			fi
-			if is_release_path "$file_path"; then
-				release_relevant="true"
-			fi
-			if is_dependency_manifest_path "$file_path"; then
-				dependency_manifest_relevant="true"
-			fi
-			if is_tooling_config_path "$file_path"; then
-				tooling_config_relevant="true"
-			fi
-			if ! is_docs_path "$file_path"; then
+			matched_any="false"
+			file_docs="false"
+			for category in "${classification_categories[@]}"; do
+				if path_matches_category "$category" "$file_path"; then
+					matched_any="true"
+					if [[ "$category" == "docs" ]]; then
+						file_docs="true"
+					else
+						printf -v "${category}_relevant" '%s' true
+					fi
+				fi
+			done
+			if [[ "$file_docs" != "true" ]]; then
 				all_docs="false"
 			fi
-			if ! is_known_path "$file_path"; then
+			if [[ "$matched_any" != "true" ]]; then
 				unknown_relevant="true"
 			fi
 		done
-		if [[ "$all_docs" == "true" ]]; then
-			docs_only="true"
-		fi
+		[[ "$all_docs" == "true" ]] && docs_only="true"
 	fi
 fi
 
@@ -300,19 +236,10 @@ elif [[ "$code_relevant" == "true" ]]; then
 	change_scope="code"
 fi
 
-requires_static="false"
-requires_dependency_review="false"
-requires_unit="false"
-requires_xcode_build="false"
-requires_ui_smoke="false"
-requires_release_smoke="false"
+set_flags false "${requirement_flags[@]}"
 
 if [[ "$EVENT_NAME" == "push" ]]; then
-	requires_static="true"
-	requires_unit="true"
-	requires_xcode_build="true"
-	requires_ui_smoke="true"
-	requires_release_smoke="true"
+	set_flags true "${push_required_flags[@]}"
 elif [[ "$docs_only" != "true" ]]; then
 	if [[ "$code_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
 		requires_static="true"
@@ -335,24 +262,9 @@ elif [[ "$docs_only" != "true" ]]; then
 	fi
 fi
 
-append_github_output code_relevant "$code_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output ui_relevant "$ui_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output script_relevant "$script_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output change_scope "$change_scope" "$GITHUB_OUTPUT_PATH"
-append_github_output product_code_relevant "$product_code_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output test_code_relevant "$test_code_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output ci_config_relevant "$ci_config_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output release_relevant "$release_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output dependency_manifest_relevant "$dependency_manifest_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output tooling_config_relevant "$tooling_config_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output docs_only "$docs_only" "$GITHUB_OUTPUT_PATH"
-append_github_output unknown_relevant "$unknown_relevant" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_static "$requires_static" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_dependency_review "$requires_dependency_review" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_unit "$requires_unit" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_xcode_build "$requires_xcode_build" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_ui_smoke "$requires_ui_smoke" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_release_smoke "$requires_release_smoke" "$GITHUB_OUTPUT_PATH"
+for field in "${output_fields[@]}"; do
+	append_github_output "$field" "${!field}" "$GITHUB_OUTPUT_PATH"
+done
 
 if [[ "${#changed_files[@]}" -gt 0 ]]; then
 	changed_files_json="$(printf '%s\n' "${changed_files[@]}" | jq -R . | jq -s .)"
@@ -360,69 +272,34 @@ else
 	changed_files_json="[]"
 fi
 
-if [[ "${#changed_entry_status[@]}" -gt 0 ]]; then
-	changed_entries_json="$(
-		for index in "${!changed_entry_status[@]}"; do
-			jq -n \
-				--arg status "${changed_entry_status[$index]}" \
-				--arg old_path "${changed_entry_old_path[$index]}" \
-				--arg new_path "${changed_entry_new_path[$index]}" \
-				'{status: $status, old_path: $old_path, new_path: (if $new_path == "" then null else $new_path end)}'
-		done | jq -s .
-	)"
+if [[ "${#changed_entry_json_items[@]}" -gt 0 ]]; then
+	changed_entries_json="$(printf '%s\n' "${changed_entry_json_items[@]}" | jq -s .)"
 else
 	changed_entries_json="[]"
 fi
 
+summary_flags_json="$(
+	for field in "${classification_flags[@]}" "${requirement_flags[@]}"; do
+		jq -n --arg field "$field" --arg value "${!field}" '{($field): ($value == "true")}'
+	done | jq -s add
+)"
+
 write_json_file "$SUMMARY_PATH" \
 	--arg base "$BASE_SHA" \
 	--arg head "$HEAD_SHA" \
-	--arg code_relevant "$code_relevant" \
-	--arg ui_relevant "$ui_relevant" \
-	--arg script_relevant "$script_relevant" \
-	--arg product_code_relevant "$product_code_relevant" \
-	--arg test_code_relevant "$test_code_relevant" \
-	--arg ci_config_relevant "$ci_config_relevant" \
-	--arg release_relevant "$release_relevant" \
-	--arg dependency_manifest_relevant "$dependency_manifest_relevant" \
-	--arg tooling_config_relevant "$tooling_config_relevant" \
-	--arg docs_only "$docs_only" \
-	--arg unknown_relevant "$unknown_relevant" \
-	--arg requires_static "$requires_static" \
-	--arg requires_dependency_review "$requires_dependency_review" \
-	--arg requires_unit "$requires_unit" \
-	--arg requires_xcode_build "$requires_xcode_build" \
-	--arg requires_ui_smoke "$requires_ui_smoke" \
-	--arg requires_release_smoke "$requires_release_smoke" \
 	--arg change_scope "$change_scope" \
 	--arg reason "$classification_reason" \
+	--argjson flags "$summary_flags_json" \
 	--argjson changed_files "$changed_files_json" \
 	--argjson changed_entries "$changed_entries_json" \
 	'{
 	  base: $base,
 	  head: $head,
-		  code_relevant: ($code_relevant == "true"),
-		  ui_relevant: ($ui_relevant == "true"),
-		  script_relevant: ($script_relevant == "true"),
-		  product_code_relevant: ($product_code_relevant == "true"),
-		  test_code_relevant: ($test_code_relevant == "true"),
-		  ci_config_relevant: ($ci_config_relevant == "true"),
-		  release_relevant: ($release_relevant == "true"),
-		  dependency_manifest_relevant: ($dependency_manifest_relevant == "true"),
-		  tooling_config_relevant: ($tooling_config_relevant == "true"),
-		  docs_only: ($docs_only == "true"),
-		  unknown_relevant: ($unknown_relevant == "true"),
-		  requires_static: ($requires_static == "true"),
-		  requires_dependency_review: ($requires_dependency_review == "true"),
-		  requires_unit: ($requires_unit == "true"),
-		  requires_xcode_build: ($requires_xcode_build == "true"),
-		  requires_ui_smoke: ($requires_ui_smoke == "true"),
-		  requires_release_smoke: ($requires_release_smoke == "true"),
-		  change_scope: $change_scope,
+	  change_scope: $change_scope,
 	  reason: $reason,
 	  changed_files: $changed_files,
 	  changed_entries: $changed_entries
-	}'
+	} + $flags'
 
 info "Change scope: $change_scope code_relevant=$code_relevant ui_relevant=$ui_relevant requires_unit=$requires_unit requires_xcode_build=$requires_xcode_build"
 info "Classification summary: $SUMMARY_PATH"

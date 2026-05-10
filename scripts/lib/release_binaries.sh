@@ -79,4 +79,36 @@ if [[ -z "${VOIDDISPLAY_RELEASE_BINARIES_SH_SOURCED:-}" ]]; then
 		require_binary_arch "WebRTC" "$webrtc_binary" "$expected_arch"
 		require_binary_arch "Relay" "$relay_binary" "$expected_arch"
 	}
+
+	thin_and_sign_release_app() {
+		local app_path="$1"
+		local expected_arch="$2"
+		local webrtc_framework="$app_path/Contents/Frameworks/WebRTC.framework"
+		local webrtc_binary
+		local temp_binary
+		local relay_binary="$app_path/Contents/Resources/voiddisplay-relay"
+
+		[[ -d "$app_path" ]] || die "Expected app not found: $app_path"
+		[[ -x "$relay_binary" ]] || die "Expected relay binary to be executable: $relay_binary"
+		webrtc_binary="$(resolve_webrtc_binary "$webrtc_framework")"
+
+		info "WebRTC binary before thin: $webrtc_binary"
+		lipo -archs "$webrtc_binary"
+		temp_binary="$webrtc_binary.thin"
+		lipo -thin "$expected_arch" "$webrtc_binary" -output "$temp_binary"
+		mv "$temp_binary" "$webrtc_binary"
+		chmod +x "$webrtc_binary"
+		info "WebRTC binary after thin:"
+		lipo -archs "$webrtc_binary"
+
+		require_binary_arch "Relay" "$relay_binary" "$expected_arch"
+		info "Applying ad hoc signature for local release packaging. Developer ID signing and notarization are not configured."
+		codesign --force --sign - --timestamp=none "$relay_binary"
+		codesign --force --sign - --timestamp=none "$webrtc_framework"
+		codesign --force --sign - --timestamp=none --deep "$app_path"
+		codesign --verify --deep --strict --verbose=2 "$app_path"
+		codesign --verify --strict --verbose=2 "$relay_binary"
+
+		validate_release_app_binaries "$app_path" "$expected_arch"
+	}
 fi
