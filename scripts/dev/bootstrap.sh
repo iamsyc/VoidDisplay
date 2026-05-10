@@ -63,7 +63,11 @@ install_pinned_tools_with_mise() {
 	cd "$TOOL_ROOT"
 	export MISE_YES=1
 	export MISE_TRUSTED_CONFIG_PATHS="$TOOL_ROOT"
-	mise install "${mise_targets[@]}"
+	if ((${#mise_targets[@]})); then
+		mise install "${mise_targets[@]}"
+	else
+		mise install
+	fi
 	mise reshim >/dev/null 2>&1 || true
 	activate_mise_shims
 }
