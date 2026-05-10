@@ -52,7 +52,6 @@ jobs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       unknown_relevant: ${{ steps.classify.outputs.unknown_relevant }}
       requires_static: ${{ steps.classify.outputs.requires_static }}
-      requires_head_script_self_test: ${{ steps.classify.outputs.requires_head_script_self_test }}
       requires_dependency_review: ${{ steps.classify.outputs.requires_dependency_review }}
       requires_unit: ${{ steps.classify.outputs.requires_unit }}
       requires_xcode_build: ${{ steps.classify.outputs.requires_xcode_build }}
@@ -63,13 +62,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-
-      - name: Checkout trusted classification scripts
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .ai-tmp/trusted-ci
           persist-credentials: false
 
       - name: Classify changed files
@@ -83,26 +75,6 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-            for required in \
-              scripts/build-relay.sh \
-              scripts/lib/contract.sh \
-              scripts/lib/common.sh \
-              scripts/lib/artifacts.sh \
-              scripts/lib/xcode.sh \
-              scripts/lib/xcresult.sh \
-              scripts/lib/architecture.sh \
-              scripts/lib/release_binaries.sh \
-              scripts/dev/bootstrap.sh \
-              scripts/dev/doctor.sh \
-              scripts/ci/classify.sh; do
-              if [ ! -e "$tool_root/$required" ]; then
-                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
-                exit 1
-              fi
-            done
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/classify.sh" \
             --base "$BASE_SHA" \
@@ -148,50 +120,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Checkout trusted scripts
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .ai-tmp/trusted-ci
           persist-credentials: false
 
       - name: Bootstrap static tools
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-            for required in \
-              scripts/build-relay.sh \
-              scripts/lib/contract.sh \
-              scripts/lib/common.sh \
-              scripts/lib/artifacts.sh \
-              scripts/lib/xcode.sh \
-              scripts/lib/xcresult.sh \
-              scripts/lib/architecture.sh \
-              scripts/lib/release_binaries.sh \
-              scripts/dev/bootstrap.sh \
-              scripts/dev/doctor.sh \
-              scripts/ci/classify.sh \
-              scripts/ci/static.sh \
-              scripts/ci/unit.sh \
-              scripts/ci/xcode.sh \
-              scripts/ci/ui_smoke.sh \
-              scripts/ci/release_smoke.sh \
-              scripts/ci/release_arch_check.sh \
-              scripts/ci/download_relay_modules.sh \
-              scripts/release/thin_webrtc_and_sign.sh; do
-              if [ ! -e "$tool_root/$required" ]; then
-                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
-                exit 1
-              fi
-            done
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
@@ -200,53 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-          fi
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/static.sh"
-
-  head_script_self_test:
-    name: head-script-self-test
-    needs:
-      - classify_changes
-    if: ${{ github.event_name == 'pull_request' && needs.classify_changes.outputs.requires_head_script_self_test == 'true' }}
-    runs-on: macos-26
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout head without credentials
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          persist-credentials: false
-
-      - name: Checkout trusted bootstrap scripts
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .ai-tmp/trusted-ci
-          persist-credentials: false
-
-      - name: Bootstrap trusted head-test tools
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
-
-      - name: Validate head scripts
-        shell: bash
-        env:
-          GITHUB_TOKEN: ''
-          GH_TOKEN: ''
-          MISE_GITHUB_TOKEN: ''
-          AQUA_GITHUB_TOKEN: ''
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE"
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/static.sh"
 
   unit_tests:
@@ -272,13 +162,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Checkout trusted scripts
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .ai-tmp/trusted-ci
           persist-credentials: false
 
       - name: Select Xcode
@@ -286,32 +170,9 @@ jobs:
 
       - name: Bootstrap tools
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-            for required in \
-              scripts/build-relay.sh \
-              scripts/lib/contract.sh \
-              scripts/lib/common.sh \
-              scripts/lib/artifacts.sh \
-              scripts/lib/xcode.sh \
-              scripts/lib/xcresult.sh \
-              scripts/lib/architecture.sh \
-              scripts/lib/release_binaries.sh \
-              scripts/dev/bootstrap.sh \
-              scripts/dev/doctor.sh \
-              scripts/ci/download_relay_modules.sh \
-              scripts/ci/xcode.sh; do
-              if [ ! -e "$tool_root/$required" ]; then
-                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
-                exit 1
-              fi
-            done
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
@@ -320,9 +181,6 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/doctor.sh" \
             --out-dir .ai-tmp/xcode-build/doctor
@@ -332,9 +190,6 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/xcode.sh" \
             --action build \
@@ -373,66 +228,27 @@ jobs:
       artifact_name_suffix: ${{ matrix.case_name }}
       enforce_failure: true
 
-  release_build_check:
-    name: release-build-check (${{ matrix.label }})
+  release_build_check_arm64:
+    name: release-build-check (arm64)
     needs:
       - classify_changes
       - script_static_checks
     if: ${{ needs.classify_changes.outputs.requires_release_smoke == 'true' }}
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: macos-26
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: arm64
-            arch: arm64
-            runs_on: macos-26
-          - label: intel64
-            arch: x86_64
-            runs_on: macos-26-intel
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Checkout trusted scripts
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .ai-tmp/trusted-ci
           persist-credentials: false
 
       - name: Bootstrap tools
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-            for required in \
-              scripts/build-relay.sh \
-              scripts/lib/contract.sh \
-              scripts/lib/common.sh \
-              scripts/lib/artifacts.sh \
-              scripts/lib/xcode.sh \
-              scripts/lib/architecture.sh \
-              scripts/lib/release_binaries.sh \
-              scripts/dev/bootstrap.sh \
-              scripts/ci/download_relay_modules.sh \
-              scripts/ci/release_arch_check.sh \
-              scripts/release/thin_webrtc_and_sign.sh \
-              scripts/ci/release_smoke.sh; do
-              if [ ! -e "$tool_root/$required" ]; then
-                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
-                exit 1
-              fi
-            done
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
@@ -441,21 +257,62 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/release_smoke.sh" \
-            --arch '${{ matrix.arch }}' \
-            --label '${{ matrix.label }}' \
-            --out-dir '.ai-tmp/release-check-${{ matrix.label }}'
+            --arch arm64 \
+            --label arm64 \
+            --out-dir .ai-tmp/release-check-arm64
 
       - name: Upload release smoke artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: release-smoke-${{ matrix.label }}
-          path: .ai-tmp/release-check-${{ matrix.label }}
+          name: release-smoke-arm64
+          path: .ai-tmp/release-check-arm64
+          if-no-files-found: warn
+          retention-days: 7
+
+  release_build_check_intel64:
+    name: release-build-check (intel64)
+    needs:
+      - classify_changes
+      - script_static_checks
+    if: ${{ github.event_name == 'push' && needs.classify_changes.outputs.requires_release_smoke == 'true' }}
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Release smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/release_smoke.sh" \
+            --arch x86_64 \
+            --label intel64 \
+            --out-dir .ai-tmp/release-check-intel64
+
+      - name: Upload release smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-smoke-intel64
+          path: .ai-tmp/release-check-intel64
           if-no-files-found: warn
           retention-days: 7
 
@@ -466,11 +323,11 @@ jobs:
       - classify_changes
       - dependency_review
       - script_static_checks
-      - head_script_self_test
       - unit_tests
       - xcode_build
       - ui_smoke_tests
-      - release_build_check
+      - release_build_check_arm64
+      - release_build_check_intel64
     runs-on: macos-26
     timeout-minutes: 5
     permissions:
@@ -494,7 +351,6 @@ jobs:
           DOCS_ONLY: ${{ needs.classify_changes.outputs.docs_only }}
           UNKNOWN_RELEVANT: ${{ needs.classify_changes.outputs.unknown_relevant }}
           REQUIRES_STATIC: ${{ needs.classify_changes.outputs.requires_static }}
-          REQUIRES_HEAD_SCRIPT_SELF_TEST: ${{ needs.classify_changes.outputs.requires_head_script_self_test }}
           REQUIRES_DEPENDENCY_REVIEW: ${{ needs.classify_changes.outputs.requires_dependency_review }}
           REQUIRES_UNIT: ${{ needs.classify_changes.outputs.requires_unit }}
           REQUIRES_XCODE_BUILD: ${{ needs.classify_changes.outputs.requires_xcode_build }}
@@ -502,11 +358,11 @@ jobs:
           REQUIRES_RELEASE_SMOKE: ${{ needs.classify_changes.outputs.requires_release_smoke }}
           DEPENDENCY_RESULT: ${{ needs.dependency_review.result }}
           SCRIPT_RESULT: ${{ needs.script_static_checks.result }}
-          HEAD_SCRIPT_RESULT: ${{ needs.head_script_self_test.result }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           XCODE_RESULT: ${{ needs.xcode_build.result }}
           UI_RESULT: ${{ needs.ui_smoke_tests.result }}
-          RELEASE_RESULT: ${{ needs.release_build_check.result }}
+          RELEASE_ARM64_RESULT: ${{ needs.release_build_check_arm64.result }}
+          RELEASE_INTEL64_RESULT: ${{ needs.release_build_check_intel64.result }}
         run: |
           set -euo pipefail
 
@@ -515,14 +371,14 @@ jobs:
           echo "Base ref: ${BASE_REF:-n/a}"
           echo "Change scope: ${CHANGE_SCOPE}"
           echo "Relevant: code=${CODE_RELEVANT} ui=${UI_RELEVANT} script=${SCRIPT_RELEVANT} product=${PRODUCT_CODE_RELEVANT} test=${TEST_CODE_RELEVANT} ci=${CI_CONFIG_RELEVANT} release=${RELEASE_RELEVANT} dependency=${DEPENDENCY_MANIFEST_RELEVANT} tooling=${TOOLING_CONFIG_RELEVANT} docs_only=${DOCS_ONLY} unknown=${UNKNOWN_RELEVANT}"
-          echo "Required: static=${REQUIRES_STATIC} head_script=${REQUIRES_HEAD_SCRIPT_SELF_TEST} dependency=${REQUIRES_DEPENDENCY_REVIEW} unit=${REQUIRES_UNIT} xcode=${REQUIRES_XCODE_BUILD} ui=${REQUIRES_UI_SMOKE} release=${REQUIRES_RELEASE_SMOKE}"
+          echo "Required: static=${REQUIRES_STATIC} dependency=${REQUIRES_DEPENDENCY_REVIEW} unit=${REQUIRES_UNIT} xcode=${REQUIRES_XCODE_BUILD} ui=${REQUIRES_UI_SMOKE} release=${REQUIRES_RELEASE_SMOKE}"
           echo "Dependency review: ${DEPENDENCY_RESULT}"
           echo "Static: ${SCRIPT_RESULT}"
-          echo "Head script self-test: ${HEAD_SCRIPT_RESULT}"
           echo "Unit: ${UNIT_RESULT}"
           echo "Xcode build: ${XCODE_RESULT}"
           echo "UI smoke: ${UI_RESULT}"
-          echo "Release smoke: ${RELEASE_RESULT}"
+          echo "Release smoke arm64: ${RELEASE_ARM64_RESULT}"
+          echo "Release smoke intel64: ${RELEASE_INTEL64_RESULT}"
 
           if [ "$CLASSIFY_RESULT" != "success" ]; then
             echo "Gate failed because classify-changes result is ${CLASSIFY_RESULT}."
@@ -547,11 +403,15 @@ jobs:
 
           check_required "$REQUIRES_DEPENDENCY_REVIEW" "$DEPENDENCY_RESULT" "dependency-review"
           check_required "$REQUIRES_STATIC" "$SCRIPT_RESULT" "script-static-checks"
-          check_required "$REQUIRES_HEAD_SCRIPT_SELF_TEST" "$HEAD_SCRIPT_RESULT" "head-script-self-test"
           check_required "$REQUIRES_UNIT" "$UNIT_RESULT" "unit-tests"
           check_required "$REQUIRES_XCODE_BUILD" "$XCODE_RESULT" "xcode-build"
           check_required "$REQUIRES_UI_SMOKE" "$UI_RESULT" "ui-smoke-tests"
-          check_required "$REQUIRES_RELEASE_SMOKE" "$RELEASE_RESULT" "release-build-check"
+          check_required "$REQUIRES_RELEASE_SMOKE" "$RELEASE_ARM64_RESULT" "release-build-check-arm64"
+          if [ "$EVENT_NAME" = "push" ]; then
+            check_required "$REQUIRES_RELEASE_SMOKE" "$RELEASE_INTEL64_RESULT" "release-build-check-intel64"
+          else
+            check_required "false" "$RELEASE_INTEL64_RESULT" "release-build-check-intel64"
+          fi
 
           exit 0
 
@@ -562,11 +422,11 @@ jobs:
       - classify_changes
       - dependency_review
       - script_static_checks
-      - head_script_self_test
       - unit_tests
       - xcode_build
       - ui_smoke_tests
-      - release_build_check
+      - release_build_check_arm64
+      - release_build_check_intel64
       - ci_gate
     runs-on: macos-26
     timeout-minutes: 5
@@ -593,7 +453,6 @@ jobs:
           DOCS_ONLY: ${{ needs.classify_changes.outputs.docs_only }}
           UNKNOWN_RELEVANT: ${{ needs.classify_changes.outputs.unknown_relevant }}
           REQUIRES_STATIC: ${{ needs.classify_changes.outputs.requires_static }}
-          REQUIRES_HEAD_SCRIPT_SELF_TEST: ${{ needs.classify_changes.outputs.requires_head_script_self_test }}
           REQUIRES_DEPENDENCY_REVIEW: ${{ needs.classify_changes.outputs.requires_dependency_review }}
           REQUIRES_UNIT: ${{ needs.classify_changes.outputs.requires_unit }}
           REQUIRES_XCODE_BUILD: ${{ needs.classify_changes.outputs.requires_xcode_build }}
@@ -601,7 +460,6 @@ jobs:
           REQUIRES_RELEASE_SMOKE: ${{ needs.classify_changes.outputs.requires_release_smoke }}
           DEPENDENCY_RESULT: ${{ needs.dependency_review.result }}
           SCRIPT_RESULT: ${{ needs.script_static_checks.result }}
-          HEAD_SCRIPT_RESULT: ${{ needs.head_script_self_test.result }}
           UNIT_RESULT: ${{ needs.unit_tests.result }}
           UNIT_ARTIFACT: ${{ needs.unit_tests.outputs.artifact_name }}
           UNIT_SWIFT_TEST_COUNT: ${{ needs.unit_tests.outputs.swift_test_count }}
@@ -609,7 +467,8 @@ jobs:
           UNIT_REASON: ${{ needs.unit_tests.outputs.unit_reason }}
           XCODE_RESULT: ${{ needs.xcode_build.result }}
           UI_RESULT: ${{ needs.ui_smoke_tests.result }}
-          RELEASE_RESULT: ${{ needs.release_build_check.result }}
+          RELEASE_ARM64_RESULT: ${{ needs.release_build_check_arm64.result }}
+          RELEASE_INTEL64_RESULT: ${{ needs.release_build_check_intel64.result }}
           GATE_RESULT: ${{ needs.ci_gate.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
@@ -631,8 +490,18 @@ jobs:
               'Failure classification is written by ui-smoke-summary.json in each artifact.',
               'Artifacts: ui-smoke-baseline, ui-smoke-permissionDenied, ui-smoke-rebuildFailed',
             ].join('<br>');
+            const releaseStatus = context.eventName === 'pull_request'
+              ? value('RELEASE_ARM64_RESULT', 'unknown')
+              : `arm64=${value('RELEASE_ARM64_RESULT', 'unknown')}<br>intel64=${value('RELEASE_INTEL64_RESULT', 'unknown')}`;
             const releaseDetails = [
-              'Artifacts: release-smoke-arm64, release-smoke-intel64',
+              `arm64=${value('RELEASE_ARM64_RESULT', 'unknown')}`,
+              `intel64=${value('RELEASE_INTEL64_RESULT', 'unknown')}`,
+              context.eventName === 'pull_request'
+                ? 'PR release smoke requires arm64 only.'
+                : 'Push release smoke requires arm64 and intel64.',
+              context.eventName === 'pull_request'
+                ? 'Artifacts: release-smoke-arm64'
+                : 'Artifacts: release-smoke-arm64, release-smoke-intel64',
               'Release verify summaries are produced by release.yml before publishing.',
             ].join('<br>');
             const classificationDetails = [
@@ -650,7 +519,6 @@ jobs:
             ].join('<br>');
             const requirementDetails = [
               `static=${value('REQUIRES_STATIC')}`,
-              `head_script=${value('REQUIRES_HEAD_SCRIPT_SELF_TEST')}`,
               `dependency=${value('REQUIRES_DEPENDENCY_REVIEW')}`,
               `unit=${value('REQUIRES_UNIT')}`,
               `xcode=${value('REQUIRES_XCODE_BUILD')}`,
@@ -662,11 +530,10 @@ jobs:
               ['Required Gates', 'derived', requirementDetails],
               ['Dependency Review', value('DEPENDENCY_RESULT', 'unknown'), `required=${value('REQUIRES_DEPENDENCY_REVIEW')}<br>high and critical vulnerabilities block`],
               ['Static Checks', value('SCRIPT_RESULT', 'unknown'), `required=${value('REQUIRES_STATIC')}<br>actionlint, shellcheck, shfmt, SwiftFormat, SwiftLint, action pinning`],
-              ['Head Script Self-Test', value('HEAD_SCRIPT_RESULT', 'unknown'), `required=${value('REQUIRES_HEAD_SCRIPT_SELF_TEST')}`],
               ['Unit Tests', value('UNIT_RESULT', 'unknown'), `required=${value('REQUIRES_UNIT')}<br>${unitDetails}`],
               ['Xcode Build', value('XCODE_RESULT', 'unknown'), `required=${value('REQUIRES_XCODE_BUILD')}<br>Debug build with zero warning scan<br>Artifact: xcode-build`],
               ['UI Smoke', value('UI_RESULT', 'unknown'), `required=${value('REQUIRES_UI_SMOKE')}<br>${uiDetails}`],
-              ['Release Smoke', value('RELEASE_RESULT', 'unknown'), `required=${value('REQUIRES_RELEASE_SMOKE')}<br>${releaseDetails}`],
+              ['Release Smoke', releaseStatus, `required=${value('REQUIRES_RELEASE_SMOKE')}<br>${releaseDetails}`],
               ['Artifacts', 'link', `[Open artifacts](${artifactsUrl})`],
               ['CI Gate', value('GATE_RESULT', 'unknown'), 'single branch protection check'],
             ];

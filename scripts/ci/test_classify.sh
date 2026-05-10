@@ -121,14 +121,17 @@ run_file_case docs_only pull_request main \
 	"docs_only=true code_relevant=false requires_static=false requires_unit=false unknown_relevant=false" \
 	docs/change.md
 run_file_case codeql_workflow pull_request main \
-	"ci_config_relevant=true script_relevant=true code_relevant=true requires_static=true requires_head_script_self_test=true requires_unit=false requires_xcode_build=false" \
+	"ci_config_relevant=true script_relevant=true code_relevant=true requires_static=true requires_unit=false requires_xcode_build=false" \
 	.github/workflows/codeql.yml
 run_file_case mise_config pull_request main \
-	"tooling_config_relevant=true ci_config_relevant=true requires_static=true requires_head_script_self_test=true requires_dependency_review=false requires_unit=false" \
+	"tooling_config_relevant=true ci_config_relevant=true requires_static=true requires_dependency_review=false requires_unit=false" \
 	mise.toml
 run_file_case package_manifest pull_request main \
 	"product_code_relevant=true dependency_manifest_relevant=true requires_dependency_review=true requires_unit=true requires_xcode_build=true" \
 	Package.swift
+run_file_case nested_package_resolved pull_request main \
+	"code_relevant=true product_code_relevant=true dependency_manifest_relevant=true requires_dependency_review=true requires_unit=true requires_xcode_build=true unknown_relevant=false" \
+	Apps/VoidDisplay/VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 run_file_case go_manifest pull_request main \
 	"product_code_relevant=true dependency_manifest_relevant=true release_relevant=true requires_release_smoke=true requires_unit=true requires_xcode_build=true" \
 	Tools/VoidDisplayRelay/go.mod
@@ -148,7 +151,7 @@ run_file_case app_resource pull_request main \
 	"product_code_relevant=true ui_relevant=true release_relevant=true requires_release_smoke=true requires_ui_smoke=true" \
 	Apps/VoidDisplay/Resources/Localizable.xcstrings
 run_file_case release_script pull_request main \
-	"ci_config_relevant=true script_relevant=true release_relevant=true requires_static=true requires_head_script_self_test=true requires_release_smoke=true requires_unit=false" \
+	"ci_config_relevant=true script_relevant=true release_relevant=true requires_static=true requires_release_smoke=true requires_unit=false" \
 	scripts/ci/release_smoke.sh
 run_file_case unknown_path pull_request main \
 	"unknown_relevant=true docs_only=false code_relevant=false requires_static=true requires_unit=true requires_xcode_build=true" \
@@ -156,6 +159,9 @@ run_file_case unknown_path pull_request main \
 run_file_case main_push_docs push "" \
 	"docs_only=true requires_static=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
 	docs/push.md
+run_file_case license_variant_docs pull_request main \
+	"docs_only=true code_relevant=false requires_static=false requires_unit=false unknown_relevant=false" \
+	LICENSE_THIRD_PARTY
 
 run_rename_case rename_docs_to_code docs/old.md Sources/VoidDisplayFoundation/Renamed.swift \
 	"docs_only=false product_code_relevant=true code_relevant=true requires_unit=true requires_xcode_build=true"

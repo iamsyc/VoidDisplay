@@ -36,8 +36,77 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve_release_target:
+    name: resolve-release-target
+    runs-on: macos-26
+    timeout-minutes: 5
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve release target
+        id: resolve
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+          TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}
+          SUMMARY_PATH: .ai-tmp/release-target/target-summary.json
+        with:
+          script: |
+            const fs = require('fs/promises');
+            const path = require('path');
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const eventName = process.env.EVENT_NAME;
+            const workflowRef = process.env.WORKFLOW_REF;
+            const targetRef = process.env.TARGET_REF;
+            const summaryPath = process.env.SUMMARY_PATH;
+
+            if (eventName === 'workflow_dispatch' && workflowRef !== 'refs/heads/main') {
+              throw new Error('Manual release dispatch must run from main. Use target_ref to select the release target.');
+            }
+            if (!targetRef) {
+              throw new Error('TARGET_REF is required.');
+            }
+
+            const response = await github.rest.repos.getCommit({
+              owner,
+              repo,
+              ref: targetRef,
+            });
+            const targetSha = response.data.sha;
+            if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
+              throw new Error(`Resolved target SHA is invalid: ${targetSha}`);
+            }
+
+            core.setOutput('target_sha', targetSha);
+            await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+            await fs.writeFile(summaryPath, `${JSON.stringify({
+              status: 'passed',
+              repository: `${owner}/${repo}`,
+              event_name: eventName,
+              workflow_ref: workflowRef,
+              target_ref: targetRef,
+              target_sha: targetSha,
+            }, null, 2)}\n`);
+
+      - name: Upload target summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-target-summary
+          path: .ai-tmp/release-target
+          if-no-files-found: warn
+          retention-days: 14
+
   prepare_release:
     name: prepare-release
+    needs:
+      - resolve_release_target
+      - require_ci_gate
     runs-on: macos-26
     timeout-minutes: 10
     outputs:
@@ -49,30 +118,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Validate workflow ref
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          WORKFLOW_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
-            echo "Manual release dispatch must run from main. Use target_ref to select the release target."
-            exit 1
-          fi
-
-      - name: Checkout trusted release scripts
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}
-          path: target
+          ref: ${{ needs.resolve_release_target.outputs.target_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Bootstrap prepare tools
         shell: bash
@@ -81,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Prepare release metadata
         id: prepare
@@ -95,22 +146,22 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/prepare.sh" \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/prepare.sh" \
             --event-name "$EVENT_NAME" \
-            --target-repo-dir "$GITHUB_WORKSPACE/target" \
+            --target-repo-dir "$GITHUB_WORKSPACE" \
             --before-sha "$BEFORE_SHA" \
             --input-tag "$INPUT_TAG" \
             --ref-name "$REF_NAME" \
             --ref-type "$REF_TYPE" \
             --github-output "$GITHUB_OUTPUT" \
-            --summary "$GITHUB_WORKSPACE/target/.ai-tmp/release-prepare/prepare-summary.json"
+            --summary "$GITHUB_WORKSPACE/.ai-tmp/release-prepare/prepare-summary.json"
 
       - name: Upload prepare summary
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-prepare-summary
-          path: target/.ai-tmp/release-prepare
+          path: .ai-tmp/release-prepare
           if-no-files-found: warn
           retention-days: 14
 
@@ -137,18 +188,12 @@ jobs:
             arch: x86_64
             runs_on: macos-26-intel
     steps:
-      - name: Checkout trusted release scripts
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
-          path: target
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Select Xcode
         uses: ./.github/actions/xcode-select
@@ -160,26 +205,26 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Build ad hoc DMG and SBOM
         shell: bash
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --arch '${{ matrix.arch }}' \
             --label '${{ matrix.label }}' \
-            --out-dir "$GITHUB_WORKSPACE/target/.ai-tmp/release-${{ matrix.label }}"
+            --out-dir "$GITHUB_WORKSPACE/.ai-tmp/release-${{ matrix.label }}"
 
       - name: Verify local release asset
         shell: bash
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
-            --assets-dir "$GITHUB_WORKSPACE/target/.ai-tmp/release-${{ matrix.label }}/release-assets" \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+            --assets-dir "$GITHUB_WORKSPACE/.ai-tmp/release-${{ matrix.label }}/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --label '${{ matrix.label }}' \
             --arch '${{ matrix.arch }}'
@@ -187,30 +232,30 @@ jobs:
       - name: Attest DMG provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
+          subject-path: .ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
 
       - name: Attest checksum provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
+          subject-path: .ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
 
       - name: Attest SBOM provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
+          subject-path: .ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
 
       - name: Attest SBOM
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
-          sbom-path: target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
+          subject-path: .ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
+          sbom-path: .ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
 
       - name: Upload release summaries
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-summaries-${{ matrix.label }}
-          path: target/.ai-tmp/release-${{ matrix.label }}/**/*summary.json
+          path: .ai-tmp/release-${{ matrix.label }}/**/*summary.json
           if-no-files-found: error
           retention-days: 14
 
@@ -219,10 +264,10 @@ jobs:
         with:
           name: release-assets-${{ matrix.label }}
           path: |
-            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
-            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
-            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
-            target/.ai-tmp/release-${{ matrix.label }}/release-assets/*.json
+            .ai-tmp/release-${{ matrix.label }}/release-assets/*.dmg
+            .ai-tmp/release-${{ matrix.label }}/release-assets/*.sha256
+            .ai-tmp/release-${{ matrix.label }}/release-assets/*.spdx.json
+            .ai-tmp/release-${{ matrix.label }}/release-assets/*.json
           if-no-files-found: error
           retention-days: 14
 
@@ -239,18 +284,12 @@ jobs:
       contents: write
       attestations: read
     steps:
-      - name: Checkout trusted release scripts
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
-          path: target
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Bootstrap publish tools
         shell: bash
@@ -259,7 +298,7 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -277,7 +316,7 @@ jobs:
           ls -lah release-assets
           tool_root="$GITHUB_WORKSPACE"
 
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --label arm64 \
@@ -285,7 +324,7 @@ jobs:
             --repository '${{ github.repository }}' \
             --require-attestation true
 
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --label intel64 \
@@ -300,19 +339,19 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE/target" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/publish.sh" \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/publish.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --target-sha '${{ needs.prepare_release.outputs.target_sha }}' \
             --repository '${{ github.repository }}' \
-            --out-dir "$GITHUB_WORKSPACE/target/.ai-tmp/release-publish"
+            --out-dir "$GITHUB_WORKSPACE/.ai-tmp/release-publish"
 
       - name: Upload publish summary
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-publish-summary
-          path: target/.ai-tmp/release-publish
+          path: .ai-tmp/release-publish
           if-no-files-found: error
           retention-days: 14
 
@@ -328,8 +367,8 @@ jobs:
   require_ci_gate:
     name: require-ci-gate
     needs:
-      - prepare_release
-    if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
+      - resolve_release_target
+    if: ${{ needs.resolve_release_target.outputs.target_sha != '' }}
     runs-on: macos-26
     timeout-minutes: 20
     permissions:
@@ -337,35 +376,181 @@ jobs:
       checks: read
       statuses: read
     steps:
-      - name: Checkout trusted release scripts
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
-      - name: Bootstrap release gate tools
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
-
       - name: Require target ci-gate
-        shell: bash
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/require_ci_gate.sh" \
-            --repository '${{ github.repository }}' \
-            --sha '${{ needs.prepare_release.outputs.target_sha }}' \
-            --check-name ci-gate \
-            --timeout-seconds 900 \
-            --poll-interval-seconds 20 \
-            --summary '.ai-tmp/release-ci-gate/require-ci-gate-summary.json'
+          TARGET_SHA: ${{ needs.resolve_release_target.outputs.target_sha }}
+          CHECK_NAME: ci-gate
+          TIMEOUT_SECONDS: '900'
+          POLL_INTERVAL_SECONDS: '20'
+          SUMMARY_PATH: .ai-tmp/release-ci-gate/require-ci-gate-summary.json
+        with:
+          script: |
+            const fs = require('fs/promises');
+            const path = require('path');
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const repository = `${owner}/${repo}`;
+            const targetSha = process.env.TARGET_SHA;
+            const checkName = process.env.CHECK_NAME;
+            const timeoutSeconds = Number(process.env.TIMEOUT_SECONDS);
+            const pollIntervalSeconds = Number(process.env.POLL_INTERVAL_SECONDS);
+            const summaryPath = process.env.SUMMARY_PATH;
+
+            if (!targetSha) {
+              throw new Error('TARGET_SHA is required.');
+            }
+            if (!checkName) {
+              throw new Error('CHECK_NAME is required.');
+            }
+            if (!Number.isInteger(timeoutSeconds) || timeoutSeconds <= 0) {
+              throw new Error('TIMEOUT_SECONDS must be a positive integer.');
+            }
+            if (!Number.isInteger(pollIntervalSeconds) || pollIntervalSeconds <= 0) {
+              throw new Error('POLL_INTERVAL_SECONDS must be a positive integer.');
+            }
+
+            let snapshot = {
+              gate_state: 'missing',
+              source: 'none',
+              detail: '',
+            };
+
+            const writeSummary = async (status, reason, elapsedSeconds) => {
+              await fs.mkdir(path.dirname(summaryPath), { recursive: true });
+              const summary = {
+                status,
+                reason,
+                repository,
+                target_sha: targetSha,
+                check_name: checkName,
+                gate_state: snapshot.gate_state,
+                source: snapshot.source,
+                detail: snapshot.detail,
+                elapsed_seconds: elapsedSeconds,
+              };
+              await fs.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+            };
+
+            const listCheckRuns = async () => {
+              const checkRuns = [];
+              for (let page = 1; ; page += 1) {
+                const response = await github.rest.checks.listForRef({
+                  owner,
+                  repo,
+                  ref: targetSha,
+                  check_name: checkName,
+                  per_page: 100,
+                  page,
+                });
+                const pageRuns = response.data.check_runs || [];
+                checkRuns.push(...pageRuns);
+                if (pageRuns.length < 100) {
+                  break;
+                }
+              }
+              return checkRuns;
+            };
+
+            const loadGateSnapshot = async () => {
+              snapshot = {
+                gate_state: 'missing',
+                source: 'checks',
+                detail: 'No matching check run found.',
+              };
+
+              try {
+                const checkRuns = await listCheckRuns();
+                const latestCheckRun = checkRuns
+                  .filter((checkRun) => checkRun.name === checkName)
+                  .sort((left, right) => {
+                    const leftTime = Date.parse(left.started_at || left.completed_at || left.created_at || '') || 0;
+                    const rightTime = Date.parse(right.started_at || right.completed_at || right.created_at || '') || 0;
+                    return leftTime - rightTime;
+                  })
+                  .at(-1);
+
+                if (latestCheckRun) {
+                  const checkStatus = latestCheckRun.status || 'unknown';
+                  const checkConclusion = latestCheckRun.conclusion || '';
+                  snapshot.detail = `check_status=${checkStatus} conclusion=${checkConclusion || 'none'}`;
+                  if (checkStatus === 'completed' && checkConclusion === 'success') {
+                    snapshot.gate_state = 'success';
+                  } else if (checkStatus === 'completed') {
+                    snapshot.gate_state = 'failure';
+                  } else {
+                    snapshot.gate_state = 'pending';
+                  }
+                  return;
+                }
+
+                snapshot.source = 'statuses';
+                const statusResponse = await github.rest.repos.getCombinedStatusForRef({
+                  owner,
+                  repo,
+                  ref: targetSha,
+                  per_page: 100,
+                });
+                const latestStatus = (statusResponse.data.statuses || [])
+                  .filter((status) => status.context === checkName)
+                  .sort((left, right) => {
+                    const leftTime = Date.parse(left.created_at || '') || 0;
+                    const rightTime = Date.parse(right.created_at || '') || 0;
+                    return leftTime - rightTime;
+                  })
+                  .at(-1);
+
+                if (!latestStatus) {
+                  snapshot.gate_state = 'missing';
+                  snapshot.detail = 'No matching commit status found.';
+                  return;
+                }
+
+                const statusState = latestStatus.state || 'unknown';
+                snapshot.detail = `status_state=${statusState}`;
+                if (statusState === 'success') {
+                  snapshot.gate_state = 'success';
+                } else if (statusState === 'pending') {
+                  snapshot.gate_state = 'pending';
+                } else {
+                  snapshot.gate_state = 'failure';
+                }
+              } catch (error) {
+                snapshot = {
+                  gate_state: 'api_error',
+                  source: snapshot.source,
+                  detail: error.message,
+                };
+              }
+            };
+
+            const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+            const startTime = Date.now();
+
+            for (;;) {
+              await loadGateSnapshot();
+              const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+              if (snapshot.gate_state === 'success') {
+                await writeSummary('passed', 'ci_gate_success', elapsedSeconds);
+                core.info(`Required target check passed: ${checkName} on ${targetSha}`);
+                return;
+              }
+
+              if (snapshot.gate_state === 'failure' || snapshot.gate_state === 'api_error') {
+                await writeSummary('failed', `ci_gate_${snapshot.gate_state}`, elapsedSeconds);
+                throw new Error(`Required target check ${checkName} is ${snapshot.gate_state} for ${targetSha}. ${snapshot.detail}`);
+              }
+
+              if (elapsedSeconds >= timeoutSeconds) {
+                await writeSummary('failed', 'ci_gate_timeout', elapsedSeconds);
+                throw new Error(`Timed out waiting for ${checkName} on ${targetSha}. Last state: ${snapshot.gate_state}. ${snapshot.detail}`);
+              }
+
+              core.info(`Waiting for ${checkName} on ${targetSha}: ${snapshot.gate_state}. ${snapshot.detail}`);
+              await sleep(pollIntervalSeconds * 1000);
+            }
 
       - name: Upload release ci-gate summary
         if: always()

@@ -7,6 +7,8 @@ source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 source "$TOOL_ROOT/scripts/lib/common.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release.sh
+source "$TOOL_ROOT/scripts/lib/release.sh"
 
 EVENT_NAME=""
 TARGET_REPO_DIR=""
@@ -94,42 +96,6 @@ cd "$TARGET_REPO_DIR"
 
 project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
 
-read_single_value() {
-	local key="$1"
-	local source="$2"
-	local values
-	local count
-	values="$(
-		awk -v key="$key" '$1 == key && $2 == "=" { value = $3; sub(/;$/, "", value); print value }' "$source" | sort -u
-	)"
-	count="$(printf '%s\n' "$values" | sed '/^$/d' | wc -l | tr -d ' ')"
-	if [[ "$count" -ne 1 ]]; then
-		die "Expected exactly one unique $key; found: ${values:-<none>}"
-	fi
-	printf '%s\n' "$values"
-}
-
-read_single_value_from_git() {
-	local key="$1"
-	local commit="$2"
-	local path="$3"
-	local values
-	local count
-	if ! git cat-file -e "${commit}:${path}" 2>/dev/null; then
-		die "Unable to read $path at $commit."
-	fi
-	values="$(
-		git show "${commit}:${path}" |
-			awk -v key="$key" '$1 == key && $2 == "=" { value = $3; sub(/;$/, "", value); print value }' |
-			sort -u
-	)"
-	count="$(printf '%s\n' "$values" | sed '/^$/d' | wc -l | tr -d ' ')"
-	if [[ "$count" -ne 1 ]]; then
-		die "Expected exactly one unique $key at $commit; found: ${values:-<none>}"
-	fi
-	printf '%s\n' "$values"
-}
-
 find_existing_tag_sha() {
 	local release_tag="$1"
 	git fetch --tags --force >/dev/null 2>&1
@@ -184,17 +150,17 @@ emit_result() {
 }
 
 target_sha="$(git rev-parse HEAD)"
-version="$(read_single_value MARKETING_VERSION "$project_file")"
-build_number="$(read_single_value CURRENT_PROJECT_VERSION "$project_file")"
+version="$(release_read_project_value MARKETING_VERSION "$project_file")"
+build_number="$(release_read_project_value CURRENT_PROJECT_VERSION "$project_file")"
 
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid MARKETING_VERSION: $version. Expected MAJOR.MINOR.PATCH."
-[[ "$build_number" =~ ^[1-9][0-9]*$ ]] || die "Invalid CURRENT_PROJECT_VERSION: $build_number. Expected a positive integer."
+release_require_semver "$version" "Invalid MARKETING_VERSION: $version. Expected MAJOR.MINOR.PATCH."
+release_require_positive_integer "$build_number" "Invalid CURRENT_PROJECT_VERSION: $build_number. Expected a positive integer."
 
 release_tag="v$version"
 
 case "$EVENT_NAME" in
 workflow_dispatch)
-	[[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid input tag: $INPUT_TAG. Expected vMAJOR.MINOR.PATCH."
+	release_require_tag "$INPUT_TAG" "Invalid input tag: $INPUT_TAG. Expected vMAJOR.MINOR.PATCH."
 	[[ "$INPUT_TAG" == "$release_tag" ]] || die "Input tag $INPUT_TAG does not match MARKETING_VERSION $version."
 	ensure_target_is_on_main "$target_sha"
 	ensure_tag_matches_target_if_present "$release_tag" "$target_sha"
@@ -207,9 +173,9 @@ push)
 	if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
 		die "Unable to compare against the previous main commit."
 	fi
-	previous_version="$(read_single_value_from_git MARKETING_VERSION "$BEFORE_SHA" "$project_file")"
-	previous_build_number="$(read_single_value_from_git CURRENT_PROJECT_VERSION "$BEFORE_SHA" "$project_file")"
-	[[ "$previous_build_number" =~ ^[1-9][0-9]*$ ]] || die "Previous CURRENT_PROJECT_VERSION is invalid: $previous_build_number."
+	previous_version="$(release_read_project_value_from_git MARKETING_VERSION "$BEFORE_SHA" "$project_file")"
+	previous_build_number="$(release_read_project_value_from_git CURRENT_PROJECT_VERSION "$BEFORE_SHA" "$project_file")"
+	release_require_positive_integer "$previous_build_number" "Previous CURRENT_PROJECT_VERSION is invalid: $previous_build_number."
 
 	if [[ "$previous_version" == "$version" ]]; then
 		existing_tag_sha="$(find_existing_tag_sha "$release_tag")"

@@ -5,12 +5,12 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
-# shellcheck source=scripts/lib/architecture.sh
-source "$TOOL_ROOT/scripts/lib/architecture.sh"
 # shellcheck source=scripts/lib/release_binaries.sh
 source "$TOOL_ROOT/scripts/lib/release_binaries.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release.sh
+source "$TOOL_ROOT/scripts/lib/release.sh"
 
 ASSETS_DIR=""
 TAG=""
@@ -52,15 +52,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$ASSETS_DIR" ]] || die "--assets-dir is required."
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--tag must match vMAJOR.MINOR.PATCH."
-[[ -n "$ARCH" ]] || die "--arch is required."
-validate_release_arch "$ARCH"
-LABEL="${LABEL:-$(release_label_for_arch "$ARCH")}"
-require_release_label_for_arch "$ARCH" "$LABEL"
+release_require_tag "$TAG"
+LABEL="$(release_arch_label "$ARCH" "$LABEL")"
 
 require_command jq
 
-dmg_path="$ASSETS_DIR/VoidDisplay-${TAG}-${LABEL}.dmg"
+dmg_name="$(release_dmg_name "$TAG" "$LABEL")"
+dmg_path="$ASSETS_DIR/$dmg_name"
 sha_path="$dmg_path.sha256"
 sbom_path="$dmg_path.spdx.json"
 summary_path="$ASSETS_DIR/VoidDisplay-${TAG}-${LABEL}.verify-summary.json"
@@ -72,9 +70,7 @@ verify_stage="input_validation"
 verify_summary_written="false"
 
 cleanup() {
-	if [[ -n "$device" ]]; then
-		hdiutil detach "$device" -quiet >/dev/null 2>&1 || hdiutil detach "$device" -force -quiet >/dev/null 2>&1 || true
-	fi
+	release_cleanup_device "$device"
 }
 
 write_verify_summary() {
@@ -120,16 +116,14 @@ fail_verify() {
 	local reason="$1"
 	local detail="$2"
 
-	write_verify_summary "failed" "$reason" "$detail"
-	die "$detail"
+	release_fail write_verify_summary "$reason" "$detail"
 }
 
 handle_verify_exit() {
 	local exit_code="$?"
 
-	if [[ "$exit_code" -ne 0 && "$verify_summary_written" != "true" ]]; then
-		write_verify_summary "failed" "${verify_stage}_failed" "Release verification failed in stage ${verify_stage}."
-	fi
+	release_stage_failure_once "$exit_code" "$verify_summary_written" \
+		write_verify_summary "$verify_stage" "Release verification failed in stage ${verify_stage}."
 	cleanup
 }
 trap handle_verify_exit EXIT
@@ -154,8 +148,8 @@ set -e
 if [[ "$attach_status" -ne 0 ]]; then
 	fail_verify "hdiutil_failed" "Failed to attach DMG: $attach_output"
 fi
-device="$(printf '%s\n' "$attach_output" | awk '/^\/dev\// {print $1; exit}')"
-mount_path="$(printf '%s\n' "$attach_output" | sed -n 's#.*\(/Volumes/.*\)$#\1#p' | tail -n 1)"
+device="$(printf '%s\n' "$attach_output" | release_parse_attach_device)"
+mount_path="$(printf '%s\n' "$attach_output" | release_parse_attach_mount_path)"
 
 [[ -n "$device" && -n "$mount_path" ]] || fail_verify "hdiutil_failed" "Failed to locate mounted DMG device or mount path."
 

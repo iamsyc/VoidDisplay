@@ -5,10 +5,10 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
-# shellcheck source=scripts/lib/architecture.sh
-source "$TOOL_ROOT/scripts/lib/architecture.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release.sh
+source "$TOOL_ROOT/scripts/lib/release.sh"
 
 cd "$ROOT_DIR"
 
@@ -41,18 +41,15 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--tag must match vMAJOR.MINOR.PATCH."
-[[ -n "$ARCH" ]] || die "--arch is required."
-validate_release_arch "$ARCH"
-LABEL="${LABEL:-$(release_label_for_arch "$ARCH")}"
-require_release_label_for_arch "$ARCH" "$LABEL"
+release_require_tag "$TAG"
+LABEL="$(release_arch_label "$ARCH" "$LABEL")"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/.ai-tmp/release-$LABEL}"
 
 require_command syft jq
 
 mkdir -p "$OUT_DIR/release-assets"
 
-dmg_name="VoidDisplay-${TAG}-${LABEL}.dmg"
+dmg_name="$(release_dmg_name "$TAG" "$LABEL")"
 dmg_path="$OUT_DIR/release-assets/$dmg_name"
 sbom_path="$OUT_DIR/release-assets/$dmg_name.spdx.json"
 summary_path="$OUT_DIR/release-assets/$dmg_name.summary.json"
@@ -96,9 +93,8 @@ handle_unexpected_release_error() {
 handle_release_exit() {
 	local exit_code="$?"
 
-	if [[ "$exit_code" -ne 0 && "$release_summary_written" != "true" ]]; then
-		write_release_build_summary "failed" "${release_stage}_failed" "Release build failed in stage ${release_stage}."
-	fi
+	release_stage_failure_once "$exit_code" "$release_summary_written" \
+		write_release_build_summary "$release_stage" "Release build failed in stage ${release_stage}."
 }
 
 trap 'handle_unexpected_release_error $? $LINENO' ERR
@@ -132,13 +128,11 @@ if ! (
 	cd "$OUT_DIR/release-assets"
 	shasum -a 256 "$dmg_name" >"$dmg_name.sha256"
 ); then
-	write_release_build_summary "failed" "checksum_failed" "Failed to write SHA256 checksum."
-	die "Failed to write SHA256 checksum."
+	release_fail write_release_build_summary "checksum_failed" "Failed to write SHA256 checksum."
 fi
 
 if ! checksum="$(sha256_digest "$dmg_path")"; then
-	write_release_build_summary "failed" "checksum_failed" "Failed to compute SHA256 checksum."
-	die "Failed to compute SHA256 checksum."
+	release_fail write_release_build_summary "checksum_failed" "Failed to compute SHA256 checksum."
 fi
 
 release_stage="sbom"
@@ -146,8 +140,7 @@ if ! SYFT_CHECK_FOR_APP_UPDATE=false syft "$app_path" \
 	--source-name "VoidDisplay.app" \
 	--source-version "${TAG#v}" \
 	-o "spdx-json=$sbom_path"; then
-	write_release_build_summary "failed" "sbom_failed" "Failed to generate SPDX SBOM."
-	die "Failed to generate SPDX SBOM."
+	release_fail write_release_build_summary "sbom_failed" "Failed to generate SPDX SBOM."
 fi
 
 jq -n \

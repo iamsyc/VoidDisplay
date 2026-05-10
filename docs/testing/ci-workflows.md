@@ -29,11 +29,10 @@ Gate behavior:
 - Non-code PRs pass through the fast path.
 - Code-relevant PRs run static checks, SwiftPM unit tests, Go unit tests, and Xcode Debug build.
 - UI-relevant PRs run the UI smoke matrix.
-- Code-relevant PRs targeting `main` also run arm64 and x86_64 release smoke.
+- Code-relevant PRs targeting `main` also run arm64 release smoke. Main push, nightly, and release workflows cover x86_64 release smoke.
 - Code PRs run Dependency Review and block high or critical dependency vulnerabilities.
-- Script or workflow PRs also run `head-script-self-test` without checkout credentials or exported `GITHUB_TOKEN`.
 
-Candidate workflow and script changes are validated from the PR head, while critical gate execution uses trusted base checkout scripts to build or test the PR head source. `ci-gate` remains the single required branch protection check and requires the head self-test only when the change is script/tooling relevant.
+PR CI executes scripts from the checked-out PR head. Script and workflow integrity is enforced by code review plus `script-static-checks`; `ci-gate` remains the single required branch protection check. PR CI checkouts do not persist credentials, and bootstrap steps do not expose `GITHUB_TOKEN` to checked-out repository scripts.
 
 ## Local Entrypoints
 
@@ -87,9 +86,9 @@ uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
 Release builds are ad hoc signed only. They are not Developer ID signed, notarized, stapled, or certified by Apple.
 
-Release decision logic lives in `scripts/release/prepare.sh`. The workflow passes event metadata and the target checkout path into that script, then uses its JSON summary and outputs to decide whether build and publish jobs should run.
+Release workflow first resolves the target SHA without checking out target code, then verifies that SHA has a successful `ci-gate`. After that gate passes, release jobs execute scripts from the checked-out target commit and use JSON summaries and outputs to decide whether build and publish jobs should run.
 
-Before build or publish jobs run, `scripts/release/require_ci_gate.sh` verifies that the target commit has a successful `ci-gate` check. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary.
+Before build or publish jobs run, the release workflow verifies the target commit has a successful `ci-gate` check with inline GitHub API logic that does not execute target checkout scripts. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary.
 
 Release assets per architecture:
 

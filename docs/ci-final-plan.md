@@ -56,7 +56,7 @@ CI 和脚本体系的核心目标是可复现、可审计、低误报、低人�
 
 `scripts/release/verify.sh` 校验 DMG 可挂载、app 存在、bundle id 正确、版本匹配、架构匹配、checksum 有效、SBOM 有效、ad hoc codesign 可验证、attestation 可选有效。
 
-`scripts/release/require_ci_gate.sh` 在发布前验证目标 commit 的 `ci-gate` 已成功，防止绕过分支保护或手动 dispatch 发布未验证 commit。
+Release workflow 在发布前用内联 GitHub API 逻辑验证目标 commit 的 `ci-gate` 已成功，防止绕过分支保护或手动 dispatch 发布未验证 commit。该验证不执行目标 checkout 中的脚本。
 
 `scripts/release/publish.sh` 只封装发布前最终校验和 GitHub Release 上传。本地默认不调用，CI release job 调用。
 
@@ -97,9 +97,9 @@ PR workflow 使用一个稳定的 required check：`ci-gate`。其他 job 都是
 
 UI 相关 PR 额外运行 UI smoke matrix。初始矩阵覆盖首页导航、权限拒绝、虚拟显示 rebuild 失败行。后续可以按风险扩展。
 
-目标分支是 `main` 的代码 PR 额外运行双架构 release smoke，覆盖 `arm64` 和 `x86_64`。
+目标分支是 `main` 的代码 PR 额外运行 arm64 release smoke。x86_64 release smoke 留给 main push、nightly 和 release workflow 承担。
 
-脚本和 workflow 改动采用 trusted scripts 策略。关键 job 优先 checkout base commit 中的脚本执行。脚本或 workflow 相关 PR 额外运行低权限 `head-script-self-test`，该 job 不导出 `GITHUB_TOKEN`、不使用 checkout credentials、不发布产物，只验证 head 脚本的静态门禁。
+PR CI 执行当前 checkout 的脚本。脚本和 workflow 完整性由 review 和 `script-static-checks` 承担，`ci-gate` 继续作为唯一 required check。PR CI checkout 不持久化凭据，bootstrap 不向已 checkout 的仓库脚本暴露 `GITHUB_TOKEN`。
 
 ## 6. Main CI
 
@@ -136,7 +136,7 @@ Nightly 失败不应直接阻断普通 PR，但必须在仓库首页、issue 或
 
 ## 8. Release 触发规则
 
-Release workflow 支持两种入口。workflow 只负责 checkout、runner 权限和 job 编排，版本判断、tag 判断、build number 规则都由 `scripts/release/prepare.sh` 执行。`prepare` 输出 `should_release=true` 后，workflow 先调用 `scripts/release/require_ci_gate.sh` 验证目标 SHA 的 `ci-gate`，成功后才允许 build 和 publish。
+Release workflow 支持两种入口。workflow 先不 checkout 目标代码，只用 GitHub API 解析目标 SHA，并用内联 GitHub API 逻辑验证目标 SHA 的 `ci-gate`。验证成功后，workflow 才 checkout 目标 commit 并执行 release 脚本。版本判断、tag 判断、build number 规则都由 `scripts/release/prepare.sh` 执行。`prepare` 输出 `should_release=true` 后才允许 build 和 publish。
 
 第一种是 push 到 `main`。当 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj` 中的版本字段变化时触发 release 判断。
 
@@ -255,7 +255,7 @@ scripts/release/verify.sh --assets-dir .ai-tmp/release-arm64/release-assets --ta
 
 第一阶段收敛脚本入口，完成 bootstrap、static、unit、xcode、ui smoke、release smoke、release build、release verify。
 
-第二阶段改造 PR CI，建立 `ci-gate`、trusted scripts、artifact summary、docs-only fast path。
+第二阶段改造 PR CI，建立 `ci-gate`、artifact summary、docs-only fast path。
 
 第三阶段改造 release workflow，完成版本号触发、双架构 ad hoc DMG、checksum、SBOM、attestation、下载后 verify、GitHub Release 发布。
 
@@ -271,7 +271,7 @@ scripts/release/verify.sh --assets-dir .ai-tmp/release-arm64/release-assets --ta
 
 UI 相关 PR 能跑最小 smoke matrix。
 
-目标 `main` 的代码 PR 能覆盖双架构 release smoke。
+目标 `main` 的代码 PR 能覆盖 arm64 release smoke；main push、nightly 和 release workflow 能覆盖双架构 release smoke。
 
 推送到 `main` 后，`MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION` 能自动驱动 release 判断。
 
