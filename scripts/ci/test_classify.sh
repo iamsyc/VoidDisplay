@@ -26,7 +26,14 @@ write_fixture_file() {
 	local file_path="$1"
 	local full_path="$FIXTURE_REPO/$file_path"
 	mkdir -p "$(dirname "$full_path")"
-	printf 'fixture: %s\n' "$file_path" >"$full_path"
+	case "$file_path" in
+	mise.toml)
+		printf '[tools]\n' >"$full_path"
+		;;
+	*)
+		printf 'fixture: %s\n' "$file_path" >"$full_path"
+		;;
+	esac
 }
 
 assert_summary_fields() {
