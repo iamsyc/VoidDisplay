@@ -37,8 +37,8 @@ Official WebRTC source branch used for macOS-only headers:
    and normalize its WebRTC-local include.
 5. Regenerate `SHA256SUMS` from `include/WebRTC/*.h`.
 
-The static gate validates recursive imports, iOS-only header exclusions, guarded
-UIKit usage, and checksum coverage.
+`Package.swift` owns the binary pin. `SHA256SUMS` covers the overlay headers.
+SwiftPM and Xcode builds validate header import compatibility.
 
 `WebRTCHeaderOverlayAnchor.c` is an empty compilation unit that lets SwiftPM
 model this directory as a C target while all public API surface comes from the
