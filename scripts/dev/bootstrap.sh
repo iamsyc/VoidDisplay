@@ -7,6 +7,7 @@ source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 source "$TOOL_ROOT/scripts/lib/common.sh"
 
 CI_REQUIRES_MISE="${CI_REQUIRES_MISE:-${GITHUB_ACTIONS:-false}}"
+PROFILE="full"
 
 required_commands=(
 	actionlint
@@ -20,6 +21,31 @@ required_commands=(
 	syft
 	gh
 )
+mise_targets=()
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--profile)
+		[[ $# -ge 2 && -n "${2:-}" ]] || die "--profile requires a value."
+		PROFILE="$2"
+		shift 2
+		;;
+	*)
+		die "Unknown argument: $1"
+		;;
+	esac
+done
+
+case "$PROFILE" in
+full) ;;
+release-smoke)
+	required_commands=(go jq rg)
+	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
+	;;
+*)
+	die "Unsupported bootstrap profile: $PROFILE"
+	;;
+esac
 
 activate_mise_shims() {
 	local mise_data_dir="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
@@ -37,7 +63,11 @@ install_pinned_tools_with_mise() {
 	cd "$TOOL_ROOT"
 	export MISE_YES=1
 	export MISE_TRUSTED_CONFIG_PATHS="$TOOL_ROOT"
-	mise install
+	if ((${#mise_targets[@]})); then
+		mise install "${mise_targets[@]}"
+	else
+		mise install
+	fi
 	mise reshim >/dev/null 2>&1 || true
 	activate_mise_shims
 }

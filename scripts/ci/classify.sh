@@ -45,216 +45,120 @@ done
 [[ -n "$HEAD_SHA" ]] || die "--head is required."
 SUMMARY_PATH="${SUMMARY_PATH:-$(make_artifact_dir classify)/classify-summary.json}"
 
-legacy_code_prefixes=(
-	Sources/
-	Tests/
-	UITests/
-	Apps/VoidDisplay/
-	Tools/VoidDisplayRelay/
-	scripts/
-	.github/workflows/
-	.github/actions/
+require_command git jq
+
+RULES_PATH="$TOOL_ROOT/scripts/ci/classification-rules.json"
+classification_categories=(
+	code
+	ui
+	script
+	product_code
+	test_code
+	ci_config
+	release
+	dependency_manifest
+	tooling_config
+	docs
 )
-ui_prefixes=(
-	UITests/
-	Apps/VoidDisplay/
-	Sources/VoidDisplayApp/
-	Sources/VoidDisplayDesignSystem/
-	Sources/VoidDisplayCapture/
-	Sources/VoidDisplaySharing/
-	Sources/VoidDisplaySupport/
-	Sources/VoidDisplayVirtualDisplay/
-)
-legacy_script_prefixes=(
-	scripts/
-	.github/workflows/
-	.github/actions/
-)
-legacy_exact_matches=(
-	Package.swift
-	Package.resolved
-	mise.toml
-	Brewfile
-	.swiftformat
-	.swiftlint.yml
-	.github/dependabot.yml
-)
-legacy_script_exact_matches=(
-	mise.toml
-	Brewfile
-	.swiftformat
-	.swiftlint.yml
-	.github/dependabot.yml
-)
-product_code_prefixes=(
-	Sources/
-	Apps/VoidDisplay/
-	Tools/VoidDisplayRelay/
-)
-test_code_prefixes=(
-	Tests/
-	UITests/
-)
-ci_config_prefixes=(
-	.github/workflows/
-	.github/actions/
-	scripts/ci/
-	scripts/dev/
-)
-release_prefixes=(
-	Apps/VoidDisplay/
-	Tools/VoidDisplayRelay/
-	scripts/release/
-)
-docs_prefixes=(
-	docs/
-	.github/PULL_REQUEST_TEMPLATE/
-)
-product_code_exact_matches=(
-	Package.swift
-	Package.resolved
-)
-ci_config_exact_matches=(
-	.swiftformat
-	.swiftlint.yml
-	mise.toml
-	Brewfile
-	.github/dependabot.yml
-)
-release_exact_matches=(
-	.github/workflows/release.yml
-	scripts/lib/architecture.sh
-	scripts/lib/release_binaries.sh
-)
-dependency_manifest_exact_matches=(
-	Package.swift
-	Package.resolved
-	Tools/VoidDisplayRelay/go.mod
-	Tools/VoidDisplayRelay/go.sum
-)
-tooling_config_exact_matches=(
-	mise.toml
-	Brewfile
-	.swiftformat
-	.swiftlint.yml
-	.github/dependabot.yml
-)
-docs_exact_matches=(
-	AGENTS.md
-	LICENSE
-	Readme.md
-	README.md
-)
+
+[[ -f "$RULES_PATH" ]] || die "Missing classification rules: $RULES_PATH"
+jq -e '.categories | type == "object"' "$RULES_PATH" >/dev/null || die "Invalid classification rules: $RULES_PATH"
+
+for category in "${classification_categories[@]}"; do
+	for key in exact prefixes globs; do
+		var_name="CLASSIFY_RULES_${category}_${key}"
+		values="$(jq -r --arg category "$category" --arg key "$key" '.categories[$category][$key][]?' "$RULES_PATH")"
+		printf -v "$var_name" '%s' "$values"
+	done
+done
 
 is_zero_sha() {
 	[[ "$1" =~ ^0+$ ]]
 }
 
-path_in_list() {
-	local needle="$1"
-	shift
-	local value
-	for value in "$@"; do
-		if [[ "$needle" == "$value" ]]; then
-			return 0
-		fi
-	done
-	return 1
+rule_values() {
+	local category="$1"
+	local key="$2"
+	local var_name="CLASSIFY_RULES_${category}_${key}"
+
+	[[ -n "${!var_name:-}" ]] || return 0
+	printf '%s\n' "${!var_name}"
 }
 
-path_has_prefix() {
-	local file_path="$1"
-	shift
-	local prefix
-	for prefix in "$@"; do
-		if [[ "$file_path" == "$prefix"* ]]; then
+path_matches_category() {
+	local category="$1"
+	local file_path="$2"
+	local value
+
+	while IFS= read -r value; do
+		if [[ "$file_path" == "$value" ]]; then
 			return 0
 		fi
-	done
+	done < <(rule_values "$category" exact)
+
+	while IFS= read -r value; do
+		if [[ "$file_path" == "$value"* ]]; then
+			return 0
+		fi
+	done < <(rule_values "$category" prefixes)
+
+	while IFS= read -r value; do
+		# shellcheck disable=SC2053
+		if [[ "$file_path" == $value ]]; then
+			return 0
+		fi
+	done < <(rule_values "$category" globs)
+
 	return 1
 }
 
 is_code_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${legacy_exact_matches[@]}" && return 0
-	path_has_prefix "$file_path" "${legacy_code_prefixes[@]}" && return 0
-	[[ "$file_path" == */Package.resolved ]] && return 0
-	return 1
+	path_matches_category code "$1"
 }
 
 is_ui_path() {
-	local file_path="$1"
-	path_has_prefix "$file_path" "${ui_prefixes[@]}"
+	path_matches_category ui "$1"
 }
 
 is_script_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${legacy_script_exact_matches[@]}" && return 0
-	path_has_prefix "$file_path" "${legacy_script_prefixes[@]}" && return 0
-	return 1
+	path_matches_category script "$1"
 }
 
 is_product_code_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${product_code_exact_matches[@]}" && return 0
-	path_has_prefix "$file_path" "${product_code_prefixes[@]}" && return 0
-	[[ "$file_path" == */Package.resolved ]] && return 0
-	return 1
+	path_matches_category product_code "$1"
 }
 
 is_test_code_path() {
-	local file_path="$1"
-	path_has_prefix "$file_path" "${test_code_prefixes[@]}"
+	path_matches_category test_code "$1"
 }
 
 is_ci_config_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${ci_config_exact_matches[@]}" && return 0
-	path_has_prefix "$file_path" "${ci_config_prefixes[@]}" && return 0
-	return 1
+	path_matches_category ci_config "$1"
 }
 
 is_release_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${release_exact_matches[@]}" && return 0
-	path_has_prefix "$file_path" "${release_prefixes[@]}" && return 0
-	[[ "$file_path" == scripts/ci/release_*.sh ]] && return 0
-	return 1
+	path_matches_category release "$1"
 }
 
 is_dependency_manifest_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${dependency_manifest_exact_matches[@]}" && return 0
-	[[ "$file_path" == */Package.resolved ]] && return 0
-	return 1
+	path_matches_category dependency_manifest "$1"
 }
 
 is_tooling_config_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${tooling_config_exact_matches[@]}"
+	path_matches_category tooling_config "$1"
 }
 
 is_docs_path() {
-	local file_path="$1"
-	path_in_list "$file_path" "${docs_exact_matches[@]}" && return 0
-	path_has_prefix "$file_path" "${docs_prefixes[@]}" && return 0
-	[[ "$file_path" == LICENSE_* ]] && return 0
-	[[ "$file_path" == *.md ]] && return 0
-	return 1
+	path_matches_category docs "$1"
 }
 
 is_known_path() {
 	local file_path="$1"
-	is_code_path "$file_path" && return 0
-	is_ui_path "$file_path" && return 0
-	is_script_path "$file_path" && return 0
-	is_product_code_path "$file_path" && return 0
-	is_test_code_path "$file_path" && return 0
-	is_ci_config_path "$file_path" && return 0
-	is_release_path "$file_path" && return 0
-	is_dependency_manifest_path "$file_path" && return 0
-	is_tooling_config_path "$file_path" && return 0
-	is_docs_path "$file_path" && return 0
+	local category
+
+	for category in "${classification_categories[@]}"; do
+		path_matches_category "$category" "$file_path" && return 0
+	done
 	return 1
 }
 
@@ -397,7 +301,6 @@ elif [[ "$code_relevant" == "true" ]]; then
 fi
 
 requires_static="false"
-requires_head_script_self_test="false"
 requires_dependency_review="false"
 requires_unit="false"
 requires_xcode_build="false"
@@ -413,9 +316,6 @@ if [[ "$EVENT_NAME" == "push" ]]; then
 elif [[ "$docs_only" != "true" ]]; then
 	if [[ "$code_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
 		requires_static="true"
-	fi
-	if [[ "$script_relevant" == "true" ]]; then
-		requires_head_script_self_test="true"
 	fi
 	if [[ "$dependency_manifest_relevant" == "true" ]]; then
 		requires_dependency_review="true"
@@ -448,7 +348,6 @@ append_github_output tooling_config_relevant "$tooling_config_relevant" "$GITHUB
 append_github_output docs_only "$docs_only" "$GITHUB_OUTPUT_PATH"
 append_github_output unknown_relevant "$unknown_relevant" "$GITHUB_OUTPUT_PATH"
 append_github_output requires_static "$requires_static" "$GITHUB_OUTPUT_PATH"
-append_github_output requires_head_script_self_test "$requires_head_script_self_test" "$GITHUB_OUTPUT_PATH"
 append_github_output requires_dependency_review "$requires_dependency_review" "$GITHUB_OUTPUT_PATH"
 append_github_output requires_unit "$requires_unit" "$GITHUB_OUTPUT_PATH"
 append_github_output requires_xcode_build "$requires_xcode_build" "$GITHUB_OUTPUT_PATH"
@@ -490,7 +389,6 @@ write_json_file "$SUMMARY_PATH" \
 	--arg docs_only "$docs_only" \
 	--arg unknown_relevant "$unknown_relevant" \
 	--arg requires_static "$requires_static" \
-	--arg requires_head_script_self_test "$requires_head_script_self_test" \
 	--arg requires_dependency_review "$requires_dependency_review" \
 	--arg requires_unit "$requires_unit" \
 	--arg requires_xcode_build "$requires_xcode_build" \
@@ -515,7 +413,6 @@ write_json_file "$SUMMARY_PATH" \
 		  docs_only: ($docs_only == "true"),
 		  unknown_relevant: ($unknown_relevant == "true"),
 		  requires_static: ($requires_static == "true"),
-		  requires_head_script_self_test: ($requires_head_script_self_test == "true"),
 		  requires_dependency_review: ($requires_dependency_review == "true"),
 		  requires_unit: ($requires_unit == "true"),
 		  requires_xcode_build: ($requires_xcode_build == "true"),

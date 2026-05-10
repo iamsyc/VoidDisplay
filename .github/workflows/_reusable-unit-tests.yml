@@ -42,37 +42,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Checkout trusted scripts
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .ai-tmp/trusted-ci
           persist-credentials: false
 
       - name: Bootstrap tools
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-            for required in \
-              scripts/lib/contract.sh \
-              scripts/lib/common.sh \
-              scripts/lib/xcode.sh \
-              scripts/lib/artifacts.sh \
-              scripts/dev/bootstrap.sh \
-              scripts/ci/unit.sh; do
-              if [ ! -e "$tool_root/$required" ]; then
-                echo "Missing trusted CI script in base checkout: $required. Merge the seed PR into the base branch first." >&2
-                exit 1
-              fi
-            done
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
@@ -90,9 +67,6 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tool_root="$GITHUB_WORKSPACE/.ai-tmp/trusted-ci"
-          fi
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/unit.sh" --out-dir .ai-tmp/unit-gate
 

@@ -5,10 +5,10 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
-# shellcheck source=scripts/lib/architecture.sh
-source "$TOOL_ROOT/scripts/lib/architecture.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release.sh
+source "$TOOL_ROOT/scripts/lib/release.sh"
 
 cd "$ROOT_DIR"
 
@@ -79,16 +79,14 @@ fail_publish() {
 	local reason="$1"
 	local detail="$2"
 
-	write_publish_summary "failed" "$reason" "$detail"
-	die "$detail"
+	release_fail write_publish_summary "$reason" "$detail"
 }
 
 handle_publish_exit() {
 	local exit_code="$?"
 
-	if [[ "$exit_code" -ne 0 && "$publish_summary_written" != "true" ]]; then
-		write_publish_summary "failed" "${publish_stage}_failed" "Release publish failed in stage ${publish_stage}."
-	fi
+	release_stage_failure_once "$exit_code" "$publish_summary_written" \
+		write_publish_summary "$publish_stage" "Release publish failed in stage ${publish_stage}."
 }
 trap handle_publish_exit EXIT
 
@@ -96,10 +94,9 @@ trap handle_publish_exit EXIT
 [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail_publish "invalid_tag" "--tag must match vMAJOR.MINOR.PATCH."
 [[ -n "$TARGET_SHA" ]] || fail_publish "missing_target_sha" "--target-sha is required."
 
-project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
 publish_stage="version_metadata"
-version="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' "$project_file" | sort -u)"
-build_number="$(sed -nE 's/^[[:space:]]*CURRENT_PROJECT_VERSION = ([^;]+);/\1/p' "$project_file" | sort -u)"
+version="$(release_read_project_value MARKETING_VERSION)"
+build_number="$(release_read_project_value CURRENT_PROJECT_VERSION)"
 arm64_label="$(release_label_for_arch arm64)"
 x86_64_label="$(release_label_for_arch x86_64)"
 

@@ -11,12 +11,8 @@ cd "$ROOT_DIR"
 require_command actionlint jq shellcheck shfmt shasum swift swiftformat swiftlint rg xcrun
 
 validate_runner_labels() {
-	local invalid
-	invalid="$(rg -n '(runs-on|runs_on):[[:space:]]*(ubuntu-|windows-|macos-latest-large|.*-large)' .github/workflows .github/actions || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Workflow uses a non-macOS, paid, or larger runner label."
-	fi
+	assert_no_match "Workflow uses a non-macOS, paid, or larger runner label." \
+		'(runs-on|runs_on):[[:space:]]*(ubuntu-|windows-|macos-latest-large|.*-large)' .github/workflows .github/actions
 }
 
 validate_action_pinning() {
@@ -86,123 +82,115 @@ validate_shell_scripts() {
 validate_script_contract() {
 	local invalid
 
-	invalid="$(rg -n 'SCRIPT_ROOT=|SCRIPT_LIB_DIR=' scripts --glob '!scripts/ci/static.sh' || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Scripts must use ROOT_DIR/TOOL_ROOT contract instead of SCRIPT_ROOT or SCRIPT_LIB_DIR."
-	fi
+	assert_no_match "Scripts must use ROOT_DIR/TOOL_ROOT contract instead of SCRIPT_ROOT or SCRIPT_LIB_DIR." \
+		'SCRIPT_ROOT=|SCRIPT_LIB_DIR=' scripts --glob '!scripts/ci/static.sh'
 
 	invalid="$(
-		rg -n 'source .*scripts/lib/(common|artifacts|xcode|xcresult|architecture|release_binaries)\.sh|source "\$[A-Z_]+/(common|artifacts|xcode|xcresult|architecture|release_binaries)\.sh' scripts --glob '!scripts/ci/static.sh' || true
+		rg -n 'source .*scripts/lib/(common|artifacts|xcode|xcresult|architecture|release|release_binaries)\.sh|source "\$[A-Z_]+/(common|artifacts|xcode|xcresult|architecture|release|release_binaries)\.sh' scripts --glob '!scripts/ci/static.sh' || true
 	)"
 	invalid="$(printf '%s\n' "$invalid" | rg -v 'source "\$TOOL_ROOT/scripts/lib/' || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Helper source paths must use TOOL_ROOT."
-	fi
+	fail_on_output "Helper source paths must use TOOL_ROOT." "$invalid"
 
-	invalid="$(rg -n 'ROOT_DIR="\$ROOT_DIR"(?!.*TOOL_ROOT=)|ROOT_DIR=\$\{ROOT_DIR:-' scripts --pcre2 --glob '!scripts/lib/contract.sh' --glob '!scripts/ci/static.sh' || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Nested script calls must pass ROOT_DIR and TOOL_ROOT explicitly."
+	assert_no_match "Nested script calls must pass ROOT_DIR and TOOL_ROOT explicitly." \
+		'ROOT_DIR="\$ROOT_DIR"(?!.*TOOL_ROOT=)|ROOT_DIR=\$\{ROOT_DIR:-' scripts --pcre2 --glob '!scripts/lib/contract.sh' --glob '!scripts/ci/static.sh'
+}
+
+fail_on_output() {
+	local message="$1"
+	local output="$2"
+
+	if [[ -n "$output" ]]; then
+		printf '%s\n' "$output" >&2
+		die "$message"
 	fi
 }
 
-validate_workflow_required_file_references() {
-	local missing
-	local workflow_files=("$@")
+assert_no_match() {
+	local message="$1"
+	shift
 
-	missing="$(
-		awk '
-			function emit_required_paths(line, tokens, token_count, token_index, token) {
-				sub(/[[:space:]]*;[[:space:]]*do.*$/, "", line)
-				gsub(/\\/, " ", line)
-				token_count = split(line, tokens, /[[:space:]]+/)
-				for (token_index = 1; token_index <= token_count; token_index += 1) {
-					token = tokens[token_index]
-					gsub(/^["\047]+/, "", token)
-					gsub(/["\047]+$/, "", token)
-					if (token ~ /^(scripts|\.github)\//) {
-						print FILENAME ":" FNR ":" token
-					}
-				}
-			}
+	fail_on_output "$message" "$(rg -n "$@" || true)"
+}
 
-			/for required in/ {
-				raw = $0
-				sub(/^.*for required in[[:space:]]*/, "", raw)
-				emit_required_paths(raw)
-				in_required = 1
-				if ($0 ~ /;[[:space:]]*do/) {
-					in_required = 0
-				}
-				next
-			}
-			in_required {
-				raw = $0
-				emit_required_paths(raw)
-				if (raw ~ /;[[:space:]]*do[[:space:]]*$/) {
-					in_required = 0
-				}
-			}
-		' "${workflow_files[@]}" |
-			while IFS=: read -r workflow_file line_number required_path; do
-				[[ -n "$required_path" ]] || continue
-				if [[ ! -e "$ROOT_DIR/$required_path" ]]; then
-					printf '%s:%s missing required file: %s\n' "$workflow_file" "$line_number" "$required_path"
-				fi
-			done
-	)"
+assert_file_contains_all() {
+	local file="$1"
+	local message="$2"
+	local required
+	shift 2
 
-	if [[ -n "$missing" ]]; then
-		printf '%s\n' "$missing" >&2
-		die "Workflow trusted-script required lists must only reference existing repository files."
+	for required in "$@"; do
+		rg -F "$required" "$file" >/dev/null || die "$message: $required"
+	done
+}
+
+assert_paths_exist() {
+	local message="$1"
+	local path
+	shift
+
+	for path in "$@"; do
+		[[ -e "$path" ]] || die "$message: $path"
+	done
+}
+
+workflow_job_block() {
+	local file="$1"
+	local job="$2"
+
+	awk -v job="$job" '
+		$0 ~ "^[[:space:]]{2}" job ":" { inside = 1; print; next }
+		inside && /^[[:space:]]{2}[[:alnum:]_-]+:/ { exit }
+		inside { print }
+	' "$file"
+}
+
+assert_job_contains() {
+	local file="$1"
+	local job="$2"
+	local pattern="$3"
+	local message="$4"
+	local block
+
+	block="$(workflow_job_block "$file" "$job")"
+	[[ -n "$block" ]] || die "$message"
+	if ! rg -n "$pattern" <<<"$block" >/dev/null; then
+		die "$message"
 	fi
+}
+
+assert_job_no_match() {
+	local file="$1"
+	local job="$2"
+	local pattern="$3"
+	local message="$4"
+	local block
+
+	block="$(workflow_job_block "$file" "$job")"
+	[[ -n "$block" ]] || die "$message"
+	fail_on_output "$message" "$(rg -n "$pattern" <<<"$block" || true)"
 }
 
 validate_workflow_script_contract() {
 	local invalid
 	local workflow_files=()
+	local pr_ci_workflow_files=(
+		.github/workflows/ci.yml
+		.github/workflows/_reusable-unit-tests.yml
+		.github/workflows/_reusable-ui-smoke-tests.yml
+	)
 
 	while IFS= read -r workflow_file; do
 		workflow_files+=("$workflow_file")
 	done < <(find .github/workflows .github/actions -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
 
-	validate_workflow_required_file_references "${workflow_files[@]}"
-
-	invalid="$(rg -n 'inline_first_rollout|static-validated head scripts|inline_name_status_fallback|first rollout|steps\.ci_scripts|ci_scripts\.outputs|using head scripts' .github/workflows .github/actions scripts --glob '!scripts/ci/static.sh' || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Seed fallback workflow paths must be removed."
-	fi
-
-	invalid="$(rg -n '\.ai-tmp/trusted-ci/scripts/' .github/workflows .github/actions scripts --glob '!scripts/ci/static.sh' || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Trusted CI scripts must be invoked through an absolute TOOL_ROOT."
-	fi
-
-	invalid="$(rg -n '\$GITHUB_WORKSPACE/scripts/' .github/workflows .github/actions || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Workflow script invocations must execute scripts through TOOL_ROOT."
-	fi
+	assert_no_match "Trusted/base CI script model must be removed." \
+		'\.ai-tmp/trusted-ci|head-script-self-test|requires_head_script_self_test|trusted_files|test_trusted_files|Checkout trusted' \
+		.github/workflows .github/actions scripts --glob '!scripts/ci/static.sh'
+	assert_no_match "Workflow script invocations must execute scripts through TOOL_ROOT." \
+		'\$GITHUB_WORKSPACE/scripts/' .github/workflows .github/actions
 
 	invalid="$(
 		awk '
-			/for required in[[:space:]]*\\/ {
-				in_required = 1
-				next
-			}
-			in_required && /^[[:space:]]*scripts\/[^[:space:]]+([[:space:]]*\\|; do)[[:space:]]*$/ {
-				if ($0 ~ /; do[[:space:]]*$/) {
-					in_required = 0
-				}
-				next
-			}
-			in_required && /; do[[:space:]]*$/ {
-				in_required = 0
-			}
 			/scripts\// {
 				if ($0 ~ /^[[:space:]]*- '\''scripts\//) {
 					next
@@ -214,31 +202,77 @@ validate_workflow_script_contract() {
 			}
 		' "${workflow_files[@]}" || true
 	)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Workflow script references must be path filters, trusted-script checks, or TOOL_ROOT executions."
-	fi
+	fail_on_output "Workflow script references must be path filters or TOOL_ROOT executions." "$invalid"
 
 	invalid="$(rg -n 'ROOT_DIR=.*scripts/' .github/workflows .github/actions | rg -v 'TOOL_ROOT=.*"\$tool_root/scripts/' || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Workflow script invocations must pass ROOT_DIR and TOOL_ROOT and execute through TOOL_ROOT."
-	fi
+	fail_on_output "Workflow script invocations must pass ROOT_DIR and TOOL_ROOT and execute through TOOL_ROOT." "$invalid"
+	assert_no_match "PR CI workflows must not expose GITHUB_TOKEN to checked-out repository scripts." \
+		'GITHUB_TOKEN:[[:space:]]*\$\{\{[[:space:]]*github\.token[[:space:]]*\}\}' "${pr_ci_workflow_files[@]}"
+
+	invalid="$(
+		awk '
+			function finish_checkout() {
+				if (in_checkout && !saw_persist_credentials) {
+					print current_file ":" checkout_line ":actions/checkout must set persist-credentials: false"
+				}
+			}
+			FNR == 1 {
+				finish_checkout()
+				current_file = FILENAME
+				in_checkout = 0
+				saw_persist_credentials = 0
+				checkout_line = 0
+			}
+			/^[[:space:]]*-[[:space:]]+name:/ {
+				finish_checkout()
+				in_checkout = 0
+				saw_persist_credentials = 0
+				checkout_line = 0
+			}
+			/uses:[[:space:]]*actions\/checkout@/ {
+				in_checkout = 1
+				saw_persist_credentials = 0
+				checkout_line = FNR
+			}
+			in_checkout && /persist-credentials:[[:space:]]*false/ {
+				saw_persist_credentials = 1
+			}
+			END {
+				finish_checkout()
+			}
+		' "${pr_ci_workflow_files[@]}" || true
+	)"
+	fail_on_output "PR CI checkouts must disable persisted credentials." "$invalid"
+	assert_no_match "Release smoke must stay split into arm64 and intel64 jobs." \
+		'^[[:space:]]{2}release_build_check:' .github/workflows/ci.yml
+
+	assert_job_contains .github/workflows/ci.yml release_build_check_arm64 \
+		'if:.*requires_release_smoke.*true' \
+		"arm64 release smoke must run whenever release smoke is required"
+	assert_job_contains .github/workflows/ci.yml release_build_check_intel64 \
+		'if:.*github\.event_name.*push.*requires_release_smoke.*true' \
+		"intel64 release smoke must be push-only"
+
+	assert_job_no_match .github/workflows/release.yml require_ci_gate \
+		'actions\/checkout@|scripts\/release\/require_ci_gate\.sh|scripts\/dev\/bootstrap\.sh|prepare_release|needs\.prepare_release' \
+		"Release ci-gate verification must stay workflow-owned and must not execute target checkout scripts."
+	assert_job_no_match .github/workflows/release.yml resolve_release_target \
+		'actions\/checkout@|scripts\/' \
+		"resolve-release-target must not checkout or execute repository scripts"
+	assert_job_contains .github/workflows/release.yml prepare_release \
+		'^[[:space:]]*-[[:space:]]*require_ci_gate[[:space:]]*$' \
+		"prepare-release must depend on require-ci-gate"
+	assert_job_contains .github/workflows/release.yml prepare_release \
+		'ref:[[:space:]]*\$\{\{[[:space:]]*needs\.resolve_release_target\.outputs\.target_sha[[:space:]]*\}\}' \
+		"prepare-release must checkout the resolved target SHA"
 }
 
 validate_xcode_shell_build_phase() {
 	local project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
 	local shell_phase_count
 	local invalid_inputs
-	local required
 	local root_setting_count
 	local tool_setting_count
-	local tool_build_input='$(TOOL_ROOT)/scripts/build-relay.sh'
-	local tool_contract_input='$(TOOL_ROOT)/scripts/lib/contract.sh'
-	local tool_common_input='$(TOOL_ROOT)/scripts/lib/common.sh'
-	local tool_architecture_input='$(TOOL_ROOT)/scripts/lib/architecture.sh'
-	local tool_release_binaries_input='$(TOOL_ROOT)/scripts/lib/release_binaries.sh'
-	local root_relay_input_prefix='$(ROOT_DIR)/Tools/VoidDisplayRelay/'
 
 	extract_pbx_array_values() {
 		local key="$1"
@@ -267,25 +301,17 @@ validate_xcode_shell_build_phase() {
 	shell_phase_count="$(awk '/isa = PBXShellScriptBuildPhase;/{count += 1} END{print count + 0}' "$project_file")"
 	[[ "$shell_phase_count" == "1" ]] || die "Xcode project must contain exactly one shell build phase."
 
-	for required in \
+	assert_file_contains_all "$project_file" "Build Relay phase is missing required line" \
 		'name = "Build Relay";' \
 		'shellPath = /bin/bash;' \
-		'"cd \"$SRCROOT/../..\"",'; do
-		if ! rg -F "$required" "$project_file" >/dev/null; then
-			die "Build Relay phase is missing required line: $required"
-		fi
-	done
+		'"cd \"$SRCROOT/../..\"",'
 
-	for required in \
+	assert_file_contains_all "$project_file" "Build Relay phase is missing required tool input or build setting" \
 		'"$(TOOL_ROOT)/scripts/build-relay.sh",' \
 		'"$(TOOL_ROOT)/scripts/lib/contract.sh",' \
 		'"$(TOOL_ROOT)/scripts/lib/common.sh",' \
 		'"$(TOOL_ROOT)/scripts/lib/architecture.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",'; do
-		if ! rg -F "$required" "$project_file" >/dev/null; then
-			die "Build Relay phase is missing required trusted tool input or build setting: $required"
-		fi
-	done
+		'"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",'
 
 	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)/../..";' "$project_file" | wc -l | tr -d '[:space:]')"
 	tool_setting_count="$(rg -F 'TOOL_ROOT = "$(ROOT_DIR)";' "$project_file" | wc -l | tr -d '[:space:]')"
@@ -304,48 +330,32 @@ validate_xcode_shell_build_phase() {
 
 	invalid_inputs="$(
 		extract_pbx_array_values inputPaths |
-			while IFS= read -r input_path; do
-				if [[ "$input_path" == "$tool_build_input" ||
-					"$input_path" == "$tool_contract_input" ||
-					"$input_path" == "$tool_common_input" ||
-					"$input_path" == "$tool_architecture_input" ||
-					"$input_path" == "$tool_release_binaries_input" ||
-					"$input_path" == "$root_relay_input_prefix"* ]]; then
-					continue
-				fi
-				printf '%s\n' "$input_path"
-			done
+			rg -v '^\$\(TOOL_ROOT\)/scripts/(build-relay\.sh|lib/(contract|common|architecture|release_binaries)\.sh)$|^\$\(ROOT_DIR\)/Tools/VoidDisplayRelay/' || true
 	)"
-	if [[ -n "$invalid_inputs" ]]; then
-		printf '%s\n' "$invalid_inputs" >&2
-		die "Build Relay input paths must stay under allowed prefixes."
-	fi
+	fail_on_output "Build Relay input paths must stay under allowed prefixes." "$invalid_inputs"
+}
+
+validate_log_scanner() {
+	local scanner="$1"
+	local label="$2"
+	local fixture_dir="$3"
+	local positive_fixture
+
+	for positive_fixture in "$fixture_dir"/positive-*.fixture; do
+		if ("$scanner" "$label log fixture" "$positive_fixture" >/dev/null 2>&1); then
+			die "$label log scanner missed fixture: $positive_fixture"
+		fi
+	done
+
+	"$scanner" "$label negative log fixture" "$fixture_dir/negative-ordinary-text.fixture"
 }
 
 validate_xcode_log_scanner() {
-	local fixture_dir="$TOOL_ROOT/scripts/ci/fixtures/xcode-log-scanner"
-	local positive_fixture
-
-	for positive_fixture in "$fixture_dir"/positive-*.fixture; do
-		if (scan_xcode_log_for_diagnostics "Xcode log fixture" "$positive_fixture" >/dev/null 2>&1); then
-			die "Xcode log scanner missed fixture: $positive_fixture"
-		fi
-	done
-
-	scan_xcode_log_for_diagnostics "Xcode negative log fixture" "$fixture_dir/negative-ordinary-text.fixture"
+	validate_log_scanner scan_xcode_log_for_diagnostics Xcode "$TOOL_ROOT/scripts/ci/fixtures/xcode-log-scanner"
 }
 
 validate_swiftpm_log_scanner() {
-	local fixture_dir="$TOOL_ROOT/scripts/ci/fixtures/swiftpm-log-scanner"
-	local positive_fixture
-
-	for positive_fixture in "$fixture_dir"/positive-*.fixture; do
-		if (scan_build_log_for_diagnostics "SwiftPM log fixture" "$positive_fixture" >/dev/null 2>&1); then
-			die "SwiftPM log scanner missed fixture: $positive_fixture"
-		fi
-	done
-
-	scan_build_log_for_diagnostics "SwiftPM negative log fixture" "$fixture_dir/negative-ordinary-text.fixture"
+	validate_log_scanner scan_build_log_for_diagnostics SwiftPM "$TOOL_ROOT/scripts/ci/fixtures/swiftpm-log-scanner"
 }
 
 validate_classify_fixtures() {
@@ -360,7 +370,6 @@ validate_webrtc_header_overlay() {
 	local invalid
 	local expected_paths
 	local actual_paths
-	local required_source
 	local manifest_json
 
 	if ! manifest_json="$(swift package dump-package 2>/dev/null)"; then
@@ -370,51 +379,36 @@ validate_webrtc_header_overlay() {
 	if ! jq -e \
 		--arg url 'https://github.com/stasel/WebRTC/releases/download/147.0.0/WebRTC-M147.xcframework.zip' \
 		--arg checksum '49f9b1713432c19f408e3218fc8526c7692fafca5869f7ec5f5991614276ed40' \
-		'.targets[] | select(.name == "WebRTCBinary" and .type == "binary" and .url == $url and .checksum == $checksum)' \
+		'(
+		  any(.targets[]; .name == "WebRTCBinary" and .type == "binary" and .url == $url and .checksum == $checksum) and
+		  any(.targets[]; .name == "WebRTC" and .type == "regular" and .path == "Vendor/WebRTCHeaders/M147" and .publicHeadersPath == "include" and any(.dependencies[]?; .byName[0] == "WebRTCBinary")) and
+		  any(.targets[]; .name == "VoidDisplaySharing" and any(.dependencies[]?; .byName[0] == "WebRTC")) and
+		  ((.dependencies // []) | length == 0)
+		)' \
 		<<<"$manifest_json" >/dev/null; then
-		die "Package.swift must define WebRTCBinary from the stasel/WebRTC 147.0.0 asset."
+		die "Package.swift must use the local WebRTC M147 wrapper target and no remote source package dependencies."
 	fi
-	if ! jq -e \
-		'.targets[] | select(.name == "WebRTC" and .type == "regular" and .path == "Vendor/WebRTCHeaders/M147" and .publicHeadersPath == "include" and any(.dependencies[]?; .byName[0] == "WebRTCBinary"))' \
-		<<<"$manifest_json" >/dev/null; then
-		die "Package.swift must expose the WebRTC M147 overlay through the local WebRTC target."
-	fi
-	if ! jq -e \
-		'.targets[] | select(.name == "VoidDisplaySharing" and any(.dependencies[]?; .byName[0] == "WebRTC"))' \
-		<<<"$manifest_json" >/dev/null; then
-		die "VoidDisplaySharing must depend on the local WebRTC wrapper target."
-	fi
-	if ! jq -e '(.dependencies // []) | length == 0' <<<"$manifest_json" >/dev/null; then
-		die "Package.swift must not retain remote source package dependencies."
-	fi
-	if rg -F 'https://github.com/stasel/WebRTC.git' "$ROOT_DIR/Package.swift" >/dev/null; then
-		die "Package.swift must use the local WebRTC wrapper target instead of the remote stasel package."
-	fi
+	assert_no_match "Package.swift must use the local WebRTC wrapper target instead of the remote stasel package." \
+		'https://github.com/stasel/WebRTC.git' "$ROOT_DIR/Package.swift"
 	invalid="$(rg -n 'https://github.com/stasel/WebRTC.git|\"identity\"[[:space:]]*:[[:space:]]*\"webrtc\"' \
 		"$ROOT_DIR/Package.resolved" \
 		"$ROOT_DIR/Apps/VoidDisplay/VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" \
 		"$ROOT_DIR/VoidDisplay.xcworkspace/xcshareddata/swiftpm/Package.resolved" || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "Package.resolved files must not retain stale stasel/WebRTC source pins."
-	fi
+	fail_on_output "Package.resolved files must not retain stale stasel/WebRTC source pins." "$invalid"
 
-	[[ -f "$overlay_root/SOURCES.md" ]] || die "WebRTC M147 header overlay must document sources."
-	[[ -f "$checksum_file" ]] || die "WebRTC M147 header overlay must include SHA256SUMS."
-	[[ -f "$overlay_root/WebRTCHeaderOverlayAnchor.c" ]] || die "WebRTC M147 header overlay target must include its anchor C file."
-	[[ -f "$include_dir/WebRTC.h" ]] || die "WebRTC M147 header overlay must include WebRTC.h."
-	[[ -f "$include_dir/RTCMTLNSVideoView.h" ]] || die "WebRTC M147 header overlay must include RTCMTLNSVideoView.h."
+	assert_paths_exist "WebRTC M147 header overlay is missing required file" \
+		"$overlay_root/SOURCES.md" \
+		"$checksum_file" \
+		"$overlay_root/WebRTCHeaderOverlayAnchor.c" \
+		"$include_dir/WebRTC.h" \
+		"$include_dir/RTCMTLNSVideoView.h"
 
-	for required_source in \
+	assert_file_contains_all "$overlay_root/SOURCES.md" "WebRTC M147 SOURCES.md is missing required source detail" \
 		'https://github.com/stasel/WebRTC/releases/download/147.0.0/WebRTC-M147.xcframework.zip' \
 		'49f9b1713432c19f408e3218fc8526c7692fafca5869f7ec5f5991614276ed40' \
 		'refs/branch-heads/7727' \
 		'macos-x86_64_arm64/WebRTC.framework/Versions/A/Headers/WebRTC.h' \
-		'RTCMTLNSVideoView.h'; do
-		if ! rg -F "$required_source" "$overlay_root/SOURCES.md" >/dev/null; then
-			die "WebRTC M147 SOURCES.md is missing required source detail: $required_source"
-		fi
-	done
+		'RTCMTLNSVideoView.h'
 
 	invalid="$(
 		find "$overlay_root" -type f \
@@ -424,24 +418,18 @@ validate_webrtc_header_overlay() {
 			! -path "$overlay_root/WebRTCHeaderOverlayAnchor.c" \
 			-print
 	)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "WebRTC M147 overlay may only contain headers, source metadata, checksums, and the anchor C file."
-	fi
+	fail_on_output "WebRTC M147 overlay may only contain headers, source metadata, checksums, and the anchor C file." "$invalid"
 
-	if ! rg -F '#import <WebRTC/RTCVideoRenderer.h>' "$include_dir/RTCMTLNSVideoView.h" >/dev/null; then
-		die "RTCMTLNSVideoView.h must import RTCVideoRenderer.h through the WebRTC framework path."
-	fi
+	assert_file_contains_all "$include_dir/RTCMTLNSVideoView.h" \
+		"RTCMTLNSVideoView.h must import RTCVideoRenderer.h through the WebRTC framework path" \
+		'#import <WebRTC/RTCVideoRenderer.h>'
 
 	for forbidden_header in RTCEAGLVideoView.h RTCCameraPreviewView.h UIDevice+RTCDevice.h; do
 		[[ ! -e "$include_dir/$forbidden_header" ]] || die "WebRTC M147 overlay must not include iOS-only header: $forbidden_header"
 	done
 
-	invalid="$(rg -n '^[[:space:]]*#(import|include)[[:space:]]+"[^"]+"' "$include_dir" || true)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "WebRTC M147 overlay must not use WebRTC-local quoted imports."
-	fi
+	assert_no_match "WebRTC M147 overlay must not use WebRTC-local quoted imports." \
+		'^[[:space:]]*#(import|include)[[:space:]]+"[^"]+"' "$include_dir"
 
 	invalid="$(
 		while IFS=: read -r file line_number import_path; do
@@ -451,10 +439,7 @@ validate_webrtc_header_overlay() {
 			[[ -f "$include_dir/$import_path" ]] || printf '%s:%s missing <%s>\n' "$file" "$line_number" "WebRTC/$import_path"
 		done < <(rg -n -o '<WebRTC/[^>]+>' "$include_dir" || true)
 	)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "WebRTC M147 overlay has unresolved recursive WebRTC imports."
-	fi
+	fail_on_output "WebRTC M147 overlay has unresolved recursive WebRTC imports." "$invalid"
 
 	invalid="$(
 		awk '
@@ -481,10 +466,7 @@ validate_webrtc_header_overlay() {
 			}
 		' "$include_dir"/*.h
 	)"
-	if [[ -n "$invalid" ]]; then
-		printf '%s\n' "$invalid" >&2
-		die "WebRTC M147 overlay may only reference UIKit inside TARGET_OS_IPHONE guards."
-	fi
+	fail_on_output "WebRTC M147 overlay may only reference UIKit inside TARGET_OS_IPHONE guards." "$invalid"
 
 	if ! (cd "$overlay_root" && shasum -a 256 -c SHA256SUMS >/dev/null); then
 		(cd "$overlay_root" && shasum -a 256 -c SHA256SUMS) >&2 || true
@@ -511,23 +493,19 @@ validate_create_dmg_failure_summary() {
 	local out_dir
 	local summary_path
 	local missing_app_path
-	local status
 
 	out_dir="$AI_TMP_DIR/static-dmg-summary/$(timestamp)"
 	summary_path="$out_dir/create-dmg-summary.json"
 	missing_app_path="$out_dir/Missing.app"
 	mkdir -p "$out_dir"
 
-	set +e
-	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/release/create_dmg.sh" \
+	if env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/release/create_dmg.sh" \
 		--summary "$summary_path" \
 		"$missing_app_path" \
 		"$out_dir/Missing.dmg" \
-		"VoidDisplay" >/dev/null 2>&1
-	status="$?"
-	set -e
-
-	[[ "$status" -ne 0 ]] || die "create_dmg missing-app fixture unexpectedly passed."
+		"VoidDisplay" >/dev/null 2>&1; then
+		die "create_dmg missing-app fixture unexpectedly passed."
+	fi
 	jq -e '.status == "failed" and .reason == "missing_app" and .stage == "argument_validation"' "$summary_path" >/dev/null ||
 		die "create_dmg missing-app fixture did not write the expected summary."
 }

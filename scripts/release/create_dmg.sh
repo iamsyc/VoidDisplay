@@ -7,6 +7,8 @@ source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 source "$TOOL_ROOT/scripts/lib/common.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release.sh
+source "$TOOL_ROOT/scripts/lib/release.sh"
 
 usage() {
 	cat <<'EOF'
@@ -102,49 +104,11 @@ mount_path=""
 device=""
 
 cleanup() {
-	if [ -n "${device}" ]; then
-		hdiutil detach "${device}" -quiet >/dev/null 2>&1 || hdiutil detach "${device}" -force -quiet >/dev/null 2>&1 || true
-	fi
+	release_cleanup_device "$device"
 	rm -rf "${work_dir}"
 }
 
 trap cleanup EXIT
-
-detach_volume() {
-	local target_device="$1"
-
-	if [ -z "${target_device}" ]; then
-		return
-	fi
-
-	for _ in 1 2 3 4 5; do
-		if hdiutil detach "${target_device}" -quiet >/dev/null 2>&1; then
-			return
-		fi
-		sleep 1
-	done
-
-	hdiutil detach "${target_device}" -force -quiet >/dev/null 2>&1 || true
-}
-
-run_with_timeout() {
-	local timeout_seconds="$1"
-	shift
-
-	python3 - "$timeout_seconds" "$@" <<'PY'
-import subprocess
-import sys
-
-timeout_seconds = int(sys.argv[1])
-command = sys.argv[2:]
-
-try:
-    completed = subprocess.run(command, check=False, timeout=timeout_seconds)
-    sys.exit(completed.returncode)
-except subprocess.TimeoutExpired:
-    sys.exit(124)
-PY
-}
 
 mkdir -p "${background_dir}"
 # Render the DMG background at build time from a fixed template.
@@ -194,8 +158,8 @@ set -e
 if [ "$attach_status" -ne 0 ]; then
 	fail_dmg "hdiutil_failed" "Failed to attach writable DMG: ${attach_output}"
 fi
-device="$(printf '%s\n' "${attach_output}" | awk '/^\/dev\// {print $1; exit}')"
-mount_path="$(printf '%s\n' "${attach_output}" | sed -n 's#.*\(/Volumes/.*\)$#\1#p' | tail -n 1)"
+device="$(printf '%s\n' "${attach_output}" | release_parse_attach_device)"
+mount_path="$(printf '%s\n' "${attach_output}" | release_parse_attach_mount_path)"
 
 if [ -z "${device}" ] || [ -z "${mount_path}" ]; then
 	fail_dmg "hdiutil_failed" "Failed to locate mounted DMG device or mount path: ${attach_output}"
@@ -205,7 +169,7 @@ mounted_volume_name="$(basename "${mount_path}")"
 
 stage="dmg_layout"
 layout_exit_code=0
-run_with_timeout 45 osascript "$TOOL_ROOT/scripts/release/apply_dmg_layout.applescript" "${mounted_volume_name}" "${app_name}" || layout_exit_code="$?"
+release_run_with_timeout 45 osascript "$TOOL_ROOT/scripts/release/apply_dmg_layout.applescript" "${mounted_volume_name}" "${app_name}" || layout_exit_code="$?"
 if [ "${layout_exit_code}" -ne 0 ]; then
 	if [ "${layout_exit_code}" -eq 124 ]; then
 		fail_dmg "dmg_layout_timeout" "DMG layout timed out after 45 seconds." 124
@@ -218,7 +182,7 @@ SetFile -a V "${mount_path}/.background" || true
 bless --folder "${mount_path}" --openfolder "${mount_path}" >/dev/null 2>&1 || true
 
 stage="hdiutil_detach"
-detach_volume "${device}"
+release_detach_device "${device}"
 device=""
 
 rm -f "${output_dmg}"
