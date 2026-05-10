@@ -31,12 +31,10 @@ backend = "aqua:cli/cli"
 [tools."aqua:cli/cli"."platforms.macos-arm64"]
 checksum = "sha256:b11c54f6bd7d15ed6590475079e5b2fcf36f45d3991a80041b29c9d0cc1f1d07"
 url = "https://github.com/cli/cli/releases/download/v2.92.0/gh_2.92.0_macOS_arm64.zip"
-provenance = "github-attestations"
 
 [tools."aqua:cli/cli"."platforms.macos-x64"]
 checksum = "sha256:ae9bb327ab0d91071bdada79f8f14034a2a0f19b0e001835a782eafa519d2af0"
 url = "https://github.com/cli/cli/releases/download/v2.92.0/gh_2.92.0_macOS_amd64.zip"
-provenance = "github-attestations"
 
 [[tools."aqua:jqlang/jq"]]
 version = "1.8.1"
@@ -45,12 +43,10 @@ backend = "aqua:jqlang/jq"
 [tools."aqua:jqlang/jq"."platforms.macos-arm64"]
 checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
-provenance = "github-attestations"
 
 [tools."aqua:jqlang/jq"."platforms.macos-x64"]
 checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"
-provenance = "github-attestations"
 
 [[tools."aqua:koalaman/shellcheck"]]
 version = "0.11.0"
@@ -95,12 +91,10 @@ backend = "aqua:rhysd/actionlint"
 [tools."aqua:rhysd/actionlint"."platforms.macos-arm64"]
 checksum = "sha256:aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f"
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_arm64.tar.gz"
-provenance = "github-attestations"
 
 [tools."aqua:rhysd/actionlint"."platforms.macos-x64"]
 checksum = "sha256:5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644"
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_amd64.tar.gz"
-provenance = "github-attestations"
 
 [[tools.go]]
 version = "1.26.2"
