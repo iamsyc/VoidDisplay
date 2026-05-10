@@ -1,15 +1,6 @@
 name: CodeQL
 
 on:
-  pull_request:
-    paths:
-      - 'Sources/**'
-      - 'Tests/**'
-      - 'Tools/VoidDisplayRelay/**'
-      - 'Package.swift'
-      - 'Package.resolved'
-      - '**/Package.resolved'
-      - '.github/workflows/codeql.yml'
   push:
     branches:
       - main
