@@ -100,7 +100,7 @@ write_summary() {
 }
 
 select_required_xcode
-require_command jq go
+require_command jq go rg
 go_mod_download_with_retry "$ROOT_DIR/Tools/VoidDisplayRelay"
 
 last_reason="not_run"

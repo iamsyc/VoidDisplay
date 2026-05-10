@@ -1,9 +1,9 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplaySharingTestingSupport
 @testable import VoidDisplayTestingSupport
+import Darwin
 import Foundation
 import Network
-import Darwin
 import Testing
 
 @MainActor
@@ -122,13 +122,21 @@ struct WebServiceControllerTests {
     }
 
     @Test
-    func preflightBindingFailureReturnsPortInUseWhenSocketAlreadyBound() throws {
-        let (socketDescriptor, port) = try openBoundSocket()
+    func startReturnsPortInUseWhenPortIsActuallyListening() async throws {
+        let (socketDescriptor, port) = try openListeningSocket()
         defer { close(socketDescriptor) }
+        let sut = WebServiceController()
 
-        let failure = WebServiceController.preflightBindingFailure(for: port)
+        let result = await sut.start(
+            requestedPort: port,
+            targetStateProvider: { _ in .unknown },
+            concreteTargetResolver: { $0 },
+            sessionHubProvider: { _ in nil },
+            sharingEventSink: { _ in }
+        )
 
-        #expect(failure == .portInUse(port: port))
+        #expect(result == .failed(.portInUse(port: port)))
+        #expect(sut.lifecycleState == .failed(.portInUse(port: port)))
     }
 
     @Test
@@ -342,7 +350,7 @@ struct WebServiceControllerTests {
         return (startTask, server)
     }
 
-    private func openBoundSocket() throws -> (Int32, UInt16) {
+    private func openListeningSocket() throws -> (Int32, UInt16) {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
         guard descriptor >= 0 else {
             throw POSIXError(.ENOTSOCK)
@@ -360,6 +368,12 @@ struct WebServiceControllerTests {
             }
         }
         guard bindResult == 0 else {
+            let errnoValue = POSIXErrorCode(rawValue: errno) ?? .EFAULT
+            close(descriptor)
+            throw POSIXError(errnoValue)
+        }
+
+        guard listen(descriptor, 1) == 0 else {
             let errnoValue = POSIXErrorCode(rawValue: errno) ?? .EFAULT
             close(descriptor)
             throw POSIXError(errnoValue)

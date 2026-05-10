@@ -1,7 +1,7 @@
 {
   "categories": {
     "code": {
-      "exact": ["Package.swift", "Package.resolved", "mise.toml", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
+      "exact": ["Package.swift", "Package.resolved", "mise.toml", "mise.lock", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
       "prefixes": ["Sources/", "Tests/", "UITests/", "Apps/VoidDisplay/", "Tools/VoidDisplayRelay/", "scripts/", ".github/workflows/", ".github/actions/"],
       "globs": ["*/Package.resolved"]
     },
@@ -11,7 +11,7 @@
       "globs": []
     },
     "script": {
-      "exact": ["mise.toml", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
+      "exact": ["mise.toml", "mise.lock", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
       "prefixes": ["scripts/", ".github/workflows/", ".github/actions/"],
       "globs": []
     },
@@ -26,7 +26,7 @@
       "globs": []
     },
     "ci_config": {
-      "exact": [".swiftformat", ".swiftlint.yml", "mise.toml", "Brewfile", ".github/dependabot.yml"],
+      "exact": [".swiftformat", ".swiftlint.yml", "mise.toml", "mise.lock", "Brewfile", ".github/dependabot.yml"],
       "prefixes": [".github/workflows/", ".github/actions/", "scripts/ci/", "scripts/dev/"],
       "globs": []
     },
@@ -41,7 +41,7 @@
       "globs": ["*/Package.resolved"]
     },
     "tooling_config": {
-      "exact": ["mise.toml", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
+      "exact": ["mise.toml", "mise.lock", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
       "prefixes": [],
       "globs": []
     },

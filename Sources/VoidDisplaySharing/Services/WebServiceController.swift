@@ -4,7 +4,6 @@ import VoidDisplayObservability
 import Foundation
 import Network
 import OSLog
-import Darwin
 package enum WebServiceServerStopReason: Equatable {
     case requested
     case startupCancelled
@@ -90,6 +89,8 @@ package final class WebServiceController: WebServiceControllerProtocol {
     private var lifecycleNonce: UInt64 = 0
     private let webServiceServerFactory: WebServiceServerFactory
     private let relayProcessController: RelayProcessController?
+    private static let addressReuseRetryLimit = 10
+    private static let addressReuseRetryDelay = Duration.milliseconds(50)
 
     package var onRunningStateChanged: (@MainActor @Sendable (Bool) -> Void)?
     package var onLifecycleStateChanged: (@MainActor @Sendable (WebServiceLifecycleState) -> Void)?
@@ -254,16 +255,6 @@ package final class WebServiceController: WebServiceControllerProtocol {
             return .failed(failure)
         }
 
-        if let preflightFailure = Self.preflightBindingFailure(for: requestedPort) {
-            AppLog.web.error(
-                "Web service preflight failed (requestedPort: \(requestedPort, privacy: .public), reason: \(String(describing: preflightFailure), privacy: .public))."
-            )
-            if isCurrentOperation(operationNonce) {
-                setLifecycleState(.failed(preflightFailure))
-            }
-            return .failed(preflightFailure)
-        }
-
         if let relayProcessController {
             do {
                 _ = try await relayProcessController.client()
@@ -278,81 +269,119 @@ package final class WebServiceController: WebServiceControllerProtocol {
             }
         }
 
-        do {
+        for startupAttempt in 0...Self.addressReuseRetryLimit {
             let serverToken = UUID()
-            let server = try webServiceServerFactory(
-                port,
-                targetStateProvider,
-                concreteTargetResolver,
-                sessionHubProvider,
-                sharingEventSink,
-                { [weak self] reason in
-                    self?.handleServerStop(serverToken: serverToken, reason: reason)
-                }
-            )
-            guard isCurrentOperation(operationNonce) else {
-                server.stopListener(reason: .superseded)
-                return supersededFailure(port: requestedPort)
-            }
-
-            startingServer = (serverToken, server)
-            defer {
-                if self.startingServer?.token == serverToken {
-                    self.startingServer = nil
-                }
-            }
-
-            let startResult = await server.startListener()
-            let stillOwnsStartupSlot = startingServer?.token == serverToken
-            guard isCurrentOperation(operationNonce), stillOwnsStartupSlot else {
-                if stillOwnsStartupSlot {
+            do {
+                let server = try webServiceServerFactory(
+                    port,
+                    targetStateProvider,
+                    concreteTargetResolver,
+                    sessionHubProvider,
+                    sharingEventSink,
+                    { [weak self] reason in
+                        self?.handleServerStop(serverToken: serverToken, reason: reason)
+                    }
+                )
+                guard isCurrentOperation(operationNonce) else {
                     server.stopListener(reason: .superseded)
+                    return supersededFailure(port: requestedPort)
                 }
-                return supersededFailure(port: requestedPort)
-            }
 
-            switch startResult {
-            case .ready(let boundPort):
-                activeServer = server
-                activeServerToken = serverToken
-                let binding = WebServiceBinding(
+                startingServer = (serverToken, server)
+                defer {
+                    if self.startingServer?.token == serverToken {
+                        self.startingServer = nil
+                    }
+                }
+
+                let startResult = await server.startListener()
+                let stillOwnsStartupSlot = startingServer?.token == serverToken
+                guard isCurrentOperation(operationNonce), stillOwnsStartupSlot else {
+                    if stillOwnsStartupSlot {
+                        server.stopListener(reason: .superseded)
+                    }
+                    return supersededFailure(port: requestedPort)
+                }
+
+                switch startResult {
+                case .ready(let boundPort):
+                    activeServer = server
+                    activeServerToken = serverToken
+                    let binding = WebServiceBinding(
+                        requestedPort: requestedPort,
+                        boundPort: boundPort
+                    )
+                    currentBinding = binding
+                    setLifecycleState(.running(binding))
+                    AppLog.web.info(
+                        "Web service started (requestedPort: \(requestedPort, privacy: .public), boundPort: \(boundPort, privacy: .public))."
+                    )
+                    return .started(binding)
+
+                case .timedOut:
+                    server.stopListener(reason: .requested)
+                    relayProcessController?.stop()
+                    let failure: WebServiceStartFailure = .timedOut(port: requestedPort)
+                    setLifecycleState(.failed(failure))
+                    AppLog.web.error(
+                        "Web service failed to become ready in time (requestedPort: \(requestedPort, privacy: .public))."
+                    )
+                    return .failed(failure)
+
+                case .failed(let error):
+                    if await retryAfterAddressInUseIfNeeded(
+                        error: error,
+                        requestedPort: requestedPort,
+                        startupAttempt: startupAttempt,
+                        operationNonce: operationNonce
+                    ) {
+                        server.stopListener(reason: .requested)
+                        continue
+                    }
+                    relayProcessController?.stop()
+                    let failure = mapStartFailure(error: error, requestedPort: requestedPort)
+                    setLifecycleState(.failed(failure))
+                    AppLog.web.error(
+                        "Web service listener failed (requestedPort: \(requestedPort, privacy: .public)): \(String(describing: error), privacy: .public)"
+                    )
+                    return .failed(failure)
+                }
+            } catch {
+                if await retryAfterAddressInUseIfNeeded(
+                    error: error,
                     requestedPort: requestedPort,
-                    boundPort: boundPort
-                )
-                currentBinding = binding
-                setLifecycleState(.running(binding))
-                AppLog.web.info(
-                    "Web service started (requestedPort: \(requestedPort, privacy: .public), boundPort: \(boundPort, privacy: .public))."
-                )
-                return .started(binding)
-
-            case .timedOut:
-                server.stopListener(reason: .requested)
-                relayProcessController?.stop()
-                let failure: WebServiceStartFailure = .timedOut(port: requestedPort)
-                setLifecycleState(.failed(failure))
-                AppLog.web.error(
-                    "Web service failed to become ready in time (requestedPort: \(requestedPort, privacy: .public))."
-                )
-                return .failed(failure)
-
-            case .failed(let error):
+                    startupAttempt: startupAttempt,
+                    operationNonce: operationNonce
+                ) {
+                    continue
+                }
+                clearRunningServerIfTokenMatches(activeServerToken)
                 relayProcessController?.stop()
                 let failure = mapStartFailure(error: error, requestedPort: requestedPort)
                 setLifecycleState(.failed(failure))
-                AppLog.web.error(
-                    "Web service listener failed (requestedPort: \(requestedPort, privacy: .public)): \(String(describing: error), privacy: .public)"
-                )
+                AppErrorMapper.logFailure("Start web service", error: error, logger: AppLog.web)
                 return .failed(failure)
             }
-        } catch {
-            clearRunningServerIfTokenMatches(activeServerToken)
-            relayProcessController?.stop()
-            let failure = mapStartFailure(error: error, requestedPort: requestedPort)
-            setLifecycleState(.failed(failure))
-            AppErrorMapper.logFailure("Start web service", error: error, logger: AppLog.web)
-            return .failed(failure)
         }
+
+        let failure = WebServiceStartFailure.portInUse(port: requestedPort)
+        relayProcessController?.stop()
+        setLifecycleState(.failed(failure))
+        return .failed(failure)
+    }
+
+    private func retryAfterAddressInUseIfNeeded(
+        error: Error,
+        requestedPort: UInt16,
+        startupAttempt: Int,
+        operationNonce: UInt64
+    ) async -> Bool {
+        guard startupAttempt < Self.addressReuseRetryLimit,
+              Self.isAddressInUse(error, requestedPort: requestedPort) else {
+            return false
+        }
+        try? await Task.sleep(for: Self.addressReuseRetryDelay)
+        return isCurrentOperation(operationNonce)
     }
 
     private func handleServerStop(serverToken: UUID, reason: WebServiceServerStopReason) {
@@ -445,6 +474,13 @@ package final class WebServiceController: WebServiceControllerProtocol {
         Self.classifyStartFailure(error: error, requestedPort: requestedPort)
     }
 
+    private static func isAddressInUse(_ error: Error, requestedPort: UInt16) -> Bool {
+        if case .portInUse = classifyStartFailure(error: error, requestedPort: requestedPort) {
+            return true
+        }
+        return false
+    }
+
     package static func classifyStartFailure(error: Error, requestedPort: UInt16) -> WebServiceStartFailure {
         if let nwError = error as? NWError {
             switch nwError {
@@ -474,65 +510,5 @@ package final class WebServiceController: WebServiceControllerProtocol {
             port: requestedPort,
             message: String(localized: "Failed to start web service on port \(requestedPort).")
         )
-    }
-
-    package static func preflightBindingFailure(for requestedPort: UInt16) -> WebServiceStartFailure? {
-        let socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard socketDescriptor >= 0 else {
-            return .listenerFailed(
-                port: requestedPort,
-                message: String(localized: "Failed to prepare web service socket for port \(requestedPort).")
-            )
-        }
-        defer { close(socketDescriptor) }
-
-        var reuseAddress = Int32(1)
-        let optionResult = setsockopt(
-            socketDescriptor,
-            SOL_SOCKET,
-            SO_REUSEADDR,
-            &reuseAddress,
-            socklen_t(MemoryLayout<Int32>.size)
-        )
-        guard optionResult == 0 else {
-            return .listenerFailed(
-                port: requestedPort,
-                message: String(localized: "Failed to prepare web service socket for port \(requestedPort).")
-            )
-        }
-
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = requestedPort.bigEndian
-        address.sin_addr = in_addr(s_addr: INADDR_ANY.bigEndian)
-
-        let bindResult = withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
-                bind(socketDescriptor, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-
-        guard bindResult == 0 else {
-            if let code = POSIXErrorCode(rawValue: errno) {
-                switch code {
-                case .EADDRINUSE:
-                    return .portInUse(port: requestedPort)
-                case .EACCES:
-                    return .permissionDenied(port: requestedPort)
-                default:
-                    return .listenerFailed(
-                        port: requestedPort,
-                        message: String(localized: "Failed to start web service on port \(requestedPort).")
-                    )
-                }
-            }
-            return .listenerFailed(
-                port: requestedPort,
-                message: String(localized: "Failed to start web service on port \(requestedPort).")
-            )
-        }
-
-        return nil
     }
 }

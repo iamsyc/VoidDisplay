@@ -72,11 +72,27 @@ package final class WebServer {
         """
     }
 
-    private static func loadDisplayPageTemplate() throws -> String {
-        if let path = Bundle.module.path(forResource: "displayPage", ofType: "html") {
+    private struct DisplayPageResources {
+        let template: String
+        let styles: String
+        let messagesScript: String
+        let runtimeScript: String
+    }
+
+    private static func loadResource(named name: String, ofType type: String) throws -> String {
+        if let path = Bundle.module.path(forResource: name, ofType: type) {
             return try String(contentsOfFile: path, encoding: .utf8)
         }
         throw InitError.missingDisplayPageResource
+    }
+
+    private static func loadDisplayPageResources() throws -> DisplayPageResources {
+        try DisplayPageResources(
+            template: loadResource(named: "displayPage", ofType: "html"),
+            styles: loadResource(named: "displayPage", ofType: "css"),
+            messagesScript: loadResource(named: "displayPageMessages", ofType: "js"),
+            runtimeScript: loadResource(named: "displayPageRuntime", ofType: "js")
+        )
     }
 
     private struct ActiveConnection {
@@ -87,7 +103,7 @@ package final class WebServer {
     }
 
     private var listener: NWListener?
-    private let displayPageTemplate: String
+    private let displayPageResources: DisplayPageResources
     private let requestHandler = WebRequestHandler()
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
@@ -118,11 +134,12 @@ package final class WebServer {
         self.sharingEventSink = sharingEventSink
         self.onListenerStopped = onListenerStopped
 
-        displayPageTemplate = try Self.loadDisplayPageTemplate()
+        displayPageResources = try Self.loadDisplayPageResources()
 
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
         let params = NWParameters(tls: nil, tcp: tcpOptions)
+        params.allowLocalEndpointReuse = true
         listener = try NWListener(using: params, on: port)
         listener?.stateUpdateHandler = { [weak self] state in
             Task { @MainActor [weak self] in
@@ -145,6 +162,13 @@ package final class WebServer {
     }
 
     deinit {
+        startupTimeoutTask?.cancel()
+        startupWaiter?.resume(returning: .failed(error: LifecycleError.listenerCancelled))
+        for activeConnection in activeConnections.values {
+            activeConnection.sessionHub.removeClient(activeConnection.connection)
+            activeConnection.connection.cancel()
+        }
+        activeConnections.removeAll()
         listener?.cancel()
         listener = nil
     }
@@ -310,8 +334,17 @@ package final class WebServer {
     private func displayPage(for target: ShareTarget) -> String {
         _ = target
         let title = "Screen Share"
-        return displayPageTemplate
+        return displayPageResources.template
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
+            .replacingOccurrences(of: "__DISPLAY_PAGE_STYLES__", with: displayPageResources.styles)
+            .replacingOccurrences(
+                of: "__DISPLAY_PAGE_MESSAGES_SCRIPT__",
+                with: displayPageResources.messagesScript
+            )
+            .replacingOccurrences(
+                of: "__DISPLAY_PAGE_RUNTIME_SCRIPT__",
+                with: displayPageResources.runtimeScript
+            )
             .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)
             .replacingOccurrences(of: "__BOOTSTRAP_JSON__", with: makeDisplayPageBootstrapJSON())
     }

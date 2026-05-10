@@ -31,7 +31,6 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     private let profileState: Mutex<WebRTCStreamingProfile>
     private let activeCodecsState = Mutex<Set<WebRTCVideoCodec>>([])
     private let publisherIDState = Mutex<String?>(nil)
-    private let iceGatheringWaiters = Mutex<[CheckedContinuation<Void, Never>]>([])
     private let pendingPublisherCandidates = Mutex<[RTCIceCandidate]>([])
     nonisolated(unsafe) private var videoTransceivers: [VideoTransceiverBinding] = []
     nonisolated(unsafe) private var diagnosticsTask: Task<Void, Never>?
@@ -141,7 +140,6 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
         pendingPublisherCandidates.withLock { $0.removeAll() }
         diagnosticsTask?.cancel()
         diagnosticsTask = nil
-        resumeIceGatheringWaiters()
         peerConnection.close()
         guard let publisherID else { return }
         Task { [relayClient, roomID, publisherID] in
@@ -180,7 +178,6 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let offer = try await createOffer(constraints: constraints)
         try await setLocalDescription(offer)
-        await waitForInitialIceGathering()
         try throwIfClosed()
         let finalOffer = peerConnection.localDescription ?? offer
         let localCodecSummary = WebRTCCodecPreference.sdpVideoCodecSummary(from: finalOffer.sdp)
@@ -259,33 +256,6 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
         }
     }
 
-    private nonisolated func waitForIceGatheringComplete() async {
-        guard peerConnection.iceGatheringState != .complete else { return }
-        guard !isClosed else { return }
-        await withCheckedContinuation { continuation in
-            let shouldResumeImmediately = iceGatheringWaiters.withLock { waiters -> Bool in
-                guard peerConnection.iceGatheringState != .complete, !isClosed else { return true }
-                waiters.append(continuation)
-                return false
-            }
-            if shouldResumeImmediately {
-                continuation.resume(returning: ())
-            }
-        }
-    }
-
-    private nonisolated func waitForInitialIceGathering() async {
-        let deadline = Date().addingTimeInterval(1)
-        while peerConnection.iceGatheringState != .complete, !isClosed, Date() < deadline {
-            try? await Task.sleep(nanoseconds: 25_000_000)
-        }
-        if peerConnection.iceGatheringState != .complete {
-            AppLog.web.info(
-                "WebRTC publisher continuing before ICE gathering complete state=\(String(describing: self.peerConnection.iceGatheringState), privacy: .public)."
-            )
-        }
-    }
-
     private nonisolated var isClosed: Bool {
         stateLock.withLock { state in
             if case .closed = state { return true }
@@ -296,17 +266,6 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     private nonisolated func throwIfClosed() throws {
         if isClosed {
             throw PublisherSessionError.closed
-        }
-    }
-
-    private nonisolated func resumeIceGatheringWaiters() {
-        let waiters = iceGatheringWaiters.withLock { waiters -> [CheckedContinuation<Void, Never>] in
-            let current = waiters
-            waiters.removeAll()
-            return current
-        }
-        for waiter in waiters {
-            waiter.resume(returning: ())
         }
     }
 
@@ -475,11 +434,7 @@ extension WebRTCPublisherSession: RTCPeerConnectionDelegate {
             break
         }
     }
-    package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        if newState == .complete {
-            resumeIceGatheringWaiters()
-        }
-    }
+    package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
 
     package nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         sendPublisherCandidate(candidate)

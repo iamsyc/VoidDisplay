@@ -38,6 +38,30 @@ done
 
 case "$PROFILE" in
 full) ;;
+static)
+	required_commands=(actionlint shellcheck shfmt swiftformat swiftlint jq rg)
+	mise_targets=(
+		aqua:rhysd/actionlint
+		aqua:koalaman/shellcheck
+		aqua:mvdan/sh
+		swiftformat
+		aqua:realm/SwiftLint
+		aqua:jqlang/jq
+		aqua:BurntSushi/ripgrep
+	)
+	;;
+unit)
+	required_commands=(go jq)
+	mise_targets=(go aqua:jqlang/jq)
+	;;
+ui-smoke)
+	required_commands=(go jq rg)
+	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
+	;;
+xcode)
+	required_commands=(go jq rg)
+	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
+	;;
 release-smoke)
 	required_commands=(go jq rg)
 	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
@@ -62,6 +86,14 @@ install_pinned_tools_with_mise() {
 	info "Installing pinned tools with mise."
 	cd "$TOOL_ROOT"
 	export MISE_YES=1
+	if [[ "$CI_REQUIRES_MISE" == "true" ]]; then
+		export MISE_LOCKED="${MISE_LOCKED:-1}"
+		export MISE_LOCKED_VERIFY_PROVENANCE="${MISE_LOCKED_VERIFY_PROVENANCE:-0}"
+		export MISE_AQUA_GITHUB_ATTESTATIONS="${MISE_AQUA_GITHUB_ATTESTATIONS:-0}"
+		export MISE_AQUA_SLSA="${MISE_AQUA_SLSA:-0}"
+		export MISE_GITHUB_GITHUB_ATTESTATIONS="${MISE_GITHUB_GITHUB_ATTESTATIONS:-0}"
+		export MISE_GITHUB_SLSA="${MISE_GITHUB_SLSA:-0}"
+	fi
 	export MISE_TRUSTED_CONFIG_PATHS="$TOOL_ROOT"
 	if ((${#mise_targets[@]})); then
 		mise install "${mise_targets[@]}"
