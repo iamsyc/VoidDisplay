@@ -75,6 +75,13 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 		done
 	}
 
+	go_mod_download_with_retry() {
+		local module_dir="$1"
+		local goproxy_value="${GOPROXY:-https://proxy.golang.org|https://goproxy.cn|direct}"
+
+		(cd "$module_dir" && run_with_retry 3 env GOPROXY="$goproxy_value" go mod download)
+	}
+
 	collect_build_log_diagnostics() {
 		local log_path="$1"
 

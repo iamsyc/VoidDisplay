@@ -22,6 +22,7 @@ OUT_DIR="$(make_artifact_dir ci-release-smoke)"
 DERIVED_DATA_PATH=""
 APP_OUTPUT_FILE=""
 SUMMARY_PATH=""
+LOG_PATH=""
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -63,24 +64,47 @@ mkdir -p "$OUT_DIR"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$OUT_DIR/DerivedData}"
 APP_OUTPUT_FILE="${APP_OUTPUT_FILE:-$OUT_DIR/app-path.txt}"
 SUMMARY_PATH="${SUMMARY_PATH:-$OUT_DIR/release-smoke-summary.json}"
+LOG_PATH="$OUT_DIR/xcode-release-build.log"
 
 select_required_xcode
+go_mod_download_with_retry "$ROOT_DIR/Tools/VoidDisplayRelay"
 
-env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" bash "$TOOL_ROOT/scripts/ci/release_arch_check.sh" \
-	--arch "$ARCH" \
-	--label "$LABEL" \
-	--derived-data-path "$DERIVED_DATA_PATH" \
-	--app-output-file "$APP_OUTPUT_FILE" \
-	--log-path "$OUT_DIR/xcode-release-build.log"
+set +e
+xcodebuild \
+	-scheme VoidDisplay \
+	-project Apps/VoidDisplay/VoidDisplay.xcodeproj \
+	-configuration Release \
+	-destination "$(xcode_destination_for_arch "$ARCH")" \
+	-derivedDataPath "$DERIVED_DATA_PATH" \
+	-skipPackageUpdates \
+	-onlyUsePackageVersionsFromResolvedFile \
+	ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" \
+	CODE_SIGNING_ALLOWED=NO \
+	CODE_SIGNING_REQUIRED=NO \
+	ARCHS="$ARCH" \
+	build \
+	2>&1 | tee "$LOG_PATH"
+build_status=${PIPESTATUS[0]}
+set -e
 
-app_path="$(cat "$APP_OUTPUT_FILE")"
-validate_release_app_binaries "$app_path" "$ARCH"
+if [[ "$build_status" -ne 0 ]]; then
+	die "xcodebuild Release exited with non-zero status: $build_status. Log: $LOG_PATH"
+fi
+
+scan_xcode_log_for_diagnostics "Xcode Release build" "$LOG_PATH"
+
+app_path="${DERIVED_DATA_PATH}/Build/Products/Release/VoidDisplay.app"
+[[ -d "$app_path" ]] || die "Expected app not found: $app_path"
+thin_and_sign_release_app "$app_path" "$ARCH"
+
+mkdir -p "$(dirname "$APP_OUTPUT_FILE")"
+printf '%s\n' "$app_path" >"$APP_OUTPUT_FILE"
 write_json_file "$SUMMARY_PATH" \
 	--arg status "passed" \
 	--arg arch "$ARCH" \
 	--arg label "$LABEL" \
 	--arg app_path "$app_path" \
-	--arg log_path "$OUT_DIR/xcode-release-build.log" \
+	--arg log_path "$LOG_PATH" \
 	'{status: $status, arch: $arch, label: $label, app_path: $app_path, log_path: $log_path}'
 
 info "Release smoke passed for $LABEL."

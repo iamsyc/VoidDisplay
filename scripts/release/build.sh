@@ -53,7 +53,6 @@ dmg_name="$(release_dmg_name "$TAG" "$LABEL")"
 dmg_path="$OUT_DIR/release-assets/$dmg_name"
 sbom_path="$OUT_DIR/release-assets/$dmg_name.spdx.json"
 summary_path="$OUT_DIR/release-assets/$dmg_name.summary.json"
-dmg_summary_path="$OUT_DIR/release-assets/$dmg_name.create-dmg-summary.json"
 release_stage="initialization"
 checksum=""
 release_summary_written="false"
@@ -114,13 +113,11 @@ app_path="$(cat "$app_output")"
 
 release_stage="create_dmg"
 if ! env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/release/create_dmg.sh" \
-	--summary "$dmg_summary_path" \
 	"$app_path" \
 	"$dmg_path" \
 	"VoidDisplay"; then
-	dmg_reason="$(jq -r '.reason // "dmg_failed"' "$dmg_summary_path" 2>/dev/null || printf 'dmg_failed\n')"
-	write_release_build_summary "failed" "$dmg_reason" "DMG creation failed. See $(basename "$dmg_summary_path")."
-	die "DMG creation failed: $dmg_reason"
+	write_release_build_summary "failed" "dmg_failed" "DMG creation failed."
+	die "DMG creation failed."
 fi
 
 release_stage="checksum"

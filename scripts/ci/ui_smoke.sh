@@ -101,7 +101,7 @@ write_summary() {
 
 select_required_xcode
 require_command jq go
-env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" bash "$TOOL_ROOT/scripts/ci/download_relay_modules.sh"
+go_mod_download_with_retry "$ROOT_DIR/Tools/VoidDisplayRelay"
 
 last_reason="not_run"
 last_log_file=""
