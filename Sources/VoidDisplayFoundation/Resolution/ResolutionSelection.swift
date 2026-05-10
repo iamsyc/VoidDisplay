@@ -21,7 +21,7 @@ package struct ResolutionSelection: Identifiable, Hashable {
     ///   - refreshRate: Refresh rate in Hz (default: 60.0)
     ///   - enableHiDPI: Whether to enable HiDPI for this resolution (default: true)
     package init(preset: DisplayResolutionPreset, refreshRate: Double = 60.0, enableHiDPI: Bool = true) {
-        let (w, h) = preset.resolutions
+        let (w, h) = preset.logicalSize
         self.width = w
         self.height = h
         self.refreshRate = refreshRate

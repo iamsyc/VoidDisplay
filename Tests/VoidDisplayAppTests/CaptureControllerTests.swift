@@ -3,6 +3,7 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
+@testable import VoidDisplaySharingTestingSupport
 import CoreGraphics
 import CoreMedia
 import Foundation

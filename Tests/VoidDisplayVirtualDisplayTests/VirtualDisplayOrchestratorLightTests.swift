@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayVirtualDisplayTestingSupport
 
 @MainActor
 @Suite(.serialized)

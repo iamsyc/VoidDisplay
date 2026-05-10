@@ -1,5 +1,7 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+@testable import VoidDisplaySharingTestingSupport
+@testable import VoidDisplayTestingSupport
 import Foundation
 import CoreGraphics
 import ScreenCaptureKit

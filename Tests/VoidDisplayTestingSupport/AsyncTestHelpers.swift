@@ -1,13 +1,12 @@
-@testable import VoidDisplayFoundation
 import Foundation
 
-enum AsyncTestTimeouts {
-    static let shortStabilityWindow: UInt64 = 1_500_000_000
-    static let defaultAsyncAssertion: UInt64 = 3_000_000_000
+package enum AsyncTestTimeouts {
+    package static let shortStabilityWindow: UInt64 = 1_500_000_000
+    package static let defaultAsyncAssertion: UInt64 = 3_000_000_000
 }
 
 @MainActor
-func waitUntil(
+package func waitUntil(
     timeoutNanoseconds: UInt64 = AsyncTestTimeouts.defaultAsyncAssertion,
     pollNanoseconds: UInt64 = 10_000_000,
     condition: @MainActor () -> Bool
@@ -23,7 +22,7 @@ func waitUntil(
 }
 
 @MainActor
-func staysTrue(
+package func staysTrue(
     timeoutNanoseconds: UInt64 = AsyncTestTimeouts.shortStabilityWindow,
     pollNanoseconds: UInt64 = 10_000_000,
     condition: @MainActor () -> Bool
@@ -38,7 +37,7 @@ func staysTrue(
     return condition()
 }
 
-func staysTrue(
+package func staysTrue(
     timeoutNanoseconds: UInt64 = AsyncTestTimeouts.shortStabilityWindow,
     pollNanoseconds: UInt64 = 10_000_000,
     condition: @escaping @Sendable () async -> Bool
@@ -54,7 +53,7 @@ func staysTrue(
 }
 
 @MainActor
-func drainMainActorTasks(iterations: Int = 5) async {
+package func drainMainActorTasks(iterations: Int = 5) async {
     for _ in 0..<max(0, iterations) {
         await Task.yield()
     }

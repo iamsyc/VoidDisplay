@@ -1,23 +1,20 @@
-@testable import VoidDisplayApp
-@testable import VoidDisplayVirtualDisplay
-@testable import VoidDisplayCapture
-@testable import VoidDisplaySharing
-@testable import VoidDisplayFoundation
+import VoidDisplayVirtualDisplay
+import VoidDisplayFoundation
 import Foundation
 
 @MainActor
-final class TestVirtualDisplayClock: VirtualDisplayClocking {
-    private(set) var currentTime: TimeInterval
+package final class TestVirtualDisplayClock: VirtualDisplayClocking {
+    package private(set) var currentTime: TimeInterval
 
-    init(startTime: TimeInterval = 0) {
+    package init(startTime: TimeInterval = 0) {
         self.currentTime = startTime
     }
 
-    func now() -> TimeInterval {
+    package func now() -> TimeInterval {
         currentTime
     }
 
-    func sleep(for duration: Duration) async {
+    package func sleep(for duration: Duration) async {
         let components = duration.components
         let seconds =
             Double(components.seconds) +

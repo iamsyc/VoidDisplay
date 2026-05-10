@@ -1,10 +1,10 @@
-@testable import VoidDisplaySharing
+import VoidDisplaySharing
 import CoreVideo
 import Foundation
 import Synchronization
 import VoidDisplayFoundation
 
-final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
+package final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
     private struct ClientState {
         nonisolated(unsafe) let connection: any SignalSocketConnection
         let clientID: String
@@ -22,19 +22,21 @@ final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
 
     private let state = Mutex(State())
 
-    nonisolated var activeClientCount: Int {
+    package init() {}
+
+    package nonisolated var activeClientCount: Int {
         state.withLock { $0.clients.count }
     }
 
-    nonisolated var hasDemand: Bool {
+    package nonisolated var hasDemand: Bool {
         activeClientCount > 0
     }
 
-    nonisolated func updateDemandHandler(_ onDemandChanged: @escaping @Sendable (Bool) -> Void) {
+    package nonisolated func updateDemandHandler(_ onDemandChanged: @escaping @Sendable (Bool) -> Void) {
         state.withLock { $0.onDemandChanged = onDemandChanged }
     }
 
-    nonisolated func addClient(
+    package nonisolated func addClient(
         _ connection: any SignalSocketConnection,
         target: ShareTarget,
         makeClientID: @escaping @Sendable () -> String = { UUID().uuidString },
@@ -60,21 +62,21 @@ final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
         return .accepted(clientID: clientID)
     }
 
-    nonisolated func removeClient(_ connection: any SignalSocketConnection) {
+    package nonisolated func removeClient(_ connection: any SignalSocketConnection) {
         removeClient(for: ObjectIdentifier(connection as AnyObject), cancelConnection: false)
     }
 
-    nonisolated func sendRejection(reason: String, to connection: any SignalSocketConnection) {
+    package nonisolated func sendRejection(reason: String, to connection: any SignalSocketConnection) {
         send(message: SignalingOutboundMessage(type: .error, reason: reason), to: connection)
     }
 
-    nonisolated func disconnectAllClients() {
+    package nonisolated func disconnectAllClients() {
         for key in state.withLock({ Array($0.clients.keys) }) {
             removeClient(for: key, cancelConnection: true)
         }
     }
 
-    nonisolated func stopSharing() {
+    package nonisolated func stopSharing() {
         for key in state.withLock({ Array($0.clients.keys) }) {
             if let connection = state.withLock({ $0.clients[key]?.connection }) {
                 send(message: SignalingOutboundMessage(type: .stopped), to: connection)
@@ -83,11 +85,11 @@ final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
         }
     }
 
-    nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
+    package nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
 
-    nonisolated func updatePerformanceMode(_: CapturePerformanceMode) {}
+    package nonisolated func updatePerformanceMode(_: CapturePerformanceMode) {}
 
-    nonisolated func receiveSignalText(_ text: String, from connection: any SignalSocketConnection) {
+    package nonisolated func receiveSignalText(_ text: String, from connection: any SignalSocketConnection) {
         let key = ObjectIdentifier(connection as AnyObject)
         guard let message = parseMessage(text) else {
             send(message: SignalingOutboundMessage(type: .error, reason: "invalid_signal_payload"), to: connection)
@@ -123,7 +125,7 @@ final class TestSignalSessionHub: SignalSessionHub, @unchecked Sendable {
         }
     }
 
-    nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
+    package nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
 
     private nonisolated func removeClient(for key: ObjectIdentifier, cancelConnection: Bool) {
         let result = state.withLock { state -> (

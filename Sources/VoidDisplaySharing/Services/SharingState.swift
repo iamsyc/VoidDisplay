@@ -35,7 +35,7 @@ package struct SharingSessionEvent: Sendable, Equatable {
         sessionEpoch
     }
 
-    nonisolated init(
+    package nonisolated init(
         target: ShareTarget,
         clientID: String,
         sessionEpoch: UInt64 = 0,

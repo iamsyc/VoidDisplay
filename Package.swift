@@ -124,14 +124,18 @@ let package = Package(
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
                 "VoidDisplayFoundation",
-                "VoidDisplayTestingSupport"
+                "VoidDisplayTestingSupport",
+                "VoidDisplaySharingTestingSupport",
+                "VoidDisplayVirtualDisplayTestingSupport"
             ],
             swiftSettings: sharedSwiftSettings
         ),
         .testTarget(
             name: "VoidDisplayVirtualDisplayTests",
             dependencies: [
-                "VoidDisplayVirtualDisplay"
+                "VoidDisplayVirtualDisplay",
+                "VoidDisplayTestingSupport",
+                "VoidDisplayVirtualDisplayTestingSupport"
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -152,7 +156,9 @@ let package = Package(
         .testTarget(
             name: "VoidDisplaySharingTests",
             dependencies: [
-                "VoidDisplaySharing"
+                "VoidDisplaySharing",
+                "VoidDisplayTestingSupport",
+                "VoidDisplaySharingTestingSupport"
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -168,7 +174,8 @@ let package = Package(
             dependencies: [
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
-                "VoidDisplayFoundation"
+                "VoidDisplayFoundation",
+                "VoidDisplayTestingSupport"
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -193,6 +200,24 @@ let package = Package(
                 "VoidDisplayFoundation"
             ],
             path: "Tests/VoidDisplayTestingSupport",
+            swiftSettings: sharedSwiftSettings
+        ),
+        .target(
+            name: "VoidDisplaySharingTestingSupport",
+            dependencies: [
+                "VoidDisplaySharing",
+                "VoidDisplayFoundation"
+            ],
+            path: "Tests/VoidDisplaySharingTestingSupport",
+            swiftSettings: sharedSwiftSettings
+        ),
+        .target(
+            name: "VoidDisplayVirtualDisplayTestingSupport",
+            dependencies: [
+                "VoidDisplayVirtualDisplay",
+                "VoidDisplayFoundation"
+            ],
+            path: "Tests/VoidDisplayVirtualDisplayTestingSupport",
             swiftSettings: sharedSwiftSettings
         )
     ]
