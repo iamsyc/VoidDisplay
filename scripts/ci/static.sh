@@ -348,6 +348,10 @@ validate_swiftpm_log_scanner() {
 	scan_build_log_for_diagnostics "SwiftPM negative log fixture" "$fixture_dir/negative-ordinary-text.fixture"
 }
 
+validate_classify_fixtures() {
+	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/test_classify.sh"
+}
+
 validate_webrtc_header_overlay() {
 	local overlay_root="$ROOT_DIR/Vendor/WebRTCHeaders/M147"
 	local include_dir="$overlay_root/include/WebRTC"
@@ -537,6 +541,7 @@ validate_workflow_script_contract
 validate_xcode_shell_build_phase
 validate_xcode_log_scanner
 validate_swiftpm_log_scanner
+validate_classify_fixtures
 validate_webrtc_header_overlay
 validate_swift_style
 validate_swift_scripts
