@@ -31,7 +31,8 @@ done
 mkdir -p "$OUT_DIR"
 
 missing=()
-for command_name in git xcodebuild swift go jq rg; do
+DOCTOR_REQUIRED_COMMANDS=(git xcodebuild swift go jq rg)
+for command_name in "${DOCTOR_REQUIRED_COMMANDS[@]}"; do
 	if ! command -v "$command_name" >/dev/null 2>&1; then
 		missing+=("$command_name")
 	fi

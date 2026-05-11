@@ -525,6 +525,7 @@ jobs:
               `xcode=${value('REQUIRES_XCODE_BUILD')}`,
               `ui=${value('REQUIRES_UI_SMOKE')}`,
               `release=${value('REQUIRES_RELEASE_SMOKE')}`,
+              'PRs always run static, unit, and xcode build gates.',
             ].join('<br>');
             const rows = [
               ['Change Scope', value('CHANGE_SCOPE', 'unknown'), classificationDetails],

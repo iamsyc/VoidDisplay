@@ -240,26 +240,23 @@ set_flags false "${requirement_flags[@]}"
 
 if [[ "$EVENT_NAME" == "push" ]]; then
 	set_flags true "${push_required_flags[@]}"
-elif [[ "$docs_only" != "true" ]]; then
-	if [[ "$code_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
-		requires_static="true"
-	fi
+elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+	requires_static="true"
+	requires_unit="true"
+	requires_xcode_build="true"
 	if [[ "$dependency_manifest_relevant" == "true" ]]; then
 		requires_dependency_review="true"
 	fi
-	if [[ "$product_code_relevant" == "true" ||
-		"$test_code_relevant" == "true" ||
-		"$dependency_manifest_relevant" == "true" ||
-		"$unknown_relevant" == "true" ]]; then
-		requires_unit="true"
-		requires_xcode_build="true"
-	fi
-	if [[ "$ui_relevant" == "true" ]]; then
+	if [[ "$ui_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
 		requires_ui_smoke="true"
 	fi
 	if [[ "$release_relevant" == "true" && "$BASE_REF" == "main" ]]; then
 		requires_release_smoke="true"
 	fi
+elif [[ "$docs_only" != "true" ]]; then
+	requires_static="true"
+	requires_unit="true"
+	requires_xcode_build="true"
 fi
 
 for field in "${output_fields[@]}"; do

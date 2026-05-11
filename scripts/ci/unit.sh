@@ -12,7 +12,7 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
-require_command go jq
+require_command go jq rg xcodebuild swift awk
 select_required_xcode
 
 OUT_DIR="${OUT_DIR:-$(make_artifact_dir ci-unit)}"
