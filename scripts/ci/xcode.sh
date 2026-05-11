@@ -16,7 +16,7 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
-require_command jq
+require_command go jq rg xcodebuild xcrun awk tr tail
 
 ACTION="build"
 CONFIGURATION="Debug"

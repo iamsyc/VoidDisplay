@@ -60,6 +60,7 @@ done
 validate_release_arch "$ARCH"
 LABEL="${LABEL:-$(release_label_for_arch "$ARCH")}"
 require_release_label_for_arch "$ARCH" "$LABEL"
+require_command go jq rg xcodebuild lipo codesign
 mkdir -p "$OUT_DIR"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$OUT_DIR/DerivedData}"
 APP_OUTPUT_FILE="${APP_OUTPUT_FILE:-$OUT_DIR/app-path.txt}"

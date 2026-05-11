@@ -5,22 +5,14 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
+# shellcheck source=scripts/dev/bootstrap_profiles.sh
+source "$TOOL_ROOT/scripts/dev/bootstrap_profiles.sh"
 
 CI_REQUIRES_MISE="${CI_REQUIRES_MISE:-${GITHUB_ACTIONS:-false}}"
 PROFILE="full"
-
-required_commands=(
-	actionlint
-	shellcheck
-	shfmt
-	swiftformat
-	swiftlint
-	go
-	jq
-	rg
-	syft
-	gh
-)
+PRINT_REQUIRED_COMMANDS="false"
+PRINT_MISE_TARGETS="false"
+required_commands=()
 mise_targets=()
 
 while [[ $# -gt 0 ]]; do
@@ -30,46 +22,41 @@ while [[ $# -gt 0 ]]; do
 		PROFILE="$2"
 		shift 2
 		;;
+	--print-required-commands)
+		PRINT_REQUIRED_COMMANDS="true"
+		shift
+		;;
+	--print-mise-targets)
+		PRINT_MISE_TARGETS="true"
+		shift
+		;;
 	*)
 		die "Unknown argument: $1"
 		;;
 	esac
 done
 
-case "$PROFILE" in
-full) ;;
-static)
-	required_commands=(actionlint shellcheck shfmt swiftformat swiftlint jq rg)
-	mise_targets=(
-		aqua:rhysd/actionlint
-		aqua:koalaman/shellcheck
-		aqua:mvdan/sh
-		swiftformat
-		aqua:realm/SwiftLint
-		aqua:jqlang/jq
-		aqua:BurntSushi/ripgrep
-	)
-	;;
-unit)
-	required_commands=(go jq)
-	mise_targets=(go aqua:jqlang/jq)
-	;;
-ui-smoke)
-	required_commands=(go jq rg)
-	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
-	;;
-xcode)
-	required_commands=(go jq rg)
-	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
-	;;
-release-smoke)
-	required_commands=(go jq rg)
-	mise_targets=(go aqua:jqlang/jq aqua:BurntSushi/ripgrep)
-	;;
-*)
+if ! bootstrap_profile_exists "$PROFILE"; then
 	die "Unsupported bootstrap profile: $PROFILE"
-	;;
-esac
+fi
+
+while IFS= read -r command_name; do
+	[[ -n "$command_name" ]] && required_commands+=("$command_name")
+done < <(bootstrap_profile_commands "$PROFILE")
+
+while IFS= read -r target_name; do
+	[[ -n "$target_name" ]] && mise_targets+=("$target_name")
+done < <(bootstrap_profile_mise_targets "$PROFILE")
+
+if [[ "$PRINT_REQUIRED_COMMANDS" == "true" ]]; then
+	printf '%s\n' "${required_commands[@]}"
+	exit 0
+fi
+
+if [[ "$PRINT_MISE_TARGETS" == "true" ]]; then
+	printf '%s\n' "${mise_targets[@]}"
+	exit 0
+fi
 
 activate_mise_shims() {
 	local mise_data_dir="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
