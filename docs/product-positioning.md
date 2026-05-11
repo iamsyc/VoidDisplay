@@ -380,7 +380,7 @@ Demand aggregation 由统一规则决定：
 局域网 Web View 即使只读，也会暴露桌面内容。短期安全要求：
 
 - 默认只面向局域网。
-- 分享 URL 应包含随机 token 或等价访问凭证。
+- 当前阶段不引入随机 token、访问密码、账号体系或鉴权层。
 - UI 明确显示正在分享的 DisplaySurface。
 - UI 显示当前 viewer 数量。
 - 支持按 DisplaySurface 一键停止分享。
@@ -388,6 +388,7 @@ Demand aggregation 由统一规则决定：
 
 后续可评估：
 
+- 随机 token 或等价访问凭证。
 - 访问密码。
 - 仅本机访问模式。
 - 指定网段允许列表。
@@ -457,7 +458,7 @@ VoidDisplay is a remote display companion, not a remote control system.
 5. Capture fanout 如何从功能页驱动改成 DisplaySurface consumer lease 驱动。
 6. UI 如何从功能标签页逐步调整为 `Displays` 主入口。
 7. 现有 README 如何改写为 headless Mac、HiDPI remote desktop、LAN browser viewing 主线。
-8. 局域网 Web View 的 token、安全策略和 viewer state 如何进入 snapshot。
+8. 局域网 Web View 的安全策略和 viewer state 如何进入 snapshot。
 9. 可观测与诊断如何提供 agent-readable runtime snapshot 和事务验证证据。
 
 ## 决策摘要
