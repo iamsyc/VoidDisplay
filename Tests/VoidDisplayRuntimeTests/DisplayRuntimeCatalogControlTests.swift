@@ -359,6 +359,10 @@ private final class SharingControlHarness: DisplayRuntimeSharingProviding, Displ
     func stopSharing(displayID: DisplayRuntimeDisplayID) {
         stoppedDisplayIDs.append(displayID)
     }
+
+    func restoreSharing(displayID _: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult {
+        .restored
+    }
 }
 
 @MainActor

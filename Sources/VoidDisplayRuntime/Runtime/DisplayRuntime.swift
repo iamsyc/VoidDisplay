@@ -304,17 +304,44 @@ package final class DisplayRuntime {
             convergeToVisibleDisplaysFromCurrentCatalog()
             await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
         }
-        let postSnapshot = makeSnapshot()
-        let finalStatus = transactionStatus(after: topologyResult)
+        let postConvergenceSnapshot = makeSnapshot()
+        let restoreIntents = makeSharingRestoreIntents(
+            pauseIntents: pauseIntents,
+            topologyResult: topologyResult,
+            postSnapshot: postConvergenceSnapshot
+        )
+        updateTrace(request.transactionID) { trace in
+            trace.replacing(restoreIntents: restoreIntents)
+        }
+        if !restoreIntents.isEmpty {
+            await appendPhase(.restoringSessions, transactionID: request.transactionID)
+        }
+        let restoreResults = await restoreSharingSessions(
+            restoreIntents,
+            topologyResult: topologyResult,
+            postSnapshot: postConvergenceSnapshot
+        )
+        updateTrace(request.transactionID) { trace in
+            trace.replacing(restoreResults: restoreResults)
+        }
+        let finalPostSnapshot = makeSnapshot()
+        let finalStatus = transactionStatus(
+            after: topologyResult,
+            restoreResults: restoreResults
+        )
         return finalizeTransaction(
             transactionID: request.transactionID,
             status: finalStatus,
             phase: .completed,
             failure: nil,
             virtualDisplayCommandSucceeded: true,
-            postSnapshot: postSnapshot,
+            postSnapshot: finalPostSnapshot,
             topologyStabilityResult: topologyResult,
-            compensation: compensationResult(after: topologyResult)
+            compensation: compensationResult(
+                after: topologyResult,
+                restoreResults: restoreResults,
+                restoreIntentCount: restoreIntents.count
+            )
         )
     }
 
@@ -414,29 +441,150 @@ package final class DisplayRuntime {
         }
     }
 
+    private func makeSharingRestoreIntents(
+        pauseIntents: [DisplayRuntimeSessionPauseIntent],
+        topologyResult: DisplayRuntimeTopologyStabilityResult,
+        postSnapshot: DisplayRuntimeSnapshot
+    ) -> [DisplayRuntimeSessionRestoreIntent] {
+        let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
+        return pauseIntents
+            .filter(\.pauseSharing)
+            .map { pauseIntent in
+                let resolvedDisplayID: DisplayRuntimeDisplayID? = {
+                    guard topologyResult.status == .stable,
+                          let surface = postSnapshot.surfaces.first(where: { $0.identity == pauseIntent.surfaceIdentity }),
+                          let displayID = surface.currentDisplayID,
+                          visibleDisplayIDs.contains(displayID)
+                    else {
+                        return nil
+                    }
+                    return displayID
+                }()
+                return DisplayRuntimeSessionRestoreIntent(
+                    surfaceIdentity: pauseIntent.surfaceIdentity,
+                    previousDisplayID: pauseIntent.displayID,
+                    resolvedDisplayID: resolvedDisplayID,
+                    restoreSharing: true,
+                    restoreMonitoring: false,
+                    monitoringCapturesCursor: false
+                )
+            }
+    }
+
+    private func restoreSharingSessions(
+        _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
+        topologyResult: DisplayRuntimeTopologyStabilityResult,
+        postSnapshot: DisplayRuntimeSnapshot
+    ) async -> [DisplayRuntimeSessionRestoreResult] {
+        guard !restoreIntents.isEmpty else { return [] }
+
+        guard topologyResult.status == .stable else {
+            return restoreIntents.map {
+                makeRestoreResult(
+                    intent: $0,
+                    status: .skipped,
+                    failureReason: "topology_\(topologyResult.status.rawValue)"
+                )
+            }
+        }
+
+        let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
+        var results: [DisplayRuntimeSessionRestoreResult] = []
+        for intent in restoreIntents {
+            guard intent.restoreSharing else { continue }
+            guard let resolvedDisplayID = intent.resolvedDisplayID else {
+                results.append(
+                    makeRestoreResult(
+                        intent: intent,
+                        status: .skipped,
+                        failureReason: "resolved_display_unavailable"
+                    )
+                )
+                continue
+            }
+            guard visibleDisplayIDs.contains(resolvedDisplayID) else {
+                results.append(
+                    makeRestoreResult(
+                        intent: intent,
+                        status: .skipped,
+                        failureReason: "resolved_display_not_visible"
+                    )
+                )
+                continue
+            }
+            guard let sharingCommander else {
+                results.append(
+                    makeRestoreResult(
+                        intent: intent,
+                        status: .failed,
+                        failureReason: "sharing_commander_unavailable"
+                    )
+                )
+                continue
+            }
+
+            let commandResult = await sharingCommander.restoreSharing(displayID: resolvedDisplayID)
+            results.append(
+                makeRestoreResult(
+                    intent: intent,
+                    status: commandResult.status,
+                    failureReason: commandResult.failureReason
+                )
+            )
+        }
+        return results
+    }
+
+    private func makeRestoreResult(
+        intent: DisplayRuntimeSessionRestoreIntent,
+        status: DisplayRuntimeSessionRestoreStatus,
+        failureReason: String?
+    ) -> DisplayRuntimeSessionRestoreResult {
+        DisplayRuntimeSessionRestoreResult(
+            kind: .sharing,
+            status: status,
+            previousDisplayID: intent.previousDisplayID,
+            resolvedDisplayID: intent.resolvedDisplayID,
+            failureReason: failureReason
+        )
+    }
+
     private func transactionStatus(
-        after topologyResult: DisplayRuntimeTopologyStabilityResult
+        after topologyResult: DisplayRuntimeTopologyStabilityResult,
+        restoreResults: [DisplayRuntimeSessionRestoreResult]
     ) -> DisplayRuntimeTransactionStatus {
         switch topologyResult.status {
         case .stable:
-            return .completed
+            return restoreResults.allSatisfy { $0.status == .restored } ? .completed : .completedWithRecoveryFailures
         case .unprovableDueToPermission, .failed, .timedOut:
             return .completedWithRecoveryFailures
         }
     }
 
     private func compensationResult(
-        after topologyResult: DisplayRuntimeTopologyStabilityResult
+        after topologyResult: DisplayRuntimeTopologyStabilityResult,
+        restoreResults: [DisplayRuntimeSessionRestoreResult],
+        restoreIntentCount: Int
     ) -> DisplayRuntimeCompensationResult {
+        let restoredSharingCount = restoreResults.filter { $0.kind == .sharing && $0.status == .restored }.count
+        let failedRestoreCount = restoreResults.filter { $0.status != .restored }.count
         switch topologyResult.status {
         case .stable:
-            return .notRequired
+            if restoreIntentCount == 0 {
+                return .notRequired
+            }
+            return .init(
+                status: failedRestoreCount == 0 ? .completed : .degraded,
+                restoredSharingCount: restoredSharingCount,
+                restoredMonitoringCount: 0,
+                failedRestoreCount: failedRestoreCount
+            )
         case .unprovableDueToPermission, .failed, .timedOut:
             return .init(
                 status: .degraded,
-                restoredSharingCount: 0,
+                restoredSharingCount: restoredSharingCount,
                 restoredMonitoringCount: 0,
-                failedRestoreCount: 0
+                failedRestoreCount: failedRestoreCount
             )
         }
     }

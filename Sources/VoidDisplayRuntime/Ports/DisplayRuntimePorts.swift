@@ -42,6 +42,7 @@ package protocol DisplayRuntimeCatalogCommanding {
 package protocol DisplayRuntimeSharingCommanding {
     func registerShareableDisplays(_ displays: [DisplayRuntimeShareableDisplayRegistration])
     func stopSharing(displayID: DisplayRuntimeDisplayID)
+    func restoreSharing(displayID: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult
 }
 
 @MainActor

@@ -168,4 +168,8 @@ private final class SharingForwardingHarness: DisplayRuntimeSharingProviding, Di
     func registerShareableDisplays(_: [DisplayRuntimeShareableDisplayRegistration]) {}
 
     func stopSharing(displayID _: DisplayRuntimeDisplayID) {}
+
+    func restoreSharing(displayID _: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult {
+        .restored
+    }
 }

@@ -188,6 +188,29 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         controller?.stopSharing(displayID: displayID)
     }
 
+    package func restoreSharing(displayID: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult {
+        guard let controller else {
+            return .failed("sharing_controller_unavailable")
+        }
+        guard let display = (controller.displayCatalogState.displays ?? []).first(where: { $0.displayID == displayID }) else {
+            return .failed("display_not_found")
+        }
+        guard controller.sharePagePath(for: displayID) != nil else {
+            return .failed("shareable_display_not_registered")
+        }
+
+        do {
+            switch try await controller.beginSharing(display: display) {
+            case .started:
+                return .restored
+            case .invalidated:
+                return .invalidated("sharing_start_invalidated")
+            }
+        } catch {
+            return .failed(String(describing: error))
+        }
+    }
+
     private func firstRegistrationsByDisplayID(
         _ displays: [DisplayRuntimeShareableDisplayRegistration]
     ) -> [DisplayRuntimeDisplayID: DisplayRuntimeShareableDisplayRegistration] {

@@ -107,6 +107,8 @@ final class MockSharingService: SharingServiceProtocol {
     var registeredVirtualSerialsByDisplayID: [CGDirectDisplayID: UInt32?] = [:]
     var stopSharingCallCount = 0
     var stopAllSharingCallCount = 0
+    var startSharingCallCount = 0
+    var startedSharingDisplayIDs: [CGDirectDisplayID] = []
     var streamClientCountsByTarget: [ShareTarget: Int] = [:]
     var shareIDByDisplayID: [CGDirectDisplayID: UInt32] = [:]
     var shareTargetByDisplayID: [CGDirectDisplayID: ShareTarget] = [:]
@@ -180,6 +182,8 @@ final class MockSharingService: SharingServiceProtocol {
     }
 
     func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
+        startSharingCallCount += 1
+        startedSharingDisplayIDs.append(display.displayID)
         if let startSharingHandler {
             return try await startSharingHandler(display)
         }

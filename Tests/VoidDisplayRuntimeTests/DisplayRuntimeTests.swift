@@ -431,9 +431,11 @@ struct DisplayRuntimeTests {
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged",
-            "registerShareable:77"
+            "registerShareable:77",
+            "restoreSharing:77"
         ])
         #expect(trace.phases.contains(.init(phase: .waitingForTopology)))
+        #expect(trace.phases.contains(.init(phase: .restoringSessions)))
         #expect(trace.topologyStabilityResult?.status == .stable)
         #expect(trace.preSnapshotEvidence?.captureSessions.map(\.id) == [sessionID])
         #expect(trace.preSnapshotEvidence?.sharingDisplayIDs == [77])
@@ -446,6 +448,27 @@ struct DisplayRuntimeTests {
                 pauseMonitoring: true
             )
         ])
+        #expect(trace.restoreIntents == [
+            .init(
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                previousDisplayID: 77,
+                resolvedDisplayID: 77,
+                restoreSharing: true,
+                restoreMonitoring: false,
+                monitoringCapturesCursor: false
+            )
+        ])
+        #expect(trace.restoreResults == [
+            .init(
+                kind: .sharing,
+                status: .restored,
+                previousDisplayID: 77,
+                resolvedDisplayID: 77,
+                failureReason: nil
+            )
+        ])
+        #expect(trace.compensation.status == .completed)
+        #expect(trace.compensation.restoredSharingCount == 1)
     }
 
     @Test func rebuildTransactionDoesNotWriteNoOpPauseIntentWithoutSessionDemand() async throws {
@@ -471,6 +494,8 @@ struct DisplayRuntimeTests {
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
         #expect(trace.pauseIntents.isEmpty)
+        #expect(trace.restoreIntents.isEmpty)
+        #expect(trace.restoreResults.isEmpty)
         #expect(recorder.events == [
             "refresh:topologyChanged",
             "rebuild:\(configID.uuidString)",
@@ -539,7 +564,8 @@ struct DisplayRuntimeTests {
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged",
-            "registerShareable:58"
+            "registerShareable:58",
+            "restoreSharing:58"
         ])
     }
 
@@ -774,6 +800,149 @@ struct DisplayRuntimeTests {
         #expect(trace.topologyStabilityResult?.failureReason == "topology_stability_timed_out")
         #expect(trace.compensation.status == .degraded)
         #expect(trace.failure == nil)
+    }
+
+    @Test func rebuildTransactionMarksRecoveryFailureWhenSharingRestoreFails() async throws {
+        let configID = UUID(uuidString: "D1D1D1D1-D1D1-D1D1-D1D1-D1D1D1D1D1D1")!
+        let catalog = catalogSnapshot(displayID: 101, isMain: false)
+        let sharingCommander = FakeSharingCommander(
+            restoreResult: .failed("display_not_found")
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 101)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 101)),
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            sharingCommander: sharingCommander,
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.virtualDisplayCommandSucceeded)
+        #expect(sharingCommander.restoredDisplayIDs == [101])
+        #expect(trace.restoreResults == [
+            .init(
+                kind: .sharing,
+                status: .failed,
+                previousDisplayID: 101,
+                resolvedDisplayID: 101,
+                failureReason: "display_not_found"
+            )
+        ])
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.failedRestoreCount == 1)
+        #expect(trace.failure == nil)
+    }
+
+    @Test func rebuildTransactionMarksRecoveryFailureWhenSharingRestoreInvalidates() async throws {
+        let configID = UUID(uuidString: "D2D2D2D2-D2D2-D2D2-D2D2-D2D2D2D2D2D2")!
+        let catalog = catalogSnapshot(displayID: 102, isMain: false)
+        let sharingCommander = FakeSharingCommander(
+            restoreResult: .invalidated("sharing_start_invalidated")
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 102)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 102)),
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            sharingCommander: sharingCommander,
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(sharingCommander.restoredDisplayIDs == [102])
+        #expect(trace.restoreResults.first?.status == .invalidated)
+        #expect(trace.restoreResults.first?.failureReason == "sharing_start_invalidated")
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.failure == nil)
+    }
+
+    @Test func rebuildTransactionSkipsSharingRestoreWhenTopologyCannotProveStable() async throws {
+        struct Scenario {
+            let expectedStatus: DisplayRuntimeTopologyStabilityStatus
+            let catalog: DisplayRuntimeCatalogSnapshot
+            let refreshResults: [DisplayRuntimeCatalogRefreshResult]
+            let maximumSampleCount: Int
+        }
+
+        let scenarios: [Scenario] = [
+            .init(
+                expectedStatus: .unprovableDueToPermission,
+                catalog: .init(
+                    hasScreenCapturePermission: false,
+                    lastPreflightPermission: false,
+                    lastRequestPermission: nil,
+                    isLoadingDisplays: false,
+                    hasLoadError: false,
+                    lastLoadError: nil,
+                    loadedDisplays: [],
+                    topologySignature: []
+                ),
+                refreshResults: [.clearedSnapshot],
+                maximumSampleCount: 4
+            ),
+            .init(
+                expectedStatus: .failed,
+                catalog: catalogSnapshot(displayID: 103, isMain: false),
+                refreshResults: [.reusedSnapshot, .failed],
+                maximumSampleCount: 4
+            ),
+            .init(
+                expectedStatus: .timedOut,
+                catalog: .init(
+                    hasScreenCapturePermission: true,
+                    lastPreflightPermission: true,
+                    lastRequestPermission: nil,
+                    isLoadingDisplays: false,
+                    hasLoadError: false,
+                    lastLoadError: nil,
+                    loadedDisplays: [],
+                    topologySignature: []
+                ),
+                refreshResults: [.reusedSnapshot],
+                maximumSampleCount: 2
+            )
+        ]
+
+        for scenario in scenarios {
+            let configID = UUID()
+            let sharingCommander = FakeSharingCommander()
+            let runtime = DisplayRuntime(
+                catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
+                sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 103)),
+                virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 103)),
+                catalogCommander: FakeCatalogCommander(refreshResults: scenario.refreshResults),
+                sharingCommander: sharingCommander,
+                virtualDisplayCommander: FakeVirtualDisplayCommander(),
+                topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: scenario.maximumSampleCount)
+            )
+
+            let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+            let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+            #expect(result.status == .completedWithRecoveryFailures)
+            #expect(trace.topologyStabilityResult?.status == scenario.expectedStatus)
+            #expect(trace.restoreResults == [
+                .init(
+                    kind: .sharing,
+                    status: .skipped,
+                    previousDisplayID: 103,
+                    resolvedDisplayID: nil,
+                    failureReason: "topology_\(scenario.expectedStatus.rawValue)"
+                )
+            ])
+            #expect(sharingCommander.restoredDisplayIDs.isEmpty)
+            #expect(trace.compensation.status == .degraded)
+            #expect(trace.failure == nil)
+        }
     }
 
     @Test func rebuildTransactionDoesNotStabilizeWhenVisibleDisplayIDsChange() async throws {
@@ -1194,9 +1363,15 @@ private final class FakeCatalogCommander: DisplayRuntimeCatalogCommanding {
 @MainActor
 private final class FakeSharingCommander: DisplayRuntimeSharingCommanding {
     private let recorder: RuntimeOperationRecorder?
+    private let restoreResult: DisplayRuntimeSharingRestoreCommandResult
+    private(set) var restoredDisplayIDs: [DisplayRuntimeDisplayID] = []
 
-    init(recorder: RuntimeOperationRecorder? = nil) {
+    init(
+        recorder: RuntimeOperationRecorder? = nil,
+        restoreResult: DisplayRuntimeSharingRestoreCommandResult = .restored
+    ) {
         self.recorder = recorder
+        self.restoreResult = restoreResult
     }
 
     func registerShareableDisplays(_ displays: [DisplayRuntimeShareableDisplayRegistration]) {
@@ -1206,6 +1381,12 @@ private final class FakeSharingCommander: DisplayRuntimeSharingCommanding {
 
     func stopSharing(displayID: DisplayRuntimeDisplayID) {
         recorder?.append("stopSharing:\(displayID)")
+    }
+
+    func restoreSharing(displayID: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult {
+        restoredDisplayIDs.append(displayID)
+        recorder?.append("restoreSharing:\(displayID)")
+        return restoreResult
     }
 }
 

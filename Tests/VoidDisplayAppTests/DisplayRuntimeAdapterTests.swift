@@ -82,6 +82,117 @@ struct DisplayRuntimeAdapterTests {
         #expect(sharingService.registeredVirtualSerialsByDisplayID[skippedDisplay.displayID] == nil)
     }
 
+    @Test func sharingAdapterRestoreResolvesCatalogDisplayAndStartsSharing() async {
+        let display = SharedMockSCDisplay.make(displayID: 8211, width: 2560, height: 1440)
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [display] },
+            activeDisplayIDsProvider: { [display.displayID] }
+        )
+        catalogService.store.displays = [display]
+        let sharingService = MockSharingService()
+        sharingService.isWebServiceRunning = true
+        sharingService.shareIDByDisplayID[display.displayID] = 9211
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: AdapterTestPortPreferences(),
+            catalogService: catalogService
+        )
+        let sut = DisplayRuntimeSharingAdapter(controller: sharingController)
+
+        let result = await sut.restoreSharing(displayID: display.displayID)
+
+        #expect(result == .restored)
+        #expect(sharingService.startSharingCallCount == 1)
+        #expect(sharingService.startedSharingDisplayIDs == [display.displayID])
+    }
+
+    @Test func sharingAdapterRestoreFailsWhenCatalogDisplayIsMissing() async {
+        let display = SharedMockSCDisplay.make(displayID: 8212, width: 2560, height: 1440)
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [display] },
+            activeDisplayIDsProvider: { [display.displayID] }
+        )
+        catalogService.store.displays = []
+        let sharingService = MockSharingService()
+        sharingService.isWebServiceRunning = true
+        sharingService.shareIDByDisplayID[display.displayID] = 9212
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: AdapterTestPortPreferences(),
+            catalogService: catalogService
+        )
+        let sut = DisplayRuntimeSharingAdapter(controller: sharingController)
+
+        let result = await sut.restoreSharing(displayID: display.displayID)
+
+        #expect(result.status == .failed)
+        #expect(result.failureReason == "display_not_found")
+        #expect(sharingService.startSharingCallCount == 0)
+    }
+
+    @Test func sharingAdapterRestoreFailsWhenShareableRegistrationIsMissing() async {
+        let display = SharedMockSCDisplay.make(displayID: 8213, width: 2560, height: 1440)
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [display] },
+            activeDisplayIDsProvider: { [display.displayID] }
+        )
+        catalogService.store.displays = [display]
+        let sharingService = MockSharingService()
+        sharingService.isWebServiceRunning = true
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: AdapterTestPortPreferences(),
+            catalogService: catalogService
+        )
+        let sut = DisplayRuntimeSharingAdapter(controller: sharingController)
+
+        let result = await sut.restoreSharing(displayID: display.displayID)
+
+        #expect(result.status == .failed)
+        #expect(result.failureReason == "shareable_display_not_registered")
+        #expect(sharingService.startSharingCallCount == 0)
+    }
+
+    @Test func sharingAdapterRestoreMapsBeginSharingInvalidationAndFailure() async {
+        struct ControlledError: Error {}
+
+        let invalidatedDisplay = SharedMockSCDisplay.make(displayID: 8214, width: 2560, height: 1440)
+        let failedDisplay = SharedMockSCDisplay.make(displayID: 8215, width: 2560, height: 1440)
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [invalidatedDisplay, failedDisplay] },
+            activeDisplayIDsProvider: { [invalidatedDisplay.displayID, failedDisplay.displayID] }
+        )
+        catalogService.store.displays = [invalidatedDisplay, failedDisplay]
+        let sharingService = MockSharingService()
+        sharingService.isWebServiceRunning = true
+        sharingService.shareIDByDisplayID[invalidatedDisplay.displayID] = 9214
+        sharingService.shareIDByDisplayID[failedDisplay.displayID] = 9215
+        sharingService.startSharingHandler = { display in
+            if display.displayID == invalidatedDisplay.displayID {
+                return .invalidated
+            }
+            throw ControlledError()
+        }
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: AdapterTestPortPreferences(),
+            catalogService: catalogService
+        )
+        let sut = DisplayRuntimeSharingAdapter(controller: sharingController)
+
+        let invalidatedResult = await sut.restoreSharing(displayID: invalidatedDisplay.displayID)
+        let failedResult = await sut.restoreSharing(displayID: failedDisplay.displayID)
+
+        #expect(invalidatedResult.status == .invalidated)
+        #expect(invalidatedResult.failureReason == "sharing_start_invalidated")
+        #expect(failedResult.status == .failed)
+        #expect(sharingService.startedSharingDisplayIDs == [invalidatedDisplay.displayID, failedDisplay.displayID])
+    }
+
     @Test func virtualDisplayAdapterRebuildCallsControllerCommandPath() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Adapter",
