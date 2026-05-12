@@ -330,8 +330,8 @@ package final class DisplayRuntime {
         affectedSurfaces: [DisplayRuntimeAffectedSurface]
     ) async -> DisplayRuntimeTopologyStabilityResult {
         var samples: [DisplayRuntimeTopologyStabilitySample] = []
-        var previousSample: DisplayRuntimeTopologyStabilitySample?
-        var stableTransitionCount = 0
+        var previousStableSample: DisplayRuntimeTopologyStabilitySample?
+        var stableSampleCount = 0
 
         for index in 0..<topologyWaitPolicy.maximumSampleCount {
             if index > 0 && topologyWaitPolicy.sampleIntervalNanoseconds > 0 {
@@ -358,16 +358,20 @@ package final class DisplayRuntime {
                 )
             }
 
-            if affectedSurfacesResolveToVisibleDisplayIDs(affectedSurfaces, snapshot: snapshot),
-               previousSample?.topologySignature == sample.topologySignature {
-                stableTransitionCount += 1
-                if stableTransitionCount >= topologyWaitPolicy.requiredStableSampleCount - 1 {
+            if affectedSurfacesResolveToVisibleDisplayIDs(affectedSurfaces, snapshot: snapshot) {
+                if previousStableSample == sample {
+                    stableSampleCount += 1
+                } else {
+                    previousStableSample = sample
+                    stableSampleCount = 1
+                }
+                if stableSampleCount >= topologyWaitPolicy.requiredStableSampleCount {
                     return topologyResult(status: .stable, samples: samples, failureReason: nil)
                 }
             } else {
-                stableTransitionCount = 0
+                previousStableSample = nil
+                stableSampleCount = 0
             }
-            previousSample = sample
         }
 
         return topologyResult(
