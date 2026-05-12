@@ -9,7 +9,7 @@ import ScreenCaptureKit
 
 @MainActor
 package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding, DisplayRuntimeCatalogCommanding {
-    private weak var service: ScreenCaptureCatalogService?
+    private let service: ScreenCaptureCatalogService
     private let captureRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
     private let sharingRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
 
@@ -18,7 +18,7 @@ package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding
     }
 
     package func makeCatalogSnapshot() -> DisplayRuntimeCatalogSnapshot {
-        guard let store = service?.store else { return .empty }
+        let store = service.store
         return DisplayRuntimeCatalogSnapshot(
             hasScreenCapturePermission: store.hasScreenCapturePermission,
             lastPreflightPermission: store.lastPreflightPermission,
@@ -55,18 +55,17 @@ package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding
     }
 
     package func requestPermission() -> Bool {
-        service?.requestPermission() ?? false
+        service.requestPermission()
     }
 
     package func refreshPermission() -> Bool {
-        service?.refreshPermission() ?? false
+        service.refreshPermission()
     }
 
     package func submitRefresh(
         intent: DisplayRuntimeCatalogRefreshIntent,
         ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
     ) async -> DisplayRuntimeCatalogRefreshResult {
-        guard let service else { return .failed }
         let result = await service.submitRefresh(
             intent: ScreenCaptureCatalogRefreshIntent(intent),
             owner: owner(for: ownerScope)
@@ -75,15 +74,14 @@ package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding
     }
 
     package func clearSnapshotForDeniedPermission(loadErrorMessage: String?) async {
-        await service?.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
+        await service.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
     }
 
     package func cancelRefresh(ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?) async {
-        await service?.cancelRefresh(owner: owner(for: ownerScope))
+        await service.cancelRefresh(owner: owner(for: ownerScope))
     }
 
     package func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay] {
-        guard let service else { return [] }
         return service.visibleDisplays(from: service.store.displays ?? []).map {
             DisplayRuntimeVisibleDisplay(
                 displayID: $0.displayID,

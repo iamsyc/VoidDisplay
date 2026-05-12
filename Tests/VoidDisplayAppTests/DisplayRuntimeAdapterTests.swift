@@ -27,6 +27,33 @@ struct DisplayRuntimeAdapterTests {
         ])
     }
 
+    @Test func catalogAdapterRetainsScreenCaptureCatalogService() {
+        let display = SharedMockSCDisplay.make(displayID: 8301, width: 1440, height: 900)
+        var service: ScreenCaptureCatalogService? = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [display] },
+            activeDisplayIDsProvider: { [display.displayID] }
+        )
+        service?.store.hasScreenCapturePermission = true
+        service?.store.lastPreflightPermission = true
+        service?.store.displays = [display]
+        let sut = DisplayRuntimeCatalogAdapter(service: service!)
+
+        service = nil
+
+        let snapshot = sut.makeCatalogSnapshot()
+        let visibleDisplays = sut.currentVisibleDisplays()
+
+        #expect(snapshot.hasScreenCapturePermission == true)
+        #expect(snapshot.lastPreflightPermission == true)
+        #expect(snapshot.loadedDisplays == [
+            .init(displayID: display.displayID, pixelWidth: 1440, pixelHeight: 900)
+        ])
+        #expect(visibleDisplays == [
+            .init(displayID: display.displayID, pixelWidth: 1440, pixelHeight: 900)
+        ])
+    }
+
     @Test func sharingAdapterResolvesSCDisplayAndVirtualSerialInAppLayer() {
         let skippedDisplay = SharedMockSCDisplay.make(displayID: 8201, width: 1920, height: 1080)
         let registeredDisplay = SharedMockSCDisplay.make(displayID: 8202, width: 3840, height: 2160)
