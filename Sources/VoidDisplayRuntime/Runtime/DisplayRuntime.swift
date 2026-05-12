@@ -18,6 +18,18 @@ package nonisolated struct DisplayRuntimeTopologyWaitPolicy: Equatable, Sendable
     package static let `default` = Self()
 }
 
+private nonisolated struct ActiveVirtualDisplayTransactionKey: Hashable {
+    let kind: DisplayRuntimeTransactionKind
+    let configID: UUID
+}
+
+private nonisolated struct ActiveVirtualDisplayTransactionContext: Sendable {
+    let transactionID: DisplayRuntimeTransactionID
+    let kind: DisplayRuntimeTransactionKind
+    let configID: UUID
+    let source: DisplayRuntimeTransactionSource
+}
+
 @MainActor
 package final class DisplayRuntime {
     private let catalogProvider: (any DisplayRuntimeCatalogProviding)?
@@ -33,9 +45,13 @@ package final class DisplayRuntime {
 
     private var topologyRefreshTask: Task<Void, Never>?
     private var hasPendingTopologyChange = false
-    private var rebuildQueueTail: Task<DisplayRuntimeVirtualDisplayRebuildTransactionResult, Error>?
-    private var activeRebuildTasksByConfigID: [UUID: Task<DisplayRuntimeVirtualDisplayRebuildTransactionResult, Error>] = [:]
-    private var activeRebuildTransactionIDsByConfigID: [UUID: DisplayRuntimeTransactionID] = [:]
+    private var virtualDisplayTransactionQueueTail: Task<Void, Never>?
+    private var activeVirtualDisplayTransactionTasksByKey: [
+        ActiveVirtualDisplayTransactionKey: Task<DisplayRuntimeVirtualDisplayRebuildTransactionResult, Error>
+    ] = [:]
+    private var activeVirtualDisplayTransactionIDsByKey: [
+        ActiveVirtualDisplayTransactionKey: DisplayRuntimeTransactionID
+    ] = [:]
     private var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]
     private var recentTransactionTraces: [DisplayRuntimeTransactionTrace] = []
 
@@ -169,33 +185,77 @@ package final class DisplayRuntime {
         configID: UUID,
         source: DisplayRuntimeTransactionSource
     ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
-        if let activeTask = activeRebuildTasksByConfigID[configID],
-           let transactionID = activeRebuildTransactionIDsByConfigID[configID] {
+        try await enqueueVirtualDisplayTransaction(
+            kind: .virtualDisplayRebuild,
+            configID: configID,
+            source: source
+        ) { context in
+            let request = DisplayRuntimeVirtualDisplayRebuildRequest(
+                transactionID: context.transactionID,
+                configID: context.configID,
+                source: context.source
+            )
+            return try await self.executeVirtualDisplayRebuildTransaction(request)
+        }
+    }
+
+    @discardableResult
+    package func setVirtualDisplayDesiredEnabled(
+        configID: UUID,
+        enabled: Bool,
+        source: DisplayRuntimeTransactionSource
+    ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
+        let kind: DisplayRuntimeTransactionKind = enabled ? .virtualDisplayEnable : .virtualDisplayDisable
+        return try await enqueueVirtualDisplayTransaction(
+            kind: kind,
+            configID: configID,
+            source: source
+        ) { context in
+            try await self.executeVirtualDisplayDesiredEnabledTransaction(context, desiredEnabled: enabled)
+        }
+    }
+
+    private func enqueueVirtualDisplayTransaction(
+        kind: DisplayRuntimeTransactionKind,
+        configID: UUID,
+        source: DisplayRuntimeTransactionSource,
+        execute: @escaping @MainActor (ActiveVirtualDisplayTransactionContext) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult
+    ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
+        let key = ActiveVirtualDisplayTransactionKey(kind: kind, configID: configID)
+        if let activeTask = activeVirtualDisplayTransactionTasksByKey[key],
+           let transactionID = activeVirtualDisplayTransactionIDsByKey[key] {
             incrementCoalescedRequestCount(transactionID: transactionID)
             await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
             return try await activeTask.value
         }
 
-        let request = DisplayRuntimeVirtualDisplayRebuildRequest(configID: configID, source: source)
-        let previousTail = rebuildQueueTail
-        setActiveTrace(makeInitialTrace(for: request))
+        let context = ActiveVirtualDisplayTransactionContext(
+            transactionID: DisplayRuntimeTransactionID(),
+            kind: kind,
+            configID: configID,
+            source: source
+        )
+        let previousTail = virtualDisplayTransactionQueueTail
+        setActiveTrace(makeInitialTrace(for: context))
 
         let task = Task { @MainActor in
             defer {
-                self.activeRebuildTasksByConfigID[configID] = nil
-                self.activeRebuildTransactionIDsByConfigID[configID] = nil
-                if self.activeRebuildTasksByConfigID.isEmpty {
-                    self.rebuildQueueTail = nil
+                self.activeVirtualDisplayTransactionTasksByKey[key] = nil
+                self.activeVirtualDisplayTransactionIDsByKey[key] = nil
+                if self.activeVirtualDisplayTransactionTasksByKey.isEmpty {
+                    self.virtualDisplayTransactionQueueTail = nil
                 }
             }
             if let previousTail {
-                _ = try? await previousTail.value
+                await previousTail.value
             }
-            return try await self.executeVirtualDisplayRebuildTransaction(request)
+            return try await execute(context)
         }
-        rebuildQueueTail = task
-        activeRebuildTasksByConfigID[configID] = task
-        activeRebuildTransactionIDsByConfigID[configID] = request.transactionID
+        virtualDisplayTransactionQueueTail = Task { @MainActor in
+            _ = try? await task.value
+        }
+        activeVirtualDisplayTransactionTasksByKey[key] = task
+        activeVirtualDisplayTransactionIDsByKey[key] = context.transactionID
         await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
 
         return try await task.value
@@ -299,7 +359,10 @@ package final class DisplayRuntime {
         }
 
         await appendPhase(.waitingForTopology, transactionID: request.transactionID)
-        let topologyResult = await waitForPostCommandTopology(affectedSurfaces: affectedSurfaces)
+        let topologyResult = await waitForPostCommandTopology(
+            kind: .virtualDisplayRebuild,
+            affectedSurfaces: affectedSurfaces
+        )
         if topologyResult.status == .stable {
             convergeToVisibleDisplaysFromCurrentCatalog()
             await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
@@ -320,11 +383,13 @@ package final class DisplayRuntime {
         let sharingRestoreResults = await restoreSharingSessions(
             restoreIntents,
             topologyResult: topologyResult,
-            postSnapshot: postConvergenceSnapshot
+            postSnapshot: postConvergenceSnapshot,
+            disabledTargetIdentity: nil
         )
         let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
             restoreIntents,
-            topologyResult: topologyResult
+            topologyResult: topologyResult,
+            disabledTargetIdentity: nil
         )
         let restoreResults = sharingRestoreResults + monitoringRestoreResults
         updateTrace(request.transactionID) { trace in
@@ -351,6 +416,274 @@ package final class DisplayRuntime {
         )
     }
 
+    private func executeVirtualDisplayDesiredEnabledTransaction(
+        _ context: ActiveVirtualDisplayTransactionContext,
+        desiredEnabled: Bool
+    ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
+        do {
+            try Task.checkCancellation()
+        } catch {
+            _ = finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: context.kind,
+                status: .cancelled,
+                phase: .cancelled,
+                failure: .init(
+                    phase: .cancelled,
+                    reason: "cancelled_before_virtual_display_command",
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                desiredEnabled: desiredEnabled
+            )
+            throw error
+        }
+
+        await appendPhase(.preparing, transactionID: context.transactionID)
+        await refreshCatalogTopologyForTransaction()
+        let preSnapshot = makeSnapshot()
+        let preEvidence = DisplayRuntimeTransactionSnapshotEvidence(snapshot: preSnapshot)
+        updateTrace(context.transactionID) { trace in
+            trace.replacing(preSnapshotEvidence: preEvidence)
+        }
+
+        guard preSnapshot.virtualDisplay.configs.contains(where: { $0.id == context.configID }) else {
+            return finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: context.kind,
+                status: .failed,
+                phase: .failed,
+                failure: .init(
+                    phase: .preparing,
+                    reason: "config_not_found",
+                    recoverability: .unrecoverable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: preSnapshot,
+                desiredEnabled: desiredEnabled
+            )
+        }
+
+        guard let virtualDisplayCommander else {
+            return finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: context.kind,
+                status: .failed,
+                phase: .failed,
+                failure: .init(
+                    phase: .preparing,
+                    reason: "virtual_display_commander_unavailable",
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: preSnapshot,
+                desiredEnabled: desiredEnabled
+            )
+        }
+
+        let targetPreDisplayID = preSnapshot.surfaces
+            .first(where: { $0.identity == .managedVirtualDisplay(configID: context.configID) })?
+            .currentDisplayID
+        var enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
+        if desiredEnabled {
+            do {
+                enablePreflight = try await virtualDisplayCommander.preflightEnableVirtualDisplay(
+                    request: .init(configID: context.configID, targetPreDisplayID: targetPreDisplayID)
+                )
+                updateTrace(context.transactionID) { trace in
+                    trace.replacing(enablePreflight: enablePreflight)
+                }
+            } catch {
+                _ = finalizeTransaction(
+                    transactionID: context.transactionID,
+                    kind: context.kind,
+                    status: .failed,
+                    phase: .failed,
+                    failure: transactionFailure(
+                        phase: .preparing,
+                        reason: "virtual_display_enable_preflight_failed",
+                        error: error,
+                        recoverability: .retryable
+                    ),
+                    virtualDisplayCommandSucceeded: false,
+                    postSnapshot: makeSnapshot(),
+                    desiredEnabled: desiredEnabled
+                )
+                throw error
+            }
+        }
+
+        await appendPhase(.persistingConfig, transactionID: context.transactionID)
+        do {
+            let persistenceResult = try await virtualDisplayCommander.setVirtualDisplayDesiredEnabled(
+                request: .init(configID: context.configID, enabled: desiredEnabled)
+            )
+            updateTrace(context.transactionID) { trace in
+                trace.replacing(persistenceOutcome: persistenceResult.persistenceOutcome)
+            }
+            guard persistenceResult.persistenceOutcome == .saved else {
+                return finalizeTransaction(
+                    transactionID: context.transactionID,
+                    kind: context.kind,
+                    status: .failed,
+                    phase: .failed,
+                    failure: .init(
+                        phase: .persistingConfig,
+                        reason: "virtual_display_desired_enabled_save_failed",
+                        recoverability: .retryable
+                    ),
+                    virtualDisplayCommandSucceeded: false,
+                    postSnapshot: makeSnapshot(),
+                    desiredEnabled: desiredEnabled,
+                    persistenceOutcome: persistenceResult.persistenceOutcome
+                )
+            }
+        } catch {
+            _ = finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: context.kind,
+                status: .failed,
+                phase: .failed,
+                failure: transactionFailure(
+                    phase: .persistingConfig,
+                    reason: "virtual_display_desired_enabled_save_failed",
+                    error: error,
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: makeSnapshot(),
+                desiredEnabled: desiredEnabled,
+                persistenceOutcome: .failed
+            )
+            throw error
+        }
+
+        let affectedScope = makeLifecycleAffectedScope(
+            kind: context.kind,
+            configID: context.configID,
+            snapshot: preSnapshot,
+            enablePreflight: enablePreflight
+        )
+        let pauseIntents = makePauseIntents(
+            affectedSurfaces: affectedScope.surfaces,
+            snapshot: preSnapshot
+        )
+        updateTrace(context.transactionID) { trace in
+            trace.replacing(
+                affectedSurfaces: affectedScope.surfaces,
+                pauseIntents: pauseIntents,
+                scopeEscalationReason: affectedScope.scopeEscalationReason
+            )
+        }
+
+        await appendPhase(.quiescingSessions, transactionID: context.transactionID)
+        quiesceSessions(pauseIntents)
+
+        await appendPhase(.executingVirtualDisplayCommand, transactionID: context.transactionID)
+        do {
+            let request = DisplayRuntimeVirtualDisplayLifecycleCommandRequest(
+                configID: context.configID,
+                targetPreDisplayID: targetPreDisplayID
+            )
+            if desiredEnabled {
+                _ = try await virtualDisplayCommander.enableVirtualDisplay(request: request)
+            } else {
+                _ = try await virtualDisplayCommander.disableVirtualDisplay(request: request)
+            }
+            updateTrace(context.transactionID) { trace in
+                trace.replacing(virtualDisplayCommandOutcome: .succeeded)
+            }
+        } catch {
+            _ = finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: context.kind,
+                status: .failed,
+                phase: .failed,
+                failure: transactionFailure(
+                    phase: .executingVirtualDisplayCommand,
+                    reason: "virtual_display_command_failed",
+                    error: error,
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: makeSnapshot(),
+                compensation: .init(
+                    status: .degraded,
+                    restoredSharingCount: 0,
+                    restoredMonitoringCount: 0,
+                    failedRestoreCount: pauseIntents.count
+                ),
+                desiredEnabled: desiredEnabled,
+                virtualDisplayCommandOutcome: .failed
+            )
+            throw error
+        }
+
+        await appendPhase(.waitingForTopology, transactionID: context.transactionID)
+        let topologyResult = await waitForPostCommandTopology(
+            kind: context.kind,
+            affectedSurfaces: affectedScope.surfaces
+        )
+        if topologyResult.status == .stable {
+            convergeToVisibleDisplaysFromCurrentCatalog()
+            await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
+        }
+        let postConvergenceSnapshot = makeSnapshot()
+        let restoreIntents = makeLifecycleSessionRestoreIntents(
+            kind: context.kind,
+            targetConfigID: context.configID,
+            pauseIntents: pauseIntents,
+            topologyResult: topologyResult,
+            preSnapshot: preSnapshot,
+            postSnapshot: postConvergenceSnapshot
+        )
+        updateTrace(context.transactionID) { trace in
+            trace.replacing(restoreIntents: restoreIntents)
+        }
+        if !restoreIntents.isEmpty {
+            await appendPhase(.restoringSessions, transactionID: context.transactionID)
+        }
+        let disabledTargetIdentity: DisplaySurfaceIdentity? = desiredEnabled
+            ? nil
+            : .managedVirtualDisplay(configID: context.configID)
+        let sharingRestoreResults = await restoreSharingSessions(
+            restoreIntents,
+            topologyResult: topologyResult,
+            postSnapshot: postConvergenceSnapshot,
+            disabledTargetIdentity: disabledTargetIdentity
+        )
+        let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+            restoreIntents,
+            topologyResult: topologyResult,
+            disabledTargetIdentity: disabledTargetIdentity
+        )
+        let restoreResults = sharingRestoreResults + monitoringRestoreResults
+        updateTrace(context.transactionID) { trace in
+            trace.replacing(restoreResults: restoreResults)
+        }
+        let finalPostSnapshot = makeSnapshot()
+        let finalStatus = transactionStatus(
+            after: topologyResult,
+            restoreResults: restoreResults
+        )
+        return finalizeTransaction(
+            transactionID: context.transactionID,
+            kind: context.kind,
+            status: finalStatus,
+            phase: .completed,
+            failure: nil,
+            virtualDisplayCommandSucceeded: true,
+            postSnapshot: finalPostSnapshot,
+            topologyStabilityResult: topologyResult,
+            compensation: compensationResult(
+                after: topologyResult,
+                restoreResults: restoreResults,
+                restoreIntentCount: restoreIntents.count
+            ),
+            desiredEnabled: desiredEnabled
+        )
+    }
+
     @discardableResult
     private func refreshCatalogTopologyForTransaction() async -> DisplayRuntimeCatalogRefreshResult {
         guard let catalogCommander else { return .failed }
@@ -360,6 +693,7 @@ package final class DisplayRuntime {
     }
 
     private func waitForPostCommandTopology(
+        kind: DisplayRuntimeTransactionKind,
         affectedSurfaces: [DisplayRuntimeAffectedSurface]
     ) async -> DisplayRuntimeTopologyStabilityResult {
         var samples: [DisplayRuntimeTopologyStabilitySample] = []
@@ -391,7 +725,11 @@ package final class DisplayRuntime {
                 )
             }
 
-            if affectedSurfacesResolveToVisibleDisplayIDs(affectedSurfaces, snapshot: snapshot) {
+            if affectedSurfacesResolveToVisibleDisplayIDs(
+                affectedSurfaces,
+                kind: kind,
+                snapshot: snapshot
+            ) {
                 if previousStableSample == sample {
                     stableSampleCount += 1
                 } else {
@@ -431,15 +769,48 @@ package final class DisplayRuntime {
         catalog.hasScreenCapturePermission == false || catalog.lastPreflightPermission == false
     }
 
+    private func makeLifecycleSessionRestoreIntents(
+        kind: DisplayRuntimeTransactionKind,
+        targetConfigID: UUID,
+        pauseIntents: [DisplayRuntimeSessionPauseIntent],
+        topologyResult: DisplayRuntimeTopologyStabilityResult,
+        preSnapshot: DisplayRuntimeSnapshot,
+        postSnapshot: DisplayRuntimeSnapshot
+    ) -> [DisplayRuntimeSessionRestoreIntent] {
+        let targetIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: targetConfigID)
+        let intents: [DisplayRuntimeSessionPauseIntent]
+        switch kind {
+        case .virtualDisplayEnable:
+            intents = pauseIntents.filter { $0.surfaceIdentity != targetIdentity }
+        case .virtualDisplayDisable, .virtualDisplayRebuild:
+            intents = pauseIntents
+        }
+        return makeSessionRestoreIntents(
+            pauseIntents: intents,
+            topologyResult: topologyResult,
+            preSnapshot: preSnapshot,
+            postSnapshot: postSnapshot
+        )
+    }
+
     private func affectedSurfacesResolveToVisibleDisplayIDs(
         _ affectedSurfaces: [DisplayRuntimeAffectedSurface],
+        kind: DisplayRuntimeTransactionKind,
         snapshot: DisplayRuntimeSnapshot
     ) -> Bool {
-        guard !affectedSurfaces.isEmpty else { return false }
+        let surfacesToResolve: [DisplayRuntimeAffectedSurface]
+        switch kind {
+        case .virtualDisplayDisable:
+            surfacesToResolve = affectedSurfaces.filter { $0.reason != .requestedConfig }
+        case .virtualDisplayRebuild, .virtualDisplayEnable:
+            surfacesToResolve = affectedSurfaces
+        }
+        guard !surfacesToResolve.isEmpty else { return kind == .virtualDisplayDisable }
         let visibleDisplayIDs = Set(snapshot.catalog.loadedDisplays.map(\.displayID))
-        return affectedSurfaces.allSatisfy { affectedSurface in
+        return surfacesToResolve.allSatisfy { affectedSurface in
             guard let surface = snapshot.surfaces.first(where: { $0.identity == affectedSurface.identity }),
-                  let displayID = surface.currentDisplayID
+                  let displayID = surface.currentDisplayID,
+                  surface.managedVirtualDisplay?.isRunning != false
             else {
                 return false
             }
@@ -460,6 +831,7 @@ package final class DisplayRuntime {
                     guard topologyResult.status == .stable,
                           let surface = postSnapshot.surfaces.first(where: { $0.identity == pauseIntent.surfaceIdentity }),
                           let displayID = surface.currentDisplayID,
+                          surface.managedVirtualDisplay?.isRunning != false,
                           visibleDisplayIDs.contains(displayID)
                     else {
                         return nil
@@ -484,13 +856,27 @@ package final class DisplayRuntime {
     private func restoreSharingSessions(
         _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
         topologyResult: DisplayRuntimeTopologyStabilityResult,
-        postSnapshot: DisplayRuntimeSnapshot
+        postSnapshot: DisplayRuntimeSnapshot,
+        disabledTargetIdentity: DisplaySurfaceIdentity?
     ) async -> [DisplayRuntimeSessionRestoreResult] {
         let sharingRestoreIntents = restoreIntents.filter(\.restoreSharing)
         guard !sharingRestoreIntents.isEmpty else { return [] }
 
+        let disabledTargetResults = sharingRestoreIntents
+            .filter { $0.surfaceIdentity == disabledTargetIdentity }
+            .map {
+                makeRestoreResult(
+                    kind: .sharing,
+                    intent: $0,
+                    status: .skipped,
+                    failureReason: "target_disabled"
+                )
+            }
+        let peerSharingRestoreIntents = sharingRestoreIntents.filter { $0.surfaceIdentity != disabledTargetIdentity }
+        guard !peerSharingRestoreIntents.isEmpty else { return disabledTargetResults }
+
         guard topologyResult.status == .stable else {
-            return sharingRestoreIntents.map {
+            return disabledTargetResults + peerSharingRestoreIntents.map {
                 makeRestoreResult(
                     kind: .sharing,
                     intent: $0,
@@ -501,7 +887,7 @@ package final class DisplayRuntime {
         }
 
         guard postSnapshot.sharing.isWebServiceRunning else {
-            return sharingRestoreIntents.map {
+            return disabledTargetResults + peerSharingRestoreIntents.map {
                 makeRestoreResult(
                     kind: .sharing,
                     intent: $0,
@@ -512,8 +898,8 @@ package final class DisplayRuntime {
         }
 
         let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
-        var results: [DisplayRuntimeSessionRestoreResult] = []
-        for intent in sharingRestoreIntents {
+        var results: [DisplayRuntimeSessionRestoreResult] = disabledTargetResults
+        for intent in peerSharingRestoreIntents {
             guard let resolvedDisplayID = intent.resolvedDisplayID else {
                 results.append(
                     makeRestoreResult(
@@ -563,13 +949,17 @@ package final class DisplayRuntime {
 
     private func makeDeferredMonitoringRestoreResults(
         _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
-        topologyResult: DisplayRuntimeTopologyStabilityResult
+        topologyResult: DisplayRuntimeTopologyStabilityResult,
+        disabledTargetIdentity: DisplaySurfaceIdentity?
     ) -> [DisplayRuntimeSessionRestoreResult] {
         let monitoringRestoreIntents = restoreIntents.filter(\.restoreMonitoring)
         guard !monitoringRestoreIntents.isEmpty else { return [] }
 
         return monitoringRestoreIntents.map { intent in
             let failureReason: String = {
+                guard intent.surfaceIdentity != disabledTargetIdentity else {
+                    return "target_disabled"
+                }
                 guard topologyResult.status == .stable else {
                     return "topology_\(topologyResult.status.rawValue)"
                 }
@@ -608,7 +998,9 @@ package final class DisplayRuntime {
     ) -> DisplayRuntimeTransactionStatus {
         switch topologyResult.status {
         case .stable:
-            return restoreResults.allSatisfy { $0.status == .restored } ? .completed : .completedWithRecoveryFailures
+            return restoreResults.allSatisfy { $0.status == .restored || $0.failureReason == "target_disabled" }
+                ? .completed
+                : .completedWithRecoveryFailures
         case .unprovableDueToPermission, .failed, .timedOut:
             return .completedWithRecoveryFailures
         }
@@ -620,7 +1012,9 @@ package final class DisplayRuntime {
         restoreIntentCount: Int
     ) -> DisplayRuntimeCompensationResult {
         let restoredSharingCount = restoreResults.filter { $0.kind == .sharing && $0.status == .restored }.count
-        let failedRestoreCount = restoreResults.filter { $0.status != .restored }.count
+        let failedRestoreCount = restoreResults.filter {
+            $0.status != .restored && $0.failureReason != "target_disabled"
+        }.count
         switch topologyResult.status {
         case .stable:
             if restoreIntentCount == 0 {
@@ -642,6 +1036,83 @@ package final class DisplayRuntime {
         }
     }
 
+    private func makeLifecycleAffectedScope(
+        kind: DisplayRuntimeTransactionKind,
+        configID: UUID,
+        snapshot: DisplayRuntimeSnapshot,
+        enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
+    ) -> (surfaces: [DisplayRuntimeAffectedSurface], scopeEscalationReason: DisplayRuntimeScopeEscalationReason?) {
+        switch kind {
+        case .virtualDisplayRebuild:
+            return (makeAffectedSurfaces(configID: configID, snapshot: snapshot), nil)
+        case .virtualDisplayEnable:
+            return makeEnableAffectedScope(
+                configID: configID,
+                snapshot: snapshot,
+                preflight: enablePreflight
+            )
+        case .virtualDisplayDisable:
+            let surfaces = makeAffectedSurfaces(configID: configID, snapshot: snapshot)
+            let hasPeer = surfaces.contains { $0.configID != configID }
+            return (surfaces, hasPeer ? .managedMainPolicyRisk : nil)
+        }
+    }
+
+    private func makeEnableAffectedScope(
+        configID: UUID,
+        snapshot: DisplayRuntimeSnapshot,
+        preflight: DisplayRuntimeVirtualDisplayEnablePreflight?
+    ) -> (surfaces: [DisplayRuntimeAffectedSurface], scopeEscalationReason: DisplayRuntimeScopeEscalationReason?) {
+        let targetIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        guard let targetSurface = snapshot.surfaces.first(where: { $0.identity == targetIdentity }) else {
+            return ([], nil)
+        }
+
+        let targetOnlyProven = preflight?.mayPerformFleetRebuild == false
+            && preflight?.requiresFleetQuiesce == false
+        guard !targetOnlyProven else {
+            return ([
+                makeAffectedSurface(
+                    identity: targetIdentity,
+                    configID: configID,
+                    surface: targetSurface,
+                    snapshot: snapshot,
+                    reason: .requestedConfig
+                )
+            ], nil)
+        }
+
+        let runningConfigIDs = Set(snapshot.virtualDisplay.runningConfigIDs)
+        let runningManagedDisplays = firstValuesByKey(snapshot.virtualDisplay.managedDisplays, key: \.configID)
+            .values
+            .filter { runningConfigIDs.contains($0.configID) }
+            .sorted { $0.configID.uuidString < $1.configID.uuidString }
+        var surfaces: [DisplayRuntimeAffectedSurface] = [
+            makeAffectedSurface(
+                identity: targetIdentity,
+                configID: configID,
+                surface: targetSurface,
+                snapshot: snapshot,
+                reason: .requestedConfig
+            )
+        ]
+        for managed in runningManagedDisplays where managed.configID != configID {
+            let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: managed.configID)
+            let surface = snapshot.surfaces.first { $0.identity == identity }
+            surfaces.append(
+                makeAffectedSurface(
+                    identity: identity,
+                    configID: managed.configID,
+                    surface: surface,
+                    snapshot: snapshot,
+                    fallbackManagedDisplay: managed,
+                    reason: .enableFleetRiskPeer
+                )
+            )
+        }
+        return (surfaces, .scopeEscalatedEnableMayPerformFleetRebuild)
+    }
+
     private func makeAffectedSurfaces(
         configID: UUID,
         snapshot: DisplayRuntimeSnapshot
@@ -652,7 +1123,6 @@ package final class DisplayRuntime {
         }
 
         let managedDisplaysByConfigID = firstValuesByKey(snapshot.virtualDisplay.managedDisplays, key: \.configID)
-        let configsByID = firstValuesByKey(snapshot.virtualDisplay.configs, key: \.id)
         let runningConfigIDs = Set(snapshot.virtualDisplay.runningConfigIDs)
         let runningManagedDisplays = managedDisplaysByConfigID.values.filter {
             runningConfigIDs.contains($0.configID)
@@ -669,25 +1139,45 @@ package final class DisplayRuntime {
             return runningManagedDisplays.map { managed in
                 let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: managed.configID)
                 let surface = snapshot.surfaces.first { $0.identity == identity }
-                return DisplayRuntimeAffectedSurface(
+                return makeAffectedSurface(
                     identity: identity,
                     configID: managed.configID,
-                    preDisplayID: surface?.currentDisplayID ?? managed.displayID,
-                    serialNumber: configsByID[managed.configID]?.serialNumber ?? managed.serialNumber,
+                    surface: surface,
+                    snapshot: snapshot,
+                    fallbackManagedDisplay: managed,
                     reason: managed.configID == configID ? .requestedConfig : .managedMainFleetPeer
                 )
             }
         }
 
         return [
-            DisplayRuntimeAffectedSurface(
+            makeAffectedSurface(
                 identity: requestedIdentity,
                 configID: configID,
-                preDisplayID: requestedSurface.currentDisplayID ?? managedDisplaysByConfigID[configID]?.displayID,
-                serialNumber: configsByID[configID]?.serialNumber ?? managedDisplaysByConfigID[configID]?.serialNumber,
+                surface: requestedSurface,
+                snapshot: snapshot,
+                fallbackManagedDisplay: managedDisplaysByConfigID[configID],
                 reason: .requestedConfig
             )
         ]
+    }
+
+    private func makeAffectedSurface(
+        identity: DisplaySurfaceIdentity,
+        configID: UUID,
+        surface: DisplaySurface?,
+        snapshot: DisplayRuntimeSnapshot,
+        fallbackManagedDisplay: DisplayRuntimeManagedVirtualDisplay? = nil,
+        reason: DisplayRuntimeAffectedSurfaceReason
+    ) -> DisplayRuntimeAffectedSurface {
+        let configsByID = firstValuesByKey(snapshot.virtualDisplay.configs, key: \.id)
+        return DisplayRuntimeAffectedSurface(
+            identity: identity,
+            configID: configID,
+            preDisplayID: surface?.currentDisplayID ?? fallbackManagedDisplay?.displayID,
+            serialNumber: configsByID[configID]?.serialNumber ?? fallbackManagedDisplay?.serialNumber,
+            reason: reason
+        )
     }
 
     private func makePauseIntents(
@@ -737,12 +1227,12 @@ package final class DisplayRuntime {
     }
 
     private func makeInitialTrace(
-        for request: DisplayRuntimeVirtualDisplayRebuildRequest
+        for context: ActiveVirtualDisplayTransactionContext
     ) -> DisplayRuntimeTransactionTrace {
         DisplayRuntimeTransactionTrace(
-            id: request.transactionID,
-            kind: .virtualDisplayRebuild,
-            source: request.source,
+            id: context.transactionID,
+            kind: context.kind,
+            source: context.source,
             status: .active,
             phases: [.init(phase: .queued)],
             affectedSurfaces: [],
@@ -780,13 +1270,17 @@ package final class DisplayRuntime {
 
     private func finalizeTransaction(
         transactionID: DisplayRuntimeTransactionID,
+        kind: DisplayRuntimeTransactionKind = .virtualDisplayRebuild,
         status: DisplayRuntimeTransactionStatus,
         phase: DisplayRuntimeTransactionPhase,
         failure: DisplayRuntimeTransactionFailure?,
         virtualDisplayCommandSucceeded: Bool,
         postSnapshot: DisplayRuntimeSnapshot? = nil,
         topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
-        compensation: DisplayRuntimeCompensationResult? = nil
+        compensation: DisplayRuntimeCompensationResult? = nil,
+        desiredEnabled: Bool? = nil,
+        persistenceOutcome: DisplayRuntimePersistenceOutcome? = nil,
+        virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome? = nil
     ) -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
         let postEvidence = postSnapshot.map(DisplayRuntimeTransactionSnapshotEvidence.init(snapshot:))
         updateTrace(transactionID) { trace in
@@ -796,7 +1290,9 @@ package final class DisplayRuntime {
                 postSnapshotEvidence: postEvidence ?? trace.postSnapshotEvidence,
                 topologyStabilityResult: topologyStabilityResult,
                 failure: failure,
-                compensation: compensation
+                compensation: compensation,
+                persistenceOutcome: persistenceOutcome,
+                virtualDisplayCommandOutcome: virtualDisplayCommandOutcome
             )
         }
         if let trace = activeTransactionTracesByID.removeValue(forKey: transactionID) {
@@ -811,9 +1307,11 @@ package final class DisplayRuntime {
         }
         return DisplayRuntimeVirtualDisplayRebuildTransactionResult(
             transactionID: transactionID,
+            kind: kind,
             status: status,
             virtualDisplayCommandSucceeded: virtualDisplayCommandSucceeded,
-            hasSessionRecoveryFailures: status == .completedWithRecoveryFailures
+            hasSessionRecoveryFailures: status == .completedWithRecoveryFailures,
+            desiredEnabled: desiredEnabled
         )
     }
 
@@ -864,7 +1362,7 @@ package final class DisplayRuntime {
         switch phase {
         case .failed, .cancelled:
             severity = .warning
-        case .queued, .preparing, .quiescingSessions, .executingVirtualDisplayCommand,
+        case .queued, .preparing, .persistingConfig, .quiescingSessions, .executingVirtualDisplayCommand,
              .waitingForTopology, .restoringSessions, .completed:
             severity = .info
         }
@@ -872,8 +1370,8 @@ package final class DisplayRuntime {
             DisplayRuntimeObservabilityEvent(
                 domain: .displayRuntime,
                 severity: severity,
-                operation: "Virtual display rebuild transaction",
-                message: "Rebuild transaction phase changed.",
+                operation: "Virtual display transaction",
+                message: "Virtual display transaction phase changed.",
                 metadata: [
                     "transactionID": transactionID.rawValue.uuidString,
                     "phase": phase.rawValue

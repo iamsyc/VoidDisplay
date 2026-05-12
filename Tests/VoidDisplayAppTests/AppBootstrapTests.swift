@@ -81,6 +81,41 @@ struct AppBootstrapTests {
         #expect(trace.topologyStabilityResult != nil)
     }
 
+    @Test func initInjectsRuntimeBackedVirtualDisplayDesiredEnabledExecutor() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Runtime Toggle",
+            serialNum: 9402,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: false
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(env.virtualDisplay.hasConfiguredDesiredEnabledExecutor)
+
+        try await env.virtualDisplay.setVirtualDisplayDesiredEnabled(
+            configId: config.id,
+            enabled: true,
+            source: .rowToggle
+        )
+        let trace = try #require(env.displayRuntime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(virtualDisplay.setDesiredEnabledRequests.map(\.0) == [config.id])
+        #expect(virtualDisplay.enableRuntimeDisplayConfigIDs == [config.id])
+        #expect(virtualDisplay.enableDisplayCallCount == 0)
+        #expect(trace.kind == .virtualDisplayEnable)
+    }
+
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
         let overrides = [
             (UITestRuntime.modeEnvironmentKey, "1"),

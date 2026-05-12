@@ -66,6 +66,15 @@ private extension DisplayRuntimeTransactionSource {
             self = .unknown
         }
     }
+
+    init(_ source: VirtualDisplayDesiredEnabledRequestSource) {
+        switch source {
+        case .rowToggle:
+            self = .virtualDisplayRowToggle
+        case .unknown:
+            self = .unknown
+        }
+    }
 }
 
 public struct VoidDisplayApplication: App {
@@ -404,6 +413,16 @@ package enum AppBootstrap {
         virtualDisplay.configureRebuildExecutor { configID, source in
             let result = try await displayRuntime.rebuildVirtualDisplay(
                 configID: configID,
+                source: DisplayRuntimeTransactionSource(source)
+            )
+            guard result.status != .failed && result.status != .cancelled else {
+                throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
+            }
+        }
+        virtualDisplay.configureDesiredEnabledExecutor { configID, enabled, source in
+            let result = try await displayRuntime.setVirtualDisplayDesiredEnabled(
+                configID: configID,
+                enabled: enabled,
                 source: DisplayRuntimeTransactionSource(source)
             )
             guard result.status != .failed && result.status != .cancelled else {

@@ -309,36 +309,77 @@ package final class VirtualDisplayOrchestrator {
 
     // MARK: - Disable
 
-    package func disableDisplayByConfig(_ configId: UUID) throws {
-        guard let config = configManager.config(id: configId) else { return }
+    package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
+        try configManager.setDesiredEnabled(configId, enabled: enabled, reason: .userToggledDesiredEnabled)
+    }
 
-        try configManager.setDesiredEnabled(configId, enabled: false, reason: .userToggledDesiredEnabled)
+    package func disableDisplayByConfig(_ configId: UUID) throws {
+        try setDesiredEnabled(configId, enabled: false)
+        _ = try disableRuntimeDisplayByConfig(configId)
+    }
+
+    package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
+        guard let config = configManager.config(id: configId) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
+
+        let preDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
 
         let runtimeSerialNum = runtimeTracker.runtimeSerialNum(
             for: configId,
             fallback: config.serialNum
         )
-        let runtimeDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
-        let disablingMain = runtimeDisplayID == CGMainDisplayID()
+        let disablingMain = preDisplayID == CGMainDisplayID()
         AppLog.virtualDisplay.notice(
-            "Disable-by-config requested (config: \(configId.uuidString, privacy: .public), serial: \(runtimeSerialNum, privacy: .public), runtimeDisplayID: \(String(describing: runtimeDisplayID), privacy: .public), disablingMain: \(disablingMain, privacy: .public))."
+            "Disable-by-config requested (config: \(configId.uuidString, privacy: .public), serial: \(runtimeSerialNum, privacy: .public), runtimeDisplayID: \(String(describing: preDisplayID), privacy: .public), disablingMain: \(disablingMain, privacy: .public))."
         )
         logTopologySnapshot("disableDisplayByConfig:pre-clear", snapshot: currentTopologySnapshot())
         if disablingMain {
             policyResolver.markAggressiveRecoveryPending(configId: configId)
         }
         runtimeTracker.clearRuntimeTracking(configId: configId, keepGeneration: true)
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: false,
+            preDisplayID: preDisplayID,
+            postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+            mayPerformFleetRebuild: disablingMain && runtimeTracker.runningConfigCount >= 1,
+            requiresFleetQuiesce: disablingMain && runtimeTracker.runningConfigCount >= 1
+        )
     }
 
     // MARK: - Enable
 
     package func enableDisplay(_ configId: UUID) async throws {
-        guard var config = configManager.config(id: configId) else {
+        try setDesiredEnabled(configId, enabled: true)
+        _ = try await enableRuntimeDisplay(configId)
+    }
+
+    package func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
+        let recoveryMode: VirtualDisplayTopologyRecoveryMode = policyResolver.isAggressiveRecoveryPending(configId: configId)
+            ? .aggressive
+            : .fast
+        let configIsAlreadyDesired = configManager.config(id: configId)?.desiredEnabled == true
+        let desiredManagedEnabledCount = configManager.allConfigs().filter(\.desiredEnabled).count
+            + (configIsAlreadyDesired ? 0 : 1)
+        let mayPerformFleetRebuild = recoveryMode == .aggressive
+            && runtimeTracker.runningConfigCount >= 1
+            && desiredManagedEnabledCount >= 2
+        return VirtualDisplayEnablePreflight(
+            configID: configId,
+            targetPreDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+            mayPerformFleetRebuild: mayPerformFleetRebuild,
+            requiresFleetQuiesce: mayPerformFleetRebuild,
+            scopeEscalationReason: mayPerformFleetRebuild ? .enableMayPerformFleetRebuild : nil
+        )
+    }
+
+    package func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
+        guard let config = configManager.config(id: configId) else {
             throw VirtualDisplayOperationError.configNotFound
         }
-        config.desiredEnabled = true
-        try configManager.setDesiredEnabled(configId, enabled: true, reason: .userToggledDesiredEnabled)
 
+        let preflight = enableDisplayPreflight(configId)
         let enableStart = DispatchTime.now().uptimeNanoseconds
         let topologyBeforeEnable = currentTopologySnapshot()
         let mainPolicyResolution = policyResolver.resolveMainDisplayPolicy(
@@ -419,7 +460,14 @@ package final class VirtualDisplayOrchestrator {
                     includePrioritizedConfigIfNotRunning: true
                 )
                 policyResolver.clearAggressiveRecoveryPending(configId: configId)
-                return
+                return VirtualDisplayLifecycleCommandResult(
+                    configID: configId,
+                    desiredEnabled: true,
+                    preDisplayID: preflight.targetPreDisplayID,
+                    postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+                    mayPerformFleetRebuild: true,
+                    requiresFleetQuiesce: true
+                )
             }
             if recoveryMode == .aggressive && !terminationConfirmed {
                 let cooldown = await waitForAdaptiveManagedDisplayCooldown(
@@ -485,6 +533,15 @@ package final class VirtualDisplayOrchestrator {
             )
             throw error
         }
+        let postDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: true,
+            preDisplayID: preflight.targetPreDisplayID,
+            postDisplayID: postDisplayID,
+            mayPerformFleetRebuild: preflight.mayPerformFleetRebuild,
+            requiresFleetQuiesce: preflight.requiresFleetQuiesce
+        )
     }
 
     // MARK: - Destroy

@@ -5,6 +5,7 @@
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplay
 import CoreGraphics
+import Foundation
 import Testing
 
 @MainActor
@@ -244,6 +245,80 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.configID == config.id)
         #expect(result.preDisplayID == 8302)
         #expect(result.postDisplayID == 8302)
+    }
+
+    @Test func virtualDisplayAdapterEnableUsesCommandOnlyPath() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Enable Adapter",
+            serialNum: 9302,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: false
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.runtimeDisplayIDByConfigId[config.id] = 8303
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        _ = try await sut.setVirtualDisplayDesiredEnabled(request: .init(configID: config.id, enabled: true))
+        let result = try await sut.enableVirtualDisplay(
+            request: .init(configID: config.id, targetPreDisplayID: nil)
+        )
+
+        #expect(facade.setDesiredEnabledRequests.map(\.0) == [config.id])
+        #expect(facade.enableRuntimeDisplayConfigIDs == [config.id])
+        #expect(facade.enableDisplayCallCount == 0)
+        #expect(result.desiredEnabled == true)
+    }
+
+    @Test func virtualDisplayAdapterDisableUsesCommandOnlyPath() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Disable Adapter",
+            serialNum: 9303,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.currentRunningConfigIds = [config.id]
+        facade.runtimeDisplayIDByConfigId[config.id] = 8304
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        _ = try await sut.setVirtualDisplayDesiredEnabled(request: .init(configID: config.id, enabled: false))
+        let result = try await sut.disableVirtualDisplay(
+            request: .init(configID: config.id, targetPreDisplayID: 8304)
+        )
+
+        #expect(facade.setDesiredEnabledRequests.map(\.0) == [config.id])
+        #expect(facade.disableRuntimeDisplayByConfigIDs == [config.id])
+        #expect(facade.disableDisplayByConfigCallCount == 0)
+        #expect(result.desiredEnabled == false)
+    }
+
+    @Test func virtualDisplayAdapterUnavailableFailsExplicitly() async throws {
+        var controller: VirtualDisplayController? = VirtualDisplayController(
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller!)
+        controller = nil
+
+        await #expect(throws: (any Error).self) {
+            _ = try await sut.enableVirtualDisplay(
+                request: .init(configID: UUID(), targetPreDisplayID: nil)
+            )
+        }
     }
 }
 

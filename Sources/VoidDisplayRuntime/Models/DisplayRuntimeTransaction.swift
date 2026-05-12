@@ -8,12 +8,15 @@ package nonisolated struct DisplayRuntimeTransactionID: Codable, Equatable, Hash
     }
 }
 
-package nonisolated enum DisplayRuntimeTransactionKind: String, Codable, Equatable, Sendable {
+package nonisolated enum DisplayRuntimeTransactionKind: String, Codable, Equatable, Hashable, Sendable {
     case virtualDisplayRebuild
+    case virtualDisplayEnable
+    case virtualDisplayDisable
 }
 
 package nonisolated enum DisplayRuntimeTransactionSource: String, Codable, Equatable, Sendable {
     case virtualDisplayRowRetry
+    case virtualDisplayRowToggle
     case editSaveAndRebuild
     case diagnostics
     case unknown
@@ -22,6 +25,7 @@ package nonisolated enum DisplayRuntimeTransactionSource: String, Codable, Equat
 package nonisolated enum DisplayRuntimeTransactionPhase: String, Codable, Equatable, Sendable {
     case queued
     case preparing
+    case persistingConfig
     case quiescingSessions
     case executingVirtualDisplayCommand
     case waitingForTopology
@@ -67,26 +71,56 @@ package nonisolated struct DisplayRuntimeVirtualDisplayRebuildRequest: Codable, 
 
 package nonisolated struct DisplayRuntimeVirtualDisplayRebuildTransactionResult: Codable, Equatable, Sendable {
     package let transactionID: DisplayRuntimeTransactionID
+    package let kind: DisplayRuntimeTransactionKind
     package let status: DisplayRuntimeTransactionStatus
     package let virtualDisplayCommandSucceeded: Bool
     package let hasSessionRecoveryFailures: Bool
+    package let desiredEnabled: Bool?
 
     package init(
         transactionID: DisplayRuntimeTransactionID,
+        kind: DisplayRuntimeTransactionKind = .virtualDisplayRebuild,
         status: DisplayRuntimeTransactionStatus,
         virtualDisplayCommandSucceeded: Bool,
-        hasSessionRecoveryFailures: Bool
+        hasSessionRecoveryFailures: Bool,
+        desiredEnabled: Bool? = nil
     ) {
         self.transactionID = transactionID
+        self.kind = kind
         self.status = status
         self.virtualDisplayCommandSucceeded = virtualDisplayCommandSucceeded
         self.hasSessionRecoveryFailures = hasSessionRecoveryFailures
+        self.desiredEnabled = desiredEnabled
     }
 }
 
 package nonisolated enum DisplayRuntimeAffectedSurfaceReason: String, Codable, Equatable, Sendable {
     case requestedConfig
     case managedMainFleetPeer
+    case enableFleetRiskPeer
+}
+
+package nonisolated enum DisplayRuntimeScopeEscalationReason: String, Codable, Equatable, Sendable {
+    case targetDisabled
+    case managedMainPolicyRisk
+    case enableMayPerformFleetRebuild
+    case scopeEscalatedEnableMayPerformFleetRebuild
+}
+
+package nonisolated enum DisplayRuntimePersistenceOutcome: String, Codable, Equatable, Sendable {
+    case notAttempted
+    case saved
+    case failed
+    case rolledBack
+    case rollbackFailed
+}
+
+package nonisolated enum DisplayRuntimeVirtualDisplayCommandOutcome: String, Codable, Equatable, Sendable {
+    case notAttempted
+    case succeeded
+    case failed
+    case invalidated
+    case partiallySucceeded
 }
 
 package nonisolated struct DisplayRuntimeAffectedSurface: Codable, Equatable, Sendable {
@@ -233,6 +267,100 @@ package nonisolated struct DisplayRuntimeVirtualDisplayRebuildCommandResult: Cod
         self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
             ($0.configID.uuidString, $0.displayID) < ($1.configID.uuidString, $1.displayID)
         }
+    }
+}
+
+package nonisolated struct DisplayRuntimeVirtualDisplayLifecycleCommandRequest: Codable, Equatable, Sendable {
+    package let configID: UUID
+    package let targetPreDisplayID: DisplayRuntimeDisplayID?
+
+    package init(
+        configID: UUID,
+        targetPreDisplayID: DisplayRuntimeDisplayID?
+    ) {
+        self.configID = configID
+        self.targetPreDisplayID = targetPreDisplayID
+    }
+}
+
+package nonisolated struct DisplayRuntimeVirtualDisplayDesiredEnabledCommandRequest: Codable, Equatable, Sendable {
+    package let configID: UUID
+    package let enabled: Bool
+
+    package init(configID: UUID, enabled: Bool) {
+        self.configID = configID
+        self.enabled = enabled
+    }
+}
+
+package nonisolated struct DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult: Codable, Equatable, Sendable {
+    package let configID: UUID
+    package let desiredEnabled: Bool
+    package let persistenceOutcome: DisplayRuntimePersistenceOutcome
+
+    package init(
+        configID: UUID,
+        desiredEnabled: Bool,
+        persistenceOutcome: DisplayRuntimePersistenceOutcome
+    ) {
+        self.configID = configID
+        self.desiredEnabled = desiredEnabled
+        self.persistenceOutcome = persistenceOutcome
+    }
+}
+
+package nonisolated struct DisplayRuntimeVirtualDisplayEnablePreflight: Codable, Equatable, Sendable {
+    package let configID: UUID
+    package let targetPreDisplayID: DisplayRuntimeDisplayID?
+    package let mayPerformFleetRebuild: Bool?
+    package let requiresFleetQuiesce: Bool?
+    package let scopeEscalationReason: DisplayRuntimeScopeEscalationReason?
+
+    package init(
+        configID: UUID,
+        targetPreDisplayID: DisplayRuntimeDisplayID?,
+        mayPerformFleetRebuild: Bool?,
+        requiresFleetQuiesce: Bool?,
+        scopeEscalationReason: DisplayRuntimeScopeEscalationReason?
+    ) {
+        self.configID = configID
+        self.targetPreDisplayID = targetPreDisplayID
+        self.mayPerformFleetRebuild = mayPerformFleetRebuild
+        self.requiresFleetQuiesce = requiresFleetQuiesce
+        self.scopeEscalationReason = scopeEscalationReason
+    }
+}
+
+package nonisolated struct DisplayRuntimeVirtualDisplayLifecycleCommandResult: Codable, Equatable, Sendable {
+    package let configID: UUID
+    package let desiredEnabled: Bool
+    package let preDisplayID: DisplayRuntimeDisplayID?
+    package let postDisplayID: DisplayRuntimeDisplayID?
+    package let runningConfigIDsAfterCommand: [UUID]
+    package let managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
+    package let mayPerformFleetRebuild: Bool?
+    package let requiresFleetQuiesce: Bool?
+
+    package init(
+        configID: UUID,
+        desiredEnabled: Bool,
+        preDisplayID: DisplayRuntimeDisplayID?,
+        postDisplayID: DisplayRuntimeDisplayID?,
+        runningConfigIDsAfterCommand: [UUID],
+        managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay],
+        mayPerformFleetRebuild: Bool?,
+        requiresFleetQuiesce: Bool?
+    ) {
+        self.configID = configID
+        self.desiredEnabled = desiredEnabled
+        self.preDisplayID = preDisplayID
+        self.postDisplayID = postDisplayID
+        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
+        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
+            ($0.configID.uuidString, $0.displayID) < ($1.configID.uuidString, $1.displayID)
+        }
+        self.mayPerformFleetRebuild = mayPerformFleetRebuild
+        self.requiresFleetQuiesce = requiresFleetQuiesce
     }
 }
 
@@ -432,6 +560,10 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
     package let failure: DisplayRuntimeTransactionFailure?
     package let compensation: DisplayRuntimeCompensationResult
     package let coalescedRequestCount: Int
+    package let persistenceOutcome: DisplayRuntimePersistenceOutcome
+    package let virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
+    package let scopeEscalationReason: DisplayRuntimeScopeEscalationReason?
+    package let enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
 
     package init(
         id: DisplayRuntimeTransactionID,
@@ -448,7 +580,11 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
         failure: DisplayRuntimeTransactionFailure?,
         compensation: DisplayRuntimeCompensationResult,
-        coalescedRequestCount: Int
+        coalescedRequestCount: Int,
+        persistenceOutcome: DisplayRuntimePersistenceOutcome = .notAttempted,
+        virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
+        scopeEscalationReason: DisplayRuntimeScopeEscalationReason? = nil,
+        enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -469,6 +605,10 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         self.failure = failure
         self.compensation = compensation
         self.coalescedRequestCount = coalescedRequestCount
+        self.persistenceOutcome = persistenceOutcome
+        self.virtualDisplayCommandOutcome = virtualDisplayCommandOutcome
+        self.scopeEscalationReason = scopeEscalationReason
+        self.enablePreflight = enablePreflight
     }
 
     package func replacing(
@@ -483,7 +623,11 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
         failure: DisplayRuntimeTransactionFailure? = nil,
         compensation: DisplayRuntimeCompensationResult? = nil,
-        coalescedRequestCount: Int? = nil
+        coalescedRequestCount: Int? = nil,
+        persistenceOutcome: DisplayRuntimePersistenceOutcome? = nil,
+        virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome? = nil,
+        scopeEscalationReason: DisplayRuntimeScopeEscalationReason? = nil,
+        enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight? = nil
     ) -> Self {
         Self(
             id: id,
@@ -500,7 +644,11 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
             topologyStabilityResult: topologyStabilityResult ?? self.topologyStabilityResult,
             failure: failure ?? self.failure,
             compensation: compensation ?? self.compensation,
-            coalescedRequestCount: coalescedRequestCount ?? self.coalescedRequestCount
+            coalescedRequestCount: coalescedRequestCount ?? self.coalescedRequestCount,
+            persistenceOutcome: persistenceOutcome ?? self.persistenceOutcome,
+            virtualDisplayCommandOutcome: virtualDisplayCommandOutcome ?? self.virtualDisplayCommandOutcome,
+            scopeEscalationReason: scopeEscalationReason ?? self.scopeEscalationReason,
+            enablePreflight: enablePreflight ?? self.enablePreflight
         )
     }
 }

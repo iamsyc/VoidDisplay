@@ -23,6 +23,18 @@ package protocol DisplayRuntimeVirtualDisplayProviding {
 @MainActor
 package protocol DisplayRuntimeVirtualDisplayCommanding {
     func rebuildVirtualDisplay(configID: UUID) async throws -> DisplayRuntimeVirtualDisplayRebuildCommandResult
+    func preflightEnableVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayEnablePreflight
+    func setVirtualDisplayDesiredEnabled(
+        request: DisplayRuntimeVirtualDisplayDesiredEnabledCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult
+    func enableVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult
+    func disableVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult
 }
 
 @MainActor

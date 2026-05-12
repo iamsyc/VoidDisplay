@@ -92,23 +92,65 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     package func disableDisplayByConfig(_ configId: UUID) throws {
-        guard let index = configs.firstIndex(where: { $0.id == configId }) else {
-            throw VirtualDisplayOperationError.configNotFound
-        }
-        var updated = configs[index]
-        updated.desiredEnabled = false
-        configs[index] = updated
-        runningConfigIds.remove(configId)
+        try setDesiredEnabled(configId, enabled: false)
+        _ = try disableRuntimeDisplayByConfig(configId)
     }
 
     package func enableDisplay(_ configId: UUID) async throws {
+        try setDesiredEnabled(configId, enabled: true)
+        _ = try await enableRuntimeDisplay(configId)
+    }
+
+    package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
         guard let index = configs.firstIndex(where: { $0.id == configId }) else {
             throw VirtualDisplayOperationError.configNotFound
         }
         var updated = configs[index]
-        updated.desiredEnabled = true
+        updated.desiredEnabled = enabled
         configs[index] = updated
+    }
+
+    package func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
+        VirtualDisplayEnablePreflight(
+            configID: configId,
+            targetPreDisplayID: runtimeDisplayIDs()[configId],
+            mayPerformFleetRebuild: false,
+            requiresFleetQuiesce: false,
+            scopeEscalationReason: nil
+        )
+    }
+
+    package func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
+        guard configs.contains(where: { $0.id == configId }) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
+        runningConfigIds.remove(configId)
         runningConfigIds.insert(configId)
+        let displayID = runtimeDisplayIDs()[configId]
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: true,
+            preDisplayID: displayID,
+            postDisplayID: displayID,
+            mayPerformFleetRebuild: false,
+            requiresFleetQuiesce: false
+        )
+    }
+
+    package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
+        guard configs.contains(where: { $0.id == configId }) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
+        let preDisplayID = runtimeDisplayIDs()[configId]
+        runningConfigIds.remove(configId)
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: false,
+            preDisplayID: preDisplayID,
+            postDisplayID: nil,
+            mayPerformFleetRebuild: false,
+            requiresFleetQuiesce: false
+        )
     }
 
     package func destroyDisplay(_ configId: UUID) throws {

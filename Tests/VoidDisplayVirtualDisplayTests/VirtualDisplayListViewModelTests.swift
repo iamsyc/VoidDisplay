@@ -67,33 +67,43 @@ struct VirtualDisplayListViewModelTests {
 
     @Test func toggleDisplayStateEnablesWhenConfigIsStopped() async {
         let config = sampleConfig(serial: 201)
-        let mockService = MockVirtualDisplayFacade()
-        mockService.currentDisplayConfigs = [config]
-        let controller = makeController(virtualDisplayFacade: mockService)
-        controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
-
-        let sut = VirtualDisplayListViewModel(controller: controller)
+        let gate = AsyncGate()
+        var requests: [(UUID, Bool)] = []
+        let sut = VirtualDisplayListViewModel(
+            dependencies: .test(
+                isRunning: false,
+                setVirtualDisplayDesiredEnabled: { configID, enabled in
+                    requests.append((configID, enabled))
+                    await gate.wait()
+                }
+            )
+        )
 
         sut.toggleDisplayState(config)
-        let finished = await waitUntil {
-            mockService.enableDisplayCallCount == 1 && sut.togglingConfigIds.isEmpty
+        let started = await waitUntil {
+            requests.map(\.0) == [config.id] && sut.togglingConfigIds == [config.id]
         }
+        gate.open()
+        let finished = await waitUntil { sut.togglingConfigIds.isEmpty }
 
+        #expect(started)
         #expect(finished)
-        #expect(mockService.enableDisplayConfigIDs == [config.id])
+        #expect(requests.map(\.1) == [true])
         #expect(sut.userFacingAlert == nil)
     }
 
     @Test func toggleDisplayStateShowsErrorWhenDisableFails() async {
         let config = sampleConfig(serial: 301)
-        let mockService = MockVirtualDisplayFacade()
-        mockService.currentDisplayConfigs = [config]
-        mockService.currentRunningConfigIds = [config.id]
-        mockService.disableDisplayByConfigError = NSError(domain: "VirtualDisplayListViewModelTests", code: 9)
-        let controller = makeController(virtualDisplayFacade: mockService)
-        controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
-
-        let sut = VirtualDisplayListViewModel(controller: controller)
+        var requests: [(UUID, Bool)] = []
+        let sut = VirtualDisplayListViewModel(
+            dependencies: .test(
+                isRunning: true,
+                setVirtualDisplayDesiredEnabled: { configID, enabled in
+                    requests.append((configID, enabled))
+                    throw NSError(domain: "VirtualDisplayListViewModelTests", code: 9)
+                }
+            )
+        )
 
         sut.toggleDisplayState(config)
         let finished = await waitUntil {
@@ -101,8 +111,29 @@ struct VirtualDisplayListViewModelTests {
         }
 
         #expect(finished)
-        #expect(mockService.disableDisplayByConfigCallCount == 1)
-        #expect(mockService.disableDisplayByConfigIDs == [config.id])
+        #expect(requests.map(\.0) == [config.id])
+        #expect(requests.map(\.1) == [false])
+        #expect(sut.userFacingAlert?.message.isEmpty == false)
+    }
+
+    @Test func toggleDisplayStateShowsErrorWhenEnableFails() async {
+        let config = sampleConfig(serial: 302)
+        let sut = VirtualDisplayListViewModel(
+            dependencies: .test(
+                isRunning: false,
+                setVirtualDisplayDesiredEnabled: { _, _ in
+                    throw NSError(domain: "VirtualDisplayListViewModelTests", code: 10)
+                }
+            )
+        )
+
+        sut.toggleDisplayState(config)
+        let finished = await waitUntil {
+            sut.userFacingAlert != nil && sut.togglingConfigIds.isEmpty
+        }
+
+        #expect(finished)
+        #expect(sut.userFacingAlert?.title == "Enable Failed")
         #expect(sut.userFacingAlert?.message.isEmpty == false)
     }
 
@@ -149,5 +180,44 @@ struct VirtualDisplayListViewModelTests {
             ],
             desiredEnabled: false
         )
+    }
+}
+
+private extension VirtualDisplayListViewModel.Dependencies {
+    static func test(
+        isRunning: Bool = false,
+        setVirtualDisplayDesiredEnabled: @escaping @MainActor (UUID, Bool) async throws -> Void
+    ) -> Self {
+        Self(
+            restoreFailures: { [] },
+            clearRestoreFailures: {},
+            destroyDisplay: { _ in },
+            runtimeDisplayID: { _ in nil },
+            isRebuilding: { _ in false },
+            isVirtualDisplayRunning: { _ in isRunning },
+            setVirtualDisplayDesiredEnabled: setVirtualDisplayDesiredEnabled
+        )
+    }
+}
+
+@MainActor
+private final class AsyncGate {
+    private var isOpen = false
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
     }
 }

@@ -16,8 +16,7 @@ package final class VirtualDisplayListViewModel {
         var runtimeDisplayID: @MainActor (UUID) -> CGDirectDisplayID?
         var isRebuilding: @MainActor (UUID) -> Bool
         var isVirtualDisplayRunning: @MainActor (UUID) -> Bool
-        var disableDisplayByConfig: @MainActor (UUID) throws -> Void
-        var enableDisplay: @MainActor (UUID) async throws -> Void
+        var setVirtualDisplayDesiredEnabled: @MainActor (UUID, Bool) async throws -> Void
 
         static func live(controller: VirtualDisplayController) -> Self {
             Self(
@@ -27,8 +26,13 @@ package final class VirtualDisplayListViewModel {
                 runtimeDisplayID: { controller.runtimeDisplayID(for: $0) },
                 isRebuilding: { controller.isRebuilding(configId: $0) },
                 isVirtualDisplayRunning: { controller.isVirtualDisplayRunning(configId: $0) },
-                disableDisplayByConfig: { try controller.disableDisplayByConfig($0) },
-                enableDisplay: { try await controller.enableDisplay($0) }
+                setVirtualDisplayDesiredEnabled: {
+                    try await controller.setVirtualDisplayDesiredEnabled(
+                        configId: $0,
+                        enabled: $1,
+                        source: .rowToggle
+                    )
+                }
             )
         }
     }
@@ -125,7 +129,7 @@ package final class VirtualDisplayListViewModel {
 
             if dependencies.isVirtualDisplayRunning(config.id) {
                 do {
-                    try dependencies.disableDisplayByConfig(config.id)
+                    try await dependencies.setVirtualDisplayDesiredEnabled(config.id, false)
                 } catch {
                     AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
                     self.userFacingAlert = UserFacingAlertState(
@@ -136,7 +140,7 @@ package final class VirtualDisplayListViewModel {
                 return
             }
             do {
-                try await dependencies.enableDisplay(config.id)
+                try await dependencies.setVirtualDisplayDesiredEnabled(config.id, true)
             } catch {
                 AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
                 self.userFacingAlert = UserFacingAlertState(

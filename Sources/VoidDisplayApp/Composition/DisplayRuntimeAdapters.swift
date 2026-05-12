@@ -294,6 +294,98 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
             }
         )
     }
+
+    package func preflightEnableVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayEnablePreflight {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let preflight = controller.enableDisplayPreflight(request.configID)
+        return DisplayRuntimeVirtualDisplayEnablePreflight(
+            configID: preflight.configID,
+            targetPreDisplayID: preflight.targetPreDisplayID,
+            mayPerformFleetRebuild: preflight.mayPerformFleetRebuild,
+            requiresFleetQuiesce: preflight.requiresFleetQuiesce,
+            scopeEscalationReason: DisplayRuntimeScopeEscalationReason(preflight.scopeEscalationReason)
+        )
+    }
+
+    package func setVirtualDisplayDesiredEnabled(
+        request: DisplayRuntimeVirtualDisplayDesiredEnabledCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        try controller.setDesiredEnabled(request.configID, enabled: request.enabled)
+        return DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult(
+            configID: request.configID,
+            desiredEnabled: request.enabled,
+            persistenceOutcome: .saved
+        )
+    }
+
+    package func enableVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let result = try await controller.enableRuntimeDisplay(request.configID)
+        return DisplayRuntimeVirtualDisplayLifecycleCommandResult(
+            configID: result.configID,
+            desiredEnabled: result.desiredEnabled,
+            preDisplayID: result.preDisplayID ?? request.targetPreDisplayID,
+            postDisplayID: result.postDisplayID,
+            runningConfigIDsAfterCommand: Array(controller.runningConfigIds),
+            managedDisplaysAfterCommand: controller.managedDisplays.map {
+                .init(
+                    configID: $0.configId,
+                    serialNumber: $0.serialNum,
+                    displayID: $0.displayID,
+                    isLiveRuntime: $0.isLiveRuntime
+                )
+            },
+            mayPerformFleetRebuild: result.mayPerformFleetRebuild,
+            requiresFleetQuiesce: result.requiresFleetQuiesce
+        )
+    }
+
+    package func disableVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let result = try controller.disableRuntimeDisplayByConfig(request.configID)
+        return DisplayRuntimeVirtualDisplayLifecycleCommandResult(
+            configID: result.configID,
+            desiredEnabled: result.desiredEnabled,
+            preDisplayID: result.preDisplayID ?? request.targetPreDisplayID,
+            postDisplayID: result.postDisplayID,
+            runningConfigIDsAfterCommand: Array(controller.runningConfigIds),
+            managedDisplaysAfterCommand: controller.managedDisplays.map {
+                .init(
+                    configID: $0.configId,
+                    serialNumber: $0.serialNum,
+                    displayID: $0.displayID,
+                    isLiveRuntime: $0.isLiveRuntime
+                )
+            },
+            mayPerformFleetRebuild: result.mayPerformFleetRebuild,
+            requiresFleetQuiesce: result.requiresFleetQuiesce
+        )
+    }
+}
+
+private extension DisplayRuntimeScopeEscalationReason {
+    init?(_ reason: VirtualDisplayEnablePreflight.ScopeEscalationReason?) {
+        guard let reason else { return nil }
+        switch reason {
+        case .enableMayPerformFleetRebuild:
+            self = .enableMayPerformFleetRebuild
+        }
+    }
 }
 
 private enum DisplayRuntimeAdapterError: LocalizedError {

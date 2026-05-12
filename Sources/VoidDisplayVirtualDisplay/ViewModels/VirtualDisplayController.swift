@@ -16,9 +16,20 @@ package typealias VirtualDisplayRebuildExecutor = @MainActor (
     VirtualDisplayRebuildRequestSource
 ) async throws -> Void
 
+package typealias VirtualDisplayDesiredEnabledExecutor = @MainActor (
+    UUID,
+    Bool,
+    VirtualDisplayDesiredEnabledRequestSource
+) async throws -> Void
+
 package nonisolated enum VirtualDisplayRebuildRequestSource: Sendable {
     case rowRetry
     case editSaveAndRebuild
+    case unknown
+}
+
+package nonisolated enum VirtualDisplayDesiredEnabledRequestSource: Sendable {
+    case rowToggle
     case unknown
 }
 
@@ -27,6 +38,8 @@ private struct VirtualDisplayRebuildExecutorUnavailableError: LocalizedError {
         String(localized: "Failed to rebuild virtual display.")
     }
 }
+
+private struct VirtualDisplayDesiredEnabledExecutorUnavailableError: Error {}
 
 @MainActor
 @Observable
@@ -48,6 +61,7 @@ package final class VirtualDisplayController {
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var rebuildPresentationWaiterCountByConfigId: [UUID: Int] = [:]
     @ObservationIgnored private var rebuildExecutor: VirtualDisplayRebuildExecutor?
+    @ObservationIgnored private var desiredEnabledExecutor: VirtualDisplayDesiredEnabledExecutor?
     private var virtualDisplaySnapshot: VirtualDisplaySnapshot
     private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
@@ -183,6 +197,14 @@ package final class VirtualDisplayController {
         rebuildExecutor != nil
     }
 
+    package func configureDesiredEnabledExecutor(_ executor: VirtualDisplayDesiredEnabledExecutor?) {
+        desiredEnabledExecutor = executor
+    }
+
+    package var hasConfiguredDesiredEnabledExecutor: Bool {
+        desiredEnabledExecutor != nil
+    }
+
     package func startRebuildFromSavedConfig(
         configId: UUID,
         source: VirtualDisplayRebuildRequestSource = .unknown
@@ -252,6 +274,17 @@ package final class VirtualDisplayController {
 
     package func retryRebuild(configId: UUID) {
         startRebuildFromSavedConfig(configId: configId, source: .rowRetry)
+    }
+
+    package func setVirtualDisplayDesiredEnabled(
+        configId: UUID,
+        enabled: Bool,
+        source: VirtualDisplayDesiredEnabledRequestSource = .unknown
+    ) async throws {
+        guard let desiredEnabledExecutor else {
+            throw VirtualDisplayDesiredEnabledExecutorUnavailableError()
+        }
+        try await desiredEnabledExecutor(configId, enabled, source)
     }
 
     package func isRebuilding(configId: UUID) -> Bool {
@@ -341,6 +374,44 @@ package final class VirtualDisplayController {
             message: "Enabled virtual display.",
             metadata: ["configID": configId.uuidString]
         )
+    }
+
+    package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
+        try mutateAndSync {
+            try virtualDisplayFacade.setDesiredEnabled(configId, enabled: enabled)
+        }
+    }
+
+    package func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
+        virtualDisplayFacade.enableDisplayPreflight(configId)
+    }
+
+    package func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
+        let result = try await mutateAndSync {
+            try await virtualDisplayFacade.enableRuntimeDisplay(configId)
+        }
+        await recordEvent(
+            severity: .notice,
+            operation: "Enable virtual display",
+            message: "Enabled virtual display.",
+            metadata: ["configID": configId.uuidString]
+        )
+        return result
+    }
+
+    package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
+        let result = try mutateAndSync {
+            try virtualDisplayFacade.disableRuntimeDisplayByConfig(configId)
+        }
+        Task {
+            await recordEvent(
+                severity: .notice,
+                operation: "Disable virtual display",
+                message: "Disabled virtual display.",
+                metadata: ["configID": configId.uuidString]
+            )
+        }
+        return result
     }
 
     package func destroyDisplay(_ configId: UUID) throws {

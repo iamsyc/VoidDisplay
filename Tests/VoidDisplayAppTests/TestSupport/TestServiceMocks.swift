@@ -264,9 +264,18 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var disableDisplayByConfigCallCount = 0
     var disableDisplayByConfigIDs: [UUID] = []
     var disableDisplayByConfigError: Error?
+    var disableRuntimeDisplayByConfigCallCount = 0
+    var disableRuntimeDisplayByConfigIDs: [UUID] = []
+    var disableRuntimeDisplayByConfigError: Error?
     var enableDisplayCallCount = 0
     var enableDisplayConfigIDs: [UUID] = []
     var enableDisplayError: Error?
+    var enableRuntimeDisplayCallCount = 0
+    var enableRuntimeDisplayConfigIDs: [UUID] = []
+    var enableRuntimeDisplayError: Error?
+    var setDesiredEnabledCallCount = 0
+    var setDesiredEnabledRequests: [(UUID, Bool)] = []
+    var setDesiredEnabledError: Error?
     var destroyDisplayByConfigCallCount = 0
     var destroyedConfigIDs: [UUID] = []
     var destroyDisplayError: Error?
@@ -361,6 +370,8 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         if let disableDisplayByConfigError {
             throw disableDisplayByConfigError
         }
+        try setDesiredEnabled(configId, enabled: false)
+        _ = try disableRuntimeDisplayByConfig(configId)
     }
 
     func enableDisplay(_ configId: UUID) async throws {
@@ -369,6 +380,65 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         if let enableDisplayError {
             throw enableDisplayError
         }
+        try setDesiredEnabled(configId, enabled: true)
+        _ = try await enableRuntimeDisplay(configId)
+    }
+
+    func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
+        setDesiredEnabledCallCount += 1
+        setDesiredEnabledRequests.append((configId, enabled))
+        if let setDesiredEnabledError {
+            throw setDesiredEnabledError
+        }
+        guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else { return }
+        currentDisplayConfigs[index].desiredEnabled = enabled
+    }
+
+    func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
+        VirtualDisplayEnablePreflight(
+            configID: configId,
+            targetPreDisplayID: runtimeDisplayIDByConfigId[configId],
+            mayPerformFleetRebuild: false,
+            requiresFleetQuiesce: false,
+            scopeEscalationReason: nil
+        )
+    }
+
+    func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
+        enableRuntimeDisplayCallCount += 1
+        enableRuntimeDisplayConfigIDs.append(configId)
+        if let enableRuntimeDisplayError {
+            throw enableRuntimeDisplayError
+        }
+        currentRunningConfigIds.insert(configId)
+        let postDisplayID = runtimeDisplayIDByConfigId[configId]
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: true,
+            preDisplayID: postDisplayID,
+            postDisplayID: postDisplayID,
+            mayPerformFleetRebuild: false,
+            requiresFleetQuiesce: false
+        )
+    }
+
+    func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
+        disableRuntimeDisplayByConfigCallCount += 1
+        disableRuntimeDisplayByConfigIDs.append(configId)
+        if let disableRuntimeDisplayByConfigError {
+            throw disableRuntimeDisplayByConfigError
+        }
+        let preDisplayID = runtimeDisplayIDByConfigId[configId]
+        currentRunningConfigIds.remove(configId)
+        runtimeDisplayIDByConfigId[configId] = nil
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: false,
+            preDisplayID: preDisplayID,
+            postDisplayID: nil,
+            mayPerformFleetRebuild: false,
+            requiresFleetQuiesce: false
+        )
     }
 
     func destroyDisplay(_ configId: UUID) throws {
