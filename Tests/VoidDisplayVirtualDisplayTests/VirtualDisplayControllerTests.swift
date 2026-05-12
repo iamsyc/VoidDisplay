@@ -76,7 +76,7 @@ struct VirtualDisplayControllerTests {
         #expect(virtualDisplay.applyModesCallCount == 0)
     }
 
-    @Test func startRebuildStopsDependentSharingAndMonitoringForRuntimeDisplay() async {
+    @Test func startRebuildDelegatesQuiesceToInjectedExecutor() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -109,12 +109,12 @@ struct VirtualDisplayControllerTests {
         }
 
         #expect(rebuildTriggered)
-        #expect(sharing.stopSharingCallCount == 1)
-        #expect(capture.removeByDisplayCallCount == 1)
-        #expect(capture.removedDisplayIDs == [displayID])
+        #expect(sharing.stopSharingCallCount == 0)
+        #expect(capture.removeByDisplayCallCount == 0)
+        #expect(capture.removedDisplayIDs.isEmpty)
     }
 
-    @Test func startRebuildIgnoresConcurrentDuplicateRequests() async {
+    @Test func startRebuildForwardsConcurrentDuplicateRequestsToExecutor() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -140,15 +140,35 @@ struct VirtualDisplayControllerTests {
         sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
         sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
 
-        let onlyOnceTriggered = await waitUntil {
-            virtualDisplay.rebuildVirtualDisplayCallCount == 1
+        let duplicateForwarded = await waitUntil {
+            virtualDisplay.rebuildVirtualDisplayCallCount == 2
         }
-        #expect(onlyOnceTriggered)
+        #expect(duplicateForwarded)
 
         let settled = await waitUntil {
             !sut.virtualDisplay.isRebuilding(configId: config.id)
         }
         #expect(settled)
+    }
+
+    @Test func startRebuildForwardsMissingConfigToExecutor() async {
+        let sharing = MockSharingService()
+        let capture = MockCaptureMonitoringService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let missingConfigID = UUID()
+
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay
+        )
+
+        sut.virtualDisplay.startRebuildFromSavedConfig(configId: missingConfigID)
+
+        let forwarded = await waitUntil {
+            virtualDisplay.rebuildVirtualDisplayConfigIds == [missingConfigID]
+        }
+        #expect(forwarded)
     }
 
     @Test func rebuildFailureRetryAndAppliedBadgeLifecycle() async {
@@ -566,9 +586,12 @@ struct VirtualDisplayControllerTests {
 
         let sut = VirtualDisplayController(
             virtualDisplayFacade: orchestrator,
-            appliedBadgeDisplayDuration: .nanoseconds(1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .nanoseconds(1)
         )
+        sut.configureRebuildExecutor { [weak sut] configID, _ in
+            guard let sut else { return }
+            try await sut.rebuildVirtualDisplay(configId: configID)
+        }
 
         #expect(throws: Error.self) {
             _ = try sut.createDisplay(
@@ -703,12 +726,12 @@ private func makeControllerEnvironment(
 ) -> ControllerTestEnvironment {
     let controller = VirtualDisplayController(
         virtualDisplayFacade: virtualDisplayFacade,
-        appliedBadgeDisplayDuration: appliedBadgeDisplayDuration,
-        stopDependentStreamsBeforeRebuild: { displayID in
-            capture.removeMonitoringSessions(displayID: displayID)
-            sharing.stopSharing(displayID: displayID)
-        }
+        appliedBadgeDisplayDuration: appliedBadgeDisplayDuration
     )
+    controller.configureRebuildExecutor { [weak controller] configID, _ in
+        guard let controller else { return }
+        try await controller.rebuildVirtualDisplay(configId: configID)
+    }
     return ControllerTestEnvironment(virtualDisplay: controller)
 }
 

@@ -59,8 +59,7 @@ struct SharingUICompositionTests {
         sharingController.installStartingDisplayIDsForTesting([501])
         let virtualDisplayController = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDuration: .nanoseconds(1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .nanoseconds(1)
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: sharingController,
@@ -85,8 +84,7 @@ struct SharingUICompositionTests {
         sharingController.installStartingDisplayIDsForTesting([502])
         let virtualDisplayController = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDuration: .nanoseconds(1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .nanoseconds(1)
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: sharingController,

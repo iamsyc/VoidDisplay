@@ -54,6 +54,7 @@ package nonisolated struct DisplayRuntimeShareableDisplayRegistration: Codable, 
 }
 
 package nonisolated struct DisplayRuntimeObservabilityEvent: Codable, Equatable, Sendable {
+    package let domain: DisplayRuntimeObservabilityDomain
     package let severity: DisplayRuntimeObservabilitySeverity
     package let operation: String
     package let message: String
@@ -61,18 +62,25 @@ package nonisolated struct DisplayRuntimeObservabilityEvent: Codable, Equatable,
     package let deduplicationKey: String?
 
     package init(
+        domain: DisplayRuntimeObservabilityDomain = .screenCatalog,
         severity: DisplayRuntimeObservabilitySeverity,
         operation: String,
         message: String,
         metadata: [String: String] = [:],
         deduplicationKey: String? = nil
     ) {
+        self.domain = domain
         self.severity = severity
         self.operation = operation
         self.message = message
         self.metadata = metadata
         self.deduplicationKey = deduplicationKey
     }
+}
+
+package nonisolated enum DisplayRuntimeObservabilityDomain: String, Codable, Equatable, Sendable {
+    case screenCatalog
+    case displayRuntime
 }
 
 package nonisolated enum DisplayRuntimeObservabilitySeverity: String, Codable, Equatable, Sendable {
@@ -82,4 +90,5 @@ package nonisolated enum DisplayRuntimeObservabilitySeverity: String, Codable, E
 
 package nonisolated enum DisplayRuntimeObservabilityRefreshReason: String, Codable, Equatable, Sendable {
     case screenCatalogStateChanged
+    case displayRuntimeTransactionChanged
 }

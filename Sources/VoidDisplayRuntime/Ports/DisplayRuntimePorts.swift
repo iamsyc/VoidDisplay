@@ -1,3 +1,5 @@
+import Foundation
+
 @MainActor
 package protocol DisplayRuntimeCatalogProviding {
     func makeCatalogSnapshot() -> DisplayRuntimeCatalogSnapshot
@@ -16,6 +18,11 @@ package protocol DisplayRuntimeSharingProviding {
 @MainActor
 package protocol DisplayRuntimeVirtualDisplayProviding {
     func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot
+}
+
+@MainActor
+package protocol DisplayRuntimeVirtualDisplayCommanding {
+    func rebuildVirtualDisplay(configID: UUID) async throws -> DisplayRuntimeVirtualDisplayRebuildCommandResult
 }
 
 @MainActor

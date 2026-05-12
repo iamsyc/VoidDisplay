@@ -134,8 +134,7 @@ struct VirtualDisplayListViewModelTests {
     private func makeController(virtualDisplayFacade: MockVirtualDisplayFacade) -> VirtualDisplayController {
         VirtualDisplayController(
             virtualDisplayFacade: virtualDisplayFacade,
-            appliedBadgeDisplayDuration: .seconds(0.1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .seconds(0.1)
         )
     }
 

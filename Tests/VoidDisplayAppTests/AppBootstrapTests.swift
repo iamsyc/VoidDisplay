@@ -42,7 +42,42 @@ struct AppBootstrapTests {
         let runtimeSection = try #require(diagnostics.state.sections["runtime"])
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
 
-        #expect(runtime.schemaVersion == 1)
+        #expect(runtime.schemaVersion == 2)
+    }
+
+    @Test func initInjectsRuntimeBackedVirtualDisplayRebuildExecutor() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Runtime Rebuild",
+            serialNum: 9401,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(env.virtualDisplay.hasConfiguredRebuildExecutor)
+
+        env.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
+
+        let rebuilt = await waitUntil {
+            virtualDisplay.rebuildVirtualDisplayConfigIds == [config.id]
+                && !env.displayRuntime.makeSnapshot().transactions.recentTransactions.isEmpty
+        }
+        let trace = try #require(env.displayRuntime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(rebuilt)
+        #expect(trace.kind == .virtualDisplayRebuild)
+        #expect(trace.status == .completed)
     }
 
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {

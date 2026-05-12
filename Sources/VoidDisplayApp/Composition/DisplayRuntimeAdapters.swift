@@ -200,7 +200,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
 }
 
 @MainActor
-package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDisplayProviding {
+package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDisplayProviding, DisplayRuntimeVirtualDisplayCommanding {
     private weak var controller: VirtualDisplayController?
 
     package init(controller: VirtualDisplayController) {
@@ -246,6 +246,39 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
             restoreFailureConfigIDs: controller.restoreFailures.map(\.id)
         )
     }
+
+    package func rebuildVirtualDisplay(configID: UUID) async throws -> DisplayRuntimeVirtualDisplayRebuildCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let preDisplayID = controller.runtimeDisplayID(for: configID)
+        try await controller.rebuildVirtualDisplay(configId: configID)
+        return DisplayRuntimeVirtualDisplayRebuildCommandResult(
+            configID: configID,
+            preDisplayID: preDisplayID,
+            postDisplayID: controller.runtimeDisplayID(for: configID),
+            runningConfigIDsAfterCommand: Array(controller.runningConfigIds),
+            managedDisplaysAfterCommand: controller.managedDisplays.map {
+                .init(
+                    configID: $0.configId,
+                    serialNumber: $0.serialNum,
+                    displayID: $0.displayID,
+                    isLiveRuntime: $0.isLiveRuntime
+                )
+            }
+        )
+    }
+}
+
+private enum DisplayRuntimeAdapterError: LocalizedError {
+    case adapterUnavailable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .adapterUnavailable(let reason):
+            reason
+        }
+    }
 }
 
 @MainActor
@@ -260,7 +293,7 @@ package final class DisplayRuntimeObservabilityAdapter: DisplayRuntimeObservabil
         await observability?.record(
             ObservabilityEvent(
                 severity: ObservabilitySeverity(event.severity),
-                subsystem: .screenCatalog,
+                subsystem: ObservabilityDomain(event.domain),
                 operation: event.operation,
                 message: event.message,
                 metadata: event.metadata,
@@ -315,11 +348,24 @@ private extension ObservabilitySeverity {
     }
 }
 
+private extension ObservabilityDomain {
+    init(_ domain: DisplayRuntimeObservabilityDomain) {
+        switch domain {
+        case .screenCatalog:
+            self = .screenCatalog
+        case .displayRuntime:
+            self = .displayRuntime
+        }
+    }
+}
+
 private extension SnapshotRefreshReason {
     init(_ reason: DisplayRuntimeObservabilityRefreshReason) {
         switch reason {
         case .screenCatalogStateChanged:
             self = .screenCatalogStateChanged
+        case .displayRuntimeTransactionChanged:
+            self = .displayRuntimeTransactionChanged
         }
     }
 }

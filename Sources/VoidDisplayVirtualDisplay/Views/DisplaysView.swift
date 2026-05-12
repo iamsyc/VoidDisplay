@@ -164,12 +164,21 @@ package struct DisplaysView: View {
     }
 }
 
-#Preview {
+@MainActor
+private func makeDisplaysPreviewController() -> VirtualDisplayController {
     let controller = VirtualDisplayController(
         virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: .baseline),
-        appliedBadgeDisplayDuration: .seconds(0.1),
-        stopDependentStreamsBeforeRebuild: { _ in }
+        appliedBadgeDisplayDuration: .seconds(0.1)
     )
+    controller.configureRebuildExecutor { [weak controller] configID, _ in
+        guard let controller else { return }
+        try await controller.rebuildVirtualDisplay(configId: configID)
+    }
+    return controller
+}
+
+#Preview {
+    let controller = makeDisplaysPreviewController()
     DisplaysView(activityProvider: StaticDisplayActivityStatusProvider(.inactive))
         .environment(controller)
 }

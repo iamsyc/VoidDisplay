@@ -53,8 +53,7 @@ struct EditVirtualDisplayWorkflowTests {
     ) -> VirtualDisplayController {
         VirtualDisplayController(
             virtualDisplayFacade: facade,
-            appliedBadgeDisplayDuration: .seconds(0.1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .seconds(0.1)
         )
     }
 }

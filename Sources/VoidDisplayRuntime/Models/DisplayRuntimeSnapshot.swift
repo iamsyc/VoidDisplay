@@ -7,14 +7,16 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
     package let capture: DisplayRuntimeCaptureSnapshot
     package let sharing: DisplayRuntimeSharingSnapshot
     package let virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot
+    package let transactions: DisplayRuntimeTransactionSnapshot
 
     package init(
-        schemaVersion: Int = 1,
+        schemaVersion: Int = 2,
         surfaces: [DisplaySurface],
         catalog: DisplayRuntimeCatalogSnapshot,
         capture: DisplayRuntimeCaptureSnapshot,
         sharing: DisplayRuntimeSharingSnapshot,
-        virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot
+        virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot,
+        transactions: DisplayRuntimeTransactionSnapshot = .empty
     ) {
         self.schemaVersion = schemaVersion
         self.surfaces = surfaces.sorted {
@@ -24,6 +26,7 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
         self.capture = capture
         self.sharing = sharing
         self.virtualDisplay = virtualDisplay
+        self.transactions = transactions
     }
 
     package static let empty = Self(
@@ -31,6 +34,7 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
         catalog: .empty,
         capture: .empty,
         sharing: .empty,
-        virtualDisplay: .empty
+        virtualDisplay: .empty,
+        transactions: .empty
     )
 }

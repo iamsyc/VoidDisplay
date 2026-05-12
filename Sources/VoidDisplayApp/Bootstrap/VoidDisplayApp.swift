@@ -55,6 +55,19 @@ package struct AppEnvironment {
     }
 }
 
+private extension DisplayRuntimeTransactionSource {
+    init(_ source: VirtualDisplayRebuildRequestSource) {
+        switch source {
+        case .rowRetry:
+            self = .virtualDisplayRowRetry
+        case .editSaveAndRebuild:
+            self = .editSaveAndRebuild
+        case .unknown:
+            self = .unknown
+        }
+    }
+}
+
 public struct VoidDisplayApplication: App {
     @NSApplicationDelegateAdaptor(VoidDisplayApplicationDelegate.self) private var appDelegate
     @State private var capture: CaptureController
@@ -173,6 +186,19 @@ package enum AppBootstrap {
             message
         }
     }
+
+    private struct DisplayRuntimeRebuildExecutorError: LocalizedError {
+        let reason: String
+
+        init(transactionStatus: String) {
+            self.reason = "display_runtime_transaction_\(transactionStatus)"
+        }
+
+        var errorDescription: String? {
+            String(localized: "Failed to rebuild virtual display.")
+        }
+    }
+
     package struct StartupPlan {
         var shouldRestoreVirtualDisplays: Bool
         var postRestoreConfiguration: (@MainActor (VirtualDisplayController) -> Void)?
@@ -346,12 +372,6 @@ package enum AppBootstrap {
         let virtualDisplay = VirtualDisplayController(
             virtualDisplayFacade: resolvedVirtualDisplayFacade,
             appliedBadgeDisplayDuration: appliedBadgeDisplayDuration,
-            stopDependentStreamsBeforeRebuild: { displayID in
-                capture.stopDependentStreamsBeforeRebuild(
-                    displayID: displayID,
-                    sharingController: sharing
-                )
-            },
             observability: observability
         )
         AppErrorMapper.installFailureBridge { error, subsystem, operation, context in
@@ -378,8 +398,18 @@ package enum AppBootstrap {
             catalogCommander: displayRuntimeCatalogAdapter,
             sharingCommander: displayRuntimeSharingAdapter,
             captureCommander: displayRuntimeCaptureAdapter,
+            virtualDisplayCommander: displayRuntimeVirtualDisplayAdapter,
             observabilityRecorder: displayRuntimeObservabilityAdapter
         )
+        virtualDisplay.configureRebuildExecutor { configID, source in
+            let result = try await displayRuntime.rebuildVirtualDisplay(
+                configID: configID,
+                source: DisplayRuntimeTransactionSource(source)
+            )
+            guard result.status != .failed && result.status != .cancelled else {
+                throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
+            }
+        }
 
         let startupObservabilityTask = Task {
             await observability.registerSnapshotProvider(

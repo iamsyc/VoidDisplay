@@ -275,12 +275,13 @@ struct DisplayRuntimeTests {
     @Test func unavailableProvidersProduceEmptySnapshot() {
         let snapshot = DisplayRuntime().makeSnapshot()
 
-        #expect(snapshot.schemaVersion == 1)
+        #expect(snapshot.schemaVersion == 2)
         #expect(snapshot.surfaces.isEmpty)
         #expect(snapshot.catalog == .empty)
         #expect(snapshot.capture == .empty)
         #expect(snapshot.sharing == .empty)
         #expect(snapshot.virtualDisplay == .empty)
+        #expect(snapshot.transactions == .empty)
     }
 
     @Test func duplicatePortEntriesConvergeWithoutDroppingSnapshot() throws {
@@ -385,6 +386,195 @@ struct DisplayRuntimeTests {
         #expect(surface.catalog?.pixelWidth == 1920)
     }
 
+    @Test func rebuildTransactionQuiescesSessionsBeforeVirtualDisplayCommand() async throws {
+        let configID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
+        let sessionID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
+        let recorder = RuntimeOperationRecorder()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 77, isMain: false)),
+            captureProvider: FakeCaptureProvider(
+                snapshot: .init(
+                    startingDisplayIDs: [],
+                    sessions: [
+                        .init(
+                            id: sessionID,
+                            displayID: 77,
+                            isVirtualDisplay: true,
+                            capturesCursor: true,
+                            state: .active,
+                            metrics: .empty
+                        )
+                    ]
+                )
+            ),
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 77)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 77)),
+            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder)
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completed)
+        #expect(recorder.events == [
+            "refresh:topologyChanged",
+            "stopSharing:77",
+            "removeMonitoring:77",
+            "rebuild:\(configID.uuidString)"
+        ])
+        #expect(trace.preSnapshotEvidence?.captureSessions.map(\.id) == [sessionID])
+        #expect(trace.preSnapshotEvidence?.sharingDisplayIDs == [77])
+        #expect(trace.postSnapshotEvidence != nil)
+        #expect(trace.pauseIntents == [
+            .init(
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                displayID: 77,
+                pauseSharing: true,
+                pauseMonitoring: true
+            )
+        ])
+    }
+
+    @Test func rebuildTransactionWritesFailedTraceForMissingConfig() async throws {
+        let missingConfigID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
+        let commander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: .empty),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: missingConfigID, source: .editSaveAndRebuild)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(commander.rebuildCallCount == 0)
+        #expect(trace.status == .failed)
+        #expect(trace.failure?.reason == "config_not_found")
+        #expect(trace.preSnapshotEvidence != nil)
+        #expect(trace.postSnapshotEvidence != nil)
+    }
+
+    @Test func rebuildTransactionCoalescesDuplicateRequestForSameConfig() async throws {
+        let configID = UUID(uuidString: "88888888-8888-8888-8888-888888888888")!
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 150_000_000)
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 88)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander
+        )
+
+        async let first = runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
+        async let second = runtime.rebuildVirtualDisplay(configID: configID, source: .editSaveAndRebuild)
+        let results = try await [first, second]
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(results.map(\.transactionID).first == results.map(\.transactionID).last)
+        #expect(commander.rebuildCallCount == 1)
+        #expect(trace.coalescedRequestCount == 1)
+        #expect(trace.phases.contains(.init(phase: .queued, note: "coalesced_duplicate_request")))
+    }
+
+    @Test func rebuildTransactionEscalatesManagedMainToFleetScope() async throws {
+        let targetConfigID = UUID(uuidString: "99999999-9999-9999-9999-999999999999")!
+        let peerConfigID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(
+                snapshot: .init(
+                    hasScreenCapturePermission: true,
+                    lastPreflightPermission: true,
+                    lastRequestPermission: nil,
+                    isLoadingDisplays: false,
+                    hasLoadError: false,
+                    lastLoadError: nil,
+                    loadedDisplays: [
+                        .init(displayID: 91, pixelWidth: 1920, pixelHeight: 1080),
+                        .init(displayID: 92, pixelWidth: 1920, pixelHeight: 1080)
+                    ],
+                    topologySignature: [
+                        .init(
+                            displayID: 91,
+                            isMain: true,
+                            pixelWidth: 1920,
+                            pixelHeight: 1080,
+                            refreshRateMilliHertz: 60_000,
+                            mirrorsDisplayID: nil
+                        ),
+                        .init(
+                            displayID: 92,
+                            isMain: false,
+                            pixelWidth: 1920,
+                            pixelHeight: 1080,
+                            refreshRateMilliHertz: 60_000,
+                            mirrorsDisplayID: nil
+                        )
+                    ]
+                )
+            ),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(
+                    configs: [
+                        (targetConfigID, 9101, 91),
+                        (peerConfigID, 9102, 92)
+                    ]
+                )
+            ),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: FakeVirtualDisplayCommander()
+        )
+
+        _ = try await runtime.rebuildVirtualDisplay(configID: targetConfigID, source: .virtualDisplayRowRetry)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        let affectedConfigIDs = trace.affectedSurfaces.map(\.configID).sorted { $0.uuidString < $1.uuidString }
+        let expectedConfigIDs = [targetConfigID, peerConfigID].sorted { $0.uuidString < $1.uuidString }
+        #expect(affectedConfigIDs == expectedConfigIDs)
+        #expect(trace.affectedSurfaces.contains { $0.reason == .managedMainFleetPeer && $0.configID == peerConfigID })
+    }
+
+    @Test func rebuildTransactionCallsCommandWhenPreDisplayIDIsUnavailable() async throws {
+        let configID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let commander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: .init(
+                    rebuildRequestCount: 0,
+                    rebuildingConfigIDs: [],
+                    runningConfigIDs: [],
+                    recentlyAppliedConfigIDs: [],
+                    rebuildFailureConfigIDs: [],
+                    configStoreHasLoadFailure: false,
+                    configStoreHasDiagnostics: false,
+                    managedDisplays: [],
+                    configs: [
+                        .init(
+                            id: configID,
+                            serialNumber: 9103,
+                            desiredEnabled: true,
+                            physicalWidthMillimeters: 600,
+                            physicalHeightMillimeters: 340,
+                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+                        )
+                    ],
+                    restoreFailureConfigIDs: []
+                )
+            ),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completed)
+        #expect(commander.rebuildCallCount == 1)
+        #expect(trace.affectedSurfaces.first?.preDisplayID == nil)
+        #expect(trace.pauseIntents.isEmpty)
+    }
+
     @Test func snapshotProviderUsesRuntimeKeyAndEncodesSnapshot() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(
@@ -461,6 +651,92 @@ struct DisplayRuntimeTests {
     }
 }
 
+private func catalogSnapshot(displayID: DisplayRuntimeDisplayID, isMain: Bool) -> DisplayRuntimeCatalogSnapshot {
+    .init(
+        hasScreenCapturePermission: true,
+        lastPreflightPermission: true,
+        lastRequestPermission: nil,
+        isLoadingDisplays: false,
+        hasLoadError: false,
+        lastLoadError: nil,
+        loadedDisplays: [.init(displayID: displayID, pixelWidth: 1920, pixelHeight: 1080)],
+        topologySignature: [
+            .init(
+                displayID: displayID,
+                isMain: isMain,
+                pixelWidth: 1920,
+                pixelHeight: 1080,
+                refreshRateMilliHertz: 60_000,
+                mirrorsDisplayID: nil
+            )
+        ]
+    )
+}
+
+private func activeSharingSnapshot(displayID: DisplayRuntimeDisplayID) -> DisplayRuntimeSharingSnapshot {
+    .init(
+        activeSharingDisplayIDs: [displayID],
+        startingDisplayIDs: [],
+        isSharing: true,
+        isWebServiceRunning: true,
+        preferredPort: 8089,
+        sharingClientCount: 1,
+        sharingClientCounts: [.init(displayID: displayID, count: 1)],
+        lifecycle: .init(
+            phase: .running,
+            requestedPort: 8089,
+            boundPort: 8089,
+            failureReason: nil,
+            hasFailureMessage: false
+        ),
+        routes: [.init(displayID: displayID, hasConcreteRoute: true)]
+    )
+}
+
+private func virtualDisplaySnapshot(
+    configID: UUID,
+    displayID: DisplayRuntimeDisplayID
+) -> DisplayRuntimeVirtualDisplaySnapshot {
+    virtualDisplaySnapshot(configs: [(configID, 9001, displayID)])
+}
+
+private func virtualDisplaySnapshot(
+    configs: [(UUID, UInt32, DisplayRuntimeDisplayID)]
+) -> DisplayRuntimeVirtualDisplaySnapshot {
+    .init(
+        rebuildRequestCount: 0,
+        rebuildingConfigIDs: [],
+        runningConfigIDs: configs.map(\.0),
+        recentlyAppliedConfigIDs: [],
+        rebuildFailureConfigIDs: [],
+        configStoreHasLoadFailure: false,
+        configStoreHasDiagnostics: false,
+        managedDisplays: configs.map {
+            .init(configID: $0.0, serialNumber: $0.1, displayID: $0.2, isLiveRuntime: true)
+        },
+        configs: configs.map {
+            .init(
+                id: $0.0,
+                serialNumber: $0.1,
+                desiredEnabled: true,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+            )
+        },
+        restoreFailureConfigIDs: []
+    )
+}
+
+@MainActor
+private final class RuntimeOperationRecorder {
+    var events: [String] = []
+
+    func append(_ event: String) {
+        events.append(event)
+    }
+}
+
 @MainActor
 private final class FakeCatalogProvider: DisplayRuntimeCatalogProviding {
     let snapshot: DisplayRuntimeCatalogSnapshot
@@ -510,5 +786,102 @@ private final class FakeVirtualDisplayProvider: DisplayRuntimeVirtualDisplayProv
 
     func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
         snapshot
+    }
+}
+
+@MainActor
+private final class FakeCatalogCommander: DisplayRuntimeCatalogCommanding {
+    private let recorder: RuntimeOperationRecorder?
+
+    init(recorder: RuntimeOperationRecorder? = nil) {
+        self.recorder = recorder
+    }
+
+    func requestPermission() -> Bool {
+        true
+    }
+
+    func refreshPermission() -> Bool {
+        true
+    }
+
+    func submitRefresh(
+        intent: DisplayRuntimeCatalogRefreshIntent,
+        ownerScope _: DisplayRuntimeCatalogRefreshOwnerScope?
+    ) async -> DisplayRuntimeCatalogRefreshResult {
+        recorder?.append("refresh:\(intent.rawValue)")
+        return .reusedSnapshot
+    }
+
+    func clearSnapshotForDeniedPermission(loadErrorMessage _: String?) async {}
+
+    func cancelRefresh(ownerScope _: DisplayRuntimeCatalogRefreshOwnerScope?) async {}
+
+    func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay] {
+        []
+    }
+}
+
+@MainActor
+private final class FakeSharingCommander: DisplayRuntimeSharingCommanding {
+    private let recorder: RuntimeOperationRecorder?
+
+    init(recorder: RuntimeOperationRecorder? = nil) {
+        self.recorder = recorder
+    }
+
+    func registerShareableDisplays(_: [DisplayRuntimeShareableDisplayRegistration]) {}
+
+    func stopSharing(displayID: DisplayRuntimeDisplayID) {
+        recorder?.append("stopSharing:\(displayID)")
+    }
+}
+
+@MainActor
+private final class FakeCaptureCommander: DisplayRuntimeCaptureCommanding {
+    private let recorder: RuntimeOperationRecorder?
+
+    init(recorder: RuntimeOperationRecorder? = nil) {
+        self.recorder = recorder
+    }
+
+    func removeMonitoringSessions(displayID: DisplayRuntimeDisplayID) {
+        recorder?.append("removeMonitoring:\(displayID)")
+    }
+}
+
+@MainActor
+private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding {
+    private let recorder: RuntimeOperationRecorder?
+    private let delayNanoseconds: UInt64
+    var rebuildCallCount = 0
+    var rebuildConfigIDs: [UUID] = []
+    var error: Error?
+
+    init(
+        recorder: RuntimeOperationRecorder? = nil,
+        delayNanoseconds: UInt64 = 0
+    ) {
+        self.recorder = recorder
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func rebuildVirtualDisplay(configID: UUID) async throws -> DisplayRuntimeVirtualDisplayRebuildCommandResult {
+        rebuildCallCount += 1
+        rebuildConfigIDs.append(configID)
+        recorder?.append("rebuild:\(configID.uuidString)")
+        if delayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if let error {
+            throw error
+        }
+        return .init(
+            configID: configID,
+            preDisplayID: nil,
+            postDisplayID: nil,
+            runningConfigIDsAfterCommand: [configID],
+            managedDisplaysAfterCommand: []
+        )
     }
 }

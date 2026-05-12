@@ -11,6 +11,23 @@ import CoreGraphics
 import Observation
 import OSLog
 
+package typealias VirtualDisplayRebuildExecutor = @MainActor (
+    UUID,
+    VirtualDisplayRebuildRequestSource
+) async throws -> Void
+
+package nonisolated enum VirtualDisplayRebuildRequestSource: Sendable {
+    case rowRetry
+    case editSaveAndRebuild
+    case unknown
+}
+
+private struct VirtualDisplayRebuildExecutorUnavailableError: LocalizedError {
+    var errorDescription: String? {
+        String(localized: "Failed to rebuild virtual display.")
+    }
+}
+
 @MainActor
 @Observable
 package final class VirtualDisplayController {
@@ -27,24 +44,23 @@ package final class VirtualDisplayController {
     package private(set) var rebuildRequestCount = 0
 
     @ObservationIgnored private let virtualDisplayFacade: any VirtualDisplayFacade
-    @ObservationIgnored private var rebuildTasksByConfigId: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var rebuildTasksByConfigId: [UUID: [UUID: Task<Void, Never>]] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var rebuildPresentationWaiterCountByConfigId: [UUID: Int] = [:]
+    @ObservationIgnored private var rebuildExecutor: VirtualDisplayRebuildExecutor?
     private var virtualDisplaySnapshot: VirtualDisplaySnapshot
     private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
-    @ObservationIgnored private let stopDependentStreamsBeforeRebuild: (CGDirectDisplayID) -> Void
     @ObservationIgnored private weak var observability: ObservabilityCenter?
 
     package init(
         virtualDisplayFacade: any VirtualDisplayFacade,
         appliedBadgeDisplayDuration: Duration,
-        stopDependentStreamsBeforeRebuild: @escaping (CGDirectDisplayID) -> Void,
         observability: ObservabilityCenter? = nil
     ) {
         self.virtualDisplayFacade = virtualDisplayFacade
         self.virtualDisplaySnapshot = virtualDisplayFacade.snapshot
         self.appliedBadgeDisplayDuration = appliedBadgeDisplayDuration
-        self.stopDependentStreamsBeforeRebuild = stopDependentStreamsBeforeRebuild
         self.observability = observability
         requestSnapshotRefresh()
     }
@@ -85,10 +101,13 @@ package final class VirtualDisplayController {
     package func applyUITestPresentationState(scenario: UITestScenario) {
         rebuildPresentationState = RebuildPresentationState()
 
-        for task in rebuildTasksByConfigId.values {
-            task.cancel()
+        for tasks in rebuildTasksByConfigId.values {
+            for task in tasks.values {
+                task.cancel()
+            }
         }
         rebuildTasksByConfigId.removeAll()
+        rebuildPresentationWaiterCountByConfigId.removeAll()
 
         for task in appliedBadgeClearTasksByConfigId.values {
             task.cancel()
@@ -156,26 +175,21 @@ package final class VirtualDisplayController {
         requestSnapshotRefresh()
     }
 
-    package func startRebuildFromSavedConfig(configId: UUID) {
-        guard !rebuildingConfigIds.contains(configId) else { return }
-        guard getConfig(configId) != nil else {
-            clearRebuildPresentationState(configId: configId)
-            return
-        }
+    package func configureRebuildExecutor(_ executor: VirtualDisplayRebuildExecutor?) {
+        rebuildExecutor = executor
+    }
+
+    package var hasConfiguredRebuildExecutor: Bool {
+        rebuildExecutor != nil
+    }
+
+    package func startRebuildFromSavedConfig(
+        configId: UUID,
+        source: VirtualDisplayRebuildRequestSource = .unknown
+    ) {
         rebuildRequestCount += 1
 
-        if let runtimeDisplayID = runtimeDisplayIDByConfigId[configId] {
-            var displayIDsToStop: Set<CGDirectDisplayID> = [runtimeDisplayID]
-            if runtimeDisplayID == CGMainDisplayID(), managedDisplays.count >= 2 {
-                displayIDsToStop.formUnion(managedDisplays.map(\.displayID))
-            }
-            for displayID in displayIDsToStop {
-                stopDependentStreamsBeforeRebuild(displayID)
-            }
-        }
-
-        rebuildPresentationState.beginRebuild(configId: configId)
-        syncRebuildPresentationState()
+        incrementRebuildPresentationWaiter(configId: configId)
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = nil
         Task {
@@ -188,16 +202,22 @@ package final class VirtualDisplayController {
             )
         }
 
+        let taskID = UUID()
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
-                self.rebuildPresentationState.finishRebuild(configId: configId)
-                self.syncRebuildPresentationState()
-                self.rebuildTasksByConfigId[configId] = nil
+                self.decrementRebuildPresentationWaiter(configId: configId)
+                self.rebuildTasksByConfigId[configId]?[taskID] = nil
+                if self.rebuildTasksByConfigId[configId]?.isEmpty == true {
+                    self.rebuildTasksByConfigId[configId] = nil
+                }
             }
 
             do {
-                try await self.rebuildVirtualDisplay(configId: configId)
+                guard let rebuildExecutor = self.rebuildExecutor else {
+                    throw VirtualDisplayRebuildExecutorUnavailableError()
+                }
+                try await rebuildExecutor(configId, source)
                 self.rebuildPresentationState.markRebuildSuccess(configId: configId)
                 self.syncRebuildPresentationState()
                 self.scheduleAppliedBadgeClear(configId: configId)
@@ -227,11 +247,11 @@ package final class VirtualDisplayController {
                 self.syncRebuildPresentationState()
             }
         }
-        rebuildTasksByConfigId[configId] = task
+        rebuildTasksByConfigId[configId, default: [:]][taskID] = task
     }
 
     package func retryRebuild(configId: UUID) {
-        startRebuildFromSavedConfig(configId: configId)
+        startRebuildFromSavedConfig(configId: configId, source: .rowRetry)
     }
 
     package func isRebuilding(configId: UUID) -> Bool {
@@ -247,8 +267,13 @@ package final class VirtualDisplayController {
     }
 
     package func clearRebuildPresentationState(configId: UUID) {
-        rebuildTasksByConfigId[configId]?.cancel()
+        if let tasks = rebuildTasksByConfigId[configId] {
+            for task in tasks.values {
+                task.cancel()
+            }
+        }
         rebuildTasksByConfigId[configId] = nil
+        rebuildPresentationWaiterCountByConfigId[configId] = nil
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = nil
         rebuildPresentationState.clear(configId: configId)
@@ -514,6 +539,27 @@ package final class VirtualDisplayController {
             title: title,
             message: AppErrorMapper.userMessage(for: error, fallback: fallback)
         )
+    }
+
+    private func incrementRebuildPresentationWaiter(configId: UUID) {
+        let currentCount = rebuildPresentationWaiterCountByConfigId[configId] ?? 0
+        rebuildPresentationWaiterCountByConfigId[configId] = currentCount + 1
+        if currentCount == 0 {
+            rebuildPresentationState.beginRebuild(configId: configId)
+        }
+        syncRebuildPresentationState()
+    }
+
+    private func decrementRebuildPresentationWaiter(configId: UUID) {
+        let currentCount = rebuildPresentationWaiterCountByConfigId[configId] ?? 0
+        let nextCount = max(0, currentCount - 1)
+        if nextCount == 0 {
+            rebuildPresentationWaiterCountByConfigId[configId] = nil
+            rebuildPresentationState.finishRebuild(configId: configId)
+        } else {
+            rebuildPresentationWaiterCountByConfigId[configId] = nextCount
+        }
+        syncRebuildPresentationState()
     }
 
     private func scheduleAppliedBadgeClear(configId: UUID) {

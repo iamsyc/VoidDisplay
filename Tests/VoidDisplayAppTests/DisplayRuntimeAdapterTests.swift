@@ -3,6 +3,7 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
+@testable import VoidDisplayVirtualDisplay
 import CoreGraphics
 import Testing
 
@@ -79,6 +80,34 @@ struct DisplayRuntimeAdapterTests {
         #expect(sharingService.registeredShareableDisplays.map(\.displayID) == [registeredDisplay.displayID])
         #expect(sharingService.registeredVirtualSerialsByDisplayID[registeredDisplay.displayID] == 9202)
         #expect(sharingService.registeredVirtualSerialsByDisplayID[skippedDisplay.displayID] == nil)
+    }
+
+    @Test func virtualDisplayAdapterRebuildCallsControllerCommandPath() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Adapter",
+            serialNum: 9301,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.currentRunningConfigIds = [config.id]
+        facade.runtimeDisplayIDByConfigId[config.id] = 8302
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let result = try await sut.rebuildVirtualDisplay(configID: config.id)
+
+        #expect(facade.rebuildVirtualDisplayCallCount == 1)
+        #expect(facade.rebuildVirtualDisplayConfigIds == [config.id])
+        #expect(result.configID == config.id)
+        #expect(result.preDisplayID == 8302)
+        #expect(result.postDisplayID == 8302)
     }
 }
 

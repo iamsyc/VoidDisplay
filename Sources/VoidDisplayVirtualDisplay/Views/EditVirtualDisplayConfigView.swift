@@ -424,7 +424,7 @@ package struct EditVirtualDisplayConfigView: View {
         } catch { return }
         loadedConfig = analysis.updatedConfig
         dismiss()
-        virtualDisplay.startRebuildFromSavedConfig(configId: configId)
+        virtualDisplay.startRebuildFromSavedConfig(configId: configId, source: .editSaveAndRebuild)
     }
 
     private func addPresetMode() {

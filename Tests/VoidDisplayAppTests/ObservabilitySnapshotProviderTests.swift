@@ -121,8 +121,7 @@ struct ObservabilitySnapshotProviderTests {
         ]
         let controller = VirtualDisplayController(
             virtualDisplayFacade: facade,
-            appliedBadgeDisplayDuration: .seconds(1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .seconds(1)
         )
         controller.applyUITestPresentationState(scenario: .virtualDisplayRebuildFailed)
 
@@ -178,8 +177,7 @@ struct ObservabilitySnapshotProviderTests {
 
         var virtualDisplayController: VirtualDisplayController? = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDuration: .seconds(1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .seconds(1)
         )
         let virtualDisplayProvider = VirtualDisplaySnapshotProvider(controller: virtualDisplayController!)
         virtualDisplayController = nil

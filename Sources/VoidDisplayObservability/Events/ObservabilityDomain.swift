@@ -6,6 +6,7 @@ package nonisolated enum ObservabilityDomain: String, Codable, CaseIterable, Sen
     case sharing = "sharing"
     case virtualDisplay = "virtual_display"
     case screenCatalog = "screen_catalog"
+    case displayRuntime = "display_runtime"
     case persistence = "persistence"
     case web = "web"
     case observability = "observability"
