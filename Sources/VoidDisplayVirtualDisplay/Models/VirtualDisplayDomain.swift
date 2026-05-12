@@ -70,6 +70,9 @@ package enum VirtualDisplayOperationError: LocalizedError {
         }
     }
 }
+package enum VirtualDisplayEditRebuildPersistenceError: Error, Equatable {
+    case editRequestStale
+}
 package enum VirtualDisplayTimingPolicy {
     package static let rollbackOfflineWaitTimeout: TimeInterval = 1.2
     package static let rebuildTerminationTimeout: TimeInterval = 2.0

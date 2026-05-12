@@ -549,6 +549,18 @@ package final class VirtualDisplayOrchestrator {
         try configManager.updateConfig(updated)
     }
 
+    package func configForEditRebuild(_ configId: UUID) -> VirtualDisplayConfig? {
+        configManager.config(id: configId)
+    }
+
+    package func saveConfigForRebuild(_ updated: VirtualDisplayConfig) throws {
+        try configManager.updateConfig(updated)
+    }
+
+    package func restoreConfigAfterFailedEdit(_ previous: VirtualDisplayConfig) throws {
+        try configManager.updateConfig(previous)
+    }
+
     @discardableResult
     package func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
         try configManager.moveConfig(configId, direction: direction)

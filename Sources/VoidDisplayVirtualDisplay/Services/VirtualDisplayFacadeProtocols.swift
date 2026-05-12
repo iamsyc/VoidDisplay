@@ -85,6 +85,9 @@ package protocol VirtualDisplayCommanding: AnyObject {
     func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult
     func destroyDisplay(_ configId: UUID) throws
     func updateConfig(_ updated: VirtualDisplayConfig) throws
+    func configForEditRebuild(_ configId: UUID) -> VirtualDisplayConfig?
+    func saveConfigForRebuild(_ updated: VirtualDisplayConfig) throws
+    func restoreConfigAfterFailedEdit(_ previous: VirtualDisplayConfig) throws
     func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool
     @discardableResult
     func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool

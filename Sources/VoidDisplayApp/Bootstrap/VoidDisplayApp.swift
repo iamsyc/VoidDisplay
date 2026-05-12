@@ -77,6 +77,47 @@ private extension DisplayRuntimeTransactionSource {
     }
 }
 
+private extension VirtualDisplayEditRebuildTransactionStatus {
+    init(_ status: DisplayRuntimeTransactionStatus) {
+        switch status {
+        case .completed:
+            self = .completed
+        case .completedWithRecoveryFailures:
+            self = .completedWithRecoveryFailures
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        case .active:
+            self = .failed
+        }
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayConfigEditDTO {
+    init(config: VirtualDisplayConfig) {
+        let maxPixels = config.maxPixelDimensions
+        self.init(
+            id: config.id,
+            displayName: config.displayName,
+            serialNumber: config.serialNum,
+            desiredEnabled: config.desiredEnabled,
+            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
+            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
+            modes: config.modes.map {
+                .init(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            },
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
+        )
+    }
+}
+
 public struct VoidDisplayApplication: App {
     @NSApplicationDelegateAdaptor(VoidDisplayApplicationDelegate.self) private var appDelegate
     @State private var capture: CaptureController
@@ -428,6 +469,35 @@ package enum AppBootstrap {
             guard result.status != .failed && result.status != .cancelled else {
                 throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
             }
+        }
+        virtualDisplay.configureEditRebuildExecutor { updatedConfig, expectedConfigFingerprint, source in
+            let runtimeSource = DisplayRuntimeTransactionSource(source)
+            let runtimeHandle = try await displayRuntime.saveVirtualDisplayConfigAndRebuild(
+                request: DisplayRuntimeVirtualDisplayEditRebuildRequest(
+                    editedConfig: DisplayRuntimeVirtualDisplayConfigEditDTO(config: updatedConfig),
+                    expectedConfigFingerprint: expectedConfigFingerprint,
+                    source: runtimeSource
+                ),
+                source: runtimeSource
+            )
+            return VirtualDisplayEditRebuildTransactionHandle(
+                transactionID: runtimeHandle.transactionID.rawValue,
+                saveGateTask: Task { @MainActor in
+                    let saveGate = try await runtimeHandle.waitForSaveGate()
+                    return VirtualDisplayEditRebuildSaveGateResult(
+                        transactionID: saveGate.transactionID.rawValue,
+                        configID: saveGate.configID
+                    )
+                },
+                terminalResultTask: Task { @MainActor in
+                    let result = try await runtimeHandle.waitForTerminalResult()
+                    return VirtualDisplayEditRebuildTransactionResult(
+                        transactionID: result.transactionID.rawValue,
+                        status: VirtualDisplayEditRebuildTransactionStatus(result.status),
+                        virtualDisplayCommandSucceeded: result.virtualDisplayCommandSucceeded
+                    )
+                }
+            )
         }
 
         let startupObservabilityTask = Task {

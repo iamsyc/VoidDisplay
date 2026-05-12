@@ -153,6 +153,18 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         configs[index] = updated
     }
 
+    package func configForEditRebuild(_ configId: UUID) -> VirtualDisplayConfig? {
+        configs.first { $0.id == configId }
+    }
+
+    package func saveConfigForRebuild(_ updated: VirtualDisplayConfig) throws {
+        try updateConfig(updated)
+    }
+
+    package func restoreConfigAfterFailedEdit(_ previous: VirtualDisplayConfig) throws {
+        try updateConfig(previous)
+    }
+
     package func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
         guard let sourceIndex = configs.firstIndex(where: { $0.id == configId }) else {
             return false

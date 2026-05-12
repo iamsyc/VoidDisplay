@@ -63,7 +63,10 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var destroyDisplayByConfigCallCount = 0
     var destroyedConfigIDs: [UUID] = []
     var destroyDisplayError: Error?
+    var updateConfigCallCount = 0
     var updateConfigError: Error?
+    var saveConfigForRebuildError: Error?
+    var restoreConfigAfterFailedEditError: Error?
     var moveConfigError: Error?
     var moveConfigToFirstEnabledPositionError: Error?
     var resetAllVirtualDisplayDataError: Error?
@@ -217,11 +220,45 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     func updateConfig(_ updated: VirtualDisplayConfig) throws {
+        updateConfigCallCount += 1
         if let updateConfigError {
             throw updateConfigError
         }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
         currentDisplayConfigs[index] = updated
+    }
+
+    var configForEditRebuildCallCount = 0
+    var configForEditRebuildIDs: [UUID] = []
+    var saveConfigForRebuildCallCount = 0
+    var savedConfigForRebuildIDs: [UUID] = []
+    var restoreConfigAfterFailedEditCallCount = 0
+    var restoredConfigAfterFailedEditIDs: [UUID] = []
+
+    func configForEditRebuild(_ configId: UUID) -> VirtualDisplayConfig? {
+        configForEditRebuildCallCount += 1
+        configForEditRebuildIDs.append(configId)
+        return currentDisplayConfigs.first { $0.id == configId }
+    }
+
+    func saveConfigForRebuild(_ updated: VirtualDisplayConfig) throws {
+        saveConfigForRebuildCallCount += 1
+        savedConfigForRebuildIDs.append(updated.id)
+        if let saveConfigForRebuildError {
+            throw saveConfigForRebuildError
+        }
+        guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
+        currentDisplayConfigs[index] = updated
+    }
+
+    func restoreConfigAfterFailedEdit(_ previous: VirtualDisplayConfig) throws {
+        restoreConfigAfterFailedEditCallCount += 1
+        restoredConfigAfterFailedEditIDs.append(previous.id)
+        if let restoreConfigAfterFailedEditError {
+            throw restoreConfigAfterFailedEditError
+        }
+        guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == previous.id }) else { return }
+        currentDisplayConfigs[index] = previous
     }
 
     func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {

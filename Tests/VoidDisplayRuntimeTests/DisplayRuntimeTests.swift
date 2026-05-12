@@ -621,6 +621,328 @@ struct DisplayRuntimeTests {
         #expect(trace.phases.contains(.init(phase: .queued, note: "coalesced_duplicate_request")))
     }
 
+    @Test func editRebuildAPIReturnsHandleAndRecordsTraceKind() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000001")!
+        let edited = editConfigDTO(id: configID, displayName: "Edited Name", serial: 9101)
+        let commander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 91)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: edited,
+                expectedConfigFingerprint: edited.fingerprint,
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        let result = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(handle.transactionID == result.transactionID)
+        #expect(result.kind == .virtualDisplayEditRebuild)
+        #expect(trace.kind == .virtualDisplayEditRebuild)
+        #expect(trace.source == .editSaveAndRebuild)
+        #expect(trace.oldConfigEvidence?.id == configID)
+        #expect(trace.editedConfigEvidence?.serialNumber == 9101)
+        #expect(commander.saveConfigForRebuildCallCount == 1)
+        #expect(commander.saveConfigForRebuildRequests.first?.editedConfig.displayName == "Edited Name")
+        #expect(commander.saveConfigForRebuildRequests.first?.expectedConfigFingerprint == edited.fingerprint)
+        #expect(commander.rebuildCallCount == 1)
+    }
+
+    @Test func editRebuildSaveGateResolvesBeforeTerminalResult() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000002")!
+        let edited = editConfigDTO(id: configID, displayName: "Gate First", serial: 9102)
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 200_000_000)
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 92)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: edited.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        var terminalResolved = false
+        let terminalTask = Task { @MainActor in
+            _ = try await handle.waitForTerminalResult()
+            terminalResolved = true
+        }
+        let gate = try await handle.waitForSaveGate()
+
+        #expect(gate.configID == configID)
+        #expect(terminalResolved == false)
+        _ = try await terminalTask.value
+    }
+
+    @Test func editRebuildStaleRequestFailsSaveGateBeforeSideEffects() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000003")!
+        let edited = editConfigDTO(id: configID, displayName: "Stale Name", serial: 9103)
+        let recorder = RuntimeOperationRecorder()
+        let commander = FakeVirtualDisplayCommander(recorder: recorder)
+        commander.saveConfigForRebuildError = DisplayRuntimeVirtualDisplayEditRebuildSaveCommandError.editRequestStale
+        let runtime = DisplayRuntime(
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 93)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 93)),
+            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: "stale", source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        await #expect(throws: DisplayRuntimeVirtualDisplayEditRebuildFailure.self) {
+            _ = try await handle.waitForSaveGate()
+        }
+        let result = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(trace.failure?.reason == "edit_request_stale")
+        #expect(trace.virtualDisplayCommandOutcome == .notAttempted)
+        #expect(commander.rebuildCallCount == 0)
+        #expect(commander.restoreConfigAfterFailedEditCallCount == 0)
+        #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removeMonitoring") })
+    }
+
+    @Test func editRebuildSaveFailureStopsBeforeQuiesceAndRebuild() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000004")!
+        let edited = editConfigDTO(id: configID, displayName: "Save Failed Name", serial: 9104)
+        let recorder = RuntimeOperationRecorder()
+        let commander = FakeVirtualDisplayCommander(recorder: recorder)
+        commander.saveConfigForRebuildError = NSError(domain: "EditSave", code: 4)
+        let runtime = DisplayRuntime(
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 94)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 94)),
+            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: edited.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        await #expect(throws: DisplayRuntimeVirtualDisplayEditRebuildFailure.self) {
+            _ = try await handle.waitForSaveGate()
+        }
+        _ = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(trace.failure?.reason == "config_save_failed")
+        #expect(trace.persistenceOutcome == .failed)
+        #expect(trace.virtualDisplayCommandOutcome == .notAttempted)
+        #expect(commander.rebuildCallCount == 0)
+        #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removeMonitoring") })
+    }
+
+    @Test func editRebuildMissingOldConfigFailsBeforeSaveAndRebuild() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000005")!
+        let commander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: .empty),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: editConfigDTO(id: configID, displayName: "Missing", serial: 9105),
+                expectedConfigFingerprint: "missing",
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+        await #expect(throws: DisplayRuntimeVirtualDisplayEditRebuildFailure.self) {
+            _ = try await handle.waitForSaveGate()
+        }
+        _ = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(trace.failure?.reason == "config_not_found")
+        #expect(commander.saveConfigForRebuildCallCount == 0)
+        #expect(commander.rebuildCallCount == 0)
+    }
+
+    @Test func editRebuildTraceRedactsDisplayNames() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000006")!
+        let secretName = "Customer Secret Display"
+        let edited = editConfigDTO(id: configID, displayName: secretName, serial: 9106)
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 96)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: edited.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        _ = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+        let encoded = try JSONEncoder().encode(trace)
+        let json = try #require(String(data: encoded, encoding: .utf8))
+
+        #expect(trace.editedConfigEvidence?.id == configID)
+        #expect(!json.contains(secretName))
+        #expect(!json.contains("displayName"))
+    }
+
+    @Test func editRebuildFailureRestoresOldConfigAndRunsCompensationRebuild() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000007")!
+        let previous = editConfigDTO(id: configID, displayName: "Previous Name", serial: 9107)
+        let edited = editConfigDTO(id: configID, displayName: "Edited Name", serial: 9108)
+        let commander = FakeVirtualDisplayCommander()
+        commander.saveConfigForRebuildResult = .init(
+            configID: configID,
+            persistenceOutcome: .saved,
+            previousConfigForCompensation: previous,
+            savedConfigEvidence: .init(config: edited)
+        )
+        commander.scriptedRebuildErrors = [NSError(domain: "EditRebuild", code: 7), nil]
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 97)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: previous.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        let result = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(trace.failure?.reason == "virtual_display_command_failed")
+        #expect(trace.compensation.status == .completed)
+        #expect(trace.compensation.persistenceOutcome == .rolledBack)
+        #expect(trace.compensation.virtualDisplayCommandOutcome == .succeeded)
+        #expect(commander.restoredConfigsAfterFailedEdit.map(\.displayName) == ["Previous Name"])
+        #expect(commander.rebuildConfigIDs == [configID, configID])
+    }
+
+    @Test func editRebuildCompensationRecordsDegradedWhenCompensationRebuildFails() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000008")!
+        let previous = editConfigDTO(id: configID, displayName: "Previous", serial: 9108)
+        let edited = editConfigDTO(id: configID, displayName: "Edited", serial: 9109)
+        let commander = FakeVirtualDisplayCommander()
+        commander.saveConfigForRebuildResult = .init(
+            configID: configID,
+            persistenceOutcome: .saved,
+            previousConfigForCompensation: previous,
+            savedConfigEvidence: .init(config: edited)
+        )
+        commander.scriptedRebuildErrors = [
+            NSError(domain: "EditRebuild", code: 8),
+            NSError(domain: "CompensationRebuild", code: 9)
+        ]
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 98)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: previous.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        _ = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.persistenceOutcome == .rolledBack)
+        #expect(trace.compensation.virtualDisplayCommandOutcome == .failed)
+        #expect(trace.compensation.failureReason == "compensation_rebuild_failed")
+    }
+
+    @Test func editRebuildCompensationRecordsPersistenceCompensationFailure() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000009")!
+        let previous = editConfigDTO(id: configID, displayName: "Previous", serial: 9109)
+        let edited = editConfigDTO(id: configID, displayName: "Edited", serial: 9110)
+        let commander = FakeVirtualDisplayCommander()
+        commander.saveConfigForRebuildResult = .init(
+            configID: configID,
+            persistenceOutcome: .saved,
+            previousConfigForCompensation: previous,
+            savedConfigEvidence: .init(config: edited)
+        )
+        commander.scriptedRebuildErrors = [NSError(domain: "EditRebuild", code: 10)]
+        commander.restoreConfigAfterFailedEditError = NSError(domain: "RestoreOldConfig", code: 11)
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 99)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: previous.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        _ = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.persistenceOutcome == .rollbackFailed)
+        #expect(trace.compensation.failureReason == "persistence_compensation_failed")
+        #expect(commander.rebuildCallCount == 1)
+    }
+
+    @Test func duplicateEditRebuildRequestsSerializeWithoutCoalescing() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000010")!
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 50_000_000)
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 100)),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+        let edited = editConfigDTO(id: configID, displayName: "Same Edit", serial: 9111)
+
+        async let firstHandle = runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: edited.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        async let secondHandle = runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(editedConfig: edited, expectedConfigFingerprint: edited.fingerprint, source: .editSaveAndRebuild),
+            source: .editSaveAndRebuild
+        )
+        let handles = try await [firstHandle, secondHandle]
+        for handle in handles {
+            _ = try await handle.waitForSaveGate()
+            _ = try await handle.waitForTerminalResult()
+        }
+        let traces = runtime.makeSnapshot().transactions.recentTransactions
+
+        #expect(Set(handles.map(\.transactionID)).count == 2)
+        #expect(commander.saveConfigForRebuildCallCount == 2)
+        #expect(commander.rebuildCallCount == 2)
+        #expect(traces.allSatisfy { $0.coalescedRequestCount == 0 })
+    }
+
     @Test func enableTransactionSuccessRecordsEvidenceAndTraceKind() async throws {
         let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000001")!
         let catalog = catalogSnapshot(displayID: 107, isMain: false)
@@ -2056,6 +2378,44 @@ private func virtualDisplaySnapshot(
     virtualDisplaySnapshot(configs: [(configID, 9001, displayID)])
 }
 
+private func editConfigDTO(
+    id: UUID,
+    displayName: String,
+    serial: UInt32,
+    desiredEnabled: Bool = true,
+    physicalWidthMillimeters: UInt32 = 600,
+    physicalHeightMillimeters: UInt32 = 340,
+    modes: [DisplayRuntimeVirtualDisplayModeDTO] = [
+        .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
+    ]
+) -> DisplayRuntimeVirtualDisplayConfigEditDTO {
+    let maximumPixelDimensions = maximumPixelDimensions(for: modes)
+    return DisplayRuntimeVirtualDisplayConfigEditDTO(
+        id: id,
+        displayName: displayName,
+        serialNumber: serial,
+        desiredEnabled: desiredEnabled,
+        physicalWidthMillimeters: physicalWidthMillimeters,
+        physicalHeightMillimeters: physicalHeightMillimeters,
+        modes: modes,
+        maximumPixelWidth: maximumPixelDimensions.width,
+        maximumPixelHeight: maximumPixelDimensions.height
+    )
+}
+
+private func maximumPixelDimensions(
+    for modes: [DisplayRuntimeVirtualDisplayModeDTO]
+) -> (width: UInt32, height: UInt32) {
+    guard let maxMode = modes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
+        return (0, 0)
+    }
+    let scale = modes.contains(where: \.enableHiDPI) ? 2 : 1
+    return (
+        UInt32(clamping: maxMode.width * scale),
+        UInt32(clamping: maxMode.height * scale)
+    )
+}
+
 private func disabledVirtualDisplaySnapshot(
     configID: UUID,
     serial: UInt32,
@@ -2354,18 +2714,29 @@ private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCom
     var preflightCallCount = 0
     var setDesiredEnabledCallCount = 0
     var setDesiredEnabledRequests: [(UUID, Bool)] = []
+    var saveConfigForRebuildCallCount = 0
+    var saveConfigForRebuildRequests: [DisplayRuntimeVirtualDisplayEditRebuildRequest] = []
+    var restoreConfigAfterFailedEditCallCount = 0
+    var restoredConfigsAfterFailedEdit: [DisplayRuntimeVirtualDisplayConfigEditDTO] = []
     var enableCallCount = 0
     var enableConfigIDs: [UUID] = []
     var disableCallCount = 0
     var disableConfigIDs: [UUID] = []
     var enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
     var setDesiredEnabledError: Error?
+    var saveConfigForRebuildError: Error?
+    var restoreConfigAfterFailedEditError: Error?
+    var saveConfigForRebuildResult: DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult?
+    var restoreConfigAfterFailedEditResult: DisplayRuntimeVirtualDisplayPersistenceCommandResult?
     var enableError: Error?
     var disableError: Error?
     var onSetDesiredEnabled: ((UUID, Bool) -> Void)?
+    var onSaveConfigForRebuild: ((DisplayRuntimeVirtualDisplayEditRebuildRequest) -> Void)?
+    var onRestoreConfigAfterFailedEdit: ((DisplayRuntimeVirtualDisplayConfigEditDTO) -> Void)?
     var onEnable: ((UUID) -> Void)?
     var onDisable: ((UUID) -> Void)?
     var error: Error?
+    var scriptedRebuildErrors: [Error?] = []
 
     init(
         recorder: RuntimeOperationRecorder? = nil,
@@ -2382,7 +2753,11 @@ private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCom
         if delayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
         }
-        if let error {
+        if !scriptedRebuildErrors.isEmpty {
+            if let scriptedError = scriptedRebuildErrors.removeFirst() {
+                throw scriptedError
+            }
+        } else if let error {
             throw error
         }
         return .init(
@@ -2422,6 +2797,43 @@ private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCom
             configID: request.configID,
             desiredEnabled: request.enabled,
             persistenceOutcome: .saved
+        )
+    }
+
+    func saveConfigForRebuild(
+        request: DisplayRuntimeVirtualDisplayEditRebuildRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult {
+        saveConfigForRebuildCallCount += 1
+        saveConfigForRebuildRequests.append(request)
+        recorder?.append("saveConfigForRebuild:\(request.editedConfig.id.uuidString)")
+        if let saveConfigForRebuildError {
+            throw saveConfigForRebuildError
+        }
+        onSaveConfigForRebuild?(request)
+        if let saveConfigForRebuildResult {
+            return saveConfigForRebuildResult
+        }
+        return .init(
+            configID: request.editedConfig.id,
+            persistenceOutcome: .saved,
+            previousConfigForCompensation: request.editedConfig,
+            savedConfigEvidence: .init(config: request.editedConfig)
+        )
+    }
+
+    func restoreConfigAfterFailedEdit(
+        request: DisplayRuntimeVirtualDisplayEditRebuildRestoreCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayPersistenceCommandResult {
+        restoreConfigAfterFailedEditCallCount += 1
+        restoredConfigsAfterFailedEdit.append(request.previousConfigForCompensation)
+        recorder?.append("restoreConfigAfterFailedEdit:\(request.previousConfigForCompensation.id.uuidString)")
+        if let restoreConfigAfterFailedEditError {
+            throw restoreConfigAfterFailedEditError
+        }
+        onRestoreConfigAfterFailedEdit?(request.previousConfigForCompensation)
+        return restoreConfigAfterFailedEditResult ?? .init(
+            configID: request.previousConfigForCompensation.id,
+            persistenceOutcome: .rolledBack
         )
     }
 

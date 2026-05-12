@@ -306,6 +306,144 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.desiredEnabled == false)
     }
 
+    @Test func virtualDisplayAdapterSaveConfigForRebuildUsesCommandOnlyPathAndReturnsPreviousConfig() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Old Adapter Name",
+            serialNum: 9304,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var edited = config
+        edited.displayName = "New Adapter Name"
+        edited.serialNum = 9305
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let result = try await sut.saveConfigForRebuild(
+            request: .init(
+                editedConfig: editDTO(config: edited),
+                expectedConfigFingerprint: config.editRebuildFingerprint,
+                source: .editSaveAndRebuild
+            )
+        )
+
+        #expect(facade.configForEditRebuildIDs == [config.id])
+        #expect(facade.saveConfigForRebuildCallCount == 1)
+        #expect(facade.savedConfigForRebuildIDs == [config.id])
+        #expect(facade.updateConfigCallCount == 0)
+        #expect(facade.currentDisplayConfigs.first?.displayName == "New Adapter Name")
+        #expect(result.persistenceOutcome == .saved)
+        #expect(result.previousConfigForCompensation.displayName == "Old Adapter Name")
+        #expect(result.savedConfigEvidence.serialNumber == 9305)
+        #expect(controller.persistenceAlert == nil)
+    }
+
+    @Test func virtualDisplayAdapterSaveConfigForRebuildDetectsStaleFingerprintBeforeSaving() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Stale Adapter Name",
+            serialNum: 9306,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        await #expect(throws: DisplayRuntimeVirtualDisplayEditRebuildSaveCommandError.self) {
+            _ = try await sut.saveConfigForRebuild(
+                request: .init(
+                    editedConfig: editDTO(config: config),
+                    expectedConfigFingerprint: "stale",
+                    source: .editSaveAndRebuild
+                )
+            )
+        }
+
+        #expect(facade.configForEditRebuildIDs == [config.id])
+        #expect(facade.saveConfigForRebuildCallCount == 0)
+        #expect(controller.persistenceAlert == nil)
+    }
+
+    @Test func virtualDisplayAdapterCommandOnlySaveFailureDoesNotSetPersistenceAlert() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Save Failure",
+            serialNum: 9307,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.saveConfigForRebuildError = NSError(domain: "CommandOnlySave", code: 7)
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        await #expect(throws: (any Error).self) {
+            _ = try await sut.saveConfigForRebuild(
+                request: .init(
+                    editedConfig: editDTO(config: config),
+                    expectedConfigFingerprint: config.editRebuildFingerprint,
+                    source: .editSaveAndRebuild
+                )
+            )
+        }
+
+        #expect(facade.saveConfigForRebuildCallCount == 1)
+        #expect(controller.persistenceAlert == nil)
+    }
+
+    @Test func virtualDisplayAdapterRestoreConfigAfterFailedEditUsesPreviousConfigCommandPath() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Edited",
+            serialNum: 9308,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var previous = config
+        previous.displayName = "Previous"
+        previous.serialNum = 9309
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let result = try await sut.restoreConfigAfterFailedEdit(
+            request: .init(
+                transactionID: DisplayRuntimeTransactionID(),
+                previousConfigForCompensation: editDTO(config: previous)
+            )
+        )
+
+        #expect(result.persistenceOutcome == .rolledBack)
+        #expect(facade.restoreConfigAfterFailedEditCallCount == 1)
+        #expect(facade.restoredConfigAfterFailedEditIDs == [config.id])
+        #expect(facade.updateConfigCallCount == 0)
+        #expect(facade.currentDisplayConfigs.first?.displayName == "Previous")
+        #expect(controller.persistenceAlert == nil)
+    }
+
     @Test func virtualDisplayAdapterUnavailableFailsExplicitly() async throws {
         var controller: VirtualDisplayController? = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
@@ -328,4 +466,26 @@ private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {
     func savePreferredPort(_ port: UInt16) {
         preferredPort = port
     }
+}
+
+private func editDTO(config: VirtualDisplayConfig) -> DisplayRuntimeVirtualDisplayConfigEditDTO {
+    let maxPixels = config.maxPixelDimensions
+    return DisplayRuntimeVirtualDisplayConfigEditDTO(
+        id: config.id,
+        displayName: config.displayName,
+        serialNumber: config.serialNum,
+        desiredEnabled: config.desiredEnabled,
+        physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
+        physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
+        modes: config.modes.map {
+            .init(
+                width: $0.width,
+                height: $0.height,
+                refreshRate: $0.refreshRate,
+                enableHiDPI: $0.enableHiDPI
+            )
+        },
+        maximumPixelWidth: maxPixels.width,
+        maximumPixelHeight: maxPixels.height
+    )
 }

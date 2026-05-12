@@ -690,6 +690,174 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
+    @Test func commandOnlySaveConfigForRebuildDoesNotSetPersistenceAlertOrCallUpdateConfig() throws {
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let config = VirtualDisplayConfig(
+            displayName: "Loaded",
+            serialNum: 131,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var edited = config
+        edited.displayName = "Edited"
+        virtualDisplay.currentDisplayConfigs = [config]
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay
+        )
+
+        let previous = try sut.virtualDisplay.saveConfigForRebuildCommand(
+            edited,
+            expectedConfigFingerprint: config.editRebuildFingerprint
+        )
+
+        #expect(previous.displayName == "Loaded")
+        #expect(virtualDisplay.configForEditRebuildIDs == [config.id])
+        #expect(virtualDisplay.saveConfigForRebuildCallCount == 1)
+        #expect(virtualDisplay.updateConfigCallCount == 0)
+        #expect(sut.virtualDisplay.persistenceAlert == nil)
+    }
+
+    @Test func commandOnlySaveConfigForRebuildStaleFailsBeforeSaving() {
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let config = VirtualDisplayConfig(
+            displayName: "Loaded",
+            serialNum: 132,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [config]
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay
+        )
+
+        #expect(throws: VirtualDisplayEditRebuildPersistenceError.self) {
+            _ = try sut.virtualDisplay.saveConfigForRebuildCommand(
+                config,
+                expectedConfigFingerprint: "stale"
+            )
+        }
+
+        #expect(virtualDisplay.saveConfigForRebuildCallCount == 0)
+        #expect(sut.virtualDisplay.persistenceAlert == nil)
+    }
+
+    @Test func saveConfigAndRebuildSendsSingleExecutorRequest() async throws {
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let config = VirtualDisplayConfig(
+            displayName: "Runtime Edit",
+            serialNum: 133,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [config]
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay
+        ).virtualDisplay
+        var requestCount = 0
+        sut.configureEditRebuildExecutor { updatedConfig, expectedFingerprint, source in
+            requestCount += 1
+            #expect(updatedConfig.id == config.id)
+            #expect(expectedFingerprint == config.editRebuildFingerprint)
+            #expect(source == .editSaveAndRebuild)
+            return editRebuildHandle(
+                configID: config.id,
+                status: .completed,
+                virtualDisplayCommandSucceeded: true
+            )
+        }
+
+        let handle = try await sut.saveConfigAndRebuild(
+            config,
+            expectedConfigFingerprint: config.editRebuildFingerprint,
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+
+        #expect(requestCount == 1)
+        #expect(virtualDisplay.updateConfigCallCount == 0)
+        #expect(virtualDisplay.rebuildVirtualDisplayCallCount == 0)
+    }
+
+    @Test func editRebuildPresentationWaitsForTerminalResultBeforeSuccess() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Presentation",
+            serialNum: 134,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            appliedBadgeDisplayDuration: .milliseconds(50)
+        ).virtualDisplay
+        let handle = editRebuildHandle(
+            configID: config.id,
+            status: .completed,
+            virtualDisplayCommandSucceeded: true,
+            terminalDelayNanoseconds: 80_000_000
+        )
+
+        sut.startEditRebuildPresentation(configId: config.id, handle: handle)
+
+        #expect(sut.isRebuilding(configId: config.id))
+        #expect(sut.hasRecentApplySuccess(configId: config.id) == false)
+        let completed = await waitUntil(timeoutNanoseconds: 1_000_000_000) {
+            sut.hasRecentApplySuccess(configId: config.id)
+        }
+        #expect(completed)
+        #expect(!sut.isRebuilding(configId: config.id))
+    }
+
+    @Test func editRebuildFailureIsPresentedAsRebuildFailureNotSaveFailure() async {
+        let config = VirtualDisplayConfig(
+            displayName: "Presentation Failure",
+            serialNum: 135,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay
+        ).virtualDisplay
+
+        sut.startEditRebuildPresentation(
+            configId: config.id,
+            handle: editRebuildHandle(
+                configID: config.id,
+                status: .failed,
+                virtualDisplayCommandSucceeded: false
+            )
+        )
+
+        let failed = await waitUntil {
+            sut.rebuildFailureMessage(configId: config.id) != nil
+        }
+        #expect(failed)
+        #expect(sut.persistenceAlert == nil)
+    }
+
     @Test func dismissPersistenceAlertResetsControllerPresentationState() {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
@@ -733,6 +901,34 @@ private func makeControllerEnvironment(
         try await controller.rebuildVirtualDisplay(configId: configID)
     }
     return ControllerTestEnvironment(virtualDisplay: controller)
+}
+
+private func editRebuildHandle(
+    configID: UUID,
+    status: VirtualDisplayEditRebuildTransactionStatus,
+    virtualDisplayCommandSucceeded: Bool,
+    terminalDelayNanoseconds: UInt64 = 0
+) -> VirtualDisplayEditRebuildTransactionHandle {
+    let transactionID = UUID()
+    return VirtualDisplayEditRebuildTransactionHandle(
+        transactionID: transactionID,
+        saveGateTask: Task {
+            VirtualDisplayEditRebuildSaveGateResult(
+                transactionID: transactionID,
+                configID: configID
+            )
+        },
+        terminalResultTask: Task {
+            if terminalDelayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: terminalDelayNanoseconds)
+            }
+            return VirtualDisplayEditRebuildTransactionResult(
+                transactionID: transactionID,
+                status: status,
+                virtualDisplayCommandSucceeded: virtualDisplayCommandSucceeded
+            )
+        }
+    )
 }
 
 @MainActor

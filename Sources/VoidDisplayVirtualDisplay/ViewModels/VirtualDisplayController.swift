@@ -22,6 +22,12 @@ package typealias VirtualDisplayDesiredEnabledExecutor = @MainActor (
     VirtualDisplayDesiredEnabledRequestSource
 ) async throws -> Void
 
+package typealias VirtualDisplayEditRebuildExecutor = @MainActor (
+    VirtualDisplayConfig,
+    String,
+    VirtualDisplayRebuildRequestSource
+) async throws -> VirtualDisplayEditRebuildTransactionHandle
+
 package nonisolated enum VirtualDisplayRebuildRequestSource: Sendable {
     case rowRetry
     case editSaveAndRebuild
@@ -40,6 +46,12 @@ private struct VirtualDisplayRebuildExecutorUnavailableError: LocalizedError {
 }
 
 private struct VirtualDisplayDesiredEnabledExecutorUnavailableError: Error {}
+
+private struct VirtualDisplayEditRebuildExecutorUnavailableError: Error {}
+
+private struct VirtualDisplayEditRebuildPresentationError: LocalizedError {
+    var errorDescription: String? { nil }
+}
 
 @MainActor
 @Observable
@@ -62,6 +74,7 @@ package final class VirtualDisplayController {
     @ObservationIgnored private var rebuildPresentationWaiterCountByConfigId: [UUID: Int] = [:]
     @ObservationIgnored private var rebuildExecutor: VirtualDisplayRebuildExecutor?
     @ObservationIgnored private var desiredEnabledExecutor: VirtualDisplayDesiredEnabledExecutor?
+    @ObservationIgnored private var editRebuildExecutor: VirtualDisplayEditRebuildExecutor?
     private var virtualDisplaySnapshot: VirtualDisplaySnapshot
     private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
@@ -205,6 +218,14 @@ package final class VirtualDisplayController {
         desiredEnabledExecutor != nil
     }
 
+    package func configureEditRebuildExecutor(_ executor: VirtualDisplayEditRebuildExecutor?) {
+        editRebuildExecutor = executor
+    }
+
+    package var hasConfiguredEditRebuildExecutor: Bool {
+        editRebuildExecutor != nil
+    }
+
     package func startRebuildFromSavedConfig(
         configId: UUID,
         source: VirtualDisplayRebuildRequestSource = .unknown
@@ -285,6 +306,84 @@ package final class VirtualDisplayController {
             throw VirtualDisplayDesiredEnabledExecutorUnavailableError()
         }
         try await desiredEnabledExecutor(configId, enabled, source)
+    }
+
+    package func saveConfigAndRebuild(
+        _ updated: VirtualDisplayConfig,
+        expectedConfigFingerprint: String,
+        source: VirtualDisplayRebuildRequestSource = .unknown
+    ) async throws -> VirtualDisplayEditRebuildTransactionHandle {
+        guard let editRebuildExecutor else {
+            throw VirtualDisplayEditRebuildExecutorUnavailableError()
+        }
+        return try await editRebuildExecutor(updated, expectedConfigFingerprint, source)
+    }
+
+    package func startEditRebuildPresentation(
+        configId: UUID,
+        handle: VirtualDisplayEditRebuildTransactionHandle
+    ) {
+        rebuildRequestCount += 1
+
+        incrementRebuildPresentationWaiter(configId: configId)
+        appliedBadgeClearTasksByConfigId[configId]?.cancel()
+        appliedBadgeClearTasksByConfigId[configId] = nil
+        Task {
+            await recordEvent(
+                severity: .info,
+                operation: "Rebuild virtual display",
+                message: "Started rebuild request.",
+                metadata: ["configID": configId.uuidString],
+                deduplicationKey: "virtualDisplay.rebuild.\(configId.uuidString)"
+            )
+        }
+
+        let taskID = UUID()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.decrementRebuildPresentationWaiter(configId: configId)
+                self.rebuildTasksByConfigId[configId]?[taskID] = nil
+                if self.rebuildTasksByConfigId[configId]?.isEmpty == true {
+                    self.rebuildTasksByConfigId[configId] = nil
+                }
+            }
+
+            do {
+                let result = try await handle.waitForTerminalResult()
+                guard result.status != .failed && result.status != .cancelled else {
+                    throw VirtualDisplayEditRebuildPresentationError()
+                }
+                self.rebuildPresentationState.markRebuildSuccess(configId: configId)
+                self.syncRebuildPresentationState()
+                self.scheduleAppliedBadgeClear(configId: configId)
+                await self.recordEvent(
+                    severity: .notice,
+                    operation: "Rebuild virtual display",
+                    message: "Virtual display rebuild completed.",
+                    metadata: ["configID": configId.uuidString],
+                    deduplicationKey: "virtualDisplay.rebuild.\(configId.uuidString)"
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                if Task.isCancelled {
+                    return
+                }
+                AppErrorMapper.logFailure(
+                    "Rebuild virtual display",
+                    error: error,
+                    logger: AppLog.virtualDisplay,
+                    subsystem: .virtualDisplay,
+                    metadata: ["configID": configId.uuidString],
+                    deduplicationKey: "virtualDisplay.rebuild.\(configId.uuidString)"
+                )
+                let message = AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to rebuild virtual display."))
+                self.rebuildPresentationState.markRebuildFailure(configId: configId, message: message)
+                self.syncRebuildPresentationState()
+            }
+        }
+        rebuildTasksByConfigId[configId, default: [:]][taskID] = task
     }
 
     package func isRebuilding(configId: UUID) -> Bool {
@@ -432,6 +531,28 @@ package final class VirtualDisplayController {
                     "configID": updated.id.uuidString
                 ]
             )
+        }
+    }
+
+    package func saveConfigForRebuildCommand(
+        _ updated: VirtualDisplayConfig,
+        expectedConfigFingerprint: String
+    ) throws -> VirtualDisplayConfig {
+        try mutateAndSync {
+            guard let previous = virtualDisplayFacade.configForEditRebuild(updated.id) else {
+                throw VirtualDisplayOperationError.configNotFound
+            }
+            guard previous.editRebuildFingerprint == expectedConfigFingerprint else {
+                throw VirtualDisplayEditRebuildPersistenceError.editRequestStale
+            }
+            try virtualDisplayFacade.saveConfigForRebuild(updated)
+            return previous
+        }
+    }
+
+    package func restoreConfigAfterFailedEditCommand(_ previous: VirtualDisplayConfig) throws {
+        try mutateAndSync {
+            try virtualDisplayFacade.restoreConfigAfterFailedEdit(previous)
         }
     }
 

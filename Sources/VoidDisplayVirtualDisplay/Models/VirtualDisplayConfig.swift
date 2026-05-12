@@ -8,6 +8,7 @@ import VoidDisplayObservability
 //  Configuration model for virtual displays (used for enable/disable functionality)
 //
 
+import CryptoKit
 import Foundation
 import CoreGraphics
 
@@ -124,10 +125,41 @@ package struct VirtualDisplayConfig: Identifiable, Codable, Equatable {
         return (width, height)
     }
 
+    package var editRebuildFingerprint: String {
+        let maxPixels = maxPixelDimensions
+        let canonical = [
+            "v1",
+            "id=\(id.uuidString.lowercased())",
+            "displayName=\(lengthPrefixed(displayName))",
+            "serialNumber=\(serialNum)",
+            "desiredEnabled=\(desiredEnabled ? 1 : 0)",
+            "physicalWidthMillimeters=\(UInt32(clamping: physicalWidth))",
+            "physicalHeightMillimeters=\(UInt32(clamping: physicalHeight))",
+            "maximumPixelWidth=\(maxPixels.width)",
+            "maximumPixelHeight=\(maxPixels.height)",
+            "modes=\(modes.map(Self.modeFingerprintComponent).joined(separator: ";"))"
+        ].joined(separator: "|")
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
     private func pixelArea(_ mode: ModeConfig) -> UInt64 {
         let (area, overflow) = UInt64(mode.width).multipliedReportingOverflow(by: UInt64(mode.height))
         precondition(!overflow, "VirtualDisplayConfig mode pixel area overflowed.")
         return area
+    }
+
+    private func lengthPrefixed(_ value: String) -> String {
+        "\(value.utf8.count):\(value)"
+    }
+
+    private static func modeFingerprintComponent(_ mode: ModeConfig) -> String {
+        [
+            "\(mode.width)",
+            "\(mode.height)",
+            "\(mode.refreshRate.bitPattern)",
+            mode.enableHiDPI ? "1" : "0"
+        ].joined(separator: ",")
     }
     
     /// Physical size as CGSize

@@ -29,6 +29,12 @@ package protocol DisplayRuntimeVirtualDisplayCommanding {
     func setVirtualDisplayDesiredEnabled(
         request: DisplayRuntimeVirtualDisplayDesiredEnabledCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult
+    func saveConfigForRebuild(
+        request: DisplayRuntimeVirtualDisplayEditRebuildRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult
+    func restoreConfigAfterFailedEdit(
+        request: DisplayRuntimeVirtualDisplayEditRebuildRestoreCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayPersistenceCommandResult
     func enableVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult

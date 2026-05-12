@@ -325,6 +325,45 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
         )
     }
 
+    package func saveConfigForRebuild(
+        request: DisplayRuntimeVirtualDisplayEditRebuildRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let updated = VirtualDisplayConfig(editDTO: request.editedConfig)
+        do {
+            let previous = try controller.saveConfigForRebuildCommand(
+                updated,
+                expectedConfigFingerprint: request.expectedConfigFingerprint
+            )
+            return DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult(
+                configID: updated.id,
+                persistenceOutcome: .saved,
+                previousConfigForCompensation: DisplayRuntimeVirtualDisplayConfigEditDTO(config: previous),
+                savedConfigEvidence: DisplayRuntimeVirtualDisplayConfigEvidence(
+                    config: DisplayRuntimeVirtualDisplayConfigEditDTO(config: updated)
+                )
+            )
+        } catch VirtualDisplayEditRebuildPersistenceError.editRequestStale {
+            throw DisplayRuntimeVirtualDisplayEditRebuildSaveCommandError.editRequestStale
+        }
+    }
+
+    package func restoreConfigAfterFailedEdit(
+        request: DisplayRuntimeVirtualDisplayEditRebuildRestoreCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayPersistenceCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let previous = VirtualDisplayConfig(editDTO: request.previousConfigForCompensation)
+        try controller.restoreConfigAfterFailedEditCommand(previous)
+        return DisplayRuntimeVirtualDisplayPersistenceCommandResult(
+            configID: previous.id,
+            persistenceOutcome: .rolledBack
+        )
+    }
+
     package func enableVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult {
@@ -385,6 +424,51 @@ private extension DisplayRuntimeScopeEscalationReason {
         case .enableMayPerformFleetRebuild:
             self = .enableMayPerformFleetRebuild
         }
+    }
+}
+
+private extension VirtualDisplayConfig {
+    init(editDTO: DisplayRuntimeVirtualDisplayConfigEditDTO) {
+        self.init(
+            id: editDTO.id,
+            displayName: editDTO.displayName,
+            serialNum: editDTO.serialNumber,
+            physicalWidth: Int(editDTO.physicalWidthMillimeters),
+            physicalHeight: Int(editDTO.physicalHeightMillimeters),
+            modes: editDTO.modes.map {
+                .init(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            },
+            desiredEnabled: editDTO.desiredEnabled
+        )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayConfigEditDTO {
+    init(config: VirtualDisplayConfig) {
+        let maxPixels = config.maxPixelDimensions
+        self.init(
+            id: config.id,
+            displayName: config.displayName,
+            serialNumber: config.serialNum,
+            desiredEnabled: config.desiredEnabled,
+            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
+            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
+            modes: config.modes.map {
+                .init(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            },
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
+        )
     }
 }
 

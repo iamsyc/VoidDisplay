@@ -116,6 +116,109 @@ struct AppBootstrapTests {
         #expect(trace.kind == .virtualDisplayEnable)
     }
 
+    @Test func initInjectsRuntimeBackedVirtualDisplayEditRebuildExecutor() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Runtime Edit",
+            serialNum: 9403,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var edited = config
+        edited.displayName = "Runtime Edit Renamed"
+        edited.serialNum = 9404
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(env.virtualDisplay.hasConfiguredEditRebuildExecutor)
+
+        let handle = try await env.virtualDisplay.saveConfigAndRebuild(
+            edited,
+            expectedConfigFingerprint: config.editRebuildFingerprint,
+            source: .editSaveAndRebuild
+        )
+        let saveGate = try await handle.waitForSaveGate()
+        env.virtualDisplay.startEditRebuildPresentation(configId: config.id, handle: handle)
+
+        let rebuilt = await waitUntil {
+            virtualDisplay.rebuildVirtualDisplayConfigIds == [config.id]
+                && !env.displayRuntime.makeSnapshot().transactions.recentTransactions.isEmpty
+        }
+        let trace = try #require(env.displayRuntime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(saveGate.configID == config.id)
+        #expect(rebuilt)
+        #expect(virtualDisplay.saveConfigForRebuildCallCount == 1)
+        #expect(virtualDisplay.updateConfigCallCount == 0)
+        #expect(trace.kind == .virtualDisplayEditRebuild)
+        #expect(trace.source == .editSaveAndRebuild)
+    }
+
+    @Test func editRebuildRuntimeTraceDisplayNameIsAbsentFromObservabilityAndSupportBundle() async throws {
+        let secretName = "Runtime Secret Edit Name"
+        let config = VirtualDisplayConfig(
+            displayName: "Runtime Original",
+            serialNum: 9405,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var edited = config
+        edited.displayName = secretName
+        edited.serialNum = 9406
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        let handle = try await env.virtualDisplay.saveConfigAndRebuild(
+            edited,
+            expectedConfigFingerprint: config.editRebuildFingerprint,
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        _ = try await handle.waitForTerminalResult()
+        await env.waitForStartupObservability()
+        await env.observability.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
+
+        let runtimeJSON = String(
+            decoding: try JSONEncoder().encode(env.displayRuntime.makeSnapshot()),
+            as: UTF8.self
+        )
+        let diagnostics = await env.observability.diagnosticsSnapshot()
+        let diagnosticsJSON = String(
+            decoding: try JSONEncoder().encode(diagnostics.state),
+            as: UTF8.self
+        )
+        let bundleURL = try await env.observability.exportBundle(
+            draft: FeedbackDraft(happened: "Edit rebuild failed"),
+            consent: FeedbackConsent()
+        )
+        let bundleStateJSON = try supportBundleEntryString(
+            archiveURL: bundleURL,
+            relativePathSuffix: "/state/current-state.json"
+        )
+
+        #expect(runtimeJSON.contains(secretName) == false)
+        #expect(diagnosticsJSON.contains(secretName) == false)
+        #expect(bundleStateJSON.contains(secretName) == false)
+    }
+
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
         let overrides = [
             (UITestRuntime.modeEnvironmentKey, "1"),
@@ -275,4 +378,32 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
     }
+}
+
+private func supportBundleEntryString(
+    archiveURL: URL,
+    relativePathSuffix: String
+) throws -> String {
+    let extractionURL = try makeTemporaryDirectory(prefix: "app-bootstrap-support-bundle")
+    defer { try? FileManager.default.removeItem(at: extractionURL) }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+    process.arguments = ["-x", "-k", archiveURL.path, extractionURL.path]
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+
+    let bundleRoot = try #require(
+        FileManager.default.contentsOfDirectory(
+            at: extractionURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).first
+    )
+    let entryURL = bundleRoot.appendingPathComponent(String(relativePathSuffix.dropFirst()))
+    let data = try Data(contentsOf: entryURL)
+    return String(decoding: data, as: UTF8.self)
 }
