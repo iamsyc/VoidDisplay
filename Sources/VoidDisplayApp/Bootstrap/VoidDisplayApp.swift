@@ -4,6 +4,7 @@ import VoidDisplayCapture
 import VoidDisplaySharing
 import VoidDisplaySupport
 import VoidDisplayObservability
+import VoidDisplayRuntime
 import VoidDisplayFoundation
 //
 //  VoidDisplayApp.swift
@@ -22,6 +23,7 @@ package struct AppEnvironment {
     package let sharing: SharingController
     package let virtualDisplay: VirtualDisplayController
     package let screenCatalog: ScreenCatalogOrchestrator
+    package let displayRuntime: DisplayRuntime
     package let capturePerformancePreferences: CapturePerformancePreferences
     package let feedbackController: AppSettingsFeedbackController
 }
@@ -36,6 +38,7 @@ public struct VoidDisplayApplication: App {
     @State private var navigation: AppNavigationController
     @State private var feedbackController: AppSettingsFeedbackController
     private let observability: ObservabilityCenter
+    private let displayRuntime: DisplayRuntime
 
     public init() {
         let env = AppBootstrap.makeEnvironment()
@@ -47,6 +50,7 @@ public struct VoidDisplayApplication: App {
         _navigation = State(initialValue: AppNavigationController())
         _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
+        displayRuntime = env.displayRuntime
         AppTerminationCleanup.install {
             env.sharing.stopWebService()
         }
@@ -334,6 +338,12 @@ package enum AppBootstrap {
                 )
             }
         }
+        let displayRuntime = DisplayRuntime(
+            catalogProvider: DisplayRuntimeCatalogAdapter(store: catalogService.store),
+            captureProvider: DisplayRuntimeCaptureAdapter(controller: capture),
+            sharingProvider: DisplayRuntimeSharingAdapter(controller: sharing),
+            virtualDisplayProvider: DisplayRuntimeVirtualDisplayAdapter(controller: virtualDisplay)
+        )
 
         let env = AppEnvironment(
             capture: capture,
@@ -347,10 +357,14 @@ package enum AppBootstrap {
                 virtualDisplay: virtualDisplay,
                 observability: observability
             ),
+            displayRuntime: displayRuntime,
             capturePerformancePreferences: capturePerformancePreferences,
             feedbackController: feedbackController
         )
         Task {
+            await observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: displayRuntime))
+            )
             await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(CaptureSnapshotProvider(controller: capture))
             )

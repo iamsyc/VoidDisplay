@@ -2,6 +2,8 @@
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
+@testable import VoidDisplayRuntime
+@testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 import Foundation
@@ -24,6 +26,22 @@ struct AppBootstrapTests {
         #expect(env.capture.screenCaptureSessions.isEmpty)
         #expect(sharing.startWebServiceCallCount == 0)
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
+    }
+
+    @Test func initRegistersRuntimeSnapshotProvider() async throws {
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            isRunningUnderXCTestOverride: true
+        )
+
+        let diagnostics = await diagnosticsSnapshotContainingRuntimeSection(env.observability)
+        let runtimeSection = try #require(diagnostics.state.sections["runtime"])
+        let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
+
+        #expect(runtime.schemaVersion == 1)
     }
 
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
@@ -185,4 +203,16 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
     }
+}
+
+private func diagnosticsSnapshotContainingRuntimeSection(
+    _ observability: ObservabilityCenter
+) async -> ObservabilityDiagnosticsSnapshot {
+    var snapshot = await observability.diagnosticsSnapshot()
+    for _ in 0..<20 where snapshot.state.sections["runtime"] == nil {
+        await Task.yield()
+        await observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
+        snapshot = await observability.diagnosticsSnapshot()
+    }
+    return snapshot
 }
