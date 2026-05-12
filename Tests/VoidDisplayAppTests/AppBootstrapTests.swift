@@ -77,7 +77,8 @@ struct AppBootstrapTests {
 
         #expect(rebuilt)
         #expect(trace.kind == .virtualDisplayRebuild)
-        #expect(trace.status == .completed)
+        #expect(trace.status == .completed || trace.status == .completedWithRecoveryFailures)
+        #expect(trace.topologyStabilityResult != nil)
     }
 
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {

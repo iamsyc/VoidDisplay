@@ -257,6 +257,52 @@ package nonisolated struct DisplayRuntimeTransactionSnapshotEvidence: Codable, E
     }
 }
 
+package nonisolated struct DisplayRuntimeTopologyStabilitySample: Codable, Equatable, Sendable {
+    package let topologySignature: [DisplayRuntimeCatalogTopologyEntry]
+    package let visibleDisplayIDs: [DisplayRuntimeDisplayID]
+
+    package init(
+        topologySignature: [DisplayRuntimeCatalogTopologyEntry],
+        visibleDisplayIDs: [DisplayRuntimeDisplayID]
+    ) {
+        self.topologySignature = topologySignature.sorted { $0.displayID < $1.displayID }
+        self.visibleDisplayIDs = visibleDisplayIDs.sorted()
+    }
+
+    package init(snapshot: DisplayRuntimeSnapshot) {
+        self.init(
+            topologySignature: snapshot.catalog.topologySignature,
+            visibleDisplayIDs: snapshot.catalog.loadedDisplays.map(\.displayID)
+        )
+    }
+}
+
+package nonisolated enum DisplayRuntimeTopologyStabilityStatus: String, Codable, Equatable, Sendable {
+    case stable
+    case unprovableDueToPermission
+    case failed
+    case timedOut
+}
+
+package nonisolated struct DisplayRuntimeTopologyStabilityResult: Codable, Equatable, Sendable {
+    package let status: DisplayRuntimeTopologyStabilityStatus
+    package let sampleCount: Int
+    package let failureReason: String?
+    package let lastSample: DisplayRuntimeTopologyStabilitySample?
+
+    package init(
+        status: DisplayRuntimeTopologyStabilityStatus,
+        sampleCount: Int,
+        failureReason: String?,
+        lastSample: DisplayRuntimeTopologyStabilitySample?
+    ) {
+        self.status = status
+        self.sampleCount = sampleCount
+        self.failureReason = failureReason
+        self.lastSample = lastSample
+    }
+}
+
 package nonisolated enum DisplayRuntimeTransactionRecoverability: String, Codable, Equatable, Sendable {
     case retryable
     case degraded
@@ -330,6 +376,7 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
     package let pauseIntents: [DisplayRuntimeSessionPauseIntent]
     package let restoreIntents: [DisplayRuntimeSessionRestoreIntent]
     package let restoreResults: [DisplayRuntimeSessionRestoreResult]
+    package let topologyStabilityResult: DisplayRuntimeTopologyStabilityResult?
     package let failure: DisplayRuntimeTransactionFailure?
     package let compensation: DisplayRuntimeCompensationResult
     package let coalescedRequestCount: Int
@@ -346,6 +393,7 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         pauseIntents: [DisplayRuntimeSessionPauseIntent],
         restoreIntents: [DisplayRuntimeSessionRestoreIntent],
         restoreResults: [DisplayRuntimeSessionRestoreResult],
+        topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
         failure: DisplayRuntimeTransactionFailure?,
         compensation: DisplayRuntimeCompensationResult,
         coalescedRequestCount: Int
@@ -365,6 +413,7 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
             ($0.previousDisplayID ?? 0, $0.surfaceIdentity.stableID) < ($1.previousDisplayID ?? 0, $1.surfaceIdentity.stableID)
         }
         self.restoreResults = restoreResults
+        self.topologyStabilityResult = topologyStabilityResult
         self.failure = failure
         self.compensation = compensation
         self.coalescedRequestCount = coalescedRequestCount
@@ -379,6 +428,7 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         pauseIntents: [DisplayRuntimeSessionPauseIntent]? = nil,
         restoreIntents: [DisplayRuntimeSessionRestoreIntent]? = nil,
         restoreResults: [DisplayRuntimeSessionRestoreResult]? = nil,
+        topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
         failure: DisplayRuntimeTransactionFailure? = nil,
         compensation: DisplayRuntimeCompensationResult? = nil,
         coalescedRequestCount: Int? = nil
@@ -395,6 +445,7 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
             pauseIntents: pauseIntents ?? self.pauseIntents,
             restoreIntents: restoreIntents ?? self.restoreIntents,
             restoreResults: restoreResults ?? self.restoreResults,
+            topologyStabilityResult: topologyStabilityResult ?? self.topologyStabilityResult,
             failure: failure ?? self.failure,
             compensation: compensation ?? self.compensation,
             coalescedRequestCount: coalescedRequestCount ?? self.coalescedRequestCount

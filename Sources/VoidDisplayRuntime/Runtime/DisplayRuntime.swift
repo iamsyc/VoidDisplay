@@ -1,5 +1,23 @@
 import Foundation
 
+package nonisolated struct DisplayRuntimeTopologyWaitPolicy: Equatable, Sendable {
+    package let requiredStableSampleCount: Int
+    package let maximumSampleCount: Int
+    package let sampleIntervalNanoseconds: UInt64
+
+    package init(
+        requiredStableSampleCount: Int = 2,
+        maximumSampleCount: Int = 10,
+        sampleIntervalNanoseconds: UInt64 = 100_000_000
+    ) {
+        self.requiredStableSampleCount = max(1, requiredStableSampleCount)
+        self.maximumSampleCount = max(1, maximumSampleCount)
+        self.sampleIntervalNanoseconds = sampleIntervalNanoseconds
+    }
+
+    package static let `default` = Self()
+}
+
 @MainActor
 package final class DisplayRuntime {
     private let catalogProvider: (any DisplayRuntimeCatalogProviding)?
@@ -11,6 +29,7 @@ package final class DisplayRuntime {
     private let captureCommander: (any DisplayRuntimeCaptureCommanding)?
     private let virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)?
     private let observabilityRecorder: (any DisplayRuntimeObservabilityRecording)?
+    private let topologyWaitPolicy: DisplayRuntimeTopologyWaitPolicy
 
     private var topologyRefreshTask: Task<Void, Never>?
     private var hasPendingTopologyChange = false
@@ -29,7 +48,8 @@ package final class DisplayRuntime {
         sharingCommander: (any DisplayRuntimeSharingCommanding)? = nil,
         captureCommander: (any DisplayRuntimeCaptureCommanding)? = nil,
         virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)? = nil,
-        observabilityRecorder: (any DisplayRuntimeObservabilityRecording)? = nil
+        observabilityRecorder: (any DisplayRuntimeObservabilityRecording)? = nil,
+        topologyWaitPolicy: DisplayRuntimeTopologyWaitPolicy = .default
     ) {
         self.catalogProvider = catalogProvider
         self.captureProvider = captureProvider
@@ -40,6 +60,7 @@ package final class DisplayRuntime {
         self.captureCommander = captureCommander
         self.virtualDisplayCommander = virtualDisplayCommander
         self.observabilityRecorder = observabilityRecorder
+        self.topologyWaitPolicy = topologyWaitPolicy
     }
 
     package func handleCatalogAppear(source: DisplayRuntimeCatalogSource) async {
@@ -277,20 +298,143 @@ package final class DisplayRuntime {
             throw error
         }
 
+        await appendPhase(.waitingForTopology, transactionID: request.transactionID)
+        let topologyResult = await waitForPostCommandTopology(affectedSurfaces: affectedSurfaces)
+        if topologyResult.status == .stable {
+            convergeToVisibleDisplaysFromCurrentCatalog()
+            await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
+        }
+        let postSnapshot = makeSnapshot()
+        let finalStatus = transactionStatus(after: topologyResult)
         return finalizeTransaction(
             transactionID: request.transactionID,
-            status: .completed,
+            status: finalStatus,
             phase: .completed,
             failure: nil,
             virtualDisplayCommandSucceeded: true,
-            postSnapshot: makeSnapshot()
+            postSnapshot: postSnapshot,
+            topologyStabilityResult: topologyResult,
+            compensation: compensationResult(after: topologyResult)
         )
     }
 
-    private func refreshCatalogTopologyForTransaction() async {
-        guard let catalogCommander else { return }
-        _ = await catalogCommander.submitRefresh(intent: .topologyChanged, ownerScope: nil)
+    @discardableResult
+    private func refreshCatalogTopologyForTransaction() async -> DisplayRuntimeCatalogRefreshResult {
+        guard let catalogCommander else { return .failed }
+        let result = await catalogCommander.submitRefresh(intent: .topologyChanged, ownerScope: nil)
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
+        return result
+    }
+
+    private func waitForPostCommandTopology(
+        affectedSurfaces: [DisplayRuntimeAffectedSurface]
+    ) async -> DisplayRuntimeTopologyStabilityResult {
+        var samples: [DisplayRuntimeTopologyStabilitySample] = []
+        var previousSample: DisplayRuntimeTopologyStabilitySample?
+        var stableTransitionCount = 0
+
+        for index in 0..<topologyWaitPolicy.maximumSampleCount {
+            if index > 0 && topologyWaitPolicy.sampleIntervalNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: topologyWaitPolicy.sampleIntervalNanoseconds)
+            }
+
+            let refreshResult = await refreshCatalogTopologyForTransaction()
+            let snapshot = makeSnapshot()
+            let sample = DisplayRuntimeTopologyStabilitySample(snapshot: snapshot)
+            samples.append(sample)
+
+            if catalogPermissionUnavailable(snapshot.catalog) {
+                return topologyResult(
+                    status: .unprovableDueToPermission,
+                    samples: samples,
+                    failureReason: "screen_capture_permission_unavailable"
+                )
+            }
+            if refreshResult == .failed {
+                return topologyResult(
+                    status: .failed,
+                    samples: samples,
+                    failureReason: "catalog_refresh_failed"
+                )
+            }
+
+            if affectedSurfacesResolveToVisibleDisplayIDs(affectedSurfaces, snapshot: snapshot),
+               previousSample?.topologySignature == sample.topologySignature {
+                stableTransitionCount += 1
+                if stableTransitionCount >= topologyWaitPolicy.requiredStableSampleCount - 1 {
+                    return topologyResult(status: .stable, samples: samples, failureReason: nil)
+                }
+            } else {
+                stableTransitionCount = 0
+            }
+            previousSample = sample
+        }
+
+        return topologyResult(
+            status: .timedOut,
+            samples: samples,
+            failureReason: "topology_stability_timed_out"
+        )
+    }
+
+    private func topologyResult(
+        status: DisplayRuntimeTopologyStabilityStatus,
+        samples: [DisplayRuntimeTopologyStabilitySample],
+        failureReason: String?
+    ) -> DisplayRuntimeTopologyStabilityResult {
+        DisplayRuntimeTopologyStabilityResult(
+            status: status,
+            sampleCount: samples.count,
+            failureReason: failureReason,
+            lastSample: samples.last
+        )
+    }
+
+    private func catalogPermissionUnavailable(_ catalog: DisplayRuntimeCatalogSnapshot) -> Bool {
+        catalog.hasScreenCapturePermission == false || catalog.lastPreflightPermission == false
+    }
+
+    private func affectedSurfacesResolveToVisibleDisplayIDs(
+        _ affectedSurfaces: [DisplayRuntimeAffectedSurface],
+        snapshot: DisplayRuntimeSnapshot
+    ) -> Bool {
+        guard !affectedSurfaces.isEmpty else { return false }
+        let visibleDisplayIDs = Set(snapshot.catalog.loadedDisplays.map(\.displayID))
+        return affectedSurfaces.allSatisfy { affectedSurface in
+            guard let surface = snapshot.surfaces.first(where: { $0.identity == affectedSurface.identity }),
+                  let displayID = surface.currentDisplayID
+            else {
+                return false
+            }
+            return visibleDisplayIDs.contains(displayID)
+        }
+    }
+
+    private func transactionStatus(
+        after topologyResult: DisplayRuntimeTopologyStabilityResult
+    ) -> DisplayRuntimeTransactionStatus {
+        switch topologyResult.status {
+        case .stable:
+            return .completed
+        case .unprovableDueToPermission, .failed, .timedOut:
+            return .completedWithRecoveryFailures
+        }
+    }
+
+    private func compensationResult(
+        after topologyResult: DisplayRuntimeTopologyStabilityResult
+    ) -> DisplayRuntimeCompensationResult {
+        switch topologyResult.status {
+        case .stable:
+            return .notRequired
+        case .unprovableDueToPermission, .failed, .timedOut:
+            return .init(
+                status: .degraded,
+                restoredSharingCount: 0,
+                restoredMonitoringCount: 0,
+                failedRestoreCount: 0
+            )
+        }
     }
 
     private func makeAffectedSurfaces(
@@ -435,7 +579,9 @@ package final class DisplayRuntime {
         phase: DisplayRuntimeTransactionPhase,
         failure: DisplayRuntimeTransactionFailure?,
         virtualDisplayCommandSucceeded: Bool,
-        postSnapshot: DisplayRuntimeSnapshot? = nil
+        postSnapshot: DisplayRuntimeSnapshot? = nil,
+        topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
+        compensation: DisplayRuntimeCompensationResult? = nil
     ) -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
         let postEvidence = postSnapshot.map(DisplayRuntimeTransactionSnapshotEvidence.init(snapshot:))
         updateTrace(transactionID) { trace in
@@ -443,7 +589,9 @@ package final class DisplayRuntime {
                 status: status,
                 phases: trace.phases + [.init(phase: phase)],
                 postSnapshotEvidence: postEvidence ?? trace.postSnapshotEvidence,
-                failure: failure
+                topologyStabilityResult: topologyStabilityResult,
+                failure: failure,
+                compensation: compensation
             )
         }
         if let trace = activeTransactionTracesByID.removeValue(forKey: transactionID) {
@@ -460,7 +608,7 @@ package final class DisplayRuntime {
             transactionID: transactionID,
             status: status,
             virtualDisplayCommandSucceeded: virtualDisplayCommandSucceeded,
-            hasSessionRecoveryFailures: false
+            hasSessionRecoveryFailures: status == .completedWithRecoveryFailures
         )
     }
 

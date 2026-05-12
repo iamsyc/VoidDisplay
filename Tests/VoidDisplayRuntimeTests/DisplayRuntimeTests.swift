@@ -390,8 +390,9 @@ struct DisplayRuntimeTests {
         let configID = UUID(uuidString: "55555555-5555-5555-5555-555555555555")!
         let sessionID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
         let recorder = RuntimeOperationRecorder()
+        let catalog = catalogSnapshot(displayID: 77, isMain: false)
         let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 77, isMain: false)),
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
             captureProvider: FakeCaptureProvider(
                 snapshot: .init(
                     startingDisplayIDs: [],
@@ -409,10 +410,14 @@ struct DisplayRuntimeTests {
             ),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 77)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 77)),
-            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            catalogCommander: FakeCatalogCommander(
+                recorder: recorder,
+                visibleDisplays: visibleDisplays(from: catalog)
+            ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureCommander: FakeCaptureCommander(recorder: recorder),
-            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder)
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
         )
 
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
@@ -423,8 +428,13 @@ struct DisplayRuntimeTests {
             "refresh:topologyChanged",
             "stopSharing:77",
             "removeMonitoring:77",
-            "rebuild:\(configID.uuidString)"
+            "rebuild:\(configID.uuidString)",
+            "refresh:topologyChanged",
+            "refresh:topologyChanged",
+            "registerShareable:77"
         ])
+        #expect(trace.phases.contains(.init(phase: .waitingForTopology)))
+        #expect(trace.topologyStabilityResult?.status == .stable)
         #expect(trace.preSnapshotEvidence?.captureSessions.map(\.id) == [sessionID])
         #expect(trace.preSnapshotEvidence?.sharingDisplayIDs == [77])
         #expect(trace.postSnapshotEvidence != nil)
@@ -441,14 +451,20 @@ struct DisplayRuntimeTests {
     @Test func rebuildTransactionDoesNotWriteNoOpPauseIntentWithoutSessionDemand() async throws {
         let configID = UUID(uuidString: "57575757-5757-5757-5757-575757575757")!
         let recorder = RuntimeOperationRecorder()
+        let catalog = catalogSnapshot(displayID: 57, isMain: false)
         let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: virtualDisplaySnapshot(configID: configID, displayID: 57)
             ),
-            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            catalogCommander: FakeCatalogCommander(
+                recorder: recorder,
+                visibleDisplays: visibleDisplays(from: catalog)
+            ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureCommander: FakeCaptureCommander(recorder: recorder),
-            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder)
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
         )
 
         _ = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
@@ -457,7 +473,9 @@ struct DisplayRuntimeTests {
         #expect(trace.pauseIntents.isEmpty)
         #expect(recorder.events == [
             "refresh:topologyChanged",
-            "rebuild:\(configID.uuidString)"
+            "rebuild:\(configID.uuidString)",
+            "refresh:topologyChanged",
+            "refresh:topologyChanged"
         ])
     }
 
@@ -465,7 +483,9 @@ struct DisplayRuntimeTests {
         let configID = UUID(uuidString: "58585858-5858-5858-5858-585858585858")!
         let sessionID = UUID(uuidString: "59595959-5959-5959-5959-595959595959")!
         let recorder = RuntimeOperationRecorder()
+        let catalog = catalogSnapshot(displayID: 58, isMain: false)
         let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
             captureProvider: FakeCaptureProvider(
                 snapshot: .init(
                     startingDisplayIDs: [],
@@ -490,10 +510,14 @@ struct DisplayRuntimeTests {
                     ]
                 )
             ),
-            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            catalogCommander: FakeCatalogCommander(
+                recorder: recorder,
+                visibleDisplays: visibleDisplays(from: catalog)
+            ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureCommander: FakeCaptureCommander(recorder: recorder),
-            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder)
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
         )
 
         _ = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
@@ -512,7 +536,10 @@ struct DisplayRuntimeTests {
             "refresh:topologyChanged",
             "stopSharing:58",
             "removeMonitoring:58",
-            "rebuild:\(configID.uuidString)"
+            "rebuild:\(configID.uuidString)",
+            "refresh:topologyChanged",
+            "refresh:topologyChanged",
+            "registerShareable:58"
         ])
     }
 
@@ -522,7 +549,8 @@ struct DisplayRuntimeTests {
         let runtime = DisplayRuntime(
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: .empty),
             catalogCommander: FakeCatalogCommander(),
-            virtualDisplayCommander: commander
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
         )
 
         let result = try await runtime.rebuildVirtualDisplay(configID: missingConfigID, source: .editSaveAndRebuild)
@@ -542,7 +570,8 @@ struct DisplayRuntimeTests {
         let runtime = DisplayRuntime(
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 88)),
             catalogCommander: FakeCatalogCommander(),
-            virtualDisplayCommander: commander
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )
 
         async let first = runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
@@ -601,7 +630,8 @@ struct DisplayRuntimeTests {
                 )
             ),
             catalogCommander: FakeCatalogCommander(),
-            virtualDisplayCommander: FakeVirtualDisplayCommander()
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
         )
 
         _ = try await runtime.rebuildVirtualDisplay(configID: targetConfigID, source: .virtualDisplayRowRetry)
@@ -641,16 +671,109 @@ struct DisplayRuntimeTests {
                 )
             ),
             catalogCommander: FakeCatalogCommander(),
-            virtualDisplayCommander: commander
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 2)
         )
 
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(result.status == .completed)
+        #expect(result.status == .completedWithRecoveryFailures)
         #expect(commander.rebuildCallCount == 1)
         #expect(trace.affectedSurfaces.first?.preDisplayID == nil)
         #expect(trace.pauseIntents.isEmpty)
+        #expect(trace.topologyStabilityResult?.status == .timedOut)
+    }
+
+    @Test func rebuildTransactionRecordsUnprovableTopologyWhenPermissionIsUnavailable() async throws {
+        let configID = UUID(uuidString: "C1C1C1C1-C1C1-C1C1-C1C1-C1C1C1C1C1C1")!
+        let catalog = DisplayRuntimeCatalogSnapshot(
+            hasScreenCapturePermission: false,
+            lastPreflightPermission: false,
+            lastRequestPermission: nil,
+            isLoadingDisplays: false,
+            hasLoadError: false,
+            lastLoadError: nil,
+            loadedDisplays: [],
+            topologySignature: []
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 81)),
+            catalogCommander: FakeCatalogCommander(refreshResults: [.clearedSnapshot]),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 4)
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.virtualDisplayCommandSucceeded)
+        #expect(result.hasSessionRecoveryFailures)
+        #expect(trace.status == .completedWithRecoveryFailures)
+        #expect(trace.topologyStabilityResult?.status == .unprovableDueToPermission)
+        #expect(trace.topologyStabilityResult?.sampleCount == 1)
+        #expect(trace.topologyStabilityResult?.failureReason == "screen_capture_permission_unavailable")
+        #expect(trace.phases.contains(.init(phase: .waitingForTopology)))
+        #expect(trace.failure == nil)
+    }
+
+    @Test func rebuildTransactionRecordsFailedTopologyRefreshAfterCommandSuccess() async throws {
+        let configID = UUID(uuidString: "C2C2C2C2-C2C2-C2C2-C2C2-C2C2C2C2C2C2")!
+        let catalog = catalogSnapshot(displayID: 82, isMain: false)
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 82)),
+            catalogCommander: FakeCatalogCommander(
+                refreshResults: [.reusedSnapshot, .failed],
+                visibleDisplays: visibleDisplays(from: catalog)
+            ),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 4)
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.virtualDisplayCommandSucceeded)
+        #expect(trace.topologyStabilityResult?.status == .failed)
+        #expect(trace.topologyStabilityResult?.sampleCount == 1)
+        #expect(trace.topologyStabilityResult?.failureReason == "catalog_refresh_failed")
+        #expect(trace.failure == nil)
+    }
+
+    @Test func rebuildTransactionRecordsTimedOutTopologyWhenAffectedDisplayCannotResolveVisibleID() async throws {
+        let configID = UUID(uuidString: "C3C3C3C3-C3C3-C3C3-C3C3-C3C3C3C3C3C3")!
+        let catalog = DisplayRuntimeCatalogSnapshot(
+            hasScreenCapturePermission: true,
+            lastPreflightPermission: true,
+            lastRequestPermission: nil,
+            isLoadingDisplays: false,
+            hasLoadError: false,
+            lastLoadError: nil,
+            loadedDisplays: [],
+            topologySignature: []
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 83)),
+            catalogCommander: FakeCatalogCommander(refreshResults: [.reusedSnapshot]),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 2)
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.virtualDisplayCommandSucceeded)
+        #expect(trace.topologyStabilityResult?.status == .timedOut)
+        #expect(trace.topologyStabilityResult?.sampleCount == 2)
+        #expect(trace.topologyStabilityResult?.failureReason == "topology_stability_timed_out")
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.failure == nil)
     }
 
     @Test func snapshotProviderUsesRuntimeKeyAndEncodesSnapshot() async throws {
@@ -771,6 +894,24 @@ private func activeSharingSnapshot(displayID: DisplayRuntimeDisplayID) -> Displa
     )
 }
 
+private func visibleDisplays(from catalog: DisplayRuntimeCatalogSnapshot) -> [DisplayRuntimeVisibleDisplay] {
+    catalog.loadedDisplays.map {
+        DisplayRuntimeVisibleDisplay(
+            displayID: $0.displayID,
+            pixelWidth: $0.pixelWidth,
+            pixelHeight: $0.pixelHeight
+        )
+    }
+}
+
+private func fastTopologyWaitPolicy(maximumSampleCount: Int = 3) -> DisplayRuntimeTopologyWaitPolicy {
+    .init(
+        requiredStableSampleCount: 2,
+        maximumSampleCount: maximumSampleCount,
+        sampleIntervalNanoseconds: 0
+    )
+}
+
 private func virtualDisplaySnapshot(
     configID: UUID,
     displayID: DisplayRuntimeDisplayID
@@ -870,9 +1011,17 @@ private final class FakeVirtualDisplayProvider: DisplayRuntimeVirtualDisplayProv
 @MainActor
 private final class FakeCatalogCommander: DisplayRuntimeCatalogCommanding {
     private let recorder: RuntimeOperationRecorder?
+    private let visibleDisplays: [DisplayRuntimeVisibleDisplay]
+    private var refreshResults: [DisplayRuntimeCatalogRefreshResult]
 
-    init(recorder: RuntimeOperationRecorder? = nil) {
+    init(
+        recorder: RuntimeOperationRecorder? = nil,
+        refreshResults: [DisplayRuntimeCatalogRefreshResult] = [.reusedSnapshot],
+        visibleDisplays: [DisplayRuntimeVisibleDisplay] = []
+    ) {
         self.recorder = recorder
+        self.refreshResults = refreshResults
+        self.visibleDisplays = visibleDisplays
     }
 
     func requestPermission() -> Bool {
@@ -888,7 +1037,10 @@ private final class FakeCatalogCommander: DisplayRuntimeCatalogCommanding {
         ownerScope _: DisplayRuntimeCatalogRefreshOwnerScope?
     ) async -> DisplayRuntimeCatalogRefreshResult {
         recorder?.append("refresh:\(intent.rawValue)")
-        return .reusedSnapshot
+        if refreshResults.count > 1 {
+            return refreshResults.removeFirst()
+        }
+        return refreshResults.first ?? .reusedSnapshot
     }
 
     func clearSnapshotForDeniedPermission(loadErrorMessage _: String?) async {}
@@ -896,7 +1048,7 @@ private final class FakeCatalogCommander: DisplayRuntimeCatalogCommanding {
     func cancelRefresh(ownerScope _: DisplayRuntimeCatalogRefreshOwnerScope?) async {}
 
     func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay] {
-        []
+        visibleDisplays
     }
 }
 
@@ -908,7 +1060,10 @@ private final class FakeSharingCommander: DisplayRuntimeSharingCommanding {
         self.recorder = recorder
     }
 
-    func registerShareableDisplays(_: [DisplayRuntimeShareableDisplayRegistration]) {}
+    func registerShareableDisplays(_ displays: [DisplayRuntimeShareableDisplayRegistration]) {
+        let displayIDs = displays.map(\.displayID).sorted()
+        recorder?.append("registerShareable:\(displayIDs.map(String.init).joined(separator: ","))")
+    }
 
     func stopSharing(displayID: DisplayRuntimeDisplayID) {
         recorder?.append("stopSharing:\(displayID)")
