@@ -132,6 +132,31 @@ struct DisplayRuntimeAdapterTests {
         #expect(sharingService.startSharingCallCount == 0)
     }
 
+    @Test func sharingAdapterRestoreSkipsWhenWebServiceIsStopped() async {
+        let display = SharedMockSCDisplay.make(displayID: 8216, width: 2560, height: 1440)
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [display] },
+            activeDisplayIDsProvider: { [display.displayID] }
+        )
+        catalogService.store.displays = [display]
+        let sharingService = MockSharingService()
+        sharingService.isWebServiceRunning = false
+        sharingService.shareIDByDisplayID[display.displayID] = 9216
+        let sharingController = SharingController(
+            sharingService: sharingService,
+            portPreferences: AdapterTestPortPreferences(),
+            catalogService: catalogService
+        )
+        let sut = DisplayRuntimeSharingAdapter(controller: sharingController)
+
+        let result = await sut.restoreSharing(displayID: display.displayID)
+
+        #expect(result.status == .skipped)
+        #expect(result.failureReason == "web_service_not_running")
+        #expect(sharingService.startSharingCallCount == 0)
+    }
+
     @Test func sharingAdapterRestoreFailsWhenShareableRegistrationIsMissing() async {
         let display = SharedMockSCDisplay.make(displayID: 8213, width: 2560, height: 1440)
         let catalogService = ScreenCaptureCatalogService(

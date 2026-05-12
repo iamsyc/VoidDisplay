@@ -865,6 +865,60 @@ struct DisplayRuntimeTests {
         #expect(trace.failure == nil)
     }
 
+    @Test func rebuildTransactionSkipsSharingRestoreWhenPostWebServiceStopped() async throws {
+        let configID = UUID(uuidString: "D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3")!
+        let catalog = catalogSnapshot(displayID: 104, isMain: false)
+        let sharingProvider = FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 104))
+        let sharingCommander = FakeSharingCommander()
+        var refreshCount = 0
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            sharingProvider: sharingProvider,
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 104)),
+            catalogCommander: FakeCatalogCommander(
+                visibleDisplays: visibleDisplays(from: catalog),
+                onRefresh: {
+                    refreshCount += 1
+                    if refreshCount >= 2 {
+                        sharingProvider.setSnapshot(stoppedSharingSnapshot(previousDisplayID: 104))
+                    }
+                }
+            ),
+            sharingCommander: sharingCommander,
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(trace.topologyStabilityResult?.status == .stable)
+        #expect(trace.restoreIntents == [
+            .init(
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                previousDisplayID: 104,
+                resolvedDisplayID: 104,
+                restoreSharing: true,
+                restoreMonitoring: false,
+                monitoringCapturesCursor: false
+            )
+        ])
+        #expect(trace.restoreResults == [
+            .init(
+                kind: .sharing,
+                status: .skipped,
+                previousDisplayID: 104,
+                resolvedDisplayID: 104,
+                failureReason: "web_service_not_running"
+            )
+        ])
+        #expect(sharingCommander.restoredDisplayIDs.isEmpty)
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.failedRestoreCount == 1)
+        #expect(trace.failure == nil)
+    }
+
     @Test func rebuildTransactionSkipsSharingRestoreWhenTopologyCannotProveStable() async throws {
         struct Scenario {
             let expectedStatus: DisplayRuntimeTopologyStabilityStatus
@@ -1190,6 +1244,26 @@ private func activeSharingSnapshot(displayID: DisplayRuntimeDisplayID) -> Displa
     )
 }
 
+private func stoppedSharingSnapshot(previousDisplayID: DisplayRuntimeDisplayID) -> DisplayRuntimeSharingSnapshot {
+    .init(
+        activeSharingDisplayIDs: [],
+        startingDisplayIDs: [],
+        isSharing: false,
+        isWebServiceRunning: false,
+        preferredPort: 8089,
+        sharingClientCount: 0,
+        sharingClientCounts: [],
+        lifecycle: .init(
+            phase: .stopped,
+            requestedPort: nil,
+            boundPort: nil,
+            failureReason: nil,
+            hasFailureMessage: false
+        ),
+        routes: [.init(displayID: previousDisplayID, hasConcreteRoute: false)]
+    )
+}
+
 private func visibleDisplays(from catalog: DisplayRuntimeCatalogSnapshot) -> [DisplayRuntimeVisibleDisplay] {
     catalog.loadedDisplays.map {
         DisplayRuntimeVisibleDisplay(
@@ -1284,7 +1358,7 @@ private final class FakeCaptureProvider: DisplayRuntimeCaptureProviding {
 
 @MainActor
 private final class FakeSharingProvider: DisplayRuntimeSharingProviding {
-    let snapshot: DisplayRuntimeSharingSnapshot
+    private var snapshot: DisplayRuntimeSharingSnapshot
 
     init(snapshot: DisplayRuntimeSharingSnapshot) {
         self.snapshot = snapshot
@@ -1292,6 +1366,10 @@ private final class FakeSharingProvider: DisplayRuntimeSharingProviding {
 
     func makeSharingSnapshot() -> DisplayRuntimeSharingSnapshot {
         snapshot
+    }
+
+    func setSnapshot(_ snapshot: DisplayRuntimeSharingSnapshot) {
+        self.snapshot = snapshot
     }
 }
 

@@ -488,6 +488,16 @@ package final class DisplayRuntime {
             }
         }
 
+        guard postSnapshot.sharing.isWebServiceRunning else {
+            return restoreIntents.map {
+                makeRestoreResult(
+                    intent: $0,
+                    status: .skipped,
+                    failureReason: "web_service_not_running"
+                )
+            }
+        }
+
         let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
         var results: [DisplayRuntimeSessionRestoreResult] = []
         for intent in restoreIntents {

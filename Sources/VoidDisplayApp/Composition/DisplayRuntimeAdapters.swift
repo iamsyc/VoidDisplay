@@ -192,6 +192,9 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         guard let controller else {
             return .failed("sharing_controller_unavailable")
         }
+        guard controller.isWebServiceRunning else {
+            return .init(status: .skipped, failureReason: "web_service_not_running")
+        }
         guard let display = (controller.displayCatalogState.displays ?? []).first(where: { $0.displayID == displayID }) else {
             return .failed("display_not_found")
         }
