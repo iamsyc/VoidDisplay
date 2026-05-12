@@ -305,9 +305,10 @@ package final class DisplayRuntime {
             await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
         }
         let postConvergenceSnapshot = makeSnapshot()
-        let restoreIntents = makeSharingRestoreIntents(
+        let restoreIntents = makeSessionRestoreIntents(
             pauseIntents: pauseIntents,
             topologyResult: topologyResult,
+            preSnapshot: preSnapshot,
             postSnapshot: postConvergenceSnapshot
         )
         updateTrace(request.transactionID) { trace in
@@ -316,11 +317,16 @@ package final class DisplayRuntime {
         if !restoreIntents.isEmpty {
             await appendPhase(.restoringSessions, transactionID: request.transactionID)
         }
-        let restoreResults = await restoreSharingSessions(
+        let sharingRestoreResults = await restoreSharingSessions(
             restoreIntents,
             topologyResult: topologyResult,
             postSnapshot: postConvergenceSnapshot
         )
+        let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+            restoreIntents,
+            topologyResult: topologyResult
+        )
+        let restoreResults = sharingRestoreResults + monitoringRestoreResults
         updateTrace(request.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
@@ -441,14 +447,14 @@ package final class DisplayRuntime {
         }
     }
 
-    private func makeSharingRestoreIntents(
+    private func makeSessionRestoreIntents(
         pauseIntents: [DisplayRuntimeSessionPauseIntent],
         topologyResult: DisplayRuntimeTopologyStabilityResult,
+        preSnapshot: DisplayRuntimeSnapshot,
         postSnapshot: DisplayRuntimeSnapshot
     ) -> [DisplayRuntimeSessionRestoreIntent] {
         let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
         return pauseIntents
-            .filter(\.pauseSharing)
             .map { pauseIntent in
                 let resolvedDisplayID: DisplayRuntimeDisplayID? = {
                     guard topologyResult.status == .stable,
@@ -460,13 +466,17 @@ package final class DisplayRuntime {
                     }
                     return displayID
                 }()
+                let monitoringCapturesCursor = pauseIntent.pauseMonitoring
+                    && preSnapshot.capture.sessions.contains {
+                        $0.displayID == pauseIntent.displayID && $0.capturesCursor
+                    }
                 return DisplayRuntimeSessionRestoreIntent(
                     surfaceIdentity: pauseIntent.surfaceIdentity,
                     previousDisplayID: pauseIntent.displayID,
                     resolvedDisplayID: resolvedDisplayID,
-                    restoreSharing: true,
-                    restoreMonitoring: false,
-                    monitoringCapturesCursor: false
+                    restoreSharing: pauseIntent.pauseSharing,
+                    restoreMonitoring: pauseIntent.pauseMonitoring,
+                    monitoringCapturesCursor: monitoringCapturesCursor
                 )
             }
     }
@@ -476,11 +486,13 @@ package final class DisplayRuntime {
         topologyResult: DisplayRuntimeTopologyStabilityResult,
         postSnapshot: DisplayRuntimeSnapshot
     ) async -> [DisplayRuntimeSessionRestoreResult] {
-        guard !restoreIntents.isEmpty else { return [] }
+        let sharingRestoreIntents = restoreIntents.filter(\.restoreSharing)
+        guard !sharingRestoreIntents.isEmpty else { return [] }
 
         guard topologyResult.status == .stable else {
-            return restoreIntents.map {
+            return sharingRestoreIntents.map {
                 makeRestoreResult(
+                    kind: .sharing,
                     intent: $0,
                     status: .skipped,
                     failureReason: "topology_\(topologyResult.status.rawValue)"
@@ -489,8 +501,9 @@ package final class DisplayRuntime {
         }
 
         guard postSnapshot.sharing.isWebServiceRunning else {
-            return restoreIntents.map {
+            return sharingRestoreIntents.map {
                 makeRestoreResult(
+                    kind: .sharing,
                     intent: $0,
                     status: .skipped,
                     failureReason: "web_service_not_running"
@@ -500,11 +513,11 @@ package final class DisplayRuntime {
 
         let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
         var results: [DisplayRuntimeSessionRestoreResult] = []
-        for intent in restoreIntents {
-            guard intent.restoreSharing else { continue }
+        for intent in sharingRestoreIntents {
             guard let resolvedDisplayID = intent.resolvedDisplayID else {
                 results.append(
                     makeRestoreResult(
+                        kind: .sharing,
                         intent: intent,
                         status: .skipped,
                         failureReason: "resolved_display_unavailable"
@@ -515,6 +528,7 @@ package final class DisplayRuntime {
             guard visibleDisplayIDs.contains(resolvedDisplayID) else {
                 results.append(
                     makeRestoreResult(
+                        kind: .sharing,
                         intent: intent,
                         status: .skipped,
                         failureReason: "resolved_display_not_visible"
@@ -525,6 +539,7 @@ package final class DisplayRuntime {
             guard let sharingCommander else {
                 results.append(
                     makeRestoreResult(
+                        kind: .sharing,
                         intent: intent,
                         status: .failed,
                         failureReason: "sharing_commander_unavailable"
@@ -536,6 +551,7 @@ package final class DisplayRuntime {
             let commandResult = await sharingCommander.restoreSharing(displayID: resolvedDisplayID)
             results.append(
                 makeRestoreResult(
+                    kind: .sharing,
                     intent: intent,
                     status: commandResult.status,
                     failureReason: commandResult.failureReason
@@ -545,13 +561,40 @@ package final class DisplayRuntime {
         return results
     }
 
+    private func makeDeferredMonitoringRestoreResults(
+        _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
+        topologyResult: DisplayRuntimeTopologyStabilityResult
+    ) -> [DisplayRuntimeSessionRestoreResult] {
+        let monitoringRestoreIntents = restoreIntents.filter(\.restoreMonitoring)
+        guard !monitoringRestoreIntents.isEmpty else { return [] }
+
+        return monitoringRestoreIntents.map { intent in
+            let failureReason: String = {
+                guard topologyResult.status == .stable else {
+                    return "topology_\(topologyResult.status.rawValue)"
+                }
+                guard intent.resolvedDisplayID != nil else {
+                    return "resolved_display_unavailable"
+                }
+                return "monitoring_restore_deferred_until_consumer_lease"
+            }()
+            return makeRestoreResult(
+                kind: .monitoring,
+                intent: intent,
+                status: .skipped,
+                failureReason: failureReason
+            )
+        }
+    }
+
     private func makeRestoreResult(
+        kind: DisplayRuntimeSessionRestoreKind,
         intent: DisplayRuntimeSessionRestoreIntent,
         status: DisplayRuntimeSessionRestoreStatus,
         failureReason: String?
     ) -> DisplayRuntimeSessionRestoreResult {
         DisplayRuntimeSessionRestoreResult(
-            kind: .sharing,
+            kind: kind,
             status: status,
             previousDisplayID: intent.previousDisplayID,
             resolvedDisplayID: intent.resolvedDisplayID,

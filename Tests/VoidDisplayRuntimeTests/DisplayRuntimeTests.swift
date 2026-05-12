@@ -423,7 +423,8 @@ struct DisplayRuntimeTests {
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(result.status == .completed)
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.hasSessionRecoveryFailures)
         #expect(recorder.events == [
             "refresh:topologyChanged",
             "stopSharing:77",
@@ -454,8 +455,8 @@ struct DisplayRuntimeTests {
                 previousDisplayID: 77,
                 resolvedDisplayID: 77,
                 restoreSharing: true,
-                restoreMonitoring: false,
-                monitoringCapturesCursor: false
+                restoreMonitoring: true,
+                monitoringCapturesCursor: true
             )
         ])
         #expect(trace.restoreResults == [
@@ -465,10 +466,19 @@ struct DisplayRuntimeTests {
                 previousDisplayID: 77,
                 resolvedDisplayID: 77,
                 failureReason: nil
+            ),
+            .init(
+                kind: .monitoring,
+                status: .skipped,
+                previousDisplayID: 77,
+                resolvedDisplayID: 77,
+                failureReason: "monitoring_restore_deferred_until_consumer_lease"
             )
         ])
-        #expect(trace.compensation.status == .completed)
+        #expect(trace.compensation.status == .degraded)
         #expect(trace.compensation.restoredSharingCount == 1)
+        #expect(trace.compensation.restoredMonitoringCount == 0)
+        #expect(trace.compensation.failedRestoreCount == 1)
     }
 
     @Test func rebuildTransactionDoesNotWriteNoOpPauseIntentWithoutSessionDemand() async throws {
@@ -919,6 +929,67 @@ struct DisplayRuntimeTests {
         #expect(trace.failure == nil)
     }
 
+    @Test func rebuildTransactionRecordsMonitoringRestoreIntentAsDeferredEvidence() async throws {
+        let configID = UUID(uuidString: "D4D4D4D4-D4D4-D4D4-D4D4-D4D4D4D4D4D4")!
+        let catalog = catalogSnapshot(displayID: 105, isMain: false)
+        let recorder = RuntimeOperationRecorder()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            captureProvider: FakeCaptureProvider(
+                snapshot: monitoringCaptureSnapshot(displayID: 105, capturesCursor: true)
+            ),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 105)),
+            catalogCommander: FakeCatalogCommander(
+                recorder: recorder,
+                visibleDisplays: visibleDisplays(from: catalog)
+            ),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.hasSessionRecoveryFailures)
+        #expect(trace.topologyStabilityResult?.status == .stable)
+        #expect(trace.restoreIntents == [
+            .init(
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                previousDisplayID: 105,
+                resolvedDisplayID: 105,
+                restoreSharing: false,
+                restoreMonitoring: true,
+                monitoringCapturesCursor: true
+            )
+        ])
+        #expect(trace.restoreResults == [
+            .init(
+                kind: .monitoring,
+                status: .skipped,
+                previousDisplayID: 105,
+                resolvedDisplayID: 105,
+                failureReason: "monitoring_restore_deferred_until_consumer_lease"
+            )
+        ])
+        #expect(recorder.events == [
+            "refresh:topologyChanged",
+            "removeMonitoring:105",
+            "rebuild:\(configID.uuidString)",
+            "refresh:topologyChanged",
+            "refresh:topologyChanged"
+        ])
+        #expect(recorder.events.allSatisfy { !$0.contains("startMonitoring") })
+        #expect(recorder.events.allSatisfy { !$0.contains("setMonitoringSessionCapturesCursor") })
+        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.restoredSharingCount == 0)
+        #expect(trace.compensation.restoredMonitoringCount == 0)
+        #expect(trace.compensation.failedRestoreCount == 1)
+        #expect(trace.failure == nil)
+    }
+
     @Test func rebuildTransactionSkipsSharingRestoreWhenTopologyCannotProveStable() async throws {
         struct Scenario {
             let expectedStatus: DisplayRuntimeTopologyStabilityStatus
@@ -995,6 +1066,104 @@ struct DisplayRuntimeTests {
             ])
             #expect(sharingCommander.restoredDisplayIDs.isEmpty)
             #expect(trace.compensation.status == .degraded)
+            #expect(trace.failure == nil)
+        }
+    }
+
+    @Test func rebuildTransactionSkipsMonitoringRestoreWhenTopologyCannotProveStable() async throws {
+        struct Scenario {
+            let expectedStatus: DisplayRuntimeTopologyStabilityStatus
+            let catalog: DisplayRuntimeCatalogSnapshot
+            let refreshResults: [DisplayRuntimeCatalogRefreshResult]
+            let maximumSampleCount: Int
+        }
+
+        let scenarios: [Scenario] = [
+            .init(
+                expectedStatus: .unprovableDueToPermission,
+                catalog: .init(
+                    hasScreenCapturePermission: false,
+                    lastPreflightPermission: false,
+                    lastRequestPermission: nil,
+                    isLoadingDisplays: false,
+                    hasLoadError: false,
+                    lastLoadError: nil,
+                    loadedDisplays: [],
+                    topologySignature: []
+                ),
+                refreshResults: [.clearedSnapshot],
+                maximumSampleCount: 4
+            ),
+            .init(
+                expectedStatus: .failed,
+                catalog: catalogSnapshot(displayID: 106, isMain: false),
+                refreshResults: [.reusedSnapshot, .failed],
+                maximumSampleCount: 4
+            ),
+            .init(
+                expectedStatus: .timedOut,
+                catalog: .init(
+                    hasScreenCapturePermission: true,
+                    lastPreflightPermission: true,
+                    lastRequestPermission: nil,
+                    isLoadingDisplays: false,
+                    hasLoadError: false,
+                    lastLoadError: nil,
+                    loadedDisplays: [],
+                    topologySignature: []
+                ),
+                refreshResults: [.reusedSnapshot],
+                maximumSampleCount: 2
+            )
+        ]
+
+        for scenario in scenarios {
+            let configID = UUID()
+            let recorder = RuntimeOperationRecorder()
+            let runtime = DisplayRuntime(
+                catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
+                captureProvider: FakeCaptureProvider(
+                    snapshot: monitoringCaptureSnapshot(displayID: 106, capturesCursor: false)
+                ),
+                virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 106)),
+                catalogCommander: FakeCatalogCommander(
+                    recorder: recorder,
+                    refreshResults: scenario.refreshResults
+                ),
+                captureCommander: FakeCaptureCommander(recorder: recorder),
+                virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
+                topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: scenario.maximumSampleCount)
+            )
+
+            let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+            let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+            #expect(result.status == .completedWithRecoveryFailures)
+            #expect(trace.topologyStabilityResult?.status == scenario.expectedStatus)
+            #expect(trace.restoreIntents == [
+                .init(
+                    surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                    previousDisplayID: 106,
+                    resolvedDisplayID: nil,
+                    restoreSharing: false,
+                    restoreMonitoring: true,
+                    monitoringCapturesCursor: false
+                )
+            ])
+            #expect(trace.restoreResults == [
+                .init(
+                    kind: .monitoring,
+                    status: .skipped,
+                    previousDisplayID: 106,
+                    resolvedDisplayID: nil,
+                    failureReason: "topology_\(scenario.expectedStatus.rawValue)"
+                )
+            ])
+            #expect(recorder.events.allSatisfy { !$0.contains("startMonitoring") })
+            #expect(recorder.events.allSatisfy { !$0.contains("setMonitoringSessionCapturesCursor") })
+            #expect(trace.compensation.status == .degraded)
+            #expect(trace.compensation.restoredMonitoringCount == 0)
+            #expect(trace.compensation.failedRestoreCount == 1)
             #expect(trace.failure == nil)
         }
     }
@@ -1261,6 +1430,25 @@ private func stoppedSharingSnapshot(previousDisplayID: DisplayRuntimeDisplayID) 
             hasFailureMessage: false
         ),
         routes: [.init(displayID: previousDisplayID, hasConcreteRoute: false)]
+    )
+}
+
+private func monitoringCaptureSnapshot(
+    displayID: DisplayRuntimeDisplayID,
+    capturesCursor: Bool
+) -> DisplayRuntimeCaptureSnapshot {
+    .init(
+        startingDisplayIDs: [],
+        sessions: [
+            .init(
+                id: UUID(),
+                displayID: displayID,
+                isVirtualDisplay: true,
+                capturesCursor: capturesCursor,
+                state: .active,
+                metrics: .empty
+            )
+        ]
     )
 }
 
