@@ -313,11 +313,6 @@ package final class VirtualDisplayOrchestrator {
         try configManager.setDesiredEnabled(configId, enabled: enabled, reason: .userToggledDesiredEnabled)
     }
 
-    package func disableDisplayByConfig(_ configId: UUID) throws {
-        try setDesiredEnabled(configId, enabled: false)
-        _ = try disableRuntimeDisplayByConfig(configId)
-    }
-
     package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
         guard let config = configManager.config(id: configId) else {
             throw VirtualDisplayOperationError.configNotFound
@@ -333,7 +328,7 @@ package final class VirtualDisplayOrchestrator {
         AppLog.virtualDisplay.notice(
             "Disable-by-config requested (config: \(configId.uuidString, privacy: .public), serial: \(runtimeSerialNum, privacy: .public), runtimeDisplayID: \(String(describing: preDisplayID), privacy: .public), disablingMain: \(disablingMain, privacy: .public))."
         )
-        logTopologySnapshot("disableDisplayByConfig:pre-clear", snapshot: currentTopologySnapshot())
+        logTopologySnapshot("disableRuntimeDisplayByConfig:pre-clear", snapshot: currentTopologySnapshot())
         if disablingMain {
             policyResolver.markAggressiveRecoveryPending(configId: configId)
         }
@@ -349,11 +344,6 @@ package final class VirtualDisplayOrchestrator {
     }
 
     // MARK: - Enable
-
-    package func enableDisplay(_ configId: UUID) async throws {
-        try setDesiredEnabled(configId, enabled: true)
-        _ = try await enableRuntimeDisplay(configId)
-    }
 
     package func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
         let recoveryMode: VirtualDisplayTopologyRecoveryMode = policyResolver.isAggressiveRecoveryPending(configId: configId)
@@ -392,7 +382,7 @@ package final class VirtualDisplayOrchestrator {
         AppLog.virtualDisplay.notice(
             "Enable display requested (config: \(configId.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public), preferredMain: \(String(describing: preferredMainDisplayID), privacy: .public), pendingGeneration: \(String(describing: self.runtimeTracker.runtimeGeneration(for: configId)), privacy: .public), isRunning: \(self.runtimeTracker.isVirtualDisplayRunning(configId: configId), privacy: .public))."
         )
-        logTopologySnapshot("enableDisplay:pre-enable", snapshot: topologyBeforeEnable)
+        logTopologySnapshot("enableRuntimeDisplay:pre-enable", snapshot: topologyBeforeEnable)
 
         var terminationConfirmed = true
         var offlineVerified = false
@@ -477,7 +467,7 @@ package final class VirtualDisplayOrchestrator {
                 AppLog.virtualDisplay.notice(
                     "Aggressive enable teardown settle cooldown completed (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), maxCooldownSec: \(VirtualDisplayTimingPolicy.aggressiveEnableUnsettledTeardownCooldown, privacy: .public), waitedMs: \(UInt64(cooldown.waitedSeconds * 1000), privacy: .public), earlyExit: \(cooldown.completedEarly, privacy: .public))."
                 )
-                logTopologySnapshot("enableDisplay:pre-create-post-cooldown", snapshot: currentTopologySnapshot())
+                logTopologySnapshot("enableRuntimeDisplay:pre-create-post-cooldown", snapshot: currentTopologySnapshot())
             }
             let createdDisplayRecord = try await runtimeTracker.createRuntimeDisplayWithRetries(
                 from: config,
@@ -488,7 +478,7 @@ package final class VirtualDisplayOrchestrator {
             AppLog.virtualDisplay.notice(
                 "Enable created runtime display (config: \(config.id.uuidString, privacy: .public), serial: \(createdDisplaySerialNum, privacy: .public), displayID: \(createdDisplayID, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public))."
             )
-            logTopologySnapshot("enableDisplay:post-create-pre-recovery", snapshot: currentTopologySnapshot())
+            logTopologySnapshot("enableRuntimeDisplay:post-create-pre-recovery", snapshot: currentTopologySnapshot())
             do {
                 let postCreatePolicyResolution = resolveMainDisplayPolicy(
                     snapshot: currentTopologySnapshot()

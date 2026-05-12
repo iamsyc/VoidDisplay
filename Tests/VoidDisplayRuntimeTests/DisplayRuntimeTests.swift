@@ -1065,6 +1065,76 @@ struct DisplayRuntimeTests {
         #expect(traces.first?.preSnapshotEvidence?.runningConfigIDs == [configID])
     }
 
+    @Test func disableThenEnableSameConfigSerializesAndReReadsState() async throws {
+        let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000018")!
+        let catalog = catalogSnapshot(displayID: 127, isMain: false)
+        let virtualDisplayProvider = FakeVirtualDisplayProvider(
+            snapshot: runningVirtualDisplaySnapshot(
+                configID: configID,
+                serial: 1271,
+                displayID: 127,
+                desiredEnabled: true
+            )
+        )
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 50_000_000)
+        commander.onSetDesiredEnabled = { _, enabled in
+            if enabled {
+                virtualDisplayProvider.setSnapshot(disabledVirtualDisplaySnapshot(
+                    configID: configID,
+                    serial: 1271,
+                    desiredEnabled: true
+                ))
+            } else {
+                virtualDisplayProvider.setSnapshot(disabledVirtualDisplaySnapshot(
+                    configID: configID,
+                    serial: 1271,
+                    desiredEnabled: false
+                ))
+            }
+        }
+        commander.onDisable = { _ in
+            virtualDisplayProvider.setSnapshot(disabledVirtualDisplaySnapshot(
+                configID: configID,
+                serial: 1271,
+                desiredEnabled: false
+            ))
+        }
+        commander.onEnable = { _ in
+            virtualDisplayProvider.setSnapshot(runningVirtualDisplaySnapshot(
+                configID: configID,
+                serial: 1271,
+                displayID: 127,
+                desiredEnabled: true
+            ))
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: virtualDisplayProvider,
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        async let disable = runtime.setVirtualDisplayDesiredEnabled(
+            configID: configID,
+            enabled: false,
+            source: .virtualDisplayRowToggle
+        )
+        async let enable = runtime.setVirtualDisplayDesiredEnabled(
+            configID: configID,
+            enabled: true,
+            source: .virtualDisplayRowToggle
+        )
+        _ = try await [disable, enable]
+        let traces = runtime.makeSnapshot().transactions.recentTransactions
+
+        #expect(commander.disableCallCount == 1)
+        #expect(commander.enableCallCount == 1)
+        #expect(traces.first?.kind == .virtualDisplayEnable)
+        #expect(traces.dropFirst().first?.kind == .virtualDisplayDisable)
+        #expect(traces.first?.preSnapshotEvidence?.runningConfigIDs == [])
+    }
+
     @Test func duplicateEnableWhileActiveCoalescesOnlyWhenKindAndConfigMatch() async throws {
         let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000017")!
         let commander = FakeVirtualDisplayCommander(delayNanoseconds: 150_000_000)
@@ -1092,6 +1162,41 @@ struct DisplayRuntimeTests {
 
         #expect(results.first?.transactionID == results.last?.transactionID)
         #expect(commander.enableCallCount == 1)
+        #expect(trace.coalescedRequestCount == 1)
+    }
+
+    @Test func duplicateDisableWhileActiveCoalescesOnlyWhenKindAndConfigMatch() async throws {
+        let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000019")!
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 150_000_000)
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: runningVirtualDisplaySnapshot(
+                    configID: configID,
+                    serial: 1281,
+                    displayID: 128,
+                    desiredEnabled: true
+                )
+            ),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        async let first = runtime.setVirtualDisplayDesiredEnabled(
+            configID: configID,
+            enabled: false,
+            source: .virtualDisplayRowToggle
+        )
+        async let second = runtime.setVirtualDisplayDesiredEnabled(
+            configID: configID,
+            enabled: false,
+            source: .diagnostics
+        )
+        let results = try await [first, second]
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(results.first?.transactionID == results.last?.transactionID)
+        #expect(commander.disableCallCount == 1)
         #expect(trace.coalescedRequestCount == 1)
     }
 
@@ -2351,6 +2456,9 @@ private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCom
         disableCallCount += 1
         disableConfigIDs.append(request.configID)
         recorder?.append("disable:\(request.configID.uuidString)")
+        if delayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+        }
         if let disableError {
             throw disableError
         }

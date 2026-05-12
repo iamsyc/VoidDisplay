@@ -350,32 +350,6 @@ package final class VirtualDisplayController {
         return configID
     }
 
-    package func disableDisplayByConfig(_ configId: UUID) throws {
-        try mutateAndSync {
-            try virtualDisplayFacade.disableDisplayByConfig(configId)
-        }
-        Task {
-            await recordEvent(
-                severity: .notice,
-                operation: "Disable virtual display",
-                message: "Disabled virtual display.",
-                metadata: ["configID": configId.uuidString]
-            )
-        }
-    }
-
-    package func enableDisplay(_ configId: UUID) async throws {
-        try await mutateAndSync {
-            try await virtualDisplayFacade.enableDisplay(configId)
-        }
-        await recordEvent(
-            severity: .notice,
-            operation: "Enable virtual display",
-            message: "Enabled virtual display.",
-            metadata: ["configID": configId.uuidString]
-        )
-    }
-
     package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
         try mutateAndSync {
             try virtualDisplayFacade.setDesiredEnabled(configId, enabled: enabled)

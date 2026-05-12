@@ -272,7 +272,7 @@ struct DisplayRuntimeAdapterTests {
 
         #expect(facade.setDesiredEnabledRequests.map(\.0) == [config.id])
         #expect(facade.enableRuntimeDisplayConfigIDs == [config.id])
-        #expect(facade.enableDisplayCallCount == 0)
+        #expect(facade.enableRuntimeDisplayCallCount == 1)
         #expect(result.desiredEnabled == true)
     }
 
@@ -302,7 +302,7 @@ struct DisplayRuntimeAdapterTests {
 
         #expect(facade.setDesiredEnabledRequests.map(\.0) == [config.id])
         #expect(facade.disableRuntimeDisplayByConfigIDs == [config.id])
-        #expect(facade.disableDisplayByConfigCallCount == 0)
+        #expect(facade.disableRuntimeDisplayByConfigCallCount == 1)
         #expect(result.desiredEnabled == false)
     }
 

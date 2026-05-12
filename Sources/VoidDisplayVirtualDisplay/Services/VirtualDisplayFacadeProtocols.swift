@@ -83,8 +83,6 @@ package protocol VirtualDisplayCommanding: AnyObject {
     func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight
     func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult
     func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult
-    func disableDisplayByConfig(_ configId: UUID) throws
-    func enableDisplay(_ configId: UUID) async throws
     func destroyDisplay(_ configId: UUID) throws
     func updateConfig(_ updated: VirtualDisplayConfig) throws
     func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool

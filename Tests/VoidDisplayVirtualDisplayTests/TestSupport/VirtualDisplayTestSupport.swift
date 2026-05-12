@@ -51,15 +51,9 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var rebuildVirtualDisplayConfigIds: [UUID] = []
     var rebuildVirtualDisplayError: Error?
     var rebuildDelayNanoseconds: UInt64 = 0
-    var disableDisplayByConfigCallCount = 0
-    var disableDisplayByConfigIDs: [UUID] = []
-    var disableDisplayByConfigError: Error?
     var disableRuntimeDisplayByConfigCallCount = 0
     var disableRuntimeDisplayByConfigIDs: [UUID] = []
     var disableRuntimeDisplayByConfigError: Error?
-    var enableDisplayCallCount = 0
-    var enableDisplayConfigIDs: [UUID] = []
-    var enableDisplayError: Error?
     var enableRuntimeDisplayCallCount = 0
     var enableRuntimeDisplayConfigIDs: [UUID] = []
     var enableRuntimeDisplayError: Error?
@@ -152,26 +146,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         modes: [ResolutionSelection]
     ) throws -> UUID {
         try createDisplayResult.get()
-    }
-
-    func disableDisplayByConfig(_ configId: UUID) throws {
-        disableDisplayByConfigCallCount += 1
-        disableDisplayByConfigIDs.append(configId)
-        if let disableDisplayByConfigError {
-            throw disableDisplayByConfigError
-        }
-        try setDesiredEnabled(configId, enabled: false)
-        _ = try disableRuntimeDisplayByConfig(configId)
-    }
-
-    func enableDisplay(_ configId: UUID) async throws {
-        enableDisplayCallCount += 1
-        enableDisplayConfigIDs.append(configId)
-        if let enableDisplayError {
-            throw enableDisplayError
-        }
-        try setDesiredEnabled(configId, enabled: true)
-        _ = try await enableRuntimeDisplay(configId)
     }
 
     func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {

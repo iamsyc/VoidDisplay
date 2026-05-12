@@ -91,16 +91,6 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         throw VirtualDisplayOperationError.creationFailed
     }
 
-    package func disableDisplayByConfig(_ configId: UUID) throws {
-        try setDesiredEnabled(configId, enabled: false)
-        _ = try disableRuntimeDisplayByConfig(configId)
-    }
-
-    package func enableDisplay(_ configId: UUID) async throws {
-        try setDesiredEnabled(configId, enabled: true)
-        _ = try await enableRuntimeDisplay(configId)
-    }
-
     package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
         guard let index = configs.firstIndex(where: { $0.id == configId }) else {
             throw VirtualDisplayOperationError.configNotFound

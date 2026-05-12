@@ -112,7 +112,7 @@ struct AppBootstrapTests {
 
         #expect(virtualDisplay.setDesiredEnabledRequests.map(\.0) == [config.id])
         #expect(virtualDisplay.enableRuntimeDisplayConfigIDs == [config.id])
-        #expect(virtualDisplay.enableDisplayCallCount == 0)
+        #expect(virtualDisplay.enableRuntimeDisplayCallCount == 1)
         #expect(trace.kind == .virtualDisplayEnable)
     }
 

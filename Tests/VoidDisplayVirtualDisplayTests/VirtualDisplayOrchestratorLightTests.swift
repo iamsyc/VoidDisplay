@@ -70,12 +70,12 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func disableDisplayByConfigPersistsDesiredDisabled() throws {
+    func setDesiredEnabledPersistsDesiredDisabled() throws {
         let store = FakeVirtualDisplayStore()
         let config = makeConfig(serial: 25, displayName: "用户配置 25")
         let sut = makeOrchestrator(store: store, initialConfigs: [config])
 
-        try sut.disableDisplayByConfig(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: false)
 
         #expect(store.savedConfigs.count == 1)
         #expect(sut.snapshot.configs.first?.desiredEnabled == false)
@@ -128,12 +128,16 @@ struct VirtualDisplayOrchestratorLightTests {
             runtimeDriver: driver
         )
 
-        try await sut.enableDisplay(configMain.id)
-        try await sut.enableDisplay(configPeer.id)
+        try sut.setDesiredEnabled(configMain.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(configMain.id)
+        try sut.setDesiredEnabled(configPeer.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(configPeer.id)
         #expect(driver.createCallCount == 2)
 
-        try sut.disableDisplayByConfig(configMain.id)
-        try await sut.enableDisplay(configMain.id)
+        try sut.setDesiredEnabled(configMain.id, enabled: false)
+        _ = try sut.disableRuntimeDisplayByConfig(configMain.id)
+        try sut.setDesiredEnabled(configMain.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(configMain.id)
 
         #expect(driver.createCallCount == 4)
         #expect(Set(sut.snapshot.runningConfigIds) == Set([configMain.id, configPeer.id]))
@@ -142,14 +146,15 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func enableDisplaySetsDesiredEnabledEvenWhenRuntimeCreationFails() async {
+    func setDesiredEnabledIsPersistedBeforeRuntimeEnableCommand() async {
         let store = FakeVirtualDisplayStore()
         var config = makeConfig(serial: 31, displayName: "Enable")
         config.desiredEnabled = false
         let sut = makeOrchestrator(store: store, initialConfigs: [config])
 
+        try? sut.setDesiredEnabled(config.id, enabled: true)
         do {
-            try await sut.enableDisplay(config.id)
+            _ = try await sut.enableRuntimeDisplay(config.id)
         } catch {
             // Best-effort test: in CI/without display privileges creation may fail.
         }
@@ -159,7 +164,7 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func enableDisplayRequiresTrueOfflineConfirmationBeforeRecreate() async throws {
+    func enableRuntimeDisplayRequiresTrueOfflineConfirmationBeforeRecreate() async throws {
         let store = FakeVirtualDisplayStore()
         let driver = FakeOrchestratorRuntimeDriver(
             scriptedResults: [.success(serialNum: 41, displayID: 941)]
@@ -190,14 +195,17 @@ struct VirtualDisplayOrchestratorLightTests {
             runtimeDriver: driver
         )
 
-        try await sut.enableDisplay(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(config.id)
         #expect(driver.createCallCount == 1)
 
         displayOnline = true
-        try sut.disableDisplayByConfig(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: false)
+        _ = try sut.disableRuntimeDisplayByConfig(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: true)
 
         do {
-            try await sut.enableDisplay(config.id)
+            _ = try await sut.enableRuntimeDisplay(config.id)
             Issue.record("Expected enable to fail when prior display remains online.")
         } catch let error as VirtualDisplayOperationError {
             guard case .teardownTimedOut = error else {
