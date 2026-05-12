@@ -162,16 +162,6 @@ package final class CaptureController {
         requestSnapshotRefresh()
     }
 
-    package func stopDependentStreamsBeforeRebuild(
-        displayID: CGDirectDisplayID,
-        sharingController: SharingController
-    ) {
-        if sharingController.isSharing(displayID: displayID) {
-            sharingController.stopSharing(displayID: displayID)
-        }
-        removeMonitoringSessions(displayID: displayID)
-    }
-
     private func syncCaptureMonitoringState() {
         screenCaptureSessions = captureMonitoringService.currentSessions
         startingDisplayIDs = startTracker.activeDisplayIDs
