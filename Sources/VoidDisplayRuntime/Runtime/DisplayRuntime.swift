@@ -163,6 +163,9 @@ package final class DisplayRuntime {
             defer {
                 self.activeRebuildTasksByConfigID[configID] = nil
                 self.activeRebuildTransactionIDsByConfigID[configID] = nil
+                if self.activeRebuildTasksByConfigID.isEmpty {
+                    self.rebuildQueueTail = nil
+                }
             }
             if let previousTail {
                 _ = try? await previousTail.value
@@ -301,10 +304,13 @@ package final class DisplayRuntime {
 
         let managedDisplaysByConfigID = firstValuesByKey(snapshot.virtualDisplay.managedDisplays, key: \.configID)
         let configsByID = firstValuesByKey(snapshot.virtualDisplay.configs, key: \.id)
-        let runningManagedDisplays = snapshot.virtualDisplay.managedDisplays.filter {
-            snapshot.virtualDisplay.runningConfigIDs.contains($0.configID)
+        let runningConfigIDs = Set(snapshot.virtualDisplay.runningConfigIDs)
+        let runningManagedDisplays = managedDisplaysByConfigID.values.filter {
+            runningConfigIDs.contains($0.configID)
+        }.sorted {
+            $0.configID.uuidString < $1.configID.uuidString
         }
-        let requestedIsRunning = snapshot.virtualDisplay.runningConfigIDs.contains(configID)
+        let requestedIsRunning = runningConfigIDs.contains(configID)
         let requestedMainState = requestedSurface.catalog?.isMain
         let shouldEscalateToFleet = runningManagedDisplays.count >= 2
             && requestedIsRunning
@@ -339,19 +345,35 @@ package final class DisplayRuntime {
         affectedSurfaces: [DisplayRuntimeAffectedSurface],
         snapshot: DisplayRuntimeSnapshot
     ) -> [DisplayRuntimeSessionPauseIntent] {
-        affectedSurfaces.compactMap { affectedSurface in
+        var intentsByDisplayID: [DisplayRuntimeDisplayID: DisplayRuntimeSessionPauseIntent] = [:]
+        for affectedSurface in affectedSurfaces {
             guard let displayID = affectedSurface.preDisplayID,
                   let surface = snapshot.surfaces.first(where: { $0.identity == affectedSurface.identity })
             else {
-                return nil
+                continue
             }
-            return DisplayRuntimeSessionPauseIntent(
+            let pauseSharing = surface.sharing?.isActive == true
+            let pauseMonitoring = surface.capture?.sessionIDs.isEmpty == false || surface.capture?.isStarting == true
+            guard pauseSharing || pauseMonitoring else {
+                continue
+            }
+            if let existing = intentsByDisplayID[displayID] {
+                intentsByDisplayID[displayID] = DisplayRuntimeSessionPauseIntent(
+                    surfaceIdentity: existing.surfaceIdentity,
+                    displayID: displayID,
+                    pauseSharing: existing.pauseSharing || pauseSharing,
+                    pauseMonitoring: existing.pauseMonitoring || pauseMonitoring
+                )
+                continue
+            }
+            intentsByDisplayID[displayID] = DisplayRuntimeSessionPauseIntent(
                 surfaceIdentity: affectedSurface.identity,
                 displayID: displayID,
-                pauseSharing: surface.sharing?.isActive == true,
-                pauseMonitoring: surface.capture?.sessionIDs.isEmpty == false || surface.capture?.isStarting == true
+                pauseSharing: pauseSharing,
+                pauseMonitoring: pauseMonitoring
             )
         }
+        return intentsByDisplayID.values.sorted { $0.displayID < $1.displayID }
     }
 
     private func quiesceSessions(_ pauseIntents: [DisplayRuntimeSessionPauseIntent]) {

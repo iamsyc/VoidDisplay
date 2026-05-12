@@ -438,6 +438,84 @@ struct DisplayRuntimeTests {
         ])
     }
 
+    @Test func rebuildTransactionDoesNotWriteNoOpPauseIntentWithoutSessionDemand() async throws {
+        let configID = UUID(uuidString: "57575757-5757-5757-5757-575757575757")!
+        let recorder = RuntimeOperationRecorder()
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 57)
+            ),
+            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder)
+        )
+
+        _ = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(trace.pauseIntents.isEmpty)
+        #expect(recorder.events == [
+            "refresh:topologyChanged",
+            "rebuild:\(configID.uuidString)"
+        ])
+    }
+
+    @Test func rebuildTransactionDeduplicatesManagedDisplayEntriesBeforeQuiesce() async throws {
+        let configID = UUID(uuidString: "58585858-5858-5858-5858-585858585858")!
+        let sessionID = UUID(uuidString: "59595959-5959-5959-5959-595959595959")!
+        let recorder = RuntimeOperationRecorder()
+        let runtime = DisplayRuntime(
+            captureProvider: FakeCaptureProvider(
+                snapshot: .init(
+                    startingDisplayIDs: [],
+                    sessions: [
+                        .init(
+                            id: sessionID,
+                            displayID: 58,
+                            isVirtualDisplay: true,
+                            capturesCursor: false,
+                            state: .active,
+                            metrics: .empty
+                        )
+                    ]
+                )
+            ),
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 58)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(
+                    configs: [
+                        (configID, 5801, 58),
+                        (configID, 5801, 58)
+                    ]
+                )
+            ),
+            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder)
+        )
+
+        _ = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(trace.affectedSurfaces.map(\.configID) == [configID])
+        #expect(trace.pauseIntents == [
+            .init(
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                displayID: 58,
+                pauseSharing: true,
+                pauseMonitoring: true
+            )
+        ])
+        #expect(recorder.events == [
+            "refresh:topologyChanged",
+            "stopSharing:58",
+            "removeMonitoring:58",
+            "rebuild:\(configID.uuidString)"
+        ])
+    }
+
     @Test func rebuildTransactionWritesFailedTraceForMissingConfig() async throws {
         let missingConfigID = UUID(uuidString: "77777777-7777-7777-7777-777777777777")!
         let commander = FakeVirtualDisplayCommander()
