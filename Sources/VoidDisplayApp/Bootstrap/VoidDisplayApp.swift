@@ -26,6 +26,33 @@ package struct AppEnvironment {
     package let displayRuntime: DisplayRuntime
     package let capturePerformancePreferences: CapturePerformancePreferences
     package let feedbackController: AppSettingsFeedbackController
+    private let startupObservabilityTask: Task<Void, Never>
+
+    package init(
+        capture: CaptureController,
+        observability: ObservabilityCenter,
+        sharing: SharingController,
+        virtualDisplay: VirtualDisplayController,
+        screenCatalog: ScreenCatalogOrchestrator,
+        displayRuntime: DisplayRuntime,
+        capturePerformancePreferences: CapturePerformancePreferences,
+        feedbackController: AppSettingsFeedbackController,
+        startupObservabilityTask: Task<Void, Never>
+    ) {
+        self.capture = capture
+        self.observability = observability
+        self.sharing = sharing
+        self.virtualDisplay = virtualDisplay
+        self.screenCatalog = screenCatalog
+        self.displayRuntime = displayRuntime
+        self.capturePerformancePreferences = capturePerformancePreferences
+        self.feedbackController = feedbackController
+        self.startupObservabilityTask = startupObservabilityTask
+    }
+
+    package func waitForStartupObservability() async {
+        await startupObservabilityTask.value
+    }
 }
 
 public struct VoidDisplayApplication: App {
@@ -338,30 +365,23 @@ package enum AppBootstrap {
                 )
             }
         }
+        let displayRuntimeCatalogAdapter = DisplayRuntimeCatalogAdapter(service: catalogService)
+        let displayRuntimeCaptureAdapter = DisplayRuntimeCaptureAdapter(controller: capture)
+        let displayRuntimeSharingAdapter = DisplayRuntimeSharingAdapter(controller: sharing)
+        let displayRuntimeVirtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(controller: virtualDisplay)
+        let displayRuntimeObservabilityAdapter = DisplayRuntimeObservabilityAdapter(observability: observability)
         let displayRuntime = DisplayRuntime(
-            catalogProvider: DisplayRuntimeCatalogAdapter(store: catalogService.store),
-            captureProvider: DisplayRuntimeCaptureAdapter(controller: capture),
-            sharingProvider: DisplayRuntimeSharingAdapter(controller: sharing),
-            virtualDisplayProvider: DisplayRuntimeVirtualDisplayAdapter(controller: virtualDisplay)
+            catalogProvider: displayRuntimeCatalogAdapter,
+            captureProvider: displayRuntimeCaptureAdapter,
+            sharingProvider: displayRuntimeSharingAdapter,
+            virtualDisplayProvider: displayRuntimeVirtualDisplayAdapter,
+            catalogCommander: displayRuntimeCatalogAdapter,
+            sharingCommander: displayRuntimeSharingAdapter,
+            captureCommander: displayRuntimeCaptureAdapter,
+            observabilityRecorder: displayRuntimeObservabilityAdapter
         )
 
-        let env = AppEnvironment(
-            capture: capture,
-            observability: observability,
-            sharing: sharing,
-            virtualDisplay: virtualDisplay,
-            screenCatalog: ScreenCatalogOrchestrator(
-                catalogService: catalogService,
-                capture: capture,
-                sharing: sharing,
-                virtualDisplay: virtualDisplay,
-                observability: observability
-            ),
-            displayRuntime: displayRuntime,
-            capturePerformancePreferences: capturePerformancePreferences,
-            feedbackController: feedbackController
-        )
-        Task {
+        let startupObservabilityTask = Task {
             await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: displayRuntime))
             )
@@ -385,6 +405,23 @@ package enum AppBootstrap {
             )
             await observability.refreshSnapshot(reason: .startup)
         }
+
+        let env = AppEnvironment(
+            capture: capture,
+            observability: observability,
+            sharing: sharing,
+            virtualDisplay: virtualDisplay,
+            screenCatalog: ScreenCatalogOrchestrator(
+                runtime: displayRuntime,
+                openScreenCapturePrivacySettings: { openURL in
+                    catalogService.openScreenCapturePrivacySettings(openURL: openURL)
+                }
+            ),
+            displayRuntime: displayRuntime,
+            capturePerformancePreferences: capturePerformancePreferences,
+            feedbackController: feedbackController,
+            startupObservabilityTask: startupObservabilityTask
+        )
 
         guard !preview else { return env }
 

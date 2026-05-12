@@ -37,7 +37,8 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        let diagnostics = await diagnosticsSnapshotContainingRuntimeSection(env.observability)
+        await env.waitForStartupObservability()
+        let diagnostics = await env.observability.diagnosticsSnapshot()
         let runtimeSection = try #require(diagnostics.state.sections["runtime"])
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
 
@@ -203,16 +204,4 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
     }
-}
-
-private func diagnosticsSnapshotContainingRuntimeSection(
-    _ observability: ObservabilityCenter
-) async -> ObservabilityDiagnosticsSnapshot {
-    var snapshot = await observability.diagnosticsSnapshot()
-    for _ in 0..<20 where snapshot.state.sections["runtime"] == nil {
-        await Task.yield()
-        await observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
-        snapshot = await observability.diagnosticsSnapshot()
-    }
-    return snapshot
 }

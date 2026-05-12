@@ -1,20 +1,24 @@
 import VoidDisplayCapture
 import VoidDisplayFoundation
+import VoidDisplayObservability
 import VoidDisplayRuntime
 import VoidDisplaySharing
 import VoidDisplayVirtualDisplay
 import Foundation
+import ScreenCaptureKit
 
 @MainActor
-package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding {
-    private weak var store: ScreenCaptureCatalogStore?
+package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding, DisplayRuntimeCatalogCommanding {
+    private weak var service: ScreenCaptureCatalogService?
+    private let captureRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
+    private let sharingRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
 
-    package init(store: ScreenCaptureCatalogStore) {
-        self.store = store
+    package init(service: ScreenCaptureCatalogService) {
+        self.service = service
     }
 
     package func makeCatalogSnapshot() -> DisplayRuntimeCatalogSnapshot {
-        guard let store else { return .empty }
+        guard let store = service?.store else { return .empty }
         return DisplayRuntimeCatalogSnapshot(
             hasScreenCapturePermission: store.hasScreenCapturePermission,
             lastPreflightPermission: store.lastPreflightPermission,
@@ -49,10 +53,62 @@ package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding
             }
         )
     }
+
+    package func requestPermission() -> Bool {
+        service?.requestPermission() ?? false
+    }
+
+    package func refreshPermission() -> Bool {
+        service?.refreshPermission() ?? false
+    }
+
+    package func submitRefresh(
+        intent: DisplayRuntimeCatalogRefreshIntent,
+        ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
+    ) async -> DisplayRuntimeCatalogRefreshResult {
+        guard let service else { return .failed }
+        let result = await service.submitRefresh(
+            intent: ScreenCaptureCatalogRefreshIntent(intent),
+            owner: owner(for: ownerScope)
+        )
+        return DisplayRuntimeCatalogRefreshResult(result)
+    }
+
+    package func clearSnapshotForDeniedPermission(loadErrorMessage: String?) async {
+        await service?.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
+    }
+
+    package func cancelRefresh(ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?) async {
+        await service?.cancelRefresh(owner: owner(for: ownerScope))
+    }
+
+    package func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay] {
+        guard let service else { return [] }
+        return service.visibleDisplays(from: service.store.displays ?? []).map {
+            DisplayRuntimeVisibleDisplay(
+                displayID: $0.displayID,
+                pixelWidth: $0.width,
+                pixelHeight: $0.height
+            )
+        }
+    }
+
+    private func owner(
+        for scope: DisplayRuntimeCatalogRefreshOwnerScope?
+    ) -> ScreenCaptureCatalogService.RefreshOwner? {
+        switch scope {
+        case .capture:
+            captureRefreshOwner
+        case .sharing:
+            sharingRefreshOwner
+        case nil:
+            nil
+        }
+    }
 }
 
 @MainActor
-package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding {
+package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureCommanding {
     private weak var controller: CaptureController?
 
     package init(controller: CaptureController) {
@@ -82,10 +138,14 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
             }
         )
     }
+
+    package func removeMonitoringSessions(displayID: DisplayRuntimeDisplayID) {
+        controller?.removeMonitoringSessions(displayID: displayID)
+    }
 }
 
 @MainActor
-package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding {
+package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding, DisplayRuntimeSharingCommanding {
     private weak var controller: SharingController?
 
     package init(controller: SharingController) {
@@ -113,6 +173,31 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
                 DisplayRuntimeShareRoute(displayID: $0, hasConcreteRoute: controller.sharePagePath(for: $0) != nil)
             }
         )
+    }
+
+    package func registerShareableDisplays(_ displays: [DisplayRuntimeShareableDisplayRegistration]) {
+        guard let controller else { return }
+        let registrationsByDisplayID = firstRegistrationsByDisplayID(displays)
+        let visibleDisplays = (controller.displayCatalogState.displays ?? []).filter {
+            registrationsByDisplayID[$0.displayID] != nil
+        }
+        controller.registerShareableDisplays(visibleDisplays) { displayID in
+            registrationsByDisplayID[displayID]?.virtualSerialNumber
+        }
+    }
+
+    package func stopSharing(displayID: DisplayRuntimeDisplayID) {
+        controller?.stopSharing(displayID: displayID)
+    }
+
+    private func firstRegistrationsByDisplayID(
+        _ displays: [DisplayRuntimeShareableDisplayRegistration]
+    ) -> [DisplayRuntimeDisplayID: DisplayRuntimeShareableDisplayRegistration] {
+        var result: [DisplayRuntimeDisplayID: DisplayRuntimeShareableDisplayRegistration] = [:]
+        for display in displays {
+            result[display.displayID] = result[display.displayID] ?? display
+        }
+        return result
     }
 }
 
@@ -162,6 +247,82 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
             },
             restoreFailureConfigIDs: controller.restoreFailures.map(\.id)
         )
+    }
+}
+
+@MainActor
+package final class DisplayRuntimeObservabilityAdapter: DisplayRuntimeObservabilityRecording {
+    private weak var observability: ObservabilityCenter?
+
+    package init(observability: ObservabilityCenter) {
+        self.observability = observability
+    }
+
+    package func record(_ event: DisplayRuntimeObservabilityEvent) async {
+        await observability?.record(
+            ObservabilityEvent(
+                severity: ObservabilitySeverity(event.severity),
+                subsystem: .screenCatalog,
+                operation: event.operation,
+                message: event.message,
+                metadata: event.metadata,
+                deduplicationKey: event.deduplicationKey
+            )
+        )
+    }
+
+    package func refreshSnapshot(reason: DisplayRuntimeObservabilityRefreshReason) async {
+        await observability?.refreshSnapshot(reason: SnapshotRefreshReason(reason))
+    }
+}
+
+private extension ScreenCaptureCatalogRefreshIntent {
+    init(_ intent: DisplayRuntimeCatalogRefreshIntent) {
+        switch intent {
+        case .permissionChanged:
+            self = .permissionChanged
+        case .topologyChanged:
+            self = .topologyChanged
+        case .serviceBecameRunning:
+            self = .serviceBecameRunning
+        case .userForcedRefresh:
+            self = .userForcedRefresh
+        }
+    }
+}
+
+private extension DisplayRuntimeCatalogRefreshResult {
+    init(_ result: ScreenCaptureCatalogRefreshResult) {
+        switch result {
+        case .reloadedSnapshot:
+            self = .reloadedSnapshot
+        case .reusedSnapshot:
+            self = .reusedSnapshot
+        case .clearedSnapshot:
+            self = .clearedSnapshot
+        case .failed:
+            self = .failed
+        }
+    }
+}
+
+private extension ObservabilitySeverity {
+    init(_ severity: DisplayRuntimeObservabilitySeverity) {
+        switch severity {
+        case .info:
+            self = .info
+        case .warning:
+            self = .warning
+        }
+    }
+}
+
+private extension SnapshotRefreshReason {
+    init(_ reason: DisplayRuntimeObservabilityRefreshReason) {
+        switch reason {
+        case .screenCatalogStateChanged:
+            self = .screenCatalogStateChanged
+        }
     }
 }
 

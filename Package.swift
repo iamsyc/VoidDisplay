@@ -132,6 +132,7 @@ let package = Package(
                 "VoidDisplaySharing",
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
+                "VoidDisplayRuntime",
                 "VoidDisplayFoundation",
                 "VoidDisplayTestingSupport",
                 "VoidDisplaySharingTestingSupport",
