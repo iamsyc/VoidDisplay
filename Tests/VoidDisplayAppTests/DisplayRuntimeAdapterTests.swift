@@ -554,28 +554,13 @@ struct DisplayRuntimeAdapterTests {
     @Test func virtualDisplayAdapterDeleteDoesNotMapMissingConfigToSuccess() async throws {
         let configID = UUID()
         let facade = MockVirtualDisplayFacade()
-        facade.destroyDisplayError = VirtualDisplayDeleteCommandFailure(
-            reason: "config_not_found",
-            result: VirtualDisplayDeleteCommandResult(
-                configID: configID,
-                targetWasRunning: false,
-                preDisplayID: nil,
-                postDisplayID: nil,
-                persistenceOutcome: .notAttempted,
-                virtualDisplayCommandOutcome: .failed,
-                runtimeTrackingClearOutcome: .notAttempted,
-                runningConfigIDsAfterCommand: [],
-                managedDisplaysAfterCommand: []
-            ),
-            underlyingError: NSError(domain: "Delete", code: 12)
-        )
         let controller = VirtualDisplayController(
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
         let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
 
-        await #expect(throws: DisplayRuntimeVirtualDisplayDeleteCommandError.self) {
+        do {
             _ = try await sut.deleteVirtualDisplay(
                 request: .init(
                     transactionID: DisplayRuntimeTransactionID(),
@@ -584,6 +569,14 @@ struct DisplayRuntimeAdapterTests {
                     targetWasRunning: false
                 )
             )
+            Issue.record("Expected config_not_found failure.")
+        } catch let error as DisplayRuntimeVirtualDisplayDeleteCommandError {
+            #expect(error.reason == "config_not_found")
+            #expect(error.result.persistenceOutcome == .notAttempted)
+            #expect(error.result.virtualDisplayCommandOutcome == .failed)
+            #expect(error.result.runtimeTrackingClearOutcome == .notAttempted)
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
         }
         #expect(facade.destroyDisplayByConfigCallCount == 1)
         #expect(controller.persistenceAlert == nil)

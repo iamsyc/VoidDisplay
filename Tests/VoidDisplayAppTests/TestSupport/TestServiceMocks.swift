@@ -477,6 +477,24 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
 
     func deleteDisplayCommand(_ configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
         destroyDisplayByConfigCallCount += 1
+        guard currentDisplayConfigs.contains(where: { $0.id == configId }) else {
+            let result = VirtualDisplayDeleteCommandResult(
+                configID: configId,
+                targetWasRunning: currentRunningConfigIds.contains(configId),
+                preDisplayID: runtimeDisplayIDByConfigId[configId],
+                postDisplayID: runtimeDisplayIDByConfigId[configId],
+                persistenceOutcome: .notAttempted,
+                virtualDisplayCommandOutcome: .failed,
+                runtimeTrackingClearOutcome: .notAttempted,
+                runningConfigIDsAfterCommand: Array(currentRunningConfigIds),
+                managedDisplaysAfterCommand: snapshot.managedDisplays
+            )
+            throw VirtualDisplayDeleteCommandFailure(
+                reason: "config_not_found",
+                result: result,
+                underlyingError: VirtualDisplayOperationError.configNotFound
+            )
+        }
         destroyedConfigIDs.append(configId)
         if let destroyDisplayError {
             let result = VirtualDisplayDeleteCommandResult(

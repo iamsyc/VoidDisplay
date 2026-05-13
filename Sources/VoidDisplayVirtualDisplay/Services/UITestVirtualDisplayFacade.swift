@@ -172,6 +172,24 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
 
     package func deleteDisplayCommand(_ configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
         let preDisplayID = runtimeDisplayIDs()[configId]
+        guard configs.contains(where: { $0.id == configId }) else {
+            let result = VirtualDisplayDeleteCommandResult(
+                configID: configId,
+                targetWasRunning: preDisplayID != nil,
+                preDisplayID: preDisplayID,
+                postDisplayID: preDisplayID,
+                persistenceOutcome: .notAttempted,
+                virtualDisplayCommandOutcome: .failed,
+                runtimeTrackingClearOutcome: .notAttempted,
+                runningConfigIDsAfterCommand: Array(runningConfigIds),
+                managedDisplaysAfterCommand: snapshot.managedDisplays
+            )
+            throw VirtualDisplayDeleteCommandFailure(
+                reason: "config_not_found",
+                result: result,
+                underlyingError: VirtualDisplayOperationError.configNotFound
+            )
+        }
         configs.removeAll { $0.id == configId }
         runningConfigIds.remove(configId)
         return VirtualDisplayDeleteCommandResult(

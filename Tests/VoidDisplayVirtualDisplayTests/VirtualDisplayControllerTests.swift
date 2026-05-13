@@ -662,6 +662,24 @@ struct VirtualDisplayControllerTests {
         #expect(sut.displayConfigs.count == 1)
     }
 
+    @Test func uiTestFacadeDeleteMissingConfigFailsConfigNotFound() {
+        let sut = UITestVirtualDisplayFacade(scenario: .baseline)
+        let missingID = UUID()
+
+        do {
+            _ = try sut.deleteDisplayCommand(missingID)
+            Issue.record("Expected config_not_found failure.")
+        } catch let error as VirtualDisplayDeleteCommandFailure {
+            #expect(error.reason == "config_not_found")
+            #expect(error.result.configID == missingID)
+            #expect(error.result.persistenceOutcome == .notAttempted)
+            #expect(error.result.virtualDisplayCommandOutcome == .failed)
+            #expect(error.result.runtimeTrackingClearOutcome == .notAttempted)
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+    }
+
     @Test func moveDisplayConfigPropagatesFailureAndSetsPersistencePresentation() {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
