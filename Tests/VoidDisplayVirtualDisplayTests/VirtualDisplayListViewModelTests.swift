@@ -9,12 +9,24 @@ import Testing
 @Suite(.serialized)
 struct VirtualDisplayListViewModelTests {
 
-    @Test func requestDeleteAndConfirmDeletesConfigThroughController() {
+    @Test func requestDeleteAndConfirmDeletesConfigThroughController() async {
         let config = sampleConfig(serial: 101)
         let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         let controller = makeController(virtualDisplayFacade: mockService)
         controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+        controller.configureDeleteExecutor { [weak controller] configID in
+            guard let controller else {
+                throw NSError(domain: "VirtualDisplayListViewModelTests", code: 1)
+            }
+            let result = try controller.deleteDisplayCommand(configId: configID)
+            return VirtualDisplayDeleteTransactionResult(
+                transactionID: UUID(),
+                status: .completed,
+                configID: result.configID,
+                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
+            )
+        }
 
         let sut = VirtualDisplayListViewModel(controller: controller)
 
@@ -23,32 +35,62 @@ struct VirtualDisplayListViewModelTests {
         #expect(sut.deleteCandidate?.id == config.id)
 
         sut.confirmDelete()
+        let finished = await waitUntil { sut.showDeleteConfirm == false && sut.deleteCandidate == nil }
 
-        #expect(sut.showDeleteConfirm == false)
-        #expect(sut.deleteCandidate == nil)
+        #expect(finished)
         #expect(mockService.destroyDisplayByConfigCallCount == 1)
         #expect(mockService.destroyedConfigIDs == [config.id])
     }
 
-    @Test func confirmDeleteShowsErrorWhenDestroyFails() {
+    @Test func confirmDeleteShowsErrorWhenDestroyFails() async {
         let config = sampleConfig(serial: 102)
         let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         mockService.destroyDisplayError = NSError(domain: "VirtualDisplayListViewModelTests", code: 12)
         let controller = makeController(virtualDisplayFacade: mockService)
         controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+        controller.configureDeleteExecutor { [weak controller] configID in
+            guard let controller else {
+                throw NSError(domain: "VirtualDisplayListViewModelTests", code: 2)
+            }
+            let result = try controller.deleteDisplayCommand(configId: configID)
+            return VirtualDisplayDeleteTransactionResult(
+                transactionID: UUID(),
+                status: .completed,
+                configID: result.configID,
+                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
+            )
+        }
 
         let sut = VirtualDisplayListViewModel(controller: controller)
 
         sut.requestDelete(config)
         sut.confirmDelete()
+        let finished = await waitUntil { sut.userFacingAlert != nil }
 
+        #expect(finished)
         #expect(sut.showDeleteConfirm)
         #expect(sut.deleteCandidate?.id == config.id)
         #expect(sut.userFacingAlert != nil)
         #expect(sut.userFacingAlert?.message.isEmpty == false)
         #expect(mockService.destroyDisplayByConfigCallCount == 1)
         #expect(mockService.destroyedConfigIDs == [config.id])
+    }
+
+    @Test func confirmDeleteRecoveryFailureClosesConfirmation() async {
+        let config = sampleConfig(serial: 103)
+        let sut = VirtualDisplayListViewModel(
+            dependencies: .test(
+                deleteVirtualDisplay: { _ in }
+            )
+        )
+
+        sut.requestDelete(config)
+        sut.confirmDelete()
+        let finished = await waitUntil { sut.showDeleteConfirm == false && sut.deleteCandidate == nil }
+
+        #expect(finished)
+        #expect(sut.userFacingAlert == nil)
     }
 
     @Test func acknowledgeRestoreFailuresCallsControllerClear() {
@@ -186,12 +228,13 @@ struct VirtualDisplayListViewModelTests {
 private extension VirtualDisplayListViewModel.Dependencies {
     static func test(
         isRunning: Bool = false,
-        setVirtualDisplayDesiredEnabled: @escaping @MainActor (UUID, Bool) async throws -> Void
+        deleteVirtualDisplay: @escaping @MainActor (UUID) async throws -> Void = { _ in },
+        setVirtualDisplayDesiredEnabled: @escaping @MainActor (UUID, Bool) async throws -> Void = { _, _ in }
     ) -> Self {
         Self(
             restoreFailures: { [] },
             clearRestoreFailures: {},
-            destroyDisplay: { _ in },
+            deleteVirtualDisplay: deleteVirtualDisplay,
             runtimeDisplayID: { _ in nil },
             isRebuilding: { _ in false },
             isVirtualDisplayRunning: { _ in isRunning },

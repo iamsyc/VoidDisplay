@@ -81,14 +81,41 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     @discardableResult
-    package func createDisplay(
+    package func createDisplayCommand(
         name: String,
         serialNum: UInt32,
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> UUID {
-        throw VirtualDisplayOperationError.creationFailed
+    ) throws -> VirtualDisplayCreateCommandResult {
+        let evidence = VirtualDisplayCommandConfigEvidence(
+            id: nil,
+            serialNumber: serialNum,
+            desiredEnabled: true,
+            physicalWidthMillimeters: UInt32(clamping: Int(physicalSize.width)),
+            physicalHeightMillimeters: UInt32(clamping: Int(physicalSize.height)),
+            modeCount: modes.count,
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
+        )
+        let result = VirtualDisplayCreateCommandResult(
+            createdConfigID: nil,
+            serialNumber: serialNum,
+            targetWasRunningAfterCommand: false,
+            preDisplayID: nil,
+            postDisplayID: nil,
+            persistenceOutcome: .notAttempted,
+            runtimeCreationOutcome: .failed,
+            rollbackOutcome: .notAttempted,
+            createdConfigEvidence: evidence,
+            runningConfigIDsAfterCommand: Array(runningConfigIds),
+            managedDisplaysAfterCommand: snapshot.managedDisplays
+        )
+        throw VirtualDisplayCreateCommandFailure(
+            reason: "uitest_create_unavailable",
+            result: result,
+            underlyingError: VirtualDisplayOperationError.creationFailed
+        )
     }
 
     package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
@@ -143,9 +170,21 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         )
     }
 
-    package func destroyDisplay(_ configId: UUID) throws {
+    package func deleteDisplayCommand(_ configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
+        let preDisplayID = runtimeDisplayIDs()[configId]
         configs.removeAll { $0.id == configId }
         runningConfigIds.remove(configId)
+        return VirtualDisplayDeleteCommandResult(
+            configID: configId,
+            targetWasRunning: preDisplayID != nil,
+            preDisplayID: preDisplayID,
+            postDisplayID: nil,
+            persistenceOutcome: .saved,
+            virtualDisplayCommandOutcome: .succeeded,
+            runtimeTrackingClearOutcome: .cleared,
+            runningConfigIDsAfterCommand: Array(runningConfigIds),
+            managedDisplaysAfterCommand: snapshot.managedDisplays
+        )
     }
 
     package func updateConfig(_ updated: VirtualDisplayConfig) throws {

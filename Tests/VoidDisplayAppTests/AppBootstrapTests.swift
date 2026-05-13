@@ -163,6 +163,77 @@ struct AppBootstrapTests {
         #expect(trace.source == .editSaveAndRebuild)
     }
 
+    @Test func initInjectsRuntimeBackedVirtualDisplayCreateExecutor() async throws {
+        let createdConfigID = UUID()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.createDisplayResult = .success(createdConfigID)
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(env.virtualDisplay.hasConfiguredCreateExecutor)
+
+        let result = try await env.virtualDisplay.createVirtualDisplay(
+            VirtualDisplayCreateRequest(
+                displayName: "Runtime Create",
+                serialNumber: 9407,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                maximumPixelWidth: 1920,
+                maximumPixelHeight: 1080,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+            )
+        )
+        let trace = try #require(env.displayRuntime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result == createdConfigID)
+        #expect(virtualDisplay.createDisplayCommandCallCount == 1)
+        #expect(virtualDisplay.createDisplayCommandSerialNumbers == [9407])
+        #expect(trace.kind == .virtualDisplayCreate)
+        #expect(trace.source == .createVirtualDisplaySheet)
+        #expect(trace.createdConfigID == createdConfigID)
+    }
+
+    @Test func initInjectsRuntimeBackedVirtualDisplayDeleteExecutor() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Runtime Delete",
+            serialNum: 9408,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+        virtualDisplay.currentRunningConfigIds = [config.id]
+        virtualDisplay.runtimeDisplayIDByConfigId = [config.id: 9408]
+
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        #expect(env.virtualDisplay.hasConfiguredDeleteExecutor)
+
+        try await env.virtualDisplay.deleteVirtualDisplay(configId: config.id)
+        let trace = try #require(env.displayRuntime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(virtualDisplay.destroyDisplayByConfigCallCount == 1)
+        #expect(virtualDisplay.destroyedConfigIDs == [config.id])
+        #expect(trace.kind == .virtualDisplayDelete)
+        #expect(trace.source == .deleteVirtualDisplayConfirmation)
+        #expect(trace.targetConfigID == config.id)
+        #expect(trace.runtimeTrackingClearOutcome == .cleared)
+    }
+
     @Test func editRebuildRuntimeTraceDisplayNameIsAbsentFromObservabilityAndSupportBundle() async throws {
         let secretName = "Runtime Secret Edit Name"
         let config = VirtualDisplayConfig(
@@ -217,6 +288,71 @@ struct AppBootstrapTests {
         #expect(runtimeJSON.contains(secretName) == false)
         #expect(diagnosticsJSON.contains(secretName) == false)
         #expect(bundleStateJSON.contains(secretName) == false)
+    }
+
+    @Test func createDeleteRuntimeTraceDisplayNameIsAbsentFromObservabilityAndSupportBundle() async throws {
+        let secretCreateName = "Runtime Secret Create Name"
+        let secretDeleteName = "Runtime Secret Delete Name"
+        let createdConfigID = UUID()
+        let deleteConfig = VirtualDisplayConfig(
+            displayName: secretDeleteName,
+            serialNum: 9409,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [deleteConfig]
+        virtualDisplay.currentRunningConfigIds = [deleteConfig.id]
+        virtualDisplay.runtimeDisplayIDByConfigId = [deleteConfig.id: 9409]
+        virtualDisplay.createDisplayResult = .success(createdConfigID)
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: true
+        )
+
+        _ = try await env.virtualDisplay.createVirtualDisplay(
+            VirtualDisplayCreateRequest(
+                displayName: secretCreateName,
+                serialNumber: 9410,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                maximumPixelWidth: 1920,
+                maximumPixelHeight: 1080,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+            )
+        )
+        try await env.virtualDisplay.deleteVirtualDisplay(configId: deleteConfig.id)
+        await env.waitForStartupObservability()
+        await env.observability.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
+
+        let runtimeJSON = String(
+            decoding: try JSONEncoder().encode(env.displayRuntime.makeSnapshot()),
+            as: UTF8.self
+        )
+        let diagnostics = await env.observability.diagnosticsSnapshot()
+        let diagnosticsJSON = String(
+            decoding: try JSONEncoder().encode(diagnostics.state),
+            as: UTF8.self
+        )
+        let bundleURL = try await env.observability.exportBundle(
+            draft: FeedbackDraft(happened: "Create delete failed"),
+            consent: FeedbackConsent()
+        )
+        let bundleStateJSON = try supportBundleEntryString(
+            archiveURL: bundleURL,
+            relativePathSuffix: "/state/current-state.json"
+        )
+
+        for secretName in [secretCreateName, secretDeleteName] {
+            #expect(runtimeJSON.contains(secretName) == false)
+            #expect(diagnosticsJSON.contains(secretName) == false)
+            #expect(bundleStateJSON.contains(secretName) == false)
+        }
     }
 
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {

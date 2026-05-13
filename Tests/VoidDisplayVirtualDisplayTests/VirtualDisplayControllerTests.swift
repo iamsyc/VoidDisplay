@@ -528,7 +528,7 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
-    @Test func createDisplayPropagatesFailureAndSetsPersistencePresentation() {
+    @Test func createVirtualDisplayPropagatesFailureAndSetsPersistencePresentation() async {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -541,23 +541,28 @@ struct VirtualDisplayControllerTests {
             desiredEnabled: true
         )
         virtualDisplay.currentDisplayConfigs = [existing]
-        virtualDisplay.createDisplayResult = .failure(
-            NSError(domain: "VirtualDisplayControllerTests", code: 72)
-        )
+        let createError = NSError(domain: "VirtualDisplayControllerTests", code: 72)
 
         let sut = makeControllerEnvironment(
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
+        sut.virtualDisplay.configureCreateExecutor { _ in
+            throw createError
+        }
 
-        #expect(throws: Error.self) {
-            _ = try sut.virtualDisplay.createDisplay(
-                name: "New",
-                serialNum: 127,
-                physicalSize: CGSize(width: 300, height: 200),
-                maxPixels: (width: 1920, height: 1080),
-                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+        await #expect(throws: Error.self) {
+            _ = try await sut.virtualDisplay.createVirtualDisplay(
+                VirtualDisplayCreateRequest(
+                    displayName: "New",
+                    serialNumber: 127,
+                    physicalWidthMillimeters: 300,
+                    physicalHeightMillimeters: 200,
+                    maximumPixelWidth: 1920,
+                    maximumPixelHeight: 1080,
+                    modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+                )
             )
         }
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [existing.id])
@@ -565,7 +570,40 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
-    @Test func createDisplayRollbackFailureUsesLocalizedPersistenceRecoveryErrorMessage() {
+    @Test func createVirtualDisplayRecoveryFailureIsPresentedAsSuccess() async throws {
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let sut = makeControllerEnvironment(
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay
+        )
+        let createdID = UUID()
+        sut.virtualDisplay.configureCreateExecutor { _ in
+            VirtualDisplayCreateTransactionResult(
+                transactionID: UUID(),
+                status: .completedWithRecoveryFailures,
+                createdConfigID: createdID,
+                virtualDisplayCommandSucceeded: true
+            )
+        }
+
+        let result = try await sut.virtualDisplay.createVirtualDisplay(
+            VirtualDisplayCreateRequest(
+                displayName: "Recovered",
+                serialNumber: 1271,
+                physicalWidthMillimeters: 300,
+                physicalHeightMillimeters: 200,
+                maximumPixelWidth: 1920,
+                maximumPixelHeight: 1080,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+            )
+        )
+
+        #expect(result == createdID)
+        #expect(sut.virtualDisplay.persistenceAlert == nil)
+    }
+
+    @Test func createVirtualDisplayRollbackFailureUsesLocalizedPersistenceRecoveryErrorMessage() async {
         let store = FakeVirtualDisplayStore()
         store.scriptedSaveErrors = [
             nil,
@@ -588,18 +626,30 @@ struct VirtualDisplayControllerTests {
             virtualDisplayFacade: orchestrator,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        sut.configureRebuildExecutor { [weak sut] configID, _ in
-            guard let sut else { return }
-            try await sut.rebuildVirtualDisplay(configId: configID)
+        sut.configureCreateExecutor { [weak sut] request in
+            guard let sut else {
+                throw NSError(domain: "VirtualDisplayControllerTests", code: 77)
+            }
+            let result = try sut.createDisplayCommand(request)
+            return VirtualDisplayCreateTransactionResult(
+                transactionID: UUID(),
+                status: .completed,
+                createdConfigID: result.createdConfigID,
+                virtualDisplayCommandSucceeded: result.runtimeCreationOutcome == .succeeded
+            )
         }
 
-        #expect(throws: Error.self) {
-            _ = try sut.createDisplay(
-                name: "New",
-                serialNum: 200,
-                physicalSize: CGSize(width: 300, height: 200),
-                maxPixels: (width: 1920, height: 1080),
-                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+        await #expect(throws: Error.self) {
+            _ = try await sut.createVirtualDisplay(
+                VirtualDisplayCreateRequest(
+                    displayName: "New",
+                    serialNumber: 200,
+                    physicalWidthMillimeters: 300,
+                    physicalHeightMillimeters: 200,
+                    maximumPixelWidth: 1920,
+                    maximumPixelHeight: 1080,
+                    modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+                )
             )
         }
         #expect(sut.persistenceAlert != nil)

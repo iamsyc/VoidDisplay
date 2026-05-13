@@ -415,6 +415,53 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
             requiresFleetQuiesce: result.requiresFleetQuiesce
         )
     }
+
+    package func createVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayCreateRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayCreateCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let commandRequest = VirtualDisplayCreateRequest(runtimeRequest: request)
+        do {
+            let result = try controller.createDisplayCommand(commandRequest)
+            return DisplayRuntimeVirtualDisplayCreateCommandResult(
+                transactionID: request.transactionID,
+                lowerResult: result
+            )
+        } catch let failure as VirtualDisplayCreateCommandFailure {
+            throw DisplayRuntimeVirtualDisplayCreateCommandError(
+                reason: failure.reason,
+                result: DisplayRuntimeVirtualDisplayCreateCommandResult(
+                    transactionID: request.transactionID,
+                    lowerResult: failure.result
+                )
+            )
+        }
+    }
+
+    package func deleteVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayDeleteCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayDeleteCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        do {
+            let result = try controller.deleteDisplayCommand(configId: request.configID)
+            return DisplayRuntimeVirtualDisplayDeleteCommandResult(
+                transactionID: request.transactionID,
+                lowerResult: result
+            )
+        } catch let failure as VirtualDisplayDeleteCommandFailure {
+            throw DisplayRuntimeVirtualDisplayDeleteCommandError(
+                reason: failure.reason,
+                result: DisplayRuntimeVirtualDisplayDeleteCommandResult(
+                    transactionID: request.transactionID,
+                    lowerResult: failure.result
+                )
+            )
+        }
+    }
 }
 
 private extension DisplayRuntimeScopeEscalationReason {
@@ -445,6 +492,138 @@ private extension VirtualDisplayConfig {
             },
             desiredEnabled: editDTO.desiredEnabled
         )
+    }
+}
+
+private extension VirtualDisplayCreateRequest {
+    init(runtimeRequest: DisplayRuntimeVirtualDisplayCreateRequest) {
+        self.init(
+            displayName: runtimeRequest.displayName,
+            serialNumber: runtimeRequest.serialNumber,
+            physicalWidthMillimeters: runtimeRequest.physicalWidthMillimeters,
+            physicalHeightMillimeters: runtimeRequest.physicalHeightMillimeters,
+            maximumPixelWidth: runtimeRequest.maximumPixelWidth,
+            maximumPixelHeight: runtimeRequest.maximumPixelHeight,
+            modes: runtimeRequest.modes.map {
+                ResolutionSelection(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            }
+        )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayCreateCommandResult {
+    init(
+        transactionID: DisplayRuntimeTransactionID,
+        lowerResult: VirtualDisplayCreateCommandResult
+    ) {
+        self.init(
+            transactionID: transactionID,
+            createdConfigID: lowerResult.createdConfigID,
+            serialNumber: lowerResult.serialNumber,
+            targetWasRunningAfterCommand: lowerResult.targetWasRunningAfterCommand,
+            preDisplayID: lowerResult.preDisplayID,
+            postDisplayID: lowerResult.postDisplayID,
+            persistenceOutcome: DisplayRuntimePersistenceOutcome(lowerResult.persistenceOutcome),
+            runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.runtimeCreationOutcome),
+            rollbackOutcome: DisplayRuntimePersistenceOutcome(lowerResult.rollbackOutcome),
+            createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence(lowerResult.createdConfigEvidence),
+            runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
+            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.map(DisplayRuntimeManagedVirtualDisplay.init)
+        )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayDeleteCommandResult {
+    init(
+        transactionID: DisplayRuntimeTransactionID,
+        lowerResult: VirtualDisplayDeleteCommandResult
+    ) {
+        self.init(
+            transactionID: transactionID,
+            configID: lowerResult.configID,
+            targetWasRunning: lowerResult.targetWasRunning,
+            preDisplayID: lowerResult.preDisplayID,
+            postDisplayID: lowerResult.postDisplayID,
+            persistenceOutcome: DisplayRuntimePersistenceOutcome(lowerResult.persistenceOutcome),
+            virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.virtualDisplayCommandOutcome),
+            runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome(lowerResult.runtimeTrackingClearOutcome),
+            runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
+            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.map(DisplayRuntimeManagedVirtualDisplay.init)
+        )
+    }
+}
+
+private extension DisplayRuntimeManagedVirtualDisplay {
+    init(_ display: ManagedVirtualDisplayRuntimeSnapshot) {
+        self.init(
+            configID: display.configId,
+            serialNumber: display.serialNum,
+            displayID: display.displayID,
+            isLiveRuntime: display.isLiveRuntime
+        )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayCreateConfigEvidence {
+    init(_ evidence: VirtualDisplayCommandConfigEvidence) {
+        self.init(
+            id: evidence.id,
+            serialNumber: evidence.serialNumber,
+            desiredEnabled: evidence.desiredEnabled,
+            physicalWidthMillimeters: evidence.physicalWidthMillimeters,
+            physicalHeightMillimeters: evidence.physicalHeightMillimeters,
+            modeCount: evidence.modeCount,
+            maximumPixelWidth: evidence.maximumPixelWidth,
+            maximumPixelHeight: evidence.maximumPixelHeight
+        )
+    }
+}
+
+private extension DisplayRuntimePersistenceOutcome {
+    init(_ outcome: VirtualDisplayCommandPersistenceOutcome) {
+        switch outcome {
+        case .notAttempted:
+            self = .notAttempted
+        case .saved:
+            self = .saved
+        case .failed:
+            self = .failed
+        case .rolledBack:
+            self = .rolledBack
+        case .rollbackFailed:
+            self = .rollbackFailed
+        }
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayCommandOutcome {
+    init(_ outcome: VirtualDisplayCommandRuntimeOutcome) {
+        switch outcome {
+        case .notAttempted:
+            self = .notAttempted
+        case .succeeded:
+            self = .succeeded
+        case .failed:
+            self = .failed
+        }
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome {
+    init(_ outcome: VirtualDisplayRuntimeTrackingClearOutcome) {
+        switch outcome {
+        case .notAttempted:
+            self = .notAttempted
+        case .cleared:
+            self = .cleared
+        case .failed:
+            self = .failed
+        }
     }
 }
 

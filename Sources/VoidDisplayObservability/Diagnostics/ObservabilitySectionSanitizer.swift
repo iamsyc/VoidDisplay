@@ -53,14 +53,11 @@ package nonisolated struct ObservabilitySectionSanitizer: Sendable {
 
     private func sanitizeVirtualDisplay(_ value: JSONValue) -> JSONValue {
         guard case .object(var object) = value else { return value }
-        let configLabels = makeVirtualDisplayLabels(from: object["configs"])
 
         if let configs = object["configs"]?.arrayValue {
             object["configs"] = .array(configs.map { configValue in
                 guard case .object(var config) = configValue else { return configValue }
-                if let id = config["id"]?.stringValue {
-                    config["displayName"] = .string(configLabels[id] ?? "Virtual Display")
-                }
+                config.removeValue(forKey: "displayName")
                 return .object(config)
             })
         }
@@ -68,9 +65,7 @@ package nonisolated struct ObservabilitySectionSanitizer: Sendable {
         if let restoreFailures = object["restoreFailures"]?.arrayValue {
             object["restoreFailures"] = .array(restoreFailures.map { failureValue in
                 guard case .object(var failure) = failureValue else { return failureValue }
-                if let id = failure["configID"]?.stringValue {
-                    failure["displayName"] = .string(configLabels[id] ?? "Virtual Display")
-                }
+                failure.removeValue(forKey: "displayName")
                 return .object(failure)
             })
         }
@@ -90,25 +85,4 @@ package nonisolated struct ObservabilitySectionSanitizer: Sendable {
         })
     }
 
-    private func makeVirtualDisplayLabels(from configsValue: JSONValue?) -> [String: String] {
-        let rows: [(id: String, serialNumber: Int)] = configsValue?.arrayValue?.compactMap { configValue in
-            guard let object = configValue.objectValue,
-                  let id = object["id"]?.stringValue,
-                  let serialNumber = object["serialNumber"]?.intValue else {
-                return nil
-            }
-            return (id: id, serialNumber: serialNumber)
-        } ?? []
-
-        let sortedRows = rows.sorted { lhs, rhs in
-            if lhs.serialNumber == rhs.serialNumber {
-                return lhs.id < rhs.id
-            }
-            return lhs.serialNumber < rhs.serialNumber
-        }
-
-        return Dictionary(uniqueKeysWithValues: sortedRows.enumerated().map { index, row in
-            (row.id, "Virtual Display \(index + 1)")
-        })
-    }
 }

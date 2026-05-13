@@ -155,8 +155,8 @@ struct ObservabilityCenterTests {
         let virtualDisplaySection = try #require(state.sections["virtualDisplay"])
         let virtualDisplay = try virtualDisplaySection.decode(TestVirtualDisplaySnapshot.self)
         #expect(virtualDisplay.configs.count == 1)
-        #expect(virtualDisplay.configs.first?.displayName == "Virtual Display 1")
-        #expect(virtualDisplay.restoreFailures.first?.displayName == "Virtual Display 1")
+        #expect(virtualDisplaySection.containsKey("displayName") == false)
+        #expect(virtualDisplaySection.containsString("Editing Desk") == false)
         #expect(virtualDisplay.configStoreLoadErrorMessage?.contains("~") == true)
         #expect(virtualDisplay.configStoreDiagnosticsSummary?.contains("<redacted-ip>") == true)
         #expect(virtualDisplay.restoreFailures.first?.message.contains("<redacted-ip>") == true)
@@ -361,7 +361,7 @@ private struct TestVirtualDisplaySnapshot: Codable, Equatable, Sendable {
         }
 
         let id: UUID
-        let displayName: String
+        let displayName: String?
         let serialNumber: UInt32
         let desiredEnabled: Bool
         let physicalWidthMillimeters: Int
@@ -378,7 +378,7 @@ private struct TestVirtualDisplaySnapshot: Codable, Equatable, Sendable {
 
     struct RestoreFailure: Codable, Equatable, Sendable {
         let configID: UUID
-        let displayName: String
+        let displayName: String?
         let message: String
     }
 
@@ -393,6 +393,32 @@ private struct TestVirtualDisplaySnapshot: Codable, Equatable, Sendable {
     let managedDisplays: [ManagedDisplay]
     let configs: [Config]
     let restoreFailures: [RestoreFailure]
+}
+
+private extension JSONValue {
+    func containsKey(_ key: String) -> Bool {
+        switch self {
+        case .object(let object):
+            object.keys.contains(key) || object.values.contains { $0.containsKey(key) }
+        case .array(let array):
+            array.contains { $0.containsKey(key) }
+        case .string, .number, .bool, .null:
+            false
+        }
+    }
+
+    func containsString(_ needle: String) -> Bool {
+        switch self {
+        case .object(let object):
+            object.values.contains { $0.containsString(needle) }
+        case .array(let array):
+            array.contains { $0.containsString(needle) }
+        case .string(let string):
+            string.contains(needle)
+        case .number, .bool, .null:
+            false
+        }
+    }
 }
 
 private func decodeArchiveEntry<T: Decodable>(

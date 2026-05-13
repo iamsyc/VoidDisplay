@@ -255,6 +255,8 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var createDisplayResult: Result<UUID, Error> = .failure(
         NSError(domain: "MockVirtualDisplayFacade", code: 1)
     )
+    var createDisplayCommandCallCount = 0
+    var createDisplayCommandSerialNumbers: [UInt32] = []
     var applyModesCallCount = 0
     var applyModesConfigIds: [UUID] = []
     var rebuildVirtualDisplayCallCount = 0
@@ -351,14 +353,69 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     @discardableResult
-    func createDisplay(
+    func createDisplayCommand(
         name: String,
         serialNum: UInt32,
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> UUID {
-        try createDisplayResult.get()
+    ) throws -> VirtualDisplayCreateCommandResult {
+        createDisplayCommandCallCount += 1
+        createDisplayCommandSerialNumbers.append(serialNum)
+        let evidence = VirtualDisplayCommandConfigEvidence(
+            id: nil,
+            serialNumber: serialNum,
+            desiredEnabled: true,
+            physicalWidthMillimeters: UInt32(clamping: Int(physicalSize.width)),
+            physicalHeightMillimeters: UInt32(clamping: Int(physicalSize.height)),
+            modeCount: modes.count,
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
+        )
+        do {
+            let configID = try createDisplayResult.get()
+            return VirtualDisplayCreateCommandResult(
+                createdConfigID: configID,
+                serialNumber: serialNum,
+                targetWasRunningAfterCommand: currentRunningConfigIds.contains(configID),
+                preDisplayID: nil,
+                postDisplayID: runtimeDisplayIDByConfigId[configID],
+                persistenceOutcome: .saved,
+                runtimeCreationOutcome: .succeeded,
+                rollbackOutcome: .notAttempted,
+                createdConfigEvidence: VirtualDisplayCommandConfigEvidence(
+                    id: configID,
+                    serialNumber: serialNum,
+                    desiredEnabled: true,
+                    physicalWidthMillimeters: UInt32(clamping: Int(physicalSize.width)),
+                    physicalHeightMillimeters: UInt32(clamping: Int(physicalSize.height)),
+                    modeCount: modes.count,
+                    maximumPixelWidth: maxPixels.width,
+                    maximumPixelHeight: maxPixels.height
+                ),
+                runningConfigIDsAfterCommand: Array(currentRunningConfigIds),
+                managedDisplaysAfterCommand: snapshot.managedDisplays
+            )
+        } catch {
+            let result = VirtualDisplayCreateCommandResult(
+                createdConfigID: nil,
+                serialNumber: serialNum,
+                targetWasRunningAfterCommand: false,
+                preDisplayID: nil,
+                postDisplayID: nil,
+                persistenceOutcome: .failed,
+                runtimeCreationOutcome: .notAttempted,
+                rollbackOutcome: .notAttempted,
+                createdConfigEvidence: evidence,
+                runningConfigIDsAfterCommand: Array(currentRunningConfigIds),
+                managedDisplaysAfterCommand: snapshot.managedDisplays
+            )
+            throw VirtualDisplayCreateCommandFailure(
+                reason: "config_append_failed",
+                result: result,
+                underlyingError: error
+            )
+        }
     }
 
     func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
@@ -418,15 +475,43 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         )
     }
 
-    func destroyDisplay(_ configId: UUID) throws {
+    func deleteDisplayCommand(_ configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
         destroyDisplayByConfigCallCount += 1
         destroyedConfigIDs.append(configId)
         if let destroyDisplayError {
-            throw destroyDisplayError
+            let result = VirtualDisplayDeleteCommandResult(
+                configID: configId,
+                targetWasRunning: currentRunningConfigIds.contains(configId),
+                preDisplayID: runtimeDisplayIDByConfigId[configId],
+                postDisplayID: runtimeDisplayIDByConfigId[configId],
+                persistenceOutcome: .failed,
+                virtualDisplayCommandOutcome: .failed,
+                runtimeTrackingClearOutcome: .notAttempted,
+                runningConfigIDsAfterCommand: Array(currentRunningConfigIds),
+                managedDisplaysAfterCommand: snapshot.managedDisplays
+            )
+            throw VirtualDisplayDeleteCommandFailure(
+                reason: "config_delete_failed",
+                result: result,
+                underlyingError: destroyDisplayError
+            )
         }
+        let preDisplayID = runtimeDisplayIDByConfigId[configId]
+        let targetWasRunning = currentRunningConfigIds.contains(configId) || preDisplayID != nil
         currentDisplayConfigs.removeAll { $0.id == configId }
         currentRunningConfigIds.remove(configId)
         runtimeDisplayIDByConfigId[configId] = nil
+        return VirtualDisplayDeleteCommandResult(
+            configID: configId,
+            targetWasRunning: targetWasRunning,
+            preDisplayID: preDisplayID,
+            postDisplayID: nil,
+            persistenceOutcome: .saved,
+            virtualDisplayCommandOutcome: .succeeded,
+            runtimeTrackingClearOutcome: .cleared,
+            runningConfigIDsAfterCommand: Array(currentRunningConfigIds),
+            managedDisplaysAfterCommand: snapshot.managedDisplays
+        )
     }
 
     func updateConfig(_ updated: VirtualDisplayConfig) throws {

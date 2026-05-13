@@ -41,6 +41,12 @@ package protocol DisplayRuntimeVirtualDisplayCommanding {
     func disableVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult
+    func createVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayCreateRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayCreateCommandResult
+    func deleteVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayDeleteCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayDeleteCommandResult
 }
 
 @MainActor

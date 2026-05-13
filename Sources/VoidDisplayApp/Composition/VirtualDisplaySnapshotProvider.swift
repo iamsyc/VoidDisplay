@@ -12,7 +12,6 @@ package struct VirtualDisplaySnapshotProvider: ObservabilitySnapshotProvider, @u
             }
 
             let id: UUID
-            let displayName: String
             let serialNumber: UInt32
             let desiredEnabled: Bool
             let physicalWidthMillimeters: Int
@@ -27,7 +26,6 @@ package struct VirtualDisplaySnapshotProvider: ObservabilitySnapshotProvider, @u
         }
          package nonisolated struct RestoreFailure: Codable, Equatable, Sendable {
             let configID: UUID
-            let displayName: String
             let message: String
         }
 
@@ -92,7 +90,6 @@ package struct VirtualDisplaySnapshotProvider: ObservabilitySnapshotProvider, @u
             configs: controller.displayConfigs.map { config in
                 .init(
                     id: config.id,
-                    displayName: config.displayName,
                     serialNumber: config.serialNum,
                     desiredEnabled: config.desiredEnabled,
                     physicalWidthMillimeters: config.physicalWidth,
@@ -110,7 +107,6 @@ package struct VirtualDisplaySnapshotProvider: ObservabilitySnapshotProvider, @u
             restoreFailures: controller.restoreFailures.map {
                 .init(
                     configID: $0.id,
-                    displayName: $0.name,
                     message: $0.message
                 )
             }

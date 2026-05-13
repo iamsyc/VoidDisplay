@@ -444,6 +444,151 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
+    @Test func virtualDisplayAdapterCreateUsesCommandOnlyPathAndMapsFacts() async throws {
+        let createdID = UUID()
+        let facade = MockVirtualDisplayFacade()
+        facade.createDisplayResult = .success(createdID)
+        facade.runtimeDisplayIDByConfigId[createdID] = 8310
+        facade.currentRunningConfigIds = [createdID]
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let result = try await sut.createVirtualDisplay(
+            request: runtimeCreateRequest(displayName: "Adapter Secret", serialNumber: 9310)
+        )
+
+        #expect(facade.createDisplayCommandCallCount == 1)
+        #expect(facade.createDisplayCommandSerialNumbers == [9310])
+        #expect(result.createdConfigID == createdID)
+        #expect(result.persistenceOutcome == .saved)
+        #expect(result.runtimeCreationOutcome == .succeeded)
+        #expect(result.rollbackOutcome == .notAttempted)
+        #expect(controller.persistenceAlert == nil)
+    }
+
+    @Test func virtualDisplayAdapterCreateReportsRollbackFailureWithoutSnapshotDiffGuessing() async throws {
+        let createdID = UUID()
+        let facade = MockVirtualDisplayFacade()
+        facade.createDisplayResult = .failure(
+            VirtualDisplayCreateCommandFailure(
+                reason: "persistenceRecoveryFailed",
+                result: VirtualDisplayCreateCommandResult(
+                    createdConfigID: createdID,
+                    serialNumber: 9311,
+                    targetWasRunningAfterCommand: false,
+                    preDisplayID: nil,
+                    postDisplayID: nil,
+                    persistenceOutcome: .rollbackFailed,
+                    runtimeCreationOutcome: .failed,
+                    rollbackOutcome: .rollbackFailed,
+                    createdConfigEvidence: .init(
+                        id: createdID,
+                        serialNumber: 9311,
+                        desiredEnabled: true,
+                        physicalWidthMillimeters: 600,
+                        physicalHeightMillimeters: 340,
+                        modeCount: 1,
+                        maximumPixelWidth: 1920,
+                        maximumPixelHeight: 1080
+                    ),
+                    runningConfigIDsAfterCommand: [],
+                    managedDisplaysAfterCommand: []
+                ),
+                underlyingError: NSError(domain: "Create", code: 11)
+            )
+        )
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        await #expect(throws: DisplayRuntimeVirtualDisplayCreateCommandError.self) {
+            _ = try await sut.createVirtualDisplay(
+                request: runtimeCreateRequest(displayName: "Adapter Rollback", serialNumber: 9311)
+            )
+        }
+        #expect(facade.createDisplayCommandCallCount == 1)
+        #expect(controller.persistenceAlert == nil)
+    }
+
+    @Test func virtualDisplayAdapterDeleteUsesCommandOnlyPathAndMapsFacts() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Delete Adapter",
+            serialNum: 9312,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.currentRunningConfigIds = [config.id]
+        facade.runtimeDisplayIDByConfigId[config.id] = 8312
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let result = try await sut.deleteVirtualDisplay(
+            request: .init(
+                transactionID: DisplayRuntimeTransactionID(),
+                configID: config.id,
+                targetPreDisplayID: 8312,
+                targetWasRunning: true
+            )
+        )
+
+        #expect(facade.destroyDisplayByConfigCallCount == 1)
+        #expect(facade.destroyedConfigIDs == [config.id])
+        #expect(result.targetWasRunning)
+        #expect(result.preDisplayID == 8312)
+        #expect(result.runtimeTrackingClearOutcome == .cleared)
+        #expect(controller.persistenceAlert == nil)
+    }
+
+    @Test func virtualDisplayAdapterDeleteDoesNotMapMissingConfigToSuccess() async throws {
+        let configID = UUID()
+        let facade = MockVirtualDisplayFacade()
+        facade.destroyDisplayError = VirtualDisplayDeleteCommandFailure(
+            reason: "config_not_found",
+            result: VirtualDisplayDeleteCommandResult(
+                configID: configID,
+                targetWasRunning: false,
+                preDisplayID: nil,
+                postDisplayID: nil,
+                persistenceOutcome: .notAttempted,
+                virtualDisplayCommandOutcome: .failed,
+                runtimeTrackingClearOutcome: .notAttempted,
+                runningConfigIDsAfterCommand: [],
+                managedDisplaysAfterCommand: []
+            ),
+            underlyingError: NSError(domain: "Delete", code: 12)
+        )
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        await #expect(throws: DisplayRuntimeVirtualDisplayDeleteCommandError.self) {
+            _ = try await sut.deleteVirtualDisplay(
+                request: .init(
+                    transactionID: DisplayRuntimeTransactionID(),
+                    configID: configID,
+                    targetPreDisplayID: nil,
+                    targetWasRunning: false
+                )
+            )
+        }
+        #expect(facade.destroyDisplayByConfigCallCount == 1)
+        #expect(controller.persistenceAlert == nil)
+    }
+
     @Test func virtualDisplayAdapterUnavailableFailsExplicitly() async throws {
         var controller: VirtualDisplayController? = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
@@ -487,5 +632,21 @@ private func editDTO(config: VirtualDisplayConfig) -> DisplayRuntimeVirtualDispl
         },
         maximumPixelWidth: maxPixels.width,
         maximumPixelHeight: maxPixels.height
+    )
+}
+
+private func runtimeCreateRequest(
+    displayName: String,
+    serialNumber: UInt32
+) -> DisplayRuntimeVirtualDisplayCreateRequest {
+    .init(
+        displayName: displayName,
+        serialNumber: serialNumber,
+        physicalWidthMillimeters: 600,
+        physicalHeightMillimeters: 340,
+        maximumPixelWidth: 1920,
+        maximumPixelHeight: 1080,
+        modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+        source: .createVirtualDisplaySheet
     )
 }

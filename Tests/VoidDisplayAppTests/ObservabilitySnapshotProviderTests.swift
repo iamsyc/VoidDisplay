@@ -102,7 +102,7 @@ struct ObservabilitySnapshotProviderTests {
         #expect(snapshot.lifecycle.failureReason == "port_in_use")
     }
 
-    @Test func virtualDisplaySnapshotProviderCapturesRestoreAndRebuildFailures() {
+    @Test func virtualDisplaySnapshotProviderCapturesRestoreAndRebuildFailures() throws {
         let facade = MockVirtualDisplayFacade()
         let configID = UUID()
         facade.currentDisplayConfigs = [
@@ -128,6 +128,10 @@ struct ObservabilitySnapshotProviderTests {
         let snapshot = VirtualDisplaySnapshotProvider(controller: controller).makeSnapshot()
 
         #expect(snapshot.restoreFailures.count == 1)
+        let data = try ObservabilityCodec.encode(snapshot)
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(!json.contains("displayName"))
+        #expect(!json.contains("Desk"))
         #expect(
             snapshot.rebuildFailureMessages[configID.uuidString] ==
                 String(localized: "Failed to rebuild virtual display.")

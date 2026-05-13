@@ -28,6 +28,14 @@ package typealias VirtualDisplayEditRebuildExecutor = @MainActor (
     VirtualDisplayRebuildRequestSource
 ) async throws -> VirtualDisplayEditRebuildTransactionHandle
 
+package typealias VirtualDisplayCreateExecutor = @MainActor (
+    VirtualDisplayCreateRequest
+) async throws -> VirtualDisplayCreateTransactionResult
+
+package typealias VirtualDisplayDeleteExecutor = @MainActor (
+    UUID
+) async throws -> VirtualDisplayDeleteTransactionResult
+
 package nonisolated enum VirtualDisplayRebuildRequestSource: Sendable {
     case rowRetry
     case editSaveAndRebuild
@@ -49,7 +57,15 @@ private struct VirtualDisplayDesiredEnabledExecutorUnavailableError: Error {}
 
 private struct VirtualDisplayEditRebuildExecutorUnavailableError: Error {}
 
+private struct VirtualDisplayCreateExecutorUnavailableError: Error {}
+
+private struct VirtualDisplayDeleteExecutorUnavailableError: Error {}
+
 private struct VirtualDisplayEditRebuildPresentationError: LocalizedError {
+    var errorDescription: String? { nil }
+}
+
+private struct VirtualDisplayRuntimeCommandPresentationError: LocalizedError {
     var errorDescription: String? { nil }
 }
 
@@ -75,6 +91,8 @@ package final class VirtualDisplayController {
     @ObservationIgnored private var rebuildExecutor: VirtualDisplayRebuildExecutor?
     @ObservationIgnored private var desiredEnabledExecutor: VirtualDisplayDesiredEnabledExecutor?
     @ObservationIgnored private var editRebuildExecutor: VirtualDisplayEditRebuildExecutor?
+    @ObservationIgnored private var createExecutor: VirtualDisplayCreateExecutor?
+    @ObservationIgnored private var deleteExecutor: VirtualDisplayDeleteExecutor?
     private var virtualDisplaySnapshot: VirtualDisplaySnapshot
     private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
@@ -224,6 +242,22 @@ package final class VirtualDisplayController {
 
     package var hasConfiguredEditRebuildExecutor: Bool {
         editRebuildExecutor != nil
+    }
+
+    package func configureCreateExecutor(_ executor: VirtualDisplayCreateExecutor?) {
+        createExecutor = executor
+    }
+
+    package var hasConfiguredCreateExecutor: Bool {
+        createExecutor != nil
+    }
+
+    package func configureDeleteExecutor(_ executor: VirtualDisplayDeleteExecutor?) {
+        deleteExecutor = executor
+    }
+
+    package var hasConfiguredDeleteExecutor: Bool {
+        deleteExecutor != nil
     }
 
     package func startRebuildFromSavedConfig(
@@ -413,40 +447,77 @@ package final class VirtualDisplayController {
     }
 
     @discardableResult
-    package func createDisplay(
-        name: String,
-        serialNum: UInt32,
-        physicalSize: CGSize,
-        maxPixels: (width: UInt32, height: UInt32),
-        modes: [ResolutionSelection]
-    ) throws -> UUID {
-        let configID = try performPersistenceAction(
-            title: String(localized: "Create Failed"),
-            operation: "Create virtual display",
-            fallback: String(localized: "Create failed.")
-        ) {
-            try mutateAndSync {
-                try virtualDisplayFacade.createDisplay(
-                    name: name,
-                    serialNum: serialNum,
-                    physicalSize: physicalSize,
-                    maxPixels: maxPixels,
-                    modes: modes
+    package func createVirtualDisplay(_ request: VirtualDisplayCreateRequest) async throws -> UUID? {
+        dismissPersistenceAlert()
+        do {
+            guard let createExecutor else {
+                throw VirtualDisplayCreateExecutorUnavailableError()
+            }
+            let result = try await createExecutor(request)
+            guard result.status != .failed,
+                  result.status != .cancelled,
+                  result.virtualDisplayCommandSucceeded
+            else {
+                throw VirtualDisplayRuntimeCommandPresentationError()
+            }
+            syncVirtualDisplayState()
+            if let configID = result.createdConfigID {
+                await recordEvent(
+                    severity: .notice,
+                    operation: "Create virtual display",
+                    message: "Created virtual display configuration.",
+                    metadata: [
+                        "configID": configID.uuidString,
+                        "serialNumber": "\(request.serialNumber)"
+                    ]
+                )
+            }
+            return result.createdConfigID
+        } catch {
+            syncVirtualDisplayState()
+            recordPersistenceFailure(
+                title: String(localized: "Create Failed"),
+                operation: "Create virtual display",
+                error: error,
+                fallback: String(localized: "Create failed.")
+            )
+            throw error
+        }
+    }
+
+    package func createDisplayCommand(
+        _ request: VirtualDisplayCreateRequest
+    ) throws -> VirtualDisplayCreateCommandResult {
+        let result = try mutateAndSync {
+            try virtualDisplayFacade.createDisplayCommand(
+                name: request.displayName,
+                serialNum: request.serialNumber,
+                physicalSize: CGSize(
+                    width: CGFloat(request.physicalWidthMillimeters),
+                    height: CGFloat(request.physicalHeightMillimeters)
+                ),
+                maxPixels: (
+                    width: request.maximumPixelWidth,
+                    height: request.maximumPixelHeight
+                ),
+                modes: request.modes
+            )
+        }
+        if let configID = result.createdConfigID,
+           result.runtimeCreationOutcome == .succeeded {
+            Task {
+                await recordEvent(
+                    severity: .notice,
+                    operation: "Create virtual display",
+                    message: "Created virtual display configuration.",
+                    metadata: [
+                        "configID": configID.uuidString,
+                        "serialNumber": "\(request.serialNumber)"
+                    ]
                 )
             }
         }
-        Task {
-            await recordEvent(
-                severity: .notice,
-                operation: "Create virtual display",
-                message: "Created virtual display configuration.",
-                metadata: [
-                    "configID": configID.uuidString,
-                    "serialNumber": "\(serialNum)"
-                ]
-            )
-        }
-        return configID
+        return result
     }
 
     package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
@@ -487,24 +558,30 @@ package final class VirtualDisplayController {
         return result
     }
 
-    package func destroyDisplay(_ configId: UUID) throws {
-        try performPersistenceAction(
-            title: String(localized: "Delete Failed"),
-            operation: "Delete virtual display",
-            fallback: String(localized: "Delete failed.")
-        ) {
-            try mutateAndSync {
-                try virtualDisplayFacade.destroyDisplay(configId)
-                clearRebuildPresentationState(configId: configId)
-            }
+    package func deleteVirtualDisplay(configId: UUID) async throws {
+        guard let deleteExecutor else {
+            throw VirtualDisplayDeleteExecutorUnavailableError()
         }
-        Task {
-            await recordEvent(
-                severity: .notice,
-                operation: "Delete virtual display",
-                message: "Deleted virtual display configuration.",
-                metadata: ["configID": configId.uuidString]
-            )
+        let result = try await deleteExecutor(configId)
+        guard result.status != .failed,
+              result.status != .cancelled,
+              result.virtualDisplayCommandSucceeded
+        else {
+            throw VirtualDisplayRuntimeCommandPresentationError()
+        }
+        clearRebuildPresentationState(configId: configId)
+        syncVirtualDisplayState()
+        await recordEvent(
+            severity: .notice,
+            operation: "Delete virtual display",
+            message: "Deleted virtual display configuration.",
+            metadata: ["configID": configId.uuidString]
+        )
+    }
+
+    package func deleteDisplayCommand(configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
+        try mutateAndSync {
+            try virtualDisplayFacade.deleteDisplayCommand(configId)
         }
     }
 

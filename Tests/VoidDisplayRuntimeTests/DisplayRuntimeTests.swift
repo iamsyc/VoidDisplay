@@ -1509,17 +1509,22 @@ struct DisplayRuntimeTests {
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )
 
-        async let enable = runtime.setVirtualDisplayDesiredEnabled(
-            configID: configID,
-            enabled: true,
-            source: .virtualDisplayRowToggle
-        )
-        async let disable = runtime.setVirtualDisplayDesiredEnabled(
-            configID: configID,
-            enabled: false,
-            source: .virtualDisplayRowToggle
-        )
-        _ = try await [enable, disable]
+        let enable = Task { @MainActor in
+            try await runtime.setVirtualDisplayDesiredEnabled(
+                configID: configID,
+                enabled: true,
+                source: .virtualDisplayRowToggle
+            )
+        }
+        await Task.yield()
+        let disable = Task { @MainActor in
+            try await runtime.setVirtualDisplayDesiredEnabled(
+                configID: configID,
+                enabled: false,
+                source: .virtualDisplayRowToggle
+            )
+        }
+        _ = try await [enable.value, disable.value]
         let traces = runtime.makeSnapshot().transactions.recentTransactions
 
         #expect(commander.enableCallCount == 1)
@@ -1579,17 +1584,22 @@ struct DisplayRuntimeTests {
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )
 
-        async let disable = runtime.setVirtualDisplayDesiredEnabled(
-            configID: configID,
-            enabled: false,
-            source: .virtualDisplayRowToggle
-        )
-        async let enable = runtime.setVirtualDisplayDesiredEnabled(
-            configID: configID,
-            enabled: true,
-            source: .virtualDisplayRowToggle
-        )
-        _ = try await [disable, enable]
+        let disable = Task { @MainActor in
+            try await runtime.setVirtualDisplayDesiredEnabled(
+                configID: configID,
+                enabled: false,
+                source: .virtualDisplayRowToggle
+            )
+        }
+        await Task.yield()
+        let enable = Task { @MainActor in
+            try await runtime.setVirtualDisplayDesiredEnabled(
+                configID: configID,
+                enabled: true,
+                source: .virtualDisplayRowToggle
+            )
+        }
+        _ = try await [disable.value, enable.value]
         let traces = runtime.makeSnapshot().transactions.recentTransactions
 
         #expect(commander.disableCallCount == 1)
@@ -2311,6 +2321,292 @@ struct DisplayRuntimeTests {
         #expect(trace.topologyStabilityResult?.sampleCount == 1)
     }
 
+    @Test func createTransactionRecordsCommandFactsAndRedactsDisplayName() async throws {
+        let createdConfigID = UUID()
+        let virtualDisplayProvider = FakeVirtualDisplayProvider(snapshot: .empty)
+        let catalogProvider = FakeCatalogProvider(snapshot: catalogSnapshot(displayIDs: [], mainDisplayID: nil))
+        let commander = FakeVirtualDisplayCommander()
+        commander.createResult = .init(
+            transactionID: DisplayRuntimeTransactionID(),
+            createdConfigID: createdConfigID,
+            serialNumber: 9401,
+            targetWasRunningAfterCommand: true,
+            preDisplayID: nil,
+            postDisplayID: 77,
+            persistenceOutcome: .saved,
+            runtimeCreationOutcome: .succeeded,
+            rollbackOutcome: .notAttempted,
+            createdConfigEvidence: .init(
+                id: createdConfigID,
+                serialNumber: 9401,
+                desiredEnabled: true,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                modeCount: 1,
+                maximumPixelWidth: 1920,
+                maximumPixelHeight: 1080
+            ),
+            runningConfigIDsAfterCommand: [createdConfigID],
+            managedDisplaysAfterCommand: [
+                .init(configID: createdConfigID, serialNumber: 9401, displayID: 77, isLiveRuntime: true)
+            ]
+        )
+        commander.onCreate = { _ in
+            virtualDisplayProvider.setSnapshot(virtualDisplaySnapshot(configID: createdConfigID, displayID: 77))
+            catalogProvider.setSnapshot(catalogSnapshot(displayIDs: [77], mainDisplayID: 77))
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: catalogProvider,
+            virtualDisplayProvider: virtualDisplayProvider,
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.createVirtualDisplay(
+            request: createRequest(displayName: "Secret Display", serialNumber: 9401),
+            source: .createVirtualDisplaySheet
+        )
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+        let encodedTrace = String(
+            data: try JSONEncoder().encode(trace),
+            encoding: .utf8
+        ) ?? ""
+
+        #expect(result.status == .completed)
+        #expect(result.createdConfigID == createdConfigID)
+        #expect(result.runtimeCreationOutcome == .succeeded)
+        #expect(trace.kind == .virtualDisplayCreate)
+        #expect(trace.source == .createVirtualDisplaySheet)
+        #expect(trace.createdConfigID == createdConfigID)
+        #expect(trace.createdConfigEvidence?.serialNumber == 9401)
+        #expect(trace.persistenceOutcome == .saved)
+        #expect(trace.runtimeCreationOutcome == .succeeded)
+        #expect(encodedTrace.contains("Secret Display") == false)
+    }
+
+    @Test func createRuntimeCreationFailureWithRollbackFailureRecordsRecoveryFailure() async throws {
+        let createdConfigID = UUID()
+        let failedResult = DisplayRuntimeVirtualDisplayCreateCommandResult(
+            transactionID: DisplayRuntimeTransactionID(),
+            createdConfigID: createdConfigID,
+            serialNumber: 9402,
+            targetWasRunningAfterCommand: false,
+            preDisplayID: nil,
+            postDisplayID: nil,
+            persistenceOutcome: .rollbackFailed,
+            runtimeCreationOutcome: .failed,
+            rollbackOutcome: .rollbackFailed,
+            createdConfigEvidence: .init(
+                id: createdConfigID,
+                serialNumber: 9402,
+                desiredEnabled: true,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                modeCount: 1,
+                maximumPixelWidth: 1920,
+                maximumPixelHeight: 1080
+            ),
+            runningConfigIDsAfterCommand: [],
+            managedDisplaysAfterCommand: []
+        )
+        let commander = FakeVirtualDisplayCommander()
+        commander.createError = DisplayRuntimeVirtualDisplayCreateCommandError(
+            reason: "persistenceRecoveryFailed",
+            result: failedResult
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayIDs: [], mainDisplayID: nil)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: .empty),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        await #expect(throws: DisplayRuntimeVirtualDisplayCreateCommandError.self) {
+            _ = try await runtime.createVirtualDisplay(
+                request: createRequest(displayName: "Rollback Failure", serialNumber: 9402),
+                source: .createVirtualDisplaySheet
+            )
+        }
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+        #expect(trace.status == .failed)
+        #expect(trace.failure?.reason == "persistenceRecoveryFailed")
+        #expect(trace.persistenceOutcome == .rollbackFailed)
+        #expect(trace.runtimeCreationOutcome == .failed)
+        #expect(trace.rollbackOutcome == .rollbackFailed)
+    }
+
+    @Test func createTopologyUnprovableAfterCommandSuccessCompletesWithRecoveryFailures() async throws {
+        let createdConfigID = UUID()
+        let catalogProvider = FakeCatalogProvider(
+            snapshot: .init(
+                hasScreenCapturePermission: false,
+                lastPreflightPermission: false,
+                lastRequestPermission: nil,
+                isLoadingDisplays: false,
+                hasLoadError: false,
+                lastLoadError: nil,
+                loadedDisplays: [],
+                topologySignature: []
+            )
+        )
+        let virtualDisplayProvider = FakeVirtualDisplayProvider(snapshot: .empty)
+        let commander = FakeVirtualDisplayCommander()
+        commander.createResult = .init(
+            transactionID: DisplayRuntimeTransactionID(),
+            createdConfigID: createdConfigID,
+            serialNumber: 9403,
+            targetWasRunningAfterCommand: true,
+            preDisplayID: nil,
+            postDisplayID: 78,
+            persistenceOutcome: .saved,
+            runtimeCreationOutcome: .succeeded,
+            rollbackOutcome: .notAttempted,
+            createdConfigEvidence: .init(
+                id: createdConfigID,
+                serialNumber: 9403,
+                desiredEnabled: true,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                modeCount: 1,
+                maximumPixelWidth: 1920,
+                maximumPixelHeight: 1080
+            ),
+            runningConfigIDsAfterCommand: [createdConfigID],
+            managedDisplaysAfterCommand: [
+                .init(configID: createdConfigID, serialNumber: 9403, displayID: 78, isLiveRuntime: true)
+            ]
+        )
+        commander.onCreate = { _ in
+            virtualDisplayProvider.setSnapshot(virtualDisplaySnapshot(configID: createdConfigID, displayID: 78))
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: catalogProvider,
+            virtualDisplayProvider: virtualDisplayProvider,
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.createVirtualDisplay(
+            request: createRequest(displayName: "Permission Hidden", serialNumber: 9403),
+            source: .createVirtualDisplaySheet
+        )
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(result.runtimeCreationOutcome == .succeeded)
+        #expect(result.topologyStabilityResult?.status == .unprovableDueToPermission)
+    }
+
+    @Test func deleteTransactionQuiescesBeforeCommandAndSkipsDeletedTargetRestore() async throws {
+        let configID = UUID()
+        let displayID: DisplayRuntimeDisplayID = 88
+        let recorder = RuntimeOperationRecorder()
+        let virtualDisplayProvider = FakeVirtualDisplayProvider(
+            snapshot: virtualDisplaySnapshot(configID: configID, displayID: displayID)
+        )
+        let catalogProvider = FakeCatalogProvider(
+            snapshot: catalogSnapshot(displayIDs: [displayID], mainDisplayID: displayID)
+        )
+        let commander = FakeVirtualDisplayCommander(recorder: recorder)
+        commander.onDelete = { _ in
+            virtualDisplayProvider.setSnapshot(.empty)
+            catalogProvider.setSnapshot(catalogSnapshot(displayIDs: [], mainDisplayID: nil))
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: catalogProvider,
+            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: displayID, capturesCursor: true)),
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: displayID)),
+            virtualDisplayProvider: virtualDisplayProvider,
+            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureCommander: FakeCaptureCommander(recorder: recorder),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.deleteVirtualDisplay(
+            configID: configID,
+            source: .deleteVirtualDisplayConfirmation
+        )
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completed)
+        #expect(result.targetWasRunning)
+        #expect(result.runtimeTrackingClearOutcome == .cleared)
+        #expect(trace.kind == .virtualDisplayDelete)
+        #expect(trace.source == .deleteVirtualDisplayConfirmation)
+        #expect(trace.targetConfigID == configID)
+        #expect(trace.restoreResults.allSatisfy { $0.failureReason == "target_deleted" })
+        #expect(recorder.events.firstIndex(of: "stopSharing:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
+        #expect(recorder.events.firstIndex(of: "removeMonitoring:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
+    }
+
+    @Test func deleteMissingConfigRecordsFailedTraceWithoutCommand() async throws {
+        let missingID = UUID()
+        let commander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: .empty),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        let result = try await runtime.deleteVirtualDisplay(
+            configID: missingID,
+            source: .deleteVirtualDisplayConfirmation
+        )
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(trace.failure?.reason == "config_not_found")
+        #expect(trace.targetConfigID == missingID)
+        #expect(trace.virtualDisplayCommandOutcome == .notAttempted)
+        #expect(commander.deleteCallCount == 0)
+    }
+
+    @Test func deleteCommandFailureDoesNotMapMissingConfigToSuccess() async throws {
+        let configID = UUID()
+        let failedResult = DisplayRuntimeVirtualDisplayDeleteCommandResult(
+            transactionID: DisplayRuntimeTransactionID(),
+            configID: configID,
+            targetWasRunning: false,
+            preDisplayID: nil,
+            postDisplayID: nil,
+            persistenceOutcome: .notAttempted,
+            virtualDisplayCommandOutcome: .failed,
+            runtimeTrackingClearOutcome: .notAttempted,
+            runningConfigIDsAfterCommand: [],
+            managedDisplaysAfterCommand: []
+        )
+        let commander = FakeVirtualDisplayCommander()
+        commander.deleteError = DisplayRuntimeVirtualDisplayDeleteCommandError(
+            reason: "config_not_found",
+            result: failedResult
+        )
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: disabledVirtualDisplaySnapshot(configID: configID, serial: 9404)
+            ),
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+
+        await #expect(throws: DisplayRuntimeVirtualDisplayDeleteCommandError.self) {
+            _ = try await runtime.deleteVirtualDisplay(
+                configID: configID,
+                source: .deleteVirtualDisplayConfirmation
+            )
+        }
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+        #expect(trace.status == .failed)
+        #expect(trace.failure?.reason == "config_not_found")
+        #expect(trace.persistenceOutcome == .notAttempted)
+        #expect(trace.runtimeTrackingClearOutcome == .notAttempted)
+    }
+
     @Test func snapshotProviderUsesRuntimeKeyAndEncodesSnapshot() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(
@@ -2510,6 +2806,22 @@ private func fastTopologyWaitPolicy(maximumSampleCount: Int = 3) -> DisplayRunti
         requiredStableSampleCount: 2,
         maximumSampleCount: maximumSampleCount,
         sampleIntervalNanoseconds: 0
+    )
+}
+
+private func createRequest(
+    displayName: String,
+    serialNumber: UInt32
+) -> DisplayRuntimeVirtualDisplayCreateRequest {
+    .init(
+        displayName: displayName,
+        serialNumber: serialNumber,
+        physicalWidthMillimeters: 600,
+        physicalHeightMillimeters: 340,
+        maximumPixelWidth: 1920,
+        maximumPixelHeight: 1080,
+        modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+        source: .createVirtualDisplaySheet
     )
 }
 
@@ -2864,19 +3176,29 @@ private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCom
     var enableConfigIDs: [UUID] = []
     var disableCallCount = 0
     var disableConfigIDs: [UUID] = []
+    var createCallCount = 0
+    var createRequests: [DisplayRuntimeVirtualDisplayCreateRequest] = []
+    var deleteCallCount = 0
+    var deleteRequests: [DisplayRuntimeVirtualDisplayDeleteCommandRequest] = []
     var enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
     var setDesiredEnabledError: Error?
     var saveConfigForRebuildError: Error?
     var restoreConfigAfterFailedEditError: Error?
     var saveConfigForRebuildResult: DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult?
     var restoreConfigAfterFailedEditResult: DisplayRuntimeVirtualDisplayPersistenceCommandResult?
+    var createResult: DisplayRuntimeVirtualDisplayCreateCommandResult?
+    var deleteResult: DisplayRuntimeVirtualDisplayDeleteCommandResult?
     var enableError: Error?
     var disableError: Error?
+    var createError: Error?
+    var deleteError: Error?
     var onSetDesiredEnabled: ((UUID, Bool) -> Void)?
     var onSaveConfigForRebuild: ((DisplayRuntimeVirtualDisplayEditRebuildRequest) -> Void)?
     var onRestoreConfigAfterFailedEdit: ((DisplayRuntimeVirtualDisplayConfigEditDTO) -> Void)?
     var onEnable: ((UUID) -> Void)?
     var onDisable: ((UUID) -> Void)?
+    var onCreate: ((DisplayRuntimeVirtualDisplayCreateRequest) -> Void)?
+    var onDelete: ((DisplayRuntimeVirtualDisplayDeleteCommandRequest) -> Void)?
     var error: Error?
     var scriptedRebuildErrors: [Error?] = []
 
@@ -3026,6 +3348,82 @@ private final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCom
             managedDisplaysAfterCommand: [],
             mayPerformFleetRebuild: false,
             requiresFleetQuiesce: false
+        )
+    }
+
+    func createVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayCreateRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayCreateCommandResult {
+        createCallCount += 1
+        createRequests.append(request)
+        recorder?.append("create:\(request.serialNumber)")
+        if delayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if let createError {
+            throw createError
+        }
+        onCreate?(request)
+        if let createResult {
+            return createResult
+        }
+        let createdConfigID = UUID()
+        return .init(
+            transactionID: request.transactionID,
+            createdConfigID: createdConfigID,
+            serialNumber: request.serialNumber,
+            targetWasRunningAfterCommand: true,
+            preDisplayID: nil,
+            postDisplayID: 9001,
+            persistenceOutcome: .saved,
+            runtimeCreationOutcome: .succeeded,
+            rollbackOutcome: .notAttempted,
+            createdConfigEvidence: .init(
+                id: createdConfigID,
+                serialNumber: request.serialNumber,
+                desiredEnabled: true,
+                physicalWidthMillimeters: request.physicalWidthMillimeters,
+                physicalHeightMillimeters: request.physicalHeightMillimeters,
+                modeCount: request.modes.count,
+                maximumPixelWidth: request.maximumPixelWidth,
+                maximumPixelHeight: request.maximumPixelHeight
+            ),
+            runningConfigIDsAfterCommand: [createdConfigID],
+            managedDisplaysAfterCommand: [
+                .init(
+                    configID: createdConfigID,
+                    serialNumber: request.serialNumber,
+                    displayID: 9001,
+                    isLiveRuntime: true
+                )
+            ]
+        )
+    }
+
+    func deleteVirtualDisplay(
+        request: DisplayRuntimeVirtualDisplayDeleteCommandRequest
+    ) async throws -> DisplayRuntimeVirtualDisplayDeleteCommandResult {
+        deleteCallCount += 1
+        deleteRequests.append(request)
+        recorder?.append("delete:\(request.configID.uuidString)")
+        if delayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if let deleteError {
+            throw deleteError
+        }
+        onDelete?(request)
+        return deleteResult ?? .init(
+            transactionID: request.transactionID,
+            configID: request.configID,
+            targetWasRunning: request.targetWasRunning,
+            preDisplayID: request.targetPreDisplayID,
+            postDisplayID: nil,
+            persistenceOutcome: .saved,
+            virtualDisplayCommandOutcome: .succeeded,
+            runtimeTrackingClearOutcome: .cleared,
+            runningConfigIDsAfterCommand: [],
+            managedDisplaysAfterCommand: []
         )
     }
 }

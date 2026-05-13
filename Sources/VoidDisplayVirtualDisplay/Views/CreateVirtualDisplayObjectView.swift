@@ -34,6 +34,7 @@ package struct CreateVirtualDisplay: View {
     
     // Validation & alerts
     @State private var localAlert: UserFacingAlertState?
+    @State private var isCreating = false
     
     // Focus state
     private enum FocusField: Hashable {
@@ -92,9 +93,11 @@ package struct CreateVirtualDisplay: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
                     clearFocus()
-                    createDisplayAction()
+                    Task {
+                        await createDisplayAction()
+                    }
                 }
-                .disabled(selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(isCreating || selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -384,7 +387,8 @@ package struct CreateVirtualDisplay: View {
         selectedModes.removeAll { $0.id == mode.id }
     }
     
-    private func createDisplayAction() {
+    private func createDisplayAction() async {
+        guard !isCreating else { return }
         let size = physicalSize
         guard case .resolved(let maxPixelWidth, let maxPixelHeight) = maxPixelDimensions else {
             localAlert = UserFacingAlertState(
@@ -394,16 +398,64 @@ package struct CreateVirtualDisplay: View {
             return
         }
         
+        isCreating = true
+        defer { isCreating = false }
         do {
-            _ = try virtualDisplay.createDisplay(
-                name: name,
-                serialNum: serialNum,
-                physicalSize: CGSize(width: size.width, height: size.height),
-                maxPixels: (width: maxPixelWidth, height: maxPixelHeight),
-                modes: selectedModes
+            _ = try await virtualDisplay.createVirtualDisplay(
+                VirtualDisplayCreateRequest(
+                    displayName: name,
+                    serialNumber: serialNum,
+                    physicalWidthMillimeters: UInt32(clamping: size.width),
+                    physicalHeightMillimeters: UInt32(clamping: size.height),
+                    maximumPixelWidth: maxPixelWidth,
+                    maximumPixelHeight: maxPixelHeight,
+                    modes: selectedModes
+                )
             )
             isShow = false
         } catch {}
+    }
+}
+
+package struct CreateVirtualDisplayWorkflow {
+    package enum Outcome: Equatable {
+        case created
+        case failed
+        case invalidResolution
+    }
+
+    private let create: @MainActor (VirtualDisplayCreateRequest) async throws -> UUID?
+
+    package init(create: @escaping @MainActor (VirtualDisplayCreateRequest) async throws -> UUID?) {
+        self.create = create
+    }
+
+    package func submit(
+        displayName: String,
+        serialNumber: UInt32,
+        physicalSize: (width: Int, height: Int),
+        maxPixelDimensions: CreateVirtualDisplayInputValidator.MaxPixelDimensionsResult,
+        modes: [ResolutionSelection]
+    ) async -> Outcome {
+        guard case .resolved(let maxPixelWidth, let maxPixelHeight) = maxPixelDimensions else {
+            return .invalidResolution
+        }
+        do {
+            _ = try await create(
+                VirtualDisplayCreateRequest(
+                    displayName: displayName,
+                    serialNumber: serialNumber,
+                    physicalWidthMillimeters: UInt32(clamping: physicalSize.width),
+                    physicalHeightMillimeters: UInt32(clamping: physicalSize.height),
+                    maximumPixelWidth: maxPixelWidth,
+                    maximumPixelHeight: maxPixelHeight,
+                    modes: modes
+                )
+            )
+            return .created
+        } catch {
+            return .failed
+        }
     }
 }
 

@@ -94,6 +94,45 @@ private extension VirtualDisplayEditRebuildTransactionStatus {
     }
 }
 
+private extension VirtualDisplayCommandTransactionStatus {
+    init(_ status: DisplayRuntimeTransactionStatus) {
+        switch status {
+        case .completed:
+            self = .completed
+        case .completedWithRecoveryFailures:
+            self = .completedWithRecoveryFailures
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        case .active:
+            self = .failed
+        }
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayCreateRequest {
+    init(request: VirtualDisplayCreateRequest, source: DisplayRuntimeTransactionSource) {
+        self.init(
+            displayName: request.displayName,
+            serialNumber: request.serialNumber,
+            physicalWidthMillimeters: request.physicalWidthMillimeters,
+            physicalHeightMillimeters: request.physicalHeightMillimeters,
+            maximumPixelWidth: request.maximumPixelWidth,
+            maximumPixelHeight: request.maximumPixelHeight,
+            modes: request.modes.map {
+                .init(
+                    width: $0.width,
+                    height: $0.height,
+                    refreshRate: $0.refreshRate,
+                    enableHiDPI: $0.enableHiDPI
+                )
+            },
+            source: source
+        )
+    }
+}
+
 private extension DisplayRuntimeVirtualDisplayConfigEditDTO {
     init(config: VirtualDisplayConfig) {
         let maxPixels = config.maxPixelDimensions
@@ -497,6 +536,34 @@ package enum AppBootstrap {
                         virtualDisplayCommandSucceeded: result.virtualDisplayCommandSucceeded
                     )
                 }
+            )
+        }
+        virtualDisplay.configureCreateExecutor { request in
+            let runtimeSource = DisplayRuntimeTransactionSource.createVirtualDisplaySheet
+            let result = try await displayRuntime.createVirtualDisplay(
+                request: DisplayRuntimeVirtualDisplayCreateRequest(
+                    request: request,
+                    source: runtimeSource
+                ),
+                source: runtimeSource
+            )
+            return VirtualDisplayCreateTransactionResult(
+                transactionID: result.transactionID.rawValue,
+                status: VirtualDisplayCommandTransactionStatus(result.status),
+                createdConfigID: result.createdConfigID,
+                virtualDisplayCommandSucceeded: result.runtimeCreationOutcome == .succeeded
+            )
+        }
+        virtualDisplay.configureDeleteExecutor { configID in
+            let result = try await displayRuntime.deleteVirtualDisplay(
+                configID: configID,
+                source: .deleteVirtualDisplayConfirmation
+            )
+            return VirtualDisplayDeleteTransactionResult(
+                transactionID: result.transactionID.rawValue,
+                status: VirtualDisplayCommandTransactionStatus(result.status),
+                configID: result.configID,
+                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
             )
         }
 
