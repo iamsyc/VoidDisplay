@@ -18,24 +18,6 @@ package nonisolated struct DisplayRuntimeTopologyWaitPolicy: Equatable, Sendable
     package static let `default` = Self()
 }
 
-private nonisolated struct ActiveVirtualDisplayTransactionKey: Hashable {
-    let kind: DisplayRuntimeTransactionKind
-    let configID: UUID
-}
-
-private nonisolated struct ActiveVirtualDisplayTransactionContext: Sendable {
-    let transactionID: DisplayRuntimeTransactionID
-    let kind: DisplayRuntimeTransactionKind
-    let configID: UUID
-    let source: DisplayRuntimeTransactionSource
-}
-
-private nonisolated struct ActiveVirtualDisplayInventoryTransactionContext: Sendable {
-    let transactionID: DisplayRuntimeTransactionID
-    let kind: DisplayRuntimeTransactionKind
-    let source: DisplayRuntimeTransactionSource
-}
-
 @MainActor
 package final class DisplayRuntime {
     let catalogProvider: (any DisplayRuntimeCatalogProviding)?
@@ -51,11 +33,11 @@ package final class DisplayRuntime {
 
     var topologyRefreshTask: Task<Void, Never>?
     var hasPendingTopologyChange = false
-    private var virtualDisplayTransactionQueueTail: Task<Void, Never>?
-    private var activeVirtualDisplayTransactionTasksByKey: [
+    var virtualDisplayTransactionQueueTail: Task<Void, Never>?
+    var activeVirtualDisplayTransactionTasksByKey: [
         ActiveVirtualDisplayTransactionKey: Task<DisplayRuntimeVirtualDisplayRebuildTransactionResult, Error>
     ] = [:]
-    private var activeVirtualDisplayTransactionIDsByKey: [
+    var activeVirtualDisplayTransactionIDsByKey: [
         ActiveVirtualDisplayTransactionKey: DisplayRuntimeTransactionID
     ] = [:]
     var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]
@@ -137,29 +119,15 @@ package final class DisplayRuntime {
             source: source
         )
         let saveGate = DisplayRuntimeAsyncGate<DisplayRuntimeVirtualDisplayEditRebuildSaveGateResult>()
-        let terminalResultGate = DisplayRuntimeAsyncGate<DisplayRuntimeVirtualDisplayRebuildTransactionResult>()
-        let previousTail = virtualDisplayTransactionQueueTail
-
-        setActiveTrace(makeInitialTrace(for: context))
-        let task = Task { @MainActor in
-            if let previousTail {
-                await previousTail.value
-            }
-            let result = await self.executeVirtualDisplayEditRebuildTransaction(
-                effectiveRequest,
-                saveGate: saveGate
-            )
-            terminalResultGate.succeed(result)
-        }
-        virtualDisplayTransactionQueueTail = Task { @MainActor in
-            await task.value
-        }
-        await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-
-        return DisplayRuntimeVirtualDisplayEditRebuildTransactionHandle(
-            transactionID: context.transactionID,
+        return await enqueueUncoalescedVirtualDisplayEditTransaction(
+            context: context,
             saveGate: saveGate,
-            terminalResultGate: terminalResultGate
+            execute: {
+                await self.executeVirtualDisplayEditRebuildTransaction(
+                    effectiveRequest,
+                    saveGate: saveGate
+                )
+            }
         )
     }
 
@@ -203,91 +171,6 @@ package final class DisplayRuntime {
         return try await enqueueUncoalescedVirtualDisplayTransaction(context: context) {
             try await self.executeVirtualDisplayDeleteTransaction(context)
         }
-    }
-
-    private func enqueueVirtualDisplayTransaction(
-        kind: DisplayRuntimeTransactionKind,
-        configID: UUID,
-        source: DisplayRuntimeTransactionSource,
-        execute: @escaping @MainActor (ActiveVirtualDisplayTransactionContext) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult
-    ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
-        let key = ActiveVirtualDisplayTransactionKey(kind: kind, configID: configID)
-        if let activeTask = activeVirtualDisplayTransactionTasksByKey[key],
-           let transactionID = activeVirtualDisplayTransactionIDsByKey[key] {
-            incrementCoalescedRequestCount(transactionID: transactionID)
-            await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-            return try await activeTask.value
-        }
-
-        let context = ActiveVirtualDisplayTransactionContext(
-            transactionID: DisplayRuntimeTransactionID(),
-            kind: kind,
-            configID: configID,
-            source: source
-        )
-        let previousTail = virtualDisplayTransactionQueueTail
-        setActiveTrace(makeInitialTrace(for: context))
-
-        let task = Task { @MainActor in
-            defer {
-                self.activeVirtualDisplayTransactionTasksByKey[key] = nil
-                self.activeVirtualDisplayTransactionIDsByKey[key] = nil
-            }
-            if let previousTail {
-                await previousTail.value
-            }
-            return try await execute(context)
-        }
-        virtualDisplayTransactionQueueTail = Task { @MainActor in
-            _ = try? await task.value
-        }
-        activeVirtualDisplayTransactionTasksByKey[key] = task
-        activeVirtualDisplayTransactionIDsByKey[key] = context.transactionID
-        await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-
-        return try await task.value
-    }
-
-    private func enqueueUncoalescedVirtualDisplayTransaction<Result: Sendable>(
-        context: ActiveVirtualDisplayInventoryTransactionContext,
-        execute: @escaping @MainActor () async throws -> Result
-    ) async throws -> Result {
-        let previousTail = virtualDisplayTransactionQueueTail
-        setActiveTrace(makeInitialTrace(
-            transactionID: context.transactionID,
-            kind: context.kind,
-            source: context.source
-        ))
-        let task = Task { @MainActor in
-            if let previousTail {
-                await previousTail.value
-            }
-            return try await execute()
-        }
-        virtualDisplayTransactionQueueTail = Task { @MainActor in
-            _ = try? await task.value
-        }
-        await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-        return try await task.value
-    }
-
-    private func enqueueUncoalescedVirtualDisplayTransaction<Result: Sendable>(
-        context: ActiveVirtualDisplayTransactionContext,
-        execute: @escaping @MainActor () async throws -> Result
-    ) async throws -> Result {
-        let previousTail = virtualDisplayTransactionQueueTail
-        setActiveTrace(makeInitialTrace(for: context))
-        let task = Task { @MainActor in
-            if let previousTail {
-                await previousTail.value
-            }
-            return try await execute()
-        }
-        virtualDisplayTransactionQueueTail = Task { @MainActor in
-            _ = try? await task.value
-        }
-        await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-        return try await task.value
     }
 
     private func executeVirtualDisplayRebuildTransaction(
@@ -2126,140 +2009,6 @@ package final class DisplayRuntime {
         }
     }
 
-    private func makeInitialTrace(
-        for context: ActiveVirtualDisplayTransactionContext
-    ) -> DisplayRuntimeTransactionTrace {
-        makeInitialTrace(
-            transactionID: context.transactionID,
-            kind: context.kind,
-            source: context.source,
-            targetConfigID: context.configID
-        )
-    }
-
-    private func makeInitialTrace(
-        transactionID: DisplayRuntimeTransactionID,
-        kind: DisplayRuntimeTransactionKind,
-        source: DisplayRuntimeTransactionSource,
-        targetConfigID: UUID? = nil
-    ) -> DisplayRuntimeTransactionTrace {
-        DisplayRuntimeTransactionTrace(
-            id: transactionID,
-            kind: kind,
-            source: source,
-            status: .active,
-            phases: [.init(phase: .queued)],
-            affectedSurfaces: [],
-            preSnapshotEvidence: nil,
-            postSnapshotEvidence: nil,
-            pauseIntents: [],
-            restoreIntents: [],
-            restoreResults: [],
-            failure: nil,
-            compensation: .notRequired,
-            coalescedRequestCount: 0,
-            targetConfigID: targetConfigID
-        )
-    }
-
-    private func appendPhase(
-        _ phase: DisplayRuntimeTransactionPhase,
-        transactionID: DisplayRuntimeTransactionID,
-        note: String? = nil
-    ) async {
-        updateTrace(transactionID) { trace in
-            trace.replacing(phases: trace.phases + [.init(phase: phase, note: note)])
-        }
-        await recordTransactionPhaseEvent(phase, transactionID: transactionID)
-        await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-    }
-
-    private func incrementCoalescedRequestCount(transactionID: DisplayRuntimeTransactionID) {
-        updateTrace(transactionID) { trace in
-            trace.replacing(
-                phases: trace.phases + [.init(phase: .queued, note: "coalesced_duplicate_request")],
-                coalescedRequestCount: trace.coalescedRequestCount + 1
-            )
-        }
-    }
-
-    private func finalizeTransaction(
-        transactionID: DisplayRuntimeTransactionID,
-        kind: DisplayRuntimeTransactionKind = .virtualDisplayRebuild,
-        status: DisplayRuntimeTransactionStatus,
-        phase: DisplayRuntimeTransactionPhase,
-        failure: DisplayRuntimeTransactionFailure?,
-        virtualDisplayCommandSucceeded: Bool,
-        postSnapshot: DisplayRuntimeSnapshot? = nil,
-        topologyStabilityResult: DisplayRuntimeTopologyStabilityResult? = nil,
-        compensation: DisplayRuntimeCompensationResult? = nil,
-        desiredEnabled: Bool? = nil,
-        persistenceOutcome: DisplayRuntimePersistenceOutcome? = nil,
-        virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome? = nil,
-        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome? = nil
-    ) -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
-        let postEvidence = postSnapshot.map(DisplayRuntimeTransactionSnapshotEvidence.init(snapshot:))
-        updateTrace(transactionID) { trace in
-            trace.replacing(
-                status: status,
-                phases: trace.phases + [.init(phase: phase)],
-                postSnapshotEvidence: postEvidence ?? trace.postSnapshotEvidence,
-                topologyStabilityResult: topologyStabilityResult,
-                failure: failure,
-                compensation: compensation,
-                persistenceOutcome: persistenceOutcome,
-                virtualDisplayCommandOutcome: virtualDisplayCommandOutcome,
-                runtimeTrackingClearOutcome: runtimeTrackingClearOutcome
-            )
-        }
-        if let trace = activeTransactionTracesByID.removeValue(forKey: transactionID) {
-            recentTransactionTraces.insert(trace, at: 0)
-            if recentTransactionTraces.count > 20 {
-                recentTransactionTraces = Array(recentTransactionTraces.prefix(20))
-            }
-        }
-        Task {
-            await recordTransactionPhaseEvent(phase, transactionID: transactionID)
-            await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-        }
-        return DisplayRuntimeVirtualDisplayRebuildTransactionResult(
-            transactionID: transactionID,
-            kind: kind,
-            status: status,
-            virtualDisplayCommandSucceeded: virtualDisplayCommandSucceeded,
-            hasSessionRecoveryFailures: status == .completedWithRecoveryFailures,
-            desiredEnabled: desiredEnabled
-        )
-    }
-
-    private func setActiveTrace(_ trace: DisplayRuntimeTransactionTrace) {
-        activeTransactionTracesByID[trace.id] = trace
-    }
-
-    private func updateTrace(
-        _ transactionID: DisplayRuntimeTransactionID,
-        _ update: (DisplayRuntimeTransactionTrace) -> DisplayRuntimeTransactionTrace
-    ) {
-        guard let trace = activeTransactionTracesByID[transactionID] else { return }
-        activeTransactionTracesByID[transactionID] = update(trace)
-    }
-
-    private func transactionFailure(
-        phase: DisplayRuntimeTransactionPhase,
-        reason: String,
-        error: Error,
-        recoverability: DisplayRuntimeTransactionRecoverability
-    ) -> DisplayRuntimeTransactionFailure {
-        let nsError = error as NSError
-        return DisplayRuntimeTransactionFailure(
-            phase: phase,
-            reason: reason,
-            underlyingDomain: nsError.domain,
-            underlyingCode: nsError.code,
-            recoverability: recoverability
-        )
-    }
-
     private func firstValuesByKey<Value, Key: Hashable>(
         _ values: [Value],
         key: (Value) -> Key
@@ -2269,33 +2018,6 @@ package final class DisplayRuntime {
             result[key(value)] = result[key(value)] ?? value
         }
         return result
-    }
-
-    private func recordTransactionPhaseEvent(
-        _ phase: DisplayRuntimeTransactionPhase,
-        transactionID: DisplayRuntimeTransactionID
-    ) async {
-        let severity: DisplayRuntimeObservabilitySeverity
-        switch phase {
-        case .failed, .cancelled:
-            severity = .warning
-        case .queued, .preparing, .persistingConfig, .compensatingPersistence, .quiescingSessions, .executingVirtualDisplayCommand,
-             .waitingForTopology, .restoringSessions, .completed:
-            severity = .info
-        }
-        await observabilityRecorder?.record(
-            DisplayRuntimeObservabilityEvent(
-                domain: .displayRuntime,
-                severity: severity,
-                operation: "Virtual display transaction",
-                message: "Virtual display transaction phase changed.",
-                metadata: [
-                    "transactionID": transactionID.rawValue.uuidString,
-                    "phase": phase.rawValue
-                ],
-                deduplicationKey: nil
-            )
-        )
     }
 
 }
