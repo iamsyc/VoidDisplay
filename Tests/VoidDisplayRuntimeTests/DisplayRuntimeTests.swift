@@ -943,6 +943,148 @@ struct DisplayRuntimeTests {
         #expect(traces.allSatisfy { $0.coalescedRequestCount == 0 })
     }
 
+    @Test func editRebuildSameConfigDifferentEditedConfigsSerializeAndReReadState() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000011")!
+        let initial = editConfigDTO(id: configID, displayName: "Initial", serial: 9111)
+        let firstEdited = editConfigDTO(id: configID, displayName: "First Edit", serial: 9112)
+        let secondEdited = editConfigDTO(id: configID, displayName: "Second Edit", serial: 9113)
+        let provider = FakeVirtualDisplayProvider(
+            snapshot: runningVirtualDisplaySnapshot(
+                configID: configID,
+                serial: initial.serialNumber,
+                displayID: 111,
+                desiredEnabled: true
+            )
+        )
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 50_000_000)
+        commander.onSaveConfigForRebuild = { request in
+            provider.setSnapshot(
+                runningVirtualDisplaySnapshot(
+                    configID: configID,
+                    serial: request.editedConfig.serialNumber,
+                    displayID: 111,
+                    desiredEnabled: true
+                )
+            )
+        }
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: provider,
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let firstHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: firstEdited,
+                expectedConfigFingerprint: initial.fingerprint,
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+        let secondHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: secondEdited,
+                expectedConfigFingerprint: firstEdited.fingerprint,
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+
+        for handle in [firstHandle, secondHandle] {
+            _ = try await handle.waitForSaveGate()
+            _ = try await handle.waitForTerminalResult()
+        }
+        let tracesByEditedSerial = Dictionary(
+            uniqueKeysWithValues: runtime.makeSnapshot().transactions.recentTransactions.compactMap { trace in
+                trace.editedConfigEvidence.map { ($0.serialNumber, trace) }
+            }
+        )
+
+        #expect(Set([firstHandle.transactionID, secondHandle.transactionID]).count == 2)
+        #expect(commander.saveConfigForRebuildRequests.map(\.editedConfig.serialNumber) == [9112, 9113])
+        #expect(commander.rebuildConfigIDs == [configID, configID])
+        #expect(tracesByEditedSerial[9112]?.oldConfigEvidence?.serialNumber == 9111)
+        #expect(tracesByEditedSerial[9113]?.oldConfigEvidence?.serialNumber == 9112)
+        #expect(tracesByEditedSerial.values.allSatisfy { $0.coalescedRequestCount == 0 })
+    }
+
+    @Test func editRebuildSameConfigDifferentExpectedFingerprintsStaleFailIndependently() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000012")!
+        let initial = editConfigDTO(id: configID, displayName: "Initial", serial: 9121)
+        let firstEdited = editConfigDTO(id: configID, displayName: "First Edit", serial: 9122)
+        let secondEdited = editConfigDTO(id: configID, displayName: "Second Edit", serial: 9123)
+        let provider = FakeVirtualDisplayProvider(
+            snapshot: runningVirtualDisplaySnapshot(
+                configID: configID,
+                serial: initial.serialNumber,
+                displayID: 112,
+                desiredEnabled: true
+            )
+        )
+        let commander = FakeVirtualDisplayCommander(delayNanoseconds: 50_000_000)
+        commander.onSaveConfigForRebuild = { request in
+            guard request.editedConfig.serialNumber == firstEdited.serialNumber else { return }
+            provider.setSnapshot(
+                runningVirtualDisplaySnapshot(
+                    configID: configID,
+                    serial: firstEdited.serialNumber,
+                    displayID: 112,
+                    desiredEnabled: true
+                )
+            )
+            commander.saveConfigForRebuildError = DisplayRuntimeVirtualDisplayEditRebuildSaveCommandError.editRequestStale
+        }
+        let runtime = DisplayRuntime(
+            virtualDisplayProvider: provider,
+            catalogCommander: FakeCatalogCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+
+        let firstHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: firstEdited,
+                expectedConfigFingerprint: initial.fingerprint,
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+        let secondHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: secondEdited,
+                expectedConfigFingerprint: "different-stale-fingerprint",
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+
+        _ = try await firstHandle.waitForSaveGate()
+        await #expect(throws: DisplayRuntimeVirtualDisplayEditRebuildFailure.self) {
+            _ = try await secondHandle.waitForSaveGate()
+        }
+        let firstResult = try await firstHandle.waitForTerminalResult()
+        let secondResult = try await secondHandle.waitForTerminalResult()
+        let tracesByEditedSerial = Dictionary(
+            uniqueKeysWithValues: runtime.makeSnapshot().transactions.recentTransactions.compactMap { trace in
+                trace.editedConfigEvidence.map { ($0.serialNumber, trace) }
+            }
+        )
+
+        #expect(firstResult.status != .failed)
+        #expect(secondResult.status == .failed)
+        #expect(secondResult.transactionID == secondHandle.transactionID)
+        #expect(commander.saveConfigForRebuildRequests.map(\.expectedConfigFingerprint) == [
+            initial.fingerprint,
+            "different-stale-fingerprint"
+        ])
+        #expect(commander.rebuildConfigIDs == [configID])
+        #expect(tracesByEditedSerial[9122]?.oldConfigEvidence?.serialNumber == 9121)
+        #expect(tracesByEditedSerial[9123]?.oldConfigEvidence?.serialNumber == 9122)
+        #expect(tracesByEditedSerial[9123]?.failure?.reason == "edit_request_stale")
+        #expect(tracesByEditedSerial.values.allSatisfy { $0.coalescedRequestCount == 0 })
+    }
+
     @Test func enableTransactionSuccessRecordsEvidenceAndTraceKind() async throws {
         let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000001")!
         let catalog = catalogSnapshot(displayID: 107, isMain: false)
