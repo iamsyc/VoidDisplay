@@ -150,13 +150,16 @@ package struct SupportCenterView: View {
     }
 
     private var userSummaryPanel: some View {
-        summaryPanel(
+        let runtimeSummary = RuntimeDiagnosticsSummary(state: snapshot?.state)
+        return summaryPanel(
             title: String(localized: "Status"),
             rows: [
                 (
                     String(localized: "Current Status"),
-                    snapshot.map { currentStatusLabel(for: $0) } ?? String(localized: "Looks Good")
+                    snapshot.map { currentStatusLabel(for: $0, runtimeSummary: runtimeSummary) } ??
+                        String(localized: "Looks Good")
                 ),
+                (String(localized: "Runtime Snapshot"), runtimeSummary.statusCode),
                 (String(localized: "Recent Issue Count"), "\(snapshot?.health.recentIssueCount ?? 0)"),
                 (String(localized: "Recent Event Count"), "\(snapshot?.health.recentEventCount ?? 0)"),
                 (String(localized: "Suggested Action"), statusRecommendation())
@@ -224,14 +227,11 @@ package struct SupportCenterView: View {
             columns: [GridItem(.adaptive(minimum: 220), spacing: AppUI.Spacing.medium)],
             spacing: AppUI.Spacing.medium
         ) {
+            let runtimeSummary = RuntimeDiagnosticsSummary(state: snapshot?.state)
             summaryPanel(
                 title: String(localized: "Runtime"),
-                rows: [
-                    (
-                        String(localized: "Snapshot Sections"),
-                        snapshot?.state.sections.keys.sorted().joined(separator: ", ") ?? "-"
-                    )
-                ]
+                rows: runtimeSummaryRows(for: runtimeSummary),
+                accessibilityIdentifier: "support_center_runtime_panel"
             )
 
             if let system = decodeSection("system", as: SystemSnapshotProvider.Snapshot.self),
@@ -247,6 +247,22 @@ package struct SupportCenterView: View {
                 )
             }
         }
+    }
+
+    private func runtimeSummaryRows(for summary: RuntimeDiagnosticsSummary) -> [(String, String)] {
+        [
+            (String(localized: "Runtime Snapshot"), summary.statusCode),
+            (String(localized: "Schema Version"), summary.schemaVersion.map(String.init) ?? "-"),
+            (String(localized: "Surface Count"), "\(summary.surfaceCount)"),
+            (String(localized: "Active Consumer Leases"), "\(summary.activeConsumerLeaseCount)"),
+            (String(localized: "Total Consumer Leases"), "\(summary.totalConsumerLeaseCount)"),
+            (String(localized: "Aggregated Demand Count"), "\(summary.aggregatedDemandCount)"),
+            (String(localized: "Active Viewer Count"), "\(summary.activeViewerCount)"),
+            (String(localized: "Effective Capture Intents"), "\(summary.effectiveCaptureIntentCount)"),
+            (String(localized: "Active Transactions"), "\(summary.activeTransactionCount)"),
+            (String(localized: "Recent Transactions"), "\(summary.recentTransactionCount)"),
+            (String(localized: "Last Failure"), summary.lastFailureCode ?? "-")
+        ]
     }
 
     private var issuesPanel: some View {
@@ -364,7 +380,13 @@ package struct SupportCenterView: View {
         Array(controller.exportHistory.dropFirst())
     }
 
-    private func currentStatusLabel(for snapshot: ObservabilityDiagnosticsSnapshot) -> String {
+    private func currentStatusLabel(
+        for snapshot: ObservabilityDiagnosticsSnapshot,
+        runtimeSummary: RuntimeDiagnosticsSummary
+    ) -> String {
+        guard runtimeSummary.isAvailable else {
+            return String(localized: "Attention Needed")
+        }
         if snapshot.health.recentIssueCount > 0 ||
             (snapshot.health.highestSeverity ?? .debug) >= .warning {
             return String(localized: "Attention Needed")
@@ -375,6 +397,10 @@ package struct SupportCenterView: View {
     private func statusRecommendation() -> String {
         guard let snapshot else {
             return String(localized: "If the issue happened recently, export a support package now.")
+        }
+        let runtimeSummary = RuntimeDiagnosticsSummary(state: snapshot.state)
+        guard runtimeSummary.isAvailable else {
+            return String(localized: "Refresh diagnostics, then export a support package if the runtime snapshot stays unavailable.")
         }
 
         if snapshot.health.recentIssueCount > 0 ||

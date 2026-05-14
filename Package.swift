@@ -100,7 +100,8 @@ let package = Package(
             dependencies: [
                 "VoidDisplayDesignSystem",
                 "VoidDisplayFoundation",
-                "VoidDisplayObservability"
+                "VoidDisplayObservability",
+                "VoidDisplayRuntime"
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -194,6 +195,7 @@ let package = Package(
             dependencies: [
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
+                "VoidDisplayRuntime",
                 "VoidDisplayFoundation",
                 "VoidDisplayTestingSupport"
             ],
