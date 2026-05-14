@@ -55,108 +55,6 @@ package struct AppEnvironment {
     }
 }
 
-private extension DisplayRuntimeTransactionSource {
-    init(_ source: VirtualDisplayRebuildRequestSource) {
-        switch source {
-        case .rowRetry:
-            self = .virtualDisplayRowRetry
-        case .editSaveAndRebuild:
-            self = .editSaveAndRebuild
-        case .unknown:
-            self = .unknown
-        }
-    }
-
-    init(_ source: VirtualDisplayDesiredEnabledRequestSource) {
-        switch source {
-        case .rowToggle:
-            self = .virtualDisplayRowToggle
-        case .unknown:
-            self = .unknown
-        }
-    }
-}
-
-private extension VirtualDisplayEditRebuildTransactionStatus {
-    init(_ status: DisplayRuntimeTransactionStatus) {
-        switch status {
-        case .completed:
-            self = .completed
-        case .completedWithRecoveryFailures:
-            self = .completedWithRecoveryFailures
-        case .failed:
-            self = .failed
-        case .cancelled:
-            self = .cancelled
-        case .active:
-            self = .failed
-        }
-    }
-}
-
-private extension VirtualDisplayCommandTransactionStatus {
-    init(_ status: DisplayRuntimeTransactionStatus) {
-        switch status {
-        case .completed:
-            self = .completed
-        case .completedWithRecoveryFailures:
-            self = .completedWithRecoveryFailures
-        case .failed:
-            self = .failed
-        case .cancelled:
-            self = .cancelled
-        case .active:
-            self = .failed
-        }
-    }
-}
-
-private extension DisplayRuntimeVirtualDisplayCreateRequest {
-    init(request: VirtualDisplayCreateRequest, source: DisplayRuntimeTransactionSource) {
-        self.init(
-            displayName: request.displayName,
-            serialNumber: request.serialNumber,
-            physicalWidthMillimeters: request.physicalWidthMillimeters,
-            physicalHeightMillimeters: request.physicalHeightMillimeters,
-            maximumPixelWidth: request.maximumPixelWidth,
-            maximumPixelHeight: request.maximumPixelHeight,
-            modes: request.modes.map {
-                .init(
-                    width: $0.width,
-                    height: $0.height,
-                    refreshRate: $0.refreshRate,
-                    enableHiDPI: $0.enableHiDPI
-                )
-            },
-            source: source
-        )
-    }
-}
-
-private extension DisplayRuntimeVirtualDisplayConfigEditDTO {
-    init(config: VirtualDisplayConfig) {
-        let maxPixels = config.maxPixelDimensions
-        self.init(
-            id: config.id,
-            displayName: config.displayName,
-            serialNumber: config.serialNum,
-            desiredEnabled: config.desiredEnabled,
-            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-            modes: config.modes.map {
-                .init(
-                    width: $0.width,
-                    height: $0.height,
-                    refreshRate: $0.refreshRate,
-                    enableHiDPI: $0.enableHiDPI
-                )
-            },
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
-        )
-    }
-}
-
 public struct VoidDisplayApplication: App {
     @NSApplicationDelegateAdaptor(VoidDisplayApplicationDelegate.self) private var appDelegate
     @State private var capture: CaptureController
@@ -530,7 +428,7 @@ package enum AppBootstrap {
             let runtimeSource = DisplayRuntimeTransactionSource(source)
             let runtimeHandle = try await displayRuntime.saveVirtualDisplayConfigAndRebuild(
                 request: DisplayRuntimeVirtualDisplayEditRebuildRequest(
-                    editedConfig: DisplayRuntimeVirtualDisplayConfigEditDTO(config: updatedConfig),
+                    editedConfig: DisplayRuntimeVirtualDisplayConfigEditDTO(adapterConfig: updatedConfig),
                     expectedConfigFingerprint: expectedConfigFingerprint,
                     source: runtimeSource
                 ),

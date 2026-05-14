@@ -3,6 +3,62 @@ import VoidDisplayFoundation
 import VoidDisplayRuntime
 import VoidDisplayVirtualDisplay
 
+extension DisplayRuntimeTransactionSource {
+    init(_ source: VirtualDisplayRebuildRequestSource) {
+        switch source {
+        case .rowRetry:
+            self = .virtualDisplayRowRetry
+        case .editSaveAndRebuild:
+            self = .editSaveAndRebuild
+        case .unknown:
+            self = .unknown
+        }
+    }
+
+    init(_ source: VirtualDisplayDesiredEnabledRequestSource) {
+        switch source {
+        case .rowToggle:
+            self = .virtualDisplayRowToggle
+        case .unknown:
+            self = .unknown
+        }
+    }
+}
+
+extension VirtualDisplayEditRebuildTransactionStatus {
+    init(_ status: DisplayRuntimeTransactionStatus) {
+        switch status {
+        case .completed:
+            self = .completed
+        case .completedWithRecoveryFailures:
+            self = .completedWithRecoveryFailures
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        case .active:
+            self = .failed
+        }
+    }
+}
+
+extension VirtualDisplayCommandTransactionStatus {
+    init(_ status: DisplayRuntimeTransactionStatus) {
+        switch status {
+        case .completed:
+            self = .completed
+        case .completedWithRecoveryFailures:
+            self = .completedWithRecoveryFailures
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        case .active:
+            self = .failed
+        }
+    }
+}
+
 extension DisplayRuntimeScopeEscalationReason {
     init?(_ reason: VirtualDisplayEnablePreflight.ScopeEscalationReason?) {
         guard let reason else { return nil }
@@ -10,6 +66,27 @@ extension DisplayRuntimeScopeEscalationReason {
         case .enableMayPerformFleetRebuild:
             self = .enableMayPerformFleetRebuild
         }
+    }
+}
+
+extension DisplayRuntimeVirtualDisplaySnapshot {
+    @MainActor
+    init(
+        adapterController controller: VirtualDisplayController
+    ) {
+        self.init(
+            rebuildRequestCount: controller.rebuildRequestCount,
+            rebuildingConfigIDs: Array(controller.rebuildingConfigIds),
+            runningConfigIDs: Array(controller.runningConfigIds),
+            recentlyAppliedConfigIDs: Array(controller.recentlyAppliedConfigIds),
+            rebuildFailureConfigIDs: Array(controller.rebuildFailureMessageByConfigId.keys),
+            configStoreHasLoadFailure: controller.configStorePresentation.hasLoadFailure,
+            configStoreHasDiagnostics: controller.configStorePresentation.loadErrorMessage != nil
+                || controller.configStorePresentation.diagnosticsSummary != nil,
+            managedDisplays: controller.managedDisplays.displayRuntimeManagedDisplays,
+            configs: controller.displayConfigs.displayRuntimeVirtualDisplayConfigs,
+            restoreFailureConfigIDs: controller.restoreFailures.map(\.id)
+        )
     }
 }
 
@@ -21,14 +98,7 @@ extension VirtualDisplayConfig {
             serialNum: editDTO.serialNumber,
             physicalWidth: Int(editDTO.physicalWidthMillimeters),
             physicalHeight: Int(editDTO.physicalHeightMillimeters),
-            modes: editDTO.modes.map {
-                .init(
-                    width: $0.width,
-                    height: $0.height,
-                    refreshRate: $0.refreshRate,
-                    enableHiDPI: $0.enableHiDPI
-                )
-            },
+            modes: editDTO.modes.adapterModeConfigs,
             desiredEnabled: editDTO.desiredEnabled
         )
     }
@@ -43,14 +113,60 @@ extension VirtualDisplayCreateRequest {
             physicalHeightMillimeters: runtimeRequest.physicalHeightMillimeters,
             maximumPixelWidth: runtimeRequest.maximumPixelWidth,
             maximumPixelHeight: runtimeRequest.maximumPixelHeight,
-            modes: runtimeRequest.modes.map {
-                ResolutionSelection(
-                    width: $0.width,
-                    height: $0.height,
-                    refreshRate: $0.refreshRate,
-                    enableHiDPI: $0.enableHiDPI
-                )
-            }
+            modes: runtimeRequest.modes.resolutionSelections
+        )
+    }
+}
+
+extension DisplayRuntimeVirtualDisplayCreateRequest {
+    init(request: VirtualDisplayCreateRequest, source: DisplayRuntimeTransactionSource) {
+        self.init(
+            displayName: request.displayName,
+            serialNumber: request.serialNumber,
+            physicalWidthMillimeters: request.physicalWidthMillimeters,
+            physicalHeightMillimeters: request.physicalHeightMillimeters,
+            maximumPixelWidth: request.maximumPixelWidth,
+            maximumPixelHeight: request.maximumPixelHeight,
+            modes: request.modes.displayRuntimeModeDTOs,
+            source: source
+        )
+    }
+}
+
+extension DisplayRuntimeVirtualDisplayRebuildCommandResult {
+    init(
+        configID: UUID,
+        preDisplayID: DisplayRuntimeDisplayID?,
+        postDisplayID: DisplayRuntimeDisplayID?,
+        runningConfigIDsAfterCommand: Set<UUID>,
+        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
+    ) {
+        self.init(
+            configID: configID,
+            preDisplayID: preDisplayID,
+            postDisplayID: postDisplayID,
+            runningConfigIDsAfterCommand: Array(runningConfigIDsAfterCommand),
+            managedDisplaysAfterCommand: managedDisplaysAfterCommand.displayRuntimeManagedDisplays
+        )
+    }
+}
+
+extension DisplayRuntimeVirtualDisplayLifecycleCommandResult {
+    init(
+        lowerResult: VirtualDisplayLifecycleCommandResult,
+        request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest,
+        runningConfigIDsAfterCommand: Set<UUID>,
+        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
+    ) {
+        self.init(
+            configID: lowerResult.configID,
+            desiredEnabled: lowerResult.desiredEnabled,
+            preDisplayID: lowerResult.preDisplayID ?? request.targetPreDisplayID,
+            postDisplayID: lowerResult.postDisplayID,
+            runningConfigIDsAfterCommand: Array(runningConfigIDsAfterCommand),
+            managedDisplaysAfterCommand: managedDisplaysAfterCommand.displayRuntimeManagedDisplays,
+            mayPerformFleetRebuild: lowerResult.mayPerformFleetRebuild,
+            requiresFleetQuiesce: lowerResult.requiresFleetQuiesce
         )
     }
 }
@@ -72,7 +188,7 @@ extension DisplayRuntimeVirtualDisplayCreateCommandResult {
             rollbackOutcome: DisplayRuntimePersistenceOutcome(lowerResult.rollbackOutcome),
             createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence(lowerResult.createdConfigEvidence),
             runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
-            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.map(DisplayRuntimeManagedVirtualDisplay.init)
+            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.displayRuntimeManagedDisplays
         )
     }
 }
@@ -92,19 +208,123 @@ extension DisplayRuntimeVirtualDisplayDeleteCommandResult {
             virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.virtualDisplayCommandOutcome),
             runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome(lowerResult.runtimeTrackingClearOutcome),
             runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
-            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.map(DisplayRuntimeManagedVirtualDisplay.init)
+            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.displayRuntimeManagedDisplays
         )
     }
 }
 
 private extension DisplayRuntimeManagedVirtualDisplay {
-    init(_ display: ManagedVirtualDisplayRuntimeSnapshot) {
+    init(adapterManagedDisplay display: ManagedVirtualDisplayRuntimeSnapshot) {
         self.init(
             configID: display.configId,
             serialNumber: display.serialNum,
             displayID: display.displayID,
             isLiveRuntime: display.isLiveRuntime
         )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayConfig {
+    init(adapterConfig config: VirtualDisplayConfig) {
+        self.init(
+            id: config.id,
+            serialNumber: config.serialNum,
+            desiredEnabled: config.desiredEnabled,
+            physicalWidthMillimeters: config.physicalWidth,
+            physicalHeightMillimeters: config.physicalHeight,
+            modes: config.modes.displayRuntimeModes
+        )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayMode {
+    init(adapterMode mode: VirtualDisplayConfig.ModeConfig) {
+        self.init(
+            width: mode.width,
+            height: mode.height,
+            refreshRate: mode.refreshRate,
+            enableHiDPI: mode.enableHiDPI
+        )
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayModeDTO {
+    init(adapterMode mode: VirtualDisplayConfig.ModeConfig) {
+        self.init(
+            width: mode.width,
+            height: mode.height,
+            refreshRate: mode.refreshRate,
+            enableHiDPI: mode.enableHiDPI
+        )
+    }
+
+    init(resolutionSelection mode: ResolutionSelection) {
+        self.init(
+            width: mode.width,
+            height: mode.height,
+            refreshRate: mode.refreshRate,
+            enableHiDPI: mode.enableHiDPI
+        )
+    }
+}
+
+private extension VirtualDisplayConfig.ModeConfig {
+    init(runtimeMode mode: DisplayRuntimeVirtualDisplayModeDTO) {
+        self.init(
+            width: mode.width,
+            height: mode.height,
+            refreshRate: mode.refreshRate,
+            enableHiDPI: mode.enableHiDPI
+        )
+    }
+}
+
+private extension ResolutionSelection {
+    init(runtimeMode mode: DisplayRuntimeVirtualDisplayModeDTO) {
+        self.init(
+            width: mode.width,
+            height: mode.height,
+            refreshRate: mode.refreshRate,
+            enableHiDPI: mode.enableHiDPI
+        )
+    }
+}
+
+private extension Array where Element == ManagedVirtualDisplayRuntimeSnapshot {
+    var displayRuntimeManagedDisplays: [DisplayRuntimeManagedVirtualDisplay] {
+        map { DisplayRuntimeManagedVirtualDisplay(adapterManagedDisplay: $0) }
+    }
+}
+
+private extension Array where Element == VirtualDisplayConfig {
+    var displayRuntimeVirtualDisplayConfigs: [DisplayRuntimeVirtualDisplayConfig] {
+        map { DisplayRuntimeVirtualDisplayConfig(adapterConfig: $0) }
+    }
+}
+
+private extension Array where Element == VirtualDisplayConfig.ModeConfig {
+    var displayRuntimeModes: [DisplayRuntimeVirtualDisplayMode] {
+        map { DisplayRuntimeVirtualDisplayMode(adapterMode: $0) }
+    }
+
+    var displayRuntimeModeDTOs: [DisplayRuntimeVirtualDisplayModeDTO] {
+        map { DisplayRuntimeVirtualDisplayModeDTO(adapterMode: $0) }
+    }
+}
+
+private extension Array where Element == DisplayRuntimeVirtualDisplayModeDTO {
+    var adapterModeConfigs: [VirtualDisplayConfig.ModeConfig] {
+        map { VirtualDisplayConfig.ModeConfig(runtimeMode: $0) }
+    }
+
+    var resolutionSelections: [ResolutionSelection] {
+        map { ResolutionSelection(runtimeMode: $0) }
+    }
+}
+
+private extension Array where Element == ResolutionSelection {
+    var displayRuntimeModeDTOs: [DisplayRuntimeVirtualDisplayModeDTO] {
+        map { DisplayRuntimeVirtualDisplayModeDTO(resolutionSelection: $0) }
     }
 }
 
@@ -176,14 +396,7 @@ extension DisplayRuntimeVirtualDisplayConfigEditDTO {
             desiredEnabled: config.desiredEnabled,
             physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
             physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-            modes: config.modes.map {
-                .init(
-                    width: $0.width,
-                    height: $0.height,
-                    refreshRate: $0.refreshRate,
-                    enableHiDPI: $0.enableHiDPI
-                )
-            },
+            modes: config.modes.displayRuntimeModeDTOs,
             maximumPixelWidth: maxPixels.width,
             maximumPixelHeight: maxPixels.height
         )

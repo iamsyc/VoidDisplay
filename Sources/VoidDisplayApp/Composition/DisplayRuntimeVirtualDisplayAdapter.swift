@@ -12,42 +12,7 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
 
     package func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
         guard let controller else { return .empty }
-        return DisplayRuntimeVirtualDisplaySnapshot(
-            rebuildRequestCount: controller.rebuildRequestCount,
-            rebuildingConfigIDs: Array(controller.rebuildingConfigIds),
-            runningConfigIDs: Array(controller.runningConfigIds),
-            recentlyAppliedConfigIDs: Array(controller.recentlyAppliedConfigIds),
-            rebuildFailureConfigIDs: Array(controller.rebuildFailureMessageByConfigId.keys),
-            configStoreHasLoadFailure: controller.configStorePresentation.hasLoadFailure,
-            configStoreHasDiagnostics: controller.configStorePresentation.loadErrorMessage != nil
-                || controller.configStorePresentation.diagnosticsSummary != nil,
-            managedDisplays: controller.managedDisplays.map {
-                .init(
-                    configID: $0.configId,
-                    serialNumber: $0.serialNum,
-                    displayID: $0.displayID,
-                    isLiveRuntime: $0.isLiveRuntime
-                )
-            },
-            configs: controller.displayConfigs.map { config in
-                .init(
-                    id: config.id,
-                    serialNumber: config.serialNum,
-                    desiredEnabled: config.desiredEnabled,
-                    physicalWidthMillimeters: config.physicalWidth,
-                    physicalHeightMillimeters: config.physicalHeight,
-                    modes: config.modes.map {
-                        .init(
-                            width: $0.width,
-                            height: $0.height,
-                            refreshRate: $0.refreshRate,
-                            enableHiDPI: $0.enableHiDPI
-                        )
-                    }
-                )
-            },
-            restoreFailureConfigIDs: controller.restoreFailures.map(\.id)
-        )
+        return DisplayRuntimeVirtualDisplaySnapshot(adapterController: controller)
     }
 
     package func rebuildVirtualDisplay(configID: UUID) async throws -> DisplayRuntimeVirtualDisplayRebuildCommandResult {
@@ -60,15 +25,8 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
             configID: configID,
             preDisplayID: preDisplayID,
             postDisplayID: controller.runtimeDisplayID(for: configID),
-            runningConfigIDsAfterCommand: Array(controller.runningConfigIds),
-            managedDisplaysAfterCommand: controller.managedDisplays.map {
-                .init(
-                    configID: $0.configId,
-                    serialNumber: $0.serialNum,
-                    displayID: $0.displayID,
-                    isLiveRuntime: $0.isLiveRuntime
-                )
-            }
+            runningConfigIDsAfterCommand: controller.runningConfigIds,
+            managedDisplaysAfterCommand: controller.managedDisplays
         )
     }
 
@@ -149,21 +107,10 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
         }
         let result = try await controller.enableRuntimeDisplay(request.configID)
         return DisplayRuntimeVirtualDisplayLifecycleCommandResult(
-            configID: result.configID,
-            desiredEnabled: result.desiredEnabled,
-            preDisplayID: result.preDisplayID ?? request.targetPreDisplayID,
-            postDisplayID: result.postDisplayID,
-            runningConfigIDsAfterCommand: Array(controller.runningConfigIds),
-            managedDisplaysAfterCommand: controller.managedDisplays.map {
-                .init(
-                    configID: $0.configId,
-                    serialNumber: $0.serialNum,
-                    displayID: $0.displayID,
-                    isLiveRuntime: $0.isLiveRuntime
-                )
-            },
-            mayPerformFleetRebuild: result.mayPerformFleetRebuild,
-            requiresFleetQuiesce: result.requiresFleetQuiesce
+            lowerResult: result,
+            request: request,
+            runningConfigIDsAfterCommand: controller.runningConfigIds,
+            managedDisplaysAfterCommand: controller.managedDisplays
         )
     }
 
@@ -175,21 +122,10 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
         }
         let result = try controller.disableRuntimeDisplayByConfig(request.configID)
         return DisplayRuntimeVirtualDisplayLifecycleCommandResult(
-            configID: result.configID,
-            desiredEnabled: result.desiredEnabled,
-            preDisplayID: result.preDisplayID ?? request.targetPreDisplayID,
-            postDisplayID: result.postDisplayID,
-            runningConfigIDsAfterCommand: Array(controller.runningConfigIds),
-            managedDisplaysAfterCommand: controller.managedDisplays.map {
-                .init(
-                    configID: $0.configId,
-                    serialNumber: $0.serialNum,
-                    displayID: $0.displayID,
-                    isLiveRuntime: $0.isLiveRuntime
-                )
-            },
-            mayPerformFleetRebuild: result.mayPerformFleetRebuild,
-            requiresFleetQuiesce: result.requiresFleetQuiesce
+            lowerResult: result,
+            request: request,
+            runningConfigIDsAfterCommand: controller.runningConfigIds,
+            managedDisplaysAfterCommand: controller.managedDisplays
         )
     }
 

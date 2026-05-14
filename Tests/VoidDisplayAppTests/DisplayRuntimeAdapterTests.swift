@@ -639,6 +639,70 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.configID == config.id)
         #expect(result.preDisplayID == 8302)
         #expect(result.postDisplayID == 8302)
+        #expect(result.runningConfigIDsAfterCommand == [config.id])
+        #expect(result.managedDisplaysAfterCommand == [
+            DisplayRuntimeManagedVirtualDisplay(
+                configID: config.id,
+                serialNumber: 9301,
+                displayID: 8302,
+                isLiveRuntime: true
+            )
+        ])
+    }
+
+    @Test func virtualDisplayAdapterSnapshotMapsConfigAndManagedDisplayDTOFields() throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Snapshot Mapping",
+            serialNum: 9300,
+            physicalWidth: 610,
+            physicalHeight: 350,
+            modes: [
+                .init(width: 2560, height: 1440, refreshRate: 75, enableHiDPI: true),
+                .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
+            ],
+            desiredEnabled: true
+        )
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.currentRunningConfigIds = [config.id]
+        facade.runtimeDisplayIDByConfigId[config.id] = 8300
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let snapshot = sut.makeVirtualDisplaySnapshot()
+        let dto = try #require(snapshot.configs.first)
+
+        #expect(snapshot.runningConfigIDs == [config.id])
+        #expect(snapshot.managedDisplays == [
+            DisplayRuntimeManagedVirtualDisplay(
+                configID: config.id,
+                serialNumber: 9300,
+                displayID: 8300,
+                isLiveRuntime: true
+            )
+        ])
+        #expect(dto.id == config.id)
+        #expect(dto.serialNumber == 9300)
+        #expect(dto.desiredEnabled)
+        #expect(dto.physicalWidthMillimeters == 610)
+        #expect(dto.physicalHeightMillimeters == 350)
+        #expect(dto.modes == [
+            DisplayRuntimeVirtualDisplayMode(
+                width: 1920,
+                height: 1080,
+                refreshRate: 60,
+                enableHiDPI: false
+            ),
+            DisplayRuntimeVirtualDisplayMode(
+                width: 2560,
+                height: 1440,
+                refreshRate: 75,
+                enableHiDPI: true
+            )
+        ])
     }
 
     @Test func virtualDisplayAdapterEnableUsesCommandOnlyPath() async throws {
@@ -668,6 +732,17 @@ struct DisplayRuntimeAdapterTests {
         #expect(facade.enableRuntimeDisplayConfigIDs == [config.id])
         #expect(facade.enableRuntimeDisplayCallCount == 1)
         #expect(result.desiredEnabled == true)
+        #expect(result.preDisplayID == 8303)
+        #expect(result.postDisplayID == 8303)
+        #expect(result.runningConfigIDsAfterCommand == [config.id])
+        #expect(result.managedDisplaysAfterCommand == [
+            DisplayRuntimeManagedVirtualDisplay(
+                configID: config.id,
+                serialNumber: 9302,
+                displayID: 8303,
+                isLiveRuntime: true
+            )
+        ])
     }
 
     @Test func virtualDisplayAdapterDisableUsesCommandOnlyPath() async throws {
@@ -698,6 +773,10 @@ struct DisplayRuntimeAdapterTests {
         #expect(facade.disableRuntimeDisplayByConfigIDs == [config.id])
         #expect(facade.disableRuntimeDisplayByConfigCallCount == 1)
         #expect(result.desiredEnabled == false)
+        #expect(result.preDisplayID == 8304)
+        #expect(result.postDisplayID == nil)
+        #expect(result.runningConfigIDsAfterCommand.isEmpty)
+        #expect(result.managedDisplaysAfterCommand.isEmpty)
     }
 
     @Test func virtualDisplayAdapterSaveConfigForRebuildUsesCommandOnlyPathAndReturnsPreviousConfig() async throws {
@@ -712,6 +791,13 @@ struct DisplayRuntimeAdapterTests {
         var edited = config
         edited.displayName = "New Adapter Name"
         edited.serialNum = 9305
+        edited.physicalWidth = 620
+        edited.physicalHeight = 360
+        edited.modes = [
+            .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false),
+            .init(width: 2560, height: 1440, refreshRate: 75, enableHiDPI: true)
+        ]
+        edited.desiredEnabled = false
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [config]
         let controller = VirtualDisplayController(
@@ -733,9 +819,26 @@ struct DisplayRuntimeAdapterTests {
         #expect(facade.savedConfigForRebuildIDs == [config.id])
         #expect(facade.updateConfigCallCount == 0)
         #expect(facade.currentDisplayConfigs.first?.displayName == "New Adapter Name")
+        #expect(facade.currentDisplayConfigs.first?.serialNum == 9305)
+        #expect(facade.currentDisplayConfigs.first?.physicalWidth == 620)
+        #expect(facade.currentDisplayConfigs.first?.physicalHeight == 360)
+        #expect(facade.currentDisplayConfigs.first?.modes == edited.modes)
+        #expect(facade.currentDisplayConfigs.first?.desiredEnabled == false)
         #expect(result.persistenceOutcome == .saved)
         #expect(result.previousConfigForCompensation.displayName == "Old Adapter Name")
+        #expect(result.previousConfigForCompensation.serialNumber == 9304)
+        #expect(result.previousConfigForCompensation.physicalWidthMillimeters == 600)
+        #expect(result.previousConfigForCompensation.physicalHeightMillimeters == 340)
+        #expect(result.previousConfigForCompensation.modes == [
+            .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
+        ])
         #expect(result.savedConfigEvidence.serialNumber == 9305)
+        #expect(result.savedConfigEvidence.desiredEnabled == false)
+        #expect(result.savedConfigEvidence.physicalWidthMillimeters == 620)
+        #expect(result.savedConfigEvidence.physicalHeightMillimeters == 360)
+        #expect(result.savedConfigEvidence.modeCount == 2)
+        #expect(result.savedConfigEvidence.maximumPixelWidth == 5120)
+        #expect(result.savedConfigEvidence.maximumPixelHeight == 2880)
         #expect(controller.persistenceAlert == nil)
     }
 
@@ -838,6 +941,49 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
+    @Test func virtualDisplayCreateRequestMappingPreservesRuntimeAndLowerCommandFields() {
+        let request = VirtualDisplayCreateRequest(
+            displayName: "Create Mapping",
+            serialNumber: 9309,
+            physicalWidthMillimeters: 630,
+            physicalHeightMillimeters: 370,
+            maximumPixelWidth: 5120,
+            maximumPixelHeight: 2880,
+            modes: [
+                ResolutionSelection(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false),
+                ResolutionSelection(width: 2560, height: 1440, refreshRate: 75, enableHiDPI: true)
+            ]
+        )
+
+        let runtimeRequest = DisplayRuntimeVirtualDisplayCreateRequest(
+            request: request,
+            source: .createVirtualDisplaySheet
+        )
+        let lowerRequest = VirtualDisplayCreateRequest(runtimeRequest: runtimeRequest)
+
+        #expect(runtimeRequest.displayName == "Create Mapping")
+        #expect(runtimeRequest.serialNumber == 9309)
+        #expect(runtimeRequest.physicalWidthMillimeters == 630)
+        #expect(runtimeRequest.physicalHeightMillimeters == 370)
+        #expect(runtimeRequest.maximumPixelWidth == 5120)
+        #expect(runtimeRequest.maximumPixelHeight == 2880)
+        #expect(runtimeRequest.modes == [
+            .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false),
+            .init(width: 2560, height: 1440, refreshRate: 75, enableHiDPI: true)
+        ])
+        #expect(runtimeRequest.source == .createVirtualDisplaySheet)
+        #expect(lowerRequest.displayName == request.displayName)
+        #expect(lowerRequest.serialNumber == request.serialNumber)
+        #expect(lowerRequest.physicalWidthMillimeters == request.physicalWidthMillimeters)
+        #expect(lowerRequest.physicalHeightMillimeters == request.physicalHeightMillimeters)
+        #expect(lowerRequest.maximumPixelWidth == request.maximumPixelWidth)
+        #expect(lowerRequest.maximumPixelHeight == request.maximumPixelHeight)
+        #expect(lowerRequest.modes.map(\.width) == [1920, 2560])
+        #expect(lowerRequest.modes.map(\.height) == [1080, 1440])
+        #expect(lowerRequest.modes.map(\.refreshRate) == [60, 75])
+        #expect(lowerRequest.modes.map(\.enableHiDPI) == [false, true])
+    }
+
     @Test func virtualDisplayAdapterCreateUsesCommandOnlyPathAndMapsFacts() async throws {
         let createdID = UUID()
         let facade = MockVirtualDisplayFacade()
@@ -860,6 +1006,19 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.persistenceOutcome == .saved)
         #expect(result.runtimeCreationOutcome == .succeeded)
         #expect(result.rollbackOutcome == .notAttempted)
+        #expect(result.targetWasRunningAfterCommand)
+        #expect(result.preDisplayID == nil)
+        #expect(result.postDisplayID == 8310)
+        #expect(result.createdConfigEvidence.id == createdID)
+        #expect(result.createdConfigEvidence.serialNumber == 9310)
+        #expect(result.createdConfigEvidence.desiredEnabled)
+        #expect(result.createdConfigEvidence.physicalWidthMillimeters == 600)
+        #expect(result.createdConfigEvidence.physicalHeightMillimeters == 340)
+        #expect(result.createdConfigEvidence.modeCount == 1)
+        #expect(result.createdConfigEvidence.maximumPixelWidth == 1920)
+        #expect(result.createdConfigEvidence.maximumPixelHeight == 1080)
+        #expect(result.runningConfigIDsAfterCommand == [createdID])
+        #expect(result.managedDisplaysAfterCommand.isEmpty)
         #expect(controller.persistenceAlert == nil)
     }
 
@@ -1195,25 +1354,7 @@ private func captureIntent(
 }
 
 private func editDTO(config: VirtualDisplayConfig) -> DisplayRuntimeVirtualDisplayConfigEditDTO {
-    let maxPixels = config.maxPixelDimensions
-    return DisplayRuntimeVirtualDisplayConfigEditDTO(
-        id: config.id,
-        displayName: config.displayName,
-        serialNumber: config.serialNum,
-        desiredEnabled: config.desiredEnabled,
-        physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-        physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-        modes: config.modes.map {
-            .init(
-                width: $0.width,
-                height: $0.height,
-                refreshRate: $0.refreshRate,
-                enableHiDPI: $0.enableHiDPI
-            )
-        },
-        maximumPixelWidth: maxPixels.width,
-        maximumPixelHeight: maxPixels.height
-    )
+    DisplayRuntimeVirtualDisplayConfigEditDTO(adapterConfig: config)
 }
 
 private func runtimeCreateRequest(
