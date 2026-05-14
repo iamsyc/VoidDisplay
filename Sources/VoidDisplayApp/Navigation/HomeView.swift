@@ -4,6 +4,7 @@ import VoidDisplaySharing
 import VoidDisplaySupport
 import VoidDisplayObservability
 import VoidDisplayFoundation
+import VoidDisplayRuntime
 import CoreGraphics
 //
 //  HomeView.swift
@@ -22,6 +23,7 @@ package struct HomeView: View {
     private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController
+    private let displayRuntime: DisplayRuntime
 
     @State private var hasAutoOpenedCapturePreview = false
 
@@ -32,11 +34,13 @@ package struct HomeView: View {
     package init(
         screenCatalogOrchestrator: ScreenCatalogOrchestrator,
         observability: ObservabilityCenter,
-        feedbackController: AppSettingsFeedbackController
+        feedbackController: AppSettingsFeedbackController,
+        displayRuntime: DisplayRuntime
     ) {
         self.screenCatalogOrchestrator = screenCatalogOrchestrator
         self.observability = observability
         self.feedbackController = feedbackController
+        self.displayRuntime = displayRuntime
     }
 
     package var body: some View {
@@ -104,7 +108,10 @@ package struct HomeView: View {
                     case .monitorScreen:
                         IsCapturing(
                             catalogState: capture.displayCatalogState,
-                            monitoringActions: CaptureUIComposition.monitoringActions(capture: capture),
+                            monitoringActions: CaptureUIComposition.monitoringActions(
+                                capture: capture,
+                                displayRuntime: displayRuntime
+                            ),
                             sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing),
                             virtualDisplayStatusProvider: CaptureUIComposition.virtualDisplayStatusProvider(
                                 virtualDisplay: virtualDisplay
@@ -187,7 +194,8 @@ private struct AppDisplayActivityStatusProvider: DisplayActivityStatusProviding 
     HomeView(
         screenCatalogOrchestrator: env.screenCatalog,
         observability: env.observability,
-        feedbackController: env.feedbackController
+        feedbackController: env.feedbackController,
+        displayRuntime: env.displayRuntime
     )
         .environment(env.capture)
         .environment(env.sharing)

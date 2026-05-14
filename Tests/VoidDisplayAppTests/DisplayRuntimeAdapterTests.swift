@@ -1,4 +1,5 @@
 @testable import VoidDisplayApp
+@testable import VoidDisplayCapture
 @testable import VoidDisplayRuntime
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
@@ -6,6 +7,7 @@
 @testable import VoidDisplayVirtualDisplay
 import CoreGraphics
 import Foundation
+import ScreenCaptureKit
 import Testing
 
 @MainActor
@@ -103,6 +105,102 @@ struct DisplayRuntimeAdapterTests {
         #expect(captureMonitoringService.removeCallCount == 0)
         #expect(captureMonitoringService.removeByDisplayCallCount == 0)
         #expect(captureMonitoringService.currentSessions.isEmpty)
+    }
+
+    @Test func monitorStartAttachesRuntimeLeaseAndAcquiresPreviewThroughAdapter() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8404, width: 2560, height: 1440)
+        let harness = monitorHarness(display: display)
+        let actions = CaptureUIComposition.monitoringActions(
+            capture: harness.controller,
+            displayRuntime: harness.runtime
+        )
+
+        let outcome = try await actions.startMonitoring(
+            display,
+            CaptureMonitoringDisplayMetadata(
+                displayName: "Monitor Adapter",
+                resolutionText: "2560 × 1440",
+                isVirtualDisplay: false
+            )
+        )
+
+        guard case .started(let sessionID) = outcome else {
+            Issue.record("Expected monitor start to succeed.")
+            return
+        }
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(harness.captureMonitoringService.addCallCount == 1)
+        #expect(harness.controller.monitoringSession(for: sessionID)?.displayID == display.displayID)
+        #expect(lease.kind == .monitor)
+        #expect(lease.state == .attached)
+        #expect(effectiveIntent.intent.kind == .capture)
+        #expect(effectiveIntent.intent.reason == .attach)
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+    }
+
+    @Test func monitorStopDetachesRuntimeLeaseAndDrainsPreviewThroughAdapter() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8405, width: 1920, height: 1080)
+        let harness = monitorHarness(display: display)
+        let actions = CaptureUIComposition.monitoringActions(
+            capture: harness.controller,
+            displayRuntime: harness.runtime
+        )
+        let outcome = try await actions.startMonitoring(
+            display,
+            CaptureMonitoringDisplayMetadata(
+                displayName: "Monitor Adapter",
+                resolutionText: "1920 × 1080",
+                isVirtualDisplay: false
+            )
+        )
+        guard case .started(let sessionID) = outcome else {
+            Issue.record("Expected monitor start to succeed.")
+            return
+        }
+
+        actions.closeMonitoringSession(sessionID)
+
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(lease.state == .released)
+        #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(effectiveIntent.intent.kind == .drain)
+        #expect(effectiveIntent.intent.reason == .detach)
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 1)
+        #expect(harness.captureMonitoringService.removedDisplayIDs == [display.displayID])
+        #expect(harness.controller.screenCaptureSessions.isEmpty)
+    }
+
+    @Test func monitorApplyFailsPermissionUnavailableWithoutStartingSession() async {
+        let display = SharedMockSCDisplay.make(displayID: 8406, width: 1920, height: 1080)
+        let harness = monitorHarness(display: display, hasPermission: false)
+
+        let result = await harness.adapter.applyMonitorCaptureIntent(
+            captureIntent(displayID: display.displayID, revision: 3)
+        )
+
+        #expect(result.outcome == .failed)
+        #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable)
+        #expect(harness.captureMonitoringService.addCallCount == 0)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
+        #expect(harness.controller.screenCaptureSessions.isEmpty)
+    }
+
+    @Test func monitorApplyFailsDisplayUnavailableWithoutStartingSession() async {
+        let display = SharedMockSCDisplay.make(displayID: 8407, width: 1920, height: 1080)
+        let harness = monitorHarness(display: display)
+
+        let result = await harness.adapter.applyMonitorCaptureIntent(
+            captureIntent(displayID: 8408, revision: 4)
+        )
+
+        #expect(result.outcome == .failed)
+        #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.displayUnavailable)
+        #expect(harness.captureMonitoringService.addCallCount == 0)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
+        #expect(harness.controller.screenCaptureSessions.isEmpty)
     }
 
     @Test func sharingAdapterResolvesSCDisplayAndVirtualSerialInAppLayer() {
@@ -653,6 +751,75 @@ private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {
     func savePreferredPort(_ port: UInt16) {
         preferredPort = port
     }
+}
+
+private final class AdapterMonitorDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
+
+    nonisolated func attachPreviewSink(_: any DisplayPreviewSink) {}
+
+    nonisolated func detachPreviewSink(_: any DisplayPreviewSink) {}
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func stop() async {}
+}
+
+@MainActor
+private func monitorHarness(
+    display: SCDisplay,
+    hasPermission: Bool = true
+) -> (
+    catalogService: ScreenCaptureCatalogService,
+    captureMonitoringService: MockCaptureMonitoringService,
+    controller: CaptureController,
+    adapter: DisplayRuntimeCaptureAdapter,
+    runtime: DisplayRuntime
+) {
+    let catalogService = ScreenCaptureCatalogService(
+        permissionProvider: FailingScreenCapturePermissionProvider(),
+        loadShareableDisplays: {
+            Issue.record("Monitor wiring tests must not load real shareable displays.")
+            return [display]
+        },
+        activeDisplayIDsProvider: { [display.displayID] }
+    )
+    catalogService.store.hasScreenCapturePermission = hasPermission
+    catalogService.store.lastPreflightPermission = hasPermission
+    catalogService.store.displays = [display]
+
+    let captureMonitoringService = MockCaptureMonitoringService()
+    let lifecycleService = CaptureMonitoringLifecycleService(
+        captureMonitoringService: captureMonitoringService,
+        acquirePreview: { captureDisplay, _ in
+            .started(
+                DisplayPreviewSubscription(
+                    displayID: captureDisplay.displayID,
+                    resolutionText: "\(captureDisplay.width) × \(captureDisplay.height)",
+                    session: AdapterMonitorDummySession(),
+                    cancelClosure: {}
+                )
+            )
+        }
+    )
+    let controller = CaptureController(
+        captureMonitoringService: captureMonitoringService,
+        captureMonitoringLifecycleService: lifecycleService,
+        catalogService: catalogService
+    )
+    let adapter = DisplayRuntimeCaptureAdapter(controller: controller)
+    let runtime = DisplayRuntime(
+        catalogProvider: DisplayRuntimeCatalogAdapter(service: catalogService),
+        captureProvider: adapter,
+        captureIntentCommander: adapter
+    )
+    return (
+        catalogService: catalogService,
+        captureMonitoringService: captureMonitoringService,
+        controller: controller,
+        adapter: adapter,
+        runtime: runtime
+    )
 }
 
 private struct FailingScreenCapturePermissionProvider: ScreenCapturePermissionProvider {

@@ -31,6 +31,7 @@ package nonisolated enum DisplayRuntimeCaptureIntentFailureCode {
     package static let epochMismatch = "capture_intent_epoch_mismatch"
     package static let permissionUnavailable = "capture_intent_permission_unavailable"
     package static let applyFailed = "capture_intent_apply_failed"
+    package static let applyInvalidated = "capture_intent_apply_invalidated"
 }
 
 package nonisolated struct DisplayRuntimeCaptureIntent: Codable, Equatable, Sendable {
@@ -114,5 +115,31 @@ package nonisolated struct DisplayRuntimeEffectiveCaptureIntent: Codable, Equata
         self.intent = intent
         self.lastApplyResult = lastApplyResult
         self.lastFailureCode = lastFailureCode
+    }
+}
+
+package nonisolated struct DisplayRuntimeMonitorConsumerAttachResult: Equatable, Sendable {
+    package let lease: DisplayRuntimeConsumerLease
+    package let applyResult: DisplayRuntimeCaptureIntentApplyResult
+
+    package init(
+        lease: DisplayRuntimeConsumerLease,
+        applyResult: DisplayRuntimeCaptureIntentApplyResult
+    ) {
+        self.lease = lease
+        self.applyResult = applyResult
+    }
+}
+
+package nonisolated struct DisplayRuntimeMonitorConsumerDetachResult: Equatable, Sendable {
+    package let releasedLease: DisplayRuntimeConsumerLease?
+    package let applyResult: DisplayRuntimeCaptureIntentApplyResult?
+
+    package init(
+        releasedLease: DisplayRuntimeConsumerLease?,
+        applyResult: DisplayRuntimeCaptureIntentApplyResult?
+    ) {
+        self.releasedLease = releasedLease
+        self.applyResult = applyResult
     }
 }

@@ -192,7 +192,10 @@ public struct VoidDisplayApplication: App {
                    let sessionID = capture.screenCaptureSessions.first?.id {
                     CaptureDisplayView(
                         sessionId: sessionID,
-                        monitoringActions: CaptureUIComposition.monitoringActions(capture: capture),
+                        monitoringActions: CaptureUIComposition.monitoringActions(
+                            capture: capture,
+                            displayRuntime: displayRuntime
+                        ),
                         sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing)
                     )
                 } else if UITestRuntime.scenario == .settingsFeedback {
@@ -204,7 +207,8 @@ public struct VoidDisplayApplication: App {
                     HomeView(
                         screenCatalogOrchestrator: screenCatalog,
                         observability: observability,
-                        feedbackController: feedbackController
+                        feedbackController: feedbackController,
+                        displayRuntime: displayRuntime
                     )
                 }
             }
@@ -219,7 +223,10 @@ public struct VoidDisplayApplication: App {
         WindowGroup(for: UUID.self) { $sessionId in
             CaptureDisplayWindowRoot(
                 sessionId: sessionId,
-                monitoringActions: CaptureUIComposition.monitoringActions(capture: capture),
+                monitoringActions: CaptureUIComposition.monitoringActions(
+                    capture: capture,
+                    displayRuntime: displayRuntime
+                ),
                 sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing)
             )
                 .environment(capture)
@@ -475,7 +482,14 @@ package enum AppBootstrap {
             }
         }
         let displayRuntimeCatalogAdapter = DisplayRuntimeCatalogAdapter(service: catalogService)
-        let displayRuntimeCaptureAdapter = DisplayRuntimeCaptureAdapter(controller: capture)
+        let displayRuntimeCaptureAdapter = DisplayRuntimeCaptureAdapter(
+            controller: capture,
+            isManagedVirtualDisplay: { displayID in
+                virtualDisplay.managedDisplays.contains {
+                    $0.displayID == displayID && $0.isLiveRuntime
+                }
+            }
+        )
         let displayRuntimeSharingAdapter = DisplayRuntimeSharingAdapter(controller: sharing)
         let displayRuntimeVirtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(controller: virtualDisplay)
         let displayRuntimeObservabilityAdapter = DisplayRuntimeObservabilityAdapter(observability: observability)

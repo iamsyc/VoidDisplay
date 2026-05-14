@@ -8,6 +8,54 @@ extension DisplayRuntime {
         owner: DisplayRuntimeConsumerOwner,
         demand: DisplayRuntimeConsumerDemand
     ) -> DisplayRuntimeConsumerLease {
+        attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: kind,
+            owner: owner,
+            demand: demand,
+            submitsCaptureIntent: true
+        )
+    }
+
+    package func attachMonitorConsumer(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        owner: DisplayRuntimeConsumerOwner,
+        demand: DisplayRuntimeConsumerDemand
+    ) async -> DisplayRuntimeMonitorConsumerAttachResult {
+        let lease = attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .monitor,
+            owner: owner,
+            demand: demand,
+            submitsCaptureIntent: false
+        )
+        let intent = submitCaptureIntent(
+            surfaceIdentity: surfaceIdentity,
+            reason: .attach,
+            appliesCommand: false
+        )
+        let rawResult: DisplayRuntimeCaptureIntentApplyResult
+        if let captureIntentCommander {
+            rawResult = await captureIntentCommander.applyMonitorCaptureIntent(intent)
+        } else {
+            rawResult = .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        return DisplayRuntimeMonitorConsumerAttachResult(
+            lease: lease,
+            applyResult: recordCaptureIntentApplyResult(rawResult)
+        )
+    }
+
+    private func attachConsumer(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        kind: DisplaySurfaceConsumerKind,
+        owner: DisplayRuntimeConsumerOwner,
+        demand: DisplayRuntimeConsumerDemand,
+        submitsCaptureIntent: Bool
+    ) -> DisplayRuntimeConsumerLease {
         if kind == .lanWebView,
            let existingLease = currentDemandLeases(for: surfaceIdentity)
            .first(where: { $0.kind == .lanWebView }) {
@@ -38,7 +86,9 @@ extension DisplayRuntime {
             demand: demand
         )
         consumerLeasesByID[lease.id] = lease
-        submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
+        if submitsCaptureIntent {
+            submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
+        }
         return lease
     }
 
@@ -54,6 +104,29 @@ extension DisplayRuntime {
         consumerLeasesByID[leaseID] = releasedLease
         submitCaptureIntent(surfaceIdentity: lease.surfaceIdentity, reason: .detach)
         return releasedLease
+    }
+
+    @discardableResult
+    package func detachMonitorConsumer(
+        surfaceIdentity: DisplaySurfaceIdentity
+    ) -> DisplayRuntimeMonitorConsumerDetachResult {
+        guard let lease = currentDemandLeases(for: surfaceIdentity)
+            .first(where: { $0.kind == .monitor })
+        else {
+            return DisplayRuntimeMonitorConsumerDetachResult(
+                releasedLease: nil,
+                applyResult: nil
+            )
+        }
+
+        let releasedLease = detachConsumer(leaseID: lease.id)
+        let applyResult = currentEffectiveCaptureIntentSnapshot()
+            .first { $0.intent.surfaceIdentity == surfaceIdentity }?
+            .lastApplyResult
+        return DisplayRuntimeMonitorConsumerDetachResult(
+            releasedLease: releasedLease,
+            applyResult: applyResult
+        )
     }
 
     package func currentConsumerLeaseSnapshot() -> [DisplayRuntimeConsumerLease] {
@@ -180,10 +253,12 @@ extension DisplayRuntime {
         )
     }
 
+    @discardableResult
     private func submitCaptureIntent(
         surfaceIdentity: DisplaySurfaceIdentity,
-        reason: DisplayRuntimeCaptureIntentReason
-    ) {
+        reason: DisplayRuntimeCaptureIntentReason,
+        appliesCommand: Bool = true
+    ) -> DisplayRuntimeCaptureIntent {
         let aggregateDemand = aggregateDemand(for: surfaceIdentity, surfaces: nil)
         let intent = DisplayRuntimeCaptureIntent(
             surfaceIdentity: surfaceIdentity,
@@ -196,9 +271,10 @@ extension DisplayRuntime {
         )
         captureIntentsByRevision[intent.revision] = intent
         effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
-        if let applyResult = captureIntentCommander?.applyCaptureIntent(intent) {
+        if appliesCommand, let applyResult = captureIntentCommander?.applyCaptureIntent(intent) {
             _ = recordCaptureIntentApplyResult(applyResult)
         }
+        return intent
     }
 
     private func nextCaptureIntentRevision() -> DisplayRuntimeCaptureIntentRevision {
