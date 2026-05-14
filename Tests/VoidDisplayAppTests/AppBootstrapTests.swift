@@ -357,8 +357,10 @@ struct AppBootstrapTests {
 
     @Test func runtimeConsumerLeaseCallerTextIsAbsentFromObservabilityAndSupportBundle() async throws {
         let sensitiveInputs = [
+            "share-id-raw-fixture-77",
             "viewer-client-secret-77",
             "https://10.0.0.7:8080/display/secret",
+            "10.0.0.7",
             "\(NSHomeDirectory())/Documents/session.txt",
             "Private Window Caption",
             "typed note body",
@@ -394,15 +396,51 @@ struct AppBootstrapTests {
             draft: FeedbackDraft(happened: "Runtime lease diagnostics"),
             consent: FeedbackConsent()
         )
+        let entries = try supportBundleEntries(archiveURL: bundleURL)
+        let manifestJSON = try supportBundleEntryString(
+            archiveURL: bundleURL,
+            relativePathSuffix: "/manifest.json"
+        )
+        let manifest = try supportBundleEntry(
+            SupportBundleManifest.self,
+            archiveURL: bundleURL,
+            relativePathSuffix: "/manifest.json"
+        )
+        let bundleState = try supportBundleEntry(
+            ObservabilityStateSnapshot.self,
+            archiveURL: bundleURL,
+            relativePathSuffix: "/state/current-state.json"
+        )
         let bundleStateJSON = try supportBundleEntryString(
             archiveURL: bundleURL,
             relativePathSuffix: "/state/current-state.json"
         )
+        let bundleTextContents = try supportBundleTextContents(archiveURL: bundleURL)
+        let bundleRuntimeSection = try #require(bundleState.sections["runtime"])
+        let bundleRuntime = try bundleRuntimeSection.decode(DisplayRuntimeSnapshot.self)
 
+        #expect(entries.contains(where: { $0.hasSuffix("/manifest.json") }))
+        #expect(entries.contains(where: { $0.hasSuffix("/feedback.json") }))
+        #expect(entries.contains(where: { $0.hasSuffix("/state/current-state.json") }))
+        #expect(entries.contains(where: { $0.hasSuffix("/state/health-summary.json") }))
+        #expect(entries.contains(where: { $0.hasSuffix("/events/recent-events.ndjson") }))
+        #expect(entries.contains(where: { $0.hasSuffix("/issues/recent-issues.json") }))
+        #expect(entries.contains(where: { $0.contains("/attachments/") }) == false)
+        #expect(manifest.attachments.isEmpty)
+        #expect(manifest.consent == FeedbackConsent())
+        #expect(manifest.consent.hasEnhancedCollection == false)
+        #expect(manifest.consent.includeUnifiedLogSummary == false)
+        #expect(manifest.consent.includeCrashReportExcerpt == false)
+        #expect(manifest.consent.includeRelatedConfigSnapshots == false)
+        #expect(bundleRuntime.schemaVersion == 3)
+        #expect(bundleRuntime.consumerLeases.first?.ownerSource == .sharingService)
+        #expect(bundleRuntime.aggregatedDemands.first?.activeViewerCount == 1)
         for sensitiveInput in sensitiveInputs {
             #expect(runtimeJSON.contains(sensitiveInput) == false)
             #expect(diagnosticsJSON.contains(sensitiveInput) == false)
+            #expect(manifestJSON.contains(sensitiveInput) == false)
             #expect(bundleStateJSON.contains(sensitiveInput) == false)
+            #expect(bundleTextContents.allSatisfy { $0.contains(sensitiveInput) == false })
         }
     }
 
@@ -584,6 +622,24 @@ private func supportBundleEntryString(
     archiveURL: URL,
     relativePathSuffix: String
 ) throws -> String {
+    String(decoding: try supportBundleEntryData(archiveURL: archiveURL, relativePathSuffix: relativePathSuffix), as: UTF8.self)
+}
+
+private func supportBundleEntry<T: Decodable>(
+    _ type: T.Type,
+    archiveURL: URL,
+    relativePathSuffix: String
+) throws -> T {
+    try ObservabilityCodec.decode(
+        type,
+        from: supportBundleEntryData(archiveURL: archiveURL, relativePathSuffix: relativePathSuffix)
+    )
+}
+
+private func supportBundleEntryData(
+    archiveURL: URL,
+    relativePathSuffix: String
+) throws -> Data {
     let extractionURL = try makeTemporaryDirectory(prefix: "app-bootstrap-support-bundle")
     defer { try? FileManager.default.removeItem(at: extractionURL) }
 
@@ -604,6 +660,57 @@ private func supportBundleEntryString(
         ).first
     )
     let entryURL = bundleRoot.appendingPathComponent(String(relativePathSuffix.dropFirst()))
-    let data = try Data(contentsOf: entryURL)
-    return String(decoding: data, as: UTF8.self)
+    return try Data(contentsOf: entryURL)
+}
+
+private func supportBundleEntries(archiveURL: URL) throws -> [String] {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+    process.arguments = ["-Z1", archiveURL.path]
+    let outputPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    let output = String(decoding: data, as: UTF8.self)
+    return output.split(whereSeparator: \.isNewline).map(String.init)
+}
+
+private func supportBundleTextContents(archiveURL: URL) throws -> [String] {
+    let extractionURL = try makeTemporaryDirectory(prefix: "app-bootstrap-support-bundle-contents")
+    defer { try? FileManager.default.removeItem(at: extractionURL) }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+    process.arguments = ["-x", "-k", archiveURL.path, extractionURL.path]
+    process.standardOutput = Pipe()
+    process.standardError = Pipe()
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+
+    let bundleRoot = try #require(
+        FileManager.default.contentsOfDirectory(
+            at: extractionURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ).first
+    )
+    let enumerator = FileManager.default.enumerator(
+        at: bundleRoot,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+    )
+    var contents: [String] = []
+    while let fileURL = enumerator?.nextObject() as? URL {
+        let isDirectory = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+        guard !isDirectory,
+              let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            continue
+        }
+        contents.append(content)
+    }
+    return contents
 }

@@ -155,10 +155,62 @@ package nonisolated struct FeedbackBundleExporter {
             let sanitizedName = sourceURL.lastPathComponent
             let destinationURL = directoryURL.appendingPathComponent(sanitizedName)
             let content = try String(contentsOf: sourceURL, encoding: .utf8)
-            try writeText(sanitizer.sanitize(text: content) ?? content, to: destinationURL)
+            try writeText(sanitizedConfigSnapshot(content, sourceURL: sourceURL), to: destinationURL)
             writtenFiles.append(sanitizedName)
         }
         return writtenFiles.isEmpty ? nil : writtenFiles
+    }
+
+    private func sanitizedConfigSnapshot(_ content: String, sourceURL: URL) -> String {
+        guard let data = content.data(using: .utf8),
+              let value = try? ObservabilityCodec.decode(JSONValue.self, from: data),
+              let encoded = try? ObservabilityCodec.encode(redactedConfigSnapshot(value, sourceURL: sourceURL)) else {
+            return sanitizer.sanitize(text: content) ?? content
+        }
+        return String(decoding: encoded, as: UTF8.self)
+    }
+
+    private func redactedConfigSnapshot(_ value: JSONValue, sourceURL: URL) -> JSONValue {
+        let sanitized = recursivelySanitizeConfigSnapshot(value)
+        guard sourceURL == displayShareMappingsURL,
+              case .object(var object) = sanitized else {
+            return sanitized
+        }
+        if let mappings = object["mappings"] {
+            object["mappingCount"] = .number(Double(mappingCount(in: mappings)))
+            object["mappings"] = .string("<redacted>")
+        }
+        return .object(object)
+    }
+
+    private func recursivelySanitizeConfigSnapshot(_ value: JSONValue) -> JSONValue {
+        switch value {
+        case .object(let object):
+            return .object(object.reduce(into: [String: JSONValue]()) { result, entry in
+                if entry.key == "displayName" {
+                    result[entry.key] = .string("<redacted>")
+                } else {
+                    result[entry.key] = recursivelySanitizeConfigSnapshot(entry.value)
+                }
+            })
+        case .array(let array):
+            return .array(array.map(recursivelySanitizeConfigSnapshot))
+        case .string(let string):
+            return .string(sanitizer.sanitize(text: string) ?? string)
+        case .number, .bool, .null:
+            return value
+        }
+    }
+
+    private func mappingCount(in value: JSONValue) -> Int {
+        switch value {
+        case .object(let object):
+            object.count
+        case .array(let array):
+            array.count
+        case .string, .number, .bool, .null:
+            0
+        }
     }
 
     private func readUnifiedLogSummary() -> String? {
