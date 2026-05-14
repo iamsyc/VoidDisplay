@@ -6,7 +6,7 @@ package enum AppSidebarItem: Hashable {
     case virtualDisplay
     case monitorScreen
     case screenSharing
-    case supportCenter
+    case diagnostics
 }
 
 @MainActor
@@ -14,8 +14,8 @@ package enum AppSidebarItem: Hashable {
 package final class AppNavigationController {
     package var sidebarSelection: AppSidebarItem? = .screen
 
-    package func showSupportCenter() {
-        sidebarSelection = .supportCenter
+    package func showDiagnostics() {
+        sidebarSelection = .diagnostics
         NSApp.activate(ignoringOtherApps: true)
     }
 }

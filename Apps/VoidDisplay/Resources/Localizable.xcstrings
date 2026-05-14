@@ -1289,13 +1289,19 @@
         }
       }
     },
-    "Describe the issue, add diagnostics if needed, then export a support package." : {
-      "extractionState" : "stale",
+    "Review app health, add diagnostics if needed, then export a support bundle." : {
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review app health, add diagnostics if needed, then export a support bundle."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "先描述问题，再按需附加诊断并导出支持包。"
+            "value" : "查看应用健康状态，按需附加诊断，然后导出支持包。"
           }
         }
       }
@@ -1322,19 +1328,19 @@
         }
       }
     },
-    "Diagnostics / Support" : {
+    "Diagnostics" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Diagnostics / Support"
+            "value" : "Diagnostics"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "诊断 / 支持"
+            "value" : "诊断"
           }
         }
       }
@@ -1648,8 +1654,14 @@
       }
     },
     "Export Support Bundle" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Support Bundle"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1659,8 +1671,14 @@
       }
     },
     "Exporting Support Bundle…" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting Support Bundle…"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2413,13 +2431,19 @@
         }
       }
     },
-    "Open Support Center" : {
-      "extractionState" : "stale",
+    "Open Diagnostics" : {
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Diagnostics"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开支持中心"
+            "value" : "打开诊断"
           }
         }
       }
@@ -3575,24 +3599,19 @@
         }
       }
     },
-    "Support" : {
-      "extractionState" : "stale",
+    "Health & Diagnostics" : {
+      "extractionState" : "manual",
       "localizations" : {
-        "zh-Hans" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "支持"
+            "value" : "Health & Diagnostics"
           }
-        }
-      }
-    },
-    "Support Center" : {
-      "extractionState" : "stale",
-      "localizations" : {
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "支持中心"
+            "value" : "健康与诊断"
           }
         }
       }

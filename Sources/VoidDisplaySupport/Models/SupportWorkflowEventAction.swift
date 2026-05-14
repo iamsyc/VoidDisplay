@@ -22,7 +22,7 @@ package nonisolated enum SupportWorkflowEventAction: String, Sendable {
     package var message: String {
         switch self {
         case .pageOpened:
-            "Opened support center."
+            "Opened diagnostics."
         case .issueTypeChanged:
             "Changed support issue type."
         case .validationFailed:

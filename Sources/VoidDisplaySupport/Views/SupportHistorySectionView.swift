@@ -12,7 +12,7 @@ package struct SupportHistorySectionView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(String(localized: "Previous Support Packages"))
                 .font(.headline)
-                .accessibilityIdentifier("support_center_history_section")
+                .accessibilityIdentifier("support_bundle_history_section")
 
             if records.isEmpty {
                 Text(String(localized: "No recent support records."))

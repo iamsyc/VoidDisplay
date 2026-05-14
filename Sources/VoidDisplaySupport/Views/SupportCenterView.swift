@@ -43,10 +43,10 @@ package struct SupportCenterView: View {
     private func content(feedbackController: AppSettingsFeedbackController?) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppUI.Spacing.medium + 2) {
-                Text(String(localized: "Describe the issue, add diagnostics if needed, then export a support package."))
+                Text(String(localized: "Review app health, add diagnostics if needed, then export a support bundle."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("support_center_intro_text")
+                    .accessibilityIdentifier("diagnostics_intro_text")
 
                 if let feedbackController {
                     if let alert = feedbackController.alert {
@@ -102,7 +102,7 @@ package struct SupportCenterView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(alert.title)
                 .accessibilityValue(alert.title)
-                .accessibilityIdentifier("support_center_error_title")
+                .accessibilityIdentifier("support_bundle_error_title")
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(alert.message)
@@ -113,7 +113,7 @@ package struct SupportCenterView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(alert.message)
                 .accessibilityValue(alert.message)
-                .accessibilityIdentifier("support_center_error_message")
+                .accessibilityIdentifier("support_bundle_error_message")
             }
 
             Spacer(minLength: 0)
@@ -122,7 +122,7 @@ package struct SupportCenterView: View {
         .padding()
         .appPanelStyle()
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("support_center_error_banner")
+        .accessibilityIdentifier("support_bundle_error_banner")
     }
 
     private var technicalInformationSection: some View {
@@ -146,7 +146,7 @@ package struct SupportCenterView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .appPanelStyle()
-        .accessibilityIdentifier("support_center_technical_disclosure")
+        .accessibilityIdentifier("diagnostics_technical_disclosure")
     }
 
     private var userSummaryPanel: some View {
@@ -164,7 +164,7 @@ package struct SupportCenterView: View {
                 (String(localized: "Recent Event Count"), "\(snapshot?.health.recentEventCount ?? 0)"),
                 (String(localized: "Suggested Action"), statusRecommendation())
             ],
-            accessibilityIdentifier: "support_center_overview_panel"
+            accessibilityIdentifier: "diagnostics_overview_panel"
         )
     }
 
@@ -172,7 +172,7 @@ package struct SupportCenterView: View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
             Text(String(localized: "Technical Details"))
                 .font(.headline)
-                .accessibilityIdentifier("support_center_technical_details")
+                .accessibilityIdentifier("diagnostics_technical_details")
 
             HStack(spacing: AppUI.Spacing.medium) {
                 Button(String(localized: "Refresh")) {
@@ -180,14 +180,14 @@ package struct SupportCenterView: View {
                 }
                 .appActionButtonStyle(variant: .default)
                 .disabled(isRefreshing)
-                .accessibilityIdentifier("support_center_refresh_button")
+                .accessibilityIdentifier("diagnostics_refresh_button")
 
                 Button(String(localized: "Open Data Directory")) {
                     Task { await openDataDirectory() }
                 }
                 .appActionButtonStyle(variant: .default)
                 .disabled(dataDirectoryDisplayPath == nil)
-                .accessibilityIdentifier("support_center_open_data_directory_button")
+                .accessibilityIdentifier("diagnostics_open_data_directory_button")
             }
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
@@ -215,7 +215,7 @@ package struct SupportCenterView: View {
                         .font(.footnote.monospaced())
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                        .accessibilityIdentifier("support_center_latest_bundle_full_path")
+                        .accessibilityIdentifier("support_bundle_latest_full_path")
                 }
             }
         }
@@ -231,7 +231,7 @@ package struct SupportCenterView: View {
             summaryPanel(
                 title: String(localized: "Runtime"),
                 rows: runtimeSummaryRows(for: runtimeSummary),
-                accessibilityIdentifier: "support_center_runtime_panel"
+                accessibilityIdentifier: "diagnostics_runtime_panel"
             )
 
             if let system = decodeSection("system", as: SystemSnapshotProvider.Snapshot.self),
@@ -294,7 +294,7 @@ package struct SupportCenterView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("support_center_recent_issues")
+        .accessibilityIdentifier("diagnostics_recent_issues")
     }
 
     private var eventsPanel: some View {
@@ -340,7 +340,7 @@ package struct SupportCenterView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("support_center_recent_events")
+        .accessibilityIdentifier("diagnostics_recent_events")
     }
 
     private func summaryPanel(

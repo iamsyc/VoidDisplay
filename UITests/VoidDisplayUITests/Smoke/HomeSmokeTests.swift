@@ -44,7 +44,7 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_shell_virtual_display_entry",
                 "displays_shell_monitor_entry",
                 "displays_shell_lan_web_view_entry",
-                "displays_shell_diagnostics_support_entry",
+                "displays_shell_diagnostics_entry",
                 "displays_list",
                 "displays_open_system_settings"
             ],
@@ -91,13 +91,13 @@ final class HomeSmokeTests: XCTestCase {
         displaysSidebar.tap()
         assertAllExist(
             app,
-            identifiers: ["detail_screen", "displays_shell_diagnostics_support_entry"],
+            identifiers: ["detail_screen", "displays_shell_diagnostics_entry"],
             timeout: 1.5
         )
-        tapIdentifier(app, identifier: "displays_shell_diagnostics_support_entry", timeout: 1.5)
+        tapIdentifier(app, identifier: "displays_shell_diagnostics_entry", timeout: 1.5)
         assertAllExist(
             app,
-            identifiers: ["detail_support_center"],
+            identifiers: ["detail_diagnostics"],
             timeout: 2
         )
 
@@ -181,8 +181,8 @@ final class HomeSmokeTests: XCTestCase {
 
         openDisplaysFromSidebar(in: app)
         assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_diagnostics_support")
-        assertAllExist(app, identifiers: ["detail_support_center"], timeout: 2)
+        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_diagnostics")
+        assertAllExist(app, identifiers: ["detail_diagnostics"], timeout: 2)
     }
 
     @MainActor
@@ -213,7 +213,7 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_action_open_lan_web_view",
                 "displays_action_stop_lan_web_view",
                 "displays_action_stop_web_service",
-                "displays_action_open_diagnostics_support"
+                "displays_action_open_diagnostics"
             ],
             timeout: 1.5
         )
@@ -241,33 +241,33 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testSupportCenterNavigationSmoke_baseline() throws {
+    func testDiagnosticsNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke(scenario: .baseline)
 
         assertAllExist(
             app,
             identifiers: [
                 "home_sidebar",
-                "sidebar_support_center"
+                "sidebar_diagnostics"
             ],
             timeout: 6
         )
 
-        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 2)
+        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 2)
 
         assertAllExist(
             app,
             identifiers: [
-                "detail_support_center",
-                "support_center_intro_text",
-                "support_center_export_button",
+                "detail_diagnostics",
+                "diagnostics_intro_text",
+                "support_bundle_export_button",
                 "support_bundle_draft_panel",
                 "support_bundle_draft_section",
-                "support_center_issue_type_title",
-                "support_center_issue_type_picker",
-                "support_center_issue_type_selected_description",
-                "support_center_issue_type_recommendation",
-                "support_center_apply_recommended_diagnostics_button",
+                "support_bundle_issue_type_title",
+                "support_bundle_issue_type_picker",
+                "support_bundle_issue_type_selected_description",
+                "support_bundle_issue_type_recommendation",
+                "support_bundle_apply_recommended_diagnostics_button",
                 "support_bundle_happened_title",
                 "support_bundle_happened_description",
                 "support_bundle_reproduction_title",
@@ -275,35 +275,35 @@ final class HomeSmokeTests: XCTestCase {
                 "support_bundle_expected_title",
                 "support_bundle_expected_description",
                 "support_bundle_diagnostics_description",
-                "support_center_technical_disclosure"
+                "diagnostics_technical_disclosure"
             ],
             timeout: 3
         )
 
         let draftSection = assertExists(app, identifier: "support_bundle_draft_panel", timeout: 1)
-        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 1)
-        let technicalDisclosure = assertExists(app, identifier: "support_center_technical_disclosure", timeout: 1)
+        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 1)
+        let technicalDisclosure = assertExists(app, identifier: "diagnostics_technical_disclosure", timeout: 1)
         XCTAssertLessThan(
             draftSection.frame.minY,
             technicalDisclosure.frame.minY,
             "support bundle section should appear before technical information"
         )
-        XCTAssertFalse(app.descendants(matching: .any)["support_center_copy_summary_button"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["support_center_reveal_bundle_button"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["support_center_recent_issues"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_copy_summary_button"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reveal_button"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["diagnostics_recent_issues"].exists)
         XCTAssertFalse(exportButton.label.isEmpty)
     }
 
     @MainActor
-    func testSupportCenterEmptyExportShowsValidationNearExportButton() throws {
+    func testDiagnosticsEmptyExportShowsValidationNearExportButton() throws {
         let app = launchAppForSmoke(scenario: .baseline)
 
-        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 6)
-        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 3)
+        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
+        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
         tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
 
-        let validationMessage = assertExists(app, identifier: "support_center_validation_message", timeout: 2)
-        let issueTypeTitle = assertExists(app, identifier: "support_center_issue_type_title", timeout: 1)
+        let validationMessage = assertExists(app, identifier: "support_bundle_validation_message", timeout: 2)
+        let issueTypeTitle = assertExists(app, identifier: "support_bundle_issue_type_title", timeout: 1)
         XCTAssertLessThan(
             validationMessage.frame.maxY,
             issueTypeTitle.frame.minY,
@@ -312,7 +312,7 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testSupportCenterExportShowsCompletionWithoutDuplicateHistory() throws {
+    func testDiagnosticsExportShowsCompletionWithoutDuplicateHistory() throws {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.baseline.rawValue
@@ -324,33 +324,33 @@ final class HomeSmokeTests: XCTestCase {
         app.launch()
         app.activate()
 
-        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 6)
+        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
         let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
         XCTAssertTrue(
             waitForCondition(timeout: 5) {
                 (happenedField.value as? String) == "Remote side disconnects immediately."
             }
         )
-        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 3)
+        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
         tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
 
         assertAllExist(
             app,
             identifiers: [
-                "support_center_completion_section",
-                "support_center_completion_next_step",
-                "support_center_copy_summary_button",
-                "support_center_reveal_bundle_button",
-                "support_center_new_feedback_button"
+                "support_bundle_completion_section",
+                "support_bundle_completion_next_step",
+                "support_bundle_copy_summary_button",
+                "support_bundle_reveal_button",
+                "support_bundle_new_feedback_button"
             ],
             timeout: 8
         )
 
-        XCTAssertFalse(app.descendants(matching: .any)["support_center_history_section"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_history_section"].exists)
     }
 
     @MainActor
-    func testSupportCenterExportFailureShowsErrorBannerOnSupportCenter() throws {
+    func testDiagnosticsExportFailureShowsErrorBanner() throws {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.baseline.rawValue
@@ -359,40 +359,40 @@ final class HomeSmokeTests: XCTestCase {
         app.launch()
         app.activate()
 
-        tapIdentifier(app, identifier: "sidebar_support_center", timeout: 6)
+        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
         let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
         XCTAssertTrue(
             waitForCondition(timeout: 5) {
                 (happenedField.value as? String) == "Export should fail."
             }
         )
-        let exportButton = assertExists(app, identifier: "support_center_export_button", timeout: 3)
+        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
         tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
 
         assertAllExist(
             app,
             identifiers: [
-                "support_center_error_banner",
-                "support_center_error_title",
-                "support_center_error_message"
+                "support_bundle_error_banner",
+                "support_bundle_error_title",
+                "support_bundle_error_message"
             ],
             timeout: 5
         )
         let titleText = accessibilityText(
-            for: smokeElement(app, identifier: "support_center_error_title")
+            for: smokeElement(app, identifier: "support_bundle_error_title")
         )
         XCTAssertTrue(
             ["Export Failed", "导出失败"].contains(titleText),
-            "Unexpected support center error title: \(titleText)"
+            "Unexpected diagnostics export error title: \(titleText)"
         )
         XCTAssertEqual(
             accessibilityText(
-                for: smokeElement(app, identifier: "support_center_error_message")
+                for: smokeElement(app, identifier: "support_bundle_error_message")
             ),
             "Injected export failure"
         )
         XCTAssertFalse(app.alerts.element.exists)
-        XCTAssertTrue(app.descendants(matching: .any)["detail_support_center"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["detail_diagnostics"].exists)
     }
 
     @MainActor

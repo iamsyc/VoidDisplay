@@ -322,7 +322,7 @@ struct AppSettingsFeedbackControllerTests {
         let events = recorder.events
         #expect(events.count == 3)
         #expect(events[0].subsystem == .support)
-        #expect(events[0].metadata["source"] == "support_center")
+        #expect(events[0].metadata["source"] == "diagnostics")
         #expect(events[0].metadata["issueType"] == SupportIssueType.performanceIssue.rawValue)
         #expect(events[0].metadata["hasEnhancedDiagnostics"] == "true")
         #expect(events[0].metadata["filledFieldCount"] == "1")

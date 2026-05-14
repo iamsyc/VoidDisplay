@@ -8,18 +8,18 @@ package struct DisplaysShellActions {
     package let openVirtualDisplay: @MainActor () -> Void
     package let openMonitor: @MainActor () -> Void
     package let openLANWebView: @MainActor () -> Void
-    package let openDiagnosticsSupport: @MainActor () -> Void
+    package let openDiagnostics: @MainActor () -> Void
 
     package init(
         openVirtualDisplay: @escaping @MainActor () -> Void = {},
         openMonitor: @escaping @MainActor () -> Void = {},
         openLANWebView: @escaping @MainActor () -> Void = {},
-        openDiagnosticsSupport: @escaping @MainActor () -> Void = {}
+        openDiagnostics: @escaping @MainActor () -> Void = {}
     ) {
         self.openVirtualDisplay = openVirtualDisplay
         self.openMonitor = openMonitor
         self.openLANWebView = openLANWebView
-        self.openDiagnosticsSupport = openDiagnosticsSupport
+        self.openDiagnostics = openDiagnostics
     }
 }
 
@@ -30,7 +30,7 @@ package struct DisplaySurfaceActions {
     package let openLANWebView: @MainActor () -> Void
     package let stopLANWebViewSharing: @MainActor (CGDirectDisplayID) -> Void
     package let stopWebService: @MainActor () -> Void
-    package let openDiagnosticsSupport: @MainActor () -> Void
+    package let openDiagnostics: @MainActor () -> Void
 
     package init(
         manageVirtualDisplay: @escaping @MainActor () -> Void = {},
@@ -39,7 +39,7 @@ package struct DisplaySurfaceActions {
         openLANWebView: @escaping @MainActor () -> Void = {},
         stopLANWebViewSharing: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
         stopWebService: @escaping @MainActor () -> Void = {},
-        openDiagnosticsSupport: @escaping @MainActor () -> Void = {}
+        openDiagnostics: @escaping @MainActor () -> Void = {}
     ) {
         self.manageVirtualDisplay = manageVirtualDisplay
         self.openMonitor = openMonitor
@@ -47,7 +47,7 @@ package struct DisplaySurfaceActions {
         self.openLANWebView = openLANWebView
         self.stopLANWebViewSharing = stopLANWebViewSharing
         self.stopWebService = stopWebService
-        self.openDiagnosticsSupport = openDiagnosticsSupport
+        self.openDiagnostics = openDiagnostics
     }
 }
 
@@ -149,11 +149,11 @@ package struct DisplaysView: View {
                 action: shellActions.openLANWebView
             ),
             DisplaysShellEntry(
-                id: "diagnostics_support",
-                title: "Diagnostics / Support",
+                id: "diagnostics",
+                title: "Diagnostics",
                 systemImage: "stethoscope",
-                accessibilityIdentifier: "displays_shell_diagnostics_support_entry",
-                action: shellActions.openDiagnosticsSupport
+                accessibilityIdentifier: "displays_shell_diagnostics_entry",
+                action: shellActions.openDiagnostics
             )
         ]
     }
@@ -365,12 +365,12 @@ package struct DisplaysView: View {
                 action: surfaceActions.stopWebService
             ),
             DisplaySurfaceActionEntry(
-                id: "open_diagnostics_support",
-                title: "Diagnostics / Support",
+                id: "open_diagnostics",
+                title: "Diagnostics",
                 systemImage: "stethoscope",
-                accessibilityIdentifier: "displays_action_open_diagnostics_support",
+                accessibilityIdentifier: "displays_action_open_diagnostics",
                 isEnabled: true,
-                action: surfaceActions.openDiagnosticsSupport
+                action: surfaceActions.openDiagnostics
             )
         ]
     }

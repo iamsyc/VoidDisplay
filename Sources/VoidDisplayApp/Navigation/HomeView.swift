@@ -44,8 +44,8 @@ package struct HomeView: View {
             openLANWebView: {
                 navigation.sidebarSelection = .screenSharing
             },
-            openDiagnosticsSupport: {
-                navigation.sidebarSelection = .supportCenter
+            openDiagnostics: {
+                navigation.sidebarSelection = .diagnostics
             }
         )
     }
@@ -83,8 +83,8 @@ package struct HomeView: View {
             stopWebService: {
                 sharingDependencies.sharingActions.stopWebService()
             },
-            openDiagnosticsSupport: {
-                navigation.sidebarSelection = .supportCenter
+            openDiagnostics: {
+                navigation.sidebarSelection = .diagnostics
             }
         )
     }
@@ -128,11 +128,11 @@ package struct HomeView: View {
                         .accessibilityIdentifier("sidebar_screen_sharing")
                 }
 
-                Section(String(localized: "Support")) {
-                    NavigationLink(value: AppSidebarItem.supportCenter) {
-                        Label(String(localized: "Support Center"), systemImage: "stethoscope")
+                Section(String(localized: "Diagnostics")) {
+                    NavigationLink(value: AppSidebarItem.diagnostics) {
+                        Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
                     }
-                    .accessibilityIdentifier("sidebar_support_center")
+                    .accessibilityIdentifier("sidebar_diagnostics")
                 }
             }
             .listStyle(.sidebar)
@@ -208,13 +208,13 @@ package struct HomeView: View {
                         )
                             .navigationTitle("Screen Sharing")
                             .accessibilityIdentifier("detail_screen_sharing")
-                    case .supportCenter:
+                    case .diagnostics:
                         SupportCenterView(
                             observability: observability,
                             feedbackController: feedbackController
                         )
-                            .navigationTitle(String(localized: "Support Center"))
-                            .accessibilityIdentifier("detail_support_center")
+                            .navigationTitle(String(localized: "Health & Diagnostics"))
+                            .accessibilityIdentifier("detail_diagnostics")
                     }
                 }
                 .id(bindableNavigation.sidebarSelection ?? .screen)

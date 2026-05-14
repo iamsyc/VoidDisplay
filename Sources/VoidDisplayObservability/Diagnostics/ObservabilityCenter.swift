@@ -176,7 +176,7 @@ package actor ObservabilityCenter {
         let persistence = decodeSection("persistence", from: snapshot.state, as: PersistenceSnapshotProvider.Snapshot.self)
 
         var lines: [String] = [
-            String(localized: "Support Center"),
+            String(localized: "Health & Diagnostics"),
             "\(String(localized: "Highest Severity")): \(snapshot.health.highestSeverity?.rawValue ?? "none")",
             "\(String(localized: "Recent Event Count")): \(snapshot.health.recentEventCount)",
             "\(String(localized: "Recent Issue Count")): \(snapshot.health.recentIssueCount)"

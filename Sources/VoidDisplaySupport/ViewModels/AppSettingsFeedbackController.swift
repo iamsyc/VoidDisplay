@@ -552,7 +552,7 @@ package final class AppSettingsFeedbackController {
     ) async {
         guard let eventRecorder else { return }
         var metadata = [
-            "source": "support_center",
+            "source": "diagnostics",
             "issueType": issueType.rawValue,
             "hasEnhancedDiagnostics": currentConsent.hasEnhancedCollection ? "true" : "false",
             "filledFieldCount": String(filledFieldCount)

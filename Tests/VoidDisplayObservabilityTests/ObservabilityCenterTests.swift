@@ -223,14 +223,14 @@ struct ObservabilityCenterTests {
             ObservabilityEvent(
                 severity: .error,
                 subsystem: .observability,
-                operation: "Load support center",
+                operation: "Load diagnostics",
                 message: "Recent events file should be available.",
                 metadata: ["directory": persistenceContext.observabilityDirectoryURL.path]
             )
         )
 
         _ = try await observability.exportBundle(
-            draft: FeedbackDraft(happened: "Support center failed to load"),
+            draft: FeedbackDraft(happened: "Diagnostics failed to load"),
             consent: FeedbackConsent()
         )
 
@@ -238,7 +238,7 @@ struct ObservabilityCenterTests {
             contentsOf: persistenceContext.observabilityRecentEventsURL,
             encoding: .utf8
         )
-        #expect(recentEventsContent.contains("Load support center"))
+        #expect(recentEventsContent.contains("Load diagnostics"))
 
         let issuesData = try Data(contentsOf: persistenceContext.observabilityIssuesURL)
         let issues = try ObservabilityCodec.decode([IssueRecord].self, from: issuesData)

@@ -47,7 +47,7 @@ package struct AppSettingsView: View {
 
                 SettingsSupportSectionView(
                     controller: feedbackController,
-                    onOpenSupportCenter: openSupportCenter
+                    onOpenDiagnostics: openDiagnostics
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -113,8 +113,8 @@ package struct AppSettingsView: View {
         )
     }
 
-    private func openSupportCenter() {
-        navigation.showSupportCenter()
+    private func openDiagnostics() {
+        navigation.showDiagnostics()
         NSApp.keyWindow?.close()
     }
 }
