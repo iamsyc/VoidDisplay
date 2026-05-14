@@ -13,6 +13,8 @@ package struct CaptureDisplayView: View {
 
     @State private var renderer = ZeroCopyPreviewRenderer()
     @State private var recordingSink: CapturePreviewRecordingSink?
+    @State private var diagnosticsRecorderLeaseToken: UUID?
+    @State private var diagnosticsRecorderTask: Task<Void, Never>?
     @State private var window: NSWindow?
     @State private var windowCoordinator = CapturePreviewWindowCoordinator()
     @State private var hasAppliedInitialSize = false
@@ -107,8 +109,19 @@ package struct CaptureDisplayView: View {
                         destinationDirectory: destinationDirectory,
                         session: session
                     )
-                    recordingSink = sink
-                    monitoringActions.attachPreviewSink(sink, sessionId)
+                    diagnosticsRecorderTask = Task { @MainActor in
+                        let leaseToken = await monitoringActions.attachDiagnosticsRecorder(sessionId)
+                        guard !Task.isCancelled else {
+                            if let leaseToken {
+                                await monitoringActions.detachDiagnosticsRecorder(leaseToken)
+                            }
+                            return
+                        }
+                        guard let leaseToken else { return }
+                        diagnosticsRecorderLeaseToken = leaseToken
+                        recordingSink = sink
+                        monitoringActions.attachPreviewSink(sink, sessionId)
+                    }
                 }
                 monitoringActions.activateMonitoringSession(sessionId)
             } else {
@@ -116,6 +129,15 @@ package struct CaptureDisplayView: View {
             }
         }
         .onDisappear {
+            diagnosticsRecorderTask?.cancel()
+            diagnosticsRecorderTask = nil
+            if let leaseToken = diagnosticsRecorderLeaseToken {
+                diagnosticsRecorderLeaseToken = nil
+                Task { @MainActor in
+                    await monitoringActions.detachDiagnosticsRecorder(leaseToken)
+                }
+            }
+            recordingSink = nil
             monitoringActions.closeMonitoringSession(sessionId)
             windowCoordinator.tearDown()
             renderer.flush()

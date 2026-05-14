@@ -169,3 +169,29 @@ package nonisolated struct DisplayRuntimeLANWebViewConsumerDetachResult: Equatab
         self.applyResult = applyResult
     }
 }
+
+package nonisolated struct DisplayRuntimeDiagnosticsRecorderAttachResult: Equatable, Sendable {
+    package let lease: DisplayRuntimeConsumerLease
+    package let applyResult: DisplayRuntimeCaptureIntentApplyResult
+
+    package init(
+        lease: DisplayRuntimeConsumerLease,
+        applyResult: DisplayRuntimeCaptureIntentApplyResult
+    ) {
+        self.lease = lease
+        self.applyResult = applyResult
+    }
+}
+
+package nonisolated struct DisplayRuntimeDiagnosticsRecorderDetachResult: Equatable, Sendable {
+    package let releasedLease: DisplayRuntimeConsumerLease?
+    package let applyResult: DisplayRuntimeCaptureIntentApplyResult?
+
+    package init(
+        releasedLease: DisplayRuntimeConsumerLease?,
+        applyResult: DisplayRuntimeCaptureIntentApplyResult?
+    ) {
+        self.releasedLease = releasedLease
+        self.applyResult = applyResult
+    }
+}

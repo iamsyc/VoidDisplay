@@ -131,6 +131,64 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 4)
     }
 
+    @Test func diagnosticsRecorderAttachCanProduceCaptureIntentAndDrainWhenLastLeaseReleases() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 79)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 79, isMain: true)),
+            captureIntentCommander: captureIntentCommander
+        )
+
+        let attachResult = await runtime.attachDiagnosticsRecorderConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: .init(source: .diagnostics, redactedLabel: "recorder"),
+            demand: diagnosticsDemand()
+        )
+        let detachResult = await runtime.detachDiagnosticsRecorderConsumer(leaseID: attachResult.lease.id)
+
+        #expect(attachResult.lease.kind == .diagnosticsRecorder)
+        #expect(attachResult.applyResult.outcome == .applied)
+        #expect(detachResult.releasedLease?.id == attachResult.lease.id)
+        #expect(detachResult.releasedLease?.state == .released)
+        #expect(detachResult.applyResult?.outcome == .applied)
+        #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .drain])
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
+        #expect(captureIntentCommander.intents.first?.aggregateDemand?.consumerKinds == [.diagnosticsRecorder])
+        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
+    }
+
+    @Test func diagnosticsRecorderDetachDoesNotDrainWhileMonitorLeaseRemains() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 80)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 80, isMain: true)),
+            captureIntentCommander: captureIntentCommander
+        )
+        let monitorLease = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .monitor,
+            owner: .init(source: .localUI),
+            demand: sourceDemand()
+        )
+        let diagnosticsAttach = await runtime.attachDiagnosticsRecorderConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: .init(source: .diagnostics, redactedLabel: "recorder"),
+            demand: diagnosticsDemand()
+        )
+
+        let diagnosticsDetach = await runtime.detachDiagnosticsRecorderConsumer(
+            leaseID: diagnosticsAttach.lease.id
+        )
+        let monitorDetach = runtime.detachConsumer(leaseID: monitorLease.id)
+
+        #expect(diagnosticsDetach.releasedLease?.state == .released)
+        #expect(monitorDetach?.state == .released)
+        #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .capture, .capture, .drain])
+        #expect(captureIntentCommander.intents[2].aggregateDemand?.consumerKinds == [.monitor])
+        #expect(captureIntentCommander.intents.last?.aggregateDemand == nil)
+        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
+    }
+
     @Test func surfaceEpochChangeStopsOldLeaseFromDrivingPreviousDisplayID() {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 88)
         let captureIntentCommander = FakeCaptureIntentCommander()

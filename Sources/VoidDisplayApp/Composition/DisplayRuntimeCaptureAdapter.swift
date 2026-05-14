@@ -168,6 +168,58 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         )
     }
 
+    package func applyDiagnosticsRecorderCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        guard let controller else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        guard let resolvedDisplayID = intent.resolvedDisplayID else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
+
+        guard intent.kind == .capture,
+              intent.aggregateDemand?.consumerKinds.contains(.diagnosticsRecorder) == true
+        else {
+            if intent.kind == .drain {
+                controller.removeMonitoringSessions(displayID: resolvedDisplayID)
+            }
+            return .applied(revision: intent.revision)
+        }
+
+        if controller.screenCaptureSessions.contains(where: { $0.displayID == resolvedDisplayID }) {
+            return .applied(revision: intent.revision)
+        }
+        if intent.aggregateDemand?.consumerKinds.contains(.lanWebView) == true {
+            return .applied(revision: intent.revision)
+        }
+        if controller.displayCatalogState.hasScreenCapturePermission == false
+            || controller.displayCatalogState.lastPreflightPermission == false {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
+            )
+        }
+        guard let display = resolveDisplay(displayID: resolvedDisplayID, in: controller)
+        else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
+        return await acquireDiagnosticsRecorderPreview(
+            display: display,
+            intent: intent,
+            controller: controller
+        )
+    }
+
     private func resolveDisplay(
         displayID: DisplayRuntimeDisplayID,
         in controller: CaptureController
@@ -230,11 +282,45 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         }
     }
 
+    private func acquireDiagnosticsRecorderPreview(
+        display: SCDisplay,
+        intent: DisplayRuntimeCaptureIntent,
+        controller: CaptureController
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        do {
+            switch try await controller.startMonitoring(
+                display: display,
+                metadata: diagnosticsRecorderMetadata(for: display)
+            ) {
+            case .started:
+                return .applied(revision: intent.revision)
+            case .invalidated:
+                return .failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
+                )
+            }
+        } catch {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
+            )
+        }
+    }
+
     private func monitorMetadata(for display: SCDisplay) -> CaptureMonitoringDisplayMetadata {
         CaptureMonitoringDisplayMetadata(
             displayName: NSScreen.screens.first {
                 $0.cgDirectDisplayID == display.displayID
             }?.localizedName ?? String(localized: "Monitor"),
+            resolutionText: "\(display.width) × \(display.height)",
+            isVirtualDisplay: isManagedVirtualDisplay(display.displayID)
+        )
+    }
+
+    private func diagnosticsRecorderMetadata(for display: SCDisplay) -> CaptureMonitoringDisplayMetadata {
+        CaptureMonitoringDisplayMetadata(
+            displayName: "Preview Diagnostics",
             resolutionText: "\(display.width) × \(display.height)",
             isVirtualDisplay: isManagedVirtualDisplay(display.displayID)
         )

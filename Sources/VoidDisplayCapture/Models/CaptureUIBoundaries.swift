@@ -15,6 +15,8 @@ package struct CaptureMonitoringActions {
     ) async throws -> DisplayStartOutcome<UUID>
     package var attachPreviewSink: @MainActor (any DisplayPreviewSink, UUID) -> Void
     package var activateMonitoringSession: @MainActor (UUID) -> Void
+    package var attachDiagnosticsRecorder: @MainActor (UUID) async -> UUID?
+    package var detachDiagnosticsRecorder: @MainActor (UUID) async -> Void
     package var closeMonitoringSession: @MainActor (UUID) -> Void
     package var setMonitoringSessionCapturesCursor: @MainActor (UUID, Bool) async throws -> Void
 
@@ -29,6 +31,8 @@ package struct CaptureMonitoringActions {
         ) async throws -> DisplayStartOutcome<UUID>,
         attachPreviewSink: @escaping @MainActor (any DisplayPreviewSink, UUID) -> Void,
         activateMonitoringSession: @escaping @MainActor (UUID) -> Void,
+        attachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> UUID? = { _ in UUID() },
+        detachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> Void = { _ in },
         closeMonitoringSession: @escaping @MainActor (UUID) -> Void,
         setMonitoringSessionCapturesCursor: @escaping @MainActor (UUID, Bool) async throws -> Void
     ) {
@@ -39,6 +43,8 @@ package struct CaptureMonitoringActions {
         self.startMonitoring = startMonitoring
         self.attachPreviewSink = attachPreviewSink
         self.activateMonitoringSession = activateMonitoringSession
+        self.attachDiagnosticsRecorder = attachDiagnosticsRecorder
+        self.detachDiagnosticsRecorder = detachDiagnosticsRecorder
         self.closeMonitoringSession = closeMonitoringSession
         self.setMonitoringSessionCapturesCursor = setMonitoringSessionCapturesCursor
     }

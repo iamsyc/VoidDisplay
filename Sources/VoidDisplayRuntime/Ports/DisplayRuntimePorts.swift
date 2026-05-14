@@ -79,6 +79,9 @@ package protocol DisplayRuntimeCaptureIntentCommanding {
     func applyCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult
     func applyMonitorCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) async -> DisplayRuntimeCaptureIntentApplyResult
     func applyLANWebViewCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) async -> DisplayRuntimeCaptureIntentApplyResult
+    func applyDiagnosticsRecorderCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult
 }
 
 extension DisplayRuntimeCaptureIntentCommanding {
@@ -89,6 +92,12 @@ extension DisplayRuntimeCaptureIntentCommanding {
     }
 
     package func applyLANWebViewCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        applyCaptureIntent(intent)
+    }
+
+    package func applyDiagnosticsRecorderCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
         applyCaptureIntent(intent)

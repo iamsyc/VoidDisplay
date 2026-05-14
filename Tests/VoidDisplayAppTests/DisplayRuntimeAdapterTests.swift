@@ -317,6 +317,97 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
     }
 
+    @Test func diagnosticsRecorderStandaloneAttachesLeaseAndStartsCaptureThroughAdapter() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8431, width: 2560, height: 1440)
+        let harness = monitorHarness(display: display)
+
+        let attachResult = await harness.runtime.attachDiagnosticsRecorderConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: display.displayID),
+            owner: .init(source: .diagnostics, redactedLabel: "recorder"),
+            demand: diagnosticsRecorderDemand(display: display)
+        )
+
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(attachResult.applyResult.outcome == .applied)
+        #expect(harness.captureMonitoringService.addCallCount == 1)
+        #expect(harness.controller.screenCaptureSessions.first?.displayID == display.displayID)
+        #expect(lease.kind == .diagnosticsRecorder)
+        #expect(lease.state == .attached)
+        #expect(effectiveIntent.intent.kind == .capture)
+        #expect(effectiveIntent.intent.aggregateDemand?.consumerKinds == [.diagnosticsRecorder])
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+
+        let detachResult = await harness.runtime.detachDiagnosticsRecorderConsumer(
+            leaseID: attachResult.lease.id
+        )
+
+        #expect(detachResult.applyResult?.outcome == .applied)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 1)
+        #expect(harness.controller.screenCaptureSessions.isEmpty)
+        #expect(harness.runtime.currentEffectiveCaptureIntentSnapshot().first?.intent.kind == .drain)
+    }
+
+    @Test func diagnosticsRecorderReusesExistingMonitorSessionWithoutDuplicateCapture() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8432, width: 1920, height: 1080)
+        let harness = monitorHarness(display: display)
+        let actions = CaptureUIComposition.monitoringActions(
+            capture: harness.controller,
+            displayRuntime: harness.runtime
+        )
+        let outcome = try await actions.startMonitoring(
+            display,
+            CaptureMonitoringDisplayMetadata(
+                displayName: "Monitor Adapter",
+                resolutionText: "1920 × 1080",
+                isVirtualDisplay: false
+            )
+        )
+        guard case .started(let sessionID) = outcome else {
+            Issue.record("Expected monitor start to succeed.")
+            return
+        }
+
+        let maybeLeaseToken = await actions.attachDiagnosticsRecorder(sessionID)
+        let leaseToken = try #require(maybeLeaseToken)
+        await actions.detachDiagnosticsRecorder(leaseToken)
+
+        let leases = harness.runtime.currentConsumerLeaseSnapshot()
+        let diagnosticsLease = try #require(leases.first { $0.kind == .diagnosticsRecorder })
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(harness.captureMonitoringService.addCallCount == 1)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
+        #expect(leases.filter { $0.kind == .monitor }.first?.state == .attached)
+        #expect(diagnosticsLease.state == .released)
+        #expect(effectiveIntent.intent.kind == .capture)
+        #expect(effectiveIntent.intent.aggregateDemand?.consumerKinds == [.monitor])
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+    }
+
+    @Test func diagnosticsRecorderReusesActiveLANWebViewPathWithoutStartingMonitoring() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8433, width: 3840, height: 2160)
+        let harness = lanWebViewHarness(display: display)
+
+        _ = try await harness.sharingAdapter.beginLANWebViewSharing(
+            display: display,
+            runtime: harness.runtime
+        )
+        let attachResult = await harness.runtime.attachDiagnosticsRecorderConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: display.displayID),
+            owner: .init(source: .diagnostics, redactedLabel: "recorder"),
+            demand: diagnosticsRecorderDemand(display: display)
+        )
+
+        let aggregate = try #require(harness.runtime.currentAggregatedDemandSnapshot().first)
+        #expect(attachResult.applyResult.outcome == .applied)
+        #expect(harness.sharingService.startSharingCallCount == 1)
+        #expect(harness.captureController.screenCaptureSessions.isEmpty)
+        #expect(aggregate.consumerKinds == [.diagnosticsRecorder, .lanWebView])
+        #expect(aggregate.effectivePixelSize == .init(width: 3840, height: 2160))
+        #expect(aggregate.effectiveFramesPerSecond == 60)
+        #expect(aggregate.latencyPreference == .realtime)
+    }
+
     @Test func sharingAdapterResolvesSCDisplayAndVirtualSerialInAppLayer() {
         let skippedDisplay = SharedMockSCDisplay.make(displayID: 8201, width: 1920, height: 1080)
         let registeredDisplay = SharedMockSCDisplay.make(displayID: 8202, width: 3840, height: 2160)
@@ -1017,6 +1108,18 @@ private func sharingStateSnapshot(
         streamingPeersByTarget: [target: streamingPeers],
         clientsByTarget: [:],
         lastUpdatedAt: Date()
+    )
+}
+
+private func diagnosticsRecorderDemand(display: SCDisplay) -> DisplayRuntimeConsumerDemand {
+    DisplayRuntimeConsumerDemand(
+        sourcePixelSize: .init(width: display.width, height: display.height),
+        preferredPixelSize: .init(width: min(display.width, 1280), height: min(display.height, 720)),
+        sourceFramesPerSecond: 60,
+        preferredFramesPerSecond: 15,
+        capturesCursor: false,
+        powerProfile: .powerEfficient,
+        latencyPreference: .recording
     )
 }
 

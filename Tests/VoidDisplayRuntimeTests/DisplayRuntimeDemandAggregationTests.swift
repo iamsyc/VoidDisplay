@@ -148,6 +148,51 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == false)
     }
 
+    @Test func diagnosticsRecorderAndMonitorPreserveRealtimeSourceQualityAndCursorDemand() throws {
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 106, isMain: true)),
+            captureIntentCommander: FakeCaptureIntentCommander()
+        )
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 106)
+
+        _ = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .monitor,
+            owner: .init(source: .localUI),
+            demand: aggregateDemand(
+                width: 2560,
+                height: 1440,
+                capturesCursor: false,
+                powerProfile: .automatic,
+                latencyPreference: .realtime
+            )
+        )
+        _ = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .diagnosticsRecorder,
+            owner: .init(source: .diagnostics),
+            demand: aggregateDemand(
+                width: 2560,
+                height: 1440,
+                preferredWidth: 1280,
+                preferredHeight: 720,
+                preferredFramesPerSecond: 15,
+                capturesCursor: true,
+                powerProfile: .powerEfficient,
+                latencyPreference: .recording
+            )
+        )
+
+        let aggregate = try #require(runtime.currentAggregatedDemandSnapshot().first)
+        #expect(aggregate.qualityProfile == .mixed)
+        #expect(aggregate.powerProfile == .automatic)
+        #expect(aggregate.latencyPreference == .realtime)
+        #expect(aggregate.effectivePixelSize == .init(width: 2560, height: 1440))
+        #expect(aggregate.effectiveFramesPerSecond == 60)
+        #expect(aggregate.capturesCursor == true)
+        #expect(aggregate.permitsExplicitDowngrade == false)
+    }
+
     @Test func cursorDemandUsesOrSemantics() throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 105, isMain: true)),
