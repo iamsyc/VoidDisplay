@@ -84,9 +84,12 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
 
         #expect(secondLease.id == firstLease.id)
+        #expect(secondLease.createdAt == firstLease.createdAt)
+        #expect(secondLease.updatedAt > firstLease.updatedAt)
         #expect(runtime.currentConsumerLeaseSnapshot().count == 1)
+        #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 3)
         #expect(runtime.currentAggregatedDemandSnapshot().first?.activeLeaseIDs == [firstLease.id])
-        #expect(runtime.currentAggregatedDemandSnapshot().first?.activeViewerCount == 1)
+        #expect(runtime.currentAggregatedDemandSnapshot().first?.activeViewerCount == 3)
         #expect(captureIntentCommander.intents.count == 1)
     }
 

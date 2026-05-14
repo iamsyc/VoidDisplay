@@ -11,7 +11,16 @@ extension DisplayRuntime {
         if kind == .lanWebView,
            let existingLease = currentDemandLeases(for: surfaceIdentity)
            .first(where: { $0.kind == .lanWebView }) {
-            return existingLease
+            let now = Date()
+            let updatedLease = existingLease.updated(
+                state: existingLease.state,
+                updatedAt: now > existingLease.updatedAt
+                    ? now
+                    : existingLease.updatedAt.addingTimeInterval(0.000_001),
+                demand: demand
+            )
+            consumerLeasesByID[existingLease.id] = updatedLease
+            return updatedLease
         }
 
         let now = Date()
@@ -226,6 +235,7 @@ private extension DisplayRuntimeConsumerLease {
         surfaceEpoch: DisplaySurfaceEpoch? = nil,
         resolvedDisplayID: DisplayRuntimeDisplayID? = nil,
         updatedAt: Date,
+        demand: DisplayRuntimeConsumerDemand? = nil,
         lastFailureCode: String? = nil
     ) -> DisplayRuntimeConsumerLease {
         DisplayRuntimeConsumerLease(
@@ -238,7 +248,7 @@ private extension DisplayRuntimeConsumerLease {
             createdAt: createdAt,
             updatedAt: updatedAt,
             state: state,
-            demand: demand,
+            demand: demand ?? self.demand,
             lastFailureCode: lastFailureCode
         )
     }
