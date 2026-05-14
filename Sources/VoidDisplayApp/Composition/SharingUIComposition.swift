@@ -1,5 +1,6 @@
 import VoidDisplayCapture
 import VoidDisplayFoundation
+import VoidDisplayRuntime
 import VoidDisplaySharing
 import VoidDisplayVirtualDisplay
 
@@ -28,7 +29,8 @@ package enum SharingUIComposition {
 
     package static func dependencies(
         sharing: SharingController,
-        virtualDisplay: VirtualDisplayController
+        virtualDisplay: VirtualDisplayController,
+        displayRuntime: DisplayRuntime? = nil
     ) -> ShareViewModel.Dependencies {
         ShareViewModel.Dependencies(
             sharingQueries: .init(
@@ -47,14 +49,31 @@ package enum SharingUIComposition {
                 },
                 stopWebService: {
                     sharing.stopWebService()
+                    if let displayRuntime {
+                        Task { @MainActor in
+                            await DisplayRuntimeSharingAdapter(controller: sharing)
+                                .stopAllLANWebViewSharing(runtime: displayRuntime)
+                        }
+                    }
                 },
                 registerShareableDisplays: { displays, resolver in
                     sharing.registerShareableDisplays(displays, virtualSerialResolver: resolver)
                 },
                 beginSharing: { display in
-                    try await sharing.beginSharing(display: display)
+                    if let displayRuntime {
+                        return try await DisplayRuntimeSharingAdapter(controller: sharing)
+                            .beginLANWebViewSharing(display: display, runtime: displayRuntime)
+                    }
+                    return try await sharing.beginSharing(display: display)
                 },
                 stopSharing: { displayID in
+                    if let displayRuntime {
+                        Task { @MainActor in
+                            await DisplayRuntimeSharingAdapter(controller: sharing)
+                                .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
+                        }
+                        return
+                    }
                     sharing.stopSharing(displayID: displayID)
                 }
             ),

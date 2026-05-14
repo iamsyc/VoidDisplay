@@ -95,6 +95,42 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.count == 1)
     }
 
+    @Test func lanWebViewCommandBoundaryAppliesOnlyInitialAttachAndDetach() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 78)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 78, isMain: true)),
+            captureIntentCommander: captureIntentCommander
+        )
+
+        let attachResult = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: .init(source: .sharingService, redactedLabel: "lan"),
+            demand: sourceDemand(activeViewerCount: 0)
+        )
+        let repeatedAttach = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: .init(source: .sharingService, redactedLabel: "lan"),
+            demand: sourceDemand(activeViewerCount: 2)
+        )
+        let updatedLease = runtime.updateLANWebViewConsumerDemand(
+            surfaceIdentity: surfaceIdentity,
+            demand: sourceDemand(activeViewerCount: 4)
+        )
+        let detachResult = await runtime.detachLANWebViewConsumer(surfaceIdentity: surfaceIdentity)
+
+        #expect(attachResult.applyResult?.outcome == .applied)
+        #expect(repeatedAttach.lease.id == attachResult.lease.id)
+        #expect(repeatedAttach.applyResult == nil)
+        #expect(updatedLease?.id == attachResult.lease.id)
+        #expect(detachResult.releasedLease?.id == attachResult.lease.id)
+        #expect(detachResult.applyResult?.outcome == .applied)
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
+        #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 2])
+        #expect(runtime.currentConsumerLeaseSnapshot().first?.state == .released)
+        #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 4)
+    }
+
     @Test func surfaceEpochChangeStopsOldLeaseFromDrivingPreviousDisplayID() {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 88)
         let captureIntentCommander = FakeCaptureIntentCommander()

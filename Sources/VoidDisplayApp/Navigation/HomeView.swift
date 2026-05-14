@@ -127,7 +127,8 @@ package struct HomeView: View {
                             catalogState: sharing.displayCatalogState,
                             dependencies: SharingUIComposition.dependencies(
                                 sharing: sharing,
-                                virtualDisplay: virtualDisplay
+                                virtualDisplay: virtualDisplay,
+                                displayRuntime: displayRuntime
                             ),
                             runtimeState: SharingUIComposition.runtimeState(
                                 sharing: sharing

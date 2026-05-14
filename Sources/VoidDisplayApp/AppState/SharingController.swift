@@ -37,6 +37,7 @@ package final class SharingController {
         self?.syncSharingState()
     }
     @ObservationIgnored private var sharingStateSubscription: SharingStateSubscription?
+    @ObservationIgnored private var runtimeStateDidChange: (@MainActor @Sendable () -> Void)?
 
     package init(
         sharingService: any SharingServiceProtocol,
@@ -209,6 +210,13 @@ package final class SharingController {
         requestSnapshotRefresh()
     }
 
+    package func configureRuntimeStateDidChange(
+        _ handler: (@MainActor @Sendable () -> Void)?
+    ) {
+        runtimeStateDidChange = handler
+        handler?()
+    }
+
     package var webServicePortValue: UInt16 {
         sharingService.webServicePortValue
     }
@@ -263,6 +271,7 @@ package final class SharingController {
     private func syncSharingState() {
         let previousLifecycle = runtimeState.webServiceLifecycleState
         runtimeState = makeRuntimeState()
+        runtimeStateDidChange?()
         requestSnapshotRefresh()
         if previousLifecycle != runtimeState.webServiceLifecycleState {
             Task {

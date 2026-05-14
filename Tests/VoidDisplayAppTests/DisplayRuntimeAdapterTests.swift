@@ -203,6 +203,120 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.controller.screenCaptureSessions.isEmpty)
     }
 
+    @Test func lanWebViewStartAttachesUniqueRuntimeLeaseAndStartsSharingThroughIntent() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8421, width: 3840, height: 2160)
+        let harness = lanWebViewHarness(display: display)
+        let dependencies = SharingUIComposition.dependencies(
+            sharing: harness.sharingController,
+            virtualDisplay: VirtualDisplayController(
+                virtualDisplayFacade: MockVirtualDisplayFacade(),
+                appliedBadgeDisplayDuration: .nanoseconds(1)
+            ),
+            displayRuntime: harness.runtime
+        )
+
+        let outcome = try await dependencies.sharingActions.beginSharing(display)
+
+        guard case .started = outcome else {
+            Issue.record("Expected LAN Web View sharing start to succeed.")
+            return
+        }
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(harness.sharingService.startSharingCallCount == 1)
+        #expect(harness.sharingService.startedSharingDisplayIDs == [display.displayID])
+        #expect(lease.kind == .lanWebView)
+        #expect(lease.state == .attached)
+        #expect(lease.demand.sourcePixelSize == .init(width: 3840, height: 2160))
+        #expect(lease.demand.activeViewerCount == 0)
+        #expect(effectiveIntent.intent.kind == .capture)
+        #expect(effectiveIntent.intent.reason == .attach)
+        #expect(effectiveIntent.intent.aggregateDemand?.consumerKinds == [.lanWebView])
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+    }
+
+    @Test func lanViewerAttachDetachUpdatesExistingLeaseWithoutNewCaptureIntent() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8422, width: 2560, height: 1440)
+        let target = ShareTarget.id(9422)
+        let harness = lanWebViewHarness(display: display, target: target)
+
+        _ = try await harness.sharingAdapter.beginLANWebViewSharing(
+            display: display,
+            runtime: harness.runtime
+        )
+        let firstLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let firstRevision = try #require(harness.runtime.currentLatestCaptureIntentRevision())
+
+        harness.sharingService.updateSharingStateSnapshot(
+            sharingStateSnapshot(target: target, streamingPeers: 3)
+        )
+
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().count == 1)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().first?.id == firstLease.id)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 3)
+        #expect(harness.runtime.currentAggregatedDemandSnapshot().first?.activeViewerCount == 3)
+        #expect(harness.runtime.currentLatestCaptureIntentRevision() == firstRevision)
+
+        harness.sharingService.updateSharingStateSnapshot(
+            sharingStateSnapshot(target: target, streamingPeers: 0)
+        )
+
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().count == 1)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().first?.id == firstLease.id)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().first?.state == .attached)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 0)
+        #expect(harness.runtime.currentLatestCaptureIntentRevision() == firstRevision)
+    }
+
+    @Test func lanWebViewStopReleasesRuntimeLeaseAndStopsSharingThroughIntent() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8423, width: 1920, height: 1080)
+        let harness = lanWebViewHarness(display: display)
+
+        _ = try await harness.sharingAdapter.beginLANWebViewSharing(
+            display: display,
+            runtime: harness.runtime
+        )
+
+        await harness.sharingAdapter.stopLANWebViewSharing(
+            displayID: display.displayID,
+            runtime: harness.runtime
+        )
+
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(lease.kind == .lanWebView)
+        #expect(lease.state == .released)
+        #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(effectiveIntent.intent.kind == .drain)
+        #expect(effectiveIntent.intent.reason == .detach)
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+        #expect(harness.sharingService.stopSharingCallCount == 1)
+        #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
+    }
+
+    @Test func lanWebViewApplyFailsPermissionUnavailableWithoutStartingSharing() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8424, width: 1920, height: 1080)
+        let harness = lanWebViewHarness(display: display, hasPermission: false)
+
+        let result = await harness.runtime.attachLANWebViewConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: display.displayID),
+            owner: .init(source: .sharingService, redactedLabel: "lan"),
+            demand: DisplayRuntimeConsumerDemand(
+                sourcePixelSize: .init(width: display.width, height: display.height),
+                sourceFramesPerSecond: 60,
+                capturesCursor: false,
+                powerProfile: .automatic,
+                latencyPreference: .realtime
+            )
+        )
+
+        let applyResult = try #require(result.applyResult)
+        #expect(applyResult.outcome == .failed)
+        #expect(applyResult.failureCode == DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable)
+        #expect(harness.sharingService.startSharingCallCount == 0)
+        #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
+    }
+
     @Test func sharingAdapterResolvesSCDisplayAndVirtualSerialInAppLayer() {
         let skippedDisplay = SharedMockSCDisplay.make(displayID: 8201, width: 1920, height: 1080)
         let registeredDisplay = SharedMockSCDisplay.make(displayID: 8202, width: 3840, height: 2160)
@@ -819,6 +933,90 @@ private func monitorHarness(
         controller: controller,
         adapter: adapter,
         runtime: runtime
+    )
+}
+
+@MainActor
+private func lanWebViewHarness(
+    display: SCDisplay,
+    target: ShareTarget? = nil,
+    hasPermission: Bool = true
+) -> (
+    catalogService: ScreenCaptureCatalogService,
+    sharingService: MockSharingService,
+    sharingController: SharingController,
+    sharingAdapter: DisplayRuntimeSharingAdapter,
+    captureController: CaptureController,
+    captureAdapter: DisplayRuntimeCaptureAdapter,
+    runtime: DisplayRuntime
+) {
+    let resolvedTarget = target ?? .id(9400 + UInt32(display.displayID % 100))
+    let catalogService = ScreenCaptureCatalogService(
+        permissionProvider: FailingScreenCapturePermissionProvider(),
+        loadShareableDisplays: {
+            Issue.record("LAN Web View runtime tests must not load real shareable displays.")
+            return [display]
+        },
+        activeDisplayIDsProvider: { [display.displayID] }
+    )
+    catalogService.store.hasScreenCapturePermission = hasPermission
+    catalogService.store.lastPreflightPermission = hasPermission
+    catalogService.store.displays = [display]
+
+    let sharingService = MockSharingService()
+    sharingService.isWebServiceRunning = true
+    sharingService.webServiceLifecycleState = .running(
+        WebServiceBinding(requestedPort: 8081, boundPort: 8081)
+    )
+    if case .id(let shareID) = resolvedTarget {
+        sharingService.shareIDByDisplayID[display.displayID] = shareID
+    }
+    sharingService.shareTargetByDisplayID[display.displayID] = resolvedTarget
+
+    let sharingController = SharingController(
+        sharingService: sharingService,
+        portPreferences: AdapterTestPortPreferences(),
+        catalogService: catalogService
+    )
+    let captureController = CaptureController(
+        captureMonitoringService: MockCaptureMonitoringService(),
+        catalogService: catalogService
+    )
+    let sharingAdapter = DisplayRuntimeSharingAdapter(controller: sharingController)
+    let captureAdapter = DisplayRuntimeCaptureAdapter(
+        controller: captureController,
+        sharingController: sharingController
+    )
+    let runtime = DisplayRuntime(
+        catalogProvider: DisplayRuntimeCatalogAdapter(service: catalogService),
+        captureProvider: captureAdapter,
+        sharingProvider: sharingAdapter,
+        sharingCommander: sharingAdapter,
+        captureIntentCommander: captureAdapter
+    )
+    sharingAdapter.configureLANWebViewDemandSync(runtime: runtime)
+    return (
+        catalogService: catalogService,
+        sharingService: sharingService,
+        sharingController: sharingController,
+        sharingAdapter: sharingAdapter,
+        captureController: captureController,
+        captureAdapter: captureAdapter,
+        runtime: runtime
+    )
+}
+
+private func sharingStateSnapshot(
+    target: ShareTarget,
+    streamingPeers: Int
+) -> SharingStateSnapshot {
+    SharingStateSnapshot(
+        signalingConnections: streamingPeers,
+        streamingPeers: streamingPeers,
+        signalingConnectionsByTarget: [target: streamingPeers],
+        streamingPeersByTarget: [target: streamingPeers],
+        clientsByTarget: [:],
+        lastUpdatedAt: Date()
     )
 }
 

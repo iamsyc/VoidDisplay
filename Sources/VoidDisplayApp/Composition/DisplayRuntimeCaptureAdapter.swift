@@ -8,13 +8,16 @@ import VoidDisplayRuntime
 @MainActor
 package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureCommanding, DisplayRuntimeCaptureIntentCommanding {
     private weak var controller: CaptureController?
+    private weak var sharingController: SharingController?
     private let isManagedVirtualDisplay: @MainActor (DisplayRuntimeDisplayID) -> Bool
 
     package init(
         controller: CaptureController,
+        sharingController: SharingController? = nil,
         isManagedVirtualDisplay: @escaping @MainActor (DisplayRuntimeDisplayID) -> Bool = { _ in false }
     ) {
         self.controller = controller
+        self.sharingController = sharingController
         self.isManagedVirtualDisplay = isManagedVirtualDisplay
     }
 
@@ -121,6 +124,50 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         }
     }
 
+    package func applyLANWebViewCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        guard let controller,
+              let sharingController
+        else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        guard let resolvedDisplayID = intent.resolvedDisplayID else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
+        guard intent.kind == .capture,
+              intent.aggregateDemand?.consumerKinds.contains(.lanWebView) == true
+        else {
+            sharingController.stopSharing(displayID: resolvedDisplayID)
+            return .applied(revision: intent.revision)
+        }
+        if controller.displayCatalogState.hasScreenCapturePermission == false
+            || controller.displayCatalogState.lastPreflightPermission == false {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
+            )
+        }
+        guard let display = resolveDisplay(displayID: resolvedDisplayID, in: controller)
+        else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
+        return await acquireLANWebViewShare(
+            display: display,
+            intent: intent,
+            sharingController: sharingController
+        )
+    }
+
     private func resolveDisplay(
         displayID: DisplayRuntimeDisplayID,
         in controller: CaptureController
@@ -140,6 +187,33 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
                 display: display,
                 metadata: monitorMetadata(for: display)
             ) {
+            case .started:
+                return .applied(revision: intent.revision)
+            case .invalidated:
+                return .failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
+                )
+            }
+        } catch {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
+            )
+        }
+    }
+
+    private func acquireLANWebViewShare(
+        display: SCDisplay,
+        intent: DisplayRuntimeCaptureIntent,
+        sharingController: SharingController
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        guard !sharingController.isSharing(displayID: display.displayID) else {
+            return .applied(revision: intent.revision)
+        }
+
+        do {
+            switch try await sharingController.beginSharing(display: display) {
             case .started:
                 return .applied(revision: intent.revision)
             case .invalidated:

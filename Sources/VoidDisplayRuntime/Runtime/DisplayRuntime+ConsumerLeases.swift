@@ -49,6 +49,69 @@ extension DisplayRuntime {
         )
     }
 
+    package func attachLANWebViewConsumer(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        owner: DisplayRuntimeConsumerOwner,
+        demand: DisplayRuntimeConsumerDemand
+    ) async -> DisplayRuntimeLANWebViewConsumerAttachResult {
+        let hadExistingLease = currentDemandLeases(for: surfaceIdentity)
+            .contains { $0.kind == .lanWebView }
+        let lease = attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .lanWebView,
+            owner: owner,
+            demand: demand,
+            submitsCaptureIntent: false
+        )
+        guard !hadExistingLease else {
+            return DisplayRuntimeLANWebViewConsumerAttachResult(
+                lease: lease,
+                applyResult: nil
+            )
+        }
+
+        let intent = submitCaptureIntent(
+            surfaceIdentity: surfaceIdentity,
+            reason: .attach,
+            appliesCommand: false
+        )
+        let rawResult: DisplayRuntimeCaptureIntentApplyResult
+        if let captureIntentCommander {
+            rawResult = await captureIntentCommander.applyLANWebViewCaptureIntent(intent)
+        } else {
+            rawResult = .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        return DisplayRuntimeLANWebViewConsumerAttachResult(
+            lease: lease,
+            applyResult: recordCaptureIntentApplyResult(rawResult)
+        )
+    }
+
+    @discardableResult
+    package func updateLANWebViewConsumerDemand(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        demand: DisplayRuntimeConsumerDemand
+    ) -> DisplayRuntimeConsumerLease? {
+        guard let existingLease = currentDemandLeases(for: surfaceIdentity)
+            .first(where: { $0.kind == .lanWebView })
+        else {
+            return nil
+        }
+        let now = Date()
+        let updatedLease = existingLease.updated(
+            state: existingLease.state,
+            updatedAt: now > existingLease.updatedAt
+                ? now
+                : existingLease.updatedAt.addingTimeInterval(0.000_001),
+            demand: demand
+        )
+        consumerLeasesByID[existingLease.id] = updatedLease
+        return updatedLease
+    }
+
     private func attachConsumer(
         surfaceIdentity: DisplaySurfaceIdentity,
         kind: DisplaySurfaceConsumerKind,
@@ -96,13 +159,8 @@ extension DisplayRuntime {
     package func detachConsumer(
         leaseID: DisplayRuntimeConsumerLeaseID
     ) -> DisplayRuntimeConsumerLease? {
-        guard let lease = consumerLeasesByID[leaseID] else { return nil }
-        let releasedLease = lease.updated(
-            state: .released,
-            updatedAt: Date()
-        )
-        consumerLeasesByID[leaseID] = releasedLease
-        submitCaptureIntent(surfaceIdentity: lease.surfaceIdentity, reason: .detach)
+        guard let releasedLease = releaseConsumerLease(leaseID: leaseID) else { return nil }
+        submitCaptureIntent(surfaceIdentity: releasedLease.surfaceIdentity, reason: .detach)
         return releasedLease
     }
 
@@ -127,6 +185,57 @@ extension DisplayRuntime {
             releasedLease: releasedLease,
             applyResult: applyResult
         )
+    }
+
+    @discardableResult
+    package func detachLANWebViewConsumer(
+        surfaceIdentity: DisplaySurfaceIdentity
+    ) async -> DisplayRuntimeLANWebViewConsumerDetachResult {
+        guard let lease = currentDemandLeases(for: surfaceIdentity)
+            .first(where: { $0.kind == .lanWebView })
+        else {
+            return DisplayRuntimeLANWebViewConsumerDetachResult(
+                releasedLease: nil,
+                applyResult: nil
+            )
+        }
+        guard let releasedLease = releaseConsumerLease(leaseID: lease.id) else {
+            return DisplayRuntimeLANWebViewConsumerDetachResult(
+                releasedLease: nil,
+                applyResult: nil
+            )
+        }
+
+        let intent = submitCaptureIntent(
+            surfaceIdentity: releasedLease.surfaceIdentity,
+            reason: .detach,
+            appliesCommand: false
+        )
+        let rawResult: DisplayRuntimeCaptureIntentApplyResult
+        if let captureIntentCommander {
+            rawResult = await captureIntentCommander.applyLANWebViewCaptureIntent(intent)
+        } else {
+            rawResult = .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        return DisplayRuntimeLANWebViewConsumerDetachResult(
+            releasedLease: releasedLease,
+            applyResult: recordCaptureIntentApplyResult(rawResult)
+        )
+    }
+
+    private func releaseConsumerLease(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) -> DisplayRuntimeConsumerLease? {
+        guard let lease = consumerLeasesByID[leaseID] else { return nil }
+        let releasedLease = lease.updated(
+            state: .released,
+            updatedAt: Date()
+        )
+        consumerLeasesByID[leaseID] = releasedLease
+        return releasedLease
     }
 
     package func currentConsumerLeaseSnapshot() -> [DisplayRuntimeConsumerLease] {

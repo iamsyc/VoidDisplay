@@ -484,6 +484,7 @@ package enum AppBootstrap {
         let displayRuntimeCatalogAdapter = DisplayRuntimeCatalogAdapter(service: catalogService)
         let displayRuntimeCaptureAdapter = DisplayRuntimeCaptureAdapter(
             controller: capture,
+            sharingController: sharing,
             isManagedVirtualDisplay: { displayID in
                 virtualDisplay.managedDisplays.contains {
                     $0.displayID == displayID && $0.isLiveRuntime
@@ -505,6 +506,7 @@ package enum AppBootstrap {
             virtualDisplayCommander: displayRuntimeVirtualDisplayAdapter,
             observabilityRecorder: displayRuntimeObservabilityAdapter
         )
+        displayRuntimeSharingAdapter.configureLANWebViewDemandSync(runtime: displayRuntime)
         virtualDisplay.configureRebuildExecutor { configID, source in
             let result = try await displayRuntime.rebuildVirtualDisplay(
                 configID: configID,
