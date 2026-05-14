@@ -278,6 +278,57 @@ struct DisplayRuntimeSnapshotTests {
         #expect(snapshot.virtualDisplay == .empty)
         #expect(snapshot.transactions == .empty)
     }
+
+    @Test func encodedRuntimeSnapshotExcludesStage5SensitiveFixtureValues() async throws {
+        let displayID: DisplayRuntimeDisplayID = 731
+        let sensitiveFixtures = stage5RuntimePrivacySensitiveFixtures()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: displayID, isMain: true)),
+            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: displayID, capturesCursor: true)),
+            sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: displayID)),
+            captureIntentCommander: FakeCaptureIntentCommander()
+        )
+        _ = runtime.attachConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: displayID),
+            kind: .lanWebView,
+            owner: .init(source: .sharingService, redactedLabel: sensitiveFixtures.joined(separator: " | ")),
+            demand: phase4SnapshotDemand(
+                sourceWidth: 3840,
+                sourceHeight: 2160,
+                preferredWidth: 1920,
+                preferredHeight: 1080,
+                preferredFramesPerSecond: 30,
+                capturesCursor: true,
+                powerProfile: .smooth,
+                activeViewerCount: 2
+            )
+        )
+
+        let snapshot = runtime.makeSnapshot()
+        let runtimeJSON = String(decoding: try ObservabilityCodec.encode(snapshot), as: UTF8.self)
+        let runtimeSection = try await AnyObservabilitySnapshotProvider(
+            DisplayRuntimeSnapshotProvider(runtime: runtime)
+        ).makeSnapshot()
+        let runtimeSectionJSON = String(decoding: try ObservabilityCodec.encode(runtimeSection), as: UTF8.self)
+        let decoded = try ObservabilityCodec.decode(
+            DisplayRuntimeSnapshot.self,
+            from: ObservabilityCodec.encode(snapshot)
+        )
+
+        #expect(snapshot.schemaVersion == 3)
+        #expect(decoded.schemaVersion == 3)
+        #expect(snapshot.sharing.routes.first?.hasConcreteRoute == true)
+        #expect(snapshot.sharing.sharingClientCount == 1)
+        #expect(snapshot.consumerLeases.first?.ownerSource == .sharingService)
+        #expect(snapshot.aggregatedDemands.first?.activeViewerCount == 2)
+        #expect(runtimeJSON.contains("redactedLabel") == false)
+        #expect(runtimeSectionJSON.contains("redactedLabel") == false)
+        for sensitiveFixture in sensitiveFixtures {
+            #expect(runtimeJSON.contains(sensitiveFixture) == false)
+            #expect(runtimeSectionJSON.contains(sensitiveFixture) == false)
+        }
+    }
+
     @Test func duplicatePortEntriesConvergeWithoutDroppingSnapshot() throws {
         let configID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
         let runtime = DisplayRuntime(
@@ -484,4 +535,17 @@ private func phase4SnapshotDemand(
         latencyPreference: .realtime,
         activeViewerCount: activeViewerCount
     )
+}
+
+private func stage5RuntimePrivacySensitiveFixtures() -> [String] {
+    [
+        "share-id-raw-fixture-731",
+        "https://192.168.73.10:8089/display/share-id-raw-fixture-731",
+        "192.168.73.10",
+        "\(NSHomeDirectory())/Documents/private-display-runtime-notes.txt",
+        "Payroll Forecast - Private Window",
+        "typed customer search text",
+        "viewer-client-raw-id-731",
+        "desktop shows confidential roadmap"
+    ]
 }

@@ -162,8 +162,10 @@ struct ObservabilitySnapshotProviderTests {
 
     @Test func runtimeSnapshotProviderPublishesPhase4StateWithDefaultRedaction() async throws {
         let sensitiveInputs = [
+            "share-id-raw-fixture-42",
             "viewer-client-secret-42",
             "https://10.0.0.8:8080/display/secret",
+            "10.0.0.8",
             "\(NSHomeDirectory())/Desktop/capture.txt",
             "Confidential Window Caption",
             "typed user search text",
