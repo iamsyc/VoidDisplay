@@ -72,6 +72,29 @@ func activeSharingSnapshot(displayID: DisplayRuntimeDisplayID) -> DisplayRuntime
     )
 }
 
+func sharingSnapshot(
+    isWebServiceRunning: Bool,
+    activeDisplayIDs: [DisplayRuntimeDisplayID]
+) -> DisplayRuntimeSharingSnapshot {
+    DisplayRuntimeSharingSnapshot(
+        activeSharingDisplayIDs: activeDisplayIDs,
+        startingDisplayIDs: [],
+        isSharing: !activeDisplayIDs.isEmpty,
+        isWebServiceRunning: isWebServiceRunning,
+        preferredPort: 8081,
+        sharingClientCount: 0,
+        sharingClientCounts: [],
+        lifecycle: .init(
+            phase: isWebServiceRunning ? .running : .stopped,
+            requestedPort: isWebServiceRunning ? 8081 : nil,
+            boundPort: isWebServiceRunning ? 8081 : nil,
+            failureReason: nil,
+            hasFailureMessage: false
+        ),
+        routes: []
+    )
+}
+
 func stoppedSharingSnapshot(previousDisplayID: DisplayRuntimeDisplayID) -> DisplayRuntimeSharingSnapshot {
     .init(
         activeSharingDisplayIDs: [],
@@ -92,22 +115,34 @@ func stoppedSharingSnapshot(previousDisplayID: DisplayRuntimeDisplayID) -> Displ
     )
 }
 
-func monitoringCaptureSnapshot(
-    displayID: DisplayRuntimeDisplayID,
-    capturesCursor: Bool
+func captureSnapshot(
+    displayIDs: [DisplayRuntimeDisplayID],
+    isVirtualDisplay: Bool = false,
+    capturesCursor: Bool = false
 ) -> DisplayRuntimeCaptureSnapshot {
-    .init(
+    DisplayRuntimeCaptureSnapshot(
         startingDisplayIDs: [],
-        sessions: [
-            .init(
-                id: UUID(),
+        sessions: displayIDs.enumerated().map { index, displayID in
+            DisplayRuntimeCaptureSession(
+                id: UUID(uuidString: "00000000-0000-0000-0000-\(String(format: "%012d", index + 1))")!,
                 displayID: displayID,
-                isVirtualDisplay: true,
+                isVirtualDisplay: isVirtualDisplay,
                 capturesCursor: capturesCursor,
                 state: .active,
                 metrics: .empty
             )
-        ]
+        }
+    )
+}
+
+func monitoringCaptureSnapshot(
+    displayID: DisplayRuntimeDisplayID,
+    capturesCursor: Bool
+) -> DisplayRuntimeCaptureSnapshot {
+    captureSnapshot(
+        displayIDs: [displayID],
+        isVirtualDisplay: true,
+        capturesCursor: capturesCursor
     )
 }
 

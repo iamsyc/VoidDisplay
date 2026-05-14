@@ -279,9 +279,9 @@ struct DisplayRuntimeSnapshotTests {
         #expect(snapshot.transactions == .empty)
     }
 
-    @Test func encodedRuntimeSnapshotExcludesStage5SensitiveFixtureValues() async throws {
+    @Test func runtimeSnapshotExcludesSensitiveFixtureValues() async throws {
         let displayID: DisplayRuntimeDisplayID = 731
-        let sensitiveFixtures = stage5RuntimePrivacySensitiveFixtures()
+        let sensitiveFixtures = runtimePrivacySensitiveFixtures()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: displayID, isMain: true)),
             captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: displayID, capturesCursor: true)),
@@ -292,7 +292,7 @@ struct DisplayRuntimeSnapshotTests {
             surfaceIdentity: .physicalDisplay(displayID: displayID),
             kind: .lanWebView,
             owner: .init(source: .sharingService, redactedLabel: sensitiveFixtures.joined(separator: " | ")),
-            demand: phase4SnapshotDemand(
+            demand: consumerDemandSnapshotFixture(
                 sourceWidth: 3840,
                 sourceHeight: 2160,
                 preferredWidth: 1920,
@@ -431,7 +431,7 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface.catalog?.pixelWidth == 1920)
     }
 
-    @Test func snapshotEncodesPhase4ConsumerStateDemandAndEffectiveIntent() throws {
+    @Test func snapshotEncodesConsumerDemandAndEffectiveIntent() throws {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 501)
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 501, isMain: true)),
@@ -442,7 +442,7 @@ struct DisplayRuntimeSnapshotTests {
             surfaceIdentity: surfaceIdentity,
             kind: .monitor,
             owner: .init(source: .localUI, redactedLabel: "local monitor"),
-            demand: phase4SnapshotDemand(
+            demand: consumerDemandSnapshotFixture(
                 sourceWidth: 2560,
                 sourceHeight: 1440,
                 capturesCursor: false
@@ -452,7 +452,7 @@ struct DisplayRuntimeSnapshotTests {
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: .init(source: .sharingService, redactedLabel: "lan view"),
-            demand: phase4SnapshotDemand(
+            demand: consumerDemandSnapshotFixture(
                 sourceWidth: 3840,
                 sourceHeight: 2160,
                 capturesCursor: true,
@@ -508,7 +508,7 @@ struct DisplayRuntimeSnapshotTests {
     }
 }
 
-private func phase4SnapshotDemand(
+private func consumerDemandSnapshotFixture(
     sourceWidth: Int,
     sourceHeight: Int,
     preferredWidth: Int? = nil,
@@ -537,7 +537,7 @@ private func phase4SnapshotDemand(
     )
 }
 
-private func stage5RuntimePrivacySensitiveFixtures() -> [String] {
+private func runtimePrivacySensitiveFixtures() -> [String] {
     [
         "share-id-raw-fixture-731",
         "https://192.168.73.10:8089/display/share-id-raw-fixture-731",
