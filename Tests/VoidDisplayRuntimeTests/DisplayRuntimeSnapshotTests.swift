@@ -270,7 +270,7 @@ struct DisplayRuntimeSnapshotTests {
     @Test func unavailableProvidersProduceEmptySnapshot() {
         let snapshot = DisplayRuntime().makeSnapshot()
 
-        #expect(snapshot.schemaVersion == 2)
+        #expect(snapshot.schemaVersion == 3)
         #expect(snapshot.surfaces.isEmpty)
         #expect(snapshot.catalog == .empty)
         #expect(snapshot.capture == .empty)
@@ -379,4 +379,109 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface.sharing?.viewerCount == 3)
         #expect(surface.catalog?.pixelWidth == 1920)
     }
+
+    @Test func snapshotEncodesPhase4ConsumerStateDemandAndEffectiveIntent() throws {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 501)
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 501, isMain: true)),
+            captureIntentCommander: FakeCaptureIntentCommander()
+        )
+
+        let monitorLease = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .monitor,
+            owner: .init(source: .localUI, redactedLabel: "local monitor"),
+            demand: phase4SnapshotDemand(
+                sourceWidth: 2560,
+                sourceHeight: 1440,
+                capturesCursor: false
+            )
+        )
+        let lanLease = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .lanWebView,
+            owner: .init(source: .sharingService, redactedLabel: "lan view"),
+            demand: phase4SnapshotDemand(
+                sourceWidth: 3840,
+                sourceHeight: 2160,
+                capturesCursor: true,
+                powerProfile: .smooth,
+                activeViewerCount: 3
+            )
+        )
+        let latestRevision = try #require(runtime.currentLatestCaptureIntentRevision())
+        let applyResult = runtime.recordCaptureIntentApplyResult(
+            .init(revision: latestRevision, outcome: .applied)
+        )
+
+        let snapshot = runtime.makeSnapshot()
+        let aggregate = try #require(snapshot.aggregatedDemands.first)
+        let effectiveIntent = try #require(snapshot.effectiveCaptureIntents.first)
+        let decoded = try ObservabilityCodec.decode(
+            DisplayRuntimeSnapshot.self,
+            from: ObservabilityCodec.encode(snapshot)
+        )
+
+        #expect(applyResult.outcome == .applied)
+        #expect(snapshot.schemaVersion == 3)
+        #expect(Set(snapshot.consumerLeases.map(\.id)) == Set([monitorLease.id, lanLease.id]))
+        #expect(Set(snapshot.consumerLeases.map(\.ownerSource)) == Set([.localUI, .sharingService]))
+        #expect(snapshot.consumerLeases.map(\.state) == [.attached, .attached])
+        #expect(Set(aggregate.activeLeaseIDs) == Set([monitorLease.id, lanLease.id]))
+        #expect(aggregate.qualityProfile == .mixed)
+        #expect(aggregate.effectivePixelSize == .init(width: 3840, height: 2160))
+        #expect(aggregate.effectiveFramesPerSecond == 60)
+        #expect(aggregate.capturesCursor == true)
+        #expect(aggregate.activeViewerCount == 3)
+        #expect(effectiveIntent.intent.revision == latestRevision)
+        #expect(effectiveIntent.intent.aggregateDemand == aggregate)
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+        #expect(snapshot.consumerSummary.activeLeaseCount == 2)
+        #expect(snapshot.consumerSummary.totalLeaseCount == 2)
+        #expect(snapshot.consumerSummary.activeViewerCount == 3)
+        #expect(snapshot.consumerSummary.latestCaptureIntentRevision == latestRevision)
+        #expect(snapshot.consumerSummary.surfaceEpochs.first?.surfaceEpoch == .initial)
+        #expect(
+            snapshot.consumerSummary.leaseCountsByKind.contains {
+                $0.kind == .lanWebView && $0.activeCount == 1 && $0.totalCount == 1
+            }
+        )
+        #expect(
+            snapshot.consumerSummary.leaseCountsByKind.contains {
+                $0.kind == .monitor && $0.activeCount == 1 && $0.totalCount == 1
+            }
+        )
+        #expect(Set(decoded.consumerLeases.map(\.id)) == Set([monitorLease.id, lanLease.id]))
+        #expect(decoded.aggregatedDemands.first?.activeViewerCount == 3)
+        #expect(decoded.effectiveCaptureIntents.first?.intent.revision == latestRevision)
+    }
+}
+
+private func phase4SnapshotDemand(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    preferredWidth: Int? = nil,
+    preferredHeight: Int? = nil,
+    preferredFramesPerSecond: Int? = nil,
+    capturesCursor: Bool,
+    powerProfile: DisplayRuntimeCapturePowerProfile = .automatic,
+    activeViewerCount: Int = 0
+) -> DisplayRuntimeConsumerDemand {
+    let preferredPixelSize: DisplayRuntimePixelSize?
+    if let preferredWidth, let preferredHeight {
+        preferredPixelSize = .init(width: preferredWidth, height: preferredHeight)
+    } else {
+        preferredPixelSize = nil
+    }
+
+    return DisplayRuntimeConsumerDemand(
+        sourcePixelSize: .init(width: sourceWidth, height: sourceHeight),
+        preferredPixelSize: preferredPixelSize,
+        sourceFramesPerSecond: 60,
+        preferredFramesPerSecond: preferredFramesPerSecond,
+        capturesCursor: capturesCursor,
+        powerProfile: powerProfile,
+        latencyPreference: .realtime,
+        activeViewerCount: activeViewerCount
+    )
 }

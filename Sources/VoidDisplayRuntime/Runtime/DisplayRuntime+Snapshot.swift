@@ -7,13 +7,17 @@ extension DisplayRuntime {
         let capture = captureProvider?.makeCaptureSnapshot() ?? .empty
         let sharing = sharingProvider?.makeSharingSnapshot() ?? .empty
         let virtualDisplay = virtualDisplayProvider?.makeVirtualDisplaySnapshot() ?? .empty
+        let surfaces = DisplaySurfaceGraphBuilder.makeSurfaces(
+            catalog: catalog,
+            capture: capture,
+            sharing: sharing,
+            virtualDisplay: virtualDisplay
+        )
+        let consumerLeases = currentConsumerLeaseSnapshot().map(DisplayRuntimeConsumerLeaseSnapshot.init)
+        let aggregatedDemands = currentAggregatedDemandSnapshot(surfaces: surfaces)
+        let effectiveCaptureIntents = currentEffectiveCaptureIntentSnapshot()
         return DisplayRuntimeSnapshot(
-            surfaces: DisplaySurfaceGraphBuilder.makeSurfaces(
-                catalog: catalog,
-                capture: capture,
-                sharing: sharing,
-                virtualDisplay: virtualDisplay
-            ),
+            surfaces: surfaces,
             catalog: catalog,
             capture: capture,
             sharing: sharing,
@@ -21,7 +25,12 @@ extension DisplayRuntime {
             transactions: .init(
                 activeTransactions: Array(activeTransactionTracesByID.values),
                 recentTransactions: recentTransactionTraces
-            )
+            ),
+            consumerLeases: consumerLeases,
+            aggregatedDemands: aggregatedDemands,
+            effectiveCaptureIntents: effectiveCaptureIntents,
+            surfaceEpochs: currentSurfaceEpochSnapshot(),
+            latestCaptureIntentRevision: currentLatestCaptureIntentRevision()
         )
     }
 

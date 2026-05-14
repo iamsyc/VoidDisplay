@@ -25,7 +25,7 @@ extension DisplayRuntime {
 
         let now = Date()
         let surfaceEpoch = currentSurfaceEpoch(for: surfaceIdentity)
-        let resolvedDisplayID = resolvedDisplayID(for: surfaceIdentity)
+        let resolvedDisplayID = resolvedDisplayID(for: surfaceIdentity, surfaces: nil)
         let lease = DisplayRuntimeConsumerLease(
             surfaceIdentity: surfaceIdentity,
             surfaceEpoch: surfaceEpoch,
@@ -62,7 +62,15 @@ extension DisplayRuntime {
 
     package func currentAggregatedDemandSnapshot() -> [DisplayRuntimeAggregatedDemand] {
         Set(consumerLeasesByID.values.map(\.surfaceIdentity))
-            .compactMap { aggregateDemand(for: $0) }
+            .compactMap { aggregateDemand(for: $0, surfaces: nil) }
+            .sorted(by: aggregateDemandSort)
+    }
+
+    package func currentAggregatedDemandSnapshot(
+        surfaces: [DisplaySurface]
+    ) -> [DisplayRuntimeAggregatedDemand] {
+        Set(consumerLeasesByID.values.map(\.surfaceIdentity))
+            .compactMap { aggregateDemand(for: $0, surfaces: surfaces) }
             .sorted(by: aggregateDemandSort)
     }
 
@@ -70,6 +78,30 @@ extension DisplayRuntime {
         effectiveCaptureIntentsBySurface.values.sorted {
             captureIntentSort(lhs: $0.intent, rhs: $1.intent)
         }
+    }
+
+    package func currentSurfaceEpochSnapshot() -> [DisplayRuntimeSurfaceEpochSnapshot] {
+        Set(
+            consumerLeasesByID.values.map(\.surfaceIdentity)
+                + Array(effectiveCaptureIntentsBySurface.keys)
+                + Array(surfaceEpochs.keys)
+        )
+        .map {
+            DisplayRuntimeSurfaceEpochSnapshot(
+                surfaceIdentity: $0,
+                surfaceEpoch: currentSurfaceEpoch(for: $0)
+            )
+        }
+        .sorted {
+            if $0.surfaceIdentity.kind != $1.surfaceIdentity.kind {
+                return $0.surfaceIdentity.kind.rawValue < $1.surfaceIdentity.kind.rawValue
+            }
+            return $0.surfaceIdentity.stableID < $1.surfaceIdentity.stableID
+        }
+    }
+
+    package func currentLatestCaptureIntentRevision() -> DisplayRuntimeCaptureIntentRevision? {
+        captureIntentsByRevision.keys.max()
     }
 
     package func currentSurfaceEpoch(
@@ -135,12 +167,13 @@ extension DisplayRuntime {
     }
 
     private func aggregateDemand(
-        for surfaceIdentity: DisplaySurfaceIdentity
+        for surfaceIdentity: DisplaySurfaceIdentity,
+        surfaces: [DisplaySurface]?
     ) -> DisplayRuntimeAggregatedDemand? {
         DisplayRuntimeConsumerDemandAggregator.aggregate(
             surfaceIdentity: surfaceIdentity,
             surfaceEpoch: currentSurfaceEpoch(for: surfaceIdentity),
-            resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity),
+            resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity, surfaces: surfaces),
             leases: Array(consumerLeasesByID.values)
         )
     }
@@ -149,11 +182,11 @@ extension DisplayRuntime {
         surfaceIdentity: DisplaySurfaceIdentity,
         reason: DisplayRuntimeCaptureIntentReason
     ) {
-        let aggregateDemand = aggregateDemand(for: surfaceIdentity)
+        let aggregateDemand = aggregateDemand(for: surfaceIdentity, surfaces: nil)
         let intent = DisplayRuntimeCaptureIntent(
             surfaceIdentity: surfaceIdentity,
             surfaceEpoch: currentSurfaceEpoch(for: surfaceIdentity),
-            resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity),
+            resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity, surfaces: nil),
             aggregateDemand: aggregateDemand,
             kind: aggregateDemand == nil ? .drain : .capture,
             reason: reason,
@@ -179,10 +212,16 @@ extension DisplayRuntime {
     }
 
     private func resolvedDisplayID(
-        for surfaceIdentity: DisplaySurfaceIdentity
+        for surfaceIdentity: DisplaySurfaceIdentity,
+        surfaces: [DisplaySurface]?
     ) -> DisplayRuntimeDisplayID? {
         if let storedDisplayID = surfaceResolvedDisplayIDs[surfaceIdentity] {
             return storedDisplayID
+        }
+        if let surfaces {
+            return surfaces.first {
+                $0.identity == surfaceIdentity
+            }?.currentDisplayID
         }
         return makeSnapshot().surfaces.first {
             $0.identity == surfaceIdentity

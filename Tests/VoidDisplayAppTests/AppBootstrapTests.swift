@@ -42,7 +42,7 @@ struct AppBootstrapTests {
         let runtimeSection = try #require(diagnostics.state.sections["runtime"])
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
 
-        #expect(runtime.schemaVersion == 2)
+        #expect(runtime.schemaVersion == 3)
     }
 
     @Test func initInjectsRuntimeBackedVirtualDisplayRebuildExecutor() async throws {
@@ -355,6 +355,57 @@ struct AppBootstrapTests {
         }
     }
 
+    @Test func runtimeConsumerLeaseCallerTextIsAbsentFromObservabilityAndSupportBundle() async throws {
+        let sensitiveInputs = [
+            "viewer-client-secret-77",
+            "https://10.0.0.7:8080/display/secret",
+            "\(NSHomeDirectory())/Documents/session.txt",
+            "Private Window Caption",
+            "typed note body",
+            "visible desktop sample"
+        ]
+        let env = AppBootstrap.makeEnvironment(
+            preview: true,
+            captureMonitoringService: MockCaptureMonitoringService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            isRunningUnderXCTestOverride: true
+        )
+        _ = env.displayRuntime.attachConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: 777),
+            kind: .lanWebView,
+            owner: .init(source: .sharingService, redactedLabel: sensitiveInputs.joined(separator: " ")),
+            demand: runtimeLeaseRedactionDemand()
+        )
+
+        await env.waitForStartupObservability()
+        await env.observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
+
+        let runtimeJSON = String(
+            decoding: try JSONEncoder().encode(env.displayRuntime.makeSnapshot()),
+            as: UTF8.self
+        )
+        let diagnostics = await env.observability.diagnosticsSnapshot()
+        let diagnosticsJSON = String(
+            decoding: try JSONEncoder().encode(diagnostics.state),
+            as: UTF8.self
+        )
+        let bundleURL = try await env.observability.exportBundle(
+            draft: FeedbackDraft(happened: "Runtime lease diagnostics"),
+            consent: FeedbackConsent()
+        )
+        let bundleStateJSON = try supportBundleEntryString(
+            archiveURL: bundleURL,
+            relativePathSuffix: "/state/current-state.json"
+        )
+
+        for sensitiveInput in sensitiveInputs {
+            #expect(runtimeJSON.contains(sensitiveInput) == false)
+            #expect(diagnosticsJSON.contains(sensitiveInput) == false)
+            #expect(bundleStateJSON.contains(sensitiveInput) == false)
+        }
+    }
+
     @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
         let overrides = [
             (UITestRuntime.modeEnvironmentKey, "1"),
@@ -514,6 +565,19 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
     }
+}
+
+private func runtimeLeaseRedactionDemand() -> DisplayRuntimeConsumerDemand {
+    DisplayRuntimeConsumerDemand(
+        sourcePixelSize: .init(width: 3840, height: 2160),
+        preferredPixelSize: .init(width: 1920, height: 1080),
+        sourceFramesPerSecond: 60,
+        preferredFramesPerSecond: 30,
+        capturesCursor: true,
+        powerProfile: .smooth,
+        latencyPreference: .realtime,
+        activeViewerCount: 1
+    )
 }
 
 private func supportBundleEntryString(
