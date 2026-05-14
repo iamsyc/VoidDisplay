@@ -253,7 +253,7 @@ package struct DiagnosticsView: View {
         [
             (String(localized: "Runtime Snapshot"), summary.statusCode),
             (String(localized: "Schema Version"), summary.schemaVersion.map(String.init) ?? "-"),
-            (String(localized: "Surface Count"), "\(summary.surfaceCount)"),
+            (String(localized: "Runtime Display Count"), "\(summary.surfaceCount)"),
             (String(localized: "Active Consumer Leases"), "\(summary.activeConsumerLeaseCount)"),
             (String(localized: "Total Consumer Leases"), "\(summary.totalConsumerLeaseCount)"),
             (String(localized: "Aggregated Demand Count"), "\(summary.aggregatedDemandCount)"),

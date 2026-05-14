@@ -3274,13 +3274,13 @@
         }
       }
     },
-    "Surface Count" : {
+    "Runtime Display Count" : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Surface 数量"
+            "value" : "运行时显示器数量"
           }
         }
       }
