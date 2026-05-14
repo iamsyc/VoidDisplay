@@ -137,6 +137,103 @@ struct FeedbackBundleExporterTests {
         #expect(shareMappings.contains("<redacted-ip>") == true)
     }
 
+    @Test func exportBundleRedactsMalformedConfigAttachmentsWhenEnhancedDiagnosticsEnabled() throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "support-bundle-malformed-configs")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let virtualDisplaysURL = tempURL.appendingPathComponent("virtual-displays.json")
+        let shareMappingsURL = tempURL.appendingPathComponent("display-share-id-mappings.json")
+        let secretDisplayName = "Private Window Caption"
+        let secretPath = "/Users/tester/Desktop/private-display.json"
+        let secretIP = "192.168.0.4"
+        let secretURL = "http://192.168.0.4:8080/display/share-id-raw-fixture-66"
+        let secretUserText = "typed note body"
+        let secretDesktopContent = "Desktop frame shows roadmap"
+        let secretShareID = "123456789"
+        let malformedVirtualDisplayConfig = """
+        {
+          "displayName": "\(secretDisplayName)",
+          "diagnosticPath": "\(secretPath)",
+          "diagnosticURL": "\(secretURL)",
+          "lastHost": "\(secretIP)",
+          "userText": "\(secretUserText)",
+          "desktopContent": "\(secretDesktopContent)"
+        """
+        let malformedShareMappings = """
+        {
+          "mappings": {
+            "display-identity-fixture": \(secretShareID)
+          },
+          "lastHost": "\(secretIP)",
+        """
+        try malformedVirtualDisplayConfig.write(to: virtualDisplaysURL, atomically: true, encoding: .utf8)
+        try malformedShareMappings.write(to: shareMappingsURL, atomically: true, encoding: .utf8)
+
+        let exporter = FeedbackBundleExporter(
+            exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
+            virtualDisplayConfigsURL: virtualDisplaysURL,
+            displayShareMappingsURL: shareMappingsURL,
+            sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
+        )
+
+        let result = try exporter.exportBundle(
+            draft: FeedbackDraft(),
+            consent: FeedbackConsent(includeRelatedConfigSnapshots: true),
+            state: makeStateSnapshot(),
+            health: makeHealthSummary(),
+            events: [],
+            issues: [],
+            transportCapability: FeedbackTransportCapability.localExportOnly
+        )
+
+        let virtualDisplayConfig = try archiveEntryString(
+            relativePathSuffix: "/attachments/config/virtual-displays.json",
+            archiveURL: result.bundleURL
+        )
+        let shareMappings = try archiveEntryString(
+            relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
+            archiveURL: result.bundleURL
+        )
+        let virtualPlaceholder = try #require(try decodeArchiveEntry(
+            JSONValue.self,
+            relativePathSuffix: "/attachments/config/virtual-displays.json",
+            archiveURL: result.bundleURL
+        ).objectValue)
+        let sharePlaceholder = try #require(try decodeArchiveEntry(
+            JSONValue.self,
+            relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
+            archiveURL: result.bundleURL
+        ).objectValue)
+
+        #expect(virtualPlaceholder["redacted"] == .bool(true))
+        #expect(virtualPlaceholder["reason"] == .string("invalid_json"))
+        #expect(virtualPlaceholder["sourceKind"] == .string("virtual_display_configs"))
+        #expect(virtualPlaceholder["originalByteCount"]?.intValue == malformedVirtualDisplayConfig.utf8.count)
+        #expect(sharePlaceholder["redacted"] == .bool(true))
+        #expect(sharePlaceholder["reason"] == .string("invalid_json"))
+        #expect(sharePlaceholder["sourceKind"] == .string("display_share_mappings"))
+        #expect(sharePlaceholder["originalByteCount"]?.intValue == malformedShareMappings.utf8.count)
+
+        for sensitiveFixture in [
+            "displayName",
+            secretDisplayName,
+            secretPath,
+            secretIP,
+            secretURL,
+            secretUserText,
+            secretDesktopContent
+        ] {
+            #expect(virtualDisplayConfig.contains(sensitiveFixture) == false)
+        }
+        for sensitiveFixture in [
+            #""mappings""#,
+            secretShareID,
+            secretIP
+        ] {
+            #expect(shareMappings.contains(sensitiveFixture) == false)
+        }
+    }
+
     @Test func exportBundleContinuesWhenUnifiedLogCommandTimesOut() throws {
         let tempURL = try makeTemporaryDirectory(prefix: "support-bundle-log-timeout")
         defer { try? FileManager.default.removeItem(at: tempURL) }

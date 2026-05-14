@@ -154,20 +154,41 @@ package nonisolated struct FeedbackBundleExporter {
         for sourceURL in [virtualDisplayConfigsURL, displayShareMappingsURL] where fileManager.fileExists(atPath: sourceURL.path) {
             let sanitizedName = sourceURL.lastPathComponent
             let destinationURL = directoryURL.appendingPathComponent(sanitizedName)
-            let content = try String(contentsOf: sourceURL, encoding: .utf8)
-            try writeText(sanitizedConfigSnapshot(content, sourceURL: sourceURL), to: destinationURL)
+            let data = try Data(contentsOf: sourceURL)
+            try writeText(sanitizedConfigSnapshot(data, sourceURL: sourceURL), to: destinationURL)
             writtenFiles.append(sanitizedName)
         }
         return writtenFiles.isEmpty ? nil : writtenFiles
     }
 
-    private func sanitizedConfigSnapshot(_ content: String, sourceURL: URL) -> String {
-        guard let data = content.data(using: .utf8),
-              let value = try? ObservabilityCodec.decode(JSONValue.self, from: data),
+    private func sanitizedConfigSnapshot(_ data: Data, sourceURL: URL) -> String {
+        guard let value = try? ObservabilityCodec.decode(JSONValue.self, from: data),
               let encoded = try? ObservabilityCodec.encode(redactedConfigSnapshot(value, sourceURL: sourceURL)) else {
-            return sanitizer.sanitize(text: content) ?? content
+            return redactedConfigPlaceholder(sourceURL: sourceURL, originalByteCount: data.count)
         }
         return String(decoding: encoded, as: UTF8.self)
+    }
+
+    private func redactedConfigPlaceholder(sourceURL: URL, originalByteCount: Int) -> String {
+        let placeholder: JSONValue = .object([
+            "originalByteCount": .number(Double(originalByteCount)),
+            "reason": .string("invalid_json"),
+            "redacted": .bool(true),
+            "sourceKind": .string(configSnapshotSourceKind(sourceURL))
+        ])
+        let encoded = try? ObservabilityCodec.encode(placeholder)
+        return encoded.map { String(decoding: $0, as: UTF8.self) } ??
+            "{\"originalByteCount\":\(originalByteCount),\"reason\":\"invalid_json\",\"redacted\":true,\"sourceKind\":\"\(configSnapshotSourceKind(sourceURL))\"}"
+    }
+
+    private func configSnapshotSourceKind(_ sourceURL: URL) -> String {
+        if sourceURL == virtualDisplayConfigsURL {
+            return "virtual_display_configs"
+        }
+        if sourceURL == displayShareMappingsURL {
+            return "display_share_mappings"
+        }
+        return "unknown_config_snapshot"
     }
 
     private func redactedConfigSnapshot(_ value: JSONValue, sourceURL: URL) -> JSONValue {
