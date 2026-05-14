@@ -589,18 +589,6 @@ package enum AppBootstrap {
                 AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: displayRuntime))
             )
             await observability.registerSnapshotProvider(
-                AnyObservabilitySnapshotProvider(CaptureSnapshotProvider(controller: capture))
-            )
-            await observability.registerSnapshotProvider(
-                AnyObservabilitySnapshotProvider(SharingSnapshotProvider(controller: sharing))
-            )
-            await observability.registerSnapshotProvider(
-                AnyObservabilitySnapshotProvider(VirtualDisplaySnapshotProvider(controller: virtualDisplay))
-            )
-            await observability.registerSnapshotProvider(
-                AnyObservabilitySnapshotProvider(ScreenCatalogSnapshotProvider(store: catalogService.store))
-            )
-            await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(SystemSnapshotProvider(environment: persistenceEnvironment))
             )
             await observability.registerSnapshotProvider(

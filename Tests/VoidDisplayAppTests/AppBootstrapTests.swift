@@ -43,6 +43,12 @@ struct AppBootstrapTests {
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
 
         #expect(runtime.schemaVersion == 3)
+        #expect(diagnostics.state.sections["system"] != nil)
+        #expect(diagnostics.state.sections["persistence"] != nil)
+        #expect(diagnostics.state.sections["capture"] == nil)
+        #expect(diagnostics.state.sections["sharing"] == nil)
+        #expect(diagnostics.state.sections["virtualDisplay"] == nil)
+        #expect(diagnostics.state.sections["screenCatalog"] == nil)
     }
 
     @Test func initInjectsRuntimeBackedVirtualDisplayRebuildExecutor() async throws {
