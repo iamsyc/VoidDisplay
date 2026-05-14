@@ -1,8 +1,10 @@
 # DisplayRuntime Phase 4: Consumer Lease And Demand Aggregation
 
-状态：执行级计划草案
+状态：已完成历史记录
 范围：规划 DisplaySurface consumer lease、demand aggregation、capture intent dispatch、observability、测试与迁移顺序。本文档不实现代码。
 基线：Phase 3c final audit 已通过，runtime 已完成结构拆分，可以进入 Phase 4 planning。
+归档说明：Phase 4 已完成。本文保留为使用方租约与需求聚合的历史计划，不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 

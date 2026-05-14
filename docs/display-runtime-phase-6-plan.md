@@ -1,8 +1,10 @@
 # DisplayRuntime Phase 6: UI Information Architecture Migration
 
-状态：执行级计划
+状态：已完成历史记录
 范围：规划 UI Information Architecture 迁移。本文档不实现代码，不修改源码、UI、localization、测试或工程配置。
 基线：Phase 1 到 Phase 5 已完成。`DisplayRuntime` 已成为控制平面。Phase 4 已接入 consumer lease、demand aggregation、monitor、LAN Web View、diagnostics recorder wiring。Phase 5 已让 support bundle 和 Support / Diagnostics 侧以 runtime snapshot 为默认诊断事实入口。
+归档说明：Phase 6 已完成。本文保留为 UI 信息架构迁移的历史计划，不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 

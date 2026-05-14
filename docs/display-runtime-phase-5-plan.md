@@ -1,8 +1,10 @@
 # DisplayRuntime Phase 5: Observability And Diagnostics Hardening
 
-状态：执行级计划
+状态：已完成历史记录
 范围：规划 runtime snapshot 脱敏契约、support bundle runtime 数据源收敛、Diagnostics 页面读取 runtime snapshot 的迁移边界。本文档不实现代码。
 基线：Phase 4 consumer lease 已完成，runtime snapshot 已有 `runtime` section，support bundle 已导出 `state/current-state.json`，旧 controller snapshot providers 仍注册为并行状态来源。
+归档说明：Phase 5 已完成。本文保留为可观测与诊断加固的历史计划，不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 

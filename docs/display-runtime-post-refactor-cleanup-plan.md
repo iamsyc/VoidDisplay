@@ -4,6 +4,7 @@
 依据：[产品定位与架构重构前置结论](./product-positioning.md)、[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)
 范围：DisplayRuntime Phase 1 到 Phase 6 完成后的文档、复杂度、测试、文案、本地架构边界收尾。
 说明：本文明确排除 `DisplayRuntime Phase 7` 定位，不使用新的 DisplayRuntime phase 编号，也不包含继续开发新能力。它是主路线关闭后的仓库整理计划，用于把项目从完成重构整理成长期可维护、文档清晰、复杂度可控的状态。
+Stage 1 状态：已完成。文档状态收口和阅读导航见 [DisplayRuntime 文档索引](./display-runtime-index.md)。Stage 2 到 Stage 5 仍按本文分别进入独立执行窗口确认后推进。
 
 ## Baseline
 
@@ -36,6 +37,8 @@ DisplayRuntime refactor 主路线已经关闭：
 - 每个执行窗口开始前先确认 `git status --short`，结束前确认 diff 只包含本窗口范围。
 
 ## Stage 1: Docs Closeout And Entry Alignment
+
+状态：已完成。本文档和 Phase 1 到 Phase 6 历史文档已经标明归档语义；当前入口见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 目标：
 

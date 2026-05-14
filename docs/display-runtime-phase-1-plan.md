@@ -1,9 +1,10 @@
 # DisplayRuntime Phase 1 执行计划
 
-状态：执行计划草案  
+状态：已完成历史记录
 依据：[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)、[产品定位与架构重构前置结论](./product-positioning.md)  
 范围：新增 `VoidDisplayRuntime` target、只读 `DisplaySurface` / `DisplayRuntimeSnapshot` 模型、runtime ports、App adapters、Observability runtime snapshot provider。  
-说明：本文是 Phase 1 实施计划，不表示这些能力已经在当前版本实现。
+归档说明：Phase 1 已完成。本文保留为当时的实施计划与验收记录，不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 

@@ -1,9 +1,11 @@
 # DisplayRuntime Phase 3b: Virtual Display Command Transactions
 
-状态：计划草案
+状态：已完成历史记录
 依据：[产品定位与架构重构前置结论](./product-positioning.md)、[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)、[DisplayRuntime Phase 1 执行计划](./display-runtime-phase-1-plan.md)、[DisplayRuntime Phase 2 执行记录](./display-runtime-phase-2-plan.md)、[DisplayRuntime Phase 3 计划与 Phase 3a rebuild transaction baseline](./display-runtime-phase-3-plan.md)
 基线：当前 HEAD `239c3733`
 范围：只规划 Phase 3b 如何把更多 virtual display commands 迁入 `DisplayRuntime` transaction。本文档不实现代码。
+归档说明：Phase 3b 已完成，属于 Phase 3 的拆分历史记录。本文不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 

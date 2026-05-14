@@ -1,9 +1,10 @@
 # DisplayRuntime Phase 3: Virtual Display Transactions
 
-状态：计划草案
+状态：已完成历史记录
 依据：[产品定位与架构重构前置结论](./product-positioning.md)、[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)、[DisplayRuntime Phase 1 执行计划](./display-runtime-phase-1-plan.md)、[DisplayRuntime Phase 2 执行记录](./display-runtime-phase-2-plan.md)
 范围：在 `VoidDisplayRuntime` 中规划 Virtual Display Transactions。Phase 3a 只接管 rebuild transaction。
-说明：本计划只产出实施方案，不改产品代码。
+归档说明：Phase 3 已完成。本文保留为 Phase 3a 重建事务的历史计划，不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 

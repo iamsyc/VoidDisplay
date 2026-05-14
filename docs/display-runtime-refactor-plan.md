@@ -1,9 +1,11 @@
 # DisplayRuntime 重构执行计划
 
-状态：执行计划草案  
+状态：已完成路线图
 依据：[产品定位与架构重构前置结论](./product-positioning.md)  
 范围：新增 DisplayRuntime 架构底座、DisplaySurface 产品对象、只读运行时快照、后续事务和 UI 迁移顺序。  
-说明：本文是重构计划，不表示所有目标能力已经在当前版本实现。
+完成说明：DisplayRuntime Phase 1 到 Phase 6 已完成。本文现在是主路线历史路线图和当前架构导航入口，不再作为当前待办清单。
+最终收口提交范围：主路线从 `3ce2d9d6 docs(runtime): 固化 DisplayRuntime 重构执行计划` 建立路线，到 `65416583 refactor(app): 清理 Phase 6 旧入口与用户文案` 完成 Phase 1 到 Phase 6 实现收口；`8f36ff65 docs(runtime): 制定重构后收尾计划` 是主路线完成后的收尾入口提交。
+导航：推荐阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。主路线完成后的整理工作见 [DisplayRuntime Post-Refactor Cleanup Plan](./display-runtime-post-refactor-cleanup-plan.md)，该收尾计划不使用新的阶段编号。
 
 ## Summary
 

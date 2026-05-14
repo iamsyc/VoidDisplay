@@ -1,9 +1,11 @@
 # DisplayRuntime Phase 3c: Runtime Internal Consolidation
 
-状态：执行级计划
+状态：已完成历史记录
 依据：[产品定位与架构重构前置结论](./product-positioning.md)、[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)、[DisplayRuntime Phase 1 执行计划](./display-runtime-phase-1-plan.md)、[DisplayRuntime Phase 2 执行记录](./display-runtime-phase-2-plan.md)、[DisplayRuntime Phase 3 计划与 Phase 3a rebuild transaction baseline](./display-runtime-phase-3-plan.md)、[DisplayRuntime Phase 3b 总计划](./display-runtime-phase-3b-plan.md)、[DisplayRuntime Phase 3b.2 Edit Rebuild Transaction](./display-runtime-phase-3b-2-plan.md)、[DisplayRuntime Phase 3b.3 Create / Delete Transaction](./display-runtime-phase-3b-3-plan.md)
 基线：当前执行窗口必须基于包含 commit `802135000045303ff3e290b32486751aaca5bb4d` 的 HEAD。
 范围：只规划 Phase 3c runtime internal consolidation。本文档不实现代码。
+归档说明：Phase 3c 已完成，属于 Phase 3 的结构收敛历史记录。本文不再作为当前待办清单。
+导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 
 ## Summary
 
