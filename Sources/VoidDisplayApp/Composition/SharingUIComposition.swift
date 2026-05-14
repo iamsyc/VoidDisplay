@@ -30,7 +30,7 @@ package enum SharingUIComposition {
     package static func dependencies(
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
-        displayRuntime: DisplayRuntime? = nil
+        displayRuntime: DisplayRuntime
     ) -> ShareViewModel.Dependencies {
         ShareViewModel.Dependencies(
             sharingQueries: .init(
@@ -49,32 +49,23 @@ package enum SharingUIComposition {
                 },
                 stopWebService: {
                     sharing.stopWebService()
-                    if let displayRuntime {
-                        Task { @MainActor in
-                            await DisplayRuntimeSharingAdapter(controller: sharing)
-                                .stopAllLANWebViewSharing(runtime: displayRuntime)
-                        }
+                    Task { @MainActor in
+                        await DisplayRuntimeSharingAdapter(controller: sharing)
+                            .stopAllLANWebViewSharing(runtime: displayRuntime)
                     }
                 },
                 registerShareableDisplays: { displays, resolver in
                     sharing.registerShareableDisplays(displays, virtualSerialResolver: resolver)
                 },
                 beginSharing: { display in
-                    if let displayRuntime {
-                        return try await DisplayRuntimeSharingAdapter(controller: sharing)
-                            .beginLANWebViewSharing(display: display, runtime: displayRuntime)
-                    }
-                    return try await sharing.beginSharing(display: display)
+                    try await DisplayRuntimeSharingAdapter(controller: sharing)
+                        .beginLANWebViewSharing(display: display, runtime: displayRuntime)
                 },
                 stopSharing: { displayID in
-                    if let displayRuntime {
-                        Task { @MainActor in
-                            await DisplayRuntimeSharingAdapter(controller: sharing)
-                                .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
-                        }
-                        return
+                    Task { @MainActor in
+                        await DisplayRuntimeSharingAdapter(controller: sharing)
+                            .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
                     }
-                    sharing.stopSharing(displayID: displayID)
                 }
             ),
             virtualDisplayQueries: .init(

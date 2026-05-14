@@ -58,30 +58,11 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
             )
         }
-        if intent.kind == .drain {
-            guard let resolvedDisplayID = intent.resolvedDisplayID else {
-                return .failed(
-                    revision: intent.revision,
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
-                )
-            }
-            controller.removeMonitoringSessions(displayID: resolvedDisplayID)
+        guard intent.kind == .drain else {
             return .applied(revision: intent.revision)
         }
-        if controller.displayCatalogState.hasScreenCapturePermission == false
-            || controller.displayCatalogState.lastPreflightPermission == false {
-            return .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
-            )
-        }
-        guard let resolvedDisplayID = intent.resolvedDisplayID,
-              resolveDisplay(displayID: resolvedDisplayID, in: controller) != nil
-        else {
-            return .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
-            )
+        if let resolvedDisplayID = intent.resolvedDisplayID {
+            controller.removeMonitoringSessions(displayID: resolvedDisplayID)
         }
         return .applied(revision: intent.revision)
     }
@@ -95,16 +76,7 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
             )
         }
-        if controller.displayCatalogState.hasScreenCapturePermission == false
-            || controller.displayCatalogState.lastPreflightPermission == false {
-            return .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
-            )
-        }
-        guard let resolvedDisplayID = intent.resolvedDisplayID,
-              let display = resolveDisplay(displayID: resolvedDisplayID, in: controller)
-        else {
+        guard let resolvedDisplayID = intent.resolvedDisplayID else {
             return .failed(
                 revision: intent.revision,
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
@@ -113,6 +85,19 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
 
         switch intent.kind {
         case .capture:
+            if controller.displayCatalogState.hasScreenCapturePermission == false
+                || controller.displayCatalogState.lastPreflightPermission == false {
+                return .failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
+                )
+            }
+            guard let display = resolveDisplay(displayID: resolvedDisplayID, in: controller) else {
+                return .failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+                )
+            }
             return await acquireMonitorPreview(
                 display: display,
                 intent: intent,

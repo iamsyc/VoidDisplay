@@ -74,7 +74,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable)
     }
 
-    @Test func captureIntentAdapterFailsWhenDisplayIDCannotResolveWithoutStartingCapture() {
+    @Test func genericCaptureIntentApplyDoesNotResolveDisplayOrStartCapture() {
         let visibleDisplay = SharedMockSCDisplay.make(displayID: 8402, width: 2560, height: 1440)
         let catalogService = ScreenCaptureCatalogService(
             permissionProvider: FailingScreenCapturePermissionProvider(),
@@ -98,9 +98,9 @@ struct DisplayRuntimeAdapterTests {
             captureIntent(displayID: 8403, revision: 2)
         )
 
-        #expect(result.outcome == .failed)
+        #expect(result.outcome == .applied)
         #expect(result.revision.rawValue == 2)
-        #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.displayUnavailable)
+        #expect(result.failureCode == nil)
         #expect(captureMonitoringService.addCallCount == 0)
         #expect(captureMonitoringService.removeCallCount == 0)
         #expect(captureMonitoringService.removeByDisplayCallCount == 0)
@@ -292,6 +292,19 @@ struct DisplayRuntimeAdapterTests {
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
         #expect(harness.sharingService.stopSharingCallCount == 1)
         #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
+    }
+
+    @Test func lanWebViewStopWithoutRuntimeLeaseDoesNotInvokeDirectSharingStop() async {
+        let display = SharedMockSCDisplay.make(displayID: 8429, width: 1920, height: 1080)
+        let harness = lanWebViewHarness(display: display)
+
+        await harness.sharingAdapter.stopLANWebViewSharing(
+            displayID: display.displayID,
+            runtime: harness.runtime
+        )
+
+        #expect(harness.sharingService.stopSharingCallCount == 0)
+        #expect(harness.runtime.currentEffectiveCaptureIntentSnapshot().isEmpty)
     }
 
     @Test func lanWebViewApplyFailsPermissionUnavailableWithoutStartingSharing() async throws {

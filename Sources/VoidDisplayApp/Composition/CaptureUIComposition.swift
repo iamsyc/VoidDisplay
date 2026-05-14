@@ -8,7 +8,7 @@ import ScreenCaptureKit
 package enum CaptureUIComposition {
     package static func monitoringActions(
         capture: CaptureController,
-        displayRuntime: DisplayRuntime? = nil
+        displayRuntime: DisplayRuntime
     ) -> CaptureMonitoringActions {
         CaptureMonitoringActions(
             sessions: {
@@ -24,15 +24,12 @@ package enum CaptureUIComposition {
                 capture.isStarting(displayID: displayID)
             },
             startMonitoring: { display, metadata in
-                if let displayRuntime {
-                    return try await startRuntimeBackedMonitoring(
-                        display: display,
-                        metadata: metadata,
-                        capture: capture,
-                        displayRuntime: displayRuntime
-                    )
-                }
-                return try await capture.startMonitoring(display: display, metadata: metadata)
+                try await startRuntimeBackedMonitoring(
+                    display: display,
+                    metadata: metadata,
+                    capture: capture,
+                    displayRuntime: displayRuntime
+                )
             },
             attachPreviewSink: { sink, sessionID in
                 capture.attachPreviewSink(sink, to: sessionID)
@@ -41,11 +38,7 @@ package enum CaptureUIComposition {
                 capture.activateMonitoringSession(id: sessionID)
             },
             attachDiagnosticsRecorder: { sessionID in
-                guard let displayRuntime,
-                      let session = capture.monitoringSession(for: sessionID)
-                else {
-                    return UUID()
-                }
+                guard let session = capture.monitoringSession(for: sessionID) else { return nil }
                 let result = await displayRuntime.attachDiagnosticsRecorderConsumer(
                     surfaceIdentity: .physicalDisplay(displayID: session.displayID),
                     owner: .init(source: .diagnostics, redactedLabel: "diagnostics-recorder"),
@@ -58,14 +51,12 @@ package enum CaptureUIComposition {
                 return result.lease.id.rawValue
             },
             detachDiagnosticsRecorder: { leaseToken in
-                guard let displayRuntime else { return }
                 _ = await displayRuntime.detachDiagnosticsRecorderConsumer(
                     leaseID: DisplayRuntimeConsumerLeaseID(rawValue: leaseToken)
                 )
             },
             closeMonitoringSession: { sessionID in
-                if let displayRuntime,
-                   let session = capture.monitoringSession(for: sessionID) {
+                if let session = capture.monitoringSession(for: sessionID) {
                     let result = displayRuntime.detachMonitorConsumer(
                         surfaceIdentity: .physicalDisplay(displayID: session.displayID)
                     )

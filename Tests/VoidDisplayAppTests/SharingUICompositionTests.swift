@@ -1,6 +1,7 @@
 @testable import VoidDisplayApp
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayRuntime
 @testable import VoidDisplaySharing
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplay
@@ -63,7 +64,8 @@ struct SharingUICompositionTests {
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: sharingController,
-            virtualDisplay: virtualDisplayController
+            virtualDisplay: virtualDisplayController,
+            displayRuntime: DisplayRuntime()
         )
 
         #expect(dependencies.sharingQueries.isStartingDisplayID(501))
@@ -88,7 +90,8 @@ struct SharingUICompositionTests {
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: sharingController,
-            virtualDisplay: virtualDisplayController
+            virtualDisplay: virtualDisplayController,
+            displayRuntime: DisplayRuntime()
         )
 
         #expect(dependencies.sharingQueries.isStartingDisplayID(502))

@@ -129,12 +129,9 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         displayID: CGDirectDisplayID,
         runtime: DisplayRuntime
     ) async {
-        let result = await runtime.detachLANWebViewConsumer(
+        _ = await runtime.detachLANWebViewConsumer(
             surfaceIdentity: .physicalDisplay(displayID: displayID)
         )
-        if result.releasedLease == nil {
-            controller?.stopSharing(displayID: displayID)
-        }
     }
 
     package func stopAllLANWebViewSharing(runtime: DisplayRuntime) async {
