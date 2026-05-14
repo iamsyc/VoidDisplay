@@ -147,6 +147,100 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testDisplaysSurfaceConvergenceSmoke_baseline() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_screen",
+                "displays_surface_list",
+                "display_surface_row",
+                "displays_surface_detail",
+                "displays_surface_kind_value",
+                "displays_surface_identity_value",
+                "displays_virtual_display_status"
+            ],
+            timeout: 6
+        )
+        assertDisplaysSurfaceStatusArea(in: app)
+        assertDisplaysSurfaceActionArea(in: app)
+
+        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_monitor")
+        assertAllExist(app, identifiers: ["detail_monitor_screen"], timeout: 1.5)
+
+        openDisplaysFromSidebar(in: app)
+        assertDisplaysSurfaceActionArea(in: app)
+        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
+        assertAllExist(app, identifiers: ["detail_screen_sharing"], timeout: 1.5)
+
+        openDisplaysFromSidebar(in: app)
+        assertDisplaysSurfaceActionArea(in: app)
+        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
+        assertAllExist(app, identifiers: ["detail_virtual_display"], timeout: 1.5)
+
+        openDisplaysFromSidebar(in: app)
+        assertDisplaysSurfaceActionArea(in: app)
+        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_diagnostics_support")
+        assertAllExist(app, identifiers: ["detail_support_center"], timeout: 2)
+    }
+
+    @MainActor
+    private func assertDisplaysSurfaceStatusArea(in app: XCUIApplication) {
+        assertAllExist(
+            app,
+            identifiers: [
+                "displays_monitor_status",
+                "displays_lan_web_view_status",
+                "displays_viewer_count",
+                "displays_capture_intent_status",
+                "displays_lease_status",
+                "displays_last_failure_code"
+            ],
+            timeout: 1.5
+        )
+    }
+
+    @MainActor
+    private func assertDisplaysSurfaceActionArea(in app: XCUIApplication) {
+        assertAllExist(
+            app,
+            identifiers: [
+                "displays_surface_actions",
+                "displays_action_manage_virtual_display",
+                "displays_action_open_monitor",
+                "displays_action_stop_monitor",
+                "displays_action_open_lan_web_view",
+                "displays_action_stop_lan_web_view",
+                "displays_action_stop_web_service",
+                "displays_action_open_diagnostics_support"
+            ],
+            timeout: 1.5
+        )
+    }
+
+    @MainActor
+    private func openDisplaysFromSidebar(in app: XCUIApplication) {
+        smokeElement(app, identifier: "sidebar_screen").tap()
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_screen",
+                "displays_surface_detail"
+            ],
+            timeout: 1.5
+        )
+    }
+
+    @MainActor
+    private func tapDisplaysSurfaceAction(
+        _ app: XCUIApplication,
+        identifier: String
+    ) {
+        tapIdentifier(app, identifier: identifier, timeout: 1.5)
+    }
+
+    @MainActor
     func testSupportCenterNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke(scenario: .baseline)
 

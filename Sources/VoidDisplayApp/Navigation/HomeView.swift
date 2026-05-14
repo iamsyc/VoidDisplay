@@ -50,6 +50,45 @@ package struct HomeView: View {
         )
     }
 
+    private var displaySurfaceActions: DisplaySurfaceActions {
+        let monitoringActions = CaptureUIComposition.monitoringActions(
+            capture: capture,
+            displayRuntime: displayRuntime
+        )
+        let sharingDependencies = SharingUIComposition.dependencies(
+            sharing: sharing,
+            virtualDisplay: virtualDisplay,
+            displayRuntime: displayRuntime
+        )
+
+        return DisplaySurfaceActions(
+            manageVirtualDisplay: {
+                navigation.sidebarSelection = .virtualDisplay
+            },
+            openMonitor: {
+                navigation.sidebarSelection = .monitorScreen
+            },
+            stopMonitor: { displayID in
+                guard let session = monitoringActions.monitoringSessionForDisplayID(displayID) else {
+                    return
+                }
+                monitoringActions.closeMonitoringSession(session.id)
+            },
+            openLANWebView: {
+                navigation.sidebarSelection = .screenSharing
+            },
+            stopLANWebViewSharing: { displayID in
+                sharingDependencies.sharingActions.stopSharing(displayID)
+            },
+            stopWebService: {
+                sharingDependencies.sharingActions.stopWebService()
+            },
+            openDiagnosticsSupport: {
+                navigation.sidebarSelection = .supportCenter
+            }
+        )
+    }
+
     package init(
         screenCatalogOrchestrator: ScreenCatalogOrchestrator,
         observability: ObservabilityCenter,
@@ -105,8 +144,9 @@ package struct HomeView: View {
                     switch bindableNavigation.sidebarSelection ?? .screen {
                     case .screen:
                         DisplaysView(
-                            activityProvider: displayActivityProvider,
-                            actions: displaysShellActions
+                            displayRuntime: displayRuntime,
+                            shellActions: displaysShellActions,
+                            surfaceActions: displaySurfaceActions
                         )
                             .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
