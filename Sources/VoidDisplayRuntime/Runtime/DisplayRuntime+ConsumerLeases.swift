@@ -130,7 +130,7 @@ extension DisplayRuntime {
                 surfaceEpoch: lease.surfaceEpoch,
                 resolvedDisplayID: lease.resolvedDisplayID,
                 updatedAt: now,
-                lastFailureCode: "capture_intent_epoch_mismatch"
+                lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.epochMismatch
             )
         }
         submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .epochChanged)
@@ -145,7 +145,9 @@ extension DisplayRuntime {
               let currentEffectiveIntent = effectiveCaptureIntentsBySurface[intent.surfaceIdentity],
               currentEffectiveIntent.intent.revision == result.revision
         else {
-            return result.ignored()
+            let ignoredResult = result.ignored()
+            captureIntentApplyResultsByRevision[ignoredResult.revision] = ignoredResult
+            return ignoredResult
         }
 
         let acceptedResult = result.outcome == .ignored ? result.ignored() : result
@@ -194,7 +196,9 @@ extension DisplayRuntime {
         )
         captureIntentsByRevision[intent.revision] = intent
         effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
-        captureIntentCommander?.submitCaptureIntent(intent)
+        if let applyResult = captureIntentCommander?.applyCaptureIntent(intent) {
+            _ = recordCaptureIntentApplyResult(applyResult)
+        }
     }
 
     private func nextCaptureIntentRevision() -> DisplayRuntimeCaptureIntentRevision {

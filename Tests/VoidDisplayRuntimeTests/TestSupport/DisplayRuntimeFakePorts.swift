@@ -160,10 +160,26 @@ final class FakeCaptureCommander: DisplayRuntimeCaptureCommanding {
 
 @MainActor
 final class FakeCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
-    private(set) var intents: [DisplayRuntimeCaptureIntent] = []
+    typealias ResultProvider = @MainActor (DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult
 
-    func submitCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) {
+    private(set) var intents: [DisplayRuntimeCaptureIntent] = []
+    private(set) var returnedResults: [DisplayRuntimeCaptureIntentApplyResult] = []
+
+    private let resultProvider: ResultProvider
+
+    init(
+        resultProvider: @escaping ResultProvider = {
+            .applied(revision: $0.revision)
+        }
+    ) {
+        self.resultProvider = resultProvider
+    }
+
+    func applyCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult {
         intents.append(intent)
+        let result = resultProvider(intent)
+        returnedResults.append(result)
+        return result
     }
 }
 

@@ -25,6 +25,14 @@ package nonisolated enum DisplayRuntimeCaptureIntentReason: String, Codable, Equ
     case performanceModeChanged
 }
 
+package nonisolated enum DisplayRuntimeCaptureIntentFailureCode {
+    package static let adapterUnavailable = "capture_intent_adapter_unavailable"
+    package static let displayUnavailable = "capture_intent_display_unavailable"
+    package static let epochMismatch = "capture_intent_epoch_mismatch"
+    package static let permissionUnavailable = "capture_intent_permission_unavailable"
+    package static let applyFailed = "capture_intent_apply_failed"
+}
+
 package nonisolated struct DisplayRuntimeCaptureIntent: Codable, Equatable, Sendable {
     package let surfaceIdentity: DisplaySurfaceIdentity
     package let surfaceEpoch: DisplaySurfaceEpoch
@@ -75,6 +83,17 @@ package nonisolated struct DisplayRuntimeCaptureIntentApplyResult: Codable, Equa
         self.revision = revision
         self.outcome = outcome
         self.failureCode = failureCode
+    }
+
+    package static func applied(revision: DisplayRuntimeCaptureIntentRevision) -> Self {
+        Self(revision: revision, outcome: .applied)
+    }
+
+    package static func failed(
+        revision: DisplayRuntimeCaptureIntentRevision,
+        failureCode: String
+    ) -> Self {
+        Self(revision: revision, outcome: .failed, failureCode: failureCode)
     }
 
     package func ignored() -> Self {

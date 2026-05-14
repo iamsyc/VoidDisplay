@@ -56,6 +56,55 @@ struct DisplayRuntimeAdapterTests {
         ])
     }
 
+    @Test func captureIntentAdapterUnavailableFailsExplicitly() {
+        var controller: CaptureController? = CaptureController(
+            captureMonitoringService: MockCaptureMonitoringService()
+        )
+        let sut = DisplayRuntimeCaptureAdapter(controller: controller!)
+        controller = nil
+
+        let result = sut.applyCaptureIntent(
+            captureIntent(displayID: 8401, revision: 1)
+        )
+
+        #expect(result.outcome == .failed)
+        #expect(result.revision.rawValue == 1)
+        #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable)
+    }
+
+    @Test func captureIntentAdapterFailsWhenDisplayIDCannotResolveWithoutStartingCapture() {
+        let visibleDisplay = SharedMockSCDisplay.make(displayID: 8402, width: 2560, height: 1440)
+        let catalogService = ScreenCaptureCatalogService(
+            permissionProvider: FailingScreenCapturePermissionProvider(),
+            loadShareableDisplays: {
+                Issue.record("Capture intent adapter must not load shareable displays while applying an intent.")
+                return [visibleDisplay]
+            },
+            activeDisplayIDsProvider: { [visibleDisplay.displayID] }
+        )
+        catalogService.store.hasScreenCapturePermission = true
+        catalogService.store.lastPreflightPermission = true
+        catalogService.store.displays = [visibleDisplay]
+        let captureMonitoringService = MockCaptureMonitoringService()
+        let controller = CaptureController(
+            captureMonitoringService: captureMonitoringService,
+            catalogService: catalogService
+        )
+        let sut = DisplayRuntimeCaptureAdapter(controller: controller)
+
+        let result = sut.applyCaptureIntent(
+            captureIntent(displayID: 8403, revision: 2)
+        )
+
+        #expect(result.outcome == .failed)
+        #expect(result.revision.rawValue == 2)
+        #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.displayUnavailable)
+        #expect(captureMonitoringService.addCallCount == 0)
+        #expect(captureMonitoringService.removeCallCount == 0)
+        #expect(captureMonitoringService.removeByDisplayCallCount == 0)
+        #expect(captureMonitoringService.currentSessions.isEmpty)
+    }
+
     @Test func sharingAdapterResolvesSCDisplayAndVirtualSerialInAppLayer() {
         let skippedDisplay = SharedMockSCDisplay.make(displayID: 8201, width: 1920, height: 1080)
         let registeredDisplay = SharedMockSCDisplay.make(displayID: 8202, width: 3840, height: 2160)
@@ -604,6 +653,35 @@ private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {
     func savePreferredPort(_ port: UInt16) {
         preferredPort = port
     }
+}
+
+private struct FailingScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
+    nonisolated func preflight() -> Bool {
+        Issue.record("Capture intent adapter must not preflight screen capture permission while applying an intent.")
+        return false
+    }
+
+    nonisolated func request() -> Bool {
+        Issue.record("Capture intent adapter must not request screen capture permission while applying an intent.")
+        return false
+    }
+}
+
+private func captureIntent(
+    displayID: DisplayRuntimeDisplayID?,
+    revision: UInt64,
+    kind: DisplayRuntimeCaptureIntentKind = .capture,
+    reason: DisplayRuntimeCaptureIntentReason = .attach
+) -> DisplayRuntimeCaptureIntent {
+    DisplayRuntimeCaptureIntent(
+        surfaceIdentity: .physicalDisplay(displayID: displayID ?? 0),
+        surfaceEpoch: .initial,
+        resolvedDisplayID: displayID,
+        aggregateDemand: nil,
+        kind: kind,
+        reason: reason,
+        revision: .init(rawValue: revision)
+    )
 }
 
 private func editDTO(config: VirtualDisplayConfig) -> DisplayRuntimeVirtualDisplayConfigEditDTO {

@@ -34,6 +34,8 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.first?.reason == .attach)
         #expect(captureIntentCommander.intents.first?.revision.rawValue == 1)
         #expect(captureIntentCommander.intents.first?.aggregateDemand?.capturesCursor == true)
+        #expect(captureIntentCommander.returnedResults.first?.outcome == .applied)
+        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 1))?.outcome == .applied)
     }
 
     @Test func detachRemovesDemandAndEmitsDrainingIntentForLastLease() {
@@ -115,12 +117,41 @@ struct DisplayRuntimeConsumerLeaseTests {
         let staleLease = runtime.currentConsumerLeaseSnapshot().first { $0.id == lease.id }
         #expect(nextEpoch.rawValue == 2)
         #expect(staleLease?.state == .restarting)
-        #expect(staleLease?.lastFailureCode == "capture_intent_epoch_mismatch")
+        #expect(staleLease?.lastFailureCode == DisplayRuntimeCaptureIntentFailureCode.epochMismatch)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(captureIntentCommander.intents.last?.kind == .drain)
         #expect(captureIntentCommander.intents.last?.surfaceEpoch == nextEpoch)
         #expect(captureIntentCommander.intents.last?.resolvedDisplayID == 89)
         #expect(captureIntentCommander.intents.last?.resolvedDisplayID != lease.resolvedDisplayID)
+    }
+
+    @Test func captureIntentCommandPortRecordsAttachDetachEpochChangedRevisionsAndApplyResults() {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 90)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 90, isMain: true)),
+            captureIntentCommander: captureIntentCommander
+        )
+
+        let lease = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .monitor,
+            owner: .init(source: .localUI),
+            demand: sourceDemand()
+        )
+        _ = runtime.advanceSurfaceEpoch(
+            surfaceIdentity: surfaceIdentity,
+            resolvedDisplayID: 91
+        )
+        _ = runtime.detachConsumer(leaseID: lease.id)
+
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .epochChanged, .detach])
+        #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 2, 3])
+        #expect(captureIntentCommander.returnedResults.map(\.outcome) == [.applied, .applied, .applied])
+        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 1))?.outcome == .applied)
+        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 2))?.outcome == .applied)
+        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 3))?.outcome == .applied)
+        #expect(runtime.currentLatestCaptureIntentRevision()?.rawValue == 3)
     }
 
     @Test func staleApplyResultIsIgnoredAndCannotOverwriteNewerFailure() {
@@ -149,14 +180,14 @@ struct DisplayRuntimeConsumerLeaseTests {
             .init(
                 revision: secondRevision,
                 outcome: .failed,
-                failureCode: "capture_intent_apply_failed"
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         )
         let staleResult = runtime.recordCaptureIntentApplyResult(
             .init(
                 revision: firstRevision,
                 outcome: .failed,
-                failureCode: "capture_intent_display_unavailable"
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
             )
         )
 
@@ -164,9 +195,46 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(currentResult.outcome == .failed)
         #expect(staleResult.outcome == .ignored)
         #expect(effectiveIntent?.intent.revision == secondRevision)
-        #expect(effectiveIntent?.lastFailureCode == "capture_intent_apply_failed")
+        #expect(effectiveIntent?.lastFailureCode == DisplayRuntimeCaptureIntentFailureCode.applyFailed)
         #expect(runtime.captureIntentApplyResult(for: secondRevision)?.outcome == .failed)
-        #expect(runtime.captureIntentApplyResult(for: firstRevision) == nil)
+        #expect(runtime.captureIntentApplyResult(for: firstRevision)?.outcome == .ignored)
+    }
+
+    @Test func stalePortApplyResultIsIgnoredAndDoesNotReplaceEffectiveIntent() {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 92)
+        var firstRevision: DisplayRuntimeCaptureIntentRevision?
+        let captureIntentCommander = FakeCaptureIntentCommander { intent in
+            if intent.reason == .detach, let firstRevision {
+                return .failed(
+                    revision: firstRevision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+                )
+            }
+            firstRevision = firstRevision ?? intent.revision
+            return .applied(revision: intent.revision)
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 92, isMain: true)),
+            captureIntentCommander: captureIntentCommander
+        )
+        let lease = runtime.attachConsumer(
+            surfaceIdentity: surfaceIdentity,
+            kind: .monitor,
+            owner: .init(source: .localUI),
+            demand: sourceDemand()
+        )
+        let attachedRevision = captureIntentCommander.intents[0].revision
+
+        _ = runtime.detachConsumer(leaseID: lease.id)
+
+        let effectiveIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
+        #expect(captureIntentCommander.returnedResults.last?.revision == attachedRevision)
+        #expect(runtime.captureIntentApplyResult(for: attachedRevision)?.outcome == .ignored)
+        #expect(effectiveIntent?.intent.reason == .detach)
+        #expect(effectiveIntent?.intent.revision.rawValue == 2)
+        #expect(effectiveIntent?.lastApplyResult == nil)
+        #expect(effectiveIntent?.lastFailureCode == nil)
     }
 }
 

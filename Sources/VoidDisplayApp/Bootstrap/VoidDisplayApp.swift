@@ -487,6 +487,7 @@ package enum AppBootstrap {
             catalogCommander: displayRuntimeCatalogAdapter,
             sharingCommander: displayRuntimeSharingAdapter,
             captureCommander: displayRuntimeCaptureAdapter,
+            captureIntentCommander: displayRuntimeCaptureAdapter,
             virtualDisplayCommander: displayRuntimeVirtualDisplayAdapter,
             observabilityRecorder: displayRuntimeObservabilityAdapter
         )

@@ -76,7 +76,7 @@ package protocol DisplayRuntimeCaptureCommanding {
 
 @MainActor
 package protocol DisplayRuntimeCaptureIntentCommanding {
-    func submitCaptureIntent(_ intent: DisplayRuntimeCaptureIntent)
+    func applyCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult
 }
 
 @MainActor

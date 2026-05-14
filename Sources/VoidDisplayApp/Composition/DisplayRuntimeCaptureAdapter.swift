@@ -1,9 +1,10 @@
 import Foundation
+import ScreenCaptureKit
 import VoidDisplayCapture
 import VoidDisplayRuntime
 
 @MainActor
-package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureCommanding {
+package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureCommanding, DisplayRuntimeCaptureIntentCommanding {
     private weak var controller: CaptureController?
 
     package init(controller: CaptureController) {
@@ -36,5 +37,41 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
 
     package func removeMonitoringSessions(displayID: DisplayRuntimeDisplayID) {
         controller?.removeMonitoringSessions(displayID: displayID)
+    }
+
+    package func applyCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) -> DisplayRuntimeCaptureIntentApplyResult {
+        guard let controller else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        if controller.displayCatalogState.hasScreenCapturePermission == false
+            || controller.displayCatalogState.lastPreflightPermission == false {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
+            )
+        }
+        guard let resolvedDisplayID = intent.resolvedDisplayID,
+              resolveDisplay(displayID: resolvedDisplayID, in: controller) != nil
+        else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
+        return .applied(revision: intent.revision)
+    }
+
+    private func resolveDisplay(
+        displayID: DisplayRuntimeDisplayID,
+        in controller: CaptureController
+    ) -> SCDisplay? {
+        (controller.displayCatalogState.displays ?? []).first {
+            $0.displayID == displayID
+        }
     }
 }
