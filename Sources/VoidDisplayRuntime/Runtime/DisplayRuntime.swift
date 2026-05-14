@@ -27,9 +27,20 @@ package final class DisplayRuntime {
     let catalogCommander: (any DisplayRuntimeCatalogCommanding)?
     let sharingCommander: (any DisplayRuntimeSharingCommanding)?
     let captureCommander: (any DisplayRuntimeCaptureCommanding)?
+    let captureIntentCommander: (any DisplayRuntimeCaptureIntentCommanding)?
     let virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)?
     let observabilityRecorder: (any DisplayRuntimeObservabilityRecording)?
     let topologyWaitPolicy: DisplayRuntimeTopologyWaitPolicy
+
+    var consumerLeasesByID: [DisplayRuntimeConsumerLeaseID: DisplayRuntimeConsumerLease] = [:]
+    var surfaceEpochs: [DisplaySurfaceIdentity: DisplaySurfaceEpoch] = [:]
+    var surfaceResolvedDisplayIDs: [DisplaySurfaceIdentity: DisplayRuntimeDisplayID] = [:]
+    var captureIntentRevisionCounter: UInt64 = 0
+    var captureIntentsByRevision: [DisplayRuntimeCaptureIntentRevision: DisplayRuntimeCaptureIntent] = [:]
+    var effectiveCaptureIntentsBySurface: [DisplaySurfaceIdentity: DisplayRuntimeEffectiveCaptureIntent] = [:]
+    var captureIntentApplyResultsByRevision: [
+        DisplayRuntimeCaptureIntentRevision: DisplayRuntimeCaptureIntentApplyResult
+    ] = [:]
 
     var topologyRefreshTask: Task<Void, Never>?
     var hasPendingTopologyChange = false
@@ -51,6 +62,7 @@ package final class DisplayRuntime {
         catalogCommander: (any DisplayRuntimeCatalogCommanding)? = nil,
         sharingCommander: (any DisplayRuntimeSharingCommanding)? = nil,
         captureCommander: (any DisplayRuntimeCaptureCommanding)? = nil,
+        captureIntentCommander: (any DisplayRuntimeCaptureIntentCommanding)? = nil,
         virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)? = nil,
         observabilityRecorder: (any DisplayRuntimeObservabilityRecording)? = nil,
         topologyWaitPolicy: DisplayRuntimeTopologyWaitPolicy = .default
@@ -62,6 +74,7 @@ package final class DisplayRuntime {
         self.catalogCommander = catalogCommander
         self.sharingCommander = sharingCommander
         self.captureCommander = captureCommander
+        self.captureIntentCommander = captureIntentCommander
         self.virtualDisplayCommander = virtualDisplayCommander
         self.observabilityRecorder = observabilityRecorder
         self.topologyWaitPolicy = topologyWaitPolicy

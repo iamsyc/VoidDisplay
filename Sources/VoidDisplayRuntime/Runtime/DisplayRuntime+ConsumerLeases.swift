@@ -1,0 +1,245 @@
+import Foundation
+
+@MainActor
+extension DisplayRuntime {
+    package func attachConsumer(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        kind: DisplaySurfaceConsumerKind,
+        owner: DisplayRuntimeConsumerOwner,
+        demand: DisplayRuntimeConsumerDemand
+    ) -> DisplayRuntimeConsumerLease {
+        if kind == .lanWebView,
+           let existingLease = currentDemandLeases(for: surfaceIdentity)
+           .first(where: { $0.kind == .lanWebView }) {
+            return existingLease
+        }
+
+        let now = Date()
+        let surfaceEpoch = currentSurfaceEpoch(for: surfaceIdentity)
+        let resolvedDisplayID = resolvedDisplayID(for: surfaceIdentity)
+        let lease = DisplayRuntimeConsumerLease(
+            surfaceIdentity: surfaceIdentity,
+            surfaceEpoch: surfaceEpoch,
+            resolvedDisplayID: resolvedDisplayID,
+            kind: kind,
+            owner: owner,
+            createdAt: now,
+            updatedAt: now,
+            state: .attached,
+            demand: demand
+        )
+        consumerLeasesByID[lease.id] = lease
+        submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
+        return lease
+    }
+
+    @discardableResult
+    package func detachConsumer(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) -> DisplayRuntimeConsumerLease? {
+        guard let lease = consumerLeasesByID[leaseID] else { return nil }
+        let releasedLease = lease.updated(
+            state: .released,
+            updatedAt: Date()
+        )
+        consumerLeasesByID[leaseID] = releasedLease
+        submitCaptureIntent(surfaceIdentity: lease.surfaceIdentity, reason: .detach)
+        return releasedLease
+    }
+
+    package func currentConsumerLeaseSnapshot() -> [DisplayRuntimeConsumerLease] {
+        consumerLeasesByID.values.sorted(by: leaseSort)
+    }
+
+    package func currentAggregatedDemandSnapshot() -> [DisplayRuntimeAggregatedDemand] {
+        Set(consumerLeasesByID.values.map(\.surfaceIdentity))
+            .compactMap { aggregateDemand(for: $0) }
+            .sorted(by: aggregateDemandSort)
+    }
+
+    package func currentEffectiveCaptureIntentSnapshot() -> [DisplayRuntimeEffectiveCaptureIntent] {
+        effectiveCaptureIntentsBySurface.values.sorted {
+            captureIntentSort(lhs: $0.intent, rhs: $1.intent)
+        }
+    }
+
+    package func currentSurfaceEpoch(
+        for surfaceIdentity: DisplaySurfaceIdentity
+    ) -> DisplaySurfaceEpoch {
+        surfaceEpochs[surfaceIdentity] ?? .initial
+    }
+
+    @discardableResult
+    package func advanceSurfaceEpoch(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        resolvedDisplayID: DisplayRuntimeDisplayID? = nil
+    ) -> DisplaySurfaceEpoch {
+        let now = Date()
+        let nextEpoch = currentSurfaceEpoch(for: surfaceIdentity).advanced()
+        surfaceEpochs[surfaceIdentity] = nextEpoch
+        if let resolvedDisplayID {
+            surfaceResolvedDisplayIDs[surfaceIdentity] = resolvedDisplayID
+        } else {
+            surfaceResolvedDisplayIDs.removeValue(forKey: surfaceIdentity)
+        }
+
+        for lease in currentDemandLeases(for: surfaceIdentity) where lease.surfaceEpoch != nextEpoch {
+            consumerLeasesByID[lease.id] = lease.updated(
+                state: .restarting,
+                surfaceEpoch: lease.surfaceEpoch,
+                resolvedDisplayID: lease.resolvedDisplayID,
+                updatedAt: now,
+                lastFailureCode: "capture_intent_epoch_mismatch"
+            )
+        }
+        submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .epochChanged)
+        return nextEpoch
+    }
+
+    @discardableResult
+    package func recordCaptureIntentApplyResult(
+        _ result: DisplayRuntimeCaptureIntentApplyResult
+    ) -> DisplayRuntimeCaptureIntentApplyResult {
+        guard let intent = captureIntentsByRevision[result.revision],
+              let currentEffectiveIntent = effectiveCaptureIntentsBySurface[intent.surfaceIdentity],
+              currentEffectiveIntent.intent.revision == result.revision
+        else {
+            return result.ignored()
+        }
+
+        let acceptedResult = result.outcome == .ignored ? result.ignored() : result
+        captureIntentApplyResultsByRevision[acceptedResult.revision] = acceptedResult
+
+        let failureCode = acceptedResult.outcome == .failed ? acceptedResult.failureCode : nil
+        effectiveCaptureIntentsBySurface[intent.surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(
+            intent: intent,
+            lastApplyResult: acceptedResult,
+            lastFailureCode: failureCode
+        )
+        return acceptedResult
+    }
+
+    package func captureIntentApplyResult(
+        for revision: DisplayRuntimeCaptureIntentRevision
+    ) -> DisplayRuntimeCaptureIntentApplyResult? {
+        captureIntentApplyResultsByRevision[revision]
+    }
+
+    private func aggregateDemand(
+        for surfaceIdentity: DisplaySurfaceIdentity
+    ) -> DisplayRuntimeAggregatedDemand? {
+        DisplayRuntimeConsumerDemandAggregator.aggregate(
+            surfaceIdentity: surfaceIdentity,
+            surfaceEpoch: currentSurfaceEpoch(for: surfaceIdentity),
+            resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity),
+            leases: Array(consumerLeasesByID.values)
+        )
+    }
+
+    private func submitCaptureIntent(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        reason: DisplayRuntimeCaptureIntentReason
+    ) {
+        let aggregateDemand = aggregateDemand(for: surfaceIdentity)
+        let intent = DisplayRuntimeCaptureIntent(
+            surfaceIdentity: surfaceIdentity,
+            surfaceEpoch: currentSurfaceEpoch(for: surfaceIdentity),
+            resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity),
+            aggregateDemand: aggregateDemand,
+            kind: aggregateDemand == nil ? .drain : .capture,
+            reason: reason,
+            revision: nextCaptureIntentRevision()
+        )
+        captureIntentsByRevision[intent.revision] = intent
+        effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
+        captureIntentCommander?.submitCaptureIntent(intent)
+    }
+
+    private func nextCaptureIntentRevision() -> DisplayRuntimeCaptureIntentRevision {
+        captureIntentRevisionCounter += 1
+        return DisplayRuntimeCaptureIntentRevision(rawValue: captureIntentRevisionCounter)
+    }
+
+    private func currentDemandLeases(
+        for surfaceIdentity: DisplaySurfaceIdentity
+    ) -> [DisplayRuntimeConsumerLease] {
+        consumerLeasesByID.values
+            .filter { $0.surfaceIdentity == surfaceIdentity }
+            .filter { $0.state.contributesDemand }
+            .sorted(by: leaseSort)
+    }
+
+    private func resolvedDisplayID(
+        for surfaceIdentity: DisplaySurfaceIdentity
+    ) -> DisplayRuntimeDisplayID? {
+        if let storedDisplayID = surfaceResolvedDisplayIDs[surfaceIdentity] {
+            return storedDisplayID
+        }
+        return makeSnapshot().surfaces.first {
+            $0.identity == surfaceIdentity
+        }?.currentDisplayID
+    }
+
+    private func leaseSort(
+        lhs: DisplayRuntimeConsumerLease,
+        rhs: DisplayRuntimeConsumerLease
+    ) -> Bool {
+        if lhs.surfaceIdentity.kind != rhs.surfaceIdentity.kind {
+            return lhs.surfaceIdentity.kind.rawValue < rhs.surfaceIdentity.kind.rawValue
+        }
+        if lhs.surfaceIdentity.stableID != rhs.surfaceIdentity.stableID {
+            return lhs.surfaceIdentity.stableID < rhs.surfaceIdentity.stableID
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt < rhs.createdAt
+        }
+        return lhs.id.rawValue.uuidString < rhs.id.rawValue.uuidString
+    }
+
+    private func aggregateDemandSort(
+        lhs: DisplayRuntimeAggregatedDemand,
+        rhs: DisplayRuntimeAggregatedDemand
+    ) -> Bool {
+        if lhs.surfaceIdentity.kind != rhs.surfaceIdentity.kind {
+            return lhs.surfaceIdentity.kind.rawValue < rhs.surfaceIdentity.kind.rawValue
+        }
+        return lhs.surfaceIdentity.stableID < rhs.surfaceIdentity.stableID
+    }
+
+    private func captureIntentSort(
+        lhs: DisplayRuntimeCaptureIntent,
+        rhs: DisplayRuntimeCaptureIntent
+    ) -> Bool {
+        if lhs.surfaceIdentity.kind != rhs.surfaceIdentity.kind {
+            return lhs.surfaceIdentity.kind.rawValue < rhs.surfaceIdentity.kind.rawValue
+        }
+        if lhs.surfaceIdentity.stableID != rhs.surfaceIdentity.stableID {
+            return lhs.surfaceIdentity.stableID < rhs.surfaceIdentity.stableID
+        }
+        return lhs.revision < rhs.revision
+    }
+}
+
+private extension DisplayRuntimeConsumerLease {
+    func updated(
+        state: DisplayRuntimeConsumerLeaseState,
+        surfaceEpoch: DisplaySurfaceEpoch? = nil,
+        resolvedDisplayID: DisplayRuntimeDisplayID? = nil,
+        updatedAt: Date,
+        lastFailureCode: String? = nil
+    ) -> DisplayRuntimeConsumerLease {
+        DisplayRuntimeConsumerLease(
+            id: id,
+            surfaceIdentity: surfaceIdentity,
+            surfaceEpoch: surfaceEpoch ?? self.surfaceEpoch,
+            resolvedDisplayID: resolvedDisplayID ?? self.resolvedDisplayID,
+            kind: kind,
+            owner: owner,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            state: state,
+            demand: demand,
+            lastFailureCode: lastFailureCode
+        )
+    }
+}

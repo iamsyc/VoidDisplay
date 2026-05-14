@@ -159,6 +159,15 @@ final class FakeCaptureCommander: DisplayRuntimeCaptureCommanding {
 }
 
 @MainActor
+final class FakeCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
+    private(set) var intents: [DisplayRuntimeCaptureIntent] = []
+
+    func submitCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) {
+        intents.append(intent)
+    }
+}
+
+@MainActor
 final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding {
     private let recorder: RuntimeOperationRecorder?
     private let delayNanoseconds: UInt64

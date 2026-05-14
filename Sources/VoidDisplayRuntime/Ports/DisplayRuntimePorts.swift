@@ -75,6 +75,11 @@ package protocol DisplayRuntimeCaptureCommanding {
 }
 
 @MainActor
+package protocol DisplayRuntimeCaptureIntentCommanding {
+    func submitCaptureIntent(_ intent: DisplayRuntimeCaptureIntent)
+}
+
+@MainActor
 package protocol DisplayRuntimeObservabilityRecording {
     func record(_ event: DisplayRuntimeObservabilityEvent) async
     func refreshSnapshot(reason: DisplayRuntimeObservabilityRefreshReason) async
