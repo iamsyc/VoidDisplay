@@ -128,7 +128,7 @@ package struct HomeView: View {
                             observability: observability,
                             feedbackController: feedbackController
                         )
-                            .navigationTitle(String(localized: "Health & Diagnostics"))
+                            .navigationTitle(String(localized: "Diagnostics"))
                             .accessibilityIdentifier("detail_diagnostics")
                     }
                 }
