@@ -1,6 +1,6 @@
 # DisplayRuntime Phase 5: Observability And Diagnostics Hardening
 
-状态：执行级计划草案
+状态：执行级计划
 范围：规划 runtime snapshot 脱敏契约、support bundle runtime 数据源收敛、Diagnostics 页面读取 runtime snapshot 的迁移边界。本文档不实现代码。
 基线：Phase 4 consumer lease 已完成，runtime snapshot 已有 `runtime` section，support bundle 已导出 `state/current-state.json`，旧 controller snapshot providers 仍注册为并行状态来源。
 
@@ -42,7 +42,7 @@ Phase 5 目标是让 runtime snapshot 成为 AI agent、自动化工具和用户
 
 Phase 5 的重点是把 default diagnostics 事实源收敛到 runtime snapshot，并把旧 provider 的存在降级为迁移期对照或明确的 runtime 子 section。
 
-## Phase 1: Runtime Snapshot Privacy Contract
+## Stage 5.1: Runtime Snapshot Privacy Contract
 
 目标：固定 runtime snapshot 的默认脱敏契约，使它可以直接被 AI agent 和自动化工具读取。
 
@@ -54,6 +54,7 @@ Phase 5 的重点是把 default diagnostics 事实源收敛到 runtime snapshot�
 - Enhanced diagnostics 如需输出 raw identifier，必须在数据结构或输出说明中标明来源、用途和关闭方式。
 - Runtime target 不引入 UI、App controller、ScreenCaptureKit frame type、WebRTC session type 或 frame pipeline type。
 - 敏感 fixture 必须进入测试，覆盖 raw `shareID`、LAN URL、LAN IP、本地路径、窗口标题、用户输入文本、viewer id 和桌面内容描述。
+- 隐私验证分为 source grep 和 encoded output assertions。source grep 主要限制产品源码和 runtime 源码，不把 `Tests` 中出现敏感 fixture 相关词视为失败。测试源码如出现敏感词，只能作为 fixture 或断言样本，handoff 必须明确分类。
 
 验收标准：
 
@@ -76,6 +77,7 @@ scripts/ci/unit.sh --filter ObservabilitySnapshotProviderTests
 - Runtime provider key 仍为 `runtime`。
 - Phase 4 consumer lease、aggregated demand、effective capture intent 在默认 JSON 中存在且可解码。
 - owner redacted label、raw viewer id、LAN URL、home path、窗口标题、用户文本和桌面内容 fixture 不出现在默认 runtime section。
+- `ObservabilityCodec` 编码后的 runtime JSON 不包含具体敏感 fixture 值。
 - managed virtual display identity、surface epoch、consumer summary 和 transaction trace 可被 agent 稳定读取。
 
 边界 grep：
@@ -83,10 +85,10 @@ scripts/ci/unit.sh --filter ObservabilitySnapshotProviderTests
 ```sh
 if rg -n "import (ScreenCaptureKit|VoidDisplayCapture|VoidDisplaySharing|VoidDisplayVirtualDisplay|VoidDisplayApp|SwiftUI|AppKit|Observation|VoidDisplayDesignSystem)" Sources/VoidDisplayRuntime; then exit 1; fi
 if rg -n "\\b(SCStream|SCDisplay|CMSampleBuffer|CVPixelBuffer|RTCPeerConnection|WebRTCSession|WebRTCPublisherSession|RelayPublisherSessioning|SignalSessionHub|SignalSocketConnection|WebRTCFrameMailbox|WebRTCMediaPipeline|DisplayCaptureSession|DisplayShareSubscription|DisplayPreviewSubscription)\\b" Sources/VoidDisplayRuntime; then exit 1; fi
-if rg -n "\\b(rawURL|rawViewerID|rawViewerClientID|sdp|iceCandidate|localPath|windowTitle|desktopContent|desktopFrame|windowTitles|fullShareURL|fullShareUrl|rawShareID|rawShareId|lanIPAddress|lanIpAddress)\\b" Sources/VoidDisplayRuntime Tests/VoidDisplayRuntimeTests Tests/VoidDisplayAppTests; then exit 1; fi
+if rg -n "\\b(rawURL|rawViewerID|rawViewerClientID|sdp|iceCandidate|localPath|windowTitle|desktopContent|desktopFrame|windowTitles|fullShareURL|fullShareUrl|rawShareID|rawShareId|lanIPAddress|lanIpAddress)\\b" Sources/VoidDisplayRuntime; then exit 1; fi
 ```
 
-## Phase 2: Support Bundle Runtime Source Convergence
+## Stage 5.2: Support Bundle Runtime Source Convergence
 
 目标：让 support bundle 默认导出脱敏 runtime snapshot，并把 runtime section 作为诊断事实主入口。
 
@@ -98,6 +100,7 @@ if rg -n "\\b(rawURL|rawViewerID|rawViewerClientID|sdp|iceCandidate|localPath|wi
 - Support bundle 中旧 controller snapshot provider 不能继续承担 primary diagnostics source。保留时必须降级为迁移期对照，或收敛为 runtime 子 section。
 - Bundle manifest 和 exported state 必须能证明当前导出使用默认脱敏路径，不能靠 UI 文案承诺替代数据验证。
 - `FeedbackConsent()` 默认值必须保持全 false。
+- 测试源码可以包含 LAN IP、完整 URL、路径、窗口标题、用户文本、raw viewer id 等敏感值作为 fixture。验证对象必须是编码后的 runtime JSON、support bundle 解压内容、`manifest.json` 和 `state/current-state.json`，handoff 必须把测试源码命中分类为 fixture，不得把 fixture 命中解释为产品泄漏。
 
 验收标准：
 
@@ -105,6 +108,7 @@ if rg -n "\\b(rawURL|rawViewerID|rawViewerClientID|sdp|iceCandidate|localPath|wi
 - 默认 support bundle 的 `state/current-state.json` 包含 `runtime` section。
 - 默认 support bundle 不包含 `attachments/`。
 - 默认 support bundle 不包含 raw `shareID`、LAN IP、完整 URL、路径明文、窗口标题、用户文本、raw viewer id、SDP、ICE、sample buffer 或 pixel buffer。
+- `manifest.json` 和 `state/current-state.json` 不包含具体敏感 fixture 值。
 - Enhanced diagnostics 未开启时，不导出 config snapshots、unified log summary 或 crash report excerpt。
 - Enhanced diagnostics 开启后，附件仍经 sanitizer，且测试中解压 bundle 验证敏感 fixture 被处理。
 
@@ -122,6 +126,7 @@ scripts/ci/unit.sh --filter AppBootstrapTests
 - `FeedbackBundleExporterTests` 解压 bundle，验证 archive layout。
 - `FeedbackBundleExporterTests` 验证默认 consent 不产生 enhanced attachments。
 - `FeedbackBundleExporterTests` 使用包含 LAN IP、home path、完整 URL、raw `shareID` 的 fixture，验证默认 bundle 不泄漏。
+- `FeedbackBundleExporterTests` 解压 support bundle 后检查所有默认导出文件，尤其是 `manifest.json` 和 `state/current-state.json`，确认不包含具体敏感 fixture 值。
 - `ObservabilityCenter` refresh 后的 diagnostics snapshot 包含 runtime section。
 - `FeedbackConsent()` 默认值锁定为全 false，`hasEnhancedCollection` 只在显式字段开启时为 true。
 
@@ -129,12 +134,13 @@ scripts/ci/unit.sh --filter AppBootstrapTests
 
 ```sh
 git diff --name-only -- Sources/VoidDisplaySharing/Web Sources/VoidDisplaySharing/Resources Sources/VoidDisplayCapture/Services Sources/VoidDisplayCapture/Rendering Sources/VoidDisplayVirtualDisplay Sources/CGVirtualDisplayPrivate
-if rg -n "\\b(rawShareID|rawShareId|fullShareURL|fullShareUrl|rawViewerID|rawViewerClientID|desktopContent|desktopFrame|windowTitle|windowTitles|localPath|sdp|iceCandidate)\\b" Sources/VoidDisplayObservability Sources/VoidDisplaySupport Tests/VoidDisplayObservabilityTests Tests/VoidDisplaySupportTests; then exit 1; fi
+if rg -n "\\b(rawShareID|rawShareId|fullShareURL|fullShareUrl|rawViewerID|rawViewerClientID|desktopContent|desktopFrame|windowTitle|windowTitles|localPath|sdp|iceCandidate)\\b" Sources/VoidDisplayObservability Sources/VoidDisplaySupport; then exit 1; fi
 ```
 
 The `git diff --name-only` audit must be empty for Web routes, frame pipeline and VirtualDisplay lower layer unless a later approved task explicitly changes Phase 5 scope.
+Tests are validated by encoded artifact assertions, not by banning fixture words from test source.
 
-## Phase 3: Diagnostics Runtime Consumption And Boundary Audit
+## Stage 5.3: Diagnostics Runtime Consumption And Boundary Audit
 
 目标：让 Diagnostics 页面后续读取 runtime snapshot，降低对分散 controller 状态的依赖，并完成 Phase 5 边界审计。
 
@@ -147,6 +153,7 @@ The `git diff --name-only` audit must be empty for Web routes, frame pipeline an
 - 不调整 LAN Web View route、`shareID` 语义、auth/security、WebRTC、WebSocket、HTTP、frame fanout、CaptureEngine session 或 VirtualDisplay lower layer。
 - 不新增 Web viewer diagnostics export endpoint。
 - 不新增远程控制、输入注入、鼠标键盘、剪贴板或 browser agent control endpoint。
+- Localization gate：若新增或修改 `SupportCenterView` 可见文案，必须同步更新 `Apps/VoidDisplay/Resources/Localizable.xcstrings`。若未改 app-facing 文案，handoff 必须明确说明无需 localization 更新。
 
 验收标准：
 
@@ -195,7 +202,7 @@ This task is docs-only. Do not run Xcode build or unit tests by default for this
 After `docs/display-runtime-phase-5-plan.md` is created and `git diff --check` passes, stage only this file and commit with:
 
 ```text
-docs(runtime): 制定 phase 5 diagnostics hardening 计划
+docs(runtime): 修订 phase 5 diagnostics hardening 计划
 ```
 
 The commit must contain only:
