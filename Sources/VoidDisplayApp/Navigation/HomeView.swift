@@ -102,7 +102,7 @@ package struct HomeView: View {
                     .simultaneousGesture(TapGesture().onEnded {
                         showDisplaysOverview()
                     })
-                    .accessibilityIdentifier("sidebar_screen")
+                    .accessibilityIdentifier("sidebar_displays")
                 }
 
                 Section(String(localized: "Diagnostics")) {
@@ -217,13 +217,13 @@ package struct HomeView: View {
     private var displayDestinationAccessibilityIdentifier: String {
         switch displayDestination {
         case .overview:
-            "detail_screen"
+            "detail_displays"
         case .virtualDisplay:
             "detail_virtual_display"
         case .monitor:
             "detail_monitor_screen"
         case .lanWebView:
-            "detail_screen_sharing"
+            "detail_lan_web_view"
         }
     }
 

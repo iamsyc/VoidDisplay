@@ -25,15 +25,15 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     func testHomeNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke(scenario: .baseline)
-        let displaysSidebar = smokeElement(app, identifier: "sidebar_screen")
+        let displaysSidebar = smokeElement(app, identifier: "sidebar_displays")
 
         assertAllExist(
             app,
             identifiers: [
                 "home_sidebar",
-                "sidebar_screen",
+                "sidebar_displays",
                 "sidebar_diagnostics",
-                "detail_screen",
+                "detail_displays",
                 "displays_shell",
                 "displays_surface_list",
                 "displays_surface_detail",
@@ -62,7 +62,7 @@ final class HomeSmokeTests: XCTestCase {
         displaysSidebar.tap()
         assertAllExist(
             app,
-            identifiers: ["detail_screen", "displays_action_open_monitor"],
+            identifiers: ["detail_displays", "displays_action_open_monitor"],
             timeout: 1.5
         )
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_monitor")
@@ -75,20 +75,20 @@ final class HomeSmokeTests: XCTestCase {
         displaysSidebar.tap()
         assertAllExist(
             app,
-            identifiers: ["detail_screen", "displays_action_open_lan_web_view"],
+            identifiers: ["detail_displays", "displays_action_open_lan_web_view"],
             timeout: 1.5
         )
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
         assertAllExist(
             app,
-            identifiers: ["detail_screen_sharing"],
+            identifiers: ["detail_lan_web_view"],
             timeout: 1.5
         )
 
         displaysSidebar.tap()
         assertAllExist(
             app,
-            identifiers: ["detail_screen", "displays_action_open_diagnostics"],
+            identifiers: ["detail_displays", "displays_action_open_diagnostics"],
             timeout: 1.5
         )
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_diagnostics")
@@ -135,7 +135,7 @@ final class HomeSmokeTests: XCTestCase {
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
         assertAllExist(
             app,
-            identifiers: ["detail_screen_sharing"],
+            identifiers: ["detail_lan_web_view"],
             timeout: 1.2
         )
         displaysSidebar.tap()
@@ -154,7 +154,7 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
-                "detail_screen",
+                "detail_displays",
                 "displays_surface_list",
                 "display_surface_row",
                 "displays_surface_detail",
@@ -173,7 +173,7 @@ final class HomeSmokeTests: XCTestCase {
         openDisplaysFromSidebar(in: app)
         assertDisplaysSurfaceActionArea(in: app)
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
-        assertAllExist(app, identifiers: ["detail_screen_sharing"], timeout: 1.5)
+        assertAllExist(app, identifiers: ["detail_lan_web_view"], timeout: 1.5)
 
         openDisplaysFromSidebar(in: app)
         assertDisplaysSurfaceActionArea(in: app)
@@ -222,11 +222,11 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     private func openDisplaysFromSidebar(in app: XCUIApplication) {
-        smokeElement(app, identifier: "sidebar_screen").tap()
+        smokeElement(app, identifier: "sidebar_displays").tap()
         assertAllExist(
             app,
             identifiers: [
-                "detail_screen",
+                "detail_displays",
                 "displays_surface_detail"
             ],
             timeout: 1.5
@@ -246,7 +246,7 @@ final class HomeSmokeTests: XCTestCase {
         openDisplaysFromSidebar(in: app)
         assertDisplaysSurfaceActionArea(in: app)
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
-        assertAllExist(app, identifiers: ["detail_screen_sharing"], timeout: 1.5)
+        assertAllExist(app, identifiers: ["detail_lan_web_view"], timeout: 1.5)
     }
 
     @MainActor
@@ -492,7 +492,7 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
-                "detail_screen_sharing",
+                "detail_lan_web_view",
                 "share_permission_guide",
                 "share_open_settings_button",
                 "share_request_permission_button",
@@ -530,7 +530,7 @@ final class HomeSmokeTests: XCTestCase {
             assertAllExist(
                 app,
                 identifiers: [
-                    "detail_screen_sharing",
+                    "detail_lan_web_view",
                     "share_start_service_button"
                 ],
                 timeout: 1.2
@@ -825,10 +825,10 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     private func detailVisibilitySummary(in app: XCUIApplication) -> String {
         [
-            "detail_screen",
+            "detail_displays",
             "detail_virtual_display",
             "detail_monitor_screen",
-            "detail_screen_sharing",
+            "detail_lan_web_view",
             "capture_choose_root",
             "share_content_root"
         ]
@@ -845,7 +845,7 @@ final class HomeSmokeTests: XCTestCase {
             "share_loading_permission",
             "share_start_service_button",
             "share_loading_displays",
-            "share_displays_list",
+            "lan_web_view_displays_list",
             "share_displays_empty_state"
         ]
 

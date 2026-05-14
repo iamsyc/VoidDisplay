@@ -22,7 +22,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
         case permissionGuide = "share_permission_guide"
         case loadingPermission = "share_loading_permission"
         case startServiceButton = "share_start_service_button"
-        case displaysList = "share_displays_list"
+        case displaysList = "lan_web_view_displays_list"
         case displaysEmptyState = "share_displays_empty_state"
         case loadingDisplays = "share_loading_displays"
     }
@@ -186,10 +186,10 @@ final class RealEnvironmentE2ETests: XCTestCase {
     private func openSharingPage(_ app: XCUIApplication) throws {
         app.activate()
         try skipIfBlockingSystemDialogIsPresent(operation: "open sharing page")
-        assertExists(app, identifier: "sidebar_screen").tap()
+        assertExists(app, identifier: "sidebar_displays").tap()
         assertExists(app, identifier: "displays_action_open_lan_web_view").tap()
         try skipIfBlockingSystemDialogIsPresent(operation: "open sharing page")
-        assertExists(app, identifier: "detail_screen_sharing")
+        assertExists(app, identifier: "detail_lan_web_view")
     }
 
     @MainActor

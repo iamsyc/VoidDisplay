@@ -47,7 +47,7 @@ package struct ShareView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("detail_screen_sharing")
+        .accessibilityIdentifier("detail_lan_web_view")
         .toolbar {
             if runtimeState.isWebServiceRunning {
                 if lifecycle.showToolbarRefresh {

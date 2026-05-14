@@ -39,7 +39,7 @@ package struct ShareDisplayList: View {
                 .appListContentInsets(top: false)
             }
         }
-        .accessibilityIdentifier("share_displays_list")
+        .accessibilityIdentifier("lan_web_view_displays_list")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
                 Divider()
