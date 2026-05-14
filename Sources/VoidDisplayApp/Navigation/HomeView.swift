@@ -31,6 +31,25 @@ package struct HomeView: View {
         AppDisplayActivityStatusProvider(capture: capture, sharing: sharing)
     }
 
+    private var displaysShellActions: DisplaysShellActions {
+        // Phase 6.1 routes shell entries to the existing feature pages. Remove these route
+        // handoffs in Phase 6.4 after equivalent Displays detail paths have UI smoke coverage.
+        DisplaysShellActions(
+            openVirtualDisplay: {
+                navigation.sidebarSelection = .virtualDisplay
+            },
+            openMonitor: {
+                navigation.sidebarSelection = .monitorScreen
+            },
+            openLANWebView: {
+                navigation.sidebarSelection = .screenSharing
+            },
+            openDiagnosticsSupport: {
+                navigation.sidebarSelection = .supportCenter
+            }
+        )
+    }
+
     package init(
         screenCatalogOrchestrator: ScreenCatalogOrchestrator,
         observability: ObservabilityCenter,
@@ -85,7 +104,10 @@ package struct HomeView: View {
                 Group {
                     switch bindableNavigation.sidebarSelection ?? .screen {
                     case .screen:
-                        DisplaysView(activityProvider: displayActivityProvider)
+                        DisplaysView(
+                            activityProvider: displayActivityProvider,
+                            actions: displaysShellActions
+                        )
                             .navigationTitle("Displays")
                             .accessibilityIdentifier("detail_screen")
                     case .virtualDisplay:

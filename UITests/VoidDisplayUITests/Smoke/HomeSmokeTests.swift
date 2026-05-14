@@ -25,6 +25,7 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     func testHomeNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke(scenario: .baseline)
+        let displaysSidebar = smokeElement(app, identifier: "sidebar_screen")
         let virtualDisplaySidebar = smokeElement(app, identifier: "sidebar_virtual_display")
         let monitorSidebar = smokeElement(app, identifier: "sidebar_monitor_screen")
         let sharingSidebar = smokeElement(app, identifier: "sidebar_screen_sharing")
@@ -38,9 +39,66 @@ final class HomeSmokeTests: XCTestCase {
                 "sidebar_monitor_screen",
                 "sidebar_screen_sharing",
                 "detail_screen",
+                "displays_shell",
+                "displays_shell_entries",
+                "displays_shell_virtual_display_entry",
+                "displays_shell_monitor_entry",
+                "displays_shell_lan_web_view_entry",
+                "displays_shell_diagnostics_support_entry",
+                "displays_list",
                 "displays_open_system_settings"
             ],
             timeout: 6
+        )
+
+        tapIdentifier(app, identifier: "displays_shell_virtual_display_entry", timeout: 1.5)
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_virtual_display",
+                "virtual_display_add_button",
+                "virtual_display_primary_ribbon"
+            ],
+            timeout: 1.5
+        )
+
+        displaysSidebar.tap()
+        assertAllExist(
+            app,
+            identifiers: ["detail_screen", "displays_shell_monitor_entry"],
+            timeout: 1.5
+        )
+        tapIdentifier(app, identifier: "displays_shell_monitor_entry", timeout: 1.5)
+        assertAllExist(
+            app,
+            identifiers: ["detail_monitor_screen"],
+            timeout: 1.5
+        )
+
+        displaysSidebar.tap()
+        assertAllExist(
+            app,
+            identifiers: ["detail_screen", "displays_shell_lan_web_view_entry"],
+            timeout: 1.5
+        )
+        tapIdentifier(app, identifier: "displays_shell_lan_web_view_entry", timeout: 1.5)
+        assertAllExist(
+            app,
+            identifiers: ["detail_screen_sharing"],
+            timeout: 1.5
+        )
+
+        displaysSidebar.tap()
+        assertAllExist(
+            app,
+            identifiers: ["detail_screen", "displays_shell_diagnostics_support_entry"],
+            timeout: 1.5
+        )
+        tapIdentifier(app, identifier: "displays_shell_diagnostics_support_entry", timeout: 1.5)
+        assertAllExist(
+            app,
+            identifiers: ["detail_support_center"],
+            timeout: 2
         )
 
         virtualDisplaySidebar.tap()

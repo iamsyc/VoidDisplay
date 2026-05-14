@@ -10,14 +10,38 @@ import VoidDisplayObservability
 
 import SwiftUI
 import Cocoa
+package struct DisplaysShellActions {
+    package let openVirtualDisplay: @MainActor () -> Void
+    package let openMonitor: @MainActor () -> Void
+    package let openLANWebView: @MainActor () -> Void
+    package let openDiagnosticsSupport: @MainActor () -> Void
+
+    package init(
+        openVirtualDisplay: @escaping @MainActor () -> Void = {},
+        openMonitor: @escaping @MainActor () -> Void = {},
+        openLANWebView: @escaping @MainActor () -> Void = {},
+        openDiagnosticsSupport: @escaping @MainActor () -> Void = {}
+    ) {
+        self.openVirtualDisplay = openVirtualDisplay
+        self.openMonitor = openMonitor
+        self.openLANWebView = openLANWebView
+        self.openDiagnosticsSupport = openDiagnosticsSupport
+    }
+}
+
 package struct DisplaysView: View {
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(\.openURL) private var openURL
     private let activityProvider: any DisplayActivityStatusProviding
+    private let actions: DisplaysShellActions
     @State private var displays: [NSScreen]?
 
-    package init(activityProvider: any DisplayActivityStatusProviding) {
+    package init(
+        activityProvider: any DisplayActivityStatusProviding,
+        actions: DisplaysShellActions = DisplaysShellActions()
+    ) {
         self.activityProvider = activityProvider
+        self.actions = actions
     }
 
     package var body: some View {
@@ -43,35 +67,90 @@ package struct DisplaysView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let displays = displays, !displays.isEmpty {
-            displayList(displays)
-        } else {
-            ScrollView {
-                ContentUnavailableView(
-                    "No display",
-                    systemImage: "display.trianglebadge.exclamationmark",
-                    description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 200)
-                .appListContentInsets()
-                .accessibilityIdentifier("displays_empty_state")
-            }
-        }
-    }
-
-    private func displayList(_ displays: [NSScreen]) -> some View {
         ScrollView {
-            LazyVGrid(
-                columns: [
-                    GridItem(.adaptive(minimum: 320), spacing: AppUI.List.sectionSpacing, alignment: .top)
-                ],
-                spacing: AppUI.List.sectionSpacing
-            ) {
-                ForEach(displays, id: \.self) { display in
-                    displayRow(display)
+            VStack(alignment: .leading, spacing: AppUI.Spacing.large) {
+                displaysShellEntries
+
+                if let displays = displays, !displays.isEmpty {
+                    displayGrid(displays)
+                } else {
+                    displayEmptyState
                 }
             }
             .appListContentInsets()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("displays_shell")
+        }
+    }
+
+    private var displaysShellEntries: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 220), spacing: AppUI.List.sectionSpacing, alignment: .top)
+            ],
+            spacing: AppUI.List.sectionSpacing
+        ) {
+            ForEach(shellEntries) { entry in
+                DisplaysShellEntryButton(entry: entry)
+            }
+        }
+        .accessibilityIdentifier("displays_shell_entries")
+    }
+
+    private var shellEntries: [DisplaysShellEntry] {
+        [
+            DisplaysShellEntry(
+                id: "virtual_display",
+                title: "Virtual Display",
+                systemImage: "display.2",
+                accessibilityIdentifier: "displays_shell_virtual_display_entry",
+                action: actions.openVirtualDisplay
+            ),
+            DisplaysShellEntry(
+                id: "monitor",
+                title: "Monitor",
+                systemImage: "dot.scope.display",
+                accessibilityIdentifier: "displays_shell_monitor_entry",
+                action: actions.openMonitor
+            ),
+            DisplaysShellEntry(
+                id: "lan_web_view",
+                title: "LAN Web View",
+                systemImage: "network",
+                accessibilityIdentifier: "displays_shell_lan_web_view_entry",
+                action: actions.openLANWebView
+            ),
+            DisplaysShellEntry(
+                id: "diagnostics_support",
+                title: "Diagnostics / Support",
+                systemImage: "stethoscope",
+                accessibilityIdentifier: "displays_shell_diagnostics_support_entry",
+                action: actions.openDiagnosticsSupport
+            )
+        ]
+    }
+
+    @ViewBuilder
+    private var displayEmptyState: some View {
+        ContentUnavailableView(
+            "No display",
+            systemImage: "display.trianglebadge.exclamationmark",
+            description: Text("Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings.")
+        )
+        .frame(maxWidth: .infinity, minHeight: 200)
+        .accessibilityIdentifier("displays_empty_state")
+    }
+
+    private func displayGrid(_ displays: [NSScreen]) -> some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.adaptive(minimum: 320), spacing: AppUI.List.sectionSpacing, alignment: .top)
+            ],
+            spacing: AppUI.List.sectionSpacing
+        ) {
+            ForEach(displays, id: \.self) { display in
+                displayRow(display)
+            }
         }
         .accessibilityIdentifier("displays_list")
     }
@@ -181,4 +260,51 @@ private func makeDisplaysPreviewController() -> VirtualDisplayController {
     let controller = makeDisplaysPreviewController()
     DisplaysView(activityProvider: StaticDisplayActivityStatusProvider(.inactive))
         .environment(controller)
+}
+
+private struct DisplaysShellEntry: Identifiable {
+    let id: String
+    let title: LocalizedStringKey
+    let systemImage: String
+    let accessibilityIdentifier: String
+    let action: @MainActor () -> Void
+}
+
+private struct DisplaysShellEntryButton: View {
+    let entry: DisplaysShellEntry
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: entry.action) {
+            HStack(spacing: AppUI.Spacing.medium) {
+                Image(systemName: entry.systemImage)
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight)
+                    .appTileStyle()
+
+                Text(entry.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, AppUI.List.rowHorizontalInset)
+            .padding(.vertical, AppUI.List.rowVerticalInset + 1)
+            .frame(minHeight: AppUI.List.rowMinHeight + 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .appInteractiveCardStyle(isHovered: isHovered)
+        .onHover { hovered in
+            isHovered = hovered
+        }
+        .accessibilityIdentifier(entry.accessibilityIdentifier)
+    }
 }

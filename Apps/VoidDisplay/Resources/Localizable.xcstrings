@@ -774,6 +774,23 @@
         }
       }
     },
+    "Diagnostics / Support" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics / Support"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断 / 支持"
+          }
+        }
+      }
+    },
     "Disable" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1502,6 +1519,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最新支持包："
+          }
+        }
+      }
+    },
+    "LAN Web View" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LAN Web View"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局域网网页视图"
           }
         }
       }
