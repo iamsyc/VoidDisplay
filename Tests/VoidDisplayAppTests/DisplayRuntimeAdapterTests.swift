@@ -173,6 +173,35 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.controller.screenCaptureSessions.isEmpty)
     }
 
+    @Test func monitorStopWithoutRuntimeLeaseDoesNotInvokeDirectCaptureClose() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8415, width: 1920, height: 1080)
+        let harness = monitorHarness(display: display)
+        let actions = CaptureUIComposition.monitoringActions(
+            capture: harness.controller,
+            displayRuntime: harness.runtime
+        )
+        let outcome = try await harness.controller.startMonitoring(
+            display: display,
+            metadata: CaptureMonitoringDisplayMetadata(
+                displayName: "Direct Legacy Session",
+                resolutionText: "1920 × 1080",
+                isVirtualDisplay: false
+            )
+        )
+        guard case .started(let sessionID) = outcome else {
+            Issue.record("Expected direct monitoring start to succeed.")
+            return
+        }
+
+        actions.closeMonitoringSession(sessionID)
+
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().isEmpty)
+        #expect(harness.runtime.currentEffectiveCaptureIntentSnapshot().isEmpty)
+        #expect(harness.captureMonitoringService.removeCallCount == 0)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
+        #expect(harness.controller.screenCaptureSessions.map(\.id) == [sessionID])
+    }
+
     @Test func monitorApplyFailsPermissionUnavailableWithoutStartingSession() async {
         let display = SharedMockSCDisplay.make(displayID: 8406, width: 1920, height: 1080)
         let harness = monitorHarness(display: display, hasPermission: false)

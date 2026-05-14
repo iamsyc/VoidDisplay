@@ -98,18 +98,26 @@ package enum DisplaySurfacePresentationMapper {
         let effectiveIntent = snapshot.effectiveCaptureIntents.last { $0.intent.surfaceIdentity == surface.identity }
         let monitorLeases = leases.filter { $0.kind == .monitor }
         let lanWebViewLeases = leases.filter { $0.kind == .lanWebView }
+        let runtimeConsumerKinds = runtimeConsumerKinds(
+            aggregate: aggregate,
+            effectiveIntent: effectiveIntent
+        )
         let lastFailureCode = lastFailureCode(
             surface: surface,
             leases: leases,
             effectiveIntent: effectiveIntent,
             sharing: snapshot.sharing
         )
-        let isMonitoring = monitorLeases.contains { $0.state.contributesDemand }
-            || (surface.capture?.sessionIDs.isEmpty == false)
-            || surface.capture?.isStarting == true
-        let isSharing = lanWebViewLeases.contains { $0.state.contributesDemand }
-            || surface.sharing?.isActive == true
-            || surface.sharing?.isStarting == true
+        let isMonitoring = hasRuntimeDemand(
+            kind: .monitor,
+            leases: monitorLeases,
+            runtimeConsumerKinds: runtimeConsumerKinds
+        )
+        let isSharing = hasRuntimeDemand(
+            kind: .lanWebView,
+            leases: lanWebViewLeases,
+            runtimeConsumerKinds: runtimeConsumerKinds
+        )
         let viewerCount = max(surface.sharing?.viewerCount ?? 0, aggregate?.activeViewerCount ?? 0)
         let title = title(for: surface)
         let subtitle = subtitle(for: surface)
@@ -138,15 +146,18 @@ package enum DisplaySurfacePresentationMapper {
                 title: String(localized: "Monitor Consumer"),
                 value: consumerStatus(
                     leases: monitorLeases,
-                    fallbackActive: surface.capture?.sessionIDs.isEmpty == false,
-                    fallbackStarting: surface.capture?.isStarting == true
+                    hasRuntimeDemand: isMonitoring
                 ),
                 accessibilityIdentifier: "displays_monitor_status"
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "lanWebView",
                 title: String(localized: "LAN Web View Consumer"),
-                value: lanWebViewStatus(surface: surface, leases: lanWebViewLeases),
+                value: lanWebViewStatus(
+                    surface: surface,
+                    leases: lanWebViewLeases,
+                    hasRuntimeDemand: isSharing
+                ),
                 accessibilityIdentifier: "displays_lan_web_view_status"
             ),
             DisplaySurfaceStatusItemPresentation(
@@ -187,11 +198,30 @@ package enum DisplaySurfacePresentationMapper {
             isMonitoring: isMonitoring,
             isSharing: isSharing,
             hasFailure: lastFailureCode != nil,
-            canStopMonitor: surface.currentDisplayID != nil && isMonitoring,
-            canStopLANWebViewSharing: surface.currentDisplayID != nil && isSharing,
+            canStopMonitor: surface.currentDisplayID != nil
+                && monitorLeases.contains { $0.state.contributesDemand },
+            canStopLANWebViewSharing: surface.currentDisplayID != nil
+                && lanWebViewLeases.contains { $0.state.contributesDemand },
             canStopWebService: snapshot.sharing.isWebServiceRunning,
             statusItems: statusItems
         )
+    }
+
+    private static func runtimeConsumerKinds(
+        aggregate: DisplayRuntimeAggregatedDemand?,
+        effectiveIntent: DisplayRuntimeEffectiveCaptureIntent?
+    ) -> Set<DisplaySurfaceConsumerKind> {
+        let aggregateKinds = aggregate?.consumerKinds ?? []
+        let intentKinds = effectiveIntent?.intent.aggregateDemand?.consumerKinds ?? []
+        return Set(aggregateKinds + intentKinds)
+    }
+
+    private static func hasRuntimeDemand(
+        kind: DisplaySurfaceConsumerKind,
+        leases: [DisplayRuntimeConsumerLeaseSnapshot],
+        runtimeConsumerKinds: Set<DisplaySurfaceConsumerKind>
+    ) -> Bool {
+        leases.contains { $0.state.contributesDemand } || runtimeConsumerKinds.contains(kind)
     }
 
     private static func title(for surface: DisplaySurface) -> String {
@@ -270,8 +300,7 @@ package enum DisplaySurfacePresentationMapper {
 
     private static func consumerStatus(
         leases: [DisplayRuntimeConsumerLeaseSnapshot],
-        fallbackActive: Bool,
-        fallbackStarting: Bool
+        hasRuntimeDemand: Bool
     ) -> String {
         if leases.contains(where: { $0.state == .failed }) {
             return String(localized: "Failed")
@@ -282,23 +311,20 @@ package enum DisplaySurfacePresentationMapper {
         if leases.contains(where: { $0.state == .draining }) {
             return String(localized: "Draining")
         }
-        if leases.contains(where: { $0.state.contributesDemand }) || fallbackActive {
+        if hasRuntimeDemand {
             return String(localized: "Attached")
-        }
-        if fallbackStarting {
-            return String(localized: "Starting")
         }
         return String(localized: "Inactive")
     }
 
     private static func lanWebViewStatus(
         surface: DisplaySurface,
-        leases: [DisplayRuntimeConsumerLeaseSnapshot]
+        leases: [DisplayRuntimeConsumerLeaseSnapshot],
+        hasRuntimeDemand: Bool
     ) -> String {
         let status = consumerStatus(
             leases: leases,
-            fallbackActive: surface.sharing?.isActive == true,
-            fallbackStarting: surface.sharing?.isStarting == true
+            hasRuntimeDemand: hasRuntimeDemand
         )
         guard status == String(localized: "Inactive"), surface.sharing?.hasRoute == true else {
             return status

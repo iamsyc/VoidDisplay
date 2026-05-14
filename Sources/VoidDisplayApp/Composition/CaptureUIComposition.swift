@@ -56,15 +56,12 @@ package enum CaptureUIComposition {
                 )
             },
             closeMonitoringSession: { sessionID in
-                if let session = capture.monitoringSession(for: sessionID) {
-                    let result = displayRuntime.detachMonitorConsumer(
-                        surfaceIdentity: .physicalDisplay(displayID: session.displayID)
-                    )
-                    if result.releasedLease != nil {
-                        return
-                    }
+                guard let session = capture.monitoringSession(for: sessionID) else {
+                    return
                 }
-                capture.closeMonitoringSession(id: sessionID)
+                displayRuntime.detachMonitorConsumer(
+                    surfaceIdentity: .physicalDisplay(displayID: session.displayID)
+                )
             },
             setMonitoringSessionCapturesCursor: { sessionID, capturesCursor in
                 try await capture.setMonitoringSessionCapturesCursor(

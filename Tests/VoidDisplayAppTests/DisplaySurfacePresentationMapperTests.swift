@@ -180,6 +180,100 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!value("displays_surface_identity_value", in: surface).contains(String(displayID)))
     }
 
+    @Test func surfaceFactsWithoutRuntimeDemandDoNotEnableControlState() throws {
+        let displayID: DisplayRuntimeDisplayID = 78
+        let sessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000078"))
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
+        let snapshot = DisplayRuntimeSnapshot(
+            surfaces: [
+                DisplaySurface(
+                    identity: identity,
+                    kind: .physicalDisplay,
+                    currentDisplayID: displayID,
+                    isAuxiliary: true,
+                    catalog: DisplayRuntimeCatalogSurfaceState(
+                        displayID: displayID,
+                        isVisible: true,
+                        isMain: false,
+                        pixelWidth: 2560,
+                        pixelHeight: 1440,
+                        refreshRateMilliHertz: nil,
+                        mirrorsDisplayID: nil
+                    ),
+                    capture: DisplayRuntimeCaptureSurfaceState(
+                        displayID: displayID,
+                        isStarting: true,
+                        sessionIDs: [sessionID],
+                        capturesCursor: true,
+                        receivedFrameCount: 99
+                    ),
+                    sharing: DisplayRuntimeSharingSurfaceState(
+                        displayID: displayID,
+                        isStarting: true,
+                        isActive: true,
+                        viewerCount: 2,
+                        hasRoute: true
+                    ),
+                    managedVirtualDisplay: nil
+                )
+            ],
+            catalog: .empty,
+            capture: DisplayRuntimeCaptureSnapshot(
+                startingDisplayIDs: [displayID],
+                sessions: [
+                    DisplayRuntimeCaptureSession(
+                        id: sessionID,
+                        displayID: displayID,
+                        isVirtualDisplay: false,
+                        capturesCursor: true,
+                        state: .active,
+                        metrics: .init(
+                            currentProfile: nil,
+                            currentFrameRateTier: nil,
+                            receivedFrameCount: 99,
+                            profileReconfigurationCount: 0,
+                            cursorOverrideReconfigurationCount: 0
+                        )
+                    )
+                ]
+            ),
+            sharing: DisplayRuntimeSharingSnapshot(
+                activeSharingDisplayIDs: [displayID],
+                startingDisplayIDs: [displayID],
+                isSharing: true,
+                isWebServiceRunning: true,
+                preferredPort: nil,
+                sharingClientCount: 2,
+                sharingClientCounts: [
+                    DisplayRuntimeDisplayClientCount(displayID: displayID, count: 2)
+                ],
+                lifecycle: DisplayRuntimeSharingLifecycle(
+                    phase: .running,
+                    requestedPort: nil,
+                    boundPort: nil,
+                    failureReason: nil,
+                    hasFailureMessage: false
+                ),
+                routes: [DisplayRuntimeShareRoute(displayID: displayID, hasConcreteRoute: true)]
+            ),
+            virtualDisplay: .empty,
+            consumerLeases: [],
+            aggregatedDemands: [],
+            effectiveCaptureIntents: []
+        )
+
+        let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
+
+        #expect(!surface.isMonitoring)
+        #expect(!surface.isSharing)
+        #expect(!surface.canStopMonitor)
+        #expect(!surface.canStopLANWebViewSharing)
+        #expect(surface.canStopWebService)
+        #expect(value("displays_monitor_status", in: surface) == "Inactive")
+        #expect(value("displays_lan_web_view_status", in: surface) == "Route ready")
+        #expect(value("displays_viewer_count", in: surface) == "2")
+    }
+
     private func value(
         _ accessibilityIdentifier: String,
         in surface: DisplaySurfacePresentation
