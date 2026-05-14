@@ -113,7 +113,7 @@ package struct VirtualDisplayView: View {
         } else {
             ScrollView {
                 ContentUnavailableView(
-                    "No Virtual Displays",
+                    "No Managed Virtual Display",
                     systemImage: "display.trianglebadge.exclamationmark",
                     description: Text("Click the + button in the top right to create a virtual display.")
                 )

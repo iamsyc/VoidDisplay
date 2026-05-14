@@ -26,28 +26,17 @@ package struct HomeView: View {
     private let displayRuntime: DisplayRuntime
 
     @State private var hasAutoOpenedCapturePreview = false
+    @State private var displayDestination: DisplayDestination = .overview
+
+    private enum DisplayDestination: String, Hashable {
+        case overview
+        case virtualDisplay
+        case monitor
+        case lanWebView
+    }
 
     private var displayActivityProvider: AppDisplayActivityStatusProvider {
         AppDisplayActivityStatusProvider(capture: capture, sharing: sharing)
-    }
-
-    private var displaysShellActions: DisplaysShellActions {
-        // Phase 6.1 routes shell entries to the existing feature pages. Remove these route
-        // handoffs in Phase 6.4 after equivalent Displays detail paths have UI smoke coverage.
-        DisplaysShellActions(
-            openVirtualDisplay: {
-                navigation.sidebarSelection = .virtualDisplay
-            },
-            openMonitor: {
-                navigation.sidebarSelection = .monitorScreen
-            },
-            openLANWebView: {
-                navigation.sidebarSelection = .screenSharing
-            },
-            openDiagnostics: {
-                navigation.sidebarSelection = .diagnostics
-            }
-        )
     }
 
     private var displaySurfaceActions: DisplaySurfaceActions {
@@ -63,10 +52,10 @@ package struct HomeView: View {
 
         return DisplaySurfaceActions(
             manageVirtualDisplay: {
-                navigation.sidebarSelection = .virtualDisplay
+                openDisplayDestination(.virtualDisplay)
             },
             openMonitor: {
-                navigation.sidebarSelection = .monitorScreen
+                openDisplayDestination(.monitor)
             },
             stopMonitor: { displayID in
                 guard let session = monitoringActions.monitoringSessionForDisplayID(displayID) else {
@@ -75,7 +64,7 @@ package struct HomeView: View {
                 monitoringActions.closeMonitoringSession(session.id)
             },
             openLANWebView: {
-                navigation.sidebarSelection = .screenSharing
+                openDisplayDestination(.lanWebView)
             },
             stopLANWebViewSharing: { displayID in
                 sharingDependencies.sharingActions.stopSharing(displayID)
@@ -110,22 +99,10 @@ package struct HomeView: View {
                     NavigationLink(value: AppSidebarItem.screen) {
                         Label("Displays", systemImage: "display")
                     }
-                        .accessibilityIdentifier("sidebar_screen")
-                    NavigationLink(value: AppSidebarItem.virtualDisplay) {
-                        Label("Virtual Displays", systemImage: "display.2")
-                    }
-                        .accessibilityIdentifier("sidebar_virtual_display")
-                    NavigationLink(value: AppSidebarItem.monitorScreen) {
-                        Label("Screen Monitoring", systemImage: "dot.scope.display")
-                    }
-                        .accessibilityIdentifier("sidebar_monitor_screen")
-                }
-
-                Section("Sharing") {
-                    NavigationLink(value: AppSidebarItem.screenSharing) {
-                        Label("Screen Sharing", systemImage: "display")
-                    }
-                        .accessibilityIdentifier("sidebar_screen_sharing")
+                    .simultaneousGesture(TapGesture().onEnded {
+                        showDisplaysOverview()
+                    })
+                    .accessibilityIdentifier("sidebar_screen")
                 }
 
                 Section(String(localized: "Diagnostics")) {
@@ -143,73 +120,11 @@ package struct HomeView: View {
                 Group {
                     switch bindableNavigation.sidebarSelection ?? .screen {
                     case .screen:
-                        DisplaysView(
-                            displayRuntime: displayRuntime,
-                            shellActions: displaysShellActions,
-                            surfaceActions: displaySurfaceActions
-                        )
-                            .navigationTitle("Displays")
-                            .accessibilityIdentifier("detail_screen")
-                    case .virtualDisplay:
-                        if UITestRuntime.isEnabled {
-                            VirtualDisplayView(
-                                controller: virtualDisplay,
-                                activityProvider: displayActivityProvider
-                            )
-                                .navigationTitle("Virtual Displays")
-                                .accessibilityIdentifier("detail_virtual_display")
-                                .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
-                        } else {
-                            VirtualDisplayView(
-                                controller: virtualDisplay,
-                                activityProvider: displayActivityProvider
-                            )
-                                .navigationTitle("Virtual Displays")
-                                .accessibilityIdentifier("detail_virtual_display")
-                        }
-                    case .monitorScreen:
-                        IsCapturing(
-                            catalogState: capture.displayCatalogState,
-                            monitoringActions: CaptureUIComposition.monitoringActions(
-                                capture: capture,
-                                displayRuntime: displayRuntime
-                            ),
-                            sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing),
-                            virtualDisplayStatusProvider: CaptureUIComposition.virtualDisplayStatusProvider(
-                                virtualDisplay: virtualDisplay
-                            ),
-                            catalogActions: CaptureUIComposition.catalogActions(
-                                screenCatalog: screenCatalogOrchestrator
-                            )
-                        )
-                            .navigationTitle("Screen Monitoring")
-                            .accessibilityIdentifier("detail_monitor_screen")
-                    case .screenSharing:
-                        ShareView(
-                            catalogState: sharing.displayCatalogState,
-                            dependencies: SharingUIComposition.dependencies(
-                                sharing: sharing,
-                                virtualDisplay: virtualDisplay,
-                                displayRuntime: displayRuntime
-                            ),
-                            runtimeState: SharingUIComposition.runtimeState(
-                                sharing: sharing
-                            ),
-                            catalogActions: SharingUIComposition.catalogActions(
-                                screenCatalog: screenCatalogOrchestrator
-                            ),
-                            displayStatusProvider: SharingUIComposition.displayStatusProvider(
-                                capture: capture,
-                                virtualDisplay: virtualDisplay
-                            ),
-                            performanceMode: SharingUIComposition.performanceModeBinding(
-                                capturePerformancePreferences: capturePerformancePreferences
-                            )
-                        )
-                            .navigationTitle("Screen Sharing")
-                            .accessibilityIdentifier("detail_screen_sharing")
+                        displayDestinationView
+                            .navigationTitle(displayDestinationTitle)
+                            .accessibilityIdentifier(displayDestinationAccessibilityIdentifier)
                     case .diagnostics:
-                        SupportCenterView(
+                        DiagnosticsView(
                             observability: observability,
                             feedbackController: feedbackController
                         )
@@ -217,12 +132,118 @@ package struct HomeView: View {
                             .accessibilityIdentifier("detail_diagnostics")
                     }
                 }
-                .id(bindableNavigation.sidebarSelection ?? .screen)
+                .id(detailIdentity)
             }
         }
         .onAppear {
             autoOpenCapturePreviewWindowIfNeeded()
         }
+    }
+
+    @ViewBuilder
+    private var displayDestinationView: some View {
+        switch displayDestination {
+        case .overview:
+            DisplaysView(
+                displayRuntime: displayRuntime,
+                surfaceActions: displaySurfaceActions
+            )
+        case .virtualDisplay:
+            if UITestRuntime.isEnabled {
+                VirtualDisplayView(
+                    controller: virtualDisplay,
+                    activityProvider: displayActivityProvider
+                )
+                    .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
+            } else {
+                VirtualDisplayView(
+                    controller: virtualDisplay,
+                    activityProvider: displayActivityProvider
+                )
+            }
+        case .monitor:
+            IsCapturing(
+                catalogState: capture.displayCatalogState,
+                monitoringActions: CaptureUIComposition.monitoringActions(
+                    capture: capture,
+                    displayRuntime: displayRuntime
+                ),
+                sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing),
+                virtualDisplayStatusProvider: CaptureUIComposition.virtualDisplayStatusProvider(
+                    virtualDisplay: virtualDisplay
+                ),
+                catalogActions: CaptureUIComposition.catalogActions(
+                    screenCatalog: screenCatalogOrchestrator
+                )
+            )
+        case .lanWebView:
+            ShareView(
+                catalogState: sharing.displayCatalogState,
+                dependencies: SharingUIComposition.dependencies(
+                    sharing: sharing,
+                    virtualDisplay: virtualDisplay,
+                    displayRuntime: displayRuntime
+                ),
+                runtimeState: SharingUIComposition.runtimeState(
+                    sharing: sharing
+                ),
+                catalogActions: SharingUIComposition.catalogActions(
+                    screenCatalog: screenCatalogOrchestrator
+                ),
+                displayStatusProvider: SharingUIComposition.displayStatusProvider(
+                    capture: capture,
+                    virtualDisplay: virtualDisplay
+                ),
+                performanceMode: SharingUIComposition.performanceModeBinding(
+                    capturePerformancePreferences: capturePerformancePreferences
+                )
+            )
+        }
+    }
+
+    private var displayDestinationTitle: LocalizedStringKey {
+        switch displayDestination {
+        case .overview:
+            "Displays"
+        case .virtualDisplay:
+            "Virtual Display"
+        case .monitor:
+            "Monitor"
+        case .lanWebView:
+            "LAN Web View"
+        }
+    }
+
+    private var displayDestinationAccessibilityIdentifier: String {
+        switch displayDestination {
+        case .overview:
+            "detail_screen"
+        case .virtualDisplay:
+            "detail_virtual_display"
+        case .monitor:
+            "detail_monitor_screen"
+        case .lanWebView:
+            "detail_screen_sharing"
+        }
+    }
+
+    private var detailIdentity: String {
+        switch navigation.sidebarSelection ?? .screen {
+        case .screen:
+            "screen-\(displayDestination.rawValue)"
+        case .diagnostics:
+            "diagnostics"
+        }
+    }
+
+    private func showDisplaysOverview() {
+        displayDestination = .overview
+        navigation.sidebarSelection = .screen
+    }
+
+    private func openDisplayDestination(_ destination: DisplayDestination) {
+        displayDestination = destination
+        navigation.sidebarSelection = .screen
     }
 
     private func autoOpenCapturePreviewWindowIfNeeded() {
@@ -233,7 +254,7 @@ package struct HomeView: View {
             return
         }
 
-        navigation.sidebarSelection = .monitorScreen
+        openDisplayDestination(.monitor)
         openWindow(value: sessionID)
         hasAutoOpenedCapturePreview = true
     }

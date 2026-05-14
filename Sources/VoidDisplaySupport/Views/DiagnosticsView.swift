@@ -4,7 +4,7 @@ import VoidDisplayFoundation
 import VoidDisplayObservability
 import AppKit
 import SwiftUI
-package struct SupportCenterView: View {
+package struct DiagnosticsView: View {
     private let contentMaxWidth: CGFloat = 840
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController?

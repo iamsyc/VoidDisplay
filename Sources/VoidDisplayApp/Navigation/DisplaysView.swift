@@ -4,25 +4,6 @@ import SwiftUI
 import VoidDisplayDesignSystem
 import VoidDisplayRuntime
 
-package struct DisplaysShellActions {
-    package let openVirtualDisplay: @MainActor () -> Void
-    package let openMonitor: @MainActor () -> Void
-    package let openLANWebView: @MainActor () -> Void
-    package let openDiagnostics: @MainActor () -> Void
-
-    package init(
-        openVirtualDisplay: @escaping @MainActor () -> Void = {},
-        openMonitor: @escaping @MainActor () -> Void = {},
-        openLANWebView: @escaping @MainActor () -> Void = {},
-        openDiagnostics: @escaping @MainActor () -> Void = {}
-    ) {
-        self.openVirtualDisplay = openVirtualDisplay
-        self.openMonitor = openMonitor
-        self.openLANWebView = openLANWebView
-        self.openDiagnostics = openDiagnostics
-    }
-}
-
 package struct DisplaySurfaceActions {
     package let manageVirtualDisplay: @MainActor () -> Void
     package let openMonitor: @MainActor () -> Void
@@ -54,17 +35,14 @@ package struct DisplaySurfaceActions {
 package struct DisplaysView: View {
     @Environment(\.openURL) private var openURL
     private let displayRuntime: DisplayRuntime
-    private let shellActions: DisplaysShellActions
     private let surfaceActions: DisplaySurfaceActions
     @State private var selectedSurfaceID: DisplaySurfacePresentation.ID?
 
     package init(
         displayRuntime: DisplayRuntime,
-        shellActions: DisplaysShellActions = DisplaysShellActions(),
         surfaceActions: DisplaySurfaceActions = DisplaySurfaceActions()
     ) {
         self.displayRuntime = displayRuntime
-        self.shellActions = shellActions
         self.surfaceActions = surfaceActions
     }
 
@@ -79,7 +57,6 @@ package struct DisplaysView: View {
                 if let selectedSurface {
                     surfaceActionStrip(for: selectedSurface)
                 }
-                displaysShellEntries
                 surfaceList(presentation.surfaces)
 
                 if let selectedSurface {
@@ -111,59 +88,12 @@ package struct DisplaysView: View {
         }
     }
 
-    private var displaysShellEntries: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.adaptive(minimum: 220), spacing: AppUI.List.sectionSpacing, alignment: .top)
-            ],
-            spacing: AppUI.List.sectionSpacing
-        ) {
-            ForEach(shellEntries) { entry in
-                DisplaysShellEntryButton(entry: entry)
-            }
-        }
-        .accessibilityIdentifier("displays_shell_entries")
-    }
-
-    private var shellEntries: [DisplaysShellEntry] {
-        [
-            DisplaysShellEntry(
-                id: "virtual_display",
-                title: "Virtual Display",
-                systemImage: "display.2",
-                accessibilityIdentifier: "displays_shell_virtual_display_entry",
-                action: shellActions.openVirtualDisplay
-            ),
-            DisplaysShellEntry(
-                id: "monitor",
-                title: "Monitor",
-                systemImage: "dot.scope.display",
-                accessibilityIdentifier: "displays_shell_monitor_entry",
-                action: shellActions.openMonitor
-            ),
-            DisplaysShellEntry(
-                id: "lan_web_view",
-                title: "LAN Web View",
-                systemImage: "network",
-                accessibilityIdentifier: "displays_shell_lan_web_view_entry",
-                action: shellActions.openLANWebView
-            ),
-            DisplaysShellEntry(
-                id: "diagnostics",
-                title: "Diagnostics",
-                systemImage: "stethoscope",
-                accessibilityIdentifier: "displays_shell_diagnostics_entry",
-                action: shellActions.openDiagnostics
-            )
-        ]
-    }
-
     private func surfaceList(_ surfaces: [DisplaySurfacePresentation]) -> some View {
         LazyVStack(alignment: .leading, spacing: AppUI.List.sectionSpacing) {
             HStack(spacing: AppUI.Spacing.small) {
                 Image(systemName: "display")
                     .foregroundStyle(.secondary)
-                Text("Display Surfaces")
+                Text("Displays")
                     .font(.headline)
             }
             .accessibilityIdentifier("displays_surface_list")
@@ -237,7 +167,7 @@ package struct DisplaysView: View {
             HStack(spacing: AppUI.Spacing.small) {
                 Image(systemName: "rectangle.inset.filled.and.person.filled")
                     .foregroundStyle(.secondary)
-                Text("Surface Detail")
+                Text("Display Details")
                     .font(.headline)
                 Spacer(minLength: 0)
             }
@@ -427,53 +357,6 @@ package struct DisplaysView: View {
         .environment(env.capture)
         .environment(env.sharing)
         .environment(env.virtualDisplay)
-}
-
-private struct DisplaysShellEntry: Identifiable {
-    let id: String
-    let title: LocalizedStringKey
-    let systemImage: String
-    let accessibilityIdentifier: String
-    let action: @MainActor () -> Void
-}
-
-private struct DisplaysShellEntryButton: View {
-    let entry: DisplaysShellEntry
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: entry.action) {
-            HStack(spacing: AppUI.Spacing.medium) {
-                Image(systemName: entry.systemImage)
-                    .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight)
-                    .appTileStyle()
-
-                Text(entry.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, AppUI.List.rowHorizontalInset)
-            .padding(.vertical, AppUI.List.rowVerticalInset + 1)
-            .frame(minHeight: AppUI.List.rowMinHeight + 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .appInteractiveCardStyle(isHovered: isHovered)
-        .onHover { hovered in
-            isHovered = hovered
-        }
-        .accessibilityIdentifier(entry.accessibilityIdentifier)
-    }
 }
 
 private struct DisplaySurfaceActionEntry: Identifiable {

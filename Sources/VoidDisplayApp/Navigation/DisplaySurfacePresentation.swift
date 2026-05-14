@@ -117,7 +117,7 @@ package enum DisplaySurfacePresentationMapper {
         let statusItems = [
             DisplaySurfaceStatusItemPresentation(
                 id: "kind",
-                title: String(localized: "Surface Kind"),
+                title: String(localized: "Display Type"),
                 value: kindText,
                 accessibilityIdentifier: "displays_surface_kind_value"
             ),
@@ -214,7 +214,7 @@ package enum DisplaySurfacePresentationMapper {
            let height = managed.maximumPixelHeight {
             return String(format: String(localized: "%lld × %lld pixels"), Int64(width), Int64(height))
         }
-        return String(localized: "Runtime snapshot surface")
+        return String(localized: "Runtime display status")
     }
 
     private static func kindText(for surface: DisplaySurface) -> String {

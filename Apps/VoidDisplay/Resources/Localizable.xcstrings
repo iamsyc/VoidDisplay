@@ -146,16 +146,6 @@
         }
       }
     },
-    "Display Surfaces" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示表面"
-          }
-        }
-      }
-    },
     "Drain" : {
       "localizations" : {
         "zh-Hans" : {
@@ -502,12 +492,12 @@
         }
       }
     },
-    "Runtime snapshot surface" : {
+    "Runtime display status" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "运行时快照显示表面"
+            "value" : "运行时显示状态"
           }
         }
       }
@@ -552,22 +542,22 @@
         }
       }
     },
-    "Surface Detail" : {
+    "Display Details" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "表面详情"
+            "value" : "显示器详情"
           }
         }
       }
     },
-    "Surface Kind" : {
+    "Display Type" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示表面类型"
+            "value" : "显示器类型"
           }
         }
       }
@@ -2354,13 +2344,12 @@
         }
       }
     },
-    "No Virtual Displays" : {
-      "extractionState" : "stale",
+    "No Managed Virtual Display" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没有虚拟显示器"
+            "value" : "没有托管虚拟显示器"
           }
         }
       }
@@ -3213,17 +3202,6 @@
         }
       }
     },
-    "Screen Monitoring" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "屏幕监听"
-          }
-        }
-      }
-    },
     "Screen Recording Permission Required" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3231,17 +3209,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要录屏权限"
-          }
-        }
-      }
-    },
-    "Screen Sharing" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "屏幕共享"
           }
         }
       }
@@ -3893,17 +3860,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟显示器异常"
-          }
-        }
-      }
-    },
-    "Virtual Displays" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "虚拟显示器"
           }
         }
       }

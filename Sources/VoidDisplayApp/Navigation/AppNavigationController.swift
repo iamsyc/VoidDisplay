@@ -3,9 +3,6 @@ import AppKit
 import Observation
 package enum AppSidebarItem: Hashable {
     case screen
-    case virtualDisplay
-    case monitorScreen
-    case screenSharing
     case diagnostics
 }
 

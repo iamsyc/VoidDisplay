@@ -31,7 +31,7 @@ package struct CaptureDisplayWindowRoot: View {
                     monitoringActions: monitoringActions,
                     sharingStatusProvider: sharingStatusProvider
                 )
-                    .navigationTitle("Screen Monitoring")
+                    .navigationTitle("Monitor")
             } else {
                 Color.clear
             }

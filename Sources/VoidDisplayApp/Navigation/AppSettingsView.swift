@@ -51,7 +51,7 @@ package struct AppSettingsView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Virtual Displays")
+                    Text("Virtual Display")
                         .font(.headline)
 
                     Text("Reset will remove all saved virtual display configurations and stop currently managed virtual displays.")
