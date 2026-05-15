@@ -95,22 +95,18 @@ package struct HomeView: View {
 
         NavigationSplitView {
             List(selection: $bindableNavigation.sidebarSelection) {
-                Section("Display") {
-                    NavigationLink(value: AppSidebarItem.screen) {
-                        Label("Displays", systemImage: "display")
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        showDisplaysOverview()
-                    })
-                    .accessibilityIdentifier("sidebar_displays")
+                NavigationLink(value: AppSidebarItem.screen) {
+                    Label("Displays", systemImage: "display")
                 }
+                .simultaneousGesture(TapGesture().onEnded {
+                    showDisplaysOverview()
+                })
+                .accessibilityIdentifier("sidebar_displays")
 
-                Section(String(localized: "Diagnostics")) {
-                    NavigationLink(value: AppSidebarItem.diagnostics) {
-                        Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
-                    }
-                    .accessibilityIdentifier("sidebar_diagnostics")
+                NavigationLink(value: AppSidebarItem.diagnostics) {
+                    Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
                 }
+                .accessibilityIdentifier("sidebar_diagnostics")
             }
             .listStyle(.sidebar)
             .accessibilityIdentifier("home_sidebar")

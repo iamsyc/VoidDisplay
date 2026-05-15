@@ -42,7 +42,6 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
-                "displays_issue_status",
                 "displays_action_manage_virtual_display",
                 "displays_action_open_monitor",
                 "displays_action_open_lan_web_view",
@@ -160,16 +159,17 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
-                "displays_issue_status",
                 "displays_technical_details"
             ],
             timeout: 6
         )
+        assertDisplaysShowsAtLeastThreeRows(in: app)
         assertDisplaysSurfaceStatusArea(in: app)
         assertDisplaysHeaderActionArea(in: app)
         assertDisplaysSurfaceActionArea(in: app)
         XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_issue_status"].exists)
 
         tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
         assertAllExist(app, identifiers: ["detail_virtual_display"], timeout: 1.5)
@@ -199,13 +199,13 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
-                "displays_issue_status",
                 "displays_technical_details"
             ],
             timeout: 1.5
         )
         XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_issue_status"].exists)
     }
 
     @MainActor
@@ -237,6 +237,19 @@ final class HomeSmokeTests: XCTestCase {
         )
         XCTAssertFalse(app.descendants(matching: .any)["displays_surface_actions"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["displays_action_open_diagnostics"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_action_stop_web_service"].exists)
+    }
+
+    @MainActor
+    private func assertDisplaysShowsAtLeastThreeRows(in app: XCUIApplication) {
+        let firstRow = assertExists(app, identifier: "display_surface_row", timeout: 1.5)
+        XCTAssertTrue(firstRow.frame.height > 0)
+        XCTAssertGreaterThanOrEqual(
+            app.descendants(matching: .any)
+                .matching(identifier: "display_surface_row")
+                .count,
+            3
+        )
     }
 
     @MainActor

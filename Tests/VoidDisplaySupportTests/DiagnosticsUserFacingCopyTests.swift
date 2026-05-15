@@ -7,7 +7,7 @@ struct DiagnosticsUserFacingCopyTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let forbiddenFragments = [
+        let globalForbiddenFragments = [
             "DisplaySurface",
             "Display Surface",
             "Display Surfaces",
@@ -29,13 +29,21 @@ struct DiagnosticsUserFacingCopyTests {
             "托管虚拟",
             "托管虚拟显示器",
             "Physical auxiliary",
-            "Physical Auxiliary Display"
+            "Physical Auxiliary Display",
+            "物理辅助"
+        ]
+        let displaysHomeForbiddenFragments = globalForbiddenFragments + [
+            "Consumer",
+            "Lease",
+            "Intent",
+            "监听",
+            "未监听"
         ]
 
         let localizableURL = repositoryRoot
             .appendingPathComponent("Apps/VoidDisplay/Resources/Localizable.xcstrings")
         let localizableContent = try String(contentsOf: localizableURL, encoding: .utf8)
-        for fragment in forbiddenFragments {
+        for fragment in displaysHomeForbiddenFragments {
             #expect(
                 localizableContent.contains(fragment) == false,
                 "Forbidden Localizable copy '\(fragment)' found in \(localizableURL.path)"
@@ -52,11 +60,28 @@ struct DiagnosticsUserFacingCopyTests {
 
         for fileURL in userFacingSourceFiles {
             let literals = try swiftStringLiterals(in: fileURL)
-            for fragment in forbiddenFragments {
+            for fragment in globalForbiddenFragments {
                 for literal in literals {
                     #expect(
                         literal.contains(fragment) == false,
                         "Forbidden user-facing copy '\(fragment)' found in \(fileURL.path): \(literal)"
+                    )
+                }
+            }
+        }
+
+        let displaysHomeSourceFiles = [
+            repositoryRoot.appendingPathComponent("Sources/VoidDisplayApp/Navigation/HomeView.swift"),
+            repositoryRoot.appendingPathComponent("Sources/VoidDisplayApp/Navigation/DisplaysView.swift"),
+            repositoryRoot.appendingPathComponent("Sources/VoidDisplayApp/Navigation/DisplaySurfacePresentation.swift")
+        ]
+        for fileURL in displaysHomeSourceFiles {
+            let literals = try swiftStringLiterals(in: fileURL)
+            for fragment in displaysHomeForbiddenFragments {
+                for literal in literals {
+                    #expect(
+                        literal.contains(fragment) == false,
+                        "Forbidden Displays copy '\(fragment)' found in \(fileURL.path): \(literal)"
                     )
                 }
             }

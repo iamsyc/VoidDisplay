@@ -302,7 +302,7 @@
         }
       }
     },
-    "Manage Virtual Display" : {
+    "Manage Virtual Displays" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -327,7 +327,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要关注"
+            "value" : "需要处理"
           }
         }
       }
@@ -348,6 +348,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无连接"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
           }
         }
       }
@@ -422,7 +432,7 @@
         }
       }
     },
-    "Route ready" : {
+    "Route Ready" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -663,17 +673,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "8089"
-          }
-        }
-      }
-    },
-    "Active Consumer Leases" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "活跃消费者租约"
           }
         }
       }
@@ -2439,6 +2438,16 @@
         }
       }
     },
+    "Open Web View" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Web 查看"
+          }
+        }
+      }
+    },
     "Optional enhanced diagnostics" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2490,6 +2499,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "物理显示器"
+          }
+        }
+      }
+    },
+    "Physical Display %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理显示器 %lld"
           }
         }
       }
@@ -3778,17 +3797,6 @@
         }
       }
     },
-    "Total Consumer Leases" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "消费者租约总数"
-          }
-        }
-      }
-    },
     "Use this when the issue does not fit the common categories above." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3807,6 +3815,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟显示器"
+          }
+        }
+      }
+    },
+    "Virtual Display %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器 %lld"
           }
         }
       }

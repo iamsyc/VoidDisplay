@@ -64,43 +64,59 @@ package struct DisplaysView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("displays_shell")
         }
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    surfaceActions.manageVirtualDisplay()
-                } label: {
-                    Label("Manage Virtual Display", systemImage: "display.2")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .help(Text("Manage Virtual Display"))
-                .accessibilityIdentifier("displays_action_manage_virtual_display")
-            }
-
-            ToolbarItem {
-                Button {
-                    openDisplaySettings()
-                } label: {
-                    Label("Open System Settings", systemImage: "gearshape")
-                }
-                .help(String(localized: "Open System Display Settings"))
-                .accessibilityIdentifier("displays_open_system_settings")
-            }
-        }
     }
 
     private var displaysHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                displayTitle
+                Spacer(minLength: AppUI.Spacing.large)
+                headerActions
+            }
+
+            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                displayTitle
+                headerActions
+            }
+        }
+        .accessibilityIdentifier("displays_surface_list")
+    }
+
+    private var displayTitle: some View {
         HStack(spacing: AppUI.Spacing.small) {
             Image(systemName: "display")
                 .foregroundStyle(.secondary)
             Text("Displays")
                 .font(.headline)
         }
-        .accessibilityIdentifier("displays_surface_list")
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: AppUI.Spacing.small) {
+            Button {
+                surfaceActions.manageVirtualDisplay()
+            } label: {
+                Label("Manage Virtual Displays", systemImage: "display.2")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .help(Text("Manage Virtual Displays"))
+            .accessibilityIdentifier("displays_action_manage_virtual_display")
+
+            Button {
+                openDisplaySettings()
+            } label: {
+                Label("Open System Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(String(localized: "Open System Display Settings"))
+            .accessibilityIdentifier("displays_open_system_settings")
+        }
     }
 
     private func surfaceList(_ surfaces: [DisplaySurfacePresentation]) -> some View {
-        LazyVStack(alignment: .leading, spacing: AppUI.List.sectionSpacing) {
+        LazyVStack(alignment: .leading, spacing: AppUI.List.sectionSpacing - 2) {
             ForEach(surfaces) { surface in
                 DisplaySurfaceManagementCard(
                     model: rowModel(for: surface),
@@ -184,30 +200,28 @@ private struct DisplaySurfaceManagementCard: View {
     let surface: DisplaySurfacePresentation
     let performAction: @MainActor (DisplaySurfaceRowActionPresentation) -> Void
 
-    @State private var isHovered = false
     @State private var isTechnicalDetailsExpanded = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+        VStack(alignment: .leading, spacing: 0) {
             headerAndActions
 
-            DisclosureGroup(isExpanded: $isTechnicalDetailsExpanded) {
+            if isTechnicalDetailsExpanded {
+                Divider()
+                    .padding(.horizontal, AppUI.List.rowHorizontalInset)
                 DisplaySurfaceStatusGrid(items: surface.technicalStatusItems)
-                    .padding(.top, AppUI.Spacing.small)
-            } label: {
-                Text("Technical Details")
-                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, AppUI.List.rowHorizontalInset)
+                    .padding(.vertical, AppUI.Spacing.small)
+                    .accessibilityIdentifier("displays_technical_details_panel")
             }
-            .accessibilityIdentifier("displays_technical_details")
         }
-        .frame(minHeight: AppUI.List.rowMinHeight + 34)
-        .padding(.horizontal, AppUI.List.rowHorizontalInset)
-        .padding(.vertical, AppUI.List.rowVerticalInset + 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .appInteractiveCardStyle(isHovered: isHovered)
-        .onHover { hovered in
-            isHovered = hovered
-        }
+        .background(rowFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(rowStroke, lineWidth: AppUI.Stroke.subtle)
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(surface.accessibilitySummary))
     }
@@ -216,18 +230,23 @@ private struct DisplaySurfaceManagementCard: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                 identityBlock
-                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 320, alignment: .leading)
+                    .frame(minWidth: 220, idealWidth: 250, maxWidth: 300, alignment: .leading)
                 DisplaySurfaceCompactStatusLine(items: surface.compactStatusItems)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: AppUI.Spacing.medium)
-                actionBar(alignment: .trailing)
+                rowControls(alignment: .trailing)
             }
+            .frame(minHeight: AppUI.List.rowMinHeight + 6)
+            .padding(.horizontal, AppUI.List.rowHorizontalInset)
+            .padding(.vertical, AppUI.List.rowVerticalInset)
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
                 identityBlock
                 DisplaySurfaceCompactStatusLine(items: surface.compactStatusItems)
-                actionBar(alignment: .leading)
+                rowControls(alignment: .leading)
             }
+            .padding(.horizontal, AppUI.List.rowHorizontalInset)
+            .padding(.vertical, AppUI.List.rowVerticalInset)
         }
     }
 
@@ -254,6 +273,24 @@ private struct DisplaySurfaceManagementCard: View {
         }
     }
 
+    private func rowControls(alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: AppUI.Spacing.xSmall) {
+            actionBar(alignment: alignment)
+            Button {
+                isTechnicalDetailsExpanded.toggle()
+            } label: {
+                Label("Details", systemImage: "info.circle")
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(Text("Details"))
+            .accessibilityIdentifier("displays_technical_details")
+        }
+        .frame(maxWidth: 320, alignment: alignment == .trailing ? .trailing : .leading)
+    }
+
     private func actionBar(alignment: HorizontalAlignment) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: AppUI.Spacing.small) {
@@ -268,7 +305,6 @@ private struct DisplaySurfaceManagementCard: View {
                 }
             }
         }
-        .frame(maxWidth: 320, alignment: alignment == .trailing ? .trailing : .leading)
     }
 
     private func rowActionButton(_ action: DisplaySurfaceRowActionPresentation) -> some View {
@@ -288,8 +324,20 @@ private struct DisplaySurfaceManagementCard: View {
         .fixedSize(horizontal: true, vertical: false)
         .disabled(!action.isEnabled)
         .help(Text(action.help))
-        .accessibilityLabel(Text(action.title))
+        .accessibilityLabel(Text(action.help))
         .accessibilityIdentifier(action.accessibilityIdentifier)
+    }
+
+    private var rowFill: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.035)
+            : Color(nsColor: .controlBackgroundColor).opacity(0.62)
+    }
+
+    private var rowStroke: Color {
+        colorScheme == .dark
+            ? .white.opacity(0.10)
+            : .black.opacity(0.06)
     }
 }
 
@@ -325,13 +373,21 @@ private struct DisplaySurfaceCompactStatusLine: View {
     ]
 
     var body: some View {
-        LazyVGrid(
-            columns: columns,
-            alignment: .leading,
-            spacing: 6
-        ) {
-            ForEach(items) { item in
-                DisplaySurfaceCompactStatusPill(item: item)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                ForEach(items) { item in
+                    DisplaySurfaceCompactStatusPill(item: item)
+                }
+            }
+
+            LazyVGrid(
+                columns: columns,
+                alignment: .leading,
+                spacing: 6
+            ) {
+                ForEach(items) { item in
+                    DisplaySurfaceCompactStatusPill(item: item)
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -345,28 +401,43 @@ private struct DisplaySurfaceCompactStatusPill: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let isLowPriority = item.tone == .neutral
         HStack(spacing: 4) {
             Text(item.title)
                 .foregroundStyle(.secondary)
             Text(item.value)
                 .fontWeight(.semibold)
-                .foregroundStyle(item.tone.tint)
+                .foregroundStyle(isLowPriority ? .secondary : item.tone.tint)
         }
         .font(.caption)
         .lineLimit(1)
         .padding(.horizontal, AppUI.Spacing.small - 1)
         .padding(.vertical, AppUI.Spacing.xSmall)
         .background(
-            item.tone.tint.opacity(colorScheme == .dark ? 0.18 : 0.10),
+            statusFill(isLowPriority: isLowPriority),
             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(item.tone.tint.opacity(colorScheme == .dark ? 0.28 : 0.20), lineWidth: AppUI.Stroke.subtle)
+                .stroke(statusStroke(isLowPriority: isLowPriority), lineWidth: AppUI.Stroke.subtle)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(item.title): \(item.value)"))
         .accessibilityIdentifier(item.accessibilityIdentifier)
+    }
+
+    private func statusFill(isLowPriority: Bool) -> Color {
+        if isLowPriority {
+            return colorScheme == .dark ? .white.opacity(0.05) : .black.opacity(0.035)
+        }
+        return item.tone.tint.opacity(colorScheme == .dark ? 0.18 : 0.10)
+    }
+
+    private func statusStroke(isLowPriority: Bool) -> Color {
+        if isLowPriority {
+            return colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06)
+        }
+        return item.tone.tint.opacity(colorScheme == .dark ? 0.28 : 0.20)
     }
 }
 
