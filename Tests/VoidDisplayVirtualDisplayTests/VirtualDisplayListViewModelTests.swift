@@ -14,7 +14,6 @@ struct VirtualDisplayListViewModelTests {
         let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
         controller.configureDeleteExecutor { [weak controller] configID in
             guard let controller else {
                 throw NSError(domain: "VirtualDisplayListViewModelTests", code: 1)
@@ -48,7 +47,6 @@ struct VirtualDisplayListViewModelTests {
         mockService.currentDisplayConfigs = [config]
         mockService.destroyDisplayError = NSError(domain: "VirtualDisplayListViewModelTests", code: 12)
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
         controller.configureDeleteExecutor { [weak controller] configID in
             guard let controller else {
                 throw NSError(domain: "VirtualDisplayListViewModelTests", code: 2)
@@ -186,7 +184,6 @@ struct VirtualDisplayListViewModelTests {
         mockService.currentRunningConfigIds = [config.id]
         mockService.runtimeDisplayIDByConfigId[config.id] = CGMainDisplayID()
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
 
         let sut = VirtualDisplayListViewModel(controller: controller)
 

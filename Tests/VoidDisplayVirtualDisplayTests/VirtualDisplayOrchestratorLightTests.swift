@@ -454,20 +454,17 @@ struct VirtualDisplayOrchestratorLightTests {
     @Test
     func resetAllVirtualDisplayDataResetFailurePreservesConfigAndRuntimeState() throws {
         let store = FakeVirtualDisplayStore()
-        let restoreFailureConfig = makeConfig(serial: 54, displayName: "Restore Failure")
+        let retainedConfig = makeConfig(serial: 54, displayName: "Retained")
         let driver = FakeOrchestratorRuntimeDriver(
             scriptedResults: [
-                .failure(VirtualDisplayOperationError.creationFailed),
                 .success(serialNum: 55, displayID: 955)
             ]
         )
         let sut = makeOrchestrator(
             store: store,
-            initialConfigs: [restoreFailureConfig],
+            initialConfigs: [retainedConfig],
             runtimeDriver: driver
         )
-        sut.restoreDesiredVirtualDisplays()
-        #expect(sut.snapshot.restoreFailures.count == 1)
 
         let createdConfigID = try sut.createDisplayCommand(
             name: "Reset Failure",
@@ -485,22 +482,24 @@ struct VirtualDisplayOrchestratorLightTests {
         #expect(throws: Error.self) {
             _ = try sut.resetAllVirtualDisplayData()
         }
-        #expect(sut.snapshot.configs.map(\.id) == [restoreFailureConfig.id, createdConfigID])
+        #expect(sut.snapshot.configs.map(\.id) == [retainedConfig.id, createdConfigID])
         #expect(sut.snapshot.runningConfigIds == [createdConfigID])
         #expect(sut.snapshot.runtimeDisplayID(for: createdConfigID) == runtimeDisplayIDBeforeFailure)
-        #expect(sut.snapshot.restoreFailures.count == 1)
-        #expect(sut.snapshot.restoreFailures.first?.id == restoreFailureConfig.id)
+        #expect(sut.snapshot.restoreFailures.isEmpty)
     }
 
     @Test
-    func loadPersistedConfigsFailureSetsStoreStateAndBlocksRestore() {
+    func startupRestoreConfigLoadFailureReturnsTypedFailureAndLeavesRestoreUnused() {
         let store = FakeVirtualDisplayStore()
         store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
         let sut = makeOrchestrator(store: store, loadOnInit: false)
 
-        sut.loadPersistedConfigs()
-        sut.restoreDesiredVirtualDisplays()
+        let result = sut.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
 
+        #expect(result.status == .failed)
+        #expect(result.configs.isEmpty)
+        #expect(result.failureReason == "startup_persisted_config_load_failed")
+        #expect(result.underlyingDomain != nil)
         #expect(sut.snapshot.configs.isEmpty)
         #expect(sut.snapshot.restoreFailures.isEmpty)
         #expect(sut.snapshot.configStorePresentation.hasLoadFailure)
@@ -512,25 +511,44 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func restoreDesiredVirtualDisplaysClearsExistingFailuresWhenStoreFallsBackToLoadFailed() {
+    func startupRestoreCommandRestoresSingleDesiredConfig() {
         let store = FakeVirtualDisplayStore()
-        let restoreFailureConfig = makeConfig(serial: 64, displayName: "Restore Failure")
+        let config = makeConfig(serial: 64, displayName: "Desired")
         let driver = FakeOrchestratorRuntimeDriver(
-            scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
+            scriptedResults: [.success(serialNum: 64, displayID: 964)]
         )
         let sut = makeOrchestrator(
             store: store,
-            initialConfigs: [restoreFailureConfig],
+            initialConfigs: [config],
             runtimeDriver: driver
         )
 
-        sut.restoreDesiredVirtualDisplays()
-        #expect(sut.snapshot.restoreFailures.count == 1)
+        let result = sut.restoreVirtualDisplayForStartupCommand(
+            startupRestoreRequest(config: config)
+        )
 
+        #expect(result.configID == config.id)
+        #expect(result.restoreOutcome == .succeeded)
+        #expect(result.postDisplayID == 964)
+        #expect(result.runningConfigIDsAfterCommand == [config.id])
+        #expect(driver.createCallCount == 1)
+        #expect(sut.snapshot.restoreFailures.isEmpty)
+    }
+
+    @Test
+    func startupRestoreCommandReportsLoadFailedStoreAsTypedFailure() {
+        let store = FakeVirtualDisplayStore()
+        let config = makeConfig(serial: 65, displayName: "Blocked")
         store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
-        sut.loadPersistedConfigs()
-        sut.restoreDesiredVirtualDisplays()
+        let sut = makeOrchestrator(store: store, initialConfigs: [config])
 
+        _ = sut.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
+        let result = sut.restoreVirtualDisplayForStartupCommand(
+            startupRestoreRequest(config: config)
+        )
+
+        #expect(result.restoreOutcome == .failed)
+        #expect(result.failureReason == "startup_config_store_unavailable")
         #expect(sut.snapshot.restoreFailures.isEmpty)
         #expect(sut.snapshot.configStorePresentation.hasLoadFailure)
         #expect(sut.snapshot.configStorePresentation.loadErrorMessage != nil)
@@ -595,6 +613,25 @@ private extension VirtualDisplayOrchestratorLightTests {
                 .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
             ],
             desiredEnabled: true
+        )
+    }
+
+    func startupRestoreRequest(config: VirtualDisplayConfig) -> VirtualDisplayStartupRestoreCommandRequest {
+        let maxPixels = config.maxPixelDimensions
+        return VirtualDisplayStartupRestoreCommandRequest(
+            transactionID: UUID(),
+            runID: UUID(),
+            configID: config.id,
+            configEvidence: .init(
+                id: config.id,
+                serialNumber: config.serialNum,
+                desiredEnabled: config.desiredEnabled,
+                physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
+                physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
+                modeCount: config.modes.count,
+                maximumPixelWidth: maxPixels.width,
+                maximumPixelHeight: maxPixels.height
+            )
         )
     }
 

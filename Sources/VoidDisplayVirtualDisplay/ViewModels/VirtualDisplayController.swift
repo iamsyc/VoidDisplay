@@ -110,39 +110,6 @@ package final class VirtualDisplayController {
         requestSnapshotRefresh()
     }
 
-    package func loadPersistedConfigsAndRestoreDesiredVirtualDisplays() {
-        virtualDisplayFacade.loadPersistedConfigs()
-        virtualDisplayFacade.restoreDesiredVirtualDisplays()
-        syncVirtualDisplayState()
-        Task {
-            if restoreFailures.isEmpty {
-                await recordEvent(
-                    severity: .info,
-                    operation: "Restore virtual displays",
-                    message: "Loaded persisted virtual display state.",
-                    metadata: ["configCount": "\(displayConfigs.count)"]
-                )
-            } else {
-                for failure in restoreFailures {
-                    await observability?.record(
-                        error: NSError(
-                            domain: ObservabilityDomain.virtualDisplay.rawValue,
-                            code: 0,
-                            userInfo: [NSLocalizedDescriptionKey: failure.message]
-                        ),
-                        subsystem: .virtualDisplay,
-                        operation: "Restore virtual displays",
-                        context: .init(
-                            metadata: ["configID": failure.id.uuidString],
-                            deduplicationKey: "virtualDisplay.restore.\(failure.id.uuidString)",
-                            message: failure.message
-                        )
-                    )
-                }
-            }
-        }
-    }
-
     package func applyUITestPresentationState(scenario: UITestScenario) {
         rebuildPresentationState = RebuildPresentationState()
 
@@ -582,6 +549,20 @@ package final class VirtualDisplayController {
     package func deleteDisplayCommand(configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
         try mutateAndSync {
             try virtualDisplayFacade.deleteDisplayCommand(configId)
+        }
+    }
+
+    package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
+        mutateAndSync {
+            virtualDisplayFacade.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
+        }
+    }
+
+    package func restoreVirtualDisplayForStartupCommand(
+        _ request: VirtualDisplayStartupRestoreCommandRequest
+    ) -> VirtualDisplayStartupRestoreCommandResult {
+        mutateAndSync {
+            virtualDisplayFacade.restoreVirtualDisplayForStartupCommand(request)
         }
     }
 

@@ -1135,6 +1135,137 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
+    @Test func virtualDisplayAdapterStartupRestoreLoadsConfigsAndRestoresDesiredConfig() async throws {
+        let secretName = "Startup Secret Name"
+        let desired = VirtualDisplayConfig(
+            displayName: secretName,
+            serialNum: 9313,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var disabled = VirtualDisplayConfig(
+            displayName: "Startup Disabled",
+            serialNum: 9314,
+            physicalWidth: 620,
+            physicalHeight: 360,
+            modes: [.init(width: 2560, height: 1440, refreshRate: 60, enableHiDPI: true)],
+            desiredEnabled: true
+        )
+        disabled.desiredEnabled = false
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [disabled, desired]
+        facade.runtimeDisplayIDByConfigId[desired.id] = 8313
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let loadResult = await sut.loadPersistedVirtualDisplayConfigsForStartupRestore()
+        let desiredDTO = try #require(loadResult.configs.first { $0.id == desired.id })
+        let restoreResult = try await sut.restoreVirtualDisplayForStartup(
+            request: DisplayRuntimeStartupRestoreCommandRequest(
+                transactionID: DisplayRuntimeTransactionID(),
+                runID: DisplayRuntimeStartupRestoreRunID(),
+                configID: desired.id,
+                configEvidence: desiredDTO.evidence
+            )
+        )
+        let loadJSON = String(decoding: try JSONEncoder().encode(loadResult), as: UTF8.self)
+        let restoreJSON = String(decoding: try JSONEncoder().encode(restoreResult), as: UTF8.self)
+
+        #expect(facade.loadPersistedConfigsCallCount == 1)
+        #expect(loadResult.status == .succeeded)
+        #expect(loadResult.configs.map(\.id) == [disabled.id, desired.id])
+        #expect(loadResult.configs.first { $0.id == disabled.id }?.desiredEnabled == false)
+        #expect(desiredDTO.evidence.serialNumber == 9313)
+        #expect(facade.startupRestoreCommandRequests.map(\.configID) == [desired.id])
+        #expect(restoreResult.configID == desired.id)
+        #expect(restoreResult.restoreOutcome == .succeeded)
+        #expect(restoreResult.postDisplayID == 8313)
+        #expect(restoreResult.runningConfigIDsAfterCommand == [desired.id])
+        #expect(restoreResult.managedDisplaysAfterCommand == [
+            DisplayRuntimeManagedVirtualDisplay(
+                configID: desired.id,
+                serialNumber: 9313,
+                displayID: 8313,
+                isLiveRuntime: true
+            )
+        ])
+        #expect(loadJSON.contains(secretName) == false)
+        #expect(restoreJSON.contains(secretName) == false)
+    }
+
+    @Test func virtualDisplayAdapterStartupRestoreMapsReadFailure() async {
+        let facade = MockVirtualDisplayFacade()
+        facade.startupConfigLoadResult = .failed(
+            reason: "startup_persisted_config_load_failed",
+            underlyingDomain: "AdapterStore",
+            underlyingCode: 13
+        )
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let result = await sut.loadPersistedVirtualDisplayConfigsForStartupRestore()
+
+        #expect(result.status == .failed)
+        #expect(result.configs.isEmpty)
+        #expect(result.failureReason == "startup_persisted_config_load_failed")
+        #expect(result.underlyingDomain == "AdapterStore")
+        #expect(result.underlyingCode == 13)
+        #expect(facade.startupRestoreCommandRequests.isEmpty)
+    }
+
+    @Test func virtualDisplayAdapterStartupRestoreMapsLowerFailureAndMissingConfig() async throws {
+        let config = VirtualDisplayConfig(
+            displayName: "Startup Lower Failure",
+            serialNum: 9315,
+            physicalWidth: 600,
+            physicalHeight: 340,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let missingID = UUID()
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [config]
+        facade.startupRestoreCommandResultsByConfigID[config.id] = VirtualDisplayStartupRestoreCommandResult(
+            transactionID: UUID(),
+            configID: config.id,
+            preDisplayID: nil,
+            postDisplayID: nil,
+            restoreOutcome: .failed,
+            didProduceVerifiableSideEffect: false,
+            failureReason: "driver_restore_failed",
+            runningConfigIDsAfterCommand: [],
+            managedDisplaysAfterCommand: []
+        )
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+
+        let lowerFailure = try await sut.restoreVirtualDisplayForStartup(
+            request: startupRestoreRequest(configID: config.id, serialNumber: config.serialNum)
+        )
+        let missingFailure = try await sut.restoreVirtualDisplayForStartup(
+            request: startupRestoreRequest(configID: missingID, serialNumber: 9316)
+        )
+
+        #expect(lowerFailure.restoreOutcome == .failed)
+        #expect(lowerFailure.failureReason == "driver_restore_failed")
+        #expect(lowerFailure.didProduceVerifiableSideEffect == false)
+        #expect(missingFailure.restoreOutcome == .failed)
+        #expect(missingFailure.failureReason == "config_not_found")
+        #expect(missingFailure.didProduceVerifiableSideEffect == false)
+        #expect(facade.startupRestoreCommandRequests.map(\.configID) == [config.id, missingID])
+    }
+
     @Test func virtualDisplayAdapterUnavailableFailsExplicitly() async throws {
         var controller: VirtualDisplayController? = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
@@ -1370,5 +1501,26 @@ private func runtimeCreateRequest(
         maximumPixelHeight: 1080,
         modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
         source: .createVirtualDisplaySheet
+    )
+}
+
+private func startupRestoreRequest(
+    configID: UUID,
+    serialNumber: UInt32
+) -> DisplayRuntimeStartupRestoreCommandRequest {
+    DisplayRuntimeStartupRestoreCommandRequest(
+        transactionID: DisplayRuntimeTransactionID(),
+        runID: DisplayRuntimeStartupRestoreRunID(),
+        configID: configID,
+        configEvidence: .init(
+            id: configID,
+            serialNumber: serialNumber,
+            desiredEnabled: true,
+            physicalWidthMillimeters: 600,
+            physicalHeightMillimeters: 340,
+            modeCount: 1,
+            maximumPixelWidth: 1920,
+            maximumPixelHeight: 1080
+        )
     )
 }

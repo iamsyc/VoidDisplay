@@ -213,6 +213,71 @@ extension DisplayRuntimeVirtualDisplayDeleteCommandResult {
     }
 }
 
+extension DisplayRuntimeStartupRestoreConfigLoadResult {
+    init(lowerResult: VirtualDisplayStartupRestoreConfigLoadResult) {
+        self.init(
+            status: DisplayRuntimeStartupRestoreConfigLoadStatus(lowerResult.status),
+            configs: lowerResult.configs.map(DisplayRuntimeStartupRestoreConfig.init(lowerConfig:)),
+            failureReason: lowerResult.failureReason,
+            underlyingDomain: lowerResult.underlyingDomain,
+            underlyingCode: lowerResult.underlyingCode
+        )
+    }
+}
+
+extension DisplayRuntimeStartupRestoreConfig {
+    init(lowerConfig config: VirtualDisplayStartupRestoreConfig) {
+        self.init(
+            id: config.id,
+            desiredEnabled: config.desiredEnabled,
+            evidence: DisplayRuntimeVirtualDisplayConfigEvidence(config.evidence, fallbackID: config.id)
+        )
+    }
+}
+
+extension VirtualDisplayStartupRestoreCommandRequest {
+    init(runtimeRequest request: DisplayRuntimeStartupRestoreCommandRequest) {
+        self.init(
+            transactionID: request.transactionID.rawValue,
+            runID: request.runID.rawValue,
+            configID: request.configID,
+            configEvidence: VirtualDisplayCommandConfigEvidence(runtimeEvidence: request.configEvidence)
+        )
+    }
+}
+
+extension DisplayRuntimeStartupRestoreCommandResult {
+    init(
+        runtimeRequest request: DisplayRuntimeStartupRestoreCommandRequest,
+        lowerResult: VirtualDisplayStartupRestoreCommandResult
+    ) {
+        self.init(
+            transactionID: request.transactionID,
+            configID: lowerResult.configID,
+            preDisplayID: lowerResult.preDisplayID,
+            postDisplayID: lowerResult.postDisplayID,
+            restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.restoreOutcome),
+            didProduceVerifiableSideEffect: lowerResult.didProduceVerifiableSideEffect,
+            failureReason: lowerResult.failureReason,
+            compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.compensationOutcome),
+            compensationFailureReason: lowerResult.compensationFailureReason,
+            runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
+            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.displayRuntimeManagedDisplays
+        )
+    }
+}
+
+private extension DisplayRuntimeStartupRestoreConfigLoadStatus {
+    init(_ status: VirtualDisplayStartupRestoreConfigLoadStatus) {
+        switch status {
+        case .succeeded:
+            self = .succeeded
+        case .failed:
+            self = .failed
+        }
+    }
+}
+
 private extension DisplayRuntimeManagedVirtualDisplay {
     init(adapterManagedDisplay display: ManagedVirtualDisplayRuntimeSnapshot) {
         self.init(
@@ -343,6 +408,36 @@ private extension DisplayRuntimeVirtualDisplayCreateConfigEvidence {
     }
 }
 
+private extension DisplayRuntimeVirtualDisplayConfigEvidence {
+    init(_ evidence: VirtualDisplayCommandConfigEvidence, fallbackID: UUID) {
+        self.init(
+            id: evidence.id ?? fallbackID,
+            serialNumber: evidence.serialNumber,
+            desiredEnabled: evidence.desiredEnabled,
+            physicalWidthMillimeters: evidence.physicalWidthMillimeters,
+            physicalHeightMillimeters: evidence.physicalHeightMillimeters,
+            modeCount: evidence.modeCount,
+            maximumPixelWidth: evidence.maximumPixelWidth,
+            maximumPixelHeight: evidence.maximumPixelHeight
+        )
+    }
+}
+
+private extension VirtualDisplayCommandConfigEvidence {
+    init(runtimeEvidence evidence: DisplayRuntimeVirtualDisplayConfigEvidence) {
+        self.init(
+            id: evidence.id,
+            serialNumber: evidence.serialNumber,
+            desiredEnabled: evidence.desiredEnabled,
+            physicalWidthMillimeters: evidence.physicalWidthMillimeters,
+            physicalHeightMillimeters: evidence.physicalHeightMillimeters,
+            modeCount: evidence.modeCount,
+            maximumPixelWidth: evidence.maximumPixelWidth,
+            maximumPixelHeight: evidence.maximumPixelHeight
+        )
+    }
+}
+
 private extension DisplayRuntimePersistenceOutcome {
     init(_ outcome: VirtualDisplayCommandPersistenceOutcome) {
         switch outcome {
@@ -356,6 +451,23 @@ private extension DisplayRuntimePersistenceOutcome {
             self = .rolledBack
         case .rollbackFailed:
             self = .rollbackFailed
+        }
+    }
+}
+
+private extension DisplayRuntimeVirtualDisplayCommandOutcome {
+    init(_ outcome: VirtualDisplayStartupRestoreCommandOutcome) {
+        switch outcome {
+        case .notAttempted:
+            self = .notAttempted
+        case .succeeded:
+            self = .succeeded
+        case .failed:
+            self = .failed
+        case .invalidated:
+            self = .invalidated
+        case .partiallySucceeded:
+            self = .partiallySucceeded
         }
     }
 }

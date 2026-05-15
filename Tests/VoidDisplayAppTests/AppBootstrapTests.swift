@@ -525,16 +525,17 @@ struct AppBootstrapTests {
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
-        _ = AppBootstrap.makeEnvironment(
+        let env = AppBootstrap.makeEnvironment(
             preview: true,
             captureMonitoringService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
+        await env.waitForStartupObservability()
 
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 0)
+        #expect(virtualDisplay.startupRestoreCommandRequests.isEmpty)
         #expect(sharing.startWebServiceCallCount == 0)
     }
 
@@ -549,8 +550,7 @@ struct AppBootstrapTests {
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             startupPlan: .init(
-                shouldRestoreVirtualDisplays: true,
-                postRestoreConfiguration: nil
+                shouldRestoreVirtualDisplays: true
             ),
             isRunningUnderXCTestOverride: false
         )
@@ -574,12 +574,12 @@ struct AppBootstrapTests {
         )
 
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 0)
+        #expect(virtualDisplay.startupRestoreCommandRequests.isEmpty)
         #expect(sharing.startWebServiceCallCount == 0)
         #expect(sut.virtualDisplay.displayConfigs.isEmpty)
     }
 
-    @Test func initNormalModeLoadsPersistedDataWithoutStartingWebService() async {
+    @Test func initNormalModeRestoresStartupVirtualDisplaysThroughRuntimeWithoutStartingWebService() async throws {
         let sharing = MockSharingService()
         let capture = MockCaptureMonitoringService()
         let virtualDisplay = MockVirtualDisplayFacade()
@@ -593,6 +593,7 @@ struct AppBootstrapTests {
             desiredEnabled: true
         )
         virtualDisplay.currentDisplayConfigs = [fixtureConfig]
+        virtualDisplay.runtimeDisplayIDByConfigId[fixtureConfig.id] = 10_001
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
@@ -601,10 +602,17 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
+        await sut.waitForStartupObservability()
+        let startupTrace = try #require(
+            sut.displayRuntime.makeSnapshot().transactions.recentTransactions.first {
+                $0.kind == .virtualDisplayStartupRestore
+            }
+        )
 
         #expect(sharing.startWebServiceCallCount == 0)
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 1)
+        #expect(virtualDisplay.startupRestoreCommandRequests.map(\.configID) == [fixtureConfig.id])
+        #expect(startupTrace.source == .startup)
         #expect(sut.virtualDisplay.displayConfigs.count == 1)
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)

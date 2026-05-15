@@ -195,16 +195,13 @@ package enum AppBootstrap {
 
     package struct StartupPlan {
         var shouldRestoreVirtualDisplays: Bool
-        var postRestoreConfiguration: (@MainActor (VirtualDisplayController) -> Void)?
 
         static let standard = StartupPlan(
-            shouldRestoreVirtualDisplays: true,
-            postRestoreConfiguration: nil
+            shouldRestoreVirtualDisplays: true
         )
 
         static let skipAll = StartupPlan(
-            shouldRestoreVirtualDisplays: false,
-            postRestoreConfiguration: nil
+            shouldRestoreVirtualDisplays: false
         )
     }
 
@@ -224,17 +221,16 @@ package enum AppBootstrap {
                 configuration: configuration
             )
         }()
-        return makeEnvironment(
+        let env = makeEnvironment(
             preview: false,
             captureMonitoringService: captureMonitoringService,
             virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: scenario),
             startupPlan: .init(
-                shouldRestoreVirtualDisplays: true,
-                postRestoreConfiguration: { controller in
-                    controller.applyUITestPresentationState(scenario: scenario)
-                }
+                shouldRestoreVirtualDisplays: true
             )
         )
+        env.virtualDisplay.applyUITestPresentationState(scenario: scenario)
+        return env
     }
 
     package static func makeEnvironment(
@@ -402,6 +398,7 @@ package enum AppBootstrap {
             captureCommander: displayRuntimeCaptureAdapter,
             captureIntentCommander: displayRuntimeCaptureAdapter,
             virtualDisplayCommander: displayRuntimeVirtualDisplayAdapter,
+            startupRestoreCommander: displayRuntimeVirtualDisplayAdapter,
             observabilityRecorder: displayRuntimeObservabilityAdapter
         )
         displayRuntimeSharingAdapter.configureLANWebViewDemandSync(runtime: displayRuntime)
@@ -482,7 +479,7 @@ package enum AppBootstrap {
             )
         }
 
-        let startupObservabilityTask = Task {
+        let startupObservabilityTask = Task { @MainActor in
             await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: displayRuntime))
             )
@@ -492,6 +489,9 @@ package enum AppBootstrap {
             await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(PersistenceSnapshotProvider(context: persistenceContext))
             )
+            if !preview, resolvedStartupPlan.shouldRestoreVirtualDisplays {
+                _ = await displayRuntime.restoreStartupVirtualDisplays(source: .startup)
+            }
             await observability.refreshSnapshot(reason: .startup)
         }
 
@@ -511,13 +511,6 @@ package enum AppBootstrap {
             feedbackController: feedbackController,
             startupObservabilityTask: startupObservabilityTask
         )
-
-        guard !preview else { return env }
-
-        if resolvedStartupPlan.shouldRestoreVirtualDisplays {
-            virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
-            resolvedStartupPlan.postRestoreConfiguration?(virtualDisplay)
-        }
 
         return env
     }

@@ -3,7 +3,7 @@ import VoidDisplayRuntime
 import VoidDisplayVirtualDisplay
 
 @MainActor
-package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDisplayProviding, DisplayRuntimeVirtualDisplayCommanding {
+package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDisplayProviding, DisplayRuntimeVirtualDisplayCommanding, DisplayRuntimeStartupRestoreCommanding {
     private weak var controller: VirtualDisplayController?
 
     package init(controller: VirtualDisplayController) {
@@ -174,6 +174,30 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
                 )
             )
         }
+    }
+
+    package func loadPersistedVirtualDisplayConfigsForStartupRestore()
+        async -> DisplayRuntimeStartupRestoreConfigLoadResult
+    {
+        guard let controller else {
+            return .failed(reason: "virtual_display_controller_unavailable")
+        }
+        let result = controller.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
+        return DisplayRuntimeStartupRestoreConfigLoadResult(lowerResult: result)
+    }
+
+    package func restoreVirtualDisplayForStartup(
+        request: DisplayRuntimeStartupRestoreCommandRequest
+    ) async throws -> DisplayRuntimeStartupRestoreCommandResult {
+        guard let controller else {
+            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
+        }
+        let lowerRequest = VirtualDisplayStartupRestoreCommandRequest(runtimeRequest: request)
+        let result = controller.restoreVirtualDisplayForStartupCommand(lowerRequest)
+        return DisplayRuntimeStartupRestoreCommandResult(
+            runtimeRequest: request,
+            lowerResult: result
+        )
     }
 }
 

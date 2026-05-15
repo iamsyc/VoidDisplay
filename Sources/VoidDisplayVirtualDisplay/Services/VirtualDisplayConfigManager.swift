@@ -54,18 +54,26 @@ package final class VirtualDisplayConfigManager {
         restoreFailures
     }
 
-    package func loadPersistedConfigs() {
+    @discardableResult
+    package func loadPersistedConfigs() -> VirtualDisplayStartupRestoreConfigLoadResult {
         switch configRepository.load() {
         case .success(let loaded):
             configs = loaded
             AppLog.virtualDisplay.notice(
                 "Virtual display config load succeeded (\(self.configRepository.diagnosticsSummary, privacy: .public), configCount: \(loaded.count, privacy: .public))."
             )
+            return .succeeded(configs: loaded.map(VirtualDisplayStartupRestoreConfig.init(config:)))
         case .failure(let error):
             configs = []
             restoreFailures = []
             AppLog.virtualDisplay.error(
                 "Virtual display config load failed (\(self.configRepository.diagnosticsSummary, privacy: .public)): \(String(describing: error), privacy: .public)"
+            )
+            let nsError = error as NSError
+            return .failed(
+                reason: "startup_persisted_config_load_failed",
+                underlyingDomain: nsError.domain,
+                underlyingCode: nsError.code
             )
         }
     }
@@ -218,4 +226,30 @@ package final class VirtualDisplayConfigManager {
         configs = candidate
     }
 
+}
+
+private extension VirtualDisplayStartupRestoreConfig {
+    init(config: VirtualDisplayConfig) {
+        self.init(
+            id: config.id,
+            desiredEnabled: config.desiredEnabled,
+            evidence: VirtualDisplayCommandConfigEvidence(config: config)
+        )
+    }
+}
+
+private extension VirtualDisplayCommandConfigEvidence {
+    init(config: VirtualDisplayConfig) {
+        let maxPixels = config.maxPixelDimensions
+        self.init(
+            id: config.id,
+            serialNumber: config.serialNum,
+            desiredEnabled: config.desiredEnabled,
+            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
+            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
+            modeCount: config.modes.count,
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
+        )
+    }
 }

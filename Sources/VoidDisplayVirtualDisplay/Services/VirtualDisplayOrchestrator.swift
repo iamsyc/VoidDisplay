@@ -194,19 +194,78 @@ package final class VirtualDisplayOrchestrator {
 
     // MARK: - Load / Restore / Reset
 
-    package func loadPersistedConfigs() {
+    package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
         configManager.loadPersistedConfigs()
     }
 
-    package func restoreDesiredVirtualDisplays() {
+    package func loadPersistedConfigs() {
+        _ = configManager.loadPersistedConfigs()
+    }
+
+    package func restoreVirtualDisplayForStartupCommand(
+        _ request: VirtualDisplayStartupRestoreCommandRequest
+    ) -> VirtualDisplayStartupRestoreCommandResult {
         guard case .ready = configManager.configStoreState else {
             AppLog.virtualDisplay.error(
-                "Skip restoring desired virtual displays because config store is in load-failed state."
+                "Skip startup virtual display restore because config store is in load-failed state."
             )
-            configManager.clearRestoreFailures()
-            return
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "startup_config_store_unavailable"
+            )
         }
-        configManager.setRestoreFailures(collectRestoreFailures(from: configManager.allConfigs()))
+
+        guard let config = configManager.config(id: request.configID) else {
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "config_not_found"
+            )
+        }
+
+        guard config.desiredEnabled else {
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .notAttempted,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "config_not_desired_enabled"
+            )
+        }
+
+        let preDisplayID = runtimeTracker.runtimeDisplayID(for: request.configID)
+        do {
+            let record = try runtimeTracker.createRuntimeDisplay(from: config)
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: preDisplayID,
+                postDisplayID: record.displayID,
+                restoreOutcome: .succeeded,
+                didProduceVerifiableSideEffect: true,
+                failureReason: nil
+            )
+        } catch {
+            let nsError = error as NSError
+            AppLog.virtualDisplay.error(
+                "Startup virtual display restore failed (config: \(request.configID.uuidString, privacy: .public), serial: \(request.configEvidence.serialNumber, privacy: .public), errorDomain: \(nsError.domain, privacy: .public), errorCode: \(nsError.code, privacy: .public))."
+            )
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: preDisplayID,
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "startup_restore_lower_command_failed"
+            )
+        }
     }
 
     package func clearRestoreFailures() {
@@ -786,31 +845,6 @@ package final class VirtualDisplayOrchestrator {
         )
     }
 
-    // MARK: - Restore helpers
-
-    private func collectRestoreFailures(from configs: [VirtualDisplayConfig]) -> [VirtualDisplayRestoreFailure] {
-        var failures: [VirtualDisplayRestoreFailure] = []
-        for config in configs where config.desiredEnabled {
-            do {
-                _ = try runtimeTracker.createRuntimeDisplay(from: config)
-            } catch {
-                let message = error.localizedDescription
-                AppLog.persistence.error(
-                    "Restore virtual display failed (serial: \(config.serialNum, privacy: .public), name: \(config.displayName, privacy: .public)): \(message, privacy: .public)"
-                )
-                failures.append(
-                    .init(
-                        id: config.id,
-                        name: config.displayName,
-                        serialNum: config.serialNum,
-                        message: message
-                    )
-                )
-            }
-        }
-        return failures
-    }
-
     // MARK: - Logging
 
     private func logTopologySnapshot(
@@ -848,6 +882,27 @@ package final class VirtualDisplayOrchestrator {
     private func elapsedMilliseconds(since startNanoseconds: UInt64) -> UInt64 {
         let now = DispatchTime.now().uptimeNanoseconds
         return now >= startNanoseconds ? (now - startNanoseconds) / 1_000_000 : 0
+    }
+
+    private func startupRestoreCommandResult(
+        request: VirtualDisplayStartupRestoreCommandRequest,
+        preDisplayID: CGDirectDisplayID?,
+        postDisplayID: CGDirectDisplayID?,
+        restoreOutcome: VirtualDisplayStartupRestoreCommandOutcome,
+        didProduceVerifiableSideEffect: Bool,
+        failureReason: String?
+    ) -> VirtualDisplayStartupRestoreCommandResult {
+        VirtualDisplayStartupRestoreCommandResult(
+            transactionID: request.transactionID,
+            configID: request.configID,
+            preDisplayID: preDisplayID,
+            postDisplayID: postDisplayID,
+            restoreOutcome: restoreOutcome,
+            didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
+            failureReason: failureReason,
+            runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
+            managedDisplaysAfterCommand: snapshot.managedDisplays
+        )
     }
 
     // MARK: - Lifecycle

@@ -42,9 +42,44 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         self.runningConfigIds = Set(fixtureConfigs.prefix(1).map(\.id))
     }
 
-    package func loadPersistedConfigs() {}
+    package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
+        .succeeded(configs: configs.map(VirtualDisplayStartupRestoreConfig.init(config:)))
+    }
 
-    package func restoreDesiredVirtualDisplays() {}
+    package func restoreVirtualDisplayForStartupCommand(
+        _ request: VirtualDisplayStartupRestoreCommandRequest
+    ) -> VirtualDisplayStartupRestoreCommandResult {
+        let preDisplayID = runtimeDisplayIDs()[request.configID]
+        guard let config = configs.first(where: { $0.id == request.configID }) else {
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: preDisplayID,
+                postDisplayID: preDisplayID,
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "config_not_found"
+            )
+        }
+        guard config.desiredEnabled else {
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: preDisplayID,
+                postDisplayID: preDisplayID,
+                restoreOutcome: .notAttempted,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "config_not_desired_enabled"
+            )
+        }
+        runningConfigIds.insert(config.id)
+        return startupRestoreCommandResult(
+            request: request,
+            preDisplayID: preDisplayID,
+            postDisplayID: runtimeDisplayIDs()[request.configID],
+            restoreOutcome: .succeeded,
+            didProduceVerifiableSideEffect: true,
+            failureReason: nil
+        )
+    }
 
     package var snapshot: VirtualDisplaySnapshot {
         let runtimeDisplayIDByConfigId = runtimeDisplayIDs()
@@ -310,5 +345,52 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
             map[configID] = index == 0 ? CGMainDisplayID() : CGDirectDisplayID(10_000 + index)
         }
         return map
+    }
+
+    private func startupRestoreCommandResult(
+        request: VirtualDisplayStartupRestoreCommandRequest,
+        preDisplayID: CGDirectDisplayID?,
+        postDisplayID: CGDirectDisplayID?,
+        restoreOutcome: VirtualDisplayStartupRestoreCommandOutcome,
+        didProduceVerifiableSideEffect: Bool,
+        failureReason: String?
+    ) -> VirtualDisplayStartupRestoreCommandResult {
+        VirtualDisplayStartupRestoreCommandResult(
+            transactionID: request.transactionID,
+            configID: request.configID,
+            preDisplayID: preDisplayID,
+            postDisplayID: postDisplayID,
+            restoreOutcome: restoreOutcome,
+            didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
+            failureReason: failureReason,
+            runningConfigIDsAfterCommand: Array(runningConfigIds),
+            managedDisplaysAfterCommand: snapshot.managedDisplays
+        )
+    }
+}
+
+private extension VirtualDisplayStartupRestoreConfig {
+    init(config: VirtualDisplayConfig) {
+        self.init(
+            id: config.id,
+            desiredEnabled: config.desiredEnabled,
+            evidence: VirtualDisplayCommandConfigEvidence(config: config)
+        )
+    }
+}
+
+private extension VirtualDisplayCommandConfigEvidence {
+    init(config: VirtualDisplayConfig) {
+        let maxPixels = config.maxPixelDimensions
+        self.init(
+            id: config.id,
+            serialNumber: config.serialNum,
+            desiredEnabled: config.desiredEnabled,
+            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
+            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
+            modeCount: config.modes.count,
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
+        )
     }
 }

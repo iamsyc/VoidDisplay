@@ -27,7 +27,7 @@ struct VirtualDisplayControllerTests {
             virtualDisplayFacade: virtualDisplay
         )
 
-        env.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
+        _ = env.virtualDisplay.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
 
         #expect(env.virtualDisplay.configStorePresentation.hasLoadFailure)
         #expect(
@@ -304,8 +304,6 @@ struct VirtualDisplayControllerTests {
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
-        sut.virtualDisplay.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()
-
         let moved = try sut.virtualDisplay.moveDisplayConfig(configC.id, direction: .up)
         #expect(moved)
 
