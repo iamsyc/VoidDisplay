@@ -133,6 +133,19 @@ package struct HomeView: View {
                     }
                 }
                 .id(detailIdentity)
+                .toolbar {
+                    if shouldShowDisplayOverviewToolbarButton {
+                        ToolbarItem {
+                            Button {
+                                showDisplaysOverview()
+                            } label: {
+                                Label("Displays Overview", systemImage: "chevron.left")
+                            }
+                            .help(Text("Displays Overview"))
+                            .accessibilityIdentifier("displays_overview_toolbar_button")
+                        }
+                    }
+                }
             }
         }
         .onAppear {
@@ -234,6 +247,10 @@ package struct HomeView: View {
         case .diagnostics:
             "diagnostics"
         }
+    }
+
+    private var shouldShowDisplayOverviewToolbarButton: Bool {
+        (navigation.sidebarSelection ?? .screen) == .screen && displayDestination != .overview
     }
 
     private func showDisplaysOverview() {

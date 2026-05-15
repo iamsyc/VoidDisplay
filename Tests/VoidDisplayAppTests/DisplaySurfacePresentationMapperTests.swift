@@ -117,32 +117,31 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.isSharing)
         #expect(surface.canStopMonitor)
         #expect(surface.canStopLANWebViewSharing)
-        #expect(primaryIDs(in: surface) == [
-            "kind",
-            "resolution",
+        #expect(compactIDs(in: surface) == [
             "virtualDisplay",
             "monitor",
-            "lanWebView",
+            "webView",
             "viewerCount",
             "issue"
         ])
-        #expect(primaryValue("displays_resolution_status", in: surface) == "1920 × 1080 pixels")
-        #expect(primaryValue("displays_virtual_display_status", in: surface) == "Enabled, Live, Idle")
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Monitoring")
-        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Sharing")
-        #expect(primaryValue("displays_viewer_count", in: surface) == "3")
-        #expect(primaryValue("displays_issue_status", in: surface) == "Normal")
+        #expect(!compactIDs(in: surface).contains("kind"))
+        #expect(!compactIDs(in: surface).contains("resolution"))
+        #expect(compactValue("displays_virtual_display_status", in: surface) == "Enabled")
+        #expect(compactValue("displays_monitor_status", in: surface) == "Monitoring")
+        #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
+        #expect(compactValue("displays_viewer_count", in: surface) == "3")
+        #expect(compactValue("displays_issue_status", in: surface) == "Normal")
         #expect(surface.accessibilitySummary.contains("Monitor: Monitoring"))
-        #expect(surface.accessibilitySummary.contains("LAN Web View: Sharing"))
-        #expect(surface.accessibilitySummary.contains("Active Viewers: 3"))
+        #expect(surface.accessibilitySummary.contains("Web View: Sharing"))
+        #expect(surface.accessibilitySummary.contains("Viewers: 3"))
         #expect(surface.accessibilitySummary.contains("Issue: Normal"))
-        let manageAction = try #require(rowAction(.manageVirtualDisplay, in: surface))
-        #expect(manageAction.isEnabled)
+        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let stopMonitorAction = try #require(rowAction(.stopMonitor, in: surface))
         #expect(stopMonitorAction.title == "Stop Monitor")
         #expect(stopMonitorAction.isEnabled)
         let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
-        #expect(stopLANWebViewAction.title == "Stop LAN Web View")
+        #expect(stopLANWebViewAction.title == "Stop Web View")
+        #expect(stopLANWebViewAction.help == "Stop LAN Web View")
         #expect(stopLANWebViewAction.isEnabled)
         #expect(technicalValue("displays_capture_intent_status", in: surface) == "Capture, Attach, Applied")
         #expect(technicalValue("displays_lease_status", in: surface) == "2 of 2 active")
@@ -152,7 +151,7 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(identityText.hasPrefix("ID hash "))
         #expect(!identityText.contains(configID.uuidString))
         #expect(!identityText.contains(String(displayID)))
-        assertPrimaryStatusDoesNotExposeRuntimeTerms(surface)
+        assertCompactStatusDoesNotExposeRuntimeTerms(surface)
         #expect(technicalTitles(in: surface) == [
             "Display Identifier",
             "Capture State",
@@ -205,14 +204,15 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.kindText == "Physical auxiliary")
         #expect(surface.hasFailure)
         #expect(!surface.canStopMonitor)
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Failed")
-        #expect(primaryValue("displays_issue_status", in: surface) == "Needs attention")
+        #expect(compactValue("displays_monitor_status", in: surface) == "Failed")
+        #expect(compactValue("displays_issue_status", in: surface) == "Needs attention")
+        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let openMonitorAction = try #require(rowAction(.openMonitor, in: surface))
         #expect(openMonitorAction.isEnabled)
         #expect(rowAction(.stopMonitor, in: surface) == nil)
         #expect(technicalValue("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
         #expect(!technicalValue("displays_surface_identity_value", in: surface).contains(String(displayID)))
-        assertPrimaryStatusDoesNotExposeRuntimeTerms(surface)
+        assertCompactStatusDoesNotExposeRuntimeTerms(surface)
     }
 
     @Test func surfaceFactsWithoutRuntimeDemandDoNotEnableControlState() throws {
@@ -303,12 +303,15 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.isSharing)
         #expect(!surface.canStopMonitor)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Not Monitoring")
-        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Route ready")
-        #expect(primaryValue("displays_viewer_count", in: surface) == "2")
+        #expect(compactValue("displays_monitor_status", in: surface) == "Not Monitoring")
+        #expect(compactValue("displays_lan_web_view_status", in: surface) == "Route ready")
+        #expect(compactValue("displays_viewer_count", in: surface) == "2")
+        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let openMonitorAction = try #require(rowAction(.openMonitor, in: surface))
         #expect(openMonitorAction.isEnabled)
         let openLANWebViewAction = try #require(rowAction(.openLANWebView, in: surface))
+        #expect(openLANWebViewAction.title == "Web View")
+        #expect(openLANWebViewAction.help == "Open LAN Web View")
         #expect(openLANWebViewAction.isEnabled)
         #expect(rowAction(.stopMonitor, in: surface) == nil)
         #expect(rowAction(.stopLANWebView, in: surface) == nil)
@@ -381,8 +384,9 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.isSharing)
         #expect(!surface.canStopMonitor)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Monitoring")
-        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Sharing")
+        #expect(compactValue("displays_monitor_status", in: surface) == "Monitoring")
+        #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
+        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let stopMonitorAction = try #require(rowAction(.stopMonitor, in: surface))
         #expect(!stopMonitorAction.isEnabled)
         let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
@@ -391,8 +395,8 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(technicalValue("displays_lease_status", in: surface) == "No attachments")
     }
 
-    private func primaryIDs(in surface: DisplaySurfacePresentation) -> [String] {
-        surface.primaryStatusItems.map(\.id)
+    private func compactIDs(in surface: DisplaySurfacePresentation) -> [String] {
+        surface.compactStatusItems.map(\.id)
     }
 
     private func rowAction(
@@ -402,11 +406,11 @@ struct DisplaySurfacePresentationMapperTests {
         surface.rowActions.first { $0.kind == kind }
     }
 
-    private func primaryValue(
+    private func compactValue(
         _ accessibilityIdentifier: String,
         in surface: DisplaySurfacePresentation
     ) -> String {
-        value(accessibilityIdentifier, in: surface.primaryStatusItems)
+        value(accessibilityIdentifier, in: surface.compactStatusItems)
     }
 
     private func technicalValue(
@@ -429,13 +433,15 @@ struct DisplaySurfacePresentationMapperTests {
         surface.technicalStatusItems.map(\.title)
     }
 
-    private func assertPrimaryStatusDoesNotExposeRuntimeTerms(
+    private func assertCompactStatusDoesNotExposeRuntimeTerms(
         _ surface: DisplaySurfacePresentation
     ) {
-        let combinedPrimaryStatusText = surface.primaryStatusItems.flatMap { item in
+        let combinedCompactStatusText = surface.compactStatusItems.flatMap { item in
             [item.title, item.value]
         }.joined(separator: "\n")
         for forbiddenTerm in [
+            "Display Type",
+            "Resolution",
             "Display Identity",
             "Effective Capture Intent",
             "Lease Status",
@@ -443,8 +449,16 @@ struct DisplaySurfacePresentationMapperTests {
             "Monitor Consumer",
             "LAN Web View Consumer"
         ] {
-            #expect(!combinedPrimaryStatusText.contains(forbiddenTerm))
+            #expect(!combinedCompactStatusText.contains(forbiddenTerm))
         }
+    }
+
+    private func assertRowActionsDoNotContainManageVirtualDisplay(
+        _ surface: DisplaySurfacePresentation
+    ) {
+        #expect(!surface.rowActions.contains {
+            $0.accessibilityIdentifier == "displays_action_manage_virtual_display"
+        })
     }
 
     private func makeLease(

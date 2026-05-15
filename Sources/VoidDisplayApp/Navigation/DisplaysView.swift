@@ -52,6 +52,8 @@ package struct DisplaysView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: AppUI.Spacing.large) {
+                displaysHeader
+
                 if presentation.surfaces.isEmpty {
                     displayEmptyState
                 } else {
@@ -65,6 +67,18 @@ package struct DisplaysView: View {
         .toolbar {
             ToolbarItem {
                 Button {
+                    surfaceActions.manageVirtualDisplay()
+                } label: {
+                    Label("Manage Virtual Display", systemImage: "display.2")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help(Text("Manage Virtual Display"))
+                .accessibilityIdentifier("displays_action_manage_virtual_display")
+            }
+
+            ToolbarItem {
+                Button {
                     openDisplaySettings()
                 } label: {
                     Label("Open System Settings", systemImage: "gearshape")
@@ -75,16 +89,18 @@ package struct DisplaysView: View {
         }
     }
 
+    private var displaysHeader: some View {
+        HStack(spacing: AppUI.Spacing.small) {
+            Image(systemName: "display")
+                .foregroundStyle(.secondary)
+            Text("Displays")
+                .font(.headline)
+        }
+        .accessibilityIdentifier("displays_surface_list")
+    }
+
     private func surfaceList(_ surfaces: [DisplaySurfacePresentation]) -> some View {
         LazyVStack(alignment: .leading, spacing: AppUI.List.sectionSpacing) {
-            HStack(spacing: AppUI.Spacing.small) {
-                Image(systemName: "display")
-                    .foregroundStyle(.secondary)
-                Text("Displays")
-                    .font(.headline)
-            }
-            .accessibilityIdentifier("displays_surface_list")
-
             ForEach(surfaces) { surface in
                 DisplaySurfaceManagementCard(
                     model: rowModel(for: surface),
@@ -103,9 +119,7 @@ package struct DisplaysView: View {
             id: surface.id,
             title: surface.title,
             subtitle: surface.subtitle,
-            status: surface.hasFailure
-                ? AppRowStatus(title: String(localized: "Needs attention"), tint: .red)
-                : nil,
+            status: nil,
             metaBadges: rowBadges(for: surface),
             iconSystemName: surface.isManagedVirtualDisplay ? "display.2" : "display",
             iconScreenTint: DisplayIconTintResolver.resolve(
@@ -118,22 +132,12 @@ package struct DisplaysView: View {
     }
 
     private func rowBadges(for surface: DisplaySurfacePresentation) -> [AppBadgeModel] {
-        var badges = [
+        [
             AppBadgeModel(
                 title: surface.kindText,
                 style: .roundedTag(tint: surface.isManagedVirtualDisplay ? .blue : .gray)
             )
         ]
-        if surface.isMonitoring {
-            badges.append(AppBadgeModel(title: String(localized: "Monitor"), style: .roundedTag(tint: .green)))
-        }
-        if surface.isSharing {
-            badges.append(AppBadgeModel(title: String(localized: "LAN Web View"), style: .roundedTag(tint: .orange)))
-        }
-        if surface.hasFailure {
-            badges.append(AppBadgeModel(title: String(localized: "Failure"), style: .roundedTag(tint: .red)))
-        }
-        return badges
     }
 
     @MainActor
@@ -142,8 +146,6 @@ package struct DisplaysView: View {
         for surface: DisplaySurfacePresentation
     ) {
         switch action.kind {
-        case .manageVirtualDisplay:
-            surfaceActions.manageVirtualDisplay()
         case .openMonitor:
             surfaceActions.openMonitor()
         case .stopMonitor:
@@ -195,10 +197,8 @@ private struct DisplaySurfaceManagementCard: View {
     @State private var isTechnicalDetailsExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
             headerAndActions
-
-            DisplaySurfaceStatusGrid(items: surface.primaryStatusItems)
 
             DisclosureGroup(isExpanded: $isTechnicalDetailsExpanded) {
                 DisplaySurfaceStatusGrid(items: surface.technicalStatusItems)
@@ -209,9 +209,9 @@ private struct DisplaySurfaceManagementCard: View {
             }
             .accessibilityIdentifier("displays_technical_details")
         }
-        .frame(minHeight: AppUI.List.rowMinHeight + 84)
+        .frame(minHeight: AppUI.List.rowMinHeight + 34)
         .padding(.horizontal, AppUI.List.rowHorizontalInset)
-        .padding(.vertical, AppUI.List.rowVerticalInset + 3)
+        .padding(.vertical, AppUI.List.rowVerticalInset + 1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .appInteractiveCardStyle(isHovered: isHovered)
         .onHover { hovered in
@@ -223,14 +223,18 @@ private struct DisplaySurfaceManagementCard: View {
 
     private var headerAndActions: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: AppUI.Spacing.medium) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                 identityBlock
+                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 320, alignment: .leading)
+                DisplaySurfaceCompactStatusLine(items: surface.compactStatusItems)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: AppUI.Spacing.medium)
                 actionBar(alignment: .trailing)
             }
 
-            VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
                 identityBlock
+                DisplaySurfaceCompactStatusLine(items: surface.compactStatusItems)
                 actionBar(alignment: .leading)
             }
         }
@@ -278,7 +282,7 @@ private struct DisplaySurfaceManagementCard: View {
                 }
             }
         }
-        .frame(maxWidth: 520, alignment: alignment == .trailing ? .trailing : .leading)
+        .frame(maxWidth: 320, alignment: alignment == .trailing ? .trailing : .leading)
     }
 
     private func rowActionButton(_ action: DisplaySurfaceRowActionPresentation) -> some View {
@@ -297,7 +301,7 @@ private struct DisplaySurfaceManagementCard: View {
         .tint(action.isDestructive ? .red : nil)
         .fixedSize(horizontal: true, vertical: false)
         .disabled(!action.isEnabled)
-        .help(Text(action.title))
+        .help(Text(action.help))
         .accessibilityLabel(Text(action.title))
         .accessibilityIdentifier(action.accessibilityIdentifier)
     }
@@ -323,6 +327,76 @@ private struct DisplaySurfaceIconTile: View {
                 .foregroundStyle(.secondary)
                 .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
                 .appTileStyle()
+        }
+    }
+}
+
+private struct DisplaySurfaceCompactStatusLine: View {
+    let items: [DisplaySurfaceStatusItemPresentation]
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 108), spacing: 6, alignment: .leading)
+    ]
+
+    var body: some View {
+        LazyVGrid(
+            columns: columns,
+            alignment: .leading,
+            spacing: 6
+        ) {
+            ForEach(items) { item in
+                DisplaySurfaceCompactStatusPill(item: item)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("displays_compact_status_line")
+    }
+}
+
+private struct DisplaySurfaceCompactStatusPill: View {
+    let item: DisplaySurfaceStatusItemPresentation
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(item.title)
+                .foregroundStyle(.secondary)
+            Text(item.value)
+                .fontWeight(.semibold)
+                .foregroundStyle(item.tone.tint)
+        }
+        .font(.caption)
+        .lineLimit(1)
+        .padding(.horizontal, AppUI.Spacing.small - 1)
+        .padding(.vertical, AppUI.Spacing.xSmall)
+        .background(
+            item.tone.tint.opacity(colorScheme == .dark ? 0.18 : 0.10),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(item.tone.tint.opacity(colorScheme == .dark ? 0.28 : 0.20), lineWidth: AppUI.Stroke.subtle)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(item.title): \(item.value)"))
+        .accessibilityIdentifier(item.accessibilityIdentifier)
+    }
+}
+
+private extension DisplaySurfaceStatusTone {
+    var tint: Color {
+        switch self {
+        case .neutral:
+            .gray
+        case .info:
+            .blue
+        case .success:
+            .green
+        case .warning:
+            .orange
+        case .danger:
+            .red
         }
     }
 }

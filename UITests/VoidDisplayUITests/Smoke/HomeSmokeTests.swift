@@ -36,6 +36,8 @@ final class HomeSmokeTests: XCTestCase {
                 "detail_displays",
                 "displays_shell",
                 "displays_surface_list",
+                "displays_compact_status_line",
+                "displays_virtual_display_status",
                 "display_surface_row",
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
@@ -61,7 +63,7 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 1.5
         )
 
-        displaysSidebar.tap()
+        returnToDisplaysOverviewFromToolbar(in: app)
         assertAllExist(
             app,
             identifiers: ["detail_displays", "displays_action_open_monitor"],
@@ -74,7 +76,7 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 1.5
         )
 
-        displaysSidebar.tap()
+        openDisplaysFromSidebar(in: app)
         assertAllExist(
             app,
             identifiers: ["detail_displays", "displays_action_open_lan_web_view"],
@@ -106,7 +108,7 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 1.5
         )
 
-        displaysSidebar.tap()
+        returnToDisplaysOverviewFromToolbar(in: app)
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_monitor")
         let didShowMonitorDetail = waitForIdentifierByPolling(
             app,
@@ -127,7 +129,7 @@ final class HomeSmokeTests: XCTestCase {
             """.trimmingCharacters(in: .whitespacesAndNewlines)
         )
 
-        displaysSidebar.tap()
+        openDisplaysFromSidebar(in: app)
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
         assertAllExist(
             app,
@@ -153,8 +155,7 @@ final class HomeSmokeTests: XCTestCase {
                 "detail_displays",
                 "displays_surface_list",
                 "display_surface_row",
-                "displays_surface_kind_value",
-                "displays_resolution_status",
+                "displays_compact_status_line",
                 "displays_virtual_display_status",
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
@@ -165,8 +166,16 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 6
         )
         assertDisplaysSurfaceStatusArea(in: app)
+        assertDisplaysHeaderActionArea(in: app)
         assertDisplaysSurfaceActionArea(in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
 
+        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
+        assertAllExist(app, identifiers: ["detail_virtual_display"], timeout: 1.5)
+
+        returnToDisplaysOverviewFromToolbar(in: app)
+        assertDisplaysSurfaceActionArea(in: app)
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_monitor")
         assertAllExist(app, identifiers: ["detail_monitor_screen"], timeout: 1.5)
 
@@ -174,11 +183,6 @@ final class HomeSmokeTests: XCTestCase {
         assertDisplaysSurfaceActionArea(in: app)
         tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
         assertAllExist(app, identifiers: ["detail_lan_web_view"], timeout: 1.5)
-
-        openDisplaysFromSidebar(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
-        assertAllExist(app, identifiers: ["detail_virtual_display"], timeout: 1.5)
 
         openDisplaysFromSidebar(in: app)
         assertDisplaysSurfaceActionArea(in: app)
@@ -190,6 +194,8 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
+                "displays_compact_status_line",
+                "displays_virtual_display_status",
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
@@ -198,6 +204,25 @@ final class HomeSmokeTests: XCTestCase {
             ],
             timeout: 1.5
         )
+        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
+    }
+
+    @MainActor
+    private func assertDisplaysHeaderActionArea(in app: XCUIApplication) {
+        assertAllExist(
+            app,
+            identifiers: [
+                "displays_action_manage_virtual_display"
+            ],
+            timeout: 1.5
+        )
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifier: "displays_action_manage_virtual_display")
+                .count,
+            1
+        )
     }
 
     @MainActor
@@ -205,7 +230,6 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
-                "displays_action_manage_virtual_display",
                 "displays_action_open_monitor",
                 "displays_action_open_lan_web_view"
             ],
@@ -217,13 +241,33 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     private func openDisplaysFromSidebar(in app: XCUIApplication) {
-        smokeElement(app, identifier: "sidebar_displays").tap()
+        let overviewButton = smokeElement(app, identifier: "displays_overview_toolbar_button")
+        if overviewButton.waitForExistence(timeout: 0.3) {
+            overviewButton.tap()
+        } else {
+            smokeElement(app, identifier: "sidebar_displays").tap()
+        }
         assertAllExist(
             app,
             identifiers: [
                 "detail_displays",
                 "displays_surface_list",
                 "display_surface_row"
+            ],
+            timeout: 1.5
+        )
+    }
+
+    @MainActor
+    private func returnToDisplaysOverviewFromToolbar(in app: XCUIApplication) {
+        tapIdentifier(app, identifier: "displays_overview_toolbar_button", timeout: 1.5)
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_displays",
+                "displays_surface_list",
+                "display_surface_row",
+                "displays_action_manage_virtual_display"
             ],
             timeout: 1.5
         )

@@ -522,6 +522,16 @@
         }
       }
     },
+    "Stop Web View" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 Web 查看"
+          }
+        }
+      }
+    },
     "Stop Monitor" : {
       "localizations" : {
         "zh-Hans" : {
@@ -801,7 +811,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在系统设置中允许录屏权限，以便监听屏幕。"
+            "value" : "请在系统设置中允许录屏权限，以便监看屏幕。"
           }
         }
       }
@@ -889,7 +899,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要关注"
+            "value" : "需要处理"
           }
         }
       }
@@ -1010,7 +1020,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择屏幕监听与共享在流畅度和资源占用之间的平衡方式。"
+            "value" : "选择屏幕监看与共享在流畅度和资源占用之间的平衡方式。"
           }
         }
       }
@@ -1452,6 +1462,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示器"
+          }
+        }
+      }
+    },
+    "Displays Overview" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器总览"
           }
         }
       }
@@ -2196,7 +2216,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "监听"
+            "value" : "监看"
           }
         }
       }
@@ -2207,7 +2227,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "监听中"
+            "value" : "监看中"
           }
         }
       }
@@ -2262,7 +2282,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前没有可监听的显示器。"
+            "value" : "当前没有可监看的显示器。"
           }
         }
       }
@@ -2370,7 +2390,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无可监听的屏幕"
+            "value" : "无可监看的屏幕"
           }
         }
       }
@@ -2381,7 +2401,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未监听"
+            "value" : "未监看"
           }
         }
       }
@@ -3345,7 +3365,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共享"
+            "value" : "共享中"
           }
         }
       }
@@ -3841,6 +3861,16 @@
         }
       }
     },
+    "Viewers" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "观看者"
+          }
+        }
+      }
+    },
     "Virtual Display Config File Unavailable" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3891,7 +3921,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 监听器意外停止。"
+            "value" : "Web 服务意外停止。"
           }
         }
       }
@@ -3902,7 +3932,17 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web 监听器被意外取消。"
+            "value" : "Web 服务被意外取消。"
+          }
+        }
+      }
+    },
+    "Web View" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 查看"
           }
         }
       }
