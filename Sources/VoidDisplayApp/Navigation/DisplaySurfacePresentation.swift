@@ -308,9 +308,9 @@ package enum DisplaySurfacePresentationMapper {
     private static func title(for surface: DisplaySurface) -> String {
         switch surface.kind {
         case .managedVirtualDisplay:
-            String(localized: "Managed Virtual Display")
+            String(localized: "Virtual Display")
         case .physicalDisplay:
-            String(localized: "Physical Auxiliary Display")
+            String(localized: "Physical Display")
         }
     }
 
@@ -321,9 +321,9 @@ package enum DisplaySurfacePresentationMapper {
     private static func kindText(for surface: DisplaySurface) -> String {
         switch surface.kind {
         case .managedVirtualDisplay:
-            String(localized: "Managed virtual")
+            String(localized: "Virtual Display")
         case .physicalDisplay:
-            String(localized: "Physical auxiliary")
+            String(localized: "Physical Display")
         }
     }
 
@@ -359,7 +359,7 @@ package enum DisplaySurfacePresentationMapper {
         for state: DisplayRuntimeManagedVirtualDisplaySurfaceState?
     ) -> (value: String, tone: DisplaySurfaceStatusTone) {
         guard let state else {
-            return (String(localized: "Not managed"), .neutral)
+            return (String(localized: "Physical Display"), .neutral)
         }
         if state.hasRebuildFailure || state.hasRestoreFailure {
             return (String(localized: "Needs attention"), .danger)

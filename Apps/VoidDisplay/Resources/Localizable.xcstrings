@@ -312,26 +312,6 @@
         }
       }
     },
-    "Managed Virtual Display" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "托管虚拟显示器"
-          }
-        }
-      }
-    },
-    "Managed virtual" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "托管虚拟"
-          }
-        }
-      }
-    },
     "No active capture" : {
       "localizations" : {
         "zh-Hans" : {
@@ -392,16 +372,6 @@
         }
       }
     },
-    "Not managed" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未托管"
-          }
-        }
-      }
-    },
     "Open LAN Web View" : {
       "localizations" : {
         "zh-Hans" : {
@@ -438,26 +408,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "性能模式已变化"
-          }
-        }
-      }
-    },
-    "Physical Auxiliary Display" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "物理辅助显示器"
-          }
-        }
-      }
-    },
-    "Physical auxiliary" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "物理辅助"
           }
         }
       }
@@ -2364,12 +2314,12 @@
         }
       }
     },
-    "No Managed Virtual Display" : {
+    "No Virtual Display" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没有托管虚拟显示器"
+            "value" : "没有虚拟显示器"
           }
         }
       }

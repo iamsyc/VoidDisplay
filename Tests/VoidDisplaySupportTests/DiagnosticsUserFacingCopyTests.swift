@@ -21,7 +21,15 @@ struct DiagnosticsUserFacingCopyTests {
             "Lease Status",
             "Last Failure Code",
             "Monitor Consumer",
-            "LAN Web View Consumer"
+            "LAN Web View Consumer",
+            "Not managed",
+            "未托管",
+            "Managed virtual",
+            "Managed Virtual Display",
+            "托管虚拟",
+            "托管虚拟显示器",
+            "Physical auxiliary",
+            "Physical Auxiliary Display"
         ]
 
         let localizableURL = repositoryRoot

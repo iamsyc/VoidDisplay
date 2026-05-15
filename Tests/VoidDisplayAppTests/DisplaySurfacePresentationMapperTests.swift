@@ -111,8 +111,9 @@ struct DisplaySurfacePresentationMapperTests {
         let presentation = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot)
         let surface = try #require(presentation.surfaces.first)
 
-        #expect(surface.title == "Managed Virtual Display")
-        #expect(surface.kindText == "Managed virtual")
+        #expect(surface.title == "Virtual Display")
+        #expect(surface.kindText == "Virtual Display")
+        assertPublicDisplayNamingDoesNotExposeImplementationTerms(surface)
         #expect(surface.isMonitoring)
         #expect(surface.isSharing)
         #expect(surface.canStopMonitor)
@@ -200,10 +201,12 @@ struct DisplaySurfacePresentationMapperTests {
 
         let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
 
-        #expect(surface.title == "Physical Auxiliary Display")
-        #expect(surface.kindText == "Physical auxiliary")
+        #expect(surface.title == "Physical Display")
+        #expect(surface.kindText == "Physical Display")
+        assertPublicDisplayNamingDoesNotExposeImplementationTerms(surface)
         #expect(surface.hasFailure)
         #expect(!surface.canStopMonitor)
+        #expect(compactValue("displays_virtual_display_status", in: surface) == "Physical Display")
         #expect(compactValue("displays_monitor_status", in: surface) == "Failed")
         #expect(compactValue("displays_issue_status", in: surface) == "Needs attention")
         assertRowActionsDoNotContainManageVirtualDisplay(surface)
@@ -459,6 +462,15 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.rowActions.contains {
             $0.accessibilityIdentifier == "displays_action_manage_virtual_display"
         })
+    }
+
+    private func assertPublicDisplayNamingDoesNotExposeImplementationTerms(
+        _ surface: DisplaySurfacePresentation
+    ) {
+        for text in [surface.title, surface.kindText] {
+            #expect(!text.contains("Managed"))
+            #expect(!text.contains("Auxiliary"))
+        }
     }
 
     private func makeLease(
