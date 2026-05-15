@@ -23,8 +23,8 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
     package let hasFailure: Bool
     package let canStopMonitor: Bool
     package let canStopLANWebViewSharing: Bool
-    package let canStopWebService: Bool
-    package let statusItems: [DisplaySurfaceStatusItemPresentation]
+    package let primaryStatusItems: [DisplaySurfaceStatusItemPresentation]
+    package let technicalStatusItems: [DisplaySurfaceStatusItemPresentation]
 
     package init(
         id: String,
@@ -39,8 +39,8 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         hasFailure: Bool,
         canStopMonitor: Bool,
         canStopLANWebViewSharing: Bool,
-        canStopWebService: Bool,
-        statusItems: [DisplaySurfaceStatusItemPresentation]
+        primaryStatusItems: [DisplaySurfaceStatusItemPresentation],
+        technicalStatusItems: [DisplaySurfaceStatusItemPresentation]
     ) {
         self.id = id
         self.surfaceIdentity = surfaceIdentity
@@ -54,8 +54,8 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         self.hasFailure = hasFailure
         self.canStopMonitor = canStopMonitor
         self.canStopLANWebViewSharing = canStopLANWebViewSharing
-        self.canStopWebService = canStopWebService
-        self.statusItems = statusItems
+        self.primaryStatusItems = primaryStatusItems
+        self.technicalStatusItems = technicalStatusItems
     }
 }
 
@@ -122,7 +122,16 @@ package enum DisplaySurfacePresentationMapper {
         let title = title(for: surface)
         let subtitle = subtitle(for: surface)
         let kindText = kindText(for: surface)
-        let statusItems = [
+        let monitorStatus = consumerStatus(
+            leases: monitorLeases,
+            hasRuntimeDemand: isMonitoring
+        )
+        let lanWebViewStatus = lanWebViewStatus(
+            surface: surface,
+            leases: lanWebViewLeases,
+            hasRuntimeDemand: isSharing
+        )
+        let primaryStatusItems = [
             DisplaySurfaceStatusItemPresentation(
                 id: "kind",
                 title: String(localized: "Display Type"),
@@ -130,10 +139,10 @@ package enum DisplaySurfacePresentationMapper {
                 accessibilityIdentifier: "displays_surface_kind_value"
             ),
             DisplaySurfaceStatusItemPresentation(
-                id: "identity",
-                title: String(localized: "Display Identity"),
-                value: redactedIdentityText(for: surface.identity),
-                accessibilityIdentifier: "displays_surface_identity_value"
+                id: "resolution",
+                title: String(localized: "Resolution"),
+                value: pixelResolutionText(for: surface) ?? String(localized: "Unknown"),
+                accessibilityIdentifier: "displays_resolution_status"
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "virtualDisplay",
@@ -143,21 +152,14 @@ package enum DisplaySurfacePresentationMapper {
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "monitor",
-                title: String(localized: "Monitor Consumer"),
-                value: consumerStatus(
-                    leases: monitorLeases,
-                    hasRuntimeDemand: isMonitoring
-                ),
+                title: String(localized: "Monitor"),
+                value: monitorStatus,
                 accessibilityIdentifier: "displays_monitor_status"
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "lanWebView",
-                title: String(localized: "LAN Web View Consumer"),
-                value: lanWebViewStatus(
-                    surface: surface,
-                    leases: lanWebViewLeases,
-                    hasRuntimeDemand: isSharing
-                ),
+                title: String(localized: "LAN Web View"),
+                value: lanWebViewStatus,
                 accessibilityIdentifier: "displays_lan_web_view_status"
             ),
             DisplaySurfaceStatusItemPresentation(
@@ -167,20 +169,34 @@ package enum DisplaySurfacePresentationMapper {
                 accessibilityIdentifier: "displays_viewer_count"
             ),
             DisplaySurfaceStatusItemPresentation(
+                id: "issue",
+                title: String(localized: "Issue"),
+                value: issueStatus(for: lastFailureCode),
+                accessibilityIdentifier: "displays_issue_status"
+            )
+        ]
+        let technicalStatusItems = [
+            DisplaySurfaceStatusItemPresentation(
+                id: "identity",
+                title: String(localized: "Display Identifier"),
+                value: redactedIdentityText(for: surface.identity),
+                accessibilityIdentifier: "displays_surface_identity_value"
+            ),
+            DisplaySurfaceStatusItemPresentation(
                 id: "captureIntent",
-                title: String(localized: "Effective Capture Intent"),
-                value: effectiveCaptureIntentStatus(effectiveIntent),
+                title: String(localized: "Capture State"),
+                value: captureStateStatus(effectiveIntent),
                 accessibilityIdentifier: "displays_capture_intent_status"
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "lease",
-                title: String(localized: "Lease Status"),
-                value: leaseStatus(leases),
+                title: String(localized: "Runtime Attachment"),
+                value: runtimeAttachmentStatus(leases),
                 accessibilityIdentifier: "displays_lease_status"
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "lastFailureCode",
-                title: String(localized: "Last Failure Code"),
+                title: String(localized: "Diagnostic Code"),
                 value: lastFailureCode ?? String(localized: "None"),
                 accessibilityIdentifier: "displays_last_failure_code",
                 isFailureCode: lastFailureCode != nil
@@ -202,8 +218,8 @@ package enum DisplaySurfacePresentationMapper {
                 && monitorLeases.contains { $0.state.contributesDemand },
             canStopLANWebViewSharing: surface.currentDisplayID != nil
                 && lanWebViewLeases.contains { $0.state.contributesDemand },
-            canStopWebService: snapshot.sharing.isWebServiceRunning,
-            statusItems: statusItems
+            primaryStatusItems: primaryStatusItems,
+            technicalStatusItems: technicalStatusItems
         )
     }
 
@@ -234,17 +250,7 @@ package enum DisplaySurfacePresentationMapper {
     }
 
     private static func subtitle(for surface: DisplaySurface) -> String {
-        if let catalog = surface.catalog,
-           let width = catalog.pixelWidth,
-           let height = catalog.pixelHeight {
-            return String(format: String(localized: "%lld × %lld pixels"), Int64(width), Int64(height))
-        }
-        if let managed = surface.managedVirtualDisplay,
-           let width = managed.maximumPixelWidth,
-           let height = managed.maximumPixelHeight {
-            return String(format: String(localized: "%lld × %lld pixels"), Int64(width), Int64(height))
-        }
-        return String(localized: "Runtime display status")
+        pixelResolutionText(for: surface) ?? String(localized: "Resolution unavailable")
     }
 
     private static func kindText(for surface: DisplaySurface) -> String {
@@ -268,6 +274,20 @@ package enum DisplaySurfacePresentationMapper {
             hash &*= 0x100000001b3
         }
         return String(format: "%06llx", hash & 0xFF_FFFF)
+    }
+
+    private static func pixelResolutionText(for surface: DisplaySurface) -> String? {
+        if let catalog = surface.catalog,
+           let width = catalog.pixelWidth,
+           let height = catalog.pixelHeight {
+            return String(format: String(localized: "%lld × %lld pixels"), Int64(width), Int64(height))
+        }
+        if let managed = surface.managedVirtualDisplay,
+           let width = managed.maximumPixelWidth,
+           let height = managed.maximumPixelHeight {
+            return String(format: String(localized: "%lld × %lld pixels"), Int64(width), Int64(height))
+        }
+        return nil
     }
 
     private static func virtualDisplayStatus(
@@ -332,11 +352,15 @@ package enum DisplaySurfacePresentationMapper {
         return String(localized: "Route ready")
     }
 
-    private static func effectiveCaptureIntentStatus(
+    private static func issueStatus(for lastFailureCode: String?) -> String {
+        lastFailureCode == nil ? String(localized: "None") : String(localized: "Needs attention")
+    }
+
+    private static func captureStateStatus(
         _ effectiveIntent: DisplayRuntimeEffectiveCaptureIntent?
     ) -> String {
         guard let effectiveIntent else {
-            return String(localized: "No intent")
+            return String(localized: "No active capture")
         }
         let kind: String
         switch effectiveIntent.intent.kind {
@@ -352,13 +376,13 @@ package enum DisplaySurfacePresentationMapper {
         return [kind, reason, outcome].joined(separator: ", ")
     }
 
-    private static func leaseStatus(_ leases: [DisplayRuntimeConsumerLeaseSnapshot]) -> String {
+    private static func runtimeAttachmentStatus(_ leases: [DisplayRuntimeConsumerLeaseSnapshot]) -> String {
         guard leases.isEmpty == false else {
-            return String(localized: "No leases")
+            return String(localized: "No attachments")
         }
         let activeCount = leases.filter { $0.state.contributesDemand }.count
         return String(
-            format: String(localized: "%lld of %lld active leases"),
+            format: String(localized: "%lld of %lld active"),
             Int64(activeCount),
             Int64(leases.count)
         )

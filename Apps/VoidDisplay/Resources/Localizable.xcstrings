@@ -34,18 +34,18 @@
         }
       }
     },
-    "%lld of %lld active leases" : {
+    "%lld of %lld active" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld of %2$lld active leases"
+            "value" : "%1$lld of %2$lld active"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld/%2$lld 个活跃租约"
+            "value" : "%1$lld/%2$lld 个活跃"
           }
         }
       }
@@ -136,12 +136,12 @@
         }
       }
     },
-    "Display Identity" : {
+    "Display Identifier" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示身份"
+            "value" : "显示器标识"
           }
         }
       }
@@ -166,12 +166,12 @@
         }
       }
     },
-    "Effective Capture Intent" : {
+    "Capture State" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "生效采集意图"
+            "value" : "采集状态"
           }
         }
       }
@@ -262,32 +262,32 @@
         }
       }
     },
-    "LAN Web View Consumer" : {
+    "Diagnostic Code" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "局域网 Web 视图消费者"
+            "value" : "诊断代码"
           }
         }
       }
     },
-    "Last Failure Code" : {
+    "Issue" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最近失败代码"
+            "value" : "问题"
           }
         }
       }
     },
-    "Lease Status" : {
+    "Runtime Attachment" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "租约状态"
+            "value" : "运行时连接"
           }
         }
       }
@@ -332,12 +332,12 @@
         }
       }
     },
-    "Monitor Consumer" : {
+    "No active capture" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "监看消费者"
+            "value" : "未采集"
           }
         }
       }
@@ -362,22 +362,22 @@
         }
       }
     },
-    "No intent" : {
+    "No attachments" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无意图"
+            "value" : "无连接"
           }
         }
       }
     },
-    "No leases" : {
+    "Unknown" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无租约"
+            "value" : "未知"
           }
         }
       }
@@ -482,22 +482,22 @@
         }
       }
     },
-    "Runtime display status will appear after refresh." : {
+    "Create or enable a virtual display to start using HiDPI remote desktop and LAN Web View." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刷新后将显示运行时显示状态。"
+            "value" : "创建或启用虚拟显示器，即可开始使用 HiDPI 远程桌面和局域网 Web 视图。"
           }
         }
       }
     },
-    "Runtime display status" : {
+    "Resolution unavailable" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "运行时显示状态"
+            "value" : "分辨率不可用"
           }
         }
       }
@@ -532,12 +532,12 @@
         }
       }
     },
-    "Stop Web Service" : {
+    "Resolution" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "停止 Web 服务"
+            "value" : "分辨率"
           }
         }
       }
@@ -1599,13 +1599,13 @@
         }
       }
     },
-    "Effective Capture Intents" : {
+    "Capture States" : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "生效采集意图"
+            "value" : "采集状态数"
           }
         }
       }
@@ -2091,7 +2091,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "局域网网页视图"
+            "value" : "局域网 Web 视图"
           }
         }
       }
@@ -2179,7 +2179,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示器"
+            "value" : "监看"
           }
         }
       }

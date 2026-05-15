@@ -159,8 +159,9 @@ final class HomeSmokeTests: XCTestCase {
                 "display_surface_row",
                 "displays_surface_detail",
                 "displays_surface_kind_value",
-                "displays_surface_identity_value",
-                "displays_virtual_display_status"
+                "displays_resolution_status",
+                "displays_virtual_display_status",
+                "displays_technical_details"
             ],
             timeout: 6
         )
@@ -194,9 +195,8 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
-                "displays_capture_intent_status",
-                "displays_lease_status",
-                "displays_last_failure_code"
+                "displays_issue_status",
+                "displays_technical_details"
             ],
             timeout: 1.5
         )
@@ -213,7 +213,6 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_action_stop_monitor",
                 "displays_action_open_lan_web_view",
                 "displays_action_stop_lan_web_view",
-                "displays_action_stop_web_service",
                 "displays_action_open_diagnostics"
             ],
             timeout: 1.5

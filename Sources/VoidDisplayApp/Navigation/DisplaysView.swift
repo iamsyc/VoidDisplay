@@ -37,6 +37,7 @@ package struct DisplaysView: View {
     private let displayRuntime: DisplayRuntime
     private let surfaceActions: DisplaySurfaceActions
     @State private var selectedSurfaceID: DisplaySurfacePresentation.ID?
+    @State private var isTechnicalDetailsExpanded = false
 
     package init(
         displayRuntime: DisplayRuntime,
@@ -172,7 +173,16 @@ package struct DisplaysView: View {
                 Spacer(minLength: 0)
             }
 
-            statusGrid(surface.statusItems)
+            statusGrid(surface.primaryStatusItems)
+
+            DisclosureGroup(isExpanded: $isTechnicalDetailsExpanded) {
+                statusGrid(surface.technicalStatusItems)
+                    .padding(.top, AppUI.Spacing.small)
+            } label: {
+                Text("Technical Details")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .accessibilityIdentifier("displays_technical_details")
         }
         .padding(.top, AppUI.Spacing.small)
         .accessibilityElement(children: .contain)
@@ -286,15 +296,6 @@ package struct DisplaysView: View {
                 }
             ),
             DisplaySurfaceActionEntry(
-                id: "stop_web_service",
-                title: "Stop Web Service",
-                systemImage: "power",
-                accessibilityIdentifier: "displays_action_stop_web_service",
-                isEnabled: surface.canStopWebService,
-                isDestructive: true,
-                action: surfaceActions.stopWebService
-            ),
-            DisplaySurfaceActionEntry(
                 id: "open_diagnostics",
                 title: "Diagnostics",
                 systemImage: "stethoscope",
@@ -317,7 +318,7 @@ package struct DisplaysView: View {
         ContentUnavailableView(
             "No Displays",
             systemImage: "display.trianglebadge.exclamationmark",
-            description: Text("Runtime display status will appear after refresh.")
+            description: Text("Create or enable a virtual display to start using HiDPI remote desktop and LAN Web View.")
         )
         .frame(maxWidth: .infinity, minHeight: 200)
         .accessibilityIdentifier("displays_empty_state")
@@ -382,6 +383,7 @@ private struct DisplaySurfaceCompactActionButton: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(!entry.isEnabled)
+        .help(Text(entry.title))
         .accessibilityLabel(Text(entry.title))
         .accessibilityIdentifier(entry.accessibilityIdentifier)
     }

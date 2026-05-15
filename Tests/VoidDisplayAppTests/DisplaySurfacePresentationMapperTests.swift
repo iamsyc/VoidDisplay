@@ -117,18 +117,27 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.isSharing)
         #expect(surface.canStopMonitor)
         #expect(surface.canStopLANWebViewSharing)
-        #expect(surface.canStopWebService)
-        #expect(value("displays_virtual_display_status", in: surface) == "Enabled, Live, Idle")
-        #expect(value("displays_monitor_status", in: surface) == "Attached")
-        #expect(value("displays_lan_web_view_status", in: surface) == "Attached")
-        #expect(value("displays_viewer_count", in: surface) == "3")
-        #expect(value("displays_capture_intent_status", in: surface) == "Capture, Attach, Applied")
-        #expect(value("displays_lease_status", in: surface) == "2 of 2 active leases")
+        #expect(primaryValue("displays_resolution_status", in: surface) == "1920 × 1080 pixels")
+        #expect(primaryValue("displays_virtual_display_status", in: surface) == "Enabled, Live, Idle")
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Attached")
+        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Attached")
+        #expect(primaryValue("displays_viewer_count", in: surface) == "3")
+        #expect(primaryValue("displays_issue_status", in: surface) == "None")
+        #expect(technicalValue("displays_capture_intent_status", in: surface) == "Capture, Attach, Applied")
+        #expect(technicalValue("displays_lease_status", in: surface) == "2 of 2 active")
+        #expect(technicalValue("displays_last_failure_code", in: surface) == "None")
 
-        let identityText = value("displays_surface_identity_value", in: surface)
+        let identityText = technicalValue("displays_surface_identity_value", in: surface)
         #expect(identityText.hasPrefix("ID hash "))
         #expect(!identityText.contains(configID.uuidString))
         #expect(!identityText.contains(String(displayID)))
+        assertPrimaryStatusDoesNotExposeRuntimeTerms(surface)
+        #expect(technicalTitles(in: surface) == [
+            "Display Identifier",
+            "Capture State",
+            "Runtime Attachment",
+            "Diagnostic Code"
+        ])
     }
 
     @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() {
@@ -175,9 +184,11 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.kindText == "Physical auxiliary")
         #expect(surface.hasFailure)
         #expect(!surface.canStopMonitor)
-        #expect(value("displays_monitor_status", in: surface) == "Failed")
-        #expect(value("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
-        #expect(!value("displays_surface_identity_value", in: surface).contains(String(displayID)))
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Failed")
+        #expect(primaryValue("displays_issue_status", in: surface) == "Needs attention")
+        #expect(technicalValue("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
+        #expect(!technicalValue("displays_surface_identity_value", in: surface).contains(String(displayID)))
+        assertPrimaryStatusDoesNotExposeRuntimeTerms(surface)
     }
 
     @Test func surfaceFactsWithoutRuntimeDemandDoNotEnableControlState() throws {
@@ -268,19 +279,127 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.isSharing)
         #expect(!surface.canStopMonitor)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(surface.canStopWebService)
-        #expect(value("displays_monitor_status", in: surface) == "Inactive")
-        #expect(value("displays_lan_web_view_status", in: surface) == "Route ready")
-        #expect(value("displays_viewer_count", in: surface) == "2")
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Inactive")
+        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Route ready")
+        #expect(primaryValue("displays_viewer_count", in: surface) == "2")
+    }
+
+    @Test func effectiveIntentRuntimeDemandDrivesAttachedStateWithoutStopActions() {
+        let displayID: DisplayRuntimeDisplayID = 79
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
+        let aggregateDemand = DisplayRuntimeAggregatedDemand(
+            surfaceIdentity: identity,
+            surfaceEpoch: .initial,
+            resolvedDisplayID: displayID,
+            activeLeaseIDs: [],
+            consumerKinds: [.monitor, .lanWebView],
+            effectivePixelSize: DisplayRuntimePixelSize(width: 2560, height: 1440),
+            effectiveFramesPerSecond: 60,
+            capturesCursor: false,
+            qualityProfile: .mixed,
+            powerProfile: .automatic,
+            latencyPreference: .realtime,
+            activeViewerCount: 4,
+            permitsExplicitDowngrade: false
+        )
+        let snapshot = DisplayRuntimeSnapshot(
+            surfaces: [
+                DisplaySurface(
+                    identity: identity,
+                    kind: .physicalDisplay,
+                    currentDisplayID: displayID,
+                    isAuxiliary: true,
+                    catalog: DisplayRuntimeCatalogSurfaceState(
+                        displayID: displayID,
+                        isVisible: true,
+                        isMain: false,
+                        pixelWidth: 2560,
+                        pixelHeight: 1440,
+                        refreshRateMilliHertz: nil,
+                        mirrorsDisplayID: nil
+                    ),
+                    capture: nil,
+                    sharing: nil,
+                    managedVirtualDisplay: nil
+                )
+            ],
+            catalog: .empty,
+            capture: .empty,
+            sharing: .empty,
+            virtualDisplay: .empty,
+            consumerLeases: [],
+            aggregatedDemands: [],
+            effectiveCaptureIntents: [
+                DisplayRuntimeEffectiveCaptureIntent(
+                    intent: DisplayRuntimeCaptureIntent(
+                        surfaceIdentity: identity,
+                        surfaceEpoch: .initial,
+                        resolvedDisplayID: displayID,
+                        aggregateDemand: aggregateDemand,
+                        kind: .capture,
+                        reason: .attach,
+                        revision: DisplayRuntimeCaptureIntentRevision(rawValue: 8)
+                    ),
+                    lastApplyResult: .applied(revision: DisplayRuntimeCaptureIntentRevision(rawValue: 8))
+                )
+            ]
+        )
+
+        let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
+
+        #expect(surface.isMonitoring)
+        #expect(surface.isSharing)
+        #expect(!surface.canStopMonitor)
+        #expect(!surface.canStopLANWebViewSharing)
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Attached")
+        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Attached")
+        #expect(technicalValue("displays_capture_intent_status", in: surface) == "Capture, Attach, Applied")
+        #expect(technicalValue("displays_lease_status", in: surface) == "No attachments")
+    }
+
+    private func primaryValue(
+        _ accessibilityIdentifier: String,
+        in surface: DisplaySurfacePresentation
+    ) -> String {
+        value(accessibilityIdentifier, in: surface.primaryStatusItems)
+    }
+
+    private func technicalValue(
+        _ accessibilityIdentifier: String,
+        in surface: DisplaySurfacePresentation
+    ) -> String {
+        value(accessibilityIdentifier, in: surface.technicalStatusItems)
     }
 
     private func value(
         _ accessibilityIdentifier: String,
-        in surface: DisplaySurfacePresentation
+        in items: [DisplaySurfaceStatusItemPresentation]
     ) -> String {
-        surface.statusItems.first {
+        items.first {
             $0.accessibilityIdentifier == accessibilityIdentifier
         }?.value ?? ""
+    }
+
+    private func technicalTitles(in surface: DisplaySurfacePresentation) -> [String] {
+        surface.technicalStatusItems.map(\.title)
+    }
+
+    private func assertPrimaryStatusDoesNotExposeRuntimeTerms(
+        _ surface: DisplaySurfacePresentation
+    ) {
+        let combinedPrimaryStatusText = surface.primaryStatusItems.flatMap { item in
+            [item.title, item.value]
+        }.joined(separator: "\n")
+        for forbiddenTerm in [
+            "Display Identity",
+            "Effective Capture Intent",
+            "Lease Status",
+            "Last Failure Code",
+            "Monitor Consumer",
+            "LAN Web View Consumer"
+        ] {
+            #expect(!combinedPrimaryStatusText.contains(forbiddenTerm))
+        }
     }
 
     private func makeLease(

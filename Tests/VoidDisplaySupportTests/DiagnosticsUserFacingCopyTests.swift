@@ -15,7 +15,13 @@ struct DiagnosticsUserFacingCopyTests {
             "Surface Kind",
             "Surface Count",
             "Surface 数量",
-            "显示表面"
+            "显示表面",
+            "Display Identity",
+            "Effective Capture Intent",
+            "Lease Status",
+            "Last Failure Code",
+            "Monitor Consumer",
+            "LAN Web View Consumer"
         ]
 
         let localizableURL = repositoryRoot

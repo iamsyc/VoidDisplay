@@ -258,7 +258,7 @@ package struct DiagnosticsView: View {
             (String(localized: "Total Consumer Leases"), "\(summary.totalConsumerLeaseCount)"),
             (String(localized: "Aggregated Demand Count"), "\(summary.aggregatedDemandCount)"),
             (String(localized: "Active Viewer Count"), "\(summary.activeViewerCount)"),
-            (String(localized: "Effective Capture Intents"), "\(summary.effectiveCaptureIntentCount)"),
+            (String(localized: "Capture States"), "\(summary.effectiveCaptureIntentCount)"),
             (String(localized: "Active Transactions"), "\(summary.activeTransactionCount)"),
             (String(localized: "Recent Transactions"), "\(summary.recentTransactionCount)"),
             (String(localized: "Last Failure"), summary.lastFailureCode ?? "-")
