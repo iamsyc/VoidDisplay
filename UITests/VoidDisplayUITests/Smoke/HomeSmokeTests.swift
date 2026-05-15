@@ -36,12 +36,14 @@ final class HomeSmokeTests: XCTestCase {
                 "detail_displays",
                 "displays_shell",
                 "displays_surface_list",
-                "displays_surface_detail",
-                "displays_surface_actions",
+                "display_surface_row",
+                "displays_monitor_status",
+                "displays_lan_web_view_status",
+                "displays_viewer_count",
+                "displays_issue_status",
                 "displays_action_manage_virtual_display",
                 "displays_action_open_monitor",
                 "displays_action_open_lan_web_view",
-                "displays_action_open_diagnostics",
                 "displays_list",
                 "displays_open_system_settings"
             ],
@@ -85,13 +87,7 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 1.5
         )
 
-        displaysSidebar.tap()
-        assertAllExist(
-            app,
-            identifiers: ["detail_displays", "displays_action_open_diagnostics"],
-            timeout: 1.5
-        )
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_diagnostics")
+        smokeElement(app, identifier: "sidebar_diagnostics").tap()
         assertAllExist(
             app,
             identifiers: ["detail_diagnostics"],
@@ -157,10 +153,13 @@ final class HomeSmokeTests: XCTestCase {
                 "detail_displays",
                 "displays_surface_list",
                 "display_surface_row",
-                "displays_surface_detail",
                 "displays_surface_kind_value",
                 "displays_resolution_status",
                 "displays_virtual_display_status",
+                "displays_monitor_status",
+                "displays_lan_web_view_status",
+                "displays_viewer_count",
+                "displays_issue_status",
                 "displays_technical_details"
             ],
             timeout: 6
@@ -183,8 +182,7 @@ final class HomeSmokeTests: XCTestCase {
 
         openDisplaysFromSidebar(in: app)
         assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_diagnostics")
-        assertAllExist(app, identifiers: ["detail_diagnostics"], timeout: 2)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_action_open_diagnostics"].exists)
     }
 
     @MainActor
@@ -207,16 +205,14 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
-                "displays_surface_actions",
                 "displays_action_manage_virtual_display",
                 "displays_action_open_monitor",
-                "displays_action_stop_monitor",
-                "displays_action_open_lan_web_view",
-                "displays_action_stop_lan_web_view",
-                "displays_action_open_diagnostics"
+                "displays_action_open_lan_web_view"
             ],
             timeout: 1.5
         )
+        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_actions"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_action_open_diagnostics"].exists)
     }
 
     @MainActor
@@ -226,7 +222,8 @@ final class HomeSmokeTests: XCTestCase {
             app,
             identifiers: [
                 "detail_displays",
-                "displays_surface_detail"
+                "displays_surface_list",
+                "display_surface_row"
             ],
             timeout: 1.5
         )

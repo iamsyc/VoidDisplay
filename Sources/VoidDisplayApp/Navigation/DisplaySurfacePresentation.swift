@@ -23,8 +23,10 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
     package let hasFailure: Bool
     package let canStopMonitor: Bool
     package let canStopLANWebViewSharing: Bool
+    package let rowActions: [DisplaySurfaceRowActionPresentation]
     package let primaryStatusItems: [DisplaySurfaceStatusItemPresentation]
     package let technicalStatusItems: [DisplaySurfaceStatusItemPresentation]
+    package let accessibilitySummary: String
 
     package init(
         id: String,
@@ -39,8 +41,10 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         hasFailure: Bool,
         canStopMonitor: Bool,
         canStopLANWebViewSharing: Bool,
+        rowActions: [DisplaySurfaceRowActionPresentation],
         primaryStatusItems: [DisplaySurfaceStatusItemPresentation],
-        technicalStatusItems: [DisplaySurfaceStatusItemPresentation]
+        technicalStatusItems: [DisplaySurfaceStatusItemPresentation],
+        accessibilitySummary: String
     ) {
         self.id = id
         self.surfaceIdentity = surfaceIdentity
@@ -54,8 +58,47 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         self.hasFailure = hasFailure
         self.canStopMonitor = canStopMonitor
         self.canStopLANWebViewSharing = canStopLANWebViewSharing
+        self.rowActions = rowActions
         self.primaryStatusItems = primaryStatusItems
         self.technicalStatusItems = technicalStatusItems
+        self.accessibilitySummary = accessibilitySummary
+    }
+}
+
+package enum DisplaySurfaceRowActionKind: String, Equatable {
+    case manageVirtualDisplay
+    case openMonitor
+    case stopMonitor
+    case openLANWebView
+    case stopLANWebView
+}
+
+package struct DisplaySurfaceRowActionPresentation: Identifiable, Equatable {
+    package let kind: DisplaySurfaceRowActionKind
+    package let title: String
+    package let systemImage: String
+    package let accessibilityIdentifier: String
+    package let isEnabled: Bool
+    package let isDestructive: Bool
+
+    package var id: String {
+        kind.rawValue
+    }
+
+    package init(
+        kind: DisplaySurfaceRowActionKind,
+        title: String,
+        systemImage: String,
+        accessibilityIdentifier: String,
+        isEnabled: Bool,
+        isDestructive: Bool = false
+    ) {
+        self.kind = kind
+        self.title = title
+        self.systemImage = systemImage
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.isEnabled = isEnabled
+        self.isDestructive = isDestructive
     }
 }
 
@@ -122,7 +165,7 @@ package enum DisplaySurfacePresentationMapper {
         let title = title(for: surface)
         let subtitle = subtitle(for: surface)
         let kindText = kindText(for: surface)
-        let monitorStatus = consumerStatus(
+        let monitorStatus = monitorStatus(
             leases: monitorLeases,
             hasRuntimeDemand: isMonitoring
         )
@@ -175,6 +218,20 @@ package enum DisplaySurfacePresentationMapper {
                 accessibilityIdentifier: "displays_issue_status"
             )
         ]
+        let canStopMonitor = surface.currentDisplayID != nil
+            && monitorLeases.contains { $0.state.contributesDemand }
+        let canStopLANWebViewSharing = surface.currentDisplayID != nil
+            && lanWebViewLeases.contains { $0.state.contributesDemand }
+        let rowActions = rowActions(
+            isMonitoring: isMonitoring,
+            isSharing: isSharing,
+            canStopMonitor: canStopMonitor,
+            canStopLANWebViewSharing: canStopLANWebViewSharing
+        )
+        let accessibilitySummary = accessibilitySummary(
+            title: title,
+            statusItems: primaryStatusItems
+        )
         let technicalStatusItems = [
             DisplaySurfaceStatusItemPresentation(
                 id: "identity",
@@ -214,12 +271,12 @@ package enum DisplaySurfacePresentationMapper {
             isMonitoring: isMonitoring,
             isSharing: isSharing,
             hasFailure: lastFailureCode != nil,
-            canStopMonitor: surface.currentDisplayID != nil
-                && monitorLeases.contains { $0.state.contributesDemand },
-            canStopLANWebViewSharing: surface.currentDisplayID != nil
-                && lanWebViewLeases.contains { $0.state.contributesDemand },
+            canStopMonitor: canStopMonitor,
+            canStopLANWebViewSharing: canStopLANWebViewSharing,
+            rowActions: rowActions,
             primaryStatusItems: primaryStatusItems,
-            technicalStatusItems: technicalStatusItems
+            technicalStatusItems: technicalStatusItems,
+            accessibilitySummary: accessibilitySummary
         )
     }
 
@@ -318,9 +375,11 @@ package enum DisplaySurfacePresentationMapper {
         return [desired, runtime, rebuild].joined(separator: ", ")
     }
 
-    private static func consumerStatus(
+    private static func consumerLifecycleStatus(
         leases: [DisplayRuntimeConsumerLeaseSnapshot],
-        hasRuntimeDemand: Bool
+        hasRuntimeDemand: Bool,
+        activeText: String,
+        inactiveText: String
     ) -> String {
         if leases.contains(where: { $0.state == .failed }) {
             return String(localized: "Failed")
@@ -332,9 +391,21 @@ package enum DisplaySurfacePresentationMapper {
             return String(localized: "Draining")
         }
         if hasRuntimeDemand {
-            return String(localized: "Attached")
+            return activeText
         }
-        return String(localized: "Inactive")
+        return inactiveText
+    }
+
+    private static func monitorStatus(
+        leases: [DisplayRuntimeConsumerLeaseSnapshot],
+        hasRuntimeDemand: Bool
+    ) -> String {
+        consumerLifecycleStatus(
+            leases: leases,
+            hasRuntimeDemand: hasRuntimeDemand,
+            activeText: String(localized: "Monitoring"),
+            inactiveText: String(localized: "Not Monitoring")
+        )
     }
 
     private static func lanWebViewStatus(
@@ -342,18 +413,79 @@ package enum DisplaySurfacePresentationMapper {
         leases: [DisplayRuntimeConsumerLeaseSnapshot],
         hasRuntimeDemand: Bool
     ) -> String {
-        let status = consumerStatus(
+        let status = consumerLifecycleStatus(
             leases: leases,
-            hasRuntimeDemand: hasRuntimeDemand
+            hasRuntimeDemand: hasRuntimeDemand,
+            activeText: String(localized: "Sharing"),
+            inactiveText: String(localized: "Not Sharing")
         )
-        guard status == String(localized: "Inactive"), surface.sharing?.hasRoute == true else {
+        guard status == String(localized: "Not Sharing"), surface.sharing?.hasRoute == true else {
             return status
         }
         return String(localized: "Route ready")
     }
 
     private static func issueStatus(for lastFailureCode: String?) -> String {
-        lastFailureCode == nil ? String(localized: "None") : String(localized: "Needs attention")
+        lastFailureCode == nil ? String(localized: "Normal") : String(localized: "Needs attention")
+    }
+
+    private static func rowActions(
+        isMonitoring: Bool,
+        isSharing: Bool,
+        canStopMonitor: Bool,
+        canStopLANWebViewSharing: Bool
+    ) -> [DisplaySurfaceRowActionPresentation] {
+        [
+            DisplaySurfaceRowActionPresentation(
+                kind: .manageVirtualDisplay,
+                title: String(localized: "Manage Virtual Display"),
+                systemImage: "display.2",
+                accessibilityIdentifier: "displays_action_manage_virtual_display",
+                isEnabled: true
+            ),
+            isMonitoring
+                ? DisplaySurfaceRowActionPresentation(
+                    kind: .stopMonitor,
+                    title: String(localized: "Stop Monitor"),
+                    systemImage: "stop.circle",
+                    accessibilityIdentifier: "displays_action_stop_monitor",
+                    isEnabled: canStopMonitor,
+                    isDestructive: true
+                )
+                : DisplaySurfaceRowActionPresentation(
+                    kind: .openMonitor,
+                    title: String(localized: "Monitor"),
+                    systemImage: "dot.scope.display",
+                    accessibilityIdentifier: "displays_action_open_monitor",
+                    isEnabled: true
+                ),
+            isSharing
+                ? DisplaySurfaceRowActionPresentation(
+                    kind: .stopLANWebView,
+                    title: String(localized: "Stop LAN Web View"),
+                    systemImage: "stop.circle",
+                    accessibilityIdentifier: "displays_action_stop_lan_web_view",
+                    isEnabled: canStopLANWebViewSharing,
+                    isDestructive: true
+                )
+                : DisplaySurfaceRowActionPresentation(
+                    kind: .openLANWebView,
+                    title: String(localized: "Open LAN Web View"),
+                    systemImage: "network",
+                    accessibilityIdentifier: "displays_action_open_lan_web_view",
+                    isEnabled: true
+                )
+        ]
+    }
+
+    private static func accessibilitySummary(
+        title: String,
+        statusItems: [DisplaySurfaceStatusItemPresentation]
+    ) -> String {
+        let statuses = statusItems
+            .map { "\($0.title): \($0.value)" }
+            .joined(separator: ", ")
+        return "\(title), \(statuses)"
     }
 
     private static func captureStateStatus(

@@ -2354,6 +2354,16 @@
         }
       }
     },
+    "Normal" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正常"
+          }
+        }
+      }
+    },
     "No watchable screen" : {
       "extractionState" : "stale",
       "localizations" : {

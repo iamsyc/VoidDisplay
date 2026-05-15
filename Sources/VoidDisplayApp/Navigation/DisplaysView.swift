@@ -36,8 +36,6 @@ package struct DisplaysView: View {
     @Environment(\.openURL) private var openURL
     private let displayRuntime: DisplayRuntime
     private let surfaceActions: DisplaySurfaceActions
-    @State private var selectedSurfaceID: DisplaySurfacePresentation.ID?
-    @State private var isTechnicalDetailsExpanded = false
 
     package init(
         displayRuntime: DisplayRuntime,
@@ -51,30 +49,18 @@ package struct DisplaysView: View {
         let presentation = DisplaySurfacePresentationMapper.makePresentation(
             snapshot: displayRuntime.makeSnapshot()
         )
-        let selectedSurface = selectedSurface(in: presentation)
 
         ScrollView {
             VStack(alignment: .leading, spacing: AppUI.Spacing.large) {
-                if let selectedSurface {
-                    surfaceActionStrip(for: selectedSurface)
-                }
-                surfaceList(presentation.surfaces)
-
-                if let selectedSurface {
-                    surfaceDetail(selectedSurface)
-                } else {
+                if presentation.surfaces.isEmpty {
                     displayEmptyState
+                } else {
+                    surfaceList(presentation.surfaces)
                 }
             }
             .appListContentInsets()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("displays_shell")
-        }
-        .onAppear {
-            selectInitialSurface(in: presentation)
-        }
-        .onChange(of: presentation.surfaces.map(\.id)) { _, _ in
-            selectInitialSurface(in: presentation)
         }
         .toolbar {
             ToolbarItem {
@@ -100,19 +86,12 @@ package struct DisplaysView: View {
             .accessibilityIdentifier("displays_surface_list")
 
             ForEach(surfaces) { surface in
-                Button {
-                    selectedSurfaceID = surface.id
-                } label: {
-                    AppListRowCard(
-                        model: rowModel(for: surface),
-                        pushTrailingToEdge: true
-                    ) {
-                        Image(systemName: selectedSurfaceID == surface.id ? "checkmark.circle.fill" : "chevron.right")
-                            .foregroundStyle(selectedSurfaceID == surface.id ? Color.accentColor : Color.secondary)
-                            .frame(width: 20, height: 20)
-                    }
+                DisplaySurfaceManagementCard(
+                    model: rowModel(for: surface),
+                    surface: surface
+                ) { action in
+                    perform(action, for: surface)
                 }
-                .buttonStyle(.plain)
                 .accessibilityIdentifier("display_surface_row")
             }
         }
@@ -128,12 +107,6 @@ package struct DisplaysView: View {
                 ? AppRowStatus(title: String(localized: "Needs attention"), tint: .red)
                 : nil,
             metaBadges: rowBadges(for: surface),
-            ribbon: selectedSurfaceID == surface.id
-                ? AppCornerRibbonModel(
-                    title: String(localized: "Selected"),
-                    tint: .accentColor
-                )
-                : nil,
             iconSystemName: surface.isManagedVirtualDisplay ? "display.2" : "display",
             iconScreenTint: DisplayIconTintResolver.resolve(
                 isMonitoring: surface.isMonitoring,
@@ -163,153 +136,26 @@ package struct DisplaysView: View {
         return badges
     }
 
-    private func surfaceDetail(_ surface: DisplaySurfacePresentation) -> some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HStack(spacing: AppUI.Spacing.small) {
-                Image(systemName: "rectangle.inset.filled.and.person.filled")
-                    .foregroundStyle(.secondary)
-                Text("Display Details")
-                    .font(.headline)
-                Spacer(minLength: 0)
+    @MainActor
+    private func perform(
+        _ action: DisplaySurfaceRowActionPresentation,
+        for surface: DisplaySurfacePresentation
+    ) {
+        switch action.kind {
+        case .manageVirtualDisplay:
+            surfaceActions.manageVirtualDisplay()
+        case .openMonitor:
+            surfaceActions.openMonitor()
+        case .stopMonitor:
+            if let displayID = surface.displayID {
+                surfaceActions.stopMonitor(displayID)
             }
-
-            statusGrid(surface.primaryStatusItems)
-
-            DisclosureGroup(isExpanded: $isTechnicalDetailsExpanded) {
-                statusGrid(surface.technicalStatusItems)
-                    .padding(.top, AppUI.Spacing.small)
-            } label: {
-                Text("Technical Details")
-                    .font(.subheadline.weight(.semibold))
+        case .openLANWebView:
+            surfaceActions.openLANWebView()
+        case .stopLANWebView:
+            if let displayID = surface.displayID {
+                surfaceActions.stopLANWebViewSharing(displayID)
             }
-            .accessibilityIdentifier("displays_technical_details")
-        }
-        .padding(.top, AppUI.Spacing.small)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("displays_surface_detail")
-    }
-
-    private func statusGrid(_ items: [DisplaySurfaceStatusItemPresentation]) -> some View {
-        let rows = statusRows(items)
-        return Grid(
-            alignment: .leading,
-            horizontalSpacing: AppUI.Spacing.medium,
-            verticalSpacing: AppUI.Spacing.medium
-        ) {
-            ForEach(rows.indices, id: \.self) { rowIndex in
-                GridRow {
-                    ForEach(rows[rowIndex]) { item in
-                        statusItemView(item)
-                    }
-                }
-            }
-        }
-    }
-
-    private func statusItemView(_ item: DisplaySurfaceStatusItemPresentation) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(item.title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Text(item.value)
-                .font(item.isFailureCode ? .caption.monospaced() : .subheadline.weight(.medium))
-                .foregroundStyle(item.isFailureCode ? .orange : .primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier(item.accessibilityIdentifier)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func surfaceActionStrip(for surface: DisplaySurfacePresentation) -> some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
-            HStack(spacing: AppUI.Spacing.small) {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(.secondary)
-                Text("Quick Actions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("displays_surface_actions")
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: AppUI.Spacing.small) {
-                ForEach(actionEntries(for: surface)) { entry in
-                    DisplaySurfaceCompactActionButton(entry: entry)
-                }
-            }
-        }
-    }
-
-    private func actionEntries(for surface: DisplaySurfacePresentation) -> [DisplaySurfaceActionEntry] {
-        [
-            DisplaySurfaceActionEntry(
-                id: "manage_virtual_display",
-                title: "Manage Virtual Display",
-                systemImage: "display.2",
-                accessibilityIdentifier: "displays_action_manage_virtual_display",
-                isEnabled: true,
-                action: surfaceActions.manageVirtualDisplay
-            ),
-            DisplaySurfaceActionEntry(
-                id: "open_monitor",
-                title: "Open Monitor",
-                systemImage: "dot.scope.display",
-                accessibilityIdentifier: "displays_action_open_monitor",
-                isEnabled: true,
-                action: surfaceActions.openMonitor
-            ),
-            DisplaySurfaceActionEntry(
-                id: "stop_monitor",
-                title: "Stop Monitor",
-                systemImage: "stop.circle",
-                accessibilityIdentifier: "displays_action_stop_monitor",
-                isEnabled: surface.canStopMonitor,
-                isDestructive: true,
-                action: {
-                    if let displayID = surface.displayID {
-                        surfaceActions.stopMonitor(displayID)
-                    }
-                }
-            ),
-            DisplaySurfaceActionEntry(
-                id: "open_lan_web_view",
-                title: "Open LAN Web View",
-                systemImage: "network",
-                accessibilityIdentifier: "displays_action_open_lan_web_view",
-                isEnabled: true,
-                action: surfaceActions.openLANWebView
-            ),
-            DisplaySurfaceActionEntry(
-                id: "stop_lan_web_view",
-                title: "Stop LAN Web View",
-                systemImage: "stop.circle",
-                accessibilityIdentifier: "displays_action_stop_lan_web_view",
-                isEnabled: surface.canStopLANWebViewSharing,
-                isDestructive: true,
-                action: {
-                    if let displayID = surface.displayID {
-                        surfaceActions.stopLANWebViewSharing(displayID)
-                    }
-                }
-            ),
-            DisplaySurfaceActionEntry(
-                id: "open_diagnostics",
-                title: "Diagnostics",
-                systemImage: "stethoscope",
-                accessibilityIdentifier: "displays_action_open_diagnostics",
-                isEnabled: true,
-                action: surfaceActions.openDiagnostics
-            )
-        ]
-    }
-
-    private func statusRows(_ items: [DisplaySurfaceStatusItemPresentation]) -> [[DisplaySurfaceStatusItemPresentation]] {
-        stride(from: 0, to: items.count, by: 3).map { startIndex in
-            let endIndex = min(startIndex + 3, items.count)
-            return Array(items[startIndex..<endIndex])
         }
     }
 
@@ -322,26 +168,6 @@ package struct DisplaysView: View {
         )
         .frame(maxWidth: .infinity, minHeight: 200)
         .accessibilityIdentifier("displays_empty_state")
-    }
-
-    private func selectedSurface(in presentation: DisplaySurfaceListPresentation) -> DisplaySurfacePresentation? {
-        if let selectedSurfaceID,
-           let selected = presentation.surfaces.first(where: { $0.id == selectedSurfaceID }) {
-            return selected
-        }
-        return presentation.surfaces.first
-    }
-
-    private func selectInitialSurface(in presentation: DisplaySurfaceListPresentation) {
-        guard presentation.surfaces.isEmpty == false else {
-            selectedSurfaceID = nil
-            return
-        }
-        if let selectedSurfaceID,
-           presentation.surfaces.contains(where: { $0.id == selectedSurfaceID }) {
-            return
-        }
-        selectedSurfaceID = presentation.surfaces.first?.id
     }
 
     private func openDisplaySettings() {
@@ -360,38 +186,235 @@ package struct DisplaysView: View {
         .environment(env.virtualDisplay)
 }
 
-private struct DisplaySurfaceActionEntry: Identifiable {
-    let id: String
-    let title: LocalizedStringKey
-    let systemImage: String
-    let accessibilityIdentifier: String
-    let isEnabled: Bool
-    var isDestructive = false
-    let action: @MainActor () -> Void
-}
+private struct DisplaySurfaceManagementCard: View {
+    let model: AppListRowModel
+    let surface: DisplaySurfacePresentation
+    let performAction: @MainActor (DisplaySurfaceRowActionPresentation) -> Void
 
-private struct DisplaySurfaceCompactActionButton: View {
-    let entry: DisplaySurfaceActionEntry
+    @State private var isHovered = false
+    @State private var isTechnicalDetailsExpanded = false
 
     var body: some View {
-        Button(action: entry.action) {
-            Label(entry.title, systemImage: entry.systemImage)
-                .labelStyle(.iconOnly)
-                .frame(width: 28, height: 24)
-                .foregroundStyle(iconTint)
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            headerAndActions
+
+            DisplaySurfaceStatusGrid(items: surface.primaryStatusItems)
+
+            DisclosureGroup(isExpanded: $isTechnicalDetailsExpanded) {
+                DisplaySurfaceStatusGrid(items: surface.technicalStatusItems)
+                    .padding(.top, AppUI.Spacing.small)
+            } label: {
+                Text("Technical Details")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .accessibilityIdentifier("displays_technical_details")
+        }
+        .frame(minHeight: AppUI.List.rowMinHeight + 84)
+        .padding(.horizontal, AppUI.List.rowHorizontalInset)
+        .padding(.vertical, AppUI.List.rowVerticalInset + 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appInteractiveCardStyle(isHovered: isHovered)
+        .onHover { hovered in
+            isHovered = hovered
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(surface.accessibilitySummary))
+    }
+
+    private var headerAndActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: AppUI.Spacing.medium) {
+                identityBlock
+                Spacer(minLength: AppUI.Spacing.medium)
+                actionBar(alignment: .trailing)
+            }
+
+            VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+                identityBlock
+                actionBar(alignment: .leading)
+            }
+        }
+    }
+
+    private var identityBlock: some View {
+        HStack(alignment: .top, spacing: AppUI.Spacing.medium) {
+            DisplaySurfaceIconTile(model: model)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: AppUI.Spacing.xSmall + 2) {
+                    Text(model.title)
+                        .font(.headline)
+                        .foregroundStyle(model.isEmphasized ? .primary : .secondary)
+                        .allowsTightening(true)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Text(model.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if model.status != nil || !model.metaBadges.isEmpty {
+                    FlowStatusBadges(model: model)
+                        .padding(.top, 1)
+                }
+            }
+        }
+    }
+
+    private func actionBar(alignment: HorizontalAlignment) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AppUI.Spacing.small) {
+                ForEach(surface.rowActions) { action in
+                    rowActionButton(action)
+                }
+            }
+
+            VStack(alignment: alignment, spacing: AppUI.Spacing.small) {
+                ForEach(surface.rowActions) { action in
+                    rowActionButton(action)
+                }
+            }
+        }
+        .frame(maxWidth: 520, alignment: alignment == .trailing ? .trailing : .leading)
+    }
+
+    private func rowActionButton(_ action: DisplaySurfaceRowActionPresentation) -> some View {
+        Button(role: action.isDestructive ? .destructive : nil) {
+            performAction(action)
+        } label: {
+            Label {
+                Text(action.title)
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: action.systemImage)
+            }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .disabled(!entry.isEnabled)
-        .help(Text(entry.title))
-        .accessibilityLabel(Text(entry.title))
-        .accessibilityIdentifier(entry.accessibilityIdentifier)
+        .tint(action.isDestructive ? .red : nil)
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(!action.isEnabled)
+        .help(Text(action.title))
+        .accessibilityLabel(Text(action.title))
+        .accessibilityIdentifier(action.accessibilityIdentifier)
     }
+}
 
-    private var iconTint: Color {
-        if entry.isEnabled == false {
-            return .secondary
+private struct DisplaySurfaceIconTile: View {
+    let model: AppListRowModel
+
+    var body: some View {
+        let screenTint = model.iconScreenTint
+            ?? (model.isEmphasized ? DisplayIconTintResolver.enabledIdle : nil)
+
+        if let screenTint {
+            Image(systemName: model.iconSystemName)
+                .font(.system(size: 28, weight: .regular))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.primary.opacity(0.88), screenTint)
+                .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
+                .appTileStyle()
+        } else {
+            Image(systemName: model.iconSystemName)
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: AppUI.List.iconBoxWidth, height: AppUI.List.iconBoxHeight, alignment: .center)
+                .appTileStyle()
         }
-        return entry.isDestructive ? .red : .secondary
+    }
+}
+
+private struct FlowStatusBadges: View {
+    let model: AppListRowModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let status = model.status {
+                DisplaySurfaceStatusPill(title: status.title, tint: status.tint, showsDot: true)
+            }
+
+            ForEach(model.metaBadges) { badge in
+                DisplaySurfaceStatusPill(title: badge.title, tint: .secondary, showsDot: false)
+                    .opacity(badge.isVisible ? 1 : 0)
+                    .accessibilityHidden(!badge.isVisible)
+            }
+        }
+    }
+}
+
+private struct DisplaySurfaceStatusPill: View {
+    let title: String
+    let tint: Color
+    let showsDot: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if showsDot {
+                Circle()
+                    .fill(tint)
+                    .frame(width: 7, height: 7)
+            }
+
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, AppUI.Spacing.small - 1)
+        .padding(.vertical, AppUI.Spacing.xSmall)
+        .background(
+            tint.opacity(colorScheme == .dark ? 0.20 : 0.12),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(tint.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: AppUI.Stroke.subtle)
+        )
+        .foregroundStyle(tint)
+    }
+}
+
+private struct DisplaySurfaceStatusGrid: View {
+    let items: [DisplaySurfaceStatusItemPresentation]
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 142), spacing: AppUI.Spacing.medium, alignment: .leading)
+    ]
+
+    var body: some View {
+        LazyVGrid(
+            columns: columns,
+            alignment: .leading,
+            spacing: AppUI.Spacing.medium
+        ) {
+            ForEach(items) { item in
+                DisplaySurfaceStatusItemView(item: item)
+            }
+        }
+    }
+}
+
+private struct DisplaySurfaceStatusItemView: View {
+    let item: DisplaySurfaceStatusItemPresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(item.title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(item.value)
+                .font(item.isFailureCode ? .caption.monospaced() : .subheadline.weight(.medium))
+                .foregroundStyle(item.isFailureCode ? .orange : .primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(item.accessibilityIdentifier)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

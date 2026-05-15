@@ -117,12 +117,33 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.isSharing)
         #expect(surface.canStopMonitor)
         #expect(surface.canStopLANWebViewSharing)
+        #expect(primaryIDs(in: surface) == [
+            "kind",
+            "resolution",
+            "virtualDisplay",
+            "monitor",
+            "lanWebView",
+            "viewerCount",
+            "issue"
+        ])
         #expect(primaryValue("displays_resolution_status", in: surface) == "1920 × 1080 pixels")
         #expect(primaryValue("displays_virtual_display_status", in: surface) == "Enabled, Live, Idle")
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Attached")
-        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Attached")
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Monitoring")
+        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Sharing")
         #expect(primaryValue("displays_viewer_count", in: surface) == "3")
-        #expect(primaryValue("displays_issue_status", in: surface) == "None")
+        #expect(primaryValue("displays_issue_status", in: surface) == "Normal")
+        #expect(surface.accessibilitySummary.contains("Monitor: Monitoring"))
+        #expect(surface.accessibilitySummary.contains("LAN Web View: Sharing"))
+        #expect(surface.accessibilitySummary.contains("Active Viewers: 3"))
+        #expect(surface.accessibilitySummary.contains("Issue: Normal"))
+        let manageAction = try #require(rowAction(.manageVirtualDisplay, in: surface))
+        #expect(manageAction.isEnabled)
+        let stopMonitorAction = try #require(rowAction(.stopMonitor, in: surface))
+        #expect(stopMonitorAction.title == "Stop Monitor")
+        #expect(stopMonitorAction.isEnabled)
+        let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
+        #expect(stopLANWebViewAction.title == "Stop LAN Web View")
+        #expect(stopLANWebViewAction.isEnabled)
         #expect(technicalValue("displays_capture_intent_status", in: surface) == "Capture, Attach, Applied")
         #expect(technicalValue("displays_lease_status", in: surface) == "2 of 2 active")
         #expect(technicalValue("displays_last_failure_code", in: surface) == "None")
@@ -140,7 +161,7 @@ struct DisplaySurfacePresentationMapperTests {
         ])
     }
 
-    @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() {
+    @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() throws {
         let displayID: DisplayRuntimeDisplayID = 77
         let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
         let failedLease = makeLease(
@@ -186,6 +207,9 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.canStopMonitor)
         #expect(primaryValue("displays_monitor_status", in: surface) == "Failed")
         #expect(primaryValue("displays_issue_status", in: surface) == "Needs attention")
+        let openMonitorAction = try #require(rowAction(.openMonitor, in: surface))
+        #expect(openMonitorAction.isEnabled)
+        #expect(rowAction(.stopMonitor, in: surface) == nil)
         #expect(technicalValue("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
         #expect(!technicalValue("displays_surface_identity_value", in: surface).contains(String(displayID)))
         assertPrimaryStatusDoesNotExposeRuntimeTerms(surface)
@@ -279,12 +303,18 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.isSharing)
         #expect(!surface.canStopMonitor)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Inactive")
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Not Monitoring")
         #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Route ready")
         #expect(primaryValue("displays_viewer_count", in: surface) == "2")
+        let openMonitorAction = try #require(rowAction(.openMonitor, in: surface))
+        #expect(openMonitorAction.isEnabled)
+        let openLANWebViewAction = try #require(rowAction(.openLANWebView, in: surface))
+        #expect(openLANWebViewAction.isEnabled)
+        #expect(rowAction(.stopMonitor, in: surface) == nil)
+        #expect(rowAction(.stopLANWebView, in: surface) == nil)
     }
 
-    @Test func effectiveIntentRuntimeDemandDrivesAttachedStateWithoutStopActions() {
+    @Test func effectiveIntentRuntimeDemandDrivesAttachedStateWithoutStopActions() throws {
         let displayID: DisplayRuntimeDisplayID = 79
         let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
         let aggregateDemand = DisplayRuntimeAggregatedDemand(
@@ -351,10 +381,25 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.isSharing)
         #expect(!surface.canStopMonitor)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(primaryValue("displays_monitor_status", in: surface) == "Attached")
-        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Attached")
+        #expect(primaryValue("displays_monitor_status", in: surface) == "Monitoring")
+        #expect(primaryValue("displays_lan_web_view_status", in: surface) == "Sharing")
+        let stopMonitorAction = try #require(rowAction(.stopMonitor, in: surface))
+        #expect(!stopMonitorAction.isEnabled)
+        let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
+        #expect(!stopLANWebViewAction.isEnabled)
         #expect(technicalValue("displays_capture_intent_status", in: surface) == "Capture, Attach, Applied")
         #expect(technicalValue("displays_lease_status", in: surface) == "No attachments")
+    }
+
+    private func primaryIDs(in surface: DisplaySurfacePresentation) -> [String] {
+        surface.primaryStatusItems.map(\.id)
+    }
+
+    private func rowAction(
+        _ kind: DisplaySurfaceRowActionKind,
+        in surface: DisplaySurfacePresentation
+    ) -> DisplaySurfaceRowActionPresentation? {
+        surface.rowActions.first { $0.kind == kind }
     }
 
     private func primaryValue(
