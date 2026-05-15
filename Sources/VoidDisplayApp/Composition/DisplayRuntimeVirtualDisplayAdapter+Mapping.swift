@@ -72,20 +72,24 @@ extension DisplayRuntimeScopeEscalationReason {
 extension DisplayRuntimeVirtualDisplaySnapshot {
     @MainActor
     init(
-        adapterController controller: VirtualDisplayController
+        adapterController controller: VirtualDisplayController?,
+        commandSnapshot: VirtualDisplaySnapshot
     ) {
+        let rebuildingConfigIDs = controller.map { Array($0.rebuildingConfigIds) } ?? []
+        let recentlyAppliedConfigIDs = controller.map { Array($0.recentlyAppliedConfigIds) } ?? []
+        let rebuildFailureConfigIDs = controller.map { Array($0.rebuildFailureMessageByConfigId.keys) } ?? []
         self.init(
-            rebuildRequestCount: controller.rebuildRequestCount,
-            rebuildingConfigIDs: Array(controller.rebuildingConfigIds),
-            runningConfigIDs: Array(controller.runningConfigIds),
-            recentlyAppliedConfigIDs: Array(controller.recentlyAppliedConfigIds),
-            rebuildFailureConfigIDs: Array(controller.rebuildFailureMessageByConfigId.keys),
-            configStoreHasLoadFailure: controller.configStorePresentation.hasLoadFailure,
-            configStoreHasDiagnostics: controller.configStorePresentation.loadErrorMessage != nil
-                || controller.configStorePresentation.diagnosticsSummary != nil,
-            managedDisplays: controller.managedDisplays.displayRuntimeManagedDisplays,
-            configs: controller.displayConfigs.displayRuntimeVirtualDisplayConfigs,
-            restoreFailureConfigIDs: controller.restoreFailures.map(\.id)
+            rebuildRequestCount: controller?.rebuildRequestCount ?? 0,
+            rebuildingConfigIDs: rebuildingConfigIDs,
+            runningConfigIDs: Array(commandSnapshot.runningConfigIds),
+            recentlyAppliedConfigIDs: recentlyAppliedConfigIDs,
+            rebuildFailureConfigIDs: rebuildFailureConfigIDs,
+            configStoreHasLoadFailure: commandSnapshot.configStorePresentation.hasLoadFailure,
+            configStoreHasDiagnostics: commandSnapshot.configStorePresentation.loadErrorMessage != nil
+                || commandSnapshot.configStorePresentation.diagnosticsSummary != nil,
+            managedDisplays: commandSnapshot.managedDisplays.displayRuntimeManagedDisplays,
+            configs: commandSnapshot.configs.displayRuntimeVirtualDisplayConfigs,
+            restoreFailureConfigIDs: commandSnapshot.restoreFailures.map(\.id)
         )
     }
 }
@@ -100,20 +104,6 @@ extension VirtualDisplayConfig {
             physicalHeight: Int(editDTO.physicalHeightMillimeters),
             modes: editDTO.modes.adapterModeConfigs,
             desiredEnabled: editDTO.desiredEnabled
-        )
-    }
-}
-
-extension VirtualDisplayCreateRequest {
-    init(runtimeRequest: DisplayRuntimeVirtualDisplayCreateRequest) {
-        self.init(
-            displayName: runtimeRequest.displayName,
-            serialNumber: runtimeRequest.serialNumber,
-            physicalWidthMillimeters: runtimeRequest.physicalWidthMillimeters,
-            physicalHeightMillimeters: runtimeRequest.physicalHeightMillimeters,
-            maximumPixelWidth: runtimeRequest.maximumPixelWidth,
-            maximumPixelHeight: runtimeRequest.maximumPixelHeight,
-            modes: runtimeRequest.modes.resolutionSelections
         )
     }
 }
@@ -230,7 +220,7 @@ extension DisplayRuntimeStartupRestoreConfig {
         self.init(
             id: config.id,
             desiredEnabled: config.desiredEnabled,
-            evidence: DisplayRuntimeVirtualDisplayConfigEvidence(config.evidence, fallbackID: config.id)
+            evidence: DisplayRuntimeVirtualDisplayConfigEvidence(config.evidence, configID: config.id)
         )
     }
 }
@@ -377,7 +367,7 @@ private extension Array where Element == VirtualDisplayConfig.ModeConfig {
     }
 }
 
-private extension Array where Element == DisplayRuntimeVirtualDisplayModeDTO {
+extension Array where Element == DisplayRuntimeVirtualDisplayModeDTO {
     var adapterModeConfigs: [VirtualDisplayConfig.ModeConfig] {
         map { VirtualDisplayConfig.ModeConfig(runtimeMode: $0) }
     }
@@ -409,9 +399,9 @@ private extension DisplayRuntimeVirtualDisplayCreateConfigEvidence {
 }
 
 private extension DisplayRuntimeVirtualDisplayConfigEvidence {
-    init(_ evidence: VirtualDisplayCommandConfigEvidence, fallbackID: UUID) {
+    init(_ evidence: VirtualDisplayCommandConfigEvidence, configID: UUID) {
         self.init(
-            id: evidence.id ?? fallbackID,
+            id: evidence.id ?? configID,
             serialNumber: evidence.serialNumber,
             desiredEnabled: evidence.desiredEnabled,
             physicalWidthMillimeters: evidence.physicalWidthMillimeters,

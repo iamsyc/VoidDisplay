@@ -266,10 +266,7 @@ private func makeVirtualDisplayPreviewController() -> VirtualDisplayController {
         virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: .baseline),
         appliedBadgeDisplayDuration: .seconds(0.1)
     )
-    controller.configureRebuildExecutor { [weak controller] configID, _ in
-        guard let controller else { return }
-        try await controller.rebuildVirtualDisplay(configId: configID)
-    }
+    controller.configureRebuildExecutor { _, _ in }
     return controller
 }
 

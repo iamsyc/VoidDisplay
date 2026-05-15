@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import VoidDisplayRuntime
 import VoidDisplayVirtualDisplay
@@ -5,38 +6,40 @@ import VoidDisplayVirtualDisplay
 @MainActor
 package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDisplayProviding, DisplayRuntimeVirtualDisplayCommanding, DisplayRuntimeStartupRestoreCommanding {
     private weak var controller: VirtualDisplayController?
+    private let commandFacade: any VirtualDisplayFacade
 
-    package init(controller: VirtualDisplayController) {
+    package init(
+        controller: VirtualDisplayController,
+        commandFacade: any VirtualDisplayFacade
+    ) {
         self.controller = controller
+        self.commandFacade = commandFacade
     }
 
     package func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
-        guard let controller else { return .empty }
-        return DisplayRuntimeVirtualDisplaySnapshot(adapterController: controller)
+        DisplayRuntimeVirtualDisplaySnapshot(
+            adapterController: controller,
+            commandSnapshot: commandFacade.snapshot
+        )
     }
 
     package func rebuildVirtualDisplay(configID: UUID) async throws -> DisplayRuntimeVirtualDisplayRebuildCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
-        let preDisplayID = controller.runtimeDisplayID(for: configID)
-        try await controller.rebuildVirtualDisplay(configId: configID)
+        let preDisplayID = commandFacade.snapshot.runtimeDisplayIDByConfigId[configID]
+        try await commandFacade.rebuildVirtualDisplay(configId: configID)
+        let snapshot = commandFacade.snapshot
         return DisplayRuntimeVirtualDisplayRebuildCommandResult(
             configID: configID,
             preDisplayID: preDisplayID,
-            postDisplayID: controller.runtimeDisplayID(for: configID),
-            runningConfigIDsAfterCommand: controller.runningConfigIds,
-            managedDisplaysAfterCommand: controller.managedDisplays
+            postDisplayID: snapshot.runtimeDisplayIDByConfigId[configID],
+            runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+            managedDisplaysAfterCommand: snapshot.managedDisplays
         )
     }
 
     package func preflightEnableVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayEnablePreflight {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
-        let preflight = controller.enableDisplayPreflight(request.configID)
+        let preflight = commandFacade.enableDisplayPreflight(request.configID)
         return DisplayRuntimeVirtualDisplayEnablePreflight(
             configID: preflight.configID,
             targetPreDisplayID: preflight.targetPreDisplayID,
@@ -49,10 +52,7 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     package func setVirtualDisplayDesiredEnabled(
         request: DisplayRuntimeVirtualDisplayDesiredEnabledCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
-        try controller.setDesiredEnabled(request.configID, enabled: request.enabled)
+        try commandFacade.setDesiredEnabled(request.configID, enabled: request.enabled)
         return DisplayRuntimeVirtualDisplayDesiredEnabledCommandResult(
             configID: request.configID,
             desiredEnabled: request.enabled,
@@ -63,15 +63,15 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     package func saveConfigForRebuild(
         request: DisplayRuntimeVirtualDisplayEditRebuildRequest
     ) async throws -> DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
         let updated = VirtualDisplayConfig(editDTO: request.editedConfig)
         do {
-            let previous = try controller.saveConfigForRebuildCommand(
-                updated,
-                expectedConfigFingerprint: request.expectedConfigFingerprint
-            )
+            guard let previous = commandFacade.configForEditRebuild(updated.id) else {
+                throw VirtualDisplayOperationError.configNotFound
+            }
+            guard previous.editRebuildFingerprint == request.expectedConfigFingerprint else {
+                throw VirtualDisplayEditRebuildPersistenceError.editRequestStale
+            }
+            try commandFacade.saveConfigForRebuild(updated)
             return DisplayRuntimeVirtualDisplayEditRebuildSaveCommandResult(
                 configID: updated.id,
                 persistenceOutcome: .saved,
@@ -88,11 +88,8 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     package func restoreConfigAfterFailedEdit(
         request: DisplayRuntimeVirtualDisplayEditRebuildRestoreCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayPersistenceCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
         let previous = VirtualDisplayConfig(editDTO: request.previousConfigForCompensation)
-        try controller.restoreConfigAfterFailedEditCommand(previous)
+        try commandFacade.restoreConfigAfterFailedEdit(previous)
         return DisplayRuntimeVirtualDisplayPersistenceCommandResult(
             configID: previous.id,
             persistenceOutcome: .rolledBack
@@ -102,42 +99,46 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     package func enableVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
-        let result = try await controller.enableRuntimeDisplay(request.configID)
+        let result = try await commandFacade.enableRuntimeDisplay(request.configID)
+        let snapshot = commandFacade.snapshot
         return DisplayRuntimeVirtualDisplayLifecycleCommandResult(
             lowerResult: result,
             request: request,
-            runningConfigIDsAfterCommand: controller.runningConfigIds,
-            managedDisplaysAfterCommand: controller.managedDisplays
+            runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+            managedDisplaysAfterCommand: snapshot.managedDisplays
         )
     }
 
     package func disableVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayLifecycleCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayLifecycleCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
-        let result = try controller.disableRuntimeDisplayByConfig(request.configID)
+        let result = try commandFacade.disableRuntimeDisplayByConfig(request.configID)
+        let snapshot = commandFacade.snapshot
         return DisplayRuntimeVirtualDisplayLifecycleCommandResult(
             lowerResult: result,
             request: request,
-            runningConfigIDsAfterCommand: controller.runningConfigIds,
-            managedDisplaysAfterCommand: controller.managedDisplays
+            runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+            managedDisplaysAfterCommand: snapshot.managedDisplays
         )
     }
 
     package func createVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayCreateRequest
     ) async throws -> DisplayRuntimeVirtualDisplayCreateCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
-        let commandRequest = VirtualDisplayCreateRequest(runtimeRequest: request)
         do {
-            let result = try controller.createDisplayCommand(commandRequest)
+            let result = try commandFacade.createDisplayCommand(
+                name: request.displayName,
+                serialNum: request.serialNumber,
+                physicalSize: CGSize(
+                    width: CGFloat(request.physicalWidthMillimeters),
+                    height: CGFloat(request.physicalHeightMillimeters)
+                ),
+                maxPixels: (
+                    width: request.maximumPixelWidth,
+                    height: request.maximumPixelHeight
+                ),
+                modes: request.modes.resolutionSelections
+            )
             return DisplayRuntimeVirtualDisplayCreateCommandResult(
                 transactionID: request.transactionID,
                 lowerResult: result
@@ -156,11 +157,8 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     package func deleteVirtualDisplay(
         request: DisplayRuntimeVirtualDisplayDeleteCommandRequest
     ) async throws -> DisplayRuntimeVirtualDisplayDeleteCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
         do {
-            let result = try controller.deleteDisplayCommand(configId: request.configID)
+            let result = try commandFacade.deleteDisplayCommand(request.configID)
             return DisplayRuntimeVirtualDisplayDeleteCommandResult(
                 transactionID: request.transactionID,
                 lowerResult: result
@@ -179,35 +177,18 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     package func loadPersistedVirtualDisplayConfigsForStartupRestore()
         async -> DisplayRuntimeStartupRestoreConfigLoadResult
     {
-        guard let controller else {
-            return .failed(reason: "virtual_display_controller_unavailable")
-        }
-        let result = controller.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
+        let result = commandFacade.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
         return DisplayRuntimeStartupRestoreConfigLoadResult(lowerResult: result)
     }
 
     package func restoreVirtualDisplayForStartup(
         request: DisplayRuntimeStartupRestoreCommandRequest
     ) async throws -> DisplayRuntimeStartupRestoreCommandResult {
-        guard let controller else {
-            throw DisplayRuntimeAdapterError.adapterUnavailable("virtual_display_controller_unavailable")
-        }
         let lowerRequest = VirtualDisplayStartupRestoreCommandRequest(runtimeRequest: request)
-        let result = controller.restoreVirtualDisplayForStartupCommand(lowerRequest)
+        let result = commandFacade.restoreVirtualDisplayForStartupCommand(lowerRequest)
         return DisplayRuntimeStartupRestoreCommandResult(
             runtimeRequest: request,
             lowerResult: result
         )
-    }
-}
-
-private enum DisplayRuntimeAdapterError: LocalizedError {
-    case adapterUnavailable(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .adapterUnavailable(let reason):
-            reason
-        }
     }
 }

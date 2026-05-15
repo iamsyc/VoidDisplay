@@ -27,8 +27,6 @@ struct VirtualDisplayControllerTests {
             virtualDisplayFacade: virtualDisplay
         )
 
-        _ = env.virtualDisplay.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
-
         #expect(env.virtualDisplay.configStorePresentation.hasLoadFailure)
         #expect(
             env.virtualDisplay.configStorePresentation.loadErrorMessage
@@ -624,11 +622,20 @@ struct VirtualDisplayControllerTests {
             virtualDisplayFacade: orchestrator,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        sut.configureCreateExecutor { [weak sut] request in
-            guard let sut else {
-                throw NSError(domain: "VirtualDisplayControllerTests", code: 77)
-            }
-            let result = try sut.createDisplayCommand(request)
+        sut.configureCreateExecutor { request in
+            let result = try orchestrator.createDisplayCommand(
+                name: request.displayName,
+                serialNum: request.serialNumber,
+                physicalSize: CGSize(
+                    width: CGFloat(request.physicalWidthMillimeters),
+                    height: CGFloat(request.physicalHeightMillimeters)
+                ),
+                maxPixels: (
+                    width: request.maximumPixelWidth,
+                    height: request.maximumPixelHeight
+                ),
+                modes: request.modes
+            )
             return VirtualDisplayCreateTransactionResult(
                 transactionID: UUID(),
                 status: .completed,
@@ -754,65 +761,6 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [disabled.id, enabled.id])
         #expect(sut.virtualDisplay.persistenceAlert != nil)
         #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
-    }
-
-    @Test func commandOnlySaveConfigForRebuildDoesNotSetPersistenceAlertOrCallUpdateConfig() throws {
-        let virtualDisplay = MockVirtualDisplayFacade()
-        let config = VirtualDisplayConfig(
-            displayName: "Loaded",
-            serialNum: 131,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        var edited = config
-        edited.displayName = "Edited"
-        virtualDisplay.currentDisplayConfigs = [config]
-        let sut = makeControllerEnvironment(
-            captureMonitoringService: MockCaptureMonitoringService(),
-            sharingService: MockSharingService(),
-            virtualDisplayFacade: virtualDisplay
-        )
-
-        let previous = try sut.virtualDisplay.saveConfigForRebuildCommand(
-            edited,
-            expectedConfigFingerprint: config.editRebuildFingerprint
-        )
-
-        #expect(previous.displayName == "Loaded")
-        #expect(virtualDisplay.configForEditRebuildIDs == [config.id])
-        #expect(virtualDisplay.saveConfigForRebuildCallCount == 1)
-        #expect(virtualDisplay.updateConfigCallCount == 0)
-        #expect(sut.virtualDisplay.persistenceAlert == nil)
-    }
-
-    @Test func commandOnlySaveConfigForRebuildStaleFailsBeforeSaving() {
-        let virtualDisplay = MockVirtualDisplayFacade()
-        let config = VirtualDisplayConfig(
-            displayName: "Loaded",
-            serialNum: 132,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        virtualDisplay.currentDisplayConfigs = [config]
-        let sut = makeControllerEnvironment(
-            captureMonitoringService: MockCaptureMonitoringService(),
-            sharingService: MockSharingService(),
-            virtualDisplayFacade: virtualDisplay
-        )
-
-        #expect(throws: VirtualDisplayEditRebuildPersistenceError.self) {
-            _ = try sut.virtualDisplay.saveConfigForRebuildCommand(
-                config,
-                expectedConfigFingerprint: "stale"
-            )
-        }
-
-        #expect(virtualDisplay.saveConfigForRebuildCallCount == 0)
-        #expect(sut.virtualDisplay.persistenceAlert == nil)
     }
 
     @Test func saveConfigAndRebuildSendsSingleExecutorRequest() async throws {
@@ -962,9 +910,8 @@ private func makeControllerEnvironment(
         virtualDisplayFacade: virtualDisplayFacade,
         appliedBadgeDisplayDuration: appliedBadgeDisplayDuration
     )
-    controller.configureRebuildExecutor { [weak controller] configID, _ in
-        guard let controller else { return }
-        try await controller.rebuildVirtualDisplay(configId: configID)
+    controller.configureRebuildExecutor { configID, _ in
+        try await virtualDisplayFacade.rebuildVirtualDisplay(configId: configID)
     }
     return ControllerTestEnvironment(virtualDisplay: controller)
 }

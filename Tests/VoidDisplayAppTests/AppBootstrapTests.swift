@@ -37,7 +37,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        await env.waitForStartupObservability()
+        await env.waitForStartupRuntimeTasks()
         let diagnostics = await env.observability.diagnosticsSnapshot()
         let runtimeSection = try #require(diagnostics.state.sections["runtime"])
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
@@ -70,8 +70,6 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
-
-        #expect(env.virtualDisplay.hasConfiguredRebuildExecutor)
 
         env.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
 
@@ -107,8 +105,6 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        #expect(env.virtualDisplay.hasConfiguredDesiredEnabledExecutor)
-
         try await env.virtualDisplay.setVirtualDisplayDesiredEnabled(
             configId: config.id,
             enabled: true,
@@ -119,6 +115,7 @@ struct AppBootstrapTests {
         #expect(virtualDisplay.setDesiredEnabledRequests.map(\.0) == [config.id])
         #expect(virtualDisplay.enableRuntimeDisplayConfigIDs == [config.id])
         #expect(virtualDisplay.enableRuntimeDisplayCallCount == 1)
+        #expect(env.virtualDisplay.displayConfigs.first?.desiredEnabled == true)
         #expect(trace.kind == .virtualDisplayEnable)
     }
 
@@ -145,8 +142,6 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        #expect(env.virtualDisplay.hasConfiguredEditRebuildExecutor)
-
         let handle = try await env.virtualDisplay.saveConfigAndRebuild(
             edited,
             expectedConfigFingerprint: config.editRebuildFingerprint,
@@ -163,6 +158,7 @@ struct AppBootstrapTests {
 
         #expect(saveGate.configID == config.id)
         #expect(rebuilt)
+        #expect(env.virtualDisplay.displayConfigs.first?.displayName == "Runtime Edit Renamed")
         #expect(virtualDisplay.saveConfigForRebuildCallCount == 1)
         #expect(virtualDisplay.updateConfigCallCount == 0)
         #expect(trace.kind == .virtualDisplayEditRebuild)
@@ -181,8 +177,6 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
         )
-
-        #expect(env.virtualDisplay.hasConfiguredCreateExecutor)
 
         let result = try await env.virtualDisplay.createVirtualDisplay(
             VirtualDisplayCreateRequest(
@@ -227,8 +221,6 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        #expect(env.virtualDisplay.hasConfiguredDeleteExecutor)
-
         try await env.virtualDisplay.deleteVirtualDisplay(configId: config.id)
         let trace = try #require(env.displayRuntime.makeSnapshot().transactions.recentTransactions.first)
 
@@ -270,7 +262,7 @@ struct AppBootstrapTests {
         )
         _ = try await handle.waitForSaveGate()
         _ = try await handle.waitForTerminalResult()
-        await env.waitForStartupObservability()
+        await env.waitForStartupRuntimeTasks()
         await env.observability.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
 
         let runtimeJSON = String(
@@ -333,7 +325,7 @@ struct AppBootstrapTests {
             )
         )
         try await env.virtualDisplay.deleteVirtualDisplay(configId: deleteConfig.id)
-        await env.waitForStartupObservability()
+        await env.waitForStartupRuntimeTasks()
         await env.observability.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
 
         let runtimeJSON = String(
@@ -386,7 +378,7 @@ struct AppBootstrapTests {
             demand: runtimeLeaseRedactionDemand()
         )
 
-        await env.waitForStartupObservability()
+        await env.waitForStartupRuntimeTasks()
         await env.observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
 
         let runtimeJSON = String(
@@ -532,7 +524,7 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
-        await env.waitForStartupObservability()
+        await env.waitForStartupRuntimeTasks()
 
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
         #expect(virtualDisplay.startupRestoreCommandRequests.isEmpty)
@@ -602,7 +594,7 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
-        await sut.waitForStartupObservability()
+        await sut.waitForStartupRuntimeTasks()
         let startupTrace = try #require(
             sut.displayRuntime.makeSnapshot().transactions.recentTransactions.first {
                 $0.kind == .virtualDisplayStartupRestore
@@ -616,6 +608,7 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.count == 1)
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
+        #expect(sut.virtualDisplay.runningConfigIds == [fixtureConfig.id])
     }
 }
 

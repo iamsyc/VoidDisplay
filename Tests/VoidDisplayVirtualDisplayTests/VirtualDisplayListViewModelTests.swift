@@ -14,11 +14,8 @@ struct VirtualDisplayListViewModelTests {
         let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.configureDeleteExecutor { [weak controller] configID in
-            guard let controller else {
-                throw NSError(domain: "VirtualDisplayListViewModelTests", code: 1)
-            }
-            let result = try controller.deleteDisplayCommand(configId: configID)
+        controller.configureDeleteExecutor { configID in
+            let result = try mockService.deleteDisplayCommand(configID)
             return VirtualDisplayDeleteTransactionResult(
                 transactionID: UUID(),
                 status: .completed,
@@ -47,11 +44,8 @@ struct VirtualDisplayListViewModelTests {
         mockService.currentDisplayConfigs = [config]
         mockService.destroyDisplayError = NSError(domain: "VirtualDisplayListViewModelTests", code: 12)
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.configureDeleteExecutor { [weak controller] configID in
-            guard let controller else {
-                throw NSError(domain: "VirtualDisplayListViewModelTests", code: 2)
-            }
-            let result = try controller.deleteDisplayCommand(configId: configID)
+        controller.configureDeleteExecutor { configID in
+            let result = try mockService.deleteDisplayCommand(configID)
             return VirtualDisplayDeleteTransactionResult(
                 transactionID: UUID(),
                 status: .completed,

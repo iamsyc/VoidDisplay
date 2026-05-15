@@ -173,7 +173,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.controller.screenCaptureSessions.isEmpty)
     }
 
-    @Test func monitorStopWithoutRuntimeLeaseDoesNotInvokeDirectCaptureClose() async throws {
+    @Test func monitorStopWithoutRuntimeLeaseLeavesCaptureSessionOwnedByService() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8415, width: 1920, height: 1080)
         let harness = monitorHarness(display: display)
         let actions = CaptureUIComposition.monitoringActions(
@@ -183,7 +183,7 @@ struct DisplayRuntimeAdapterTests {
         let outcome = try await harness.controller.startMonitoring(
             display: display,
             metadata: CaptureMonitoringDisplayMetadata(
-                displayName: "Direct Legacy Session",
+                displayName: "Runtime Lease Bypass Session",
                 resolutionText: "1920 × 1080",
                 isVirtualDisplay: false
             )
@@ -613,7 +613,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(sharingService.startedSharingDisplayIDs == [invalidatedDisplay.displayID, failedDisplay.displayID])
     }
 
-    @Test func virtualDisplayAdapterRebuildCallsControllerCommandPath() async throws {
+    @Test func virtualDisplayAdapterRebuildCallsLowerFacade() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Adapter",
             serialNum: 9301,
@@ -630,7 +630,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let result = try await sut.rebuildVirtualDisplay(configID: config.id)
 
@@ -670,7 +670,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let snapshot = sut.makeVirtualDisplaySnapshot()
         let dto = try #require(snapshot.configs.first)
@@ -705,7 +705,7 @@ struct DisplayRuntimeAdapterTests {
         ])
     }
 
-    @Test func virtualDisplayAdapterEnableUsesCommandOnlyPath() async throws {
+    @Test func virtualDisplayAdapterEnableUsesLowerFacade() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Enable Adapter",
             serialNum: 9302,
@@ -721,7 +721,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         _ = try await sut.setVirtualDisplayDesiredEnabled(request: .init(configID: config.id, enabled: true))
         let result = try await sut.enableVirtualDisplay(
@@ -745,7 +745,7 @@ struct DisplayRuntimeAdapterTests {
         ])
     }
 
-    @Test func virtualDisplayAdapterDisableUsesCommandOnlyPath() async throws {
+    @Test func virtualDisplayAdapterDisableUsesLowerFacade() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Disable Adapter",
             serialNum: 9303,
@@ -762,7 +762,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         _ = try await sut.setVirtualDisplayDesiredEnabled(request: .init(configID: config.id, enabled: false))
         let result = try await sut.disableVirtualDisplay(
@@ -779,7 +779,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.managedDisplaysAfterCommand.isEmpty)
     }
 
-    @Test func virtualDisplayAdapterSaveConfigForRebuildUsesCommandOnlyPathAndReturnsPreviousConfig() async throws {
+    @Test func virtualDisplayAdapterSaveConfigForRebuildUsesLowerFacadeAndReturnsPreviousConfig() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Old Adapter Name",
             serialNum: 9304,
@@ -804,7 +804,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let result = try await sut.saveConfigForRebuild(
             request: .init(
@@ -857,7 +857,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         await #expect(throws: DisplayRuntimeVirtualDisplayEditRebuildSaveCommandError.self) {
             _ = try await sut.saveConfigForRebuild(
@@ -874,7 +874,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
-    @Test func virtualDisplayAdapterCommandOnlySaveFailureDoesNotSetPersistenceAlert() async throws {
+    @Test func virtualDisplayAdapterLowerFacadeSaveFailureDoesNotSetPersistenceAlert() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Save Failure",
             serialNum: 9307,
@@ -885,12 +885,12 @@ struct DisplayRuntimeAdapterTests {
         )
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [config]
-        facade.saveConfigForRebuildError = NSError(domain: "CommandOnlySave", code: 7)
+        facade.saveConfigForRebuildError = NSError(domain: "LowerFacadeSave", code: 7)
         let controller = VirtualDisplayController(
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         await #expect(throws: (any Error).self) {
             _ = try await sut.saveConfigForRebuild(
@@ -906,7 +906,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
-    @Test func virtualDisplayAdapterRestoreConfigAfterFailedEditUsesPreviousConfigCommandPath() async throws {
+    @Test func virtualDisplayAdapterRestoreConfigAfterFailedEditUsesLowerFacade() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Edited",
             serialNum: 9308,
@@ -924,7 +924,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let result = try await sut.restoreConfigAfterFailedEdit(
             request: .init(
@@ -941,7 +941,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
-    @Test func virtualDisplayCreateRequestMappingPreservesRuntimeAndLowerCommandFields() {
+    @Test func virtualDisplayCreateRequestMappingPreservesRuntimeFields() {
         let request = VirtualDisplayCreateRequest(
             displayName: "Create Mapping",
             serialNumber: 9309,
@@ -959,8 +959,6 @@ struct DisplayRuntimeAdapterTests {
             request: request,
             source: .createVirtualDisplaySheet
         )
-        let lowerRequest = VirtualDisplayCreateRequest(runtimeRequest: runtimeRequest)
-
         #expect(runtimeRequest.displayName == "Create Mapping")
         #expect(runtimeRequest.serialNumber == 9309)
         #expect(runtimeRequest.physicalWidthMillimeters == 630)
@@ -972,19 +970,9 @@ struct DisplayRuntimeAdapterTests {
             .init(width: 2560, height: 1440, refreshRate: 75, enableHiDPI: true)
         ])
         #expect(runtimeRequest.source == .createVirtualDisplaySheet)
-        #expect(lowerRequest.displayName == request.displayName)
-        #expect(lowerRequest.serialNumber == request.serialNumber)
-        #expect(lowerRequest.physicalWidthMillimeters == request.physicalWidthMillimeters)
-        #expect(lowerRequest.physicalHeightMillimeters == request.physicalHeightMillimeters)
-        #expect(lowerRequest.maximumPixelWidth == request.maximumPixelWidth)
-        #expect(lowerRequest.maximumPixelHeight == request.maximumPixelHeight)
-        #expect(lowerRequest.modes.map(\.width) == [1920, 2560])
-        #expect(lowerRequest.modes.map(\.height) == [1080, 1440])
-        #expect(lowerRequest.modes.map(\.refreshRate) == [60, 75])
-        #expect(lowerRequest.modes.map(\.enableHiDPI) == [false, true])
     }
 
-    @Test func virtualDisplayAdapterCreateUsesCommandOnlyPathAndMapsFacts() async throws {
+    @Test func virtualDisplayAdapterCreateUsesLowerFacadeAndMapsFacts() async throws {
         let createdID = UUID()
         let facade = MockVirtualDisplayFacade()
         facade.createDisplayResult = .success(createdID)
@@ -994,7 +982,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let result = try await sut.createVirtualDisplay(
             request: runtimeCreateRequest(displayName: "Adapter Secret", serialNumber: 9310)
@@ -1057,7 +1045,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         await #expect(throws: DisplayRuntimeVirtualDisplayCreateCommandError.self) {
             _ = try await sut.createVirtualDisplay(
@@ -1068,7 +1056,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(controller.persistenceAlert == nil)
     }
 
-    @Test func virtualDisplayAdapterDeleteUsesCommandOnlyPathAndMapsFacts() async throws {
+    @Test func virtualDisplayAdapterDeleteUsesLowerFacadeAndMapsFacts() async throws {
         let config = VirtualDisplayConfig(
             displayName: "Delete Adapter",
             serialNum: 9312,
@@ -1085,7 +1073,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let result = try await sut.deleteVirtualDisplay(
             request: .init(
@@ -1111,7 +1099,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         do {
             _ = try await sut.deleteVirtualDisplay(
@@ -1161,7 +1149,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let loadResult = await sut.loadPersistedVirtualDisplayConfigsForStartupRestore()
         let desiredDTO = try #require(loadResult.configs.first { $0.id == desired.id })
@@ -1209,7 +1197,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let result = await sut.loadPersistedVirtualDisplayConfigsForStartupRestore()
 
@@ -1248,7 +1236,7 @@ struct DisplayRuntimeAdapterTests {
             virtualDisplayFacade: facade,
             appliedBadgeDisplayDuration: .nanoseconds(1)
         )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
 
         let lowerFailure = try await sut.restoreVirtualDisplayForStartup(
             request: startupRestoreRequest(configID: config.id, serialNumber: config.serialNum)
@@ -1266,20 +1254,6 @@ struct DisplayRuntimeAdapterTests {
         #expect(facade.startupRestoreCommandRequests.map(\.configID) == [config.id, missingID])
     }
 
-    @Test func virtualDisplayAdapterUnavailableFailsExplicitly() async throws {
-        var controller: VirtualDisplayController? = VirtualDisplayController(
-            virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDuration: .nanoseconds(1)
-        )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller!)
-        controller = nil
-
-        await #expect(throws: (any Error).self) {
-            _ = try await sut.enableVirtualDisplay(
-                request: .init(configID: UUID(), targetPreDisplayID: nil)
-            )
-        }
-    }
 }
 
 private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {

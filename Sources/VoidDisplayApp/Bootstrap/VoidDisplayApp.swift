@@ -26,7 +26,7 @@ package struct AppEnvironment {
     package let displayRuntime: DisplayRuntime
     package let capturePerformancePreferences: CapturePerformancePreferences
     package let feedbackController: AppSettingsFeedbackController
-    private let startupObservabilityTask: Task<Void, Never>
+    private let startupRuntimeTask: Task<Void, Never>
 
     package init(
         capture: CaptureController,
@@ -37,7 +37,7 @@ package struct AppEnvironment {
         displayRuntime: DisplayRuntime,
         capturePerformancePreferences: CapturePerformancePreferences,
         feedbackController: AppSettingsFeedbackController,
-        startupObservabilityTask: Task<Void, Never>
+        startupRuntimeTask: Task<Void, Never>
     ) {
         self.capture = capture
         self.observability = observability
@@ -47,11 +47,11 @@ package struct AppEnvironment {
         self.displayRuntime = displayRuntime
         self.capturePerformancePreferences = capturePerformancePreferences
         self.feedbackController = feedbackController
-        self.startupObservabilityTask = startupObservabilityTask
+        self.startupRuntimeTask = startupRuntimeTask
     }
 
-    package func waitForStartupObservability() async {
-        await startupObservabilityTask.value
+    package func waitForStartupRuntimeTasks() async {
+        await startupRuntimeTask.value
     }
 }
 
@@ -386,7 +386,10 @@ package enum AppBootstrap {
             }
         )
         let displayRuntimeSharingAdapter = DisplayRuntimeSharingAdapter(controller: sharing)
-        let displayRuntimeVirtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(controller: virtualDisplay)
+        let displayRuntimeVirtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(
+            controller: virtualDisplay,
+            commandFacade: resolvedVirtualDisplayFacade
+        )
         let displayRuntimeObservabilityAdapter = DisplayRuntimeObservabilityAdapter(observability: observability)
         let displayRuntime = DisplayRuntime(
             catalogProvider: displayRuntimeCatalogAdapter,
@@ -434,6 +437,7 @@ package enum AppBootstrap {
             return VirtualDisplayEditRebuildTransactionHandle(
                 transactionID: runtimeHandle.transactionID.rawValue,
                 saveGateTask: Task { @MainActor in
+                    defer { virtualDisplay.refreshVirtualDisplayState() }
                     let saveGate = try await runtimeHandle.waitForSaveGate()
                     return VirtualDisplayEditRebuildSaveGateResult(
                         transactionID: saveGate.transactionID.rawValue,
@@ -441,6 +445,7 @@ package enum AppBootstrap {
                     )
                 },
                 terminalResultTask: Task { @MainActor in
+                    defer { virtualDisplay.refreshVirtualDisplayState() }
                     let result = try await runtimeHandle.waitForTerminalResult()
                     return VirtualDisplayEditRebuildTransactionResult(
                         transactionID: result.transactionID.rawValue,
@@ -479,7 +484,7 @@ package enum AppBootstrap {
             )
         }
 
-        let startupObservabilityTask = Task { @MainActor in
+        let startupRuntimeTask = Task { @MainActor in
             await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: displayRuntime))
             )
@@ -491,6 +496,7 @@ package enum AppBootstrap {
             )
             if !preview, resolvedStartupPlan.shouldRestoreVirtualDisplays {
                 _ = await displayRuntime.restoreStartupVirtualDisplays(source: .startup)
+                virtualDisplay.refreshVirtualDisplayState()
             }
             await observability.refreshSnapshot(reason: .startup)
         }
@@ -509,7 +515,7 @@ package enum AppBootstrap {
             displayRuntime: displayRuntime,
             capturePerformancePreferences: capturePerformancePreferences,
             feedbackController: feedbackController,
-            startupObservabilityTask: startupObservabilityTask
+            startupRuntimeTask: startupRuntimeTask
         )
 
         return env

@@ -34,514 +34,6 @@
         }
       }
     },
-    "%lld of %lld active" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld of %2$lld active"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld/%2$lld 个活跃"
-          }
-        }
-      }
-    },
-    "%lld × %lld pixels" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld × %2$lld pixels"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld × %2$lld 像素"
-          }
-        }
-      }
-    },
-    "Active Viewers" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "活跃观看者"
-          }
-        }
-      }
-    },
-    "Attach" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "附加"
-          }
-        }
-      }
-    },
-    "Attached" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已附加"
-          }
-        }
-      }
-    },
-    "Capture" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "采集"
-          }
-        }
-      }
-    },
-    "Desired state unknown" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "目标状态未知"
-          }
-        }
-      }
-    },
-    "Detach" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分离"
-          }
-        }
-      }
-    },
-    "Disabled" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已停用"
-          }
-        }
-      }
-    },
-    "Display Identifier" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示器标识"
-          }
-        }
-      }
-    },
-    "Drain" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "释放"
-          }
-        }
-      }
-    },
-    "Draining" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在释放"
-          }
-        }
-      }
-    },
-    "Capture State" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "采集状态"
-          }
-        }
-      }
-    },
-    "Enabled" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已启用"
-          }
-        }
-      }
-    },
-    "Epoch changed" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "代次已变化"
-          }
-        }
-      }
-    },
-    "Failed" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失败"
-          }
-        }
-      }
-    },
-    "Failure" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失败"
-          }
-        }
-      }
-    },
-    "ID hash %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ID hash %1$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ID 哈希 %1$@"
-          }
-        }
-      }
-    },
-    "Idle" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "空闲"
-          }
-        }
-      }
-    },
-    "Ignored" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已忽略"
-          }
-        }
-      }
-    },
-    "Inactive" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未激活"
-          }
-        }
-      }
-    },
-    "Diagnostic Code" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "诊断代码"
-          }
-        }
-      }
-    },
-    "Issue" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "问题"
-          }
-        }
-      }
-    },
-    "Runtime Attachment" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行时连接"
-          }
-        }
-      }
-    },
-    "Live" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "活动"
-          }
-        }
-      }
-    },
-    "Manage Virtual Displays" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理虚拟显示器"
-          }
-        }
-      }
-    },
-    "No active capture" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未采集"
-          }
-        }
-      }
-    },
-    "Needs attention" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要处理"
-          }
-        }
-      }
-    },
-    "No Displays" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无显示器"
-          }
-        }
-      }
-    },
-    "No attachments" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无连接"
-          }
-        }
-      }
-    },
-    "Off" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭"
-          }
-        }
-      }
-    },
-    "Unknown" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知"
-          }
-        }
-      }
-    },
-    "Not live" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未活动"
-          }
-        }
-      }
-    },
-    "Open LAN Web View" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开局域网 Web 视图"
-          }
-        }
-      }
-    },
-    "Open Monitor" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开监看"
-          }
-        }
-      }
-    },
-    "Pending" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "待处理"
-          }
-        }
-      }
-    },
-    "Performance mode changed" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "性能模式已变化"
-          }
-        }
-      }
-    },
-    "Restarting" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在重启"
-          }
-        }
-      }
-    },
-    "Route Ready" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "路由就绪"
-          }
-        }
-      }
-    },
-    "Create or enable a virtual display to start using HiDPI remote desktop and LAN Web View." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创建或启用虚拟显示器，即可开始使用 HiDPI 远程桌面和局域网 Web 视图。"
-          }
-        }
-      }
-    },
-    "Resolution unavailable" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分辨率不可用"
-          }
-        }
-      }
-    },
-    "Selected" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选择"
-          }
-        }
-      }
-    },
-    "Stop LAN Web View" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止局域网 Web 视图"
-          }
-        }
-      }
-    },
-    "Stop Web View" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止 Web 查看"
-          }
-        }
-      }
-    },
-    "Stop Monitor" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止监看"
-          }
-        }
-      }
-    },
-    "Resolution" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分辨率"
-          }
-        }
-      }
-    },
-    "Display Details" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示器详情"
-          }
-        }
-      }
-    },
-    "Display Type" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示器类型"
-          }
-        }
-      }
-    },
-    "Transaction quiesce" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "事务静默"
-          }
-        }
-      }
-    },
     "%lld" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -593,6 +85,23 @@
         }
       }
     },
+    "%lld × %lld pixels" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld × %2$lld pixels"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld × %2$lld 像素"
+          }
+        }
+      }
+    },
     "%lld connected" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -623,6 +132,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld 台显示器"
+          }
+        }
+      }
+    },
+    "%lld of %lld active" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld active"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld/%2$lld 个活跃"
           }
         }
       }
@@ -699,6 +225,17 @@
         }
       }
     },
+    "Active Viewers" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活跃观看者"
+          }
+        }
+      }
+    },
     "Add Custom Resolution" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -754,17 +291,6 @@
         }
       }
     },
-    "Allow screen recording in System Settings to monitor displays." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请在系统设置中允许录屏权限，以便监看屏幕。"
-          }
-        }
-      }
-    },
     "Aggregated Demand Count" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -772,6 +298,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "聚合需求数量"
+          }
+        }
+      }
+    },
+    "Allow screen recording in System Settings to monitor displays." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在系统设置中允许录屏权限，以便监看屏幕。"
           }
         }
       }
@@ -838,6 +375,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "至少需要一个分辨率模式"
+          }
+        }
+      }
+    },
+    "Attach" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "附加"
+          }
+        }
+      }
+    },
+    "Attached" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已附加"
           }
         }
       }
@@ -941,6 +500,17 @@
         }
       }
     },
+    "Capture" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采集"
+          }
+        }
+      }
+    },
     "Capture Performance" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -959,6 +529,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "采集会话"
+          }
+        }
+      }
+    },
+    "Capture State" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采集状态"
+          }
+        }
+      }
+    },
+    "Capture States" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采集状态数"
           }
         }
       }
@@ -1091,6 +683,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建失败。"
+          }
+        }
+      }
+    },
+    "Create or enable a virtual display to start using HiDPI remote desktop and LAN Web View." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建或启用虚拟显示器，即可开始使用 HiDPI 远程桌面和局域网 Web 视图。"
           }
         }
       }
@@ -1238,23 +841,6 @@
         }
       }
     },
-    "Review app health, add diagnostics if needed, then export a support bundle." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Review app health, add diagnostics if needed, then export a support bundle."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看应用健康状态，按需附加诊断，然后导出支持包。"
-          }
-        }
-      }
-    },
     "Describe the result you expected to see." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1266,6 +852,28 @@
         }
       }
     },
+    "Desired state unknown" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标状态未知"
+          }
+        }
+      }
+    },
+    "Detach" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分离"
+          }
+        }
+      }
+    },
     "Details" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1273,6 +881,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "详细信息"
+          }
+        }
+      }
+    },
+    "Diagnostic Code" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断代码"
           }
         }
       }
@@ -1327,6 +946,17 @@
         }
       }
     },
+    "Disabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停用"
+          }
+        }
+      }
+    },
     "Display" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1356,6 +986,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示配置更新结果与请求的操作不一致。"
+          }
+        }
+      }
+    },
+    "Display Details" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器详情"
+          }
+        }
+      }
+    },
+    "Display Identifier" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器标识"
           }
         }
       }
@@ -1404,6 +1056,17 @@
         }
       }
     },
+    "Display Type" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器类型"
+          }
+        }
+      }
+    },
     "Displays" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1416,11 +1079,34 @@
       }
     },
     "Displays Overview" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示器总览"
+          }
+        }
+      }
+    },
+    "Drain" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "释放"
+          }
+        }
+      }
+    },
+    "Draining" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在释放"
           }
         }
       }
@@ -1491,6 +1177,17 @@
         }
       }
     },
+    "Enabled" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已启用"
+          }
+        }
+      }
+    },
     "Environment" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1498,6 +1195,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "环境"
+          }
+        }
+      }
+    },
+    "Epoch changed" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代次已变化"
           }
         }
       }
@@ -1568,17 +1276,6 @@
         }
       }
     },
-    "Capture States" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "采集状态数"
-          }
-        }
-      }
-    },
     "Expected Result" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1642,6 +1339,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在导出支持包…"
+          }
+        }
+      }
+    },
+    "Failed" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
           }
         }
       }
@@ -1756,6 +1464,17 @@
         }
       }
     },
+    "Failure" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        }
+      }
+    },
     "Failure Reason" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1774,6 +1493,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "适应"
+          }
+        }
+      }
+    },
+    "Health & Diagnostics" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health & Diagnostics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康与诊断"
           }
         }
       }
@@ -1822,6 +1558,34 @@
         }
       }
     },
+    "ID hash %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID hash %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID 哈希 %1$@"
+          }
+        }
+      }
+    },
+    "Idle" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空闲"
+          }
+        }
+      }
+    },
     "If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1851,6 +1615,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "如果问题刚刚复现，可以现在直接导出支持包。"
+          }
+        }
+      }
+    },
+    "Ignored" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已忽略"
+          }
+        }
+      }
+    },
+    "Inactive" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未激活"
           }
         }
       }
@@ -1923,6 +1709,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配置无效: %1$@"
+          }
+        }
+      }
+    },
+    "Issue" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "问题"
           }
         }
       }
@@ -2004,6 +1801,23 @@
         }
       }
     },
+    "LAN Web View" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LAN Web View"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "局域网 Web 视图"
+          }
+        }
+      }
+    },
     "Last Error" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2048,23 +1862,6 @@
         }
       }
     },
-    "LAN Web View" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "LAN Web View"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "局域网 Web 视图"
-          }
-        }
-      }
-    },
     "List the steps in order so the issue can be reproduced." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2072,6 +1869,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按发生顺序填写，便于复现。"
+          }
+        }
+      }
+    },
+    "Live" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活动"
           }
         }
       }
@@ -2127,6 +1935,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "状态正常"
+          }
+        }
+      }
+    },
+    "Manage Virtual Displays" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理虚拟显示器"
           }
         }
       }
@@ -2214,6 +2033,17 @@
         }
       }
     },
+    "Needs attention" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要处理"
+          }
+        }
+      }
+    },
     "New Feedback" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2221,6 +2051,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建反馈"
+          }
+        }
+      }
+    },
+    "No active capture" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未采集"
+          }
+        }
+      }
+    },
+    "No attachments" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无连接"
           }
         }
       }
@@ -2248,6 +2100,17 @@
       }
     },
     "No display" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无显示器"
+          }
+        }
+      }
+    },
+    "No Displays" : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
@@ -2314,21 +2177,12 @@
       }
     },
     "No Virtual Display" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "没有虚拟显示器"
-          }
-        }
-      }
-    },
-    "Normal" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正常"
           }
         }
       }
@@ -2340,6 +2194,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无可监看的屏幕"
+          }
+        }
+      }
+    },
+    "Normal" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正常"
+          }
+        }
+      }
+    },
+    "Not live" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未活动"
           }
         }
       }
@@ -2366,6 +2242,17 @@
         }
       }
     },
+    "Off" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
     "OK" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2388,17 +2275,6 @@
         }
       }
     },
-    "Open Share Page" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开共享页面"
-          }
-        }
-      }
-    },
     "Open Diagnostics" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2412,6 +2288,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开诊断"
+          }
+        }
+      }
+    },
+    "Open LAN Web View" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开局域网 Web 视图"
+          }
+        }
+      }
+    },
+    "Open Monitor" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开监看"
+          }
+        }
+      }
+    },
+    "Open Share Page" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开共享页面"
           }
         }
       }
@@ -2439,6 +2348,7 @@
       }
     },
     "Open Web View" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2470,6 +2380,17 @@
         }
       }
     },
+    "Pending" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待处理"
+          }
+        }
+      }
+    },
     "Performance Issue" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2477,6 +2398,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "性能问题"
+          }
+        }
+      }
+    },
+    "Performance mode changed" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "性能模式已变化"
           }
         }
       }
@@ -2504,6 +2436,7 @@
       }
     },
     "Physical Display %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2794,17 +2727,6 @@
         }
       }
     },
-    "Recent Transactions" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近事务"
-          }
-        }
-      }
-    },
     "Recent issues:" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2812,6 +2734,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近问题："
+          }
+        }
+      }
+    },
+    "Recent Transactions" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近事务"
           }
         }
       }
@@ -2882,17 +2815,6 @@
         }
       }
     },
-    "Refresh diagnostics, then export a support package if the runtime snapshot stays unavailable." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请刷新诊断；如果运行态快照仍不可用，再导出支持包。"
-          }
-        }
-      }
-    },
     "Refresh" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2900,6 +2822,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新"
+          }
+        }
+      }
+    },
+    "Refresh diagnostics, then export a support package if the runtime snapshot stays unavailable." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请刷新诊断；如果运行态快照仍不可用，再导出支持包。"
           }
         }
       }
@@ -3036,6 +2969,17 @@
         }
       }
     },
+    "Resolution" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分辨率"
+          }
+        }
+      }
+    },
     "Resolution Modes" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3043,6 +2987,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分辨率模式"
+          }
+        }
+      }
+    },
+    "Resolution unavailable" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分辨率不可用"
+          }
+        }
+      }
+    },
+    "Restarting" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在重启"
           }
         }
       }
@@ -3091,6 +3057,23 @@
         }
       }
     },
+    "Review app health, add diagnostics if needed, then export a support bundle." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review app health, add diagnostics if needed, then export a support bundle."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看应用健康状态，按需附加诊断，然后导出支持包。"
+          }
+        }
+      }
+    },
     "Review the recent issues below, then export another support package if needed." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3098,6 +3081,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可以先查看下面的最近问题，再决定是否导出新的支持包。"
+          }
+        }
+      }
+    },
+    "Route Ready" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由就绪"
           }
         }
       }
@@ -3120,6 +3114,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行态"
+          }
+        }
+      }
+    },
+    "Runtime Attachment" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行时连接"
+          }
+        }
+      }
+    },
+    "Runtime Display Count" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行时显示器数量"
           }
         }
       }
@@ -3234,6 +3250,17 @@
         }
       }
     },
+    "Selected" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选择"
+          }
+        }
+      }
+    },
     "Selected display is no longer available for sharing." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3269,17 +3296,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "序列号 %1$u 已被使用。"
-          }
-        }
-      }
-    },
-    "Runtime Display Count" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行时显示器数量"
           }
         }
       }
@@ -3504,6 +3520,28 @@
         }
       }
     },
+    "Stop LAN Web View" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止局域网 Web 视图"
+          }
+        }
+      }
+    },
+    "Stop Monitor" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止监看"
+          }
+        }
+      }
+    },
     "Stop Monitoring" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3528,6 +3566,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止服务"
+          }
+        }
+      }
+    },
+    "Stop Web View" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 Web 查看"
           }
         }
       }
@@ -3561,23 +3610,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "摘要预览"
-          }
-        }
-      }
-    },
-    "Health & Diagnostics" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Health & Diagnostics"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "健康与诊断"
           }
         }
       }
@@ -3797,6 +3829,28 @@
         }
       }
     },
+    "Transaction quiesce" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "事务静默"
+          }
+        }
+      }
+    },
+    "Unknown" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知"
+          }
+        }
+      }
+    },
     "Use this when the issue does not fit the common categories above." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3804,6 +3858,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "当问题不属于以上常见类别时，请选择此项。"
+          }
+        }
+      }
+    },
+    "Viewers" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "观看者"
           }
         }
       }
@@ -3820,21 +3885,12 @@
       }
     },
     "Virtual Display %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟显示器 %lld"
-          }
-        }
-      }
-    },
-    "Viewers" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "观看者"
           }
         }
       }
@@ -3905,16 +3961,6 @@
         }
       }
     },
-    "Web View" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 查看"
-          }
-        }
-      }
-    },
     "Web service controller is unavailable." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3955,6 +4001,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 服务启动请求已被新的请求替代。"
+          }
+        }
+      }
+    },
+    "Web View" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 查看"
           }
         }
       }

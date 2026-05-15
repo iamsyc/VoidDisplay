@@ -29,7 +29,7 @@ struct CreateVirtualDisplayWorkflowTests {
         #expect(requests.first?.maximumPixelHeight == 1080)
     }
 
-    @Test func submitFailureKeepsFailureOutcomeWithoutFallbackDirectPath() async {
+    @Test func submitFailureReturnsFailedAfterSingleCreateRequest() async {
         var requestCount = 0
         let workflow = CreateVirtualDisplayWorkflow { _ in
             requestCount += 1

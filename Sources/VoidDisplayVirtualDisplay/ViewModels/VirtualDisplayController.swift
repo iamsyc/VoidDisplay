@@ -191,40 +191,24 @@ package final class VirtualDisplayController {
         rebuildExecutor = executor
     }
 
-    package var hasConfiguredRebuildExecutor: Bool {
-        rebuildExecutor != nil
-    }
-
     package func configureDesiredEnabledExecutor(_ executor: VirtualDisplayDesiredEnabledExecutor?) {
         desiredEnabledExecutor = executor
-    }
-
-    package var hasConfiguredDesiredEnabledExecutor: Bool {
-        desiredEnabledExecutor != nil
     }
 
     package func configureEditRebuildExecutor(_ executor: VirtualDisplayEditRebuildExecutor?) {
         editRebuildExecutor = executor
     }
 
-    package var hasConfiguredEditRebuildExecutor: Bool {
-        editRebuildExecutor != nil
-    }
-
     package func configureCreateExecutor(_ executor: VirtualDisplayCreateExecutor?) {
         createExecutor = executor
-    }
-
-    package var hasConfiguredCreateExecutor: Bool {
-        createExecutor != nil
     }
 
     package func configureDeleteExecutor(_ executor: VirtualDisplayDeleteExecutor?) {
         deleteExecutor = executor
     }
 
-    package var hasConfiguredDeleteExecutor: Bool {
-        deleteExecutor != nil
+    package func refreshVirtualDisplayState() {
+        syncVirtualDisplayState()
     }
 
     package func startRebuildFromSavedConfig(
@@ -258,6 +242,7 @@ package final class VirtualDisplayController {
             }
 
             do {
+                defer { self.syncVirtualDisplayState() }
                 guard let rebuildExecutor = self.rebuildExecutor else {
                     throw VirtualDisplayRebuildExecutorUnavailableError()
                 }
@@ -306,6 +291,7 @@ package final class VirtualDisplayController {
         guard let desiredEnabledExecutor else {
             throw VirtualDisplayDesiredEnabledExecutorUnavailableError()
         }
+        defer { syncVirtualDisplayState() }
         try await desiredEnabledExecutor(configId, enabled, source)
     }
 
@@ -317,6 +303,7 @@ package final class VirtualDisplayController {
         guard let editRebuildExecutor else {
             throw VirtualDisplayEditRebuildExecutorUnavailableError()
         }
+        defer { syncVirtualDisplayState() }
         return try await editRebuildExecutor(updated, expectedConfigFingerprint, source)
     }
 
@@ -351,6 +338,7 @@ package final class VirtualDisplayController {
             }
 
             do {
+                defer { self.syncVirtualDisplayState() }
                 let result = try await handle.waitForTerminalResult()
                 guard result.status != .failed && result.status != .cancelled else {
                     throw VirtualDisplayEditRebuildPresentationError()
@@ -452,79 +440,6 @@ package final class VirtualDisplayController {
         }
     }
 
-    package func createDisplayCommand(
-        _ request: VirtualDisplayCreateRequest
-    ) throws -> VirtualDisplayCreateCommandResult {
-        let result = try mutateAndSync {
-            try virtualDisplayFacade.createDisplayCommand(
-                name: request.displayName,
-                serialNum: request.serialNumber,
-                physicalSize: CGSize(
-                    width: CGFloat(request.physicalWidthMillimeters),
-                    height: CGFloat(request.physicalHeightMillimeters)
-                ),
-                maxPixels: (
-                    width: request.maximumPixelWidth,
-                    height: request.maximumPixelHeight
-                ),
-                modes: request.modes
-            )
-        }
-        if let configID = result.createdConfigID,
-           result.runtimeCreationOutcome == .succeeded {
-            Task {
-                await recordEvent(
-                    severity: .notice,
-                    operation: "Create virtual display",
-                    message: "Created virtual display configuration.",
-                    metadata: [
-                        "configID": configID.uuidString,
-                        "serialNumber": "\(request.serialNumber)"
-                    ]
-                )
-            }
-        }
-        return result
-    }
-
-    package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
-        try mutateAndSync {
-            try virtualDisplayFacade.setDesiredEnabled(configId, enabled: enabled)
-        }
-    }
-
-    package func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
-        virtualDisplayFacade.enableDisplayPreflight(configId)
-    }
-
-    package func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
-        let result = try await mutateAndSync {
-            try await virtualDisplayFacade.enableRuntimeDisplay(configId)
-        }
-        await recordEvent(
-            severity: .notice,
-            operation: "Enable virtual display",
-            message: "Enabled virtual display.",
-            metadata: ["configID": configId.uuidString]
-        )
-        return result
-    }
-
-    package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
-        let result = try mutateAndSync {
-            try virtualDisplayFacade.disableRuntimeDisplayByConfig(configId)
-        }
-        Task {
-            await recordEvent(
-                severity: .notice,
-                operation: "Disable virtual display",
-                message: "Disabled virtual display.",
-                metadata: ["configID": configId.uuidString]
-            )
-        }
-        return result
-    }
-
     package func deleteVirtualDisplay(configId: UUID) async throws {
         guard let deleteExecutor else {
             throw VirtualDisplayDeleteExecutorUnavailableError()
@@ -544,26 +459,6 @@ package final class VirtualDisplayController {
             message: "Deleted virtual display configuration.",
             metadata: ["configID": configId.uuidString]
         )
-    }
-
-    package func deleteDisplayCommand(configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
-        try mutateAndSync {
-            try virtualDisplayFacade.deleteDisplayCommand(configId)
-        }
-    }
-
-    package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
-        mutateAndSync {
-            virtualDisplayFacade.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
-        }
-    }
-
-    package func restoreVirtualDisplayForStartupCommand(
-        _ request: VirtualDisplayStartupRestoreCommandRequest
-    ) -> VirtualDisplayStartupRestoreCommandResult {
-        mutateAndSync {
-            virtualDisplayFacade.restoreVirtualDisplayForStartupCommand(request)
-        }
     }
 
     package func getConfig(_ configId: UUID) -> VirtualDisplayConfig? {
@@ -589,28 +484,6 @@ package final class VirtualDisplayController {
                     "configID": updated.id.uuidString
                 ]
             )
-        }
-    }
-
-    package func saveConfigForRebuildCommand(
-        _ updated: VirtualDisplayConfig,
-        expectedConfigFingerprint: String
-    ) throws -> VirtualDisplayConfig {
-        try mutateAndSync {
-            guard let previous = virtualDisplayFacade.configForEditRebuild(updated.id) else {
-                throw VirtualDisplayOperationError.configNotFound
-            }
-            guard previous.editRebuildFingerprint == expectedConfigFingerprint else {
-                throw VirtualDisplayEditRebuildPersistenceError.editRequestStale
-            }
-            try virtualDisplayFacade.saveConfigForRebuild(updated)
-            return previous
-        }
-    }
-
-    package func restoreConfigAfterFailedEditCommand(_ previous: VirtualDisplayConfig) throws {
-        try mutateAndSync {
-            try virtualDisplayFacade.restoreConfigAfterFailedEdit(previous)
         }
     }
 
@@ -666,12 +539,6 @@ package final class VirtualDisplayController {
     package func applyModes(configId: UUID, modes: [ResolutionSelection]) {
         mutateAndSync {
             virtualDisplayFacade.applyModes(configId: configId, modes: modes)
-        }
-    }
-
-    package func rebuildVirtualDisplay(configId: UUID) async throws {
-        try await mutateAndSync {
-            try await virtualDisplayFacade.rebuildVirtualDisplay(configId: configId)
         }
     }
 
