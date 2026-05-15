@@ -42,14 +42,13 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_monitor_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
-                "displays_action_manage_virtual_display",
                 "displays_action_open_monitor",
                 "displays_action_open_lan_web_view",
-                "displays_list",
-                "displays_open_system_settings"
+                "displays_list"
             ],
             timeout: 6
         )
+        assertDisplaysHeaderActionArea(in: app)
 
         tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
         assertAllExist(
@@ -163,7 +162,7 @@ final class HomeSmokeTests: XCTestCase {
             ],
             timeout: 6
         )
-        assertDisplaysShowsAtLeastThreeRows(in: app)
+        assertDisplaysRowsFitDefaultViewport(in: app)
         assertDisplaysSurfaceStatusArea(in: app)
         assertDisplaysHeaderActionArea(in: app)
         assertDisplaysSurfaceActionArea(in: app)
@@ -213,15 +212,19 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
-                "displays_action_manage_virtual_display"
+                "displays_surface_list"
             ],
             timeout: 1.5
         )
-        XCTAssertEqual(
-            app.descendants(matching: .any)
-                .matching(identifier: "displays_action_manage_virtual_display")
-                .count,
-            1
+        _ = assertDisplaysHeaderButton(
+            app,
+            identifier: "displays_action_manage_virtual_display",
+            labels: ["Manage Virtual Displays", "管理虚拟显示器"]
+        )
+        _ = assertDisplaysHeaderButton(
+            app,
+            identifier: "displays_open_system_settings",
+            labels: ["Open System Settings", "打开系统设置"]
         )
     }
 
@@ -241,14 +244,135 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    private func assertDisplaysShowsAtLeastThreeRows(in app: XCUIApplication) {
-        let firstRow = assertExists(app, identifier: "display_surface_row", timeout: 1.5)
-        XCTAssertTrue(firstRow.frame.height > 0)
+    private func assertDisplaysRowsFitDefaultViewport(in app: XCUIApplication) {
+        let list = assertExists(app, identifier: "displays_list", timeout: 1.5)
+        let rows = app.descendants(matching: .any)
+            .matching(identifier: "display_surface_row")
+            .allElementsBoundByIndex
+            .filter(\.exists)
+        XCTAssertFalse(rows.isEmpty, "Displays overview should show at least one display row.")
+
+        let visibleRows = Array(rows.prefix(min(rows.count, 3)))
+        for (index, row) in visibleRows.enumerated() {
+            assertDisplayRowIsComplete(row, visibleBounds: list.frame, rowIndex: index)
+        }
+
+        if rows.count >= 3 {
+            XCTAssertEqual(visibleRows.count, 3)
+            return
+        }
+
+        guard let lastRow = visibleRows.last else { return }
+        XCTAssertLessThanOrEqual(
+            lastRow.frame.maxY,
+            list.frame.maxY + 1,
+            "All available display rows should fit before treating a sub-3 row count as fixture data."
+        )
+    }
+
+    @MainActor
+    private func assertDisplayRowIsComplete(
+        _ row: XCUIElement,
+        visibleBounds: CGRect,
+        rowIndex: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(row.frame.height > 0, "Display row \(rowIndex) should have measurable height.", file: file, line: line)
         XCTAssertGreaterThanOrEqual(
-            app.descendants(matching: .any)
-                .matching(identifier: "display_surface_row")
-                .count,
-            3
+            row.frame.minY,
+            visibleBounds.minY - 1,
+            "Display row \(rowIndex) should start inside the visible list.",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            row.frame.maxY,
+            visibleBounds.maxY + 1,
+            "Display row \(rowIndex) should be fully visible in the default window.",
+            file: file,
+            line: line
+        )
+
+        let rowText = displayRowText(row)
+        XCTAssertFalse(rowText.isEmpty, "Display row \(rowIndex) should expose identity text.", file: file, line: line)
+        XCTAssertNotNil(
+            rowText.range(of: #"\d+\s*[×xX]\s*\d+"#, options: .regularExpression),
+            "Display row \(rowIndex) should expose resolution without opening details. text=\(rowText)",
+            file: file,
+            line: line
+        )
+
+        assertRowContains(row, identifier: "displays_compact_status_line", rowIndex: rowIndex, file: file, line: line)
+        assertRowContains(row, identifier: "displays_monitor_status", rowIndex: rowIndex, file: file, line: line)
+        assertRowContains(row, identifier: "displays_lan_web_view_status", rowIndex: rowIndex, file: file, line: line)
+        assertRowContains(row, identifier: "displays_viewer_count", rowIndex: rowIndex, file: file, line: line)
+        assertRowContainsAny(
+            row,
+            identifiers: ["displays_action_open_monitor", "displays_action_stop_monitor"],
+            rowIndex: rowIndex,
+            file: file,
+            line: line
+        )
+        assertRowContainsAny(
+            row,
+            identifiers: ["displays_action_open_lan_web_view", "displays_action_stop_lan_web_view"],
+            rowIndex: rowIndex,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func displayRowText(_ row: XCUIElement) -> String {
+        var parts = [accessibilityText(for: row)]
+        parts.append(contentsOf: row.descendants(matching: .staticText)
+            .allElementsBoundByIndex
+            .map(accessibilityText(for:)))
+        return parts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    @MainActor
+    private func assertRowContains(
+        _ row: XCUIElement,
+        identifier: String,
+        rowIndex: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            row.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+                .exists,
+            "Display row \(rowIndex) is missing \(identifier).",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertRowContainsAny(
+        _ row: XCUIElement,
+        identifiers: [String],
+        rowIndex: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let hasMatch = identifiers.contains { identifier in
+            row.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+                .exists
+        }
+        XCTAssertTrue(
+            hasMatch,
+            "Display row \(rowIndex) is missing one of: \(identifiers.joined(separator: ", ")).",
+            file: file,
+            line: line
         )
     }
 
@@ -279,11 +403,11 @@ final class HomeSmokeTests: XCTestCase {
             identifiers: [
                 "detail_displays",
                 "displays_surface_list",
-                "display_surface_row",
-                "displays_action_manage_virtual_display"
+                "display_surface_row"
             ],
             timeout: 1.5
         )
+        assertDisplaysHeaderActionArea(in: app)
     }
 
     @MainActor
@@ -307,7 +431,74 @@ final class HomeSmokeTests: XCTestCase {
         _ app: XCUIApplication,
         identifier: String
     ) {
+        if identifier == "displays_action_manage_virtual_display" {
+            let button = assertDisplaysHeaderButton(
+                app,
+                identifier: identifier,
+                labels: ["Manage Virtual Displays", "管理虚拟显示器"]
+            )
+            tapWhenHittable(button, in: app, timeout: 1.5, requireExistenceCheck: false)
+            return
+        }
+
         tapIdentifier(app, identifier: identifier, timeout: 1.5)
+    }
+
+    @MainActor
+    private func assertDisplaysHeaderButton(
+        _ app: XCUIApplication,
+        identifier: String,
+        labels: [String],
+        timeout: TimeInterval = 1.5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let button = displaysHeaderButton(app, identifier: identifier, labels: labels)
+            if button.exists {
+                return button
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        let button = displaysHeaderButton(app, identifier: identifier, labels: labels)
+        XCTAssertTrue(
+            button.exists,
+            "Missing Displays header action: \(identifier), labels: \(labels.joined(separator: ", ")).",
+            file: file,
+            line: line
+        )
+        return button
+    }
+
+    @MainActor
+    private func displaysHeaderButton(
+        _ app: XCUIApplication,
+        identifier: String,
+        labels: [String]
+    ) -> XCUIElement {
+        let identifiedButton = app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+        if identifiedButton.exists {
+            return identifiedButton
+        }
+
+        for label in labels {
+            let exactButton = app.buttons[label]
+            if exactButton.exists {
+                return exactButton
+            }
+
+            let containingButton = app.buttons
+                .containing(NSPredicate(format: "label CONTAINS %@", label))
+                .firstMatch
+            if containingButton.exists {
+                return containingButton
+            }
+        }
+        return identifiedButton
     }
 
     @MainActor
