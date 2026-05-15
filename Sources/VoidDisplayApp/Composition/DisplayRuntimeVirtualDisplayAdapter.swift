@@ -139,16 +139,24 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
                 ),
                 modes: request.modes.resolutionSelections
             )
+            let snapshot = commandFacade.snapshot
             return DisplayRuntimeVirtualDisplayCreateCommandResult(
                 transactionID: request.transactionID,
-                lowerResult: result
+                lowerResult: result,
+                request: request,
+                runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+                managedDisplaysAfterCommand: snapshot.managedDisplays
             )
         } catch let failure as VirtualDisplayCreateCommandFailure {
+            let snapshot = commandFacade.snapshot
             throw DisplayRuntimeVirtualDisplayCreateCommandError(
                 reason: failure.reason,
                 result: DisplayRuntimeVirtualDisplayCreateCommandResult(
                     transactionID: request.transactionID,
-                    lowerResult: failure.result
+                    lowerResult: failure.result,
+                    request: request,
+                    runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+                    managedDisplaysAfterCommand: snapshot.managedDisplays
                 )
             )
         }
@@ -159,16 +167,22 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     ) async throws -> DisplayRuntimeVirtualDisplayDeleteCommandResult {
         do {
             let result = try commandFacade.deleteDisplayCommand(request.configID)
+            let snapshot = commandFacade.snapshot
             return DisplayRuntimeVirtualDisplayDeleteCommandResult(
                 transactionID: request.transactionID,
-                lowerResult: result
+                lowerResult: result,
+                runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+                managedDisplaysAfterCommand: snapshot.managedDisplays
             )
         } catch let failure as VirtualDisplayDeleteCommandFailure {
+            let snapshot = commandFacade.snapshot
             throw DisplayRuntimeVirtualDisplayDeleteCommandError(
                 reason: failure.reason,
                 result: DisplayRuntimeVirtualDisplayDeleteCommandResult(
                     transactionID: request.transactionID,
-                    lowerResult: failure.result
+                    lowerResult: failure.result,
+                    runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+                    managedDisplaysAfterCommand: snapshot.managedDisplays
                 )
             )
         }
@@ -186,9 +200,12 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
     ) async throws -> DisplayRuntimeStartupRestoreCommandResult {
         let lowerRequest = VirtualDisplayStartupRestoreCommandRequest(runtimeRequest: request)
         let result = commandFacade.restoreVirtualDisplayForStartupCommand(lowerRequest)
+        let snapshot = commandFacade.snapshot
         return DisplayRuntimeStartupRestoreCommandResult(
             runtimeRequest: request,
-            lowerResult: result
+            lowerResult: result,
+            runningConfigIDsAfterCommand: snapshot.runningConfigIds,
+            managedDisplaysAfterCommand: snapshot.managedDisplays
         )
     }
 }

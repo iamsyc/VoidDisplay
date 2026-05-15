@@ -164,21 +164,24 @@ extension DisplayRuntimeVirtualDisplayLifecycleCommandResult {
 extension DisplayRuntimeVirtualDisplayCreateCommandResult {
     init(
         transactionID: DisplayRuntimeTransactionID,
-        lowerResult: VirtualDisplayCreateCommandResult
+        lowerResult: VirtualDisplayCreateCommandResult,
+        request: DisplayRuntimeVirtualDisplayCreateRequest,
+        runningConfigIDsAfterCommand: Set<UUID>,
+        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
     ) {
         self.init(
             transactionID: transactionID,
             createdConfigID: lowerResult.createdConfigID,
-            serialNumber: lowerResult.serialNumber,
+            serialNumber: request.serialNumber,
             targetWasRunningAfterCommand: lowerResult.targetWasRunningAfterCommand,
             preDisplayID: lowerResult.preDisplayID,
             postDisplayID: lowerResult.postDisplayID,
             persistenceOutcome: DisplayRuntimePersistenceOutcome(lowerResult.persistenceOutcome),
             runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.runtimeCreationOutcome),
             rollbackOutcome: DisplayRuntimePersistenceOutcome(lowerResult.rollbackOutcome),
-            createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence(lowerResult.createdConfigEvidence),
-            runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
-            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.displayRuntimeManagedDisplays
+            createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence(request: request, configID: lowerResult.createdConfigID),
+            runningConfigIDsAfterCommand: Array(runningConfigIDsAfterCommand),
+            managedDisplaysAfterCommand: managedDisplaysAfterCommand.displayRuntimeManagedDisplays
         )
     }
 }
@@ -186,7 +189,9 @@ extension DisplayRuntimeVirtualDisplayCreateCommandResult {
 extension DisplayRuntimeVirtualDisplayDeleteCommandResult {
     init(
         transactionID: DisplayRuntimeTransactionID,
-        lowerResult: VirtualDisplayDeleteCommandResult
+        lowerResult: VirtualDisplayDeleteCommandResult,
+        runningConfigIDsAfterCommand: Set<UUID>,
+        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
     ) {
         self.init(
             transactionID: transactionID,
@@ -197,8 +202,8 @@ extension DisplayRuntimeVirtualDisplayDeleteCommandResult {
             persistenceOutcome: DisplayRuntimePersistenceOutcome(lowerResult.persistenceOutcome),
             virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.virtualDisplayCommandOutcome),
             runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome(lowerResult.runtimeTrackingClearOutcome),
-            runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
-            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.displayRuntimeManagedDisplays
+            runningConfigIDsAfterCommand: Array(runningConfigIDsAfterCommand),
+            managedDisplaysAfterCommand: managedDisplaysAfterCommand.displayRuntimeManagedDisplays
         )
     }
 }
@@ -239,7 +244,9 @@ extension VirtualDisplayStartupRestoreCommandRequest {
 extension DisplayRuntimeStartupRestoreCommandResult {
     init(
         runtimeRequest request: DisplayRuntimeStartupRestoreCommandRequest,
-        lowerResult: VirtualDisplayStartupRestoreCommandResult
+        lowerResult: VirtualDisplayStartupRestoreCommandResult,
+        runningConfigIDsAfterCommand: Set<UUID>,
+        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
     ) {
         self.init(
             transactionID: request.transactionID,
@@ -251,8 +258,8 @@ extension DisplayRuntimeStartupRestoreCommandResult {
             failureReason: lowerResult.failureReason,
             compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.compensationOutcome),
             compensationFailureReason: lowerResult.compensationFailureReason,
-            runningConfigIDsAfterCommand: lowerResult.runningConfigIDsAfterCommand,
-            managedDisplaysAfterCommand: lowerResult.managedDisplaysAfterCommand.displayRuntimeManagedDisplays
+            runningConfigIDsAfterCommand: Array(runningConfigIDsAfterCommand),
+            managedDisplaysAfterCommand: managedDisplaysAfterCommand.displayRuntimeManagedDisplays
         )
     }
 }
@@ -384,16 +391,16 @@ private extension Array where Element == ResolutionSelection {
 }
 
 private extension DisplayRuntimeVirtualDisplayCreateConfigEvidence {
-    init(_ evidence: VirtualDisplayCommandConfigEvidence) {
+    init(request: DisplayRuntimeVirtualDisplayCreateRequest, configID: UUID?) {
         self.init(
-            id: evidence.id,
-            serialNumber: evidence.serialNumber,
-            desiredEnabled: evidence.desiredEnabled,
-            physicalWidthMillimeters: evidence.physicalWidthMillimeters,
-            physicalHeightMillimeters: evidence.physicalHeightMillimeters,
-            modeCount: evidence.modeCount,
-            maximumPixelWidth: evidence.maximumPixelWidth,
-            maximumPixelHeight: evidence.maximumPixelHeight
+            id: configID,
+            serialNumber: request.serialNumber,
+            desiredEnabled: true,
+            physicalWidthMillimeters: request.physicalWidthMillimeters,
+            physicalHeightMillimeters: request.physicalHeightMillimeters,
+            modeCount: request.modes.count,
+            maximumPixelWidth: request.maximumPixelWidth,
+            maximumPixelHeight: request.maximumPixelHeight
         )
     }
 }

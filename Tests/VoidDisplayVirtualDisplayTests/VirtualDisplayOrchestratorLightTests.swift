@@ -236,7 +236,6 @@ struct VirtualDisplayOrchestratorLightTests {
         )
 
         #expect(result.createdConfigID != nil)
-        #expect(result.serialNumber == 50)
         #expect(result.persistenceOutcome == .saved)
         #expect(result.runtimeCreationOutcome == .succeeded)
         #expect(result.rollbackOutcome == .notAttempted)
@@ -530,7 +529,7 @@ struct VirtualDisplayOrchestratorLightTests {
         #expect(result.configID == config.id)
         #expect(result.restoreOutcome == .succeeded)
         #expect(result.postDisplayID == 964)
-        #expect(result.runningConfigIDsAfterCommand == [config.id])
+        #expect(sut.snapshot.runningConfigIds == [config.id])
         #expect(driver.createCallCount == 1)
         #expect(sut.snapshot.restoreFailures.isEmpty)
     }

@@ -204,8 +204,6 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
     package let failureReason: String?
     package let compensationOutcome: VirtualDisplayStartupRestoreCommandOutcome
     package let compensationFailureReason: String?
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
 
     package init(
         transactionID: UUID,
@@ -216,9 +214,7 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
         didProduceVerifiableSideEffect: Bool,
         failureReason: String? = nil,
         compensationOutcome: VirtualDisplayStartupRestoreCommandOutcome = .notAttempted,
-        compensationFailureReason: String? = nil,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
+        compensationFailureReason: String? = nil
     ) {
         self.transactionID = transactionID
         self.configID = configID
@@ -229,52 +225,34 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
         self.failureReason = failureReason
         self.compensationOutcome = compensationOutcome
         self.compensationFailureReason = compensationFailureReason
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            $0.configId.uuidString < $1.configId.uuidString
-        }
     }
 }
 
 package struct VirtualDisplayCreateCommandResult: Equatable, Sendable {
     package let createdConfigID: UUID?
-    package let serialNumber: UInt32
     package let targetWasRunningAfterCommand: Bool
     package let preDisplayID: CGDirectDisplayID?
     package let postDisplayID: CGDirectDisplayID?
     package let persistenceOutcome: VirtualDisplayCommandPersistenceOutcome
     package let runtimeCreationOutcome: VirtualDisplayCommandRuntimeOutcome
     package let rollbackOutcome: VirtualDisplayCommandPersistenceOutcome
-    package let createdConfigEvidence: VirtualDisplayCommandConfigEvidence
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
 
     package init(
         createdConfigID: UUID?,
-        serialNumber: UInt32,
         targetWasRunningAfterCommand: Bool,
         preDisplayID: CGDirectDisplayID?,
         postDisplayID: CGDirectDisplayID?,
         persistenceOutcome: VirtualDisplayCommandPersistenceOutcome,
         runtimeCreationOutcome: VirtualDisplayCommandRuntimeOutcome,
-        rollbackOutcome: VirtualDisplayCommandPersistenceOutcome,
-        createdConfigEvidence: VirtualDisplayCommandConfigEvidence,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
+        rollbackOutcome: VirtualDisplayCommandPersistenceOutcome
     ) {
         self.createdConfigID = createdConfigID
-        self.serialNumber = serialNumber
         self.targetWasRunningAfterCommand = targetWasRunningAfterCommand
         self.preDisplayID = preDisplayID
         self.postDisplayID = postDisplayID
         self.persistenceOutcome = persistenceOutcome
         self.runtimeCreationOutcome = runtimeCreationOutcome
         self.rollbackOutcome = rollbackOutcome
-        self.createdConfigEvidence = createdConfigEvidence
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            $0.configId.uuidString < $1.configId.uuidString
-        }
     }
 }
 
@@ -306,8 +284,6 @@ package struct VirtualDisplayDeleteCommandResult: Equatable, Sendable {
     package let persistenceOutcome: VirtualDisplayCommandPersistenceOutcome
     package let virtualDisplayCommandOutcome: VirtualDisplayCommandRuntimeOutcome
     package let runtimeTrackingClearOutcome: VirtualDisplayRuntimeTrackingClearOutcome
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
 
     package init(
         configID: UUID,
@@ -316,9 +292,7 @@ package struct VirtualDisplayDeleteCommandResult: Equatable, Sendable {
         postDisplayID: CGDirectDisplayID?,
         persistenceOutcome: VirtualDisplayCommandPersistenceOutcome,
         virtualDisplayCommandOutcome: VirtualDisplayCommandRuntimeOutcome,
-        runtimeTrackingClearOutcome: VirtualDisplayRuntimeTrackingClearOutcome,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [ManagedVirtualDisplayRuntimeSnapshot]
+        runtimeTrackingClearOutcome: VirtualDisplayRuntimeTrackingClearOutcome
     ) {
         self.configID = configID
         self.targetWasRunning = targetWasRunning
@@ -327,10 +301,6 @@ package struct VirtualDisplayDeleteCommandResult: Equatable, Sendable {
         self.persistenceOutcome = persistenceOutcome
         self.virtualDisplayCommandOutcome = virtualDisplayCommandOutcome
         self.runtimeTrackingClearOutcome = runtimeTrackingClearOutcome
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            $0.configId.uuidString < $1.configId.uuidString
-        }
     }
 }
 

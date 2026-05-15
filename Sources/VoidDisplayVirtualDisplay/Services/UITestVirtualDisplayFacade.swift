@@ -123,28 +123,14 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
     ) throws -> VirtualDisplayCreateCommandResult {
-        let evidence = VirtualDisplayCommandConfigEvidence(
-            id: nil,
-            serialNumber: serialNum,
-            desiredEnabled: true,
-            physicalWidthMillimeters: UInt32(clamping: Int(physicalSize.width)),
-            physicalHeightMillimeters: UInt32(clamping: Int(physicalSize.height)),
-            modeCount: modes.count,
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
-        )
         let result = VirtualDisplayCreateCommandResult(
             createdConfigID: nil,
-            serialNumber: serialNum,
             targetWasRunningAfterCommand: false,
             preDisplayID: nil,
             postDisplayID: nil,
             persistenceOutcome: .notAttempted,
             runtimeCreationOutcome: .failed,
-            rollbackOutcome: .notAttempted,
-            createdConfigEvidence: evidence,
-            runningConfigIDsAfterCommand: Array(runningConfigIds),
-            managedDisplaysAfterCommand: snapshot.managedDisplays
+            rollbackOutcome: .notAttempted
         )
         throw VirtualDisplayCreateCommandFailure(
             reason: "uitest_create_unavailable",
@@ -211,14 +197,12 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
             let result = VirtualDisplayDeleteCommandResult(
                 configID: configId,
                 targetWasRunning: preDisplayID != nil,
-                preDisplayID: preDisplayID,
-                postDisplayID: preDisplayID,
-                persistenceOutcome: .notAttempted,
-                virtualDisplayCommandOutcome: .failed,
-                runtimeTrackingClearOutcome: .notAttempted,
-                runningConfigIDsAfterCommand: Array(runningConfigIds),
-                managedDisplaysAfterCommand: snapshot.managedDisplays
-            )
+            preDisplayID: preDisplayID,
+            postDisplayID: preDisplayID,
+            persistenceOutcome: .notAttempted,
+            virtualDisplayCommandOutcome: .failed,
+            runtimeTrackingClearOutcome: .notAttempted
+        )
             throw VirtualDisplayDeleteCommandFailure(
                 reason: "config_not_found",
                 result: result,
@@ -234,9 +218,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
             postDisplayID: nil,
             persistenceOutcome: .saved,
             virtualDisplayCommandOutcome: .succeeded,
-            runtimeTrackingClearOutcome: .cleared,
-            runningConfigIDsAfterCommand: Array(runningConfigIds),
-            managedDisplaysAfterCommand: snapshot.managedDisplays
+            runtimeTrackingClearOutcome: .cleared
         )
     }
 
@@ -362,9 +344,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
             postDisplayID: postDisplayID,
             restoreOutcome: restoreOutcome,
             didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
-            failureReason: failureReason,
-            runningConfigIDsAfterCommand: Array(runningConfigIds),
-            managedDisplaysAfterCommand: snapshot.managedDisplays
+            failureReason: failureReason
         )
     }
 }

@@ -163,6 +163,14 @@ Must retain:
 - Lower-layer command tests for actual driver/persistence/topology behavior.
 - `DisplayRebuildCoordinator` if it remains the only owner of fleet rebuild and topology health semantics.
 
+Batch 2 completion result:
+
+- Collapsed lower create/delete/startup restore command results so they no longer carry post-command running-config and managed-display snapshots that the app adapter can read from the single lower snapshot boundary.
+- Removed lower create-result config evidence and serial echo; runtime create evidence is now derived once from the runtime request plus returned config id.
+- Moved the duplicated `MockVirtualDisplayFacade` from App and VirtualDisplay test targets into `VoidDisplayVirtualDisplayTestingSupport`.
+- Kept lower driver/topology/persistence outcomes because runtime transactions still consume those command outcomes to distinguish append failure, runtime creation failure, rollback failure, delete missing-config, and startup restore failure.
+- Net Sources+Tests deletion exceeded the 1,000-line Batch 2 target without touching Runtime, Capture data-plane, LAN security, Diagnostics, app-facing copy, or localization.
+
 ### Batch 3: Capture And Sharing Resource Model Simplification
 
 Goal: simplify resource tracking across capture and sharing without moving data plane into runtime.

@@ -313,16 +313,6 @@ package final class VirtualDisplayOrchestrator {
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
     ) throws -> VirtualDisplayCreateCommandResult {
-        let inputEvidence = VirtualDisplayCommandConfigEvidence(
-            id: nil,
-            serialNumber: serialNum,
-            desiredEnabled: true,
-            physicalWidthMillimeters: UInt32(clamping: Int(physicalSize.width)),
-            physicalHeightMillimeters: UInt32(clamping: Int(physicalSize.height)),
-            modeCount: modes.count,
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
-        )
         if runtimeTracker.hasRuntimeDisplay(serialNum: serialNum) ||
             configManager.allConfigs().contains(where: { $0.serialNum == serialNum }) {
             throw VirtualDisplayOperationError.duplicateSerialNumber(serialNum)
@@ -348,32 +338,17 @@ package final class VirtualDisplayOrchestrator {
             desiredEnabled: true
         )
 
-        let persistedEvidence = VirtualDisplayCommandConfigEvidence(
-            id: config.id,
-            serialNumber: config.serialNum,
-            desiredEnabled: config.desiredEnabled,
-            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-            modeCount: config.modes.count,
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
-        )
-
         do {
             try configManager.appendConfig(config)
         } catch {
             let result = VirtualDisplayCreateCommandResult(
                 createdConfigID: nil,
-                serialNumber: serialNum,
                 targetWasRunningAfterCommand: false,
                 preDisplayID: nil,
                 postDisplayID: nil,
                 persistenceOutcome: .failed,
                 runtimeCreationOutcome: .notAttempted,
-                rollbackOutcome: .notAttempted,
-                createdConfigEvidence: inputEvidence,
-                runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-                managedDisplaysAfterCommand: snapshot.managedDisplays
+                rollbackOutcome: .notAttempted
             )
             throw VirtualDisplayCreateCommandFailure(
                 reason: "config_append_failed",
@@ -386,16 +361,12 @@ package final class VirtualDisplayOrchestrator {
             let record = try runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
             return VirtualDisplayCreateCommandResult(
                 createdConfigID: config.id,
-                serialNumber: config.serialNum,
                 targetWasRunningAfterCommand: runtimeTracker.isVirtualDisplayRunning(configId: config.id),
                 preDisplayID: nil,
                 postDisplayID: record.displayID,
                 persistenceOutcome: .saved,
                 runtimeCreationOutcome: .succeeded,
-                rollbackOutcome: .notAttempted,
-                createdConfigEvidence: persistedEvidence,
-                runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-                managedDisplaysAfterCommand: snapshot.managedDisplays
+                rollbackOutcome: .notAttempted
             )
         } catch {
             let creationError = error
@@ -417,16 +388,12 @@ package final class VirtualDisplayOrchestrator {
                 )
                 let result = VirtualDisplayCreateCommandResult(
                     createdConfigID: config.id,
-                    serialNumber: config.serialNum,
                     targetWasRunningAfterCommand: false,
                     preDisplayID: nil,
                     postDisplayID: nil,
                     persistenceOutcome: .rollbackFailed,
                     runtimeCreationOutcome: .failed,
-                    rollbackOutcome: .rollbackFailed,
-                    createdConfigEvidence: persistedEvidence,
-                    runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-                    managedDisplaysAfterCommand: snapshot.managedDisplays
+                    rollbackOutcome: .rollbackFailed
                 )
                 throw VirtualDisplayCreateCommandFailure(
                     reason: "persistenceRecoveryFailed",
@@ -436,16 +403,12 @@ package final class VirtualDisplayOrchestrator {
             }
             let result = VirtualDisplayCreateCommandResult(
                 createdConfigID: config.id,
-                serialNumber: config.serialNum,
                 targetWasRunningAfterCommand: false,
                 preDisplayID: nil,
                 postDisplayID: nil,
                 persistenceOutcome: .rolledBack,
                 runtimeCreationOutcome: .failed,
-                rollbackOutcome: .rolledBack,
-                createdConfigEvidence: persistedEvidence,
-                runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-                managedDisplaysAfterCommand: snapshot.managedDisplays
+                rollbackOutcome: .rolledBack
             )
             throw VirtualDisplayCreateCommandFailure(
                 reason: "runtime_creation_failed",
@@ -693,9 +656,7 @@ package final class VirtualDisplayOrchestrator {
                 postDisplayID: nil,
                 persistenceOutcome: .notAttempted,
                 virtualDisplayCommandOutcome: .failed,
-                runtimeTrackingClearOutcome: .notAttempted,
-                runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-                managedDisplaysAfterCommand: snapshot.managedDisplays
+                runtimeTrackingClearOutcome: .notAttempted
             )
             throw VirtualDisplayDeleteCommandFailure(
                 reason: "config_not_found",
@@ -716,9 +677,7 @@ package final class VirtualDisplayOrchestrator {
                 postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
                 persistenceOutcome: .failed,
                 virtualDisplayCommandOutcome: .failed,
-                runtimeTrackingClearOutcome: .notAttempted,
-                runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-                managedDisplaysAfterCommand: snapshot.managedDisplays
+                runtimeTrackingClearOutcome: .notAttempted
             )
             throw VirtualDisplayDeleteCommandFailure(
                 reason: "config_delete_failed",
@@ -735,9 +694,7 @@ package final class VirtualDisplayOrchestrator {
             postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
             persistenceOutcome: .saved,
             virtualDisplayCommandOutcome: .succeeded,
-            runtimeTrackingClearOutcome: .cleared,
-            runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-            managedDisplaysAfterCommand: snapshot.managedDisplays
+            runtimeTrackingClearOutcome: .cleared
         )
     }
 
@@ -899,9 +856,7 @@ package final class VirtualDisplayOrchestrator {
             postDisplayID: postDisplayID,
             restoreOutcome: restoreOutcome,
             didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
-            failureReason: failureReason,
-            runningConfigIDsAfterCommand: Array(runtimeTracker.runningConfigIDs()),
-            managedDisplaysAfterCommand: snapshot.managedDisplays
+            failureReason: failureReason
         )
     }
 

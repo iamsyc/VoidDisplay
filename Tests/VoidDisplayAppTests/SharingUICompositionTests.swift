@@ -5,6 +5,7 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplay
+@testable import VoidDisplayVirtualDisplayTestingSupport
 import Foundation
 import Testing
 

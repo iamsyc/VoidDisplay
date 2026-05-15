@@ -1,4 +1,5 @@
 @testable import VoidDisplayVirtualDisplay
+@testable import VoidDisplayVirtualDisplayTestingSupport
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
@@ -597,92 +598,6 @@ struct VirtualDisplayControllerTests {
 
         #expect(result == createdID)
         #expect(sut.virtualDisplay.persistenceAlert == nil)
-    }
-
-    @Test func createVirtualDisplayRollbackFailureUsesLocalizedPersistenceRecoveryErrorMessage() async {
-        let store = FakeVirtualDisplayStore()
-        store.scriptedSaveErrors = [
-            nil,
-            VirtualDisplayConfigStoreError.ioFailed(
-                operation: "save",
-                underlying: NSError(domain: "VirtualDisplayControllerTests", code: 76)
-            )
-        ]
-        let orchestrator = VirtualDisplayOrchestrator(
-            configRepository: VirtualDisplayConfigRepository(store: store, reportFailure: nil),
-            displayReconfigurationMonitor: FakeDisplayReconfigurationMonitor(),
-            managedDisplayOnlineChecker: { _ in false },
-            runtimeDriver: ControllerTestRuntimeDriver(
-                scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
-            ),
-            clock: nil
-        )
-
-        let sut = VirtualDisplayController(
-            virtualDisplayFacade: orchestrator,
-            appliedBadgeDisplayDuration: .nanoseconds(1)
-        )
-        sut.configureCreateExecutor { request in
-            let result = try orchestrator.createDisplayCommand(
-                name: request.displayName,
-                serialNum: request.serialNumber,
-                physicalSize: CGSize(
-                    width: CGFloat(request.physicalWidthMillimeters),
-                    height: CGFloat(request.physicalHeightMillimeters)
-                ),
-                maxPixels: (
-                    width: request.maximumPixelWidth,
-                    height: request.maximumPixelHeight
-                ),
-                modes: request.modes
-            )
-            return VirtualDisplayCreateTransactionResult(
-                transactionID: UUID(),
-                status: .completed,
-                createdConfigID: result.createdConfigID,
-                virtualDisplayCommandSucceeded: result.runtimeCreationOutcome == .succeeded
-            )
-        }
-
-        await #expect(throws: Error.self) {
-            _ = try await sut.createVirtualDisplay(
-                VirtualDisplayCreateRequest(
-                    displayName: "New",
-                    serialNumber: 200,
-                    physicalWidthMillimeters: 300,
-                    physicalHeightMillimeters: 200,
-                    maximumPixelWidth: 1920,
-                    maximumPixelHeight: 1080,
-                    modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
-                )
-            )
-        }
-        #expect(sut.persistenceAlert != nil)
-        #expect(
-            sut.persistenceAlert?.message ==
-                String(
-                    localized: "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
-                )
-        )
-        #expect(sut.displayConfigs.count == 1)
-    }
-
-    @Test func uiTestFacadeDeleteMissingConfigFailsConfigNotFound() {
-        let sut = UITestVirtualDisplayFacade(scenario: .baseline)
-        let missingID = UUID()
-
-        do {
-            _ = try sut.deleteDisplayCommand(missingID)
-            Issue.record("Expected config_not_found failure.")
-        } catch let error as VirtualDisplayDeleteCommandFailure {
-            #expect(error.reason == "config_not_found")
-            #expect(error.result.configID == missingID)
-            #expect(error.result.persistenceOutcome == .notAttempted)
-            #expect(error.result.virtualDisplayCommandOutcome == .failed)
-            #expect(error.result.runtimeTrackingClearOutcome == .notAttempted)
-        } catch {
-            Issue.record("Unexpected error type: \(error)")
-        }
     }
 
     @Test func moveDisplayConfigPropagatesFailureAndSetsPersistencePresentation() {

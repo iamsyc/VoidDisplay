@@ -1,4 +1,5 @@
 @testable import VoidDisplayVirtualDisplay
+@testable import VoidDisplayVirtualDisplayTestingSupport
 @testable import VoidDisplayFoundation
 import Foundation
 import Testing
