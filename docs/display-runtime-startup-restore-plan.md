@@ -3,6 +3,21 @@
 状态：待实现执行计划
 范围：只规划 startup restore 进入 DisplayRuntime transaction。本文档不实现代码。
 
+## 范围边界
+
+本计划只处理 startup restore transaction。后续实现窗口只能把启动期 desired virtual display restore 收敛到 `DisplayRuntime` transaction control plane。
+
+本计划明确不处理：
+
+- README 更新或 public screenshots 更新。
+- LAN route、shareID、auth/security。
+- remote control、input injection、clipboard。
+- Capture/WebRTC/WebSocket/HTTP/frame pipeline。
+- LAN Web View 数据平面、Monitor 数据平面或 capture frame 数据平面。
+- Phase 7 叙事。
+
+任何实现批次只要需要触碰上述范围，就必须停止并重新开计划。不得把这些能力作为 startup restore transaction 的附带改动。
+
 ## 目标
 
 Startup restore 必须进入 `DisplayRuntime` transaction control plane。应用启动时不再直接通过 `VirtualDisplayController` 或 lower virtual display facade 执行 restore desired displays。
@@ -13,6 +28,12 @@ Startup restore 必须进入 `DisplayRuntime` transaction control plane。应用
 - Startup restore 复用 transaction trace、pre/post snapshot、topology wait、quiesce / restore 语义。
 - Startup restore 对 persisted desired virtual display configs 生成明确 restore intent。
 - Startup restore 的结果进入 startup 专属 presentation，不能伪装成普通 rebuild/edit failure。
+- Startup restore 只有 `DisplayRuntime` transaction path。
+- 旧 direct restore desired virtual displays path 删除。
+- `DisplayRuntime` 只通过 DTO / command ports 协调 startup restore。
+- App adapter 负责桥接 lower virtual display capabilities。
+- `VoidDisplayVirtualDisplay` lower layer 不 import `VoidDisplayRuntime`。
+- `VoidDisplayRuntime` 不 import UI/App/Capture/Sharing/VirtualDisplay/ScreenCaptureKit。
 - 用户可见功能不变。已设置为 desired-enabled 的虚拟显示仍在启动后恢复。
 - 不改变 LAN Web View、Monitor、capture frame pipeline、WebRTC/WebSocket/HTTP、LAN route、shareID、认证、安全边界。
 - 不引入旧 direct startup restore fallback。
@@ -28,13 +49,14 @@ Startup restore 必须进入 `DisplayRuntime` transaction control plane。应用
   - `loadPersistedConfigsAndRestoreDesiredVirtualDisplays()` 直接调用 `virtualDisplayFacade.loadPersistedConfigs()`。
   - 同一方法继续直接调用 `virtualDisplayFacade.restoreDesiredVirtualDisplays()`。
   - 之后只通过 `syncVirtualDisplayState()` 和 observability event/error presentation 反映结果。
+- Lower facade/orchestrator 仍暴露 startup restore direct presentation path，App bootstrap 可以绕过 runtime 直接触发 desired virtual display restore。
 
 这个路径是 Phase 3b 后残留的 parallel path。create/delete/edit/rebuild/enable/disable 已经通过 `DisplayRuntime` transaction 执行，统一经过 queue、trace、topology proof、session quiesce 与 restore evidence。startup restore 仍直接驱动 lower facade，导致启动恢复绕过以下 runtime 统一层：
 
 - transaction serialization 和 active task 约束。
 - transaction source 和 operation trace。
 - pre/post snapshot evidence。
-- topology stable / timed out / permission unprovable 结果。
+- topology stable / timedOut / unprovableDueToPermission 结果。
 - sharing / monitoring quiesce 与 restore 结果归因。
 - runtime observability snapshot refresh。
 
@@ -55,7 +77,7 @@ restoreStartupVirtualDisplays(
 新增 transaction kind/source/result DTO，命名由实现阶段按现有模型风格确定。最低要求：
 
 - `DisplayRuntimeTransactionKind` 增加 startup restore 专用 kind。
-- `DisplayRuntimeTransactionSource` 增加 app startup 专用 source。
+- `DisplayRuntimeTransactionSource` 增加 app startup 专用 source，trace 中记录为 `source=startup`。
 - Result 必须区分 overall status、per-config result、persistence read result、topology result、trace id。
 - Result 必须能表达 no desired-enabled configs，这是 terminal success no-op。
 - Result 必须能表达 duplicate request 是 coalesced、alreadyCompleted 或 serialized 后执行。
@@ -88,7 +110,7 @@ DTO 必须只包含 runtime 可拥有的数据：
 
 ### Transaction granularity
 
-采用 per-config serial transaction。单次 startup restore command 是一个 startup run，内部按 persisted order 或稳定排序生成 per-config restore transaction，并全部进入现有 virtual display transaction queue。
+Startup restore 采用 per-config serial transaction，不采用单个 batch transaction。单次 startup restore command 是一个 startup run，内部按 persisted order 或稳定排序生成 per-config restore transaction，并全部进入现有 virtual display transaction queue。
 
 选择 per-config serial transaction 的原因：
 
@@ -99,10 +121,25 @@ DTO 必须只包含 runtime 可拥有的数据：
 
 实现阶段不得把多个 lower restore side effect 包进一个无边界 batch command 后只记录一个粗粒度结果。允许在最终 presentation 中汇总 per-config transaction results。
 
+Per-config transaction 必须记录：
+
+- transaction id。
+- `source=startup`。
+- affected config id。
+- restore intent。
+- pre snapshot。
+- lower restore result。
+- topology result。
+- session restore result。
+- post snapshot。
+- failure evidence。
+- compensation evidence。没有补偿动作时记录 `notAttempted` 或等价枚举，不能省略字段导致无法判断。
+
 ### Trace and observability
 
-Startup restore 必须复用 transaction trace，并至少记录：
+Startup restore 必须进入 existing runtime transaction trace / observability recorder，并至少记录：
 
+- transaction id。
 - startup source。
 - startup run id。
 - affected config ids。
@@ -114,9 +151,20 @@ Startup restore 必须复用 transaction trace，并至少记录：
 - topology wait result。
 - sharing / monitoring restore result。
 - per-config failure reason。
+- compensation evidence。
 - aggregate startup restore result。
 
-Trace 中不得写入 display name 等不必要的用户内容。若现有 trace schema 无法表达 startup run 和 per-config restore evidence，计划实施时必须先证明需要 schema bump，再修改 snapshot schema。没有证明时不得扩大 snapshot schema。
+Trace 中不得写入 display name 等不必要的用户内容。默认不推进 runtime snapshot schema。若现有 trace schema 无法表达 startup run 和 per-config restore evidence，计划实施时必须先证明需要 schema bump，再修改 snapshot schema。没有证明时不得扩大 snapshot schema。
+
+Trace 和 observability 不得新增敏感信息导出。禁止导出：
+
+- displayName。
+- 本地路径。
+- LAN URL/IP。
+- raw shareID。
+- 窗口标题。
+- 用户文本。
+- 桌面内容。
 
 Observability 需要能回答三个问题：
 
@@ -132,6 +180,21 @@ Runtime 必须定义 duplicate startup restore 请求语义：
 - 同一进程内 startup run 已 terminal 后，后续 app startup source 请求返回 already-completed no-op，并引用上一 run 的 result/trace id。
 - 不允许 App adapter 或 `VirtualDisplayController` 以 fallback 方式再调用 old direct restore。
 
+### UI / presentation
+
+本阶段不改 UI IA，不改用户可见文案。实现只能调整 presentation 数据来源和失败归因。
+
+Startup restore presentation 必须读取 runtime startup restore result、runtime transaction trace 或由 App adapter 从 runtime result 派生的 presentation state。失败展示必须满足：
+
+- Startup restore failure 保持 startup restore 语义。
+- Persistence read failure 不伪装成 rebuild/edit failure。
+- Lower restore failure 不伪装成 rebuild/edit failure。
+- Topology timedOut 或 unprovableDueToPermission 不伪装成 driver restore failure。
+- Duplicate request no-op 不产生用户可见失败。
+- No desired-enabled configs 不产生用户可见失败。
+
+禁止保留旧 direct fallback。`VirtualDisplayController` 可以保留 presentation adapter 角色，但不能再作为 production startup restore executor。
+
 ### Failure semantics
 
 Persistence read failure：
@@ -139,42 +202,46 @@ Persistence read failure：
 - Startup restore terminal status 为 failed。
 - 不生成 per-config restore intent。
 - 不调用 lower restore。
-- Trace 记录 persistence read failure 和可用的 pre/post snapshot。
+- Trace 记录 transaction id、`source=startup`、persistence read failure、failure evidence、可用的 pre/post snapshot。
+- Compensation evidence 记录为 `notAttempted`。
 - UI startup presentation 显示 startup restore 失败，不复用 rebuild/edit failure。
 
 No desired-enabled configs：
 
 - Startup restore terminal status 为 succeeded no-op。
 - 不调用 lower restore。
-- Trace 记录 config read success、intent count 为 0、pre/post snapshot。
+- Trace 记录 transaction id、`source=startup`、config read success、affected configs 为空、intent count 为 0、pre/post snapshot、restore result 为空、failure 为空。
 
 Missing config：
 
 - 如果 persisted list 中的 config 在 per-config transaction 执行前已经不可用，该 config result 为 failed 或 skipped terminal，reason 为 `config_not_found`。
 - 该结果不能映射为 success。
+- Trace 记录 transaction id、`source=startup`、affected config id、missing config failure evidence、restore result 为 skipped 或 failed。
+- Compensation evidence 记录为 `notAttempted`。
 - 其他 per-config transactions 继续按 queue 串行执行。
 
 Lower driver restore failure：
 
 - 对应 config result 为 failed。
 - Topology wait 只在 lower command 已产生可验证 side effect 时执行。
-- Trace 记录 lower failure reason、post snapshot、是否跳过 topology proof。
+- Trace 记录 transaction id、`source=startup`、affected config id、lower failure reason、restore result、post snapshot、是否跳过 topology proof。
+- 如果 lower layer 做过恢复或 rollback，App adapter 必须把 compensation outcome 映射到 runtime DTO；没有补偿动作时记录 `notAttempted`。
 - UI startup presentation 使用 startup restore result，不显示普通 rebuild/edit 文案。
 
 Topology stable：
 
 - 对应 config result 可以成功，前提是 lower restore 成功且 topology proof 达到 stable。
-- Trace 记录 stable sample evidence。
+- Trace 记录 topology result 为 `stable`、stable sample evidence、post snapshot 和 restore result。
 
-Topology timed out：
+Topology timedOut：
 
 - 对应 config result 为 degraded 或 failed，由现有 transaction status 规则统一判定。
-- Trace 记录 timeout sample evidence。
+- Trace 记录 topology result 为 `timedOut`、timeout sample evidence、post snapshot 和 restore result。
 
-Topology unprovable due to permission：
+Topology unprovableDueToPermission：
 
 - 不归类为 lower restore failure。
-- Trace 记录 permission-unprovable topology result。
+- Trace 记录 topology result 为 `unprovableDueToPermission`、permission evidence、post snapshot 和 restore result。
 - Presentation 明确这是 startup restore topology proof 不可证，不把它归入 ordinary rebuild/edit failure。
 
 Session restore failure：
@@ -234,51 +301,36 @@ Session restore failure：
 
 任何超出允许范围的改动都必须停止并重新评估。不得用兼容层、双写、隐藏 fallback 或一次性 shim 保留旧 direct startup restore path。
 
-## 分阶段实施建议
+## 实施批次
 
-Stage A：计划和现状审计
+Batch 1：Runtime transaction model / ports / tests
 
-- Grep 当前 startup restore direct path。
-- 确认 `VirtualDisplayController.loadPersistedConfigsAndRestoreDesiredVirtualDisplays()` 的所有 production 调用点。
-- 确认 lower facade/orchestrator 当前 load persisted configs 和 restore desired virtual displays 的错误语义。
-- 确认 runtime transaction queue、active task、trace、topology wait、session restore 可复用入口。
-
-Stage B：Runtime startup restore transaction model / ports / tests
-
+- 审计当前 startup restore direct path，确认 bootstrap、controller、lower facade/orchestrator 的生产调用链。
 - 新增 startup restore transaction kind/source/result DTO。
 - 新增或扩展 virtual display command port，支持 startup config load 和 per-config restore command。
 - 实现 startup run coalescing/already-completed 语义。
 - 实现 per-config serial transaction，接入现有 queue、trace、snapshot、topology wait、session restore。
 - 添加 `VoidDisplayRuntimeTests` 覆盖 success、read failure、empty intents、missing config、lower restore failure、topology variants、duplicate request。
 
-Stage C：App adapter 和 bootstrap wiring
+Batch 2：App adapter + bootstrap wiring + remove old direct path
 
 - 在 `DisplayRuntimeVirtualDisplayAdapter*` 中映射 lower load/restore command 到 runtime DTO。
 - 将 `VoidDisplayApp.swift` startup restore 调用改为 `DisplayRuntime` startup restore API。
 - 保留 `StartupPlan.shouldRestoreVirtualDisplays` 作为是否触发 runtime startup restore 的开关。
 - 将 `postRestoreConfiguration` 改为接收 runtime-backed presentation result，或删除旧 controller restore hook。
-
-Stage D：删除旧 direct startup restore path
-
 - 删除 production 对 `loadPersistedConfigsAndRestoreDesiredVirtualDisplays()` 的调用。
 - 删除该方法，或改为只消费 runtime-backed startup restore result 的 presentation adapter。
 - 删除 lower facade 的 direct restore desired displays production 入口，或降级为仅被 command-shaped adapter 使用的内部能力。
 - Grep 确认 old direct startup restore path 无 production 命中。
 
-Stage E：observability / trace / failure evidence 验证
+Batch 3：observability / verification / final audit
 
 - 验证 startup restore trace 能定位 persistence read、lower restore、topology、session restore failure。
 - 验证 startup presentation 不复用 rebuild/edit failure。
 - 验证 no desired-enabled configs 不产生错误事件。
-- 验证 permission-unprovable topology proof 不被误报为 driver restore failure。
-
-Stage F：final audit
-
-- 执行 targeted tests 和 build gate。
-- 执行 boundary grep。
-- 扫描 Xcode warning/error 为 0。
-- 确认没有用户可见行为回归。
-- 确认工作区 clean 并提交实现。
+- 验证 unprovableDueToPermission topology proof 不被误报为 driver restore failure。
+- 执行 targeted tests、boundary grep、Xcode Debug build、warning/error scan。
+- 确认没有用户可见行为回归，确认工作区 clean 并提交实现。
 
 ## 测试计划
 
@@ -290,8 +342,8 @@ Stage F：final audit
 - Missing config：per-config result 为 `config_not_found`，不能映射为 success。
 - Lower restore failure：记录 lower failure，结果归入 startup restore failure，不复用 rebuild/edit failure。
 - Topology stable：lower restore 后 stable proof 成功。
-- Topology timed out：记录 timeout evidence，status 按 transaction 规则降级或失败。
-- Topology unprovable due to permission：记录 permission-unprovable，不归类为 lower restore failure。
+- Topology timedOut：记录 timeout evidence，status 按 transaction 规则降级或失败。
+- Topology unprovableDueToPermission：记录 permission evidence，不归类为 lower restore failure。
 - Duplicate startup restore：active run coalescing 或 terminal already-completed no-op，证明 lower restore 没有重复调用。
 - Old direct startup restore path grep 无命中：production 代码不再调用 `loadPersistedConfigsAndRestoreDesiredVirtualDisplays()` 或 direct `restoreDesiredVirtualDisplays()` startup path。
 - AppBootstrap 不再直接调用 `VirtualDisplayController` restore。
