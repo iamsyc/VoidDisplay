@@ -15,6 +15,7 @@ package nonisolated enum DisplayRuntimeTransactionKind: String, Codable, Equatab
     case virtualDisplayEditRebuild
     case virtualDisplayCreate
     case virtualDisplayDelete
+    case virtualDisplayStartupRestore
 }
 
 package nonisolated enum DisplayRuntimeTransactionSource: String, Codable, Equatable, Sendable {
@@ -23,6 +24,7 @@ package nonisolated enum DisplayRuntimeTransactionSource: String, Codable, Equat
     case editSaveAndRebuild
     case createVirtualDisplaySheet
     case deleteVirtualDisplayConfirmation
+    case startup
     case diagnostics
     case unknown
 }

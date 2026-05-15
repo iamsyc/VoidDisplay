@@ -9,7 +9,8 @@ extension DisplayRuntime {
         enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
     ) -> (surfaces: [DisplayRuntimeAffectedSurface], scopeEscalationReason: DisplayRuntimeScopeEscalationReason?) {
         switch kind {
-        case .virtualDisplayRebuild, .virtualDisplayEditRebuild, .virtualDisplayCreate, .virtualDisplayDelete:
+        case .virtualDisplayRebuild, .virtualDisplayEditRebuild, .virtualDisplayCreate, .virtualDisplayDelete,
+             .virtualDisplayStartupRestore:
             return (makeAffectedSurfaces(configID: configID, snapshot: snapshot), nil)
         case .virtualDisplayEnable:
             return makeEnableAffectedScope(

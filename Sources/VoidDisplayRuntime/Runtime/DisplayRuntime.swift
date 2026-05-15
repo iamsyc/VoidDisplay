@@ -29,6 +29,7 @@ package final class DisplayRuntime {
     let captureCommander: (any DisplayRuntimeCaptureCommanding)?
     let captureIntentCommander: (any DisplayRuntimeCaptureIntentCommanding)?
     let virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)?
+    let startupRestoreCommander: (any DisplayRuntimeStartupRestoreCommanding)?
     let observabilityRecorder: (any DisplayRuntimeObservabilityRecording)?
     let topologyWaitPolicy: DisplayRuntimeTopologyWaitPolicy
 
@@ -53,6 +54,9 @@ package final class DisplayRuntime {
     ] = [:]
     var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]
     var recentTransactionTraces: [DisplayRuntimeTransactionTrace] = []
+    var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
+    var activeStartupRestoreCoalescedRequestCount = 0
+    var completedStartupRestoreResult: DisplayRuntimeStartupRestoreResult?
 
     package init(
         catalogProvider: (any DisplayRuntimeCatalogProviding)? = nil,
@@ -64,6 +68,7 @@ package final class DisplayRuntime {
         captureCommander: (any DisplayRuntimeCaptureCommanding)? = nil,
         captureIntentCommander: (any DisplayRuntimeCaptureIntentCommanding)? = nil,
         virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)? = nil,
+        startupRestoreCommander: (any DisplayRuntimeStartupRestoreCommanding)? = nil,
         observabilityRecorder: (any DisplayRuntimeObservabilityRecording)? = nil,
         topologyWaitPolicy: DisplayRuntimeTopologyWaitPolicy = .default
     ) {
@@ -76,6 +81,7 @@ package final class DisplayRuntime {
         self.captureCommander = captureCommander
         self.captureIntentCommander = captureIntentCommander
         self.virtualDisplayCommander = virtualDisplayCommander
+        self.startupRestoreCommander = startupRestoreCommander
         self.observabilityRecorder = observabilityRecorder
         self.topologyWaitPolicy = topologyWaitPolicy
     }

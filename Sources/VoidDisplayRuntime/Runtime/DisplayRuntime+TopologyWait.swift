@@ -96,7 +96,8 @@ extension DisplayRuntime {
         switch kind {
         case .virtualDisplayDisable, .virtualDisplayDelete:
             surfacesToResolve = affectedSurfaces.filter { $0.reason != .requestedConfig }
-        case .virtualDisplayRebuild, .virtualDisplayEnable, .virtualDisplayEditRebuild, .virtualDisplayCreate:
+        case .virtualDisplayRebuild, .virtualDisplayEnable, .virtualDisplayEditRebuild, .virtualDisplayCreate,
+             .virtualDisplayStartupRestore:
             surfacesToResolve = affectedSurfaces
         }
         guard !surfacesToResolve.isEmpty else {

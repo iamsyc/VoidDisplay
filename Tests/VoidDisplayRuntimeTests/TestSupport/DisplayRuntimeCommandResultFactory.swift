@@ -166,3 +166,66 @@ func persistenceCommandResult(
         persistenceOutcome: persistenceOutcome
     )
 }
+
+func startupRestoreConfig(
+    id: UUID,
+    serial: UInt32,
+    desiredEnabled: Bool = true,
+    physicalWidthMillimeters: UInt32 = 600,
+    physicalHeightMillimeters: UInt32 = 340,
+    modeCount: Int = 1,
+    maximumPixelWidth: UInt32 = 1920,
+    maximumPixelHeight: UInt32 = 1080
+) -> DisplayRuntimeStartupRestoreConfig {
+    DisplayRuntimeStartupRestoreConfig(
+        id: id,
+        desiredEnabled: desiredEnabled,
+        evidence: .init(
+            id: id,
+            serialNumber: serial,
+            desiredEnabled: desiredEnabled,
+            physicalWidthMillimeters: physicalWidthMillimeters,
+            physicalHeightMillimeters: physicalHeightMillimeters,
+            modeCount: modeCount,
+            maximumPixelWidth: maximumPixelWidth,
+            maximumPixelHeight: maximumPixelHeight
+        )
+    )
+}
+
+func startupRestoreCommandResult(
+    transactionID: DisplayRuntimeTransactionID = DisplayRuntimeTransactionID(),
+    configID: UUID,
+    preDisplayID: DisplayRuntimeDisplayID? = nil,
+    postDisplayID: DisplayRuntimeDisplayID? = 9001,
+    restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .succeeded,
+    didProduceVerifiableSideEffect: Bool = true,
+    failureReason: String? = nil,
+    compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
+    compensationFailureReason: String? = nil,
+    runningConfigIDsAfterCommand: [UUID]? = nil,
+    managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]? = nil
+) -> DisplayRuntimeStartupRestoreCommandResult {
+    DisplayRuntimeStartupRestoreCommandResult(
+        transactionID: transactionID,
+        configID: configID,
+        preDisplayID: preDisplayID,
+        postDisplayID: postDisplayID,
+        restoreOutcome: restoreOutcome,
+        didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
+        failureReason: failureReason,
+        compensationOutcome: compensationOutcome,
+        compensationFailureReason: compensationFailureReason,
+        runningConfigIDsAfterCommand: runningConfigIDsAfterCommand ?? [configID],
+        managedDisplaysAfterCommand: managedDisplaysAfterCommand ?? postDisplayID.map {
+            [
+                DisplayRuntimeManagedVirtualDisplay(
+                    configID: configID,
+                    serialNumber: 9001,
+                    displayID: $0,
+                    isLiveRuntime: true
+                )
+            ]
+        } ?? []
+    )
+}

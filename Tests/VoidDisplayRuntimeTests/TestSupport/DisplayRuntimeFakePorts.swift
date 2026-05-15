@@ -280,7 +280,7 @@ final class FakeCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
 }
 
 @MainActor
-final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding {
+final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding, DisplayRuntimeStartupRestoreCommanding {
     private let recorder: RuntimeOperationRecorder?
     private let delayNanoseconds: UInt64
     var rebuildCallCount = 0
@@ -300,6 +300,9 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding 
     var createRequests: [DisplayRuntimeVirtualDisplayCreateRequest] = []
     var deleteCallCount = 0
     var deleteRequests: [DisplayRuntimeVirtualDisplayDeleteCommandRequest] = []
+    var startupConfigLoadCallCount = 0
+    var startupRestoreCallCount = 0
+    var startupRestoreRequests: [DisplayRuntimeStartupRestoreCommandRequest] = []
     var enablePreflight: DisplayRuntimeVirtualDisplayEnablePreflight?
     var setDesiredEnabledError: Error?
     var saveConfigForRebuildError: Error?
@@ -308,10 +311,13 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding 
     var restoreConfigAfterFailedEditResult: DisplayRuntimeVirtualDisplayPersistenceCommandResult?
     var createResult: DisplayRuntimeVirtualDisplayCreateCommandResult?
     var deleteResult: DisplayRuntimeVirtualDisplayDeleteCommandResult?
+    var startupConfigLoadResult: DisplayRuntimeStartupRestoreConfigLoadResult = .succeeded(configs: [])
+    var startupRestoreResults: [DisplayRuntimeStartupRestoreCommandResult] = []
     var enableError: Error?
     var disableError: Error?
     var createError: Error?
     var deleteError: Error?
+    var startupRestoreError: Error?
     var onSetDesiredEnabled: ((UUID, Bool) -> Void)?
     var onSaveConfigForRebuild: ((DisplayRuntimeVirtualDisplayEditRebuildRequest) -> Void)?
     var onRestoreConfigAfterFailedEdit: ((DisplayRuntimeVirtualDisplayConfigEditDTO) -> Void)?
@@ -319,6 +325,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding 
     var onDisable: ((UUID) -> Void)?
     var onCreate: ((DisplayRuntimeVirtualDisplayCreateRequest) -> Void)?
     var onDelete: ((DisplayRuntimeVirtualDisplayDeleteCommandRequest) -> Void)?
+    var onStartupRestore: ((DisplayRuntimeStartupRestoreCommandRequest) -> Void)?
     var error: Error?
     var scriptedRebuildErrors: [Error?] = []
 
@@ -505,6 +512,62 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding 
             targetWasRunning: request.targetWasRunning,
             preDisplayID: request.targetPreDisplayID,
             postDisplayID: nil
+        )
+    }
+
+    func loadPersistedVirtualDisplayConfigsForStartupRestore()
+        async -> DisplayRuntimeStartupRestoreConfigLoadResult
+    {
+        startupConfigLoadCallCount += 1
+        recorder?.append("loadStartupConfigs")
+        return startupConfigLoadResult
+    }
+
+    func restoreVirtualDisplayForStartup(
+        request: DisplayRuntimeStartupRestoreCommandRequest
+    ) async throws -> DisplayRuntimeStartupRestoreCommandResult {
+        startupRestoreCallCount += 1
+        startupRestoreRequests.append(request)
+        recorder?.append("startupRestore:\(request.configID.uuidString)")
+        if delayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if let startupRestoreError {
+            throw startupRestoreError
+        }
+        onStartupRestore?(request)
+        if !startupRestoreResults.isEmpty {
+            var result = startupRestoreResults.removeFirst()
+            if result.transactionID != request.transactionID {
+                result = startupRestoreCommandResult(
+                    transactionID: request.transactionID,
+                    configID: result.configID,
+                    preDisplayID: result.preDisplayID,
+                    postDisplayID: result.postDisplayID,
+                    restoreOutcome: result.restoreOutcome,
+                    didProduceVerifiableSideEffect: result.didProduceVerifiableSideEffect,
+                    failureReason: result.failureReason,
+                    compensationOutcome: result.compensationOutcome,
+                    compensationFailureReason: result.compensationFailureReason,
+                    runningConfigIDsAfterCommand: result.runningConfigIDsAfterCommand,
+                    managedDisplaysAfterCommand: result.managedDisplaysAfterCommand
+                )
+            }
+            return result
+        }
+        return startupRestoreCommandResult(
+            transactionID: request.transactionID,
+            configID: request.configID,
+            postDisplayID: 9001,
+            runningConfigIDsAfterCommand: [request.configID],
+            managedDisplaysAfterCommand: [
+                .init(
+                    configID: request.configID,
+                    serialNumber: request.configEvidence.serialNumber,
+                    displayID: 9001,
+                    isLiveRuntime: true
+                )
+            ]
         )
     }
 }

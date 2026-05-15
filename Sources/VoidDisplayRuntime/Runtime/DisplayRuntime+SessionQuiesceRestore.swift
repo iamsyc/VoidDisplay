@@ -15,7 +15,8 @@ extension DisplayRuntime {
         switch kind {
         case .virtualDisplayEnable:
             intents = pauseIntents.filter { $0.surfaceIdentity != targetIdentity }
-        case .virtualDisplayDisable, .virtualDisplayRebuild, .virtualDisplayEditRebuild, .virtualDisplayDelete:
+        case .virtualDisplayDisable, .virtualDisplayRebuild, .virtualDisplayEditRebuild, .virtualDisplayDelete,
+             .virtualDisplayStartupRestore:
             intents = pauseIntents
         case .virtualDisplayCreate:
             intents = []

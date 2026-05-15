@@ -50,6 +50,15 @@ package protocol DisplayRuntimeVirtualDisplayCommanding {
 }
 
 @MainActor
+package protocol DisplayRuntimeStartupRestoreCommanding {
+    func loadPersistedVirtualDisplayConfigsForStartupRestore()
+        async -> DisplayRuntimeStartupRestoreConfigLoadResult
+    func restoreVirtualDisplayForStartup(
+        request: DisplayRuntimeStartupRestoreCommandRequest
+    ) async throws -> DisplayRuntimeStartupRestoreCommandResult
+}
+
+@MainActor
 package protocol DisplayRuntimeCatalogCommanding {
     func requestPermission() -> Bool
     func refreshPermission() -> Bool

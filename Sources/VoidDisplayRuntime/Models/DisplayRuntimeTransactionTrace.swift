@@ -73,6 +73,10 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
     package let runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let rollbackOutcome: DisplayRuntimePersistenceOutcome
     package let runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome
+    package let startupRestoreRunID: DisplayRuntimeStartupRestoreRunID?
+    package let startupConfigLoadResult: DisplayRuntimeStartupRestoreConfigLoadTrace?
+    package let startupRestoreIntent: DisplayRuntimeStartupRestoreIntent?
+    package let startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace?
 
     package init(
         id: DisplayRuntimeTransactionID,
@@ -102,7 +106,11 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence? = nil,
         runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
         rollbackOutcome: DisplayRuntimePersistenceOutcome = .notAttempted,
-        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome = .notAttempted
+        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome = .notAttempted,
+        startupRestoreRunID: DisplayRuntimeStartupRestoreRunID? = nil,
+        startupConfigLoadResult: DisplayRuntimeStartupRestoreConfigLoadTrace? = nil,
+        startupRestoreIntent: DisplayRuntimeStartupRestoreIntent? = nil,
+        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -136,6 +144,10 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         self.runtimeCreationOutcome = runtimeCreationOutcome
         self.rollbackOutcome = rollbackOutcome
         self.runtimeTrackingClearOutcome = runtimeTrackingClearOutcome
+        self.startupRestoreRunID = startupRestoreRunID
+        self.startupConfigLoadResult = startupConfigLoadResult
+        self.startupRestoreIntent = startupRestoreIntent
+        self.startupRestoreCommandResult = startupRestoreCommandResult
     }
 
     package func replacing(
@@ -163,7 +175,11 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence? = nil,
         runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome? = nil,
         rollbackOutcome: DisplayRuntimePersistenceOutcome? = nil,
-        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome? = nil
+        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome? = nil,
+        startupRestoreRunID: DisplayRuntimeStartupRestoreRunID? = nil,
+        startupConfigLoadResult: DisplayRuntimeStartupRestoreConfigLoadTrace? = nil,
+        startupRestoreIntent: DisplayRuntimeStartupRestoreIntent? = nil,
+        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil
     ) -> Self {
         Self(
             id: id,
@@ -193,7 +209,11 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
             createdConfigEvidence: createdConfigEvidence ?? self.createdConfigEvidence,
             runtimeCreationOutcome: runtimeCreationOutcome ?? self.runtimeCreationOutcome,
             rollbackOutcome: rollbackOutcome ?? self.rollbackOutcome,
-            runtimeTrackingClearOutcome: runtimeTrackingClearOutcome ?? self.runtimeTrackingClearOutcome
+            runtimeTrackingClearOutcome: runtimeTrackingClearOutcome ?? self.runtimeTrackingClearOutcome,
+            startupRestoreRunID: startupRestoreRunID ?? self.startupRestoreRunID,
+            startupConfigLoadResult: startupConfigLoadResult ?? self.startupConfigLoadResult,
+            startupRestoreIntent: startupRestoreIntent ?? self.startupRestoreIntent,
+            startupRestoreCommandResult: startupRestoreCommandResult ?? self.startupRestoreCommandResult
         )
     }
 }
