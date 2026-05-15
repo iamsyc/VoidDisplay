@@ -120,7 +120,7 @@ package struct DisplaysView: View {
             title: surface.title,
             subtitle: surface.subtitle,
             status: nil,
-            metaBadges: rowBadges(for: surface),
+            metaBadges: [],
             iconSystemName: surface.isManagedVirtualDisplay ? "display.2" : "display",
             iconScreenTint: DisplayIconTintResolver.resolve(
                 isMonitoring: surface.isMonitoring,
@@ -129,15 +129,6 @@ package struct DisplaysView: View {
             isEmphasized: true,
             accessibilityIdentifier: "display_surface_card"
         )
-    }
-
-    private func rowBadges(for surface: DisplaySurfacePresentation) -> [AppBadgeModel] {
-        [
-            AppBadgeModel(
-                title: surface.kindText,
-                style: .roundedTag(tint: surface.isManagedVirtualDisplay ? .blue : .gray)
-            )
-        ]
     }
 
     @MainActor
@@ -259,11 +250,6 @@ private struct DisplaySurfaceManagementCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-
-                if model.status != nil || !model.metaBadges.isEmpty {
-                    FlowStatusBadges(model: model)
-                        .padding(.top, 1)
-                }
             }
         }
     }
@@ -398,57 +384,6 @@ private extension DisplaySurfaceStatusTone {
         case .danger:
             .red
         }
-    }
-}
-
-private struct FlowStatusBadges: View {
-    let model: AppListRowModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let status = model.status {
-                DisplaySurfaceStatusPill(title: status.title, tint: status.tint, showsDot: true)
-            }
-
-            ForEach(model.metaBadges) { badge in
-                DisplaySurfaceStatusPill(title: badge.title, tint: .secondary, showsDot: false)
-                    .opacity(badge.isVisible ? 1 : 0)
-                    .accessibilityHidden(!badge.isVisible)
-            }
-        }
-    }
-}
-
-private struct DisplaySurfaceStatusPill: View {
-    let title: String
-    let tint: Color
-    let showsDot: Bool
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 5) {
-            if showsDot {
-                Circle()
-                    .fill(tint)
-                    .frame(width: 7, height: 7)
-            }
-
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-        }
-        .padding(.horizontal, AppUI.Spacing.small - 1)
-        .padding(.vertical, AppUI.Spacing.xSmall)
-        .background(
-            tint.opacity(colorScheme == .dark ? 0.20 : 0.12),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(tint.opacity(colorScheme == .dark ? 0.34 : 0.24), lineWidth: AppUI.Stroke.subtle)
-        )
-        .foregroundStyle(tint)
     }
 }
 
