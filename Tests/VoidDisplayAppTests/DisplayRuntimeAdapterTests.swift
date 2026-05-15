@@ -139,6 +139,59 @@ struct DisplayRuntimeAdapterTests {
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
     }
 
+    @Test func monitorStartAndStopResolveManagedVirtualDisplaySurface() async throws {
+        let configID = UUID(uuidString: "13131313-1313-1313-1313-131313131313")!
+        let display = SharedMockSCDisplay.make(displayID: 8416, width: 3008, height: 1692)
+        let harness = monitorHarness(
+            display: display,
+            virtualDisplaySnapshot: managedVirtualDisplaySnapshot(
+                configID: configID,
+                displayID: display.displayID
+            )
+        )
+        let actions = CaptureUIComposition.monitoringActions(
+            capture: harness.controller,
+            displayRuntime: harness.runtime
+        )
+
+        let outcome = try await actions.startMonitoring(
+            display,
+            CaptureMonitoringDisplayMetadata(
+                displayName: "Managed Virtual Monitor",
+                resolutionText: "3008 x 1692",
+                isVirtualDisplay: true
+            )
+        )
+
+        guard case .started(let sessionID) = outcome else {
+            Issue.record("Expected managed virtual monitor start to succeed.")
+            return
+        }
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(harness.captureMonitoringService.addCallCount == 1)
+        #expect(harness.controller.monitoringSession(for: sessionID)?.displayID == display.displayID)
+        #expect(lease.surfaceIdentity == surfaceIdentity)
+        #expect(lease.resolvedDisplayID == display.displayID)
+        #expect(effectiveIntent.intent.surfaceIdentity == surfaceIdentity)
+        #expect(effectiveIntent.intent.resolvedDisplayID == display.displayID)
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+
+        actions.closeMonitoringSession(sessionID)
+
+        let releasedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let drainIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(releasedLease.surfaceIdentity == surfaceIdentity)
+        #expect(releasedLease.state == .released)
+        #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(drainIntent.intent.surfaceIdentity == surfaceIdentity)
+        #expect(drainIntent.intent.kind == .drain)
+        #expect(drainIntent.lastApplyResult?.outcome == .applied)
+        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 1)
+        #expect(harness.controller.screenCaptureSessions.isEmpty)
+    }
+
     @Test func monitorStopDetachesRuntimeLeaseAndDrainsPreviewThroughAdapter() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8405, width: 1920, height: 1080)
         let harness = monitorHarness(display: display)
@@ -1279,7 +1332,8 @@ private final class AdapterMonitorDummySession: DisplayCaptureSessioning, @unche
 @MainActor
 private func monitorHarness(
     display: SCDisplay,
-    hasPermission: Bool = true
+    hasPermission: Bool = true,
+    virtualDisplaySnapshot: DisplayRuntimeVirtualDisplaySnapshot? = nil
 ) -> (
     catalogService: ScreenCaptureCatalogService,
     captureMonitoringService: MockCaptureMonitoringService,
@@ -1322,6 +1376,7 @@ private func monitorHarness(
     let runtime = DisplayRuntime(
         catalogProvider: DisplayRuntimeCatalogAdapter(service: catalogService),
         captureProvider: adapter,
+        virtualDisplayProvider: virtualDisplaySnapshot.map(AdapterTestVirtualDisplayProvider.init),
         captureIntentCommander: adapter
     )
     return (
@@ -1331,6 +1386,18 @@ private func monitorHarness(
         adapter: adapter,
         runtime: runtime
     )
+}
+
+private final class AdapterTestVirtualDisplayProvider: DisplayRuntimeVirtualDisplayProviding {
+    private let snapshot: DisplayRuntimeVirtualDisplaySnapshot
+
+    init(snapshot: DisplayRuntimeVirtualDisplaySnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
+        snapshot
+    }
 }
 
 @MainActor
@@ -1400,6 +1467,35 @@ private func lanWebViewHarness(
         captureController: captureController,
         captureAdapter: captureAdapter,
         runtime: runtime
+    )
+}
+
+private func managedVirtualDisplaySnapshot(
+    configID: UUID,
+    displayID: DisplayRuntimeDisplayID
+) -> DisplayRuntimeVirtualDisplaySnapshot {
+    .init(
+        rebuildRequestCount: 0,
+        rebuildingConfigIDs: [],
+        runningConfigIDs: [configID],
+        recentlyAppliedConfigIDs: [],
+        rebuildFailureConfigIDs: [],
+        configStoreHasLoadFailure: false,
+        configStoreHasDiagnostics: false,
+        managedDisplays: [
+            .init(configID: configID, serialNumber: 9416, displayID: displayID, isLiveRuntime: true)
+        ],
+        configs: [
+            .init(
+                id: configID,
+                serialNumber: 9416,
+                desiredEnabled: true,
+                physicalWidthMillimeters: 600,
+                physicalHeightMillimeters: 340,
+                modes: [.init(width: 1504, height: 846, refreshRate: 60, enableHiDPI: true)]
+            )
+        ],
+        restoreFailureConfigIDs: []
     )
 }
 

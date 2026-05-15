@@ -81,7 +81,25 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface?.isAuxiliary == true)
         #expect(surface?.catalog?.pixelWidth == 2560)
         #expect(surface?.catalog?.isMain == true)
+        #expect(runtime.surfaceIdentityForDisplayID(200) == .physicalDisplay(displayID: 200))
+        #expect(runtime.surfaceIdentityForDisplayID(201) == nil)
     }
+
+    @Test func surfaceIdentityForDisplayIDResolvesManagedVirtualSurface() {
+        let configID = UUID(uuidString: "12121212-1212-1212-1212-121212121212")!
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 77, isMain: false)),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 77)
+            )
+        )
+
+        #expect(runtime.surfaceIdentityForDisplayID(77) == .managedVirtualDisplay(configID: configID))
+        #expect(runtime.makeSnapshot().surfaces.map(\.identity) == [
+            .managedVirtualDisplay(configID: configID)
+        ])
+    }
+
     @Test func shareRouteDoesNotBecomeSurfaceIdentity() {
         let runtime = DisplayRuntime(
             sharingProvider: FakeSharingProvider(

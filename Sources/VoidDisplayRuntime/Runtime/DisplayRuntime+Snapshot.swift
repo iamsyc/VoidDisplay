@@ -34,6 +34,14 @@ extension DisplayRuntime {
         )
     }
 
+    package func surfaceIdentityForDisplayID(
+        _ displayID: DisplayRuntimeDisplayID
+    ) -> DisplaySurfaceIdentity? {
+        makeSnapshot().surfaces.first {
+            $0.currentDisplayID == displayID
+        }?.identity
+    }
+
     func currentCaptureSnapshot() -> DisplayRuntimeCaptureSnapshot {
         captureProvider?.makeCaptureSnapshot() ?? .empty
     }

@@ -39,8 +39,11 @@ package enum CaptureUIComposition {
             },
             attachDiagnosticsRecorder: { sessionID in
                 guard let session = capture.monitoringSession(for: sessionID) else { return nil }
+                guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
+                    return nil
+                }
                 let result = await displayRuntime.attachDiagnosticsRecorderConsumer(
-                    surfaceIdentity: .physicalDisplay(displayID: session.displayID),
+                    surfaceIdentity: surfaceIdentity,
                     owner: .init(source: .diagnostics, redactedLabel: "diagnostics-recorder"),
                     demand: diagnosticsRecorderDemand(for: session)
                 )
@@ -59,8 +62,11 @@ package enum CaptureUIComposition {
                 guard let session = capture.monitoringSession(for: sessionID) else {
                     return
                 }
+                guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
+                    return
+                }
                 displayRuntime.detachMonitorConsumer(
-                    surfaceIdentity: .physicalDisplay(displayID: session.displayID)
+                    surfaceIdentity: surfaceIdentity
                 )
             },
             setMonitoringSessionCapturesCursor: { sessionID, capturesCursor in
@@ -115,7 +121,11 @@ package enum CaptureUIComposition {
         capture: CaptureController,
         displayRuntime: DisplayRuntime
     ) async throws -> DisplayStartOutcome<UUID> {
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: display.displayID)
+        guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(display.displayID) else {
+            throw DisplayRuntimeMonitorCaptureError(
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
         let result = await displayRuntime.attachMonitorConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: .init(source: .localUI, redactedLabel: "monitor"),
