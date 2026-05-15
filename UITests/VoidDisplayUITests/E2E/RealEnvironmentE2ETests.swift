@@ -584,8 +584,8 @@ final class RealEnvironmentE2ETests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
 
-        // Fallback to coordinate tap to reduce false negatives when accessibility
-        // reports a visible button as temporarily non-hittable.
+        // Retry with a coordinate tap to reduce false negatives when accessibility
+        // reports a visible button as briefly non-hittable.
         let center = element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         center.tap()
     }

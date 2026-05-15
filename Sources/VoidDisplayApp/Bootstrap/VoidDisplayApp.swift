@@ -22,36 +22,36 @@ package struct AppEnvironment {
     package let observability: ObservabilityCenter
     package let sharing: SharingController
     package let virtualDisplay: VirtualDisplayController
-    package let screenCatalog: ScreenCatalogOrchestrator
     package let displayRuntime: DisplayRuntime
     package let capturePerformancePreferences: CapturePerformancePreferences
     package let feedbackController: AppSettingsFeedbackController
-    private let startupRuntimeTask: Task<Void, Never>
+    package let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
+    private let startupTask: Task<Void, Never>
 
     package init(
         capture: CaptureController,
         observability: ObservabilityCenter,
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
-        screenCatalog: ScreenCatalogOrchestrator,
         displayRuntime: DisplayRuntime,
         capturePerformancePreferences: CapturePerformancePreferences,
         feedbackController: AppSettingsFeedbackController,
-        startupRuntimeTask: Task<Void, Never>
+        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void,
+        startupTask: Task<Void, Never>
     ) {
         self.capture = capture
         self.observability = observability
         self.sharing = sharing
         self.virtualDisplay = virtualDisplay
-        self.screenCatalog = screenCatalog
         self.displayRuntime = displayRuntime
         self.capturePerformancePreferences = capturePerformancePreferences
         self.feedbackController = feedbackController
-        self.startupRuntimeTask = startupRuntimeTask
+        self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
+        self.startupTask = startupTask
     }
 
-    package func waitForStartupRuntimeTasks() async {
-        await startupRuntimeTask.value
+    package func waitForStartupTasks() async {
+        await startupTask.value
     }
 }
 
@@ -60,24 +60,24 @@ public struct VoidDisplayApplication: App {
     @State private var capture: CaptureController
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
-    @State private var screenCatalog: ScreenCatalogOrchestrator
     @State private var capturePerformancePreferences: CapturePerformancePreferences
     @State private var navigation: AppNavigationController
     @State private var feedbackController: AppSettingsFeedbackController
     private let observability: ObservabilityCenter
     private let displayRuntime: DisplayRuntime
+    private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     public init() {
         let env = AppBootstrap.makeEnvironment()
         _capture = State(initialValue: env.capture)
         _sharing = State(initialValue: env.sharing)
         _virtualDisplay = State(initialValue: env.virtualDisplay)
-        _screenCatalog = State(initialValue: env.screenCatalog)
         _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
         _navigation = State(initialValue: AppNavigationController())
         _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
         displayRuntime = env.displayRuntime
+        openScreenCapturePrivacySettings = env.openScreenCapturePrivacySettings
         AppTerminationCleanup.install {
             env.sharing.stopWebService()
         }
@@ -103,10 +103,10 @@ public struct VoidDisplayApplication: App {
                     )
                 } else {
                     HomeView(
-                        screenCatalogOrchestrator: screenCatalog,
                         observability: observability,
                         feedbackController: feedbackController,
-                        displayRuntime: displayRuntime
+                        displayRuntime: displayRuntime,
+                        openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                     )
                 }
             }
@@ -484,7 +484,7 @@ package enum AppBootstrap {
             )
         }
 
-        let startupRuntimeTask = Task { @MainActor in
+        let startupTask = Task { @MainActor in
             await observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: displayRuntime))
             )
@@ -506,16 +506,13 @@ package enum AppBootstrap {
             observability: observability,
             sharing: sharing,
             virtualDisplay: virtualDisplay,
-            screenCatalog: ScreenCatalogOrchestrator(
-                runtime: displayRuntime,
-                openScreenCapturePrivacySettings: { openURL in
-                    catalogService.openScreenCapturePrivacySettings(openURL: openURL)
-                }
-            ),
             displayRuntime: displayRuntime,
             capturePerformancePreferences: capturePerformancePreferences,
             feedbackController: feedbackController,
-            startupRuntimeTask: startupRuntimeTask
+            openScreenCapturePrivacySettings: { openURL in
+                catalogService.openScreenCapturePrivacySettings(openURL: openURL)
+            },
+            startupTask: startupTask
         )
 
         return env

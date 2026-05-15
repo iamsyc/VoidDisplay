@@ -311,7 +311,7 @@ extension XCTestCase {
         _ element: XCUIElement,
         in app: XCUIApplication,
         confirmationTimeout: TimeInterval = 0.45,
-        fallbackTimeout: TimeInterval = 1.5,
+        retryTimeout: TimeInterval = 1.5,
         confirmation: () -> Bool
     ) {
         tapByCoordinate(
@@ -325,7 +325,7 @@ extension XCTestCase {
         tapWhenHittable(
             element,
             in: app,
-            timeout: fallbackTimeout,
+            timeout: retryTimeout,
             requireExistenceCheck: false
         )
     }

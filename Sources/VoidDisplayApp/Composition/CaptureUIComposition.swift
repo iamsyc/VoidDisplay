@@ -1,3 +1,4 @@
+import Foundation
 import VoidDisplayCapture
 import VoidDisplayFoundation
 import VoidDisplayRuntime
@@ -171,28 +172,31 @@ package enum CaptureUIComposition {
         }
     }
 
-    package static func catalogActions(screenCatalog: ScreenCatalogOrchestrator) -> CaptureCatalogActions {
+    package static func catalogActions(
+        displayRuntime: DisplayRuntime,
+        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
+    ) -> CaptureCatalogActions {
         CaptureCatalogActions(
             handleAppear: {
-                await screenCatalog.handleAppear(source: .capturePage)
+                await displayRuntime.handleCatalogAppear(source: .capturePage)
             },
             handleDisappear: {
-                await screenCatalog.handleDisappear(source: .capturePage)
+                await displayRuntime.handleCatalogDisappear(source: .capturePage)
             },
             handleTopologyChanged: {
-                await screenCatalog.handleTopologyChanged()
+                await displayRuntime.handleCatalogTopologyChanged()
             },
             requestPermission: {
-                await screenCatalog.requestPermission(source: .capturePage)
+                await displayRuntime.requestCatalogPermission(source: .capturePage)
             },
             refreshPermission: {
-                await screenCatalog.refreshPermission(source: .capturePage)
+                await displayRuntime.refreshCatalogPermission(source: .capturePage)
             },
             forceRefresh: {
-                await screenCatalog.forceRefresh(source: .capturePage)
+                await displayRuntime.forceRefreshCatalog(source: .capturePage)
             },
             openScreenCapturePrivacySettings: { openURL in
-                screenCatalog.openScreenCapturePrivacySettings(openURL: openURL)
+                openScreenCapturePrivacySettings(openURL)
             }
         )
     }

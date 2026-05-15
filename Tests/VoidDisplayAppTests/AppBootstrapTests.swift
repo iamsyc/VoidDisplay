@@ -37,7 +37,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        await env.waitForStartupRuntimeTasks()
+        await env.waitForStartupTasks()
         let diagnostics = await env.observability.diagnosticsSnapshot()
         let runtimeSection = try #require(diagnostics.state.sections["runtime"])
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
@@ -262,7 +262,7 @@ struct AppBootstrapTests {
         )
         _ = try await handle.waitForSaveGate()
         _ = try await handle.waitForTerminalResult()
-        await env.waitForStartupRuntimeTasks()
+        await env.waitForStartupTasks()
         await env.observability.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
 
         let runtimeJSON = String(
@@ -325,7 +325,7 @@ struct AppBootstrapTests {
             )
         )
         try await env.virtualDisplay.deleteVirtualDisplay(configId: deleteConfig.id)
-        await env.waitForStartupRuntimeTasks()
+        await env.waitForStartupTasks()
         await env.observability.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
 
         let runtimeJSON = String(
@@ -378,7 +378,7 @@ struct AppBootstrapTests {
             demand: runtimeLeaseRedactionDemand()
         )
 
-        await env.waitForStartupRuntimeTasks()
+        await env.waitForStartupTasks()
         await env.observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
 
         let runtimeJSON = String(
@@ -524,7 +524,7 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
-        await env.waitForStartupRuntimeTasks()
+        await env.waitForStartupTasks()
 
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
         #expect(virtualDisplay.startupRestoreCommandRequests.isEmpty)
@@ -594,7 +594,7 @@ struct AppBootstrapTests {
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
-        await sut.waitForStartupRuntimeTasks()
+        await sut.waitForStartupTasks()
         let startupTrace = try #require(
             sut.displayRuntime.makeSnapshot().transactions.recentTransactions.first {
                 $0.kind == .virtualDisplayStartupRestore

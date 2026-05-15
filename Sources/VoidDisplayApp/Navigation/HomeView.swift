@@ -20,10 +20,10 @@ package struct HomeView: View {
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
     @Environment(\.openWindow) private var openWindow
-    private let screenCatalogOrchestrator: ScreenCatalogOrchestrator
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController
     private let displayRuntime: DisplayRuntime
+    private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     @State private var hasAutoOpenedCapturePreview = false
     @State private var displayDestination: DisplayDestination = .overview
@@ -79,15 +79,15 @@ package struct HomeView: View {
     }
 
     package init(
-        screenCatalogOrchestrator: ScreenCatalogOrchestrator,
         observability: ObservabilityCenter,
         feedbackController: AppSettingsFeedbackController,
-        displayRuntime: DisplayRuntime
+        displayRuntime: DisplayRuntime,
+        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
     ) {
-        self.screenCatalogOrchestrator = screenCatalogOrchestrator
         self.observability = observability
         self.feedbackController = feedbackController
         self.displayRuntime = displayRuntime
+        self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
     }
 
     package var body: some View {
@@ -182,7 +182,8 @@ package struct HomeView: View {
                     virtualDisplay: virtualDisplay
                 ),
                 catalogActions: CaptureUIComposition.catalogActions(
-                    screenCatalog: screenCatalogOrchestrator
+                    displayRuntime: displayRuntime,
+                    openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                 )
             )
         case .lanWebView:
@@ -197,7 +198,8 @@ package struct HomeView: View {
                     sharing: sharing
                 ),
                 catalogActions: SharingUIComposition.catalogActions(
-                    screenCatalog: screenCatalogOrchestrator
+                    displayRuntime: displayRuntime,
+                    openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                 ),
                 displayStatusProvider: SharingUIComposition.displayStatusProvider(
                     capture: capture,
@@ -289,10 +291,10 @@ private struct AppDisplayActivityStatusProvider: DisplayActivityStatusProviding 
 #Preview {
     let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
     HomeView(
-        screenCatalogOrchestrator: env.screenCatalog,
         observability: env.observability,
         feedbackController: env.feedbackController,
-        displayRuntime: env.displayRuntime
+        displayRuntime: env.displayRuntime,
+        openScreenCapturePrivacySettings: env.openScreenCapturePrivacySettings
     )
         .environment(env.capture)
         .environment(env.sharing)

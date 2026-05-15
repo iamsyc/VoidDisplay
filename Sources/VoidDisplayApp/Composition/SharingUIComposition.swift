@@ -1,3 +1,4 @@
+import Foundation
 import VoidDisplayCapture
 import VoidDisplayFoundation
 import VoidDisplayRuntime
@@ -77,32 +78,33 @@ package enum SharingUIComposition {
     }
 
     package static func catalogActions(
-        screenCatalog: ScreenCatalogOrchestrator
+        displayRuntime: DisplayRuntime,
+        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
     ) -> ShareCatalogActions {
         ShareCatalogActions(
             handleAppear: {
-                await screenCatalog.handleAppear(source: .sharingPage)
+                await displayRuntime.handleCatalogAppear(source: .sharingPage)
             },
             handleDisappear: {
-                await screenCatalog.handleDisappear(source: .sharingPage)
+                await displayRuntime.handleCatalogDisappear(source: .sharingPage)
             },
             handleTopologyChanged: {
-                await screenCatalog.handleTopologyChanged()
+                await displayRuntime.handleCatalogTopologyChanged()
             },
             requestPermission: {
-                await screenCatalog.requestPermission(source: .sharingPage)
+                await displayRuntime.requestCatalogPermission(source: .sharingPage)
             },
             refreshPermission: {
-                await screenCatalog.refreshPermission(source: .sharingPage)
+                await displayRuntime.refreshCatalogPermission(source: .sharingPage)
             },
             forceRefresh: {
-                await screenCatalog.forceRefresh(source: .sharingPage)
+                await displayRuntime.forceRefreshCatalog(source: .sharingPage)
             },
             handleSharingServiceStateChanged: { isRunning in
-                await screenCatalog.handleSharingServiceStateChanged(isRunning: isRunning)
+                await displayRuntime.handleSharingServiceStateChanged(isRunning: isRunning)
             },
             openScreenCapturePrivacySettings: { openURL in
-                screenCatalog.openScreenCapturePrivacySettings(openURL: openURL)
+                openScreenCapturePrivacySettings(openURL)
             }
         )
     }

@@ -122,6 +122,14 @@ Must retain:
 - Real macOS callback polling fallback.
 - Screen catalog code only if still required to resolve concrete `SCDisplay` or physical catalog facts outside runtime.
 
+Batch 1 completion result:
+
+- Deleted `ScreenCatalogOrchestrator` because it only forwarded catalog actions to `DisplayRuntime` and owned no catalog policy.
+- Rewired Capture and Sharing catalog UI actions directly to `DisplayRuntime`, with privacy-settings opening kept as the only app-composition callback.
+- Removed the test that proved a runtime-bypassing monitoring session could survive `closeMonitoringSession`; retained tests now verify runtime consumer leases drive monitor and LAN Web View start/stop.
+- Renamed the app startup task handoff so startup restore remains only `DisplayRuntime.restoreStartupVirtualDisplays(source: .startup)` without old startup-runtime task naming.
+- Retained VirtualDisplay lower-layer fallback hits that represent macOS callback polling, main-display policy continuity, serial-number continuity, diagnostics defaulting, or default user-facing error messages. These are not controller direct paths.
+
 ### Batch 2: VirtualDisplay Layer Collapse
 
 Goal: collapse duplicated responsibilities across `VirtualDisplayOrchestrator`, `VirtualDisplayController`, `DisplayRebuildCoordinator`, facade protocols, UI test facade, and test support.
