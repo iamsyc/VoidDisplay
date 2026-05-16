@@ -11,8 +11,6 @@ import Testing
 @Suite(.serialized)
 struct VirtualDisplayControllerTests {
     @Test func controllerExposesConfigStoreLoadFailureState() {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.configStoreState = .loadFailed(
             error: .unsupportedSchemaVersion(expected: 3, actual: 2),
@@ -23,8 +21,6 @@ struct VirtualDisplayControllerTests {
         )
 
         let env = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -39,8 +35,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func rebuildFromSavedConfigDoesNotApplyModesAgainAfterRebuild() async {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         let config = VirtualDisplayConfig(
@@ -55,8 +49,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentRunningConfigIds = [config.id]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -75,47 +67,7 @@ struct VirtualDisplayControllerTests {
         #expect(virtualDisplay.applyModesCallCount == 0)
     }
 
-    @Test func startRebuildDelegatesQuiesceToInjectedExecutor() async {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
-        let virtualDisplay = MockVirtualDisplayFacade()
-
-        let config = VirtualDisplayConfig(
-            displayName: "Main Candidate",
-            serialNum: 9,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        let displayID: CGDirectDisplayID = 4321
-
-        virtualDisplay.currentDisplayConfigs = [config]
-        virtualDisplay.currentRunningConfigIds = [config.id]
-        virtualDisplay.runtimeDisplayIDByConfigId[config.id] = displayID
-        sharing.activeSharingDisplayIDs = [displayID]
-
-        let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay
-        )
-
-        sut.virtualDisplay.startRebuildFromSavedConfig(configId: config.id)
-
-        let rebuildTriggered = await waitUntil {
-            virtualDisplay.rebuildVirtualDisplayCallCount == 1
-        }
-
-        #expect(rebuildTriggered)
-        #expect(sharing.stopSharingCallCount == 0)
-        #expect(capture.removeByDisplayCallCount == 0)
-        #expect(capture.removedDisplayIDs.isEmpty)
-    }
-
     @Test func startRebuildForwardsConcurrentDuplicateRequestsToExecutor() async {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.rebuildDelayNanoseconds = 150_000_000
 
@@ -131,8 +83,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentRunningConfigIds = [config.id]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -151,14 +101,10 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func startRebuildForwardsMissingConfigToExecutor() async {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         let missingConfigID = UUID()
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -171,8 +117,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func rebuildFailureRetryAndAppliedBadgeLifecycle() async {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         let config = VirtualDisplayConfig(
@@ -188,8 +132,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.rebuildVirtualDisplayError = NSError(domain: "test", code: 33)
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             appliedBadgeDisplayDuration: .milliseconds(50)
         )
@@ -223,8 +165,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func moveDisplayConfigTriggersMainDisplayPolicyReconcile() async throws {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         virtualDisplay.currentDisplayConfigs = [
@@ -247,8 +187,6 @@ struct VirtualDisplayControllerTests {
         ]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -265,8 +203,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func moveDisplayConfigSkipsReconcileWhenFirstEnabledConfigDoesNotChange() async throws {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         var configA = VirtualDisplayConfig(
@@ -299,8 +235,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [configA, configB, configC]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
         let moved = try sut.virtualDisplay.moveDisplayConfig(configC.id, direction: .up)
@@ -311,8 +245,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func setPrimaryVirtualDisplayByReorderingMovesTargetToFirstEnabledAndReconciles() async throws {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         var disabled = VirtualDisplayConfig(
@@ -343,8 +275,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [disabled, configA, configB]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -361,8 +291,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenAlreadyFirstEnabled() async throws {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         let configA = VirtualDisplayConfig(
@@ -384,8 +312,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [configA, configB]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -398,8 +324,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func setPrimaryVirtualDisplayByReorderingNoOpsWhenTargetDisabled() async throws {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.moveConfigResult = true
         var disabled = VirtualDisplayConfig(
@@ -422,8 +346,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.currentDisplayConfigs = [disabled, enabled]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -437,8 +359,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func virtualDisplayFacadeResetDelegatesToOrchestrator() throws {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         virtualDisplay.currentDisplayConfigs = [
@@ -453,8 +373,6 @@ struct VirtualDisplayControllerTests {
         ]
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -464,8 +382,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func virtualDisplayFacadeResetPropagatesFailureWithoutClearingControllerState() {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         let config = VirtualDisplayConfig(
             displayName: "Keep State",
@@ -479,8 +395,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.resetAllVirtualDisplayDataError = NSError(domain: "VirtualDisplayControllerTests", code: 70)
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -494,8 +408,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func updateConfigPropagatesFacadeFailureWithoutMutatingControllerState() {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         let config = VirtualDisplayConfig(
             displayName: "Original",
@@ -509,8 +421,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.updateConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 71)
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -526,8 +436,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func createVirtualDisplayPropagatesFailureAndSetsPersistencePresentation() async {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         let existing = VirtualDisplayConfig(
             displayName: "Existing",
@@ -541,8 +449,6 @@ struct VirtualDisplayControllerTests {
         let createError = NSError(domain: "VirtualDisplayControllerTests", code: 72)
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
         sut.virtualDisplay.configureCreateExecutor { _ in
@@ -570,8 +476,6 @@ struct VirtualDisplayControllerTests {
     @Test func createVirtualDisplayRecoveryFailureIsPresentedAsSuccess() async throws {
         let virtualDisplay = MockVirtualDisplayFacade()
         let sut = makeControllerEnvironment(
-            capturePreviewService: MockCapturePreviewService(),
-            sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay
         )
         let createdID = UUID()
@@ -601,8 +505,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func moveDisplayConfigPropagatesFailureAndSetsPersistencePresentation() {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         let configA = VirtualDisplayConfig(
             displayName: "A",
@@ -624,8 +526,6 @@ struct VirtualDisplayControllerTests {
         virtualDisplay.moveConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 73)
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -638,8 +538,6 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func setPrimaryVirtualDisplayByReorderingPropagatesFailureAndSetsPersistencePresentation() {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         var disabled = VirtualDisplayConfig(
             displayName: "Disabled",
@@ -665,8 +563,6 @@ struct VirtualDisplayControllerTests {
         )
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -690,8 +586,6 @@ struct VirtualDisplayControllerTests {
         )
         virtualDisplay.currentDisplayConfigs = [config]
         let sut = makeControllerEnvironment(
-            capturePreviewService: MockCapturePreviewService(),
-            sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay
         ).virtualDisplay
         var requestCount = 0
@@ -731,8 +625,6 @@ struct VirtualDisplayControllerTests {
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.currentDisplayConfigs = [config]
         let sut = makeControllerEnvironment(
-            capturePreviewService: MockCapturePreviewService(),
-            sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             appliedBadgeDisplayDuration: .milliseconds(50)
         ).virtualDisplay
@@ -766,8 +658,6 @@ struct VirtualDisplayControllerTests {
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.currentDisplayConfigs = [config]
         let sut = makeControllerEnvironment(
-            capturePreviewService: MockCapturePreviewService(),
-            sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay
         ).virtualDisplay
 
@@ -788,14 +678,10 @@ struct VirtualDisplayControllerTests {
     }
 
     @Test func dismissPersistenceAlertResetsControllerPresentationState() {
-        let sharing = MockSharingService()
-        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         virtualDisplay.resetAllVirtualDisplayDataError = NSError(domain: "VirtualDisplayControllerTests", code: 75)
 
         let sut = makeControllerEnvironment(
-            capturePreviewService: capture,
-            sharingService: sharing,
             virtualDisplayFacade: virtualDisplay
         )
 
@@ -816,8 +702,6 @@ private struct ControllerTestEnvironment {
 
 @MainActor
 private func makeControllerEnvironment(
-    capturePreviewService capture: MockCapturePreviewService,
-    sharingService sharing: MockSharingService,
     virtualDisplayFacade: any VirtualDisplayFacade,
     appliedBadgeDisplayDuration: Duration = .seconds(2.5)
 ) -> ControllerTestEnvironment {

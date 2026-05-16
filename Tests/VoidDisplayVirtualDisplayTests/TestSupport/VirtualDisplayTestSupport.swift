@@ -1,29 +1,6 @@
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayVirtualDisplay
-import CoreGraphics
 import Foundation
-
-@MainActor
-final class MockCapturePreviewService {
-    var removeByDisplayCallCount = 0
-    var removedDisplayIDs: [CGDirectDisplayID] = []
-
-    func removePreviewSessions(displayID: CGDirectDisplayID) {
-        removeByDisplayCallCount += 1
-        removedDisplayIDs.append(displayID)
-    }
-}
-
-@MainActor
-final class MockSharingService {
-    var activeSharingDisplayIDs: Set<CGDirectDisplayID> = []
-    var stopSharingCallCount = 0
-
-    func stopSharing(displayID: CGDirectDisplayID) {
-        stopSharingCallCount += 1
-        activeSharingDisplayIDs.remove(displayID)
-    }
-}
 
 final class FakeVirtualDisplayStore: VirtualDisplayStoring {
     var loadCallCount = 0
