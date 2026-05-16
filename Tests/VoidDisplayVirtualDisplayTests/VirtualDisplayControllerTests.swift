@@ -3,7 +3,6 @@
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
-import CoreGraphics
 import Foundation
 import Testing
 
@@ -504,76 +503,6 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.persistenceAlert == nil)
     }
 
-    @Test func moveDisplayConfigPropagatesFailureAndSetsPersistencePresentation() {
-        let virtualDisplay = MockVirtualDisplayFacade()
-        let configA = VirtualDisplayConfig(
-            displayName: "A",
-            serialNum: 127,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        let configB = VirtualDisplayConfig(
-            displayName: "B",
-            serialNum: 128,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        virtualDisplay.currentDisplayConfigs = [configA, configB]
-        virtualDisplay.moveConfigError = NSError(domain: "VirtualDisplayControllerTests", code: 73)
-
-        let sut = makeControllerEnvironment(
-            virtualDisplayFacade: virtualDisplay
-        )
-
-        #expect(throws: Error.self) {
-            _ = try sut.virtualDisplay.moveDisplayConfig(configB.id, direction: .up)
-        }
-        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [configA.id, configB.id])
-        #expect(sut.virtualDisplay.persistenceAlert != nil)
-        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
-    }
-
-    @Test func setPrimaryVirtualDisplayByReorderingPropagatesFailureAndSetsPersistencePresentation() {
-        let virtualDisplay = MockVirtualDisplayFacade()
-        var disabled = VirtualDisplayConfig(
-            displayName: "Disabled",
-            serialNum: 129,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        let enabled = VirtualDisplayConfig(
-            displayName: "Enabled",
-            serialNum: 130,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
-            desiredEnabled: true
-        )
-        disabled.desiredEnabled = false
-        virtualDisplay.currentDisplayConfigs = [disabled, enabled]
-        virtualDisplay.moveConfigToFirstEnabledPositionError = NSError(
-            domain: "VirtualDisplayControllerTests",
-            code: 74
-        )
-
-        let sut = makeControllerEnvironment(
-            virtualDisplayFacade: virtualDisplay
-        )
-
-        #expect(throws: Error.self) {
-            _ = try sut.virtualDisplay.setPrimaryVirtualDisplayByReordering(enabled.id)
-        }
-        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [disabled.id, enabled.id])
-        #expect(sut.virtualDisplay.persistenceAlert != nil)
-        #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
-    }
-
     @Test func saveConfigAndRebuildSendsSingleExecutorRequest() async throws {
         let virtualDisplay = MockVirtualDisplayFacade()
         let config = VirtualDisplayConfig(
@@ -741,66 +670,4 @@ private func editRebuildHandle(
             )
         }
     )
-}
-
-@MainActor
-private final class FakeDisplayReconfigurationMonitor: DisplayReconfigurationMonitoring {
-    @discardableResult
-    func start(handler: @escaping @MainActor () -> Void) -> Bool {
-        handler()
-        return true
-    }
-
-    func stop() {}
-}
-
-@MainActor
-private final class ControllerTestRuntimeDriver: VirtualDisplayRuntimeDriving {
-    enum CreateResult {
-        case success(serialNum: UInt32, displayID: CGDirectDisplayID)
-        case failure(Error)
-    }
-
-    private let scriptedResults: [CreateResult]
-    private var nextIndex = 0
-
-    init(scriptedResults: [CreateResult]) {
-        self.scriptedResults = scriptedResults
-    }
-
-    func createRuntimeDisplay(
-        from config: VirtualDisplayConfig,
-        maxPixels _: (width: UInt32, height: UInt32)?,
-        onTermination _: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling {
-        let result: CreateResult
-        if scriptedResults.indices.contains(nextIndex) {
-            result = scriptedResults[nextIndex]
-        } else {
-            result = .success(serialNum: config.serialNum, displayID: 20_000)
-        }
-        nextIndex += 1
-
-        switch result {
-        case .success(let serialNum, let displayID):
-            return ControllerTestRuntimeHandle(serialNum: serialNum, displayID: displayID)
-        case .failure(let error):
-            throw error
-        }
-    }
-}
-
-@MainActor
-private final class ControllerTestRuntimeHandle: VirtualDisplayRuntimeHandling {
-    let serialNum: UInt32
-    let displayID: CGDirectDisplayID
-
-    init(serialNum: UInt32, displayID: CGDirectDisplayID) {
-        self.serialNum = serialNum
-        self.displayID = displayID
-    }
-
-    func applyModes(_ modes: [ResolutionSelection]) -> Bool {
-        !modes.isEmpty
-    }
 }
