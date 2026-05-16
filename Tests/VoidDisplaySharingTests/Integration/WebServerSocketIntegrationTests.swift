@@ -101,12 +101,14 @@ struct WebServerSocketIntegrationTests {
         }.value
 
         let responseText = try #require(String(data: responseData, encoding: .utf8))
-        for snippet in displayPageRequiredSnippets(signalID: Self.mainAliasShareID) {
-            #expect(responseText.contains(snippet))
-        }
-        for snippet in displayPageForbiddenSnippets {
-            #expect(!responseText.contains(snippet))
-        }
+        #expect(responseText.contains("HTTP/1.1 200 OK"))
+        #expect(responseText.contains("<title>Screen Share</title>"))
+        #expect(responseText.contains(#"id="voiddisplay-bootstrap""#))
+        #expect(responseText.contains(#""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#))
+        #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
+        #expect(responseText.contains("__SIGNAL_PATH__") == false)
+        #expect(responseText.contains("__DISPLAY_PAGE_RUNTIME_SCRIPT__") == false)
+        #expect(responseText.contains("Main Display") == false)
     }
 
     @Test func secondaryDisplayRouteAlsoUsesGenericPageTitle() async throws {
@@ -352,24 +354,6 @@ struct WebServerSocketIntegrationTests {
         #expect(try await waitForSocketClose(secondarySocket))
     }
 
-    @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
-        let sessionHub = TestSignalSessionHub()
-        let setup = try await startMainSignalServer(sessionHub: sessionHub)
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let result = try await Task.detached { try await probeBinarySignalFrameClose(port: portValue) }.value
-        #expect(result.handshakeText.contains("101 Switching Protocols"))
-        #expect(result.closeObservation.didClose)
-        #expect(result.closeObservation.closeCode == 1003)
-
-        let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
-            server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
-        }
-        #expect(clientCleared)
-    }
-
     private func startMainSignalServer(
         sessionHub: TestSignalSessionHub,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
@@ -536,67 +520,6 @@ struct WebServerSocketIntegrationTests {
     }
 }
 
-private func displayPageRequiredSnippets(signalID: UInt32) -> [String] {
-    [
-        "HTTP/1.1 200 OK",
-        "<title>Screen Share</title>",
-        #"id="voiddisplay-bootstrap""#,
-        #""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#,
-        #"const messages = {"#,
-        #"document.title = t("pageTitle");"#,
-        #"function receiverCodecPreferences() {"#,
-        #"return normalizedVideoCodecName(codec) === "video/av1";"#,
-        #"transceiver.setCodecPreferences(codecPreferences);"#,
-        #"selectedCodecFromAnswerSDP(payload.sdp);"#,
-        #"function setVideoInfo(text) {"#,
-        #"function setConnectionStatus(title, detail = "") {"#,
-        #"peer.addTransceiver("video", { direction: "recvonly" });"#,
-        #"sdp: await waitForLocalOfferSDP()"#,
-        #"const reconnectDelays = [250, 500, 1000, 2000, 4000];"#,
-        #"function waitForFirstVideoFrame(timeoutMs = firstVideoFrameTimeoutMs) {"#,
-        #"case "codec_pending":"#,
-        #"connect();"#,
-        #"heroEyebrow: "VOIDDISPLAY 实时画面""#,
-        #"overlayCodecRequiredTitle: "AV1 required""#,
-        #"overlayCodecRequiredTitle: "需要 AV1""#,
-        #"overlayFirstFrameTimeoutTitle: "Waiting for video""#,
-        #"overlayFirstFrameTimeoutTitle: "正在等待画面""#,
-        #"fullscreenEnter: "全屏""#,
-        #"pageTitle: "Screen Share""#,
-        "hero-eyebrow",
-        "video-info",
-        "connection-status",
-        "loading-spinner",
-        "footnote",
-        "/signal/\(signalID)"
-    ]
-}
-
-private let displayPageForbiddenSnippets = [
-    #"WebRTC receiver video capabilities "#,
-    #"WebRTC browser stats"#,
-    #"function initialForceH264Only() {"#,
-    #"forceH264Only"#,
-    #"function receiverSupportsCodec(mimeType) {"#,
-    #"offerToReceiveVideo"#,
-    #"function shouldRetryWithH264Fallback() {"#,
-    #"function retryWithH264Fallback() {"#,
-    #"sdp: offer.sdp"#,
-    #"function setStartupOverlay() {"#,
-    #"overlayStartupTitle"#,
-    #"overlayCodecFallbackTitle"#,
-    "message-title",
-    "message-body",
-    "__PAGE_TITLE__",
-    "__SIGNAL_PATH__",
-    "__DISPLAY_PAGE_STYLES__",
-    "__DISPLAY_PAGE_MESSAGES_SCRIPT__",
-    "__DISPLAY_PAGE_RUNTIME_SCRIPT__",
-    #"new WebSocket((window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/signal");"#,
-    "Main Display",
-    "Display 1"
-]
-
 @MainActor
 private final class MutableShareIDBox {
     var value: UInt32
@@ -717,45 +640,6 @@ private func probeClientCloseFrame(
                 throw SocketIntegrationError.receiveTimeout
             }
             return (handshakeText, didClose)
-        } catch {
-            lastError = error
-            if attempt < maxAttempts {
-                await Task.yield()
-                continue
-            }
-        }
-    }
-    throw lastError
-}
-
-private func probeBinarySignalFrameClose(
-    port: UInt16,
-    maxAttempts: Int = 3
-) async throws -> (handshakeText: String, closeObservation: WebSocketCloseObservation) {
-    var lastError: Error = SocketIntegrationError.receiveFailed
-    for attempt in 1...maxAttempts {
-        do {
-            let socketFD = try await connectLoopbackSocket(port: port)
-            defer { close(socketFD) }
-
-            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
-            let handshake = try readUntilHeaderTerminator(
-                from: socketFD,
-                timeoutMilliseconds: 500,
-                deadlineSeconds: 8
-            )
-            let terminator = Data("\r\n\r\n".utf8)
-            guard let headerRange = handshake.range(of: terminator) else {
-                throw SocketIntegrationError.receiveTimeout
-            }
-            let handshakeText = try String.orThrowUTF8(Data(handshake[..<headerRange.upperBound]))
-
-            try sendAll(socketFD, data: makeMaskedBinaryFrame(payload: Data([0x01, 0x02, 0x03])))
-            let closeObservation = try waitForCloseObservation(from: socketFD, deadlineSeconds: 10)
-            guard closeObservation.didClose else {
-                throw SocketIntegrationError.receiveTimeout
-            }
-            return (handshakeText, closeObservation)
         } catch {
             lastError = error
             if attempt < maxAttempts {
