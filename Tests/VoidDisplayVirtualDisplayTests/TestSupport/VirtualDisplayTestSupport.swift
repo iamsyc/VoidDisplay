@@ -59,16 +59,3 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
         return diagnosticsValue
     }
 }
-
-struct MockScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
-    let preflightResult: Bool
-    let requestResult: Bool
-
-    nonisolated func preflight() -> Bool {
-        preflightResult
-    }
-
-    nonisolated func request() -> Bool {
-        requestResult
-    }
-}

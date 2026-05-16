@@ -3,36 +3,11 @@
 @testable import VoidDisplayFoundation
 @testable import VoidDisplaySharing
 @testable import VoidDisplayVirtualDisplay
+@testable import VoidDisplayTestingSupport
 import CoreGraphics
 import CoreVideo
 import Foundation
 import ScreenCaptureKit
-
-@MainActor
-func makeTestDisplayTopologySignature(
-    _ displayIDs: [CGDirectDisplayID]
-) -> ScreenCaptureDisplayTopologySignature {
-    displayIDs.map { ScreenCaptureDisplayTopologySignatureEntry(displayID: $0) }
-}
-
-@MainActor
-func makeTestDisplayTopologySignatureEntry(
-    displayID: CGDirectDisplayID,
-    isMain: Bool = false,
-    pixelWidth: Int = 0,
-    pixelHeight: Int = 0,
-    refreshRateMilliHertz: Int? = nil,
-    mirrorsDisplayID: CGDirectDisplayID? = nil
-) -> ScreenCaptureDisplayTopologySignatureEntry {
-    .init(
-        displayID: displayID,
-        isMain: isMain,
-        pixelWidth: pixelWidth,
-        pixelHeight: pixelHeight,
-        refreshRateMilliHertz: refreshRateMilliHertz,
-        mirrorsDisplayID: mirrorsDisplayID
-    )
-}
 
 final class TestAppDisplayShareFrameConsumer: DisplayShareFrameConsumer {
     nonisolated init() {}
@@ -333,18 +308,5 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
             throw diagnosticsError
         }
         return diagnosticsValue
-    }
-}
-
-struct MockScreenCapturePermissionProvider: ScreenCapturePermissionProvider {
-    let preflightResult: Bool
-    let requestResult: Bool
-
-    nonisolated func preflight() -> Bool {
-        preflightResult
-    }
-
-    nonisolated func request() -> Bool {
-        requestResult
     }
 }
