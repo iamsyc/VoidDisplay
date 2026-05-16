@@ -112,11 +112,8 @@ struct DisplaySurfacePresentationMapperTests {
         let surface = try #require(presentation.surfaces.first)
 
         #expect(surface.title == "Virtual Display")
-        #expect(surface.kindText == "Virtual Display")
         #expect(surface.isPreviewing)
         #expect(surface.isSharing)
-        #expect(surface.canStopPreview)
-        #expect(surface.canStopLANWebViewSharing)
         #expect(compactIDs(in: surface) == [
             "virtualDisplay",
             "preview",
@@ -199,9 +196,6 @@ struct DisplaySurfacePresentationMapperTests {
         let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
 
         #expect(surface.title == "Physical Display")
-        #expect(surface.kindText == "Physical Display")
-        #expect(surface.hasFailure)
-        #expect(!surface.canStopPreview)
         #expect(compactValue("displays_virtual_display_status", in: surface).isEmpty)
         #expect(compactValue("displays_preview_status", in: surface) == "Failed")
         #expect(compactValue("displays_issue_status", in: surface) == "Needs attention")
@@ -298,8 +292,6 @@ struct DisplaySurfacePresentationMapperTests {
 
         #expect(!surface.isPreviewing)
         #expect(!surface.isSharing)
-        #expect(!surface.canStopPreview)
-        #expect(!surface.canStopLANWebViewSharing)
         #expect(compactValue("displays_preview_status", in: surface) == "Off")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Route Ready")
         #expect(compactValue("displays_viewer_count", in: surface) == "2")
@@ -378,8 +370,6 @@ struct DisplaySurfacePresentationMapperTests {
 
         #expect(surface.isPreviewing)
         #expect(surface.isSharing)
-        #expect(!surface.canStopPreview)
-        #expect(!surface.canStopLANWebViewSharing)
         #expect(compactValue("displays_preview_status", in: surface) == "Previewing")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
         let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))

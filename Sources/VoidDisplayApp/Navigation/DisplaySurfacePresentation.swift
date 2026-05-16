@@ -16,13 +16,9 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
     package let displayID: CGDirectDisplayID?
     package let title: String
     package let subtitle: String
-    package let kindText: String
     package let isManagedVirtualDisplay: Bool
     package let isPreviewing: Bool
     package let isSharing: Bool
-    package let hasFailure: Bool
-    package let canStopPreview: Bool
-    package let canStopLANWebViewSharing: Bool
     package let rowActions: [DisplaySurfaceRowActionPresentation]
     package let compactStatusItems: [DisplaySurfaceStatusItemPresentation]
     package let technicalStatusItems: [DisplaySurfaceStatusItemPresentation]
@@ -34,13 +30,9 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         displayID: CGDirectDisplayID?,
         title: String,
         subtitle: String,
-        kindText: String,
         isManagedVirtualDisplay: Bool,
         isPreviewing: Bool,
         isSharing: Bool,
-        hasFailure: Bool,
-        canStopPreview: Bool,
-        canStopLANWebViewSharing: Bool,
         rowActions: [DisplaySurfaceRowActionPresentation],
         compactStatusItems: [DisplaySurfaceStatusItemPresentation],
         technicalStatusItems: [DisplaySurfaceStatusItemPresentation],
@@ -51,13 +43,9 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         self.displayID = displayID
         self.title = title
         self.subtitle = subtitle
-        self.kindText = kindText
         self.isManagedVirtualDisplay = isManagedVirtualDisplay
         self.isPreviewing = isPreviewing
         self.isSharing = isSharing
-        self.hasFailure = hasFailure
-        self.canStopPreview = canStopPreview
-        self.canStopLANWebViewSharing = canStopLANWebViewSharing
         self.rowActions = rowActions
         self.compactStatusItems = compactStatusItems
         self.technicalStatusItems = technicalStatusItems
@@ -195,7 +183,6 @@ package enum DisplaySurfacePresentationMapper {
         let viewerCount = max(surface.sharing?.viewerCount ?? 0, aggregate?.activeViewerCount ?? 0)
         let title = title(for: surface, ordinal: ordinal)
         let subtitle = subtitle(for: surface)
-        let kindText = kindText(for: surface)
         let virtualDisplayStatus = virtualDisplayStatus(for: surface.managedVirtualDisplay)
         let previewStatus = previewStatus(
             leases: previewLeases,
@@ -298,13 +285,9 @@ package enum DisplaySurfacePresentationMapper {
             displayID: surface.currentDisplayID,
             title: title,
             subtitle: subtitle,
-            kindText: kindText,
             isManagedVirtualDisplay: surface.kind == .managedVirtualDisplay,
             isPreviewing: isPreviewing,
             isSharing: isSharing,
-            hasFailure: lastFailureCode != nil,
-            canStopPreview: canStopPreview,
-            canStopLANWebViewSharing: canStopLANWebViewSharing,
             rowActions: rowActions,
             compactStatusItems: compactStatusItems,
             technicalStatusItems: technicalStatusItems,
@@ -348,15 +331,6 @@ package enum DisplaySurfacePresentationMapper {
 
     private static func subtitle(for surface: DisplaySurface) -> String {
         pixelResolutionText(for: surface) ?? String(localized: "Resolution unavailable")
-    }
-
-    private static func kindText(for surface: DisplaySurface) -> String {
-        switch surface.kind {
-        case .managedVirtualDisplay:
-            String(localized: "Virtual Display")
-        case .physicalDisplay:
-            String(localized: "Physical Display")
-        }
     }
 
     private static func redactedIdentityText(for identity: DisplaySurfaceIdentity) -> String {
