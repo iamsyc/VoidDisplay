@@ -278,9 +278,7 @@ package enum AppBootstrap {
         )
         let supportHistoryStore = SupportHistoryStore(
             historyFileURL: persistenceContext.observabilityDirectoryURL
-                .appendingPathComponent("support-history.json", isDirectory: false),
-            exportsDirectoryURL: persistenceContext.observabilityExportsDirectoryURL,
-            sanitizer: sanitizer
+                .appendingPathComponent("support-history.json", isDirectory: false)
         )
         let feedbackController: AppSettingsFeedbackController
         if let failureMessage = UITestRuntime.feedbackExportFailureMessage {

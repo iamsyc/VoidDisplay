@@ -1,22 +1,15 @@
-import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 import VoidDisplayObservability
 import Foundation
 package nonisolated struct SupportHistoryStore {
     private let historyFileURL: URL
-    private let exportsDirectoryURL: URL
-    private let sanitizer: ObservabilitySanitizer
     private let fileManager: FileManager
 
     package init(
         historyFileURL: URL,
-        exportsDirectoryURL: URL,
-        sanitizer: ObservabilitySanitizer = ObservabilitySanitizer(),
         fileManager: FileManager = .default
     ) {
         self.historyFileURL = historyFileURL
-        self.exportsDirectoryURL = exportsDirectoryURL
-        self.sanitizer = sanitizer
         self.fileManager = fileManager
     }
 

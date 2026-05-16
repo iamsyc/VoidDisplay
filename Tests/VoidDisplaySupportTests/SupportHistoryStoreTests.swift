@@ -14,8 +14,7 @@ struct SupportHistoryStoreTests {
         let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
         try FileManager.default.createDirectory(at: exportsURL, withIntermediateDirectories: true)
         let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
+            historyFileURL: tempURL.appendingPathComponent("support-history.json")
         )
 
         for index in 0..<11 {
@@ -53,8 +52,7 @@ struct SupportHistoryStoreTests {
         let historyFileURL = tempURL.appendingPathComponent("support-history.json")
         try FileManager.default.createDirectory(at: historyFileURL, withIntermediateDirectories: false)
         let historyStore = SupportHistoryStore(
-            historyFileURL: historyFileURL,
-            exportsDirectoryURL: exportsURL
+            historyFileURL: historyFileURL
         )
 
         #expect(throws: Error.self) {
