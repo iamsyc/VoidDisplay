@@ -205,18 +205,6 @@ private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {
     }
 }
 
-private final class AdapterPreviewDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
-
-    nonisolated func attachPreviewSink(_: any DisplayPreviewSink) {}
-
-    nonisolated func detachPreviewSink(_: any DisplayPreviewSink) {}
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func stop() async {}
-}
-
 @MainActor
 private func previewHarness(
     display: SCDisplay,
@@ -247,7 +235,7 @@ private func previewHarness(
                 DisplayPreviewSubscription(
                     displayID: captureDisplay.displayID,
                     resolutionText: "\(captureDisplay.width) × \(captureDisplay.height)",
-                    session: AdapterPreviewDummySession(),
+                    session: TestAppDisplayCaptureSession(),
                     cancelClosure: {}
                 )
             )

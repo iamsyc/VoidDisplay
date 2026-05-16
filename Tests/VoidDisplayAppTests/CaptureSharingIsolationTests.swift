@@ -8,21 +8,6 @@ import CoreGraphics
 import Foundation
 import Testing
 
-private final class CaptureSharingIsolationDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = TestSignalSessionHub()
-    nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
-
-    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
-
-    nonisolated func stop() async {}
-}
-
 @MainActor
 private final class IsolationPortPreferences: SharingPortPreferencesProtocol {
     var preferredPort: UInt16 = 8081
@@ -110,7 +95,7 @@ struct CaptureSharingIsolationTests {
             previewSubscription: DisplayPreviewSubscription(
                 displayID: displayID,
                 resolutionText: "1920 x 1080",
-                session: CaptureSharingIsolationDummySession(),
+                session: TestAppDisplayCaptureSession(),
                 cancelClosure: {}
             ),
             capturesCursor: false,

@@ -9,33 +9,6 @@ import Foundation
 import ScreenCaptureKit
 import Testing
 
-private final class CaptureControllerDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let sessionHub = TestSignalSessionHub()
-    nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { sessionHub }
-
-    nonisolated(unsafe) var attachedSinkCount = 0
-    nonisolated(unsafe) var detachedSinkCount = 0
-    nonisolated(unsafe) var cursorUpdateCount = 0
-    nonisolated(unsafe) var lastShowsCursor: Bool?
-
-    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {
-        attachedSinkCount += 1
-    }
-
-    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {
-        detachedSinkCount += 1
-    }
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        cursorUpdateCount += 1
-        lastShowsCursor = demand.previewShowsCursor
-    }
-
-    nonisolated func stop() async {}
-}
-
 private final class CaptureControllerPreviewSink: DisplayPreviewSink, @unchecked Sendable {
     nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
@@ -142,7 +115,7 @@ struct CaptureControllerTests {
 
     @Test func startPreviewRefreshesSnapshotFromLifecycleService() async throws {
         let service = MockCapturePreviewService()
-        let subscriptionSession = CaptureControllerDummySession()
+        let subscriptionSession = TestAppDisplayCaptureSession()
         let subscription = DisplayPreviewSubscription(
             displayID: 77,
             resolutionText: "2560 × 1440",
@@ -227,7 +200,7 @@ struct CaptureControllerTests {
     @Test func duplicateStartPreviewCallsShareSameUnderlyingStartOutcome() async throws {
         let service = MockCapturePreviewService()
         let gate = CaptureControllerAsyncGate()
-        let previewSession = CaptureControllerDummySession()
+        let previewSession = TestAppDisplayCaptureSession()
         let previewSubscription = DisplayPreviewSubscription(
             displayID: 785,
             resolutionText: "1920 × 1080",
@@ -347,8 +320,8 @@ struct CaptureControllerTests {
     private func makeSession(
         id: UUID,
         displayID: CGDirectDisplayID
-    ) -> (session: ScreenPreviewSession, captureSession: CaptureControllerDummySession) {
-        let captureSession = CaptureControllerDummySession()
+    ) -> (session: ScreenPreviewSession, captureSession: TestAppDisplayCaptureSession) {
+        let captureSession = TestAppDisplayCaptureSession()
         let session = ScreenPreviewSession(
             id: id,
             displayID: displayID,

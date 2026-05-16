@@ -4,6 +4,7 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayVirtualDisplay
 import CoreGraphics
+import CoreVideo
 import Foundation
 import ScreenCaptureKit
 
@@ -31,6 +32,48 @@ func makeTestDisplayTopologySignatureEntry(
         refreshRateMilliHertz: refreshRateMilliHertz,
         mirrorsDisplayID: mirrorsDisplayID
     )
+}
+
+final class TestAppDisplayShareFrameConsumer: DisplayShareFrameConsumer {
+    nonisolated init() {}
+
+    nonisolated var hasDemand: Bool { false }
+
+    nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
+
+    nonisolated func updatePerformanceMode(_: CapturePerformanceMode) {}
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
+}
+
+final class TestAppDisplayCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestAppDisplayShareFrameConsumer()
+
+    nonisolated(unsafe) var attachedSinkCount = 0
+    nonisolated(unsafe) var detachedSinkCount = 0
+    nonisolated(unsafe) var cursorUpdateCount = 0
+    nonisolated(unsafe) var lastShowsCursor: Bool?
+
+    nonisolated init() {}
+
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {
+        attachedSinkCount += 1
+    }
+
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {
+        detachedSinkCount += 1
+    }
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
+        cursorUpdateCount += 1
+        lastShowsCursor = demand.previewShowsCursor
+    }
+
+    nonisolated func stop() async {}
 }
 
 @MainActor
