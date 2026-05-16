@@ -148,57 +148,6 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(demand.isEmpty == false)
     }
 
-    @Test func firstTransitionAppliesImmediately() {
-        let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1),
-            currentProfile: .previewOnly,
-            lastProfileSwitchTimeNs: nil,
-            nowNs: 10,
-            minimumDwellNanoseconds: 5_000_000_000
-        )
-
-        switch decision {
-        case .applyNow(.mixed):
-            break
-        default:
-            Issue.record("Expected immediate mixed profile transition, got \(String(describing: decision))")
-        }
-    }
-
-    @Test func dwellWindowSchedulesDelayedTransition() {
-        let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            demand: makeDemand(shareTokenCount: 1),
-            currentProfile: .previewOnly,
-            lastProfileSwitchTimeNs: 1_000,
-            nowNs: 2_000,
-            minimumDwellNanoseconds: 5_000
-        )
-
-        switch decision {
-        case .applyAfter(.shareOnly, let delayNanoseconds):
-            #expect(delayNanoseconds == 4_000)
-        default:
-            Issue.record("Expected delayed shareOnly transition, got \(String(describing: decision))")
-        }
-    }
-
-    @Test func elapsedDwellAppliesImmediately() {
-        let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            demand: makeDemand(shareTokenCount: 1),
-            currentProfile: .previewOnly,
-            lastProfileSwitchTimeNs: 1_000,
-            nowNs: 10_000,
-            minimumDwellNanoseconds: 5_000
-        )
-
-        switch decision {
-        case .applyNow(.shareOnly):
-            break
-        default:
-            Issue.record("Expected immediate shareOnly transition, got \(String(describing: decision))")
-        }
-    }
-
     @Test func previewFrameRateKeepsHighRefreshAndPreservesFallback() {
         #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 144) == 144)
         #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 50) == 50)
@@ -294,99 +243,6 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(context.captureSize(for: .mixed, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
         #expect(context.captureSize(for: .shareOnly, performanceMode: .powerEfficient) == DisplayCaptureDimensions(width: 1_920, height: 1_080))
         #expect(context.captureSize(for: .shareOnly, performanceMode: .smooth) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
-    }
-
-    @Test func automaticMixedModeKeeps60AcrossStableWindows() {
-        var coordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
-            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
-        )
-
-        let pressureDecision = coordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 80,
-                droppedFrameCount: 20,
-                latestRenderLatencyMilliseconds: 10,
-                pendingSlotOccupied: false,
-                capturedAt: 1
-            ),
-            nowNs: 1,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(pressureDecision == .noChange)
-        let secondPressureDecision = coordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 70,
-                droppedFrameCount: 30,
-                latestRenderLatencyMilliseconds: 10,
-                pendingSlotOccupied: false,
-                capturedAt: 2
-            ),
-            nowNs: 2,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(secondPressureDecision == .noChange)
-
-        for index in 0..<4 {
-            let stableDecision = coordinator.recordPreviewPerformanceSample(
-                .init(
-                    renderedFrameCount: 100,
-                    droppedFrameCount: 0,
-                    latestRenderLatencyMilliseconds: 10,
-                    pendingSlotOccupied: false,
-                    capturedAt: UInt64(10 + index)
-                ),
-                nowNs: UInt64(10 + index),
-                minimumDwellNanoseconds: 0
-            )
-            #expect(stableDecision == .noChange)
-        }
-    }
-
-    @Test func smoothAndPowerEfficientModesIgnoreAutomaticPreviewPressureSamples() {
-        var smoothCoordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
-            demand: makeDemand(
-                attachedPreviewSinkCount: 1,
-                shareTokenCount: 1,
-                performanceMode: .smooth
-            )
-        )
-
-        let smoothDecision = smoothCoordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 50,
-                droppedFrameCount: 50,
-                latestRenderLatencyMilliseconds: 60,
-                pendingSlotOccupied: true,
-                capturedAt: 1
-            ),
-            nowNs: 1,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(smoothDecision == .noChange)
-
-        var powerCoordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps30),
-            demand: makeDemand(
-                attachedPreviewSinkCount: 1,
-                shareTokenCount: 1,
-                performanceMode: .powerEfficient
-            )
-        )
-
-        let powerDecision = powerCoordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 100,
-                droppedFrameCount: 0,
-                latestRenderLatencyMilliseconds: 5,
-                pendingSlotOccupied: false,
-                capturedAt: 1
-            ),
-            nowNs: 1,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(powerDecision == .noChange)
     }
 
     @Test func performanceModeUpdateRecomputesCommittedMixedConfiguration() {
@@ -490,50 +346,6 @@ struct DisplayCaptureProfileStateMachineTests {
             #expect(configuration.captureSize == DisplayCaptureDimensions(width: 1_920, height: 1_080))
         default:
             Issue.record("Expected power mode update to apply budgeted capture size, got \(String(describing: powerDecision))")
-        }
-    }
-
-    @Test func committedTransitionUpdatesDwellBeforeReevaluatingPendingDemand() {
-        var coordinator = DisplayCaptureProfileCoordinatorState(
-            committedProfile: .previewOnly,
-            demand: makeDemand()
-        )
-
-        let initialDecision = coordinator.updateDemand(
-            makeDemand(shareTokenCount: 1),
-            nowNs: 0,
-            minimumDwellNanoseconds: 5_000
-        )
-        switch initialDecision {
-        case .applyNow(.mixed):
-            Issue.record("Expected shareOnly transition before preview demand arrives")
-        case .applyNow(.shareOnly):
-            break
-        default:
-            Issue.record("Expected immediate shareOnly transition, got \(String(describing: initialDecision))")
-        }
-        #expect(coordinator.inFlightProfile == .shareOnly)
-
-        let inFlightDecision = coordinator.updateDemand(
-            makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1),
-            nowNs: 1_000,
-            minimumDwellNanoseconds: 5_000
-        )
-        #expect(inFlightDecision == .noChange)
-        #expect(coordinator.inFlightProfile == .shareOnly)
-
-        let followUpDecision = coordinator.finishAppliedTransition(
-            at: 1_000,
-            minimumDwellNanoseconds: 5_000
-        )
-        #expect(coordinator.committedProfile == .shareOnly)
-        #expect(coordinator.lastProfileSwitchTimeNs == 1_000)
-
-        switch followUpDecision {
-        case .applyAfter(.mixed, let delayNanoseconds):
-            #expect(delayNanoseconds == 5_000)
-        default:
-            Issue.record("Expected delayed mixed transition after committed shareOnly apply, got \(String(describing: followUpDecision))")
         }
     }
 

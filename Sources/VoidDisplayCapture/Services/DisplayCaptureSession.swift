@@ -411,10 +411,6 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         try await demandDriver.setDemand(demand)
     }
 
-    package nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        demandDriver.recordPreviewPerformanceSample(sample)
-    }
-
     package nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
         metrics.value.withLock { $0.snapshot() }
     }

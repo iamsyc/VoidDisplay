@@ -72,11 +72,6 @@ package nonisolated enum DisplayCaptureProfile: String, Sendable, Equatable {
     case shareOnly
     case mixed
 }
-package nonisolated enum DisplayCaptureProfileDecision: Sendable, Equatable {
-    case noChange
-    case applyNow(DisplayCaptureProfile)
-    case applyAfter(DisplayCaptureProfile, delayNanoseconds: UInt64)
-}
 package nonisolated struct DisplayCaptureDemandSnapshot: Sendable, Equatable {
     package var attachedPreviewSinkCount: Int
     package var shareTokenCount: Int
@@ -123,110 +118,6 @@ package nonisolated enum DisplayCaptureProfileStateMachine {
             nil
         }
     }
-
-    nonisolated static func decideTransition(
-        demand: DisplayCaptureDemandSnapshot,
-        currentProfile: DisplayCaptureProfile,
-        lastProfileSwitchTimeNs: UInt64?,
-        nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64
-    ) -> DisplayCaptureProfileDecision {
-        guard let desiredProfile = desiredProfile(for: demand) else {
-            return .noChange
-        }
-        guard desiredProfile != currentProfile else {
-            return .noChange
-        }
-        guard let lastProfileSwitchTimeNs else {
-            return .applyNow(desiredProfile)
-        }
-
-        let elapsed = nowNs &- lastProfileSwitchTimeNs
-        if elapsed >= minimumDwellNanoseconds {
-            return .applyNow(desiredProfile)
-        }
-        return .applyAfter(
-            desiredProfile,
-            delayNanoseconds: minimumDwellNanoseconds - elapsed
-        )
-    }
-}
-package nonisolated struct DisplayCaptureProfileCoordinatorState: Sendable {
-    package var demand: DisplayCaptureDemandSnapshot
-    package var committedProfile: DisplayCaptureProfile
-    package var inFlightProfile: DisplayCaptureProfile?
-    package var lastProfileSwitchTimeNs: UInt64?
-
-    nonisolated init(
-        committedProfile: DisplayCaptureProfile,
-        demand: DisplayCaptureDemandSnapshot,
-        lastProfileSwitchTimeNs: UInt64? = nil
-    ) {
-        self.demand = demand
-        self.committedProfile = committedProfile
-        self.lastProfileSwitchTimeNs = lastProfileSwitchTimeNs
-    }
-
-    nonisolated mutating func updateDemand(
-        _ demand: DisplayCaptureDemandSnapshot,
-        nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64
-    ) -> DisplayCaptureProfileDecision {
-        self.demand = demand
-        return evaluateTransition(
-            nowNs: nowNs,
-            minimumDwellNanoseconds: minimumDwellNanoseconds
-        )
-    }
-
-    nonisolated mutating func resumeScheduledTransition(
-        nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64
-    ) -> DisplayCaptureProfileDecision {
-        evaluateTransition(
-            nowNs: nowNs,
-            minimumDwellNanoseconds: minimumDwellNanoseconds
-        )
-    }
-
-    nonisolated mutating func finishAppliedTransition(
-        at nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64
-    ) -> DisplayCaptureProfileDecision {
-        guard let inFlightProfile else { return .noChange }
-        committedProfile = inFlightProfile
-        self.inFlightProfile = nil
-        lastProfileSwitchTimeNs = nowNs
-        return evaluateTransition(
-            nowNs: nowNs,
-            minimumDwellNanoseconds: minimumDwellNanoseconds
-        )
-    }
-
-    nonisolated mutating func failAppliedTransition() {
-        inFlightProfile = nil
-    }
-
-    nonisolated private mutating func evaluateTransition(
-        nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64
-    ) -> DisplayCaptureProfileDecision {
-        guard inFlightProfile == nil else {
-            return .noChange
-        }
-
-        let decision = DisplayCaptureProfileStateMachine.decideTransition(
-            demand: demand,
-            currentProfile: committedProfile,
-            lastProfileSwitchTimeNs: lastProfileSwitchTimeNs,
-            nowNs: nowNs,
-            minimumDwellNanoseconds: minimumDwellNanoseconds
-        )
-        if case .applyNow(let profile) = decision {
-            inFlightProfile = profile
-        }
-        return decision
-    }
 }
 package nonisolated struct DisplayCaptureTaskLifetimeState: Sendable {
     private(set) var currentGeneration: UInt64 = 0
@@ -238,36 +129,6 @@ package nonisolated struct DisplayCaptureTaskLifetimeState: Sendable {
 
     nonisolated func allowsExecution(for generation: UInt64) -> Bool {
         currentGeneration == generation
-    }
-}
-package nonisolated struct DisplayPreviewPerformanceSample: Sendable, Equatable {
-    package let renderedFrameCount: UInt64
-    package let droppedFrameCount: UInt64
-    package let latestRenderLatencyMilliseconds: Double
-    package let pendingSlotOccupied: Bool
-    package let capturedAt: UInt64
-
-    package init(
-        renderedFrameCount: UInt64,
-        droppedFrameCount: UInt64,
-        latestRenderLatencyMilliseconds: Double,
-        pendingSlotOccupied: Bool,
-        capturedAt: UInt64
-    ) {
-        self.renderedFrameCount = renderedFrameCount
-        self.droppedFrameCount = droppedFrameCount
-        self.latestRenderLatencyMilliseconds = latestRenderLatencyMilliseconds
-        self.pendingSlotOccupied = pendingSlotOccupied
-        self.capturedAt = capturedAt
-    }
-
-    nonisolated var totalFrameCount: UInt64 {
-        renderedFrameCount &+ droppedFrameCount
-    }
-
-    nonisolated var droppedFrameRatio: Double {
-        let total = max(1, totalFrameCount)
-        return Double(droppedFrameCount) / Double(total)
     }
 }
 package nonisolated struct DisplayCaptureConfiguration: Sendable, Equatable {
@@ -388,17 +249,6 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
         )
     }
 
-    mutating func recordPreviewPerformanceSample(
-        _ sample: DisplayPreviewPerformanceSample,
-        nowNs: UInt64,
-        minimumDwellNanoseconds: UInt64
-    ) -> DisplayCaptureConfigurationDecision {
-        return evaluateTransition(
-            nowNs: nowNs,
-            minimumDwellNanoseconds: minimumDwellNanoseconds
-        )
-    }
-
     mutating func resumeScheduledTransition(
         nowNs: UInt64,
         minimumDwellNanoseconds: UInt64
@@ -468,7 +318,6 @@ package protocol DisplayCaptureSessioning: AnyObject, Sendable {
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { get }
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink)
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink)
-    nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample)
     nonisolated func stopSharing()
     nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws
     nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot
@@ -476,10 +325,6 @@ package protocol DisplayCaptureSessioning: AnyObject, Sendable {
 }
 
 package extension DisplayCaptureSessioning {
-    nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        _ = sample
-    }
-
     nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
         _ = demand
     }
