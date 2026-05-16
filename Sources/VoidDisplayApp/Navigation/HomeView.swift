@@ -358,18 +358,3 @@ private struct AppDisplayActivityStatusProvider: DisplayActivityStatusProviding 
         )
     }
 }
-
-#Preview {
-    let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    HomeView(
-        observability: env.observability,
-        feedbackController: env.feedbackController,
-        displayRuntime: env.displayRuntime,
-        openScreenCapturePrivacySettings: env.openScreenCapturePrivacySettings
-    )
-        .environment(env.capture)
-        .environment(env.sharing)
-        .environment(env.virtualDisplay)
-        .environment(env.capturePerformancePreferences)
-        .environment(AppNavigationController())
-}

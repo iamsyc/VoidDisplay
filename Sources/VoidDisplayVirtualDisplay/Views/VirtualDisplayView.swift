@@ -259,22 +259,3 @@ private extension View {
         }
     }
 }
-
-@MainActor
-private func makeVirtualDisplayPreviewController() -> VirtualDisplayController {
-    let controller = VirtualDisplayController(
-        virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: .baseline),
-        appliedBadgeDisplayDuration: .seconds(0.1)
-    )
-    controller.configureRebuildExecutor { _, _ in }
-    return controller
-}
-
-#Preview {
-    let controller = makeVirtualDisplayPreviewController()
-    VirtualDisplayView(
-        controller: controller,
-        activityProvider: StaticDisplayActivityStatusProvider(.inactive)
-    )
-    .environment(controller)
-}

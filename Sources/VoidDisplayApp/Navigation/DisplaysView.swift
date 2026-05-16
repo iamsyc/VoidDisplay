@@ -181,14 +181,6 @@ package struct DisplaysView: View {
     }
 }
 
-#Preview {
-    let env = AppBootstrap.makeEnvironment(preview: true, isRunningUnderXCTestOverride: false)
-    DisplaysView(displayRuntime: env.displayRuntime)
-        .environment(env.capture)
-        .environment(env.sharing)
-        .environment(env.virtualDisplay)
-}
-
 private struct DisplaySurfaceManagementCard: View {
     let model: AppListRowModel
     let surface: DisplaySurfacePresentation
