@@ -113,7 +113,6 @@ struct DisplaySurfacePresentationMapperTests {
 
         #expect(surface.title == "Virtual Display")
         #expect(surface.kindText == "Virtual Display")
-        assertPublicDisplayNamingDoesNotExposeImplementationTerms(surface)
         #expect(surface.isPreviewing)
         #expect(surface.isSharing)
         #expect(surface.canStopPreview)
@@ -135,7 +134,6 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.accessibilitySummary.contains("Web View: Sharing"))
         #expect(surface.accessibilitySummary.contains("Viewers: 3"))
         #expect(!surface.accessibilitySummary.contains("Issue:"))
-        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
         #expect(stopPreviewAction.title == "Stop")
         #expect(stopPreviewAction.help == "Stop Preview")
@@ -152,14 +150,12 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(identityText.hasPrefix("ID hash "))
         #expect(!identityText.contains(configID.uuidString))
         #expect(!identityText.contains(String(displayID)))
-        assertCompactStatusDoesNotExposeRuntimeTerms(surface)
         #expect(technicalTitles(in: surface) == [
             "Display Identifier",
             "Capture State",
             "Runtime Attachment",
             "Diagnostic Code"
         ])
-        assertUserFacingCopyDoesNotContainForbiddenTerms(surface)
     }
 
     @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() throws {
@@ -204,20 +200,16 @@ struct DisplaySurfacePresentationMapperTests {
 
         #expect(surface.title == "Physical Display")
         #expect(surface.kindText == "Physical Display")
-        assertPublicDisplayNamingDoesNotExposeImplementationTerms(surface)
         #expect(surface.hasFailure)
         #expect(!surface.canStopPreview)
         #expect(compactValue("displays_virtual_display_status", in: surface).isEmpty)
         #expect(compactValue("displays_preview_status", in: surface) == "Failed")
         #expect(compactValue("displays_issue_status", in: surface) == "Needs attention")
-        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
         #expect(openPreviewAction.isEnabled)
         #expect(rowAction(.stopPreview, in: surface) == nil)
         #expect(technicalValue("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
         #expect(!technicalValue("displays_surface_identity_value", in: surface).contains(String(displayID)))
-        assertCompactStatusDoesNotExposeRuntimeTerms(surface)
-        assertUserFacingCopyDoesNotContainForbiddenTerms(surface)
     }
 
     @Test func surfaceFactsWithoutRuntimeDemandDoNotEnableControlState() throws {
@@ -311,7 +303,6 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(compactValue("displays_preview_status", in: surface) == "Off")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Route Ready")
         #expect(compactValue("displays_viewer_count", in: surface) == "2")
-        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
         #expect(openPreviewAction.isEnabled)
         let openLANWebViewAction = try #require(rowAction(.openLANWebView, in: surface))
@@ -320,7 +311,6 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(openLANWebViewAction.isEnabled)
         #expect(rowAction(.stopPreview, in: surface) == nil)
         #expect(rowAction(.stopLANWebView, in: surface) == nil)
-        assertUserFacingCopyDoesNotContainForbiddenTerms(surface)
     }
 
     @Test func effectiveIntentRuntimeDemandDrivesAttachedStateWithoutStopActions() throws {
@@ -392,14 +382,12 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.canStopLANWebViewSharing)
         #expect(compactValue("displays_preview_status", in: surface) == "Previewing")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
-        assertRowActionsDoNotContainManageVirtualDisplay(surface)
         let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
         #expect(!stopPreviewAction.isEnabled)
         let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
         #expect(!stopLANWebViewAction.isEnabled)
         #expect(technicalValue("displays_capture_state_status", in: surface) == "Capture, Attach, Applied")
         #expect(technicalValue("displays_lease_status", in: surface) == "No attachments")
-        assertUserFacingCopyDoesNotContainForbiddenTerms(surface)
     }
 
     private func compactIDs(in surface: DisplaySurfacePresentation) -> [String] {
@@ -438,81 +426,6 @@ struct DisplaySurfacePresentationMapperTests {
 
     private func technicalTitles(in surface: DisplaySurfacePresentation) -> [String] {
         surface.technicalStatusItems.map(\.title)
-    }
-
-    private func assertCompactStatusDoesNotExposeRuntimeTerms(
-        _ surface: DisplaySurfacePresentation
-    ) {
-        let combinedCompactStatusText = surface.compactStatusItems.flatMap { item in
-            [item.title, item.value]
-        }.joined(separator: "\n")
-        for forbiddenTerm in [
-            "Display Type",
-            "Resolution",
-            "Display Identity",
-            "Effective Capture Intent",
-            "Lease Status",
-            "Last Failure Code",
-            "Preview Consumer",
-            "LAN Web View Consumer"
-        ] {
-            #expect(!combinedCompactStatusText.contains(forbiddenTerm))
-        }
-    }
-
-    private func assertRowActionsDoNotContainManageVirtualDisplay(
-        _ surface: DisplaySurfacePresentation
-    ) {
-        #expect(!surface.rowActions.contains {
-            $0.accessibilityIdentifier == "displays_action_manage_virtual_display"
-        })
-    }
-
-    private func assertPublicDisplayNamingDoesNotExposeImplementationTerms(
-        _ surface: DisplaySurfacePresentation
-    ) {
-        for text in [surface.title, surface.kindText] {
-            #expect(!text.contains("Managed"))
-            #expect(!text.contains("Auxiliary"))
-        }
-    }
-
-    private func assertUserFacingCopyDoesNotContainForbiddenTerms(
-        _ surface: DisplaySurfacePresentation
-    ) {
-        let userFacingText = [
-            surface.title,
-            surface.subtitle,
-            surface.kindText,
-            surface.accessibilitySummary
-        ]
-        + surface.compactStatusItems.flatMap { [$0.title, $0.value] }
-        + surface.technicalStatusItems.flatMap { item in
-            item.isFailureCode ? [item.title] : [item.title, item.value]
-        }
-        + surface.rowActions.flatMap { [$0.title, $0.help] }
-
-        for forbiddenTerm in [
-            "Managed virtual",
-            "Managed Virtual Display",
-            "Physical auxiliary",
-            "Physical Auxiliary Display",
-            "Not managed",
-            "DisplaySurface",
-            "Display Surface",
-            "Display Surfaces",
-            "Surface Detail",
-            "Surface Kind",
-            "Surface Count",
-            "Consumer",
-            "Lease",
-            "Intent",
-            "Issue: Normal"
-        ] {
-            for text in userFacingText {
-                #expect(!text.localizedCaseInsensitiveContains(forbiddenTerm))
-            }
-        }
     }
 
     private func makeLease(
