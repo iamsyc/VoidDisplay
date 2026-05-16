@@ -66,6 +66,24 @@ private final class SharingServiceMockSCDisplayBox: NSObject {
     }
 }
 
+private func sharingEvent(
+    target: ShareTarget,
+    clientID: String = "client-1",
+    sessionEpoch: UInt64 = 0,
+    sequence: UInt64 = 1,
+    phase: SharingPeerPhase,
+    source: SharingSessionEventSource
+) -> SharingSessionEvent {
+    SharingSessionEvent(
+        target: target,
+        clientID: clientID,
+        sessionEpoch: sessionEpoch,
+        sequence: sequence,
+        phase: phase,
+        source: source
+    )
+}
+
 private enum SharingServiceMockSCDisplay {
     static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
         let box = SharingServiceMockSCDisplayBox(displayID: displayID, width: width, height: height)
@@ -199,10 +217,8 @@ struct SharingServiceTests {
         )
         sut.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
@@ -297,28 +313,24 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
                 clientID: "client-2",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
                 clientID: "client-3",
-                sequence: 1,
                 phase: .signalingConnected,
                 source: .webSocket
             )
@@ -334,10 +346,8 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
@@ -357,28 +367,23 @@ struct SharingServiceTests {
     @MainActor @Test func closedClientIsRemovedFromCurrentSnapshot() {
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
-                clientID: "client-1",
                 sequence: 2,
                 phase: .closed,
                 source: .webSocket
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerDisconnected,
                 source: .peerConnection
             )
@@ -395,19 +400,16 @@ struct SharingServiceTests {
         let aggregator = SharingStateAggregator()
         let target = ShareTarget.id(7)
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 1,
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 1,
                 sequence: 2,
                 phase: .closed,
@@ -415,11 +417,9 @@ struct SharingServiceTests {
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 2,
-                sequence: 1,
                 phase: .signalingConnected,
                 source: .webSocket
             )
@@ -435,19 +435,16 @@ struct SharingServiceTests {
         let aggregator = SharingStateAggregator()
         let target = ShareTarget.id(7)
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 1,
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 1,
                 sequence: 2,
                 phase: .closed,
@@ -455,19 +452,16 @@ struct SharingServiceTests {
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 2,
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: target,
-                clientID: "client-1",
                 sessionEpoch: 1,
                 sequence: 3,
                 phase: .peerDisconnected,
@@ -491,10 +485,8 @@ struct SharingServiceTests {
         )
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
@@ -537,16 +529,15 @@ struct SharingServiceTests {
         for index in 0..<(SharingStateAggregator.closedClientTombstoneLimit + 5) {
             let clientID = "client-\(index)"
             aggregator.record(
-                SharingSessionEvent(
+                sharingEvent(
                     target: target,
                     clientID: clientID,
-                    sequence: 1,
                     phase: .signalingConnected,
                     source: .webSocket
                 )
             )
             aggregator.record(
-                SharingSessionEvent(
+                sharingEvent(
                     target: target,
                     clientID: clientID,
                     sequence: 2,
