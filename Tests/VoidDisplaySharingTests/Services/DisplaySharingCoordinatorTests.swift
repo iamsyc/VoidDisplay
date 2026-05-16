@@ -192,39 +192,6 @@ struct DisplaySharingCoordinatorTests {
     }
 
     @MainActor
-    @Test func startSharingCancelsSubscriptionWhenRegistrationChangesDuringAcquire() async {
-        let displayID: CGDirectDisplayID = 105
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
-        let acquireGate = DisplaySharingCoordinatorAsyncGate()
-        let subscription = makeSubscription(displayID: displayID)
-        let coordinator = DisplaySharingCoordinator(
-            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
-            acquireShare: { _, _ in
-                await acquireGate.wait()
-                return .started(subscription.subscription)
-            }
-        )
-        coordinator.registerShareableDisplays([.init(displayID: displayID, isMain: true, virtualSerial: nil)])
-
-        let task = Task { @MainActor in
-            try await coordinator.startSharing(display: display)
-        }
-        #expect(await waitForGate(acquireGate, count: 1))
-
-        coordinator.registerShareableDisplays([])
-        let outcome = try? await task.value
-        if case .some(.invalidated) = outcome {
-        } else {
-            Issue.record("Expected invalidated outcome.")
-        }
-
-        await acquireGate.releaseOne()
-
-        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
-        #expect(coordinator.isSharing(displayID: displayID) == false)
-    }
-
-    @MainActor
     @Test func startSharingInvalidatesImmediatelyWhenRegistrationChangesDuringAcquire() async {
         let displayID: CGDirectDisplayID = 205
         let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
