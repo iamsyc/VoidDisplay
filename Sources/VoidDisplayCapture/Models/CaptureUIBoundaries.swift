@@ -31,8 +31,8 @@ package struct CapturePreviewActions {
         ) async throws -> DisplayStartOutcome<UUID>,
         attachPreviewSink: @escaping @MainActor (any DisplayPreviewSink, UUID) -> Void,
         activatePreviewSession: @escaping @MainActor (UUID) -> Void,
-        attachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> UUID? = { _ in UUID() },
-        detachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> Void = { _ in },
+        attachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> UUID?,
+        detachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> Void,
         closePreviewSession: @escaping @MainActor (UUID) async -> Void,
         setPreviewSessionCapturesCursor: @escaping @MainActor (UUID, Bool) async throws -> Void
     ) {
