@@ -10,25 +10,19 @@ package struct DisplaySurfaceActions {
     package let stopPreview: @MainActor (CGDirectDisplayID) -> Void
     package let openLANWebView: @MainActor () -> Void
     package let stopLANWebViewSharing: @MainActor (CGDirectDisplayID) -> Void
-    package let stopWebService: @MainActor () -> Void
-    package let openDiagnostics: @MainActor () -> Void
 
     package init(
         manageVirtualDisplay: @escaping @MainActor () -> Void = {},
         openPreview: @escaping @MainActor () -> Void = {},
         stopPreview: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
         openLANWebView: @escaping @MainActor () -> Void = {},
-        stopLANWebViewSharing: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
-        stopWebService: @escaping @MainActor () -> Void = {},
-        openDiagnostics: @escaping @MainActor () -> Void = {}
+        stopLANWebViewSharing: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in }
     ) {
         self.manageVirtualDisplay = manageVirtualDisplay
         self.openPreview = openPreview
         self.stopPreview = stopPreview
         self.openLANWebView = openLANWebView
         self.stopLANWebViewSharing = stopLANWebViewSharing
-        self.stopWebService = stopWebService
-        self.openDiagnostics = openDiagnostics
     }
 }
 

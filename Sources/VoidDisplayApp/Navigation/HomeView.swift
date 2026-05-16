@@ -69,12 +69,6 @@ package struct HomeView: View {
             },
             stopLANWebViewSharing: { displayID in
                 sharingDependencies.sharingActions.stopSharing(displayID)
-            },
-            stopWebService: {
-                sharingDependencies.sharingActions.stopWebService()
-            },
-            openDiagnostics: {
-                navigation.sidebarSelection = .diagnostics
             }
         )
     }
