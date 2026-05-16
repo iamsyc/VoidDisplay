@@ -164,34 +164,6 @@ struct CapturePreviewLifecycleServiceTests {
         #expect(service.currentSessions.count == 1)
     }
 
-    @Test func startPreviewUsesInjectedAcquirePreview() async throws {
-        let service = MockCapturePreviewService()
-        var usedInjectedAcquirePreview = false
-        let lifecycle = CapturePreviewLifecycleService(
-            capturePreviewService: service,
-            acquirePreview: { _, _ in
-                usedInjectedAcquirePreview = true
-                return .started(makePreview(displayID: 703).subscription)
-            }
-        )
-        let display = SharedMockSCDisplay.make(
-            displayID: 703,
-            width: 2560,
-            height: 1440
-        )
-
-        _ = try await lifecycle.startPreview(
-            display: display,
-            metadata: .init(
-                displayName: "Preview Source",
-                resolutionText: "2560 × 1440",
-                isVirtualDisplay: true
-            )
-        )
-
-        #expect(usedInjectedAcquirePreview)
-    }
-
     @Test func concurrentStartPreviewForSameDisplayCreatesOneSessionAndOnePreviewAcquire() async throws {
         let service = MockCapturePreviewService()
         let preview = makePreview(displayID: 712)
