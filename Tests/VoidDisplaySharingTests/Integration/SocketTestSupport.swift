@@ -109,50 +109,6 @@ func sendRequestAndReadUntilClose(
     return try readAll(from: fd)
 }
 
-func sendRequestAndReadPartialResponse(
-    port: UInt16,
-    request: Data,
-    timeoutMilliseconds: Int = 3000
-) async throws -> Data {
-    let fd = try await connectLoopbackSocket(port: port)
-    defer { close(fd) }
-    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
-    try sendAll(fd, data: request)
-    _ = shutdown(fd, SHUT_WR)
-
-    var response = Data()
-    var buffer = [UInt8](repeating: 0, count: 4096)
-    let terminator = Data("\r\n\r\n".utf8)
-
-    while true {
-        let readBytes = recv(fd, &buffer, buffer.count, 0)
-        if readBytes > 0 {
-            response.append(buffer, count: readBytes)
-            if let range = response.range(of: terminator) {
-                return Data(response[..<range.upperBound])
-            }
-            continue
-        }
-
-        if readBytes == 0, !response.isEmpty {
-            return response
-        }
-
-        if errno == EWOULDBLOCK || errno == EAGAIN {
-            if !response.isEmpty {
-                return response
-            }
-            throw SocketIntegrationError.receiveTimeout
-        }
-
-        if response.isEmpty {
-            throw SocketIntegrationError.receiveTimeout
-        } else {
-            return response
-        }
-    }
-}
-
 func readUntilHeaderTerminator(
     from fd: Int32,
     timeoutMilliseconds: Int = 500,
