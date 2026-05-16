@@ -51,21 +51,6 @@ private actor SharingServiceOutcomeBox {
     }
 }
 
-private final class SharingServiceMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
 private func sharingEvent(
     target: ShareTarget,
     clientID: String = "client-1",
@@ -82,13 +67,6 @@ private func sharingEvent(
         phase: phase,
         source: source
     )
-}
-
-private enum SharingServiceMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = SharingServiceMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
 }
 
 struct SharingServiceTests {
@@ -143,7 +121,7 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let sut = makeService(webServiceController: mock)
         let displayID = CGDirectDisplayID(24)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
 
         sut.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
         let originalTarget = try #require(sut.shareTarget(for: displayID))
@@ -170,7 +148,7 @@ struct SharingServiceTests {
     @MainActor @Test func stopWebServiceStopsActiveSharingSessionsBeforeStoppingController() async throws {
         let mock = MockWebServiceController()
         let displayID = CGDirectDisplayID(21)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let cancelCounter = SharingServiceCounter()
         let sut = makeService(
             webServiceController: mock,
@@ -202,7 +180,7 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let aggregator = SharingStateAggregator()
         let displayID = CGDirectDisplayID(25)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let cancelCounter = SharingServiceCounter()
         let sut = makeService(
             webServiceController: mock,
@@ -256,7 +234,7 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let gate = SharingServiceAsyncGate()
         let displayID = CGDirectDisplayID(23)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let cancelCounter = SharingServiceCounter()
         let sut = makeService(
             webServiceController: mock,

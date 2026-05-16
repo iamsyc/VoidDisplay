@@ -11,28 +11,6 @@ private final class EndToEndFakeShare: @unchecked Sendable {
     nonisolated let sessionHub = TestSignalSessionHub()
 }
 
-private final class EndToEndMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum EndToEndMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = EndToEndMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 @Suite(.serialized)
 struct SharingEndToEndIntegrationTests {
     private let maxStartPortAttempts = 8
@@ -62,7 +40,7 @@ struct SharingEndToEndIntegrationTests {
         )
 
         let displayID = CGDirectDisplayID(9101)
-        let display = EndToEndMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         service.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
 
         let startOutcome = await startWebServiceWithDynamicPorts(service: service)
@@ -139,7 +117,7 @@ struct SharingEndToEndIntegrationTests {
         )
 
         let displayID = CGDirectDisplayID(9201)
-        let display = EndToEndMockSCDisplay.make(displayID: displayID, width: 2560, height: 1440)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 2560, height: 1440)
         service.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
 
         let firstStart = await startWebServiceWithDynamicPorts(service: service)

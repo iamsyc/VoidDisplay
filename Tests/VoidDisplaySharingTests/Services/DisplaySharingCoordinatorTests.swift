@@ -74,32 +74,6 @@ private actor DisplaySharingCoordinatorOutcomeBox {
     }
 }
 
-private final class DisplaySharingCoordinatorMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum DisplaySharingCoordinatorMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = DisplaySharingCoordinatorMockSCDisplayBox(
-            displayID: displayID,
-            width: width,
-            height: height
-        )
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 @Suite(.serialized)
 struct DisplaySharingCoordinatorTests {
     @MainActor
@@ -154,7 +128,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func removingRegisteredDisplayStopsActiveSharingSession() async throws {
         let displayID: CGDirectDisplayID = 103
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = makeSubscription(displayID: displayID)
         let coordinator = DisplaySharingCoordinator(
             idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
@@ -176,7 +150,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func startSharingFailsForUnregisteredDisplay() async {
         let displayID: CGDirectDisplayID = 104
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let coordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
 
         do {
@@ -194,7 +168,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func startSharingInvalidatesImmediatelyWhenRegistrationChangesDuringAcquire() async {
         let displayID: CGDirectDisplayID = 205
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let acquireGate = DisplaySharingCoordinatorAsyncGate()
         let subscription = makeSubscription(displayID: displayID)
         let coordinator = DisplaySharingCoordinator(
@@ -223,7 +197,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func startSharingCancelsSubscriptionWhenRegistrationChangesDuringPrepare() async {
         let displayID: CGDirectDisplayID = 106
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let prepareGate = DisplaySharingCoordinatorAsyncGate()
         let subscription = makeSubscription(displayID: displayID, retainGate: prepareGate)
         let coordinator = DisplaySharingCoordinator(
@@ -253,7 +227,7 @@ struct DisplaySharingCoordinatorTests {
     @Test func startSharingSucceedsWhenRegistrationRefreshKeepsSameDisplay() async throws {
         let targetDisplayID: CGDirectDisplayID = 107
         let otherDisplayID: CGDirectDisplayID = 108
-        let targetDisplay = DisplaySharingCoordinatorMockSCDisplay.make(
+        let targetDisplay = SharedMockSCDisplay.make(
             displayID: targetDisplayID,
             width: 1920,
             height: 1080
@@ -299,7 +273,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func concurrentStartSharingForSameDisplayAcquiresShareOnlyOnce() async throws {
         let displayID: CGDirectDisplayID = 111
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let acquireGate = DisplaySharingCoordinatorAsyncGate()
         let subscription = makeSubscription(displayID: displayID)
         let startCoordinator = DisplayStreamStartCoordinator()
@@ -361,7 +335,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func stopAllSharingInvalidatesInFlightStartDuringAcquire() async throws {
         let displayID: CGDirectDisplayID = 112
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let acquireGate = DisplaySharingCoordinatorAsyncGate()
         let subscription = makeSubscription(displayID: displayID)
         let coordinator = DisplaySharingCoordinator(
@@ -396,7 +370,7 @@ struct DisplaySharingCoordinatorTests {
     @MainActor
     @Test func stopAllSharingPreventsStaleSessionWriteWhenPrepareResumesAfterInvalidation() async throws {
         let displayID: CGDirectDisplayID = 113
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let prepareGate = DisplaySharingCoordinatorAsyncGate()
         let subscription = makeSubscription(displayID: displayID, retainGate: prepareGate)
         let coordinator = DisplaySharingCoordinator(
@@ -440,7 +414,7 @@ struct DisplaySharingCoordinatorTests {
             idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
             acquireShare: { _, _ in .started(activeSubscription.subscription) }
         )
-        let display = DisplaySharingCoordinatorMockSCDisplay.make(displayID: 110, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 110, width: 1920, height: 1080)
         activeCoordinator.registerShareableDisplays([.init(displayID: 110, isMain: true, virtualSerial: nil)])
         let outcome = try await activeCoordinator.startSharing(display: display)
         guard case .started = outcome else {
