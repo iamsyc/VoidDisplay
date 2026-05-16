@@ -6,23 +6,23 @@ import ScreenCaptureKit
 import CoreGraphics
 
 @MainActor
-package final class CaptureMonitoringLifecycleService: CaptureMonitoringLifecycleServiceProtocol {
+package final class CapturePreviewLifecycleService: CapturePreviewLifecycleServiceProtocol {
     package typealias AcquirePreview = @MainActor (
         SCDisplay,
         DisplayStartInvalidationContext
     ) async throws -> DisplayStartOutcome<DisplayPreviewSubscription>
 
-    private let captureMonitoringService: any CaptureMonitoringServiceProtocol
+    private let capturePreviewService: any CapturePreviewServiceProtocol
     private let startCoordinator: DisplayStreamStartCoordinator
     private let acquirePreview: AcquirePreview
 
     package init(
-        captureMonitoringService: any CaptureMonitoringServiceProtocol,
+        capturePreviewService: any CapturePreviewServiceProtocol,
         startCoordinator: DisplayStreamStartCoordinator = DisplayStreamStartCoordinator(),
         captureRegistry: DisplayCaptureRegistry = .shared,
         acquirePreview: AcquirePreview? = nil
     ) {
-        self.captureMonitoringService = captureMonitoringService
+        self.capturePreviewService = capturePreviewService
         self.startCoordinator = startCoordinator
         self.acquirePreview = acquirePreview ?? { display, invalidationContext in
             try await captureRegistry.acquirePreview(
@@ -33,12 +33,12 @@ package final class CaptureMonitoringLifecycleService: CaptureMonitoringLifecycl
     }
 
     package func isStarting(displayID: CGDirectDisplayID) -> Bool {
-        startCoordinator.isStarting(kind: .monitoring, displayID: displayID)
+        startCoordinator.isStarting(kind: .preview, displayID: displayID)
     }
 
-    package func startMonitoring(
+    package func startPreview(
         display: SCDisplay,
-        metadata: CaptureMonitoringDisplayMetadata
+        metadata: CapturePreviewDisplayMetadata
     ) async throws -> DisplayStartOutcome<UUID> {
         let displayID = display.displayID
         if let existingSession = existingSession(for: displayID) {
@@ -46,10 +46,10 @@ package final class CaptureMonitoringLifecycleService: CaptureMonitoringLifecycl
         }
 
         return try await startCoordinator.start(
-            kind: .monitoring,
+            kind: .preview,
             displayID: displayID
-        ) { [captureMonitoringService, acquirePreview] invalidationContext in
-            if let existingSession = captureMonitoringService.currentSessions.first(
+        ) { [capturePreviewService, acquirePreview] invalidationContext in
+            if let existingSession = capturePreviewService.currentSessions.first(
                 where: { $0.displayID == displayID }
             ) {
                 return .started(existingSession.id)
@@ -63,14 +63,14 @@ package final class CaptureMonitoringLifecycleService: CaptureMonitoringLifecycl
                     previewSubscription.cancel()
                     return .invalidated
                 }
-                if let existingSession = captureMonitoringService.currentSessions.first(
+                if let existingSession = capturePreviewService.currentSessions.first(
                     where: { $0.displayID == displayID }
                 ) {
                     previewSubscription.cancel()
                     return .started(existingSession.id)
                 }
 
-                let session = ScreenMonitoringSession(
+                let session = ScreenPreviewSession(
                     id: UUID(),
                     displayID: displayID,
                     displayName: metadata.displayName,
@@ -84,45 +84,45 @@ package final class CaptureMonitoringLifecycleService: CaptureMonitoringLifecycl
                     previewSubscription.cancel()
                     return .invalidated
                 }
-                captureMonitoringService.addMonitoringSession(session)
+                capturePreviewService.addPreviewSession(session)
                 return .started(session.id)
             }
         }
     }
 
-    package func activateMonitoringSession(id: UUID) {
-        guard captureMonitoringService.monitoringSession(for: id) != nil else { return }
-        captureMonitoringService.updateMonitoringSessionState(id: id, state: .active)
+    package func activatePreviewSession(id: UUID) {
+        guard capturePreviewService.previewSession(for: id) != nil else { return }
+        capturePreviewService.updatePreviewSessionState(id: id, state: .active)
     }
 
     package func attachPreviewSink(_ sink: any DisplayPreviewSink, to id: UUID) {
-        guard let session = captureMonitoringService.monitoringSession(for: id) else { return }
+        guard let session = capturePreviewService.previewSession(for: id) else { return }
         session.previewSubscription.attachPreviewSink(sink)
     }
 
-    package func setMonitoringSessionCapturesCursor(
+    package func setPreviewSessionCapturesCursor(
         id: UUID,
         capturesCursor: Bool
     ) async throws {
-        guard let session = captureMonitoringService.monitoringSession(for: id) else { return }
+        guard let session = capturePreviewService.previewSession(for: id) else { return }
         try await session.previewSubscription.setShowsCursor(capturesCursor)
-        captureMonitoringService.updateMonitoringSessionCapturesCursor(
+        capturePreviewService.updatePreviewSessionCapturesCursor(
             id: id,
             capturesCursor: capturesCursor
         )
     }
 
-    package func closeMonitoringSession(id: UUID) {
-        guard captureMonitoringService.monitoringSession(for: id) != nil else { return }
-        captureMonitoringService.removeMonitoringSession(id: id)
+    package func closePreviewSession(id: UUID) {
+        guard capturePreviewService.previewSession(for: id) != nil else { return }
+        capturePreviewService.removePreviewSession(id: id)
     }
 
-    package func removeMonitoringSessions(displayID: CGDirectDisplayID) {
-        startCoordinator.invalidate(kind: .monitoring, displayID: displayID)
-        captureMonitoringService.removeMonitoringSessions(displayID: displayID)
+    package func removePreviewSessions(displayID: CGDirectDisplayID) {
+        startCoordinator.invalidate(kind: .preview, displayID: displayID)
+        capturePreviewService.removePreviewSessions(displayID: displayID)
     }
 
-    private func existingSession(for displayID: CGDirectDisplayID) -> ScreenMonitoringSession? {
-        captureMonitoringService.currentSessions.first(where: { $0.displayID == displayID })
+    private func existingSession(for displayID: CGDirectDisplayID) -> ScreenPreviewSession? {
+        capturePreviewService.currentSessions.first(where: { $0.displayID == displayID })
     }
 }

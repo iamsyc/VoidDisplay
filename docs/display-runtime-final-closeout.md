@@ -35,7 +35,7 @@ DisplaySurface remains an internal product aggregate. It groups virtual display 
 
 Diagnostics uses the runtime section as the primary structured state. Support bundle export includes the runtime section by default and applies the validated privacy boundary before writing diagnostic artifacts.
 
-Monitor, LAN Web View, and diagnostics recorder use consumer leases. Runtime aggregates demand and records effective capture intent, while the app layer resolves concrete display and service objects.
+Screen Preview, LAN Web View, and diagnostics recorder use consumer leases. Runtime aggregates demand and records effective capture intent, while the app layer resolves concrete display and service objects.
 
 Capture, WebRTC, WebSocket, HTTP, streaming transport, relay process handling, frame fanout, pixel buffers, sample buffers, and encoder pipeline remain outside DisplayRuntime.
 

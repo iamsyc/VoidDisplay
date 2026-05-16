@@ -18,10 +18,10 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
     package let subtitle: String
     package let kindText: String
     package let isManagedVirtualDisplay: Bool
-    package let isMonitoring: Bool
+    package let isPreviewing: Bool
     package let isSharing: Bool
     package let hasFailure: Bool
-    package let canStopMonitor: Bool
+    package let canStopPreview: Bool
     package let canStopLANWebViewSharing: Bool
     package let rowActions: [DisplaySurfaceRowActionPresentation]
     package let compactStatusItems: [DisplaySurfaceStatusItemPresentation]
@@ -36,10 +36,10 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         subtitle: String,
         kindText: String,
         isManagedVirtualDisplay: Bool,
-        isMonitoring: Bool,
+        isPreviewing: Bool,
         isSharing: Bool,
         hasFailure: Bool,
-        canStopMonitor: Bool,
+        canStopPreview: Bool,
         canStopLANWebViewSharing: Bool,
         rowActions: [DisplaySurfaceRowActionPresentation],
         compactStatusItems: [DisplaySurfaceStatusItemPresentation],
@@ -53,10 +53,10 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
         self.subtitle = subtitle
         self.kindText = kindText
         self.isManagedVirtualDisplay = isManagedVirtualDisplay
-        self.isMonitoring = isMonitoring
+        self.isPreviewing = isPreviewing
         self.isSharing = isSharing
         self.hasFailure = hasFailure
-        self.canStopMonitor = canStopMonitor
+        self.canStopPreview = canStopPreview
         self.canStopLANWebViewSharing = canStopLANWebViewSharing
         self.rowActions = rowActions
         self.compactStatusItems = compactStatusItems
@@ -66,8 +66,8 @@ package struct DisplaySurfacePresentation: Identifiable, Equatable {
 }
 
 package enum DisplaySurfaceRowActionKind: String, Equatable {
-    case openMonitor
-    case stopMonitor
+    case openPreview
+    case stopPreview
     case openLANWebView
     case stopLANWebView
 }
@@ -170,7 +170,7 @@ package enum DisplaySurfacePresentationMapper {
         let leases = snapshot.consumerLeases.filter { $0.surfaceIdentity == surface.identity }
         let aggregate = snapshot.aggregatedDemands.first { $0.surfaceIdentity == surface.identity }
         let effectiveIntent = snapshot.effectiveCaptureIntents.last { $0.intent.surfaceIdentity == surface.identity }
-        let monitorLeases = leases.filter { $0.kind == .monitor }
+        let previewLeases = leases.filter { $0.kind == .preview }
         let lanWebViewLeases = leases.filter { $0.kind == .lanWebView }
         let runtimeConsumerKinds = runtimeConsumerKinds(
             aggregate: aggregate,
@@ -182,9 +182,9 @@ package enum DisplaySurfacePresentationMapper {
             effectiveIntent: effectiveIntent,
             sharing: snapshot.sharing
         )
-        let isMonitoring = hasRuntimeDemand(
-            kind: .monitor,
-            leases: monitorLeases,
+        let isPreviewing = hasRuntimeDemand(
+            kind: .preview,
+            leases: previewLeases,
             runtimeConsumerKinds: runtimeConsumerKinds
         )
         let isSharing = hasRuntimeDemand(
@@ -197,9 +197,9 @@ package enum DisplaySurfacePresentationMapper {
         let subtitle = subtitle(for: surface)
         let kindText = kindText(for: surface)
         let virtualDisplayStatus = virtualDisplayStatus(for: surface.managedVirtualDisplay)
-        let monitorStatus = monitorStatus(
-            leases: monitorLeases,
-            hasRuntimeDemand: isMonitoring
+        let previewStatus = previewStatus(
+            leases: previewLeases,
+            hasRuntimeDemand: isPreviewing
         )
         let lanWebViewStatus = lanWebViewStatus(
             surface: surface,
@@ -220,11 +220,11 @@ package enum DisplaySurfacePresentationMapper {
         }
         compactStatusItems.append(contentsOf: [
             DisplaySurfaceStatusItemPresentation(
-                id: "monitor",
-                title: String(localized: "Monitor"),
-                value: monitorStatus.value,
-                accessibilityIdentifier: "displays_monitor_status",
-                tone: monitorStatus.tone
+                id: "preview",
+                title: String(localized: "Preview"),
+                value: previewStatus.value,
+                accessibilityIdentifier: "displays_preview_status",
+                tone: previewStatus.tone
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "webView",
@@ -250,14 +250,14 @@ package enum DisplaySurfacePresentationMapper {
                 tone: issueStatus.tone
             ))
         }
-        let canStopMonitor = surface.currentDisplayID != nil
-            && monitorLeases.contains { $0.state.contributesDemand }
+        let canStopPreview = surface.currentDisplayID != nil
+            && previewLeases.contains { $0.state.contributesDemand }
         let canStopLANWebViewSharing = surface.currentDisplayID != nil
             && lanWebViewLeases.contains { $0.state.contributesDemand }
         let rowActions = rowActions(
-            isMonitoring: isMonitoring,
+            isPreviewing: isPreviewing,
             isSharing: isSharing,
-            canStopMonitor: canStopMonitor,
+            canStopPreview: canStopPreview,
             canStopLANWebViewSharing: canStopLANWebViewSharing
         )
         let accessibilitySummary = accessibilitySummary(
@@ -300,10 +300,10 @@ package enum DisplaySurfacePresentationMapper {
             subtitle: subtitle,
             kindText: kindText,
             isManagedVirtualDisplay: surface.kind == .managedVirtualDisplay,
-            isMonitoring: isMonitoring,
+            isPreviewing: isPreviewing,
             isSharing: isSharing,
             hasFailure: lastFailureCode != nil,
-            canStopMonitor: canStopMonitor,
+            canStopPreview: canStopPreview,
             canStopLANWebViewSharing: canStopLANWebViewSharing,
             rowActions: rowActions,
             compactStatusItems: compactStatusItems,
@@ -409,7 +409,7 @@ package enum DisplaySurfacePresentationMapper {
         }
     }
 
-    private static func monitorStatus(
+    private static func previewStatus(
         leases: [DisplayRuntimeConsumerLeaseSnapshot],
         hasRuntimeDemand: Bool
     ) -> (value: String, tone: DisplaySurfaceStatusTone) {
@@ -423,7 +423,7 @@ package enum DisplaySurfacePresentationMapper {
             return (String(localized: "Draining"), .warning)
         }
         if hasRuntimeDemand {
-            return (String(localized: "Monitoring"), .success)
+            return (String(localized: "Previewing"), .success)
         }
         return (String(localized: "Off"), .neutral)
     }
@@ -459,27 +459,27 @@ package enum DisplaySurfacePresentationMapper {
     }
 
     private static func rowActions(
-        isMonitoring: Bool,
+        isPreviewing: Bool,
         isSharing: Bool,
-        canStopMonitor: Bool,
+        canStopPreview: Bool,
         canStopLANWebViewSharing: Bool
     ) -> [DisplaySurfaceRowActionPresentation] {
         [
-            isMonitoring
+            isPreviewing
                 ? DisplaySurfaceRowActionPresentation(
-                    kind: .stopMonitor,
+                    kind: .stopPreview,
                     title: String(localized: "Stop"),
-                    help: String(localized: "Stop Monitor"),
+                    help: String(localized: "Stop Preview"),
                     systemImage: "stop.circle",
-                    accessibilityIdentifier: "displays_action_stop_monitor",
-                    isEnabled: canStopMonitor,
+                    accessibilityIdentifier: "displays_action_stop_preview",
+                    isEnabled: canStopPreview,
                     isDestructive: true
                 )
                 : DisplaySurfaceRowActionPresentation(
-                    kind: .openMonitor,
-                    title: String(localized: "Monitor"),
+                    kind: .openPreview,
+                    title: String(localized: "Preview"),
                     systemImage: "dot.scope.display",
-                    accessibilityIdentifier: "displays_action_open_monitor",
+                    accessibilityIdentifier: "displays_action_open_preview",
                     isEnabled: true
                 ),
             isSharing

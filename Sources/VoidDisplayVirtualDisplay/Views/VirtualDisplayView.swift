@@ -201,7 +201,7 @@ package struct VirtualDisplayView: View {
             activityProvider.activityStatus(for: $0)
         } ?? .inactive
         let iconScreenTint = DisplayIconTintResolver.resolve(
-            isMonitoring: activityStatus.isMonitoring,
+            isPreviewing: activityStatus.isPreviewing,
             isSharing: activityStatus.isSharing
         )
 

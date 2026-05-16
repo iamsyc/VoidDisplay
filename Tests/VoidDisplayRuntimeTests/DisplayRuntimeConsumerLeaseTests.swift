@@ -17,15 +17,15 @@ struct DisplayRuntimeConsumerLeaseTests {
 
         let lease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
-            owner: .init(source: .localUI, redactedLabel: "monitor"),
+            kind: .preview,
+            owner: .init(source: .localUI, redactedLabel: "preview"),
             demand: sourceDemand(capturesCursor: true)
         )
 
         #expect(lease.surfaceIdentity == surfaceIdentity)
         #expect(lease.surfaceEpoch == .initial)
         #expect(lease.resolvedDisplayID == 42)
-        #expect(lease.kind == .monitor)
+        #expect(lease.kind == .preview)
         #expect(lease.state == .attached)
         #expect(lease.createdAt <= lease.updatedAt)
         #expect(runtime.currentConsumerLeaseSnapshot().map(\.id) == [lease.id])
@@ -47,7 +47,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
         let lease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand(capturesCursor: false)
         )
@@ -157,16 +157,16 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
     }
 
-    @Test func diagnosticsRecorderDetachDoesNotDrainWhileMonitorLeaseRemains() async {
+    @Test func diagnosticsRecorderDetachDoesNotDrainWhilePreviewLeaseRemains() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 80)
         let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 80, isMain: true)),
             captureIntentCommander: captureIntentCommander
         )
-        let monitorLease = runtime.attachConsumer(
+        let previewLease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand()
         )
@@ -179,12 +179,12 @@ struct DisplayRuntimeConsumerLeaseTests {
         let diagnosticsDetach = await runtime.detachDiagnosticsRecorderConsumer(
             leaseID: diagnosticsAttach.lease.id
         )
-        let monitorDetach = runtime.detachConsumer(leaseID: monitorLease.id)
+        let previewDetach = runtime.detachConsumer(leaseID: previewLease.id)
 
         #expect(diagnosticsDetach.releasedLease?.state == .released)
-        #expect(monitorDetach?.state == .released)
+        #expect(previewDetach?.state == .released)
         #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .capture, .capture, .drain])
-        #expect(captureIntentCommander.intents[2].aggregateDemand?.consumerKinds == [.monitor])
+        #expect(captureIntentCommander.intents[2].aggregateDemand?.consumerKinds == [.preview])
         #expect(captureIntentCommander.intents.last?.aggregateDemand == nil)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
     }
@@ -198,7 +198,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
         let lease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand()
         )
@@ -229,7 +229,7 @@ struct DisplayRuntimeConsumerLeaseTests {
 
         let lease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand()
         )
@@ -257,7 +257,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
         _ = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand()
         )
@@ -313,7 +313,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
         let lease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand()
         )

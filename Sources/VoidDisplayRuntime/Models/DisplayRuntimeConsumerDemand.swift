@@ -75,7 +75,7 @@ package nonisolated struct DisplayRuntimeConsumerDemand: Codable, Equatable, Sen
 }
 
 package nonisolated enum DisplayRuntimeAggregateQualityProfile: String, Codable, Equatable, Sendable {
-    case monitorOnly
+    case previewOnly
     case lanWebViewOnly
     case diagnosticsOnly
     case mixed

@@ -20,11 +20,7 @@ struct DisplayRuntimeStartupRestoreTests {
         commander.startupRestoreResults = [
             startupRestoreCommandResult(
                 configID: configID,
-                postDisplayID: 301,
-                runningConfigIDsAfterCommand: [configID],
-                managedDisplaysAfterCommand: [
-                    .init(configID: configID, serialNumber: 3011, displayID: 301, isLiveRuntime: true)
-                ]
+                postDisplayID: 301
             )
         ]
         commander.onStartupRestore = { _ in
@@ -117,20 +113,11 @@ struct DisplayRuntimeStartupRestoreTests {
         commander.startupRestoreResults = [
             startupRestoreCommandResult(
                 configID: firstConfigID,
-                postDisplayID: 307,
-                runningConfigIDsAfterCommand: [firstConfigID],
-                managedDisplaysAfterCommand: [
-                    .init(configID: firstConfigID, serialNumber: 3071, displayID: 307, isLiveRuntime: true)
-                ]
+                postDisplayID: 307
             ),
             startupRestoreCommandResult(
                 configID: secondConfigID,
-                postDisplayID: 308,
-                runningConfigIDsAfterCommand: [firstConfigID, secondConfigID],
-                managedDisplaysAfterCommand: [
-                    .init(configID: firstConfigID, serialNumber: 3071, displayID: 307, isLiveRuntime: true),
-                    .init(configID: secondConfigID, serialNumber: 3081, displayID: 308, isLiveRuntime: true)
-                ]
+                postDisplayID: 308
             )
         ]
         commander.onStartupRestore = { request in
@@ -297,9 +284,7 @@ struct DisplayRuntimeStartupRestoreTests {
                 postDisplayID: nil,
                 restoreOutcome: .failed,
                 didProduceVerifiableSideEffect: false,
-                failureReason: "driver_restore_failed",
-                runningConfigIDsAfterCommand: [],
-                managedDisplaysAfterCommand: []
+                failureReason: "driver_restore_failed"
             )
         ]
         let runtime = DisplayRuntime(
@@ -380,11 +365,7 @@ struct DisplayRuntimeStartupRestoreTests {
             commander.startupRestoreResults = [
                 startupRestoreCommandResult(
                     configID: configID,
-                    postDisplayID: 305,
-                    runningConfigIDsAfterCommand: [configID],
-                    managedDisplaysAfterCommand: [
-                        .init(configID: configID, serialNumber: 3051, displayID: 305, isLiveRuntime: true)
-                    ]
+                    postDisplayID: 305
                 )
             ]
             commander.onStartupRestore = { _ in
@@ -434,11 +415,7 @@ struct DisplayRuntimeStartupRestoreTests {
         commander.startupRestoreResults = [
             startupRestoreCommandResult(
                 configID: configID,
-                postDisplayID: 306,
-                runningConfigIDsAfterCommand: [configID],
-                managedDisplaysAfterCommand: [
-                    .init(configID: configID, serialNumber: 3061, displayID: 306, isLiveRuntime: true)
-                ]
+                postDisplayID: 306
             )
         ]
         commander.onStartupRestore = { _ in

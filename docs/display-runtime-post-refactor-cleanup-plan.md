@@ -14,9 +14,9 @@ DisplayRuntime refactor 主路线已经关闭：
 - `DisplayRuntime` 是控制平面，负责状态、事件、事务、consumer lease、snapshot 和 intent dispatch。
 - `DisplaySurface` 是核心聚合对象，表达虚拟显示器、物理显示器、捕获状态、观看者、分享 URL、诊断状态和最近事务。
 - Capture、WebRTC、WebSocket、HTTP 是数据平面，不进入 runtime。
-- Virtual Display、Monitor、LAN Web View、Diagnostics 已按 `DisplaySurface` / Runtime 结构收敛。
+- Virtual Display、Screen Preview、LAN Web View、Diagnostics 已按 `DisplaySurface` / Runtime 结构收敛。
 - 主导航已收敛为 `Displays` 和 `Diagnostics`。
-- 旧 `Support Center`、旧 `Virtual Displays` / `Screen Monitoring` / `Screen Sharing` 主入口已删除。
+- 旧 `Support Center`、旧 `Virtual Displays` / `Screen Preview` / `Screen Sharing` 主入口已删除。
 - LAN Web View 的安全立场不变：它是局域网观察能力，不加 token、密码、账号或 auth。
 - VoidDisplay 不做远程控制、输入注入、剪贴板或 browser agent control。
 
@@ -187,7 +187,7 @@ DisplayRuntime refactor 主路线已经关闭：
 - 审计 app-facing copy，确认 `DisplaySurface`、`Surface`、`显示表面` 不作为普通用户文案出现。
 - 统一 `Diagnostics`、`Displays`、`LAN Web View`、`Support Bundle` 的英文和中文命名。
 - 清理 stale localization entries。
-- 更新 README 和中文 README 中旧四入口叙事、旧 `Screen Monitoring` / `Screen Sharing` 主入口描述和旧调试入口。
+- 更新 README 和中文 README 中旧四入口叙事、旧 `Screen Preview` / `Screen Sharing` 主入口描述和旧调试入口。
 - 公开定位采用：
 
 ```text

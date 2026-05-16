@@ -180,6 +180,13 @@ package struct ShareView: View {
                 .controlSize(.large)
                 .disabled(viewModel.isStartingService)
                 .accessibilityIdentifier("share_start_service_button")
+
+                if viewModel.isStartingService {
+                    ProgressView("Loading…")
+                        .controlSize(.small)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("share_starting_service")
+                }
             }
         }
     }

@@ -8,7 +8,7 @@ package enum DisplayStartOutcome<Value: Sendable>: Sendable {
 }
 
 package enum DisplayStartKind: Hashable, Sendable {
-    case monitoring
+    case preview
     case sharing
 }
 
@@ -180,7 +180,7 @@ package final class DisplayStreamStartCoordinator {
     }
 
     package func invalidateAll(displayID: CGDirectDisplayID) {
-        invalidate(kind: .monitoring, displayID: displayID)
+        invalidate(kind: .preview, displayID: displayID)
         invalidate(kind: .sharing, displayID: displayID)
     }
 

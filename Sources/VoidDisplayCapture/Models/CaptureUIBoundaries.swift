@@ -4,61 +4,61 @@ import ScreenCaptureKit
 import VoidDisplayFoundation
 
 @MainActor
-package struct CaptureMonitoringActions {
-    package var sessions: @MainActor () -> [ScreenMonitoringSession]
-    package var monitoringSession: @MainActor (UUID) -> ScreenMonitoringSession?
-    package var monitoringSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?
+package struct CapturePreviewActions {
+    package var sessions: @MainActor () -> [ScreenPreviewSession]
+    package var previewSession: @MainActor (UUID) -> ScreenPreviewSession?
+    package var previewSessionForDisplayID: @MainActor (CGDirectDisplayID) -> ScreenPreviewSession?
     package var isStartingDisplayID: @MainActor (CGDirectDisplayID) -> Bool
-    package var startMonitoring: @MainActor (
+    package var startPreview: @MainActor (
         SCDisplay,
-        CaptureMonitoringDisplayMetadata
+        CapturePreviewDisplayMetadata
     ) async throws -> DisplayStartOutcome<UUID>
     package var attachPreviewSink: @MainActor (any DisplayPreviewSink, UUID) -> Void
-    package var activateMonitoringSession: @MainActor (UUID) -> Void
+    package var activatePreviewSession: @MainActor (UUID) -> Void
     package var attachDiagnosticsRecorder: @MainActor (UUID) async -> UUID?
     package var detachDiagnosticsRecorder: @MainActor (UUID) async -> Void
-    package var closeMonitoringSession: @MainActor (UUID) -> Void
-    package var setMonitoringSessionCapturesCursor: @MainActor (UUID, Bool) async throws -> Void
+    package var closePreviewSession: @MainActor (UUID) -> Void
+    package var setPreviewSessionCapturesCursor: @MainActor (UUID, Bool) async throws -> Void
 
     package init(
-        sessions: @escaping @MainActor () -> [ScreenMonitoringSession],
-        monitoringSession: @escaping @MainActor (UUID) -> ScreenMonitoringSession?,
-        monitoringSessionForDisplayID: @escaping @MainActor (CGDirectDisplayID) -> ScreenMonitoringSession?,
+        sessions: @escaping @MainActor () -> [ScreenPreviewSession],
+        previewSession: @escaping @MainActor (UUID) -> ScreenPreviewSession?,
+        previewSessionForDisplayID: @escaping @MainActor (CGDirectDisplayID) -> ScreenPreviewSession?,
         isStartingDisplayID: @escaping @MainActor (CGDirectDisplayID) -> Bool,
-        startMonitoring: @escaping @MainActor (
+        startPreview: @escaping @MainActor (
             SCDisplay,
-            CaptureMonitoringDisplayMetadata
+            CapturePreviewDisplayMetadata
         ) async throws -> DisplayStartOutcome<UUID>,
         attachPreviewSink: @escaping @MainActor (any DisplayPreviewSink, UUID) -> Void,
-        activateMonitoringSession: @escaping @MainActor (UUID) -> Void,
+        activatePreviewSession: @escaping @MainActor (UUID) -> Void,
         attachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> UUID? = { _ in UUID() },
         detachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> Void = { _ in },
-        closeMonitoringSession: @escaping @MainActor (UUID) -> Void,
-        setMonitoringSessionCapturesCursor: @escaping @MainActor (UUID, Bool) async throws -> Void
+        closePreviewSession: @escaping @MainActor (UUID) -> Void,
+        setPreviewSessionCapturesCursor: @escaping @MainActor (UUID, Bool) async throws -> Void
     ) {
         self.sessions = sessions
-        self.monitoringSession = monitoringSession
-        self.monitoringSessionForDisplayID = monitoringSessionForDisplayID
+        self.previewSession = previewSession
+        self.previewSessionForDisplayID = previewSessionForDisplayID
         self.isStartingDisplayID = isStartingDisplayID
-        self.startMonitoring = startMonitoring
+        self.startPreview = startPreview
         self.attachPreviewSink = attachPreviewSink
-        self.activateMonitoringSession = activateMonitoringSession
+        self.activatePreviewSession = activatePreviewSession
         self.attachDiagnosticsRecorder = attachDiagnosticsRecorder
         self.detachDiagnosticsRecorder = detachDiagnosticsRecorder
-        self.closeMonitoringSession = closeMonitoringSession
-        self.setMonitoringSessionCapturesCursor = setMonitoringSessionCapturesCursor
+        self.closePreviewSession = closePreviewSession
+        self.setPreviewSessionCapturesCursor = setPreviewSessionCapturesCursor
     }
 
-    package static let noop = CaptureMonitoringActions(
+    package static let noop = CapturePreviewActions(
         sessions: { [] },
-        monitoringSession: { _ in nil },
-        monitoringSessionForDisplayID: { _ in nil },
+        previewSession: { _ in nil },
+        previewSessionForDisplayID: { _ in nil },
         isStartingDisplayID: { _ in false },
-        startMonitoring: { _, _ in .invalidated },
+        startPreview: { _, _ in .invalidated },
         attachPreviewSink: { _, _ in },
-        activateMonitoringSession: { _ in },
-        closeMonitoringSession: { _ in },
-        setMonitoringSessionCapturesCursor: { _, _ in }
+        activatePreviewSession: { _ in },
+        closePreviewSession: { _ in },
+        setPreviewSessionCapturesCursor: { _, _ in }
     )
 }
 

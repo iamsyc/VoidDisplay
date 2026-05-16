@@ -43,7 +43,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
-        .succeeded(configs: configs.map(VirtualDisplayStartupRestoreConfig.init(config:)))
+        .succeeded(configs: configs)
     }
 
     package func restoreVirtualDisplayForStartupCommand(
@@ -125,9 +125,6 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
     ) throws -> VirtualDisplayCreateCommandResult {
         let result = VirtualDisplayCreateCommandResult(
             createdConfigID: nil,
-            targetWasRunningAfterCommand: false,
-            preDisplayID: nil,
-            postDisplayID: nil,
             persistenceOutcome: .notAttempted,
             runtimeCreationOutcome: .failed,
             rollbackOutcome: .notAttempted
@@ -345,32 +342,6 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
             restoreOutcome: restoreOutcome,
             didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
             failureReason: failureReason
-        )
-    }
-}
-
-private extension VirtualDisplayStartupRestoreConfig {
-    init(config: VirtualDisplayConfig) {
-        self.init(
-            id: config.id,
-            desiredEnabled: config.desiredEnabled,
-            evidence: VirtualDisplayCommandConfigEvidence(config: config)
-        )
-    }
-}
-
-private extension VirtualDisplayCommandConfigEvidence {
-    init(config: VirtualDisplayConfig) {
-        let maxPixels = config.maxPixelDimensions
-        self.init(
-            id: config.id,
-            serialNumber: config.serialNum,
-            desiredEnabled: config.desiredEnabled,
-            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-            modeCount: config.modes.count,
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
         )
     }
 }

@@ -117,7 +117,7 @@ Displays
 Virtual Display
 Physical Display
 Web View
-Monitor
+Screen Preview
 Share Link
 ```
 
@@ -150,7 +150,7 @@ Share Link
 
 LAN Web View 是重要扩展能力，但它不负责远程输入，不负责远程控制。架构边界不代表降低 LAN Web View 的画质、帧率或实时性要求。
 
-### 本机监控：Monitor
+### 本机预览：Screen Preview
 
 负责：
 
@@ -158,7 +158,7 @@ LAN Web View 是重要扩展能力，但它不负责远程输入，不负责远�
 - 适用于多虚拟屏场景下的总览和调试。
 - 作为 capture pipeline 的本地 consumer。
 
-Monitor 不应拥有显示拓扑判断权。它只消费 DisplaySurface 的快照和帧。
+Screen Preview 不应拥有显示拓扑判断权。它只消费 DisplaySurface 的快照和帧。
 
 ### 可观测与诊断：Observability & Diagnostics
 
@@ -321,7 +321,7 @@ DisplayTransaction
 ```text
 1. 读取 DisplayGraph 和 DisplaySurface 快照
 2. 计算受影响的 DisplaySurface
-3. 暂停依附能力，例如 capture、Web View、Monitor
+3. 暂停依附能力，例如 capture、Web View、Screen Preview
 4. 调用 VirtualDisplayEngine 修改虚拟显示器
 5. 等待拓扑稳定
 6. 验证 managed identity 和当前 CGDisplayID
@@ -342,7 +342,7 @@ DisplaySurface -> CapturePipeline -> Consumers
 
 Consumer 包括：
 
-- local monitor window
+- local preview window
 - 局域网浏览器 viewer，包括人类观看者和 AI agent
 - diagnostics recorder
 
@@ -355,7 +355,7 @@ Demand aggregation 由统一规则决定：
 - cursor 只要任一 consumer 需要则开启。
 - WebRTC 编码需求由 StreamingEngine 提交，最终由 DisplayRuntime 聚合。
 
-这能避免 monitoring、sharing、diagnostics 各自调节帧率和分辨率。
+这能避免 preview、sharing、diagnostics 各自调节帧率和分辨率。
 
 ## 架构风险与约束
 
@@ -368,9 +368,9 @@ Demand aggregation 由统一规则决定：
 - `DisplaySurface` 是产品对象和聚合快照，不替代系统事实源。
 - 系统事实源包括 CGDisplay topology、ScreenCaptureKit visible displays、virtual display config、runtime handles、capture sessions、viewer sessions、permission state。
 - `DisplayTransaction` 只串行化虚拟屏和拓扑变更，例如创建、删除、编辑、恢复、重建和拓扑修复。
-- viewer 连接、monitor attach、WebRTC 帧发送、capture fanout 属于普通命令或数据平面，不进入同一个事务队列。
+- viewer 连接、preview attach、WebRTC 帧发送、capture fanout 属于普通命令或数据平面，不进入同一个事务队列。
 - LAN Web View 的高清、高帧率、低延迟是主体验目标，性能策略应默认偏向局域网高质量观看。
-- Demand aggregation 不应过度降级 LAN Web View 画质。多 viewer、Monitor 和 LAN Web View 同时存在、低功耗模式等场景需要显式策略。
+- Demand aggregation 不应过度降级 LAN Web View 画质。多 viewer、Screen Preview 和 LAN Web View 同时存在、低功耗模式等场景需要显式策略。
 - Observability 默认输出脱敏结构化状态，供自动化工具和 AI agent 读取。
 - support bundle 默认脱敏导出。enhanced diagnostics 需要用户显式开启。
 - `physicalDisplay` 是辅助能力，其产品承诺低于 `managedVirtualDisplay` 主路径。
@@ -424,7 +424,7 @@ VoidDisplay is a remote display companion, not a remote control system.
 对照项目用于确认边界，不作为直接竞品路线：
 
 - [BetterDisplay](https://github.com/waydabber/BetterDisplay)：覆盖广泛的 macOS 显示增强能力，包括虚拟屏、HiDPI、headless Mac remote access、PIP/streaming 等。VoidDisplay 不应追求同类大而全显示管理器。
-- [DeskPad](https://github.com/Stengo/DeskPad)：定位是用于 screen sharing 的 virtual monitor。VoidDisplay 可借鉴其清晰边界，但应保留 headless Mac、HiDPI remote desktop、局域网 Web View 这条主线。
+- [DeskPad](https://github.com/Stengo/DeskPad)：定位是用于 screen sharing 的 virtual display。VoidDisplay 可借鉴其清晰边界，但应保留 headless Mac、HiDPI remote desktop、局域网 Web View 这条主线。
 - [RustDesk](https://rustdesk.com/open-source.html)：远程桌面软件，负责连接与控制。VoidDisplay 应作为这类工具的显示增强 companion。
 
 ## 长期维护判断
@@ -435,7 +435,7 @@ VoidDisplay is a remote display companion, not a remote control system.
 产品定位：Mac Remote Display Companion
 核心对象：DisplaySurface
 核心功能：HiDPI Virtual Display
-扩展能力：LAN Web View, Monitor
+扩展能力：LAN Web View, Screen Preview
 架构底座：DisplayRuntime
 ```
 
@@ -444,7 +444,7 @@ VoidDisplay is a remote display companion, not a remote control system.
 - 远程控制软件路线。
 - 通用屏幕分享软件路线。
 - AI agent 平台路线。
-- 仅以虚拟显示器工具为边界，同时让虚拟显示器模块承载 Web View、Monitor、Diagnostics 等跨域能力。
+- 仅以虚拟显示器工具为边界，同时让虚拟显示器模块承载 Web View、Screen Preview、Diagnostics 等跨域能力。
 - 以泛化 DisplayRuntime 作为唯一锚点，缺少 DisplaySurface 作为产品对象。
 
 ## 后续重构规划输入

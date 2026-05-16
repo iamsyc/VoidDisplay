@@ -239,8 +239,7 @@ struct VirtualDisplayOrchestratorLightTests {
         #expect(result.persistenceOutcome == .saved)
         #expect(result.runtimeCreationOutcome == .succeeded)
         #expect(result.rollbackOutcome == .notAttempted)
-        #expect(result.postDisplayID == 950)
-        #expect(result.targetWasRunningAfterCommand)
+        #expect(sut.snapshot.runtimeDisplayIDByConfigId[result.createdConfigID!] == 950)
     }
 
     @Test
@@ -616,21 +615,10 @@ private extension VirtualDisplayOrchestratorLightTests {
     }
 
     func startupRestoreRequest(config: VirtualDisplayConfig) -> VirtualDisplayStartupRestoreCommandRequest {
-        let maxPixels = config.maxPixelDimensions
         return VirtualDisplayStartupRestoreCommandRequest(
             transactionID: UUID(),
             runID: UUID(),
-            configID: config.id,
-            configEvidence: .init(
-                id: config.id,
-                serialNumber: config.serialNum,
-                desiredEnabled: config.desiredEnabled,
-                physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-                physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-                modeCount: config.modes.count,
-                maximumPixelWidth: maxPixels.width,
-                maximumPixelHeight: maxPixels.height
-            )
+            configID: config.id
         )
     }
 

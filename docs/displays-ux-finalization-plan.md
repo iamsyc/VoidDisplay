@@ -1,6 +1,6 @@
 # Displays 首页最终产品化计划
 
-状态：待执行
+状态：已执行，作为 Displays 首页产品形态记录保留
 范围：规划 Displays 首页最终产品化实现。本计划只产出实现规格，不实现代码，不修改运行时、数据平面、README、公开截图或发布文档。
 基线：DisplayRuntime 重构已完成，主导航已收敛为 `Displays / Diagnostics`。Displays 首页已经从 runtime 工程面板调整为行内状态和行内动作列表，但当前状态噪音、动作层级和技术详情露出仍未达到最终产品形态。
 
@@ -10,11 +10,11 @@ Displays 是主工作台，目标是让用户打开首页即可完成以下判�
 
 1. 看清当前有哪些显示器。
 2. 看清每个显示器是否启用。
-3. 看清每个显示器是否正在监看。
+3. 看清每个显示器是否正在预览。
 4. 看清每个显示器是否正在 Web 查看。
 5. 看清每个显示器有无观看者。
 6. 发现需要处理的异常。
-7. 对某一行启动或停止 Monitor / Web View。
+7. 对某一行启动或停止 Preview / Web View。
 
 产品原则：
 
@@ -48,7 +48,7 @@ Display row 采用紧凑管理列表，不使用大字段表格。每行结构�
 
 1. 左侧身份组：显示器图标、名称、分辨率。
 2. 中间状态组：按状态层级展示用户当下需要处理的信息。
-3. 右侧动作组：只放当前 display 的 Monitor / Web View 动作。
+3. 右侧动作组：只放当前 display 的 Preview / Web View 动作。
 
 布局要求：
 
@@ -68,11 +68,11 @@ Virtual Display：
 3. `Rebuilding / 重建中` 常显，权重高于 Enabled / Disabled。
 4. `Needs attention / 需要处理` 常显，并使用异常权重。
 
-Monitor：
+Screen Preview：
 
-1. `Off` 或 `Not Monitoring / 未监看` 可低权重显示。
-2. `Monitoring / 监看中` 高权重显示。
-3. 监看状态只表达当前 display 的监看事实，不承载诊断细节。
+1. `Off` 或 `Not Previewing / 未预览` 可低权重显示。
+2. `Previewing / 预览中` 高权重显示。
+3. 预览状态只表达当前 display 的本机预览事实，不承载诊断细节。
 
 Web View：
 
@@ -85,7 +85,7 @@ Viewers：
 
 1. `0 Viewers / 0 位观看者` 低权重显示，或合并进 Web View 低权重状态。
 2. `>0 Viewers / 观看者 >0` 高权重显示。
-3. 观看者数量不得挤占 Monitor / Web View 主动作区域。
+3. 观看者数量不得挤占 Preview / Web View 主动作区域。
 
 Issue：
 
@@ -103,7 +103,7 @@ Issue：
 
 每行只放 per-display 动作：
 
-1. `Monitor / 监看`
+1. `Preview / 预览`
 2. `Stop / 停止`
 3. `Web View / Web 查看`
 4. `Stop / 停止`
@@ -117,12 +117,12 @@ Issue：
 
 动作启用规则：
 
-1. `Monitor` 启动当前 display 的监看需求。
+1. `Preview` 启动当前 display 的本机预览需求。
 2. `Web View` 启动当前 display 的 Web 查看需求。
 3. Stop actions 仍只由 runtime lease demand 启用。
 4. capture facts 不驱动 stop action。
 5. sharing facts 不驱动 stop action。
-6. 点击 `Monitor` 的测试路径不得触发真实 macOS privacy prompt。
+6. 点击 `Preview` 的测试路径不得触发真实 macOS privacy prompt。
 7. 点击 `Web View` 不改变 LAN route、shareID、auth/security stance。
 
 ## 技术详情规则
@@ -178,9 +178,9 @@ Intent
 ```text
 Virtual Display / 虚拟显示器
 Physical Display / 物理显示器
-Monitor / 监看
-Not Monitoring / 未监看
-Monitoring / 监看中
+Preview / 预览
+Not Previewing / 未预览
+Previewing / 预览中
 Web View / Web 查看
 Not Sharing / 未共享
 Sharing / 共享中
@@ -202,7 +202,7 @@ Technical Details / 技术详情
 1. 点击 `Manage Virtual Displays / 管理虚拟显示器` 进入虚拟显示器管理页。
 2. 虚拟显示器管理页必须有清楚的 `Displays Overview / 显示器总览` 返回入口。
 3. Displays 首页不提供虚拟显示器 create、edit、enable、disable、delete、order、primary 操作。
-4. 点击 `Monitor` 不应在测试环境触发真实隐私授权弹窗。
+4. 点击 `Preview` 不应在测试环境触发真实隐私授权弹窗。
 5. 点击 `Web View` 不改变当前 LAN 路由、shareID、auth/security stance。
 6. Stop actions 只跟随 runtime lease demand。
 7. capture facts 和 sharing facts 不得驱动 stop action。
@@ -261,7 +261,7 @@ UI smoke 必须覆盖：
 
 1. Displays page shows rows without selecting。
 2. rows show compact status。
-3. rows show Monitor / Web View actions。
+3. rows show Preview / Web View actions。
 4. Manage Virtual Displays is global。
 5. Displays Overview returns from child page。
 

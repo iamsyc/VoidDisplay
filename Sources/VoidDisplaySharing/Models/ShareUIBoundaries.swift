@@ -45,16 +45,16 @@ package struct ShareCatalogActions {
 }
 
 package struct ShareDisplayStatus: Equatable, Sendable {
-    package var isMonitoring: Bool
+    package var isPreviewing: Bool
     package var isManagedVirtualDisplay: Bool
 
-    package init(isMonitoring: Bool, isManagedVirtualDisplay: Bool) {
-        self.isMonitoring = isMonitoring
+    package init(isPreviewing: Bool, isManagedVirtualDisplay: Bool) {
+        self.isPreviewing = isPreviewing
         self.isManagedVirtualDisplay = isManagedVirtualDisplay
     }
 
     package static let inactive = ShareDisplayStatus(
-        isMonitoring: false,
+        isPreviewing: false,
         isManagedVirtualDisplay: false
     )
 }

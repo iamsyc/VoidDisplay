@@ -234,9 +234,9 @@ final class FakeCaptureCommander: DisplayRuntimeCaptureProviding, DisplayRuntime
         snapshot
     }
 
-    func removeMonitoringSessions(displayID: DisplayRuntimeDisplayID) {
+    func removePreviewSessions(displayID: DisplayRuntimeDisplayID) {
         removedDisplayIDs.append(displayID)
-        recorder?.append("removeMonitoring:\(displayID)")
+        recorder?.append("removePreview:\(displayID)")
     }
 }
 
@@ -435,7 +435,6 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
             desiredEnabled: true,
             preDisplayID: request.targetPreDisplayID,
             postDisplayID: request.targetPreDisplayID,
-            runningConfigIDsAfterCommand: [request.configID],
             mayPerformFleetRebuild: enablePreflight?.mayPerformFleetRebuild,
             requiresFleetQuiesce: enablePreflight?.requiresFleetQuiesce
         )
@@ -458,8 +457,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
             configID: request.configID,
             desiredEnabled: false,
             preDisplayID: request.targetPreDisplayID,
-            postDisplayID: nil,
-            runningConfigIDsAfterCommand: []
+            postDisplayID: nil
         )
     }
 
@@ -484,7 +482,6 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
             transactionID: request.transactionID,
             createdConfigID: createdConfigID,
             serialNumber: request.serialNumber,
-            postDisplayID: 9001,
             physicalWidthMillimeters: request.physicalWidthMillimeters,
             physicalHeightMillimeters: request.physicalHeightMillimeters,
             modeCount: request.modes.count,
@@ -548,9 +545,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
                     didProduceVerifiableSideEffect: result.didProduceVerifiableSideEffect,
                     failureReason: result.failureReason,
                     compensationOutcome: result.compensationOutcome,
-                    compensationFailureReason: result.compensationFailureReason,
-                    runningConfigIDsAfterCommand: result.runningConfigIDsAfterCommand,
-                    managedDisplaysAfterCommand: result.managedDisplaysAfterCommand
+                    compensationFailureReason: result.compensationFailureReason
                 )
             }
             return result
@@ -558,16 +553,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         return startupRestoreCommandResult(
             transactionID: request.transactionID,
             configID: request.configID,
-            postDisplayID: 9001,
-            runningConfigIDsAfterCommand: [request.configID],
-            managedDisplaysAfterCommand: [
-                .init(
-                    configID: request.configID,
-                    serialNumber: request.configEvidence.serialNumber,
-                    displayID: 9001,
-                    isLiveRuntime: true
-                )
-            ]
+            postDisplayID: 9001
         )
     }
 }

@@ -146,12 +146,12 @@ extension DisplayRuntime {
             postSnapshot: postConvergenceSnapshot,
             disabledTargetIdentity: nil
         )
-        let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+        let previewRestoreResults = makeDeferredPreviewRestoreResults(
             restoreIntents,
             topologyResult: topologyResult,
             disabledTargetIdentity: nil
         )
-        let restoreResults = sharingRestoreResults + monitoringRestoreResults
+        let restoreResults = sharingRestoreResults + previewRestoreResults
         updateTrace(request.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }

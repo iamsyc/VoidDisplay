@@ -82,44 +82,27 @@ package nonisolated struct DisplayRuntimeVirtualDisplayCreateCommandResult: Coda
     package let transactionID: DisplayRuntimeTransactionID
     package let createdConfigID: UUID?
     package let serialNumber: UInt32
-    package let targetWasRunningAfterCommand: Bool
-    package let preDisplayID: DisplayRuntimeDisplayID?
-    package let postDisplayID: DisplayRuntimeDisplayID?
     package let persistenceOutcome: DisplayRuntimePersistenceOutcome
     package let runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let rollbackOutcome: DisplayRuntimePersistenceOutcome
     package let createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
 
     package init(
         transactionID: DisplayRuntimeTransactionID,
         createdConfigID: UUID?,
         serialNumber: UInt32,
-        targetWasRunningAfterCommand: Bool,
-        preDisplayID: DisplayRuntimeDisplayID?,
-        postDisplayID: DisplayRuntimeDisplayID?,
         persistenceOutcome: DisplayRuntimePersistenceOutcome,
         runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome,
         rollbackOutcome: DisplayRuntimePersistenceOutcome,
-        createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
+        createdConfigEvidence: DisplayRuntimeVirtualDisplayCreateConfigEvidence
     ) {
         self.transactionID = transactionID
         self.createdConfigID = createdConfigID
         self.serialNumber = serialNumber
-        self.targetWasRunningAfterCommand = targetWasRunningAfterCommand
-        self.preDisplayID = preDisplayID
-        self.postDisplayID = postDisplayID
         self.persistenceOutcome = persistenceOutcome
         self.runtimeCreationOutcome = runtimeCreationOutcome
         self.rollbackOutcome = rollbackOutcome
         self.createdConfigEvidence = createdConfigEvidence
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            ($0.configID.uuidString, $0.displayID) < ($1.configID.uuidString, $1.displayID)
-        }
     }
 }
 
@@ -195,8 +178,6 @@ package nonisolated struct DisplayRuntimeVirtualDisplayDeleteCommandResult: Coda
     package let persistenceOutcome: DisplayRuntimePersistenceOutcome
     package let virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
 
     package init(
         transactionID: DisplayRuntimeTransactionID,
@@ -206,9 +187,7 @@ package nonisolated struct DisplayRuntimeVirtualDisplayDeleteCommandResult: Coda
         postDisplayID: DisplayRuntimeDisplayID?,
         persistenceOutcome: DisplayRuntimePersistenceOutcome,
         virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome,
-        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
+        runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome
     ) {
         self.transactionID = transactionID
         self.configID = configID
@@ -218,10 +197,6 @@ package nonisolated struct DisplayRuntimeVirtualDisplayDeleteCommandResult: Coda
         self.persistenceOutcome = persistenceOutcome
         self.virtualDisplayCommandOutcome = virtualDisplayCommandOutcome
         self.runtimeTrackingClearOutcome = runtimeTrackingClearOutcome
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            ($0.configID.uuidString, $0.displayID) < ($1.configID.uuidString, $1.displayID)
-        }
     }
 }
 

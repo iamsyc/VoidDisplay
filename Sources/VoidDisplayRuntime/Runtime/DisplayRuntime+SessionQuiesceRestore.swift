@@ -49,7 +49,7 @@ extension DisplayRuntime {
                     }
                     return displayID
                 }()
-                let monitoringCapturesCursor = pauseIntent.pauseMonitoring
+                let previewCapturesCursor = pauseIntent.pausePreview
                     && preSnapshot.capture.sessions.contains {
                         $0.displayID == pauseIntent.displayID && $0.capturesCursor
                     }
@@ -58,8 +58,8 @@ extension DisplayRuntime {
                     previousDisplayID: pauseIntent.displayID,
                     resolvedDisplayID: resolvedDisplayID,
                     restoreSharing: pauseIntent.pauseSharing,
-                    restoreMonitoring: pauseIntent.pauseMonitoring,
-                    monitoringCapturesCursor: monitoringCapturesCursor
+                    restorePreview: pauseIntent.pausePreview,
+                    previewCapturesCursor: previewCapturesCursor
                 )
             }
     }
@@ -159,16 +159,16 @@ extension DisplayRuntime {
         return results
     }
 
-    func makeDeferredMonitoringRestoreResults(
+    func makeDeferredPreviewRestoreResults(
         _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
         topologyResult: DisplayRuntimeTopologyStabilityResult,
         disabledTargetIdentity: DisplaySurfaceIdentity?,
         targetSkipReason: String = "target_disabled"
     ) -> [DisplayRuntimeSessionRestoreResult] {
-        let monitoringRestoreIntents = restoreIntents.filter(\.restoreMonitoring)
-        guard !monitoringRestoreIntents.isEmpty else { return [] }
+        let previewRestoreIntents = restoreIntents.filter(\.restorePreview)
+        guard !previewRestoreIntents.isEmpty else { return [] }
 
-        return monitoringRestoreIntents.map { intent in
+        return previewRestoreIntents.map { intent in
             let failureReason: String = {
                 guard intent.surfaceIdentity != disabledTargetIdentity else {
                     return targetSkipReason
@@ -179,10 +179,10 @@ extension DisplayRuntime {
                 guard intent.resolvedDisplayID != nil else {
                     return "resolved_display_unavailable"
                 }
-                return "monitoring_restore_deferred_until_consumer_lease"
+                return "preview_restore_deferred_until_consumer_lease"
             }()
             return makeRestoreResult(
-                kind: .monitoring,
+                kind: .preview,
                 intent: intent,
                 status: .skipped,
                 failureReason: failureReason
@@ -223,14 +223,14 @@ extension DisplayRuntime {
             return .init(
                 status: failedRestoreCount == 0 ? .completed : .degraded,
                 restoredSharingCount: restoredSharingCount,
-                restoredMonitoringCount: 0,
+                restoredPreviewCount: 0,
                 failedRestoreCount: failedRestoreCount
             )
         case .unprovableDueToPermission, .failed, .timedOut:
             return .init(
                 status: .degraded,
                 restoredSharingCount: restoredSharingCount,
-                restoredMonitoringCount: 0,
+                restoredPreviewCount: 0,
                 failedRestoreCount: failedRestoreCount
             )
         }
@@ -248,8 +248,8 @@ extension DisplayRuntime {
                 continue
             }
             let pauseSharing = surface.sharing?.isActive == true
-            let pauseMonitoring = surface.capture?.sessionIDs.isEmpty == false || surface.capture?.isStarting == true
-            guard pauseSharing || pauseMonitoring else {
+            let pausePreview = surface.capture?.sessionIDs.isEmpty == false || surface.capture?.isStarting == true
+            guard pauseSharing || pausePreview else {
                 continue
             }
             if let existing = intentsByDisplayID[displayID] {
@@ -257,7 +257,7 @@ extension DisplayRuntime {
                     surfaceIdentity: existing.surfaceIdentity,
                     displayID: displayID,
                     pauseSharing: existing.pauseSharing || pauseSharing,
-                    pauseMonitoring: existing.pauseMonitoring || pauseMonitoring
+                    pausePreview: existing.pausePreview || pausePreview
                 )
                 continue
             }
@@ -265,7 +265,7 @@ extension DisplayRuntime {
                 surfaceIdentity: affectedSurface.identity,
                 displayID: displayID,
                 pauseSharing: pauseSharing,
-                pauseMonitoring: pauseMonitoring
+                pausePreview: pausePreview
             )
         }
         return intentsByDisplayID.values.sorted { $0.displayID < $1.displayID }
@@ -276,8 +276,8 @@ extension DisplayRuntime {
             if intent.pauseSharing {
                 sharingCommander?.stopSharing(displayID: intent.displayID)
             }
-            if intent.pauseMonitoring {
-                captureCommander?.removeMonitoringSessions(displayID: intent.displayID)
+            if intent.pausePreview {
+                captureCommander?.removePreviewSessions(displayID: intent.displayID)
             }
         }
     }

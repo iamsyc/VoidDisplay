@@ -51,7 +51,7 @@ package struct ScreenCapturePermissionGuideView: View {
                 .foregroundStyle(.secondary)
             Text("Screen Recording Permission Required")
                 .font(.headline)
-            Text("Allow screen recording in System Settings to monitor displays.")
+            Text("Allow screen recording in System Settings to preview displays.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

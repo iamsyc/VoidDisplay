@@ -27,11 +27,12 @@ package struct HomeView: View {
 
     @State private var hasAutoOpenedCapturePreview = false
     @State private var displayDestination: DisplayDestination = .overview
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     private enum DisplayDestination: String, Hashable {
         case overview
         case virtualDisplay
-        case monitor
+        case preview
         case lanWebView
     }
 
@@ -40,7 +41,7 @@ package struct HomeView: View {
     }
 
     private var displaySurfaceActions: DisplaySurfaceActions {
-        let monitoringActions = CaptureUIComposition.monitoringActions(
+        let previewActions = CaptureUIComposition.previewActions(
             capture: capture,
             displayRuntime: displayRuntime
         )
@@ -54,14 +55,14 @@ package struct HomeView: View {
             manageVirtualDisplay: {
                 openDisplayDestination(.virtualDisplay)
             },
-            openMonitor: {
-                openDisplayDestination(.monitor)
+            openPreview: {
+                openDisplayDestination(.preview)
             },
-            stopMonitor: { displayID in
-                guard let session = monitoringActions.monitoringSessionForDisplayID(displayID) else {
+            stopPreview: { displayID in
+                guard let session = previewActions.previewSessionForDisplayID(displayID) else {
                     return
                 }
-                monitoringActions.closeMonitoringSession(session.id)
+                previewActions.closePreviewSession(session.id)
             },
             openLANWebView: {
                 openDisplayDestination(.lanWebView)
@@ -93,20 +94,58 @@ package struct HomeView: View {
     package var body: some View {
         @Bindable var bindableNavigation = navigation
 
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $bindableNavigation.sidebarSelection) {
-                NavigationLink(value: AppSidebarItem.screen) {
-                    Label("Displays", systemImage: "display")
-                }
-                .simultaneousGesture(TapGesture().onEnded {
-                    showDisplaysOverview()
-                })
-                .accessibilityIdentifier("sidebar_displays")
+                Section("Display") {
+                    NavigationLink(value: AppSidebarItem.home) {
+                        Label("Home", systemImage: "house")
+                            .accessibilityIdentifier("sidebar_home")
+                    }
+                    .tag(AppSidebarItem.home)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        showHomeOverview()
+                    })
+                    .accessibilityIdentifier("sidebar_home")
 
-                NavigationLink(value: AppSidebarItem.diagnostics) {
-                    Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
+                    NavigationLink(value: AppSidebarItem.screen) {
+                        Label("Displays", systemImage: "display")
+                            .accessibilityIdentifier("sidebar_displays")
+                    }
+                    .tag(AppSidebarItem.screen)
+                    .accessibilityIdentifier("sidebar_displays")
+
+                    NavigationLink(value: AppSidebarItem.virtualDisplay) {
+                        Label("Virtual Displays", systemImage: "display.2")
+                            .accessibilityIdentifier("sidebar_virtual_display")
+                    }
+                    .tag(AppSidebarItem.virtualDisplay)
+                    .accessibilityIdentifier("sidebar_virtual_display")
+
+                    NavigationLink(value: AppSidebarItem.screenPreview) {
+                        Label("Screen Preview", systemImage: "dot.scope.display")
+                            .accessibilityIdentifier("sidebar_screen_preview")
+                    }
+                    .tag(AppSidebarItem.screenPreview)
+                    .accessibilityIdentifier("sidebar_screen_preview")
                 }
-                .accessibilityIdentifier("sidebar_diagnostics")
+
+                Section("Sharing") {
+                    NavigationLink(value: AppSidebarItem.screenSharing) {
+                        Label("Screen Sharing", systemImage: "display")
+                            .accessibilityIdentifier("sidebar_screen_sharing")
+                    }
+                    .tag(AppSidebarItem.screenSharing)
+                    .accessibilityIdentifier("sidebar_screen_sharing")
+                }
+
+                Section(String(localized: "Diagnostics")) {
+                    NavigationLink(value: AppSidebarItem.diagnostics) {
+                        Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
+                            .accessibilityIdentifier("sidebar_diagnostics")
+                    }
+                    .tag(AppSidebarItem.diagnostics)
+                    .accessibilityIdentifier("sidebar_diagnostics")
+                }
             }
             .listStyle(.sidebar)
             .accessibilityIdentifier("home_sidebar")
@@ -114,11 +153,27 @@ package struct HomeView: View {
         } detail: {
             NavigationStack {
                 Group {
-                    switch bindableNavigation.sidebarSelection ?? .screen {
-                    case .screen:
+                    switch bindableNavigation.sidebarSelection ?? .home {
+                    case .home:
                         displayDestinationView
                             .navigationTitle(displayDestinationTitle)
                             .accessibilityIdentifier(displayDestinationAccessibilityIdentifier)
+                    case .screen:
+                        SystemDisplaysView(activityProvider: displayActivityProvider)
+                            .navigationTitle("Displays")
+                            .accessibilityIdentifier("detail_displays")
+                    case .virtualDisplay:
+                        virtualDisplayView
+                            .navigationTitle("Virtual Displays")
+                            .accessibilityIdentifier("detail_virtual_display")
+                    case .screenPreview:
+                        previewView
+                            .navigationTitle("Screen Preview")
+                            .accessibilityIdentifier("detail_screen_preview")
+                    case .screenSharing:
+                        lanWebView
+                            .navigationTitle("Screen Sharing")
+                            .accessibilityIdentifier("detail_screen_sharing")
                     case .diagnostics:
                         DiagnosticsView(
                             observability: observability,
@@ -133,11 +188,11 @@ package struct HomeView: View {
                     if shouldShowDisplayOverviewToolbarButton {
                         ToolbarItem {
                             Button {
-                                showDisplaysOverview()
+                                showHomeOverview()
                             } label: {
-                                Label("Displays Overview", systemImage: "chevron.left")
+                                Label("Home", systemImage: "chevron.left")
                             }
-                            .help(Text("Displays Overview"))
+                            .help(Text("Home"))
                             .accessibilityIdentifier("displays_overview_toolbar_button")
                         }
                     }
@@ -145,6 +200,7 @@ package struct HomeView: View {
             }
         }
         .onAppear {
+            columnVisibility = .all
             autoOpenCapturePreviewWindowIfNeeded()
         }
     }
@@ -158,68 +214,81 @@ package struct HomeView: View {
                 surfaceActions: displaySurfaceActions
             )
         case .virtualDisplay:
-            if UITestRuntime.isEnabled {
-                VirtualDisplayView(
-                    controller: virtualDisplay,
-                    activityProvider: displayActivityProvider
-                )
-                    .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
-            } else {
-                VirtualDisplayView(
-                    controller: virtualDisplay,
-                    activityProvider: displayActivityProvider
-                )
-            }
-        case .monitor:
-            IsCapturing(
-                catalogState: capture.displayCatalogState,
-                monitoringActions: CaptureUIComposition.monitoringActions(
-                    capture: capture,
-                    displayRuntime: displayRuntime
-                ),
-                sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing),
-                virtualDisplayStatusProvider: CaptureUIComposition.virtualDisplayStatusProvider(
-                    virtualDisplay: virtualDisplay
-                ),
-                catalogActions: CaptureUIComposition.catalogActions(
-                    displayRuntime: displayRuntime,
-                    openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
-                )
-            )
+            virtualDisplayView
+        case .preview:
+            previewView
         case .lanWebView:
-            ShareView(
-                catalogState: sharing.displayCatalogState,
-                dependencies: SharingUIComposition.dependencies(
-                    sharing: sharing,
-                    virtualDisplay: virtualDisplay,
-                    displayRuntime: displayRuntime
-                ),
-                runtimeState: SharingUIComposition.runtimeState(
-                    sharing: sharing
-                ),
-                catalogActions: SharingUIComposition.catalogActions(
-                    displayRuntime: displayRuntime,
-                    openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
-                ),
-                displayStatusProvider: SharingUIComposition.displayStatusProvider(
-                    capture: capture,
-                    virtualDisplay: virtualDisplay
-                ),
-                performanceMode: SharingUIComposition.performanceModeBinding(
-                    capturePerformancePreferences: capturePerformancePreferences
-                )
+            lanWebView
+        }
+    }
+
+    @ViewBuilder
+    private var virtualDisplayView: some View {
+        if UITestRuntime.isEnabled {
+            VirtualDisplayView(
+                controller: virtualDisplay,
+                activityProvider: displayActivityProvider
+            )
+                .accessibilityValue(Text("\(virtualDisplay.rebuildRequestCount)"))
+        } else {
+            VirtualDisplayView(
+                controller: virtualDisplay,
+                activityProvider: displayActivityProvider
             )
         }
+    }
+
+    private var previewView: some View {
+        IsCapturing(
+            catalogState: capture.displayCatalogState,
+            previewActions: CaptureUIComposition.previewActions(
+                capture: capture,
+                displayRuntime: displayRuntime
+            ),
+            sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing),
+            virtualDisplayStatusProvider: CaptureUIComposition.virtualDisplayStatusProvider(
+                virtualDisplay: virtualDisplay
+            ),
+            catalogActions: CaptureUIComposition.catalogActions(
+                displayRuntime: displayRuntime,
+                openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
+            )
+        )
+    }
+
+    private var lanWebView: some View {
+        ShareView(
+            catalogState: sharing.displayCatalogState,
+            dependencies: SharingUIComposition.dependencies(
+                sharing: sharing,
+                virtualDisplay: virtualDisplay,
+                displayRuntime: displayRuntime
+            ),
+            runtimeState: SharingUIComposition.runtimeState(
+                sharing: sharing
+            ),
+            catalogActions: SharingUIComposition.catalogActions(
+                displayRuntime: displayRuntime,
+                openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
+            ),
+            displayStatusProvider: SharingUIComposition.displayStatusProvider(
+                capture: capture,
+                virtualDisplay: virtualDisplay
+            ),
+            performanceMode: SharingUIComposition.performanceModeBinding(
+                capturePerformancePreferences: capturePerformancePreferences
+            )
+        )
     }
 
     private var displayDestinationTitle: LocalizedStringKey {
         switch displayDestination {
         case .overview:
-            "Displays"
+            "Home"
         case .virtualDisplay:
             "Virtual Display"
-        case .monitor:
-            "Monitor"
+        case .preview:
+            "Preview"
         case .lanWebView:
             "LAN Web View"
         }
@@ -228,48 +297,56 @@ package struct HomeView: View {
     private var displayDestinationAccessibilityIdentifier: String {
         switch displayDestination {
         case .overview:
-            "detail_displays"
+            "detail_home"
         case .virtualDisplay:
             "detail_virtual_display"
-        case .monitor:
-            "detail_monitor_screen"
+        case .preview:
+            "detail_screen_preview"
         case .lanWebView:
             "detail_lan_web_view"
         }
     }
 
     private var detailIdentity: String {
-        switch navigation.sidebarSelection ?? .screen {
+        switch navigation.sidebarSelection ?? .home {
+        case .home:
+            "home-\(displayDestination.rawValue)"
         case .screen:
-            "screen-\(displayDestination.rawValue)"
+            "displays"
+        case .virtualDisplay:
+            "virtualDisplay"
+        case .screenPreview:
+            "screenPreview"
+        case .screenSharing:
+            "screenSharing"
         case .diagnostics:
             "diagnostics"
         }
     }
 
     private var shouldShowDisplayOverviewToolbarButton: Bool {
-        (navigation.sidebarSelection ?? .screen) == .screen && displayDestination != .overview
+        (navigation.sidebarSelection ?? .home) == .home && displayDestination != .overview
     }
 
-    private func showDisplaysOverview() {
+    private func showHomeOverview() {
         displayDestination = .overview
-        navigation.sidebarSelection = .screen
+        navigation.sidebarSelection = .home
     }
 
     private func openDisplayDestination(_ destination: DisplayDestination) {
         displayDestination = destination
-        navigation.sidebarSelection = .screen
+        navigation.sidebarSelection = .home
     }
 
     private func autoOpenCapturePreviewWindowIfNeeded() {
         guard CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
               !hasAutoOpenedCapturePreview,
-              let sessionID = capture.screenCaptureSessions.first?.id
+              let sessionID = capture.screenPreviewSessions.first?.id
         else {
             return
         }
 
-        openDisplayDestination(.monitor)
+        navigation.sidebarSelection = .screenPreview
         openWindow(value: sessionID)
         hasAutoOpenedCapturePreview = true
     }
@@ -282,7 +359,7 @@ private struct AppDisplayActivityStatusProvider: DisplayActivityStatusProviding 
     @MainActor
     func activityStatus(for displayID: CGDirectDisplayID) -> DisplayActivityStatus {
         DisplayActivityStatus(
-            isMonitoring: capture.screenCaptureSessions.contains { $0.displayID == displayID },
+            isPreviewing: capture.screenPreviewSessions.contains { $0.displayID == displayID },
             isSharing: sharing.isDisplaySharing(displayID: displayID)
         )
     }

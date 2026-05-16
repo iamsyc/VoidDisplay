@@ -135,7 +135,7 @@ func captureSnapshot(
     )
 }
 
-func monitoringCaptureSnapshot(
+func previewCaptureSnapshot(
     displayID: DisplayRuntimeDisplayID,
     capturesCursor: Bool
 ) -> DisplayRuntimeCaptureSnapshot {

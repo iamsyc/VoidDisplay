@@ -443,13 +443,13 @@ extension DisplayRuntime {
                 disabledTargetIdentity: targetIdentity,
                 targetSkipReason: "target_deleted"
             )
-            let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+            let previewRestoreResults = makeDeferredPreviewRestoreResults(
                 restoreIntents,
                 topologyResult: topologyResult,
                 disabledTargetIdentity: targetIdentity,
                 targetSkipReason: "target_deleted"
             )
-            restoreResults = sharingRestoreResults + monitoringRestoreResults
+            restoreResults = sharingRestoreResults + previewRestoreResults
         } else {
             restoreResults = []
         }

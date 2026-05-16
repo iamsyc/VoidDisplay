@@ -263,12 +263,12 @@ extension DisplayRuntime {
             postSnapshot: postConvergenceSnapshot,
             disabledTargetIdentity: nil
         )
-        let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+        let previewRestoreResults = makeDeferredPreviewRestoreResults(
             restoreIntents,
             topologyResult: topologyResult,
             disabledTargetIdentity: nil
         )
-        let restoreResults = sharingRestoreResults + monitoringRestoreResults
+        let restoreResults = sharingRestoreResults + previewRestoreResults
         updateTrace(request.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
@@ -318,7 +318,7 @@ extension DisplayRuntime {
                 return .init(
                     status: .degraded,
                     restoredSharingCount: 0,
-                    restoredMonitoringCount: 0,
+                    restoredPreviewCount: 0,
                     failedRestoreCount: 1,
                     persistenceOutcome: restoreResult.persistenceOutcome,
                     virtualDisplayCommandOutcome: .notAttempted,
@@ -333,7 +333,7 @@ extension DisplayRuntime {
                 return .init(
                     status: .completed,
                     restoredSharingCount: 0,
-                    restoredMonitoringCount: 0,
+                    restoredPreviewCount: 0,
                     failedRestoreCount: 0,
                     persistenceOutcome: restoreResult.persistenceOutcome,
                     virtualDisplayCommandOutcome: .succeeded,
@@ -343,7 +343,7 @@ extension DisplayRuntime {
                 return .init(
                     status: .degraded,
                     restoredSharingCount: 0,
-                    restoredMonitoringCount: 0,
+                    restoredPreviewCount: 0,
                     failedRestoreCount: 1,
                     persistenceOutcome: restoreResult.persistenceOutcome,
                     virtualDisplayCommandOutcome: .failed,
@@ -354,7 +354,7 @@ extension DisplayRuntime {
             return .init(
                 status: .degraded,
                 restoredSharingCount: 0,
-                restoredMonitoringCount: 0,
+                restoredPreviewCount: 0,
                 failedRestoreCount: 1,
                 persistenceOutcome: .rollbackFailed,
                 virtualDisplayCommandOutcome: .notAttempted,

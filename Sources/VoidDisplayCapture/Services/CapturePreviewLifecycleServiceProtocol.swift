@@ -5,18 +5,18 @@ import Foundation
 import ScreenCaptureKit
 
 @MainActor
-package protocol CaptureMonitoringLifecycleServiceProtocol: AnyObject {
+package protocol CapturePreviewLifecycleServiceProtocol: AnyObject {
     func isStarting(displayID: CGDirectDisplayID) -> Bool
-    func startMonitoring(
+    func startPreview(
         display: SCDisplay,
-        metadata: CaptureMonitoringDisplayMetadata
+        metadata: CapturePreviewDisplayMetadata
     ) async throws -> DisplayStartOutcome<UUID>
-    func activateMonitoringSession(id: UUID)
+    func activatePreviewSession(id: UUID)
     func attachPreviewSink(_ sink: any DisplayPreviewSink, to id: UUID)
-    func setMonitoringSessionCapturesCursor(
+    func setPreviewSessionCapturesCursor(
         id: UUID,
         capturesCursor: Bool
     ) async throws
-    func closeMonitoringSession(id: UUID)
-    func removeMonitoringSessions(displayID: CGDirectDisplayID)
+    func closePreviewSession(id: UUID)
+    func removePreviewSessions(displayID: CGDirectDisplayID)
 }

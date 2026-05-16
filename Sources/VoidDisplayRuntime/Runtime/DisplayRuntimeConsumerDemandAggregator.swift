@@ -94,8 +94,8 @@ package nonisolated enum DisplayRuntimeConsumerDemandAggregator {
             return .mixed
         }
         switch uniqueKinds.first {
-        case .monitor:
-            return .monitorOnly
+        case .preview:
+            return .previewOnly
         case .lanWebView:
             return .lanWebViewOnly
         case .diagnosticsRecorder:

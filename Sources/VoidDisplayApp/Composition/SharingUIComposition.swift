@@ -115,7 +115,7 @@ package enum SharingUIComposition {
     ) -> ShareDisplayStatusProvider {
         ShareDisplayStatusProvider { displayID in
             ShareDisplayStatus(
-                isMonitoring: capture.screenCaptureSessions.contains { $0.displayID == displayID },
+                isPreviewing: capture.screenPreviewSessions.contains { $0.displayID == displayID },
                 isManagedVirtualDisplay: virtualDisplay.isManagedVirtualDisplay(displayID: displayID)
             )
         }

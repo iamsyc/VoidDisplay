@@ -20,7 +20,7 @@ struct DiagnosticsUserFacingCopyTests {
             "Effective Capture Intent",
             "Lease Status",
             "Last Failure Code",
-            "Monitor Consumer",
+            "Preview Consumer",
             "LAN Web View Consumer",
             "Not managed",
             "未托管",
@@ -30,7 +30,8 @@ struct DiagnosticsUserFacingCopyTests {
             "托管虚拟显示器",
             "Physical auxiliary",
             "Physical Auxiliary Display",
-            "物理辅助"
+            "物理辅助",
+            "监看"
         ]
         let displaysHomeForbiddenFragments = globalForbiddenFragments + [
             "Consumer",

@@ -33,7 +33,7 @@ package struct AppSettingsView: View {
                     Text("Capture Performance")
                         .font(.headline)
 
-                    Text("Choose how screen monitoring and sharing balance smoothness and resource usage.")
+                    Text("Choose how screen preview and sharing balance smoothness and resource usage.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 

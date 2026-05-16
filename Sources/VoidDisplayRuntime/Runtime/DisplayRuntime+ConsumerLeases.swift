@@ -17,14 +17,14 @@ extension DisplayRuntime {
         )
     }
 
-    package func attachMonitorConsumer(
+    package func attachPreviewConsumer(
         surfaceIdentity: DisplaySurfaceIdentity,
         owner: DisplayRuntimeConsumerOwner,
         demand: DisplayRuntimeConsumerDemand
-    ) async -> DisplayRuntimeMonitorConsumerAttachResult {
+    ) async -> DisplayRuntimePreviewConsumerAttachResult {
         let lease = attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: owner,
             demand: demand,
             submitsCaptureIntent: false
@@ -36,14 +36,14 @@ extension DisplayRuntime {
         )
         let rawResult: DisplayRuntimeCaptureIntentApplyResult
         if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyMonitorCaptureIntent(intent)
+            rawResult = await captureIntentCommander.applyPreviewCaptureIntent(intent)
         } else {
             rawResult = .failed(
                 revision: intent.revision,
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
             )
         }
-        return DisplayRuntimeMonitorConsumerAttachResult(
+        return DisplayRuntimePreviewConsumerAttachResult(
             lease: lease,
             applyResult: recordCaptureIntentApplyResult(rawResult)
         )
@@ -197,13 +197,13 @@ extension DisplayRuntime {
     }
 
     @discardableResult
-    package func detachMonitorConsumer(
+    package func detachPreviewConsumer(
         surfaceIdentity: DisplaySurfaceIdentity
-    ) -> DisplayRuntimeMonitorConsumerDetachResult {
+    ) -> DisplayRuntimePreviewConsumerDetachResult {
         guard let lease = currentDemandLeases(for: surfaceIdentity)
-            .first(where: { $0.kind == .monitor })
+            .first(where: { $0.kind == .preview })
         else {
-            return DisplayRuntimeMonitorConsumerDetachResult(
+            return DisplayRuntimePreviewConsumerDetachResult(
                 releasedLease: nil,
                 applyResult: nil
             )
@@ -213,7 +213,7 @@ extension DisplayRuntime {
         let applyResult = currentEffectiveCaptureIntentSnapshot()
             .first { $0.intent.surfaceIdentity == surfaceIdentity }?
             .lastApplyResult
-        return DisplayRuntimeMonitorConsumerDetachResult(
+        return DisplayRuntimePreviewConsumerDetachResult(
             releasedLease: releasedLease,
             applyResult: applyResult
         )

@@ -49,7 +49,7 @@ struct DisplayRuntimeRebuildTransactionTests {
         #expect(recorder.events == [
             "refresh:topologyChanged",
             "stopSharing:77",
-            "removeMonitoring:77",
+            "removePreview:77",
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged",
@@ -67,7 +67,7 @@ struct DisplayRuntimeRebuildTransactionTests {
                 surfaceIdentity: .managedVirtualDisplay(configID: configID),
                 displayID: 77,
                 pauseSharing: true,
-                pauseMonitoring: true
+                pausePreview: true
             )
         ])
         #expect(trace.restoreIntents == [
@@ -76,8 +76,8 @@ struct DisplayRuntimeRebuildTransactionTests {
                 previousDisplayID: 77,
                 resolvedDisplayID: 77,
                 restoreSharing: true,
-                restoreMonitoring: true,
-                monitoringCapturesCursor: true
+                restorePreview: true,
+                previewCapturesCursor: true
             )
         ])
         #expect(trace.restoreResults == [
@@ -89,16 +89,16 @@ struct DisplayRuntimeRebuildTransactionTests {
                 failureReason: nil
             ),
             .init(
-                kind: .monitoring,
+                kind: .preview,
                 status: .skipped,
                 previousDisplayID: 77,
                 resolvedDisplayID: 77,
-                failureReason: "monitoring_restore_deferred_until_consumer_lease"
+                failureReason: "preview_restore_deferred_until_consumer_lease"
             )
         ])
         #expect(trace.compensation.status == .degraded)
         #expect(trace.compensation.restoredSharingCount == 1)
-        #expect(trace.compensation.restoredMonitoringCount == 0)
+        #expect(trace.compensation.restoredPreviewCount == 0)
         #expect(trace.compensation.failedRestoreCount == 1)
     }
     @Test func rebuildTransactionDoesNotWriteNoOpPauseIntentWithoutSessionDemand() async throws {
@@ -183,13 +183,13 @@ struct DisplayRuntimeRebuildTransactionTests {
                 surfaceIdentity: .managedVirtualDisplay(configID: configID),
                 displayID: 58,
                 pauseSharing: true,
-                pauseMonitoring: true
+                pausePreview: true
             )
         ])
         #expect(recorder.events == [
             "refresh:topologyChanged",
             "stopSharing:58",
-            "removeMonitoring:58",
+            "removePreview:58",
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged",
@@ -411,8 +411,8 @@ struct DisplayRuntimeRebuildTransactionTests {
                 previousDisplayID: 104,
                 resolvedDisplayID: 104,
                 restoreSharing: true,
-                restoreMonitoring: false,
-                monitoringCapturesCursor: false
+                restorePreview: false,
+                previewCapturesCursor: false
             )
         ])
         #expect(trace.restoreResults == [
@@ -429,14 +429,14 @@ struct DisplayRuntimeRebuildTransactionTests {
         #expect(trace.compensation.failedRestoreCount == 1)
         #expect(trace.failure == nil)
     }
-    @Test func rebuildTransactionRecordsMonitoringRestoreIntentAsDeferredEvidence() async throws {
+    @Test func rebuildTransactionRecordsPreviewRestoreIntentAsDeferredEvidence() async throws {
         let configID = UUID(uuidString: "D4D4D4D4-D4D4-D4D4-D4D4-D4D4D4D4D4D4")!
         let catalog = catalogSnapshot(displayID: 105, isMain: false)
         let recorder = RuntimeOperationRecorder()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             captureProvider: FakeCaptureProvider(
-                snapshot: monitoringCaptureSnapshot(displayID: 105, capturesCursor: true)
+                snapshot: previewCaptureSnapshot(displayID: 105, capturesCursor: true)
             ),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 105)),
             catalogCommander: FakeCatalogCommander(
@@ -461,31 +461,31 @@ struct DisplayRuntimeRebuildTransactionTests {
                 previousDisplayID: 105,
                 resolvedDisplayID: 105,
                 restoreSharing: false,
-                restoreMonitoring: true,
-                monitoringCapturesCursor: true
+                restorePreview: true,
+                previewCapturesCursor: true
             )
         ])
         #expect(trace.restoreResults == [
             .init(
-                kind: .monitoring,
+                kind: .preview,
                 status: .skipped,
                 previousDisplayID: 105,
                 resolvedDisplayID: 105,
-                failureReason: "monitoring_restore_deferred_until_consumer_lease"
+                failureReason: "preview_restore_deferred_until_consumer_lease"
             )
         ])
         #expect(recorder.events == [
             "refresh:topologyChanged",
-            "removeMonitoring:105",
+            "removePreview:105",
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged"
         ])
-        #expect(recorder.events.allSatisfy { !$0.contains("startMonitoring") })
-        #expect(recorder.events.allSatisfy { !$0.contains("setMonitoringSessionCapturesCursor") })
+        #expect(recorder.events.allSatisfy { !$0.contains("startPreview") })
+        #expect(recorder.events.allSatisfy { !$0.contains("setPreviewSessionCapturesCursor") })
         #expect(trace.compensation.status == .degraded)
         #expect(trace.compensation.restoredSharingCount == 0)
-        #expect(trace.compensation.restoredMonitoringCount == 0)
+        #expect(trace.compensation.restoredPreviewCount == 0)
         #expect(trace.compensation.failedRestoreCount == 1)
         #expect(trace.failure == nil)
     }
@@ -568,7 +568,7 @@ struct DisplayRuntimeRebuildTransactionTests {
             #expect(trace.failure == nil)
         }
     }
-    @Test func rebuildTransactionSkipsMonitoringRestoreWhenTopologyCannotProveStable() async throws {
+    @Test func rebuildTransactionSkipsPreviewRestoreWhenTopologyCannotProveStable() async throws {
         struct Scenario {
             let expectedStatus: DisplayRuntimeTopologyStabilityStatus
             let catalog: DisplayRuntimeCatalogSnapshot
@@ -621,7 +621,7 @@ struct DisplayRuntimeRebuildTransactionTests {
             let runtime = DisplayRuntime(
                 catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
                 captureProvider: FakeCaptureProvider(
-                    snapshot: monitoringCaptureSnapshot(displayID: 106, capturesCursor: false)
+                    snapshot: previewCaptureSnapshot(displayID: 106, capturesCursor: false)
                 ),
                 virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 106)),
                 catalogCommander: FakeCatalogCommander(
@@ -644,23 +644,23 @@ struct DisplayRuntimeRebuildTransactionTests {
                     previousDisplayID: 106,
                     resolvedDisplayID: nil,
                     restoreSharing: false,
-                    restoreMonitoring: true,
-                    monitoringCapturesCursor: false
+                    restorePreview: true,
+                    previewCapturesCursor: false
                 )
             ])
             #expect(trace.restoreResults == [
                 .init(
-                    kind: .monitoring,
+                    kind: .preview,
                     status: .skipped,
                     previousDisplayID: 106,
                     resolvedDisplayID: nil,
                     failureReason: "topology_\(scenario.expectedStatus.rawValue)"
                 )
             ])
-            #expect(recorder.events.allSatisfy { !$0.contains("startMonitoring") })
-            #expect(recorder.events.allSatisfy { !$0.contains("setMonitoringSessionCapturesCursor") })
+            #expect(recorder.events.allSatisfy { !$0.contains("startPreview") })
+            #expect(recorder.events.allSatisfy { !$0.contains("setPreviewSessionCapturesCursor") })
             #expect(trace.compensation.status == .degraded)
-            #expect(trace.compensation.restoredMonitoringCount == 0)
+            #expect(trace.compensation.restoredPreviewCount == 0)
             #expect(trace.compensation.failedRestoreCount == 1)
             #expect(trace.failure == nil)
         }

@@ -11,11 +11,11 @@ import Observation
 @Observable
 package final class CaptureChooseViewModel {
     package struct Dependencies {
-        package var captureActions: CaptureMonitoringActions
+        package var captureActions: CapturePreviewActions
         package var virtualDisplayStatusProvider: CaptureVirtualDisplayStatusProvider
 
         package init(
-            captureActions: CaptureMonitoringActions,
+            captureActions: CapturePreviewActions,
             virtualDisplayStatusProvider: CaptureVirtualDisplayStatusProvider
         ) {
             self.captureActions = captureActions
@@ -46,7 +46,7 @@ package final class CaptureChooseViewModel {
     }
 
     package func displayName(for display: SCDisplay) -> String {
-        NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? String(localized: "Monitor")
+        NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName ?? String(localized: "Display")
     }
 
     package func resolutionText(for display: SCDisplay) -> String {
@@ -64,23 +64,23 @@ package final class CaptureChooseViewModel {
         dependencies.captureActions.isStartingDisplayID(displayID)
     }
 
-    package func startMonitoring(
+    package func startPreview(
         display: SCDisplay,
         openWindow: @escaping (UUID) -> Void
     ) async {
-        if let existingSession = dependencies.captureActions.monitoringSessionForDisplayID(display.displayID) {
+        if let existingSession = dependencies.captureActions.previewSessionForDisplayID(display.displayID) {
             openWindow(existingSession.id)
             return
         }
         guard !isStarting(displayID: display.displayID) else { return }
 
         do {
-            let metadata = CaptureMonitoringDisplayMetadata(
+            let metadata = CapturePreviewDisplayMetadata(
                 displayName: displayName(for: display),
                 resolutionText: resolutionText(for: display),
                 isVirtualDisplay: isVirtualDisplay(display)
             )
-            let outcome = try await dependencies.captureActions.startMonitoring(display, metadata)
+            let outcome = try await dependencies.captureActions.startPreview(display, metadata)
             switch outcome {
             case .started(let sessionID):
                 openWindow(sessionID)
@@ -89,12 +89,12 @@ package final class CaptureChooseViewModel {
             }
         } catch is CancellationError {
         } catch {
-            AppErrorMapper.logFailure("Start monitoring", error: error, logger: AppLog.capture)
+            AppErrorMapper.logFailure("Start preview", error: error, logger: AppLog.capture)
             userFacingAlert = UserFacingAlertState(
-                title: String(localized: "Start Monitoring Failed"),
+                title: String(localized: "Start Preview Failed"),
                 message: AppErrorMapper.userMessage(
                     for: error,
-                    fallback: String(localized: "Failed to start monitoring.")
+                    fallback: String(localized: "Failed to start preview.")
                 )
             )
         }

@@ -7,7 +7,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeDemandAggregationTests {
-    @Test func monitorAndLanWebViewAggregateToMixedRealtimeSourceQuality() throws {
+    @Test func previewAndLanWebViewAggregateToMixedRealtimeSourceQuality() throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 101, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
@@ -16,7 +16,7 @@ struct DisplayRuntimeDemandAggregationTests {
 
         _ = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: aggregateDemand(width: 2560, height: 1440, capturesCursor: false, activeViewerCount: 0)
         )
@@ -148,7 +148,7 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == false)
     }
 
-    @Test func diagnosticsRecorderAndMonitorPreserveRealtimeSourceQualityAndCursorDemand() throws {
+    @Test func diagnosticsRecorderAndPreviewPreserveRealtimeSourceQualityAndCursorDemand() throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 106, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
@@ -157,7 +157,7 @@ struct DisplayRuntimeDemandAggregationTests {
 
         _ = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: aggregateDemand(
                 width: 2560,
@@ -202,7 +202,7 @@ struct DisplayRuntimeDemandAggregationTests {
 
         _ = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
+            kind: .preview,
             owner: .init(source: .localUI),
             demand: aggregateDemand(width: 1920, height: 1080, capturesCursor: false)
         )

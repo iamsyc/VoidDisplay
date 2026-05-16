@@ -23,9 +23,6 @@ func createCommandResult(
     transactionID: DisplayRuntimeTransactionID = DisplayRuntimeTransactionID(),
     createdConfigID: UUID? = UUID(),
     serialNumber: UInt32,
-    targetWasRunningAfterCommand: Bool = true,
-    preDisplayID: DisplayRuntimeDisplayID? = nil,
-    postDisplayID: DisplayRuntimeDisplayID? = 9001,
     persistenceOutcome: DisplayRuntimePersistenceOutcome = .saved,
     runtimeCreationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .succeeded,
     rollbackOutcome: DisplayRuntimePersistenceOutcome = .notAttempted,
@@ -33,34 +30,12 @@ func createCommandResult(
     physicalHeightMillimeters: UInt32 = 340,
     modeCount: Int = 1,
     maximumPixelWidth: UInt32 = 1920,
-    maximumPixelHeight: UInt32 = 1080,
-    runningConfigIDsAfterCommand: [UUID]? = nil,
-    managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]? = nil
+    maximumPixelHeight: UInt32 = 1080
 ) -> DisplayRuntimeVirtualDisplayCreateCommandResult {
-    let runningConfigIDs = runningConfigIDsAfterCommand ?? createdConfigID.map { [$0] } ?? []
-    let managedDisplays: [DisplayRuntimeManagedVirtualDisplay]
-    if let managedDisplaysAfterCommand {
-        managedDisplays = managedDisplaysAfterCommand
-    } else if let createdConfigID, let postDisplayID {
-        managedDisplays = [
-            DisplayRuntimeManagedVirtualDisplay(
-                configID: createdConfigID,
-                serialNumber: serialNumber,
-                displayID: postDisplayID,
-                isLiveRuntime: true
-            )
-        ]
-    } else {
-        managedDisplays = []
-    }
-
-    return DisplayRuntimeVirtualDisplayCreateCommandResult(
+    DisplayRuntimeVirtualDisplayCreateCommandResult(
         transactionID: transactionID,
         createdConfigID: createdConfigID,
         serialNumber: serialNumber,
-        targetWasRunningAfterCommand: targetWasRunningAfterCommand,
-        preDisplayID: preDisplayID,
-        postDisplayID: postDisplayID,
         persistenceOutcome: persistenceOutcome,
         runtimeCreationOutcome: runtimeCreationOutcome,
         rollbackOutcome: rollbackOutcome,
@@ -73,9 +48,7 @@ func createCommandResult(
             modeCount: modeCount,
             maximumPixelWidth: maximumPixelWidth,
             maximumPixelHeight: maximumPixelHeight
-        ),
-        runningConfigIDsAfterCommand: runningConfigIDs,
-        managedDisplaysAfterCommand: managedDisplays
+        )
     )
 }
 
@@ -87,9 +60,7 @@ func deleteCommandResult(
     postDisplayID: DisplayRuntimeDisplayID? = nil,
     persistenceOutcome: DisplayRuntimePersistenceOutcome = .saved,
     virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .succeeded,
-    runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome = .cleared,
-    runningConfigIDsAfterCommand: [UUID] = [],
-    managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay] = []
+    runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome = .cleared
 ) -> DisplayRuntimeVirtualDisplayDeleteCommandResult {
     DisplayRuntimeVirtualDisplayDeleteCommandResult(
         transactionID: transactionID,
@@ -99,25 +70,19 @@ func deleteCommandResult(
         postDisplayID: postDisplayID,
         persistenceOutcome: persistenceOutcome,
         virtualDisplayCommandOutcome: virtualDisplayCommandOutcome,
-        runtimeTrackingClearOutcome: runtimeTrackingClearOutcome,
-        runningConfigIDsAfterCommand: runningConfigIDsAfterCommand,
-        managedDisplaysAfterCommand: managedDisplaysAfterCommand
+        runtimeTrackingClearOutcome: runtimeTrackingClearOutcome
     )
 }
 
 func rebuildCommandResult(
     configID: UUID,
     preDisplayID: DisplayRuntimeDisplayID? = nil,
-    postDisplayID: DisplayRuntimeDisplayID? = nil,
-    runningConfigIDsAfterCommand: [UUID]? = nil,
-    managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay] = []
+    postDisplayID: DisplayRuntimeDisplayID? = nil
 ) -> DisplayRuntimeVirtualDisplayRebuildCommandResult {
     DisplayRuntimeVirtualDisplayRebuildCommandResult(
         configID: configID,
         preDisplayID: preDisplayID,
-        postDisplayID: postDisplayID,
-        runningConfigIDsAfterCommand: runningConfigIDsAfterCommand ?? [configID],
-        managedDisplaysAfterCommand: managedDisplaysAfterCommand
+        postDisplayID: postDisplayID
     )
 }
 
@@ -126,8 +91,6 @@ func lifecycleCommandResult(
     desiredEnabled: Bool,
     preDisplayID: DisplayRuntimeDisplayID?,
     postDisplayID: DisplayRuntimeDisplayID?,
-    runningConfigIDsAfterCommand: [UUID],
-    managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay] = [],
     mayPerformFleetRebuild: Bool? = nil,
     requiresFleetQuiesce: Bool? = nil
 ) -> DisplayRuntimeVirtualDisplayLifecycleCommandResult {
@@ -136,8 +99,6 @@ func lifecycleCommandResult(
         desiredEnabled: desiredEnabled,
         preDisplayID: preDisplayID,
         postDisplayID: postDisplayID,
-        runningConfigIDsAfterCommand: runningConfigIDsAfterCommand,
-        managedDisplaysAfterCommand: managedDisplaysAfterCommand,
         mayPerformFleetRebuild: mayPerformFleetRebuild,
         requiresFleetQuiesce: requiresFleetQuiesce
     )
@@ -202,9 +163,7 @@ func startupRestoreCommandResult(
     didProduceVerifiableSideEffect: Bool = true,
     failureReason: String? = nil,
     compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
-    compensationFailureReason: String? = nil,
-    runningConfigIDsAfterCommand: [UUID]? = nil,
-    managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]? = nil
+    compensationFailureReason: String? = nil
 ) -> DisplayRuntimeStartupRestoreCommandResult {
     DisplayRuntimeStartupRestoreCommandResult(
         transactionID: transactionID,
@@ -215,17 +174,6 @@ func startupRestoreCommandResult(
         didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
         failureReason: failureReason,
         compensationOutcome: compensationOutcome,
-        compensationFailureReason: compensationFailureReason,
-        runningConfigIDsAfterCommand: runningConfigIDsAfterCommand ?? [configID],
-        managedDisplaysAfterCommand: managedDisplaysAfterCommand ?? postDisplayID.map {
-            [
-                DisplayRuntimeManagedVirtualDisplay(
-                    configID: configID,
-                    serialNumber: 9001,
-                    displayID: $0,
-                    isLiveRuntime: true
-                )
-            ]
-        } ?? []
+        compensationFailureReason: compensationFailureReason
     )
 }

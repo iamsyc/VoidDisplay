@@ -169,8 +169,6 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandResult: Codable, E
     package let failureReason: String?
     package let compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let compensationFailureReason: String?
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
 
     package init(
         transactionID: DisplayRuntimeTransactionID,
@@ -181,9 +179,7 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandResult: Codable, E
         didProduceVerifiableSideEffect: Bool,
         failureReason: String? = nil,
         compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
-        compensationFailureReason: String? = nil,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
+        compensationFailureReason: String? = nil
     ) {
         self.transactionID = transactionID
         self.configID = configID
@@ -194,10 +190,6 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandResult: Codable, E
         self.failureReason = failureReason
         self.compensationOutcome = compensationOutcome
         self.compensationFailureReason = compensationFailureReason
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sortedByUUIDString()
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            ($0.configID.uuidString, $0.displayID) < ($1.configID.uuidString, $1.displayID)
-        }
     }
 }
 
@@ -210,7 +202,6 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
     package let failureReason: String?
     package let compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let compensationFailureReason: String?
-    package let runningConfigIDsAfterCommand: [UUID]
 
     package init(commandResult: DisplayRuntimeStartupRestoreCommandResult) {
         self.configID = commandResult.configID
@@ -221,7 +212,6 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
         self.failureReason = commandResult.failureReason
         self.compensationOutcome = commandResult.compensationOutcome
         self.compensationFailureReason = commandResult.compensationFailureReason
-        self.runningConfigIDsAfterCommand = commandResult.runningConfigIDsAfterCommand
     }
 
     package init(
@@ -232,8 +222,7 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
         didProduceVerifiableSideEffect: Bool,
         failureReason: String?,
         compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome,
-        compensationFailureReason: String?,
-        runningConfigIDsAfterCommand: [UUID]
+        compensationFailureReason: String?
     ) {
         self.configID = configID
         self.preDisplayID = preDisplayID
@@ -243,7 +232,6 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
         self.failureReason = failureReason
         self.compensationOutcome = compensationOutcome
         self.compensationFailureReason = compensationFailureReason
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sortedByUUIDString()
     }
 }
 

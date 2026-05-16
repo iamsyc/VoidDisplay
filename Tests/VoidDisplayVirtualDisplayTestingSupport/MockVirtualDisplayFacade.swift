@@ -106,7 +106,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         if let startupConfigLoadResult {
             return startupConfigLoadResult
         }
-        return .succeeded(configs: currentDisplayConfigs.map(VirtualDisplayStartupRestoreConfig.init(config:)))
+        return .succeeded(configs: currentDisplayConfigs)
     }
 
     func restoreVirtualDisplayForStartupCommand(
@@ -181,9 +181,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
             let configID = try createDisplayResult.get()
             return VirtualDisplayCreateCommandResult(
                 createdConfigID: configID,
-                targetWasRunningAfterCommand: currentRunningConfigIds.contains(configID),
-                preDisplayID: nil,
-                postDisplayID: runtimeDisplayIDByConfigId[configID],
                 persistenceOutcome: .saved,
                 runtimeCreationOutcome: .succeeded,
                 rollbackOutcome: .notAttempted
@@ -191,9 +188,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         } catch {
             let result = VirtualDisplayCreateCommandResult(
                 createdConfigID: nil,
-                targetWasRunningAfterCommand: false,
-                preDisplayID: nil,
-                postDisplayID: nil,
                 persistenceOutcome: .failed,
                 runtimeCreationOutcome: .notAttempted,
                 rollbackOutcome: .notAttempted
@@ -439,32 +433,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
             restoreOutcome: restoreOutcome,
             didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
             failureReason: failureReason
-        )
-    }
-}
-
-private extension VirtualDisplayStartupRestoreConfig {
-    init(config: VirtualDisplayConfig) {
-        self.init(
-            id: config.id,
-            desiredEnabled: config.desiredEnabled,
-            evidence: VirtualDisplayCommandConfigEvidence(config: config)
-        )
-    }
-}
-
-private extension VirtualDisplayCommandConfigEvidence {
-    init(config: VirtualDisplayConfig) {
-        let maxPixels = config.maxPixelDimensions
-        self.init(
-            id: config.id,
-            serialNumber: config.serialNum,
-            desiredEnabled: config.desiredEnabled,
-            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-            modeCount: config.modes.count,
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
         )
     }
 }

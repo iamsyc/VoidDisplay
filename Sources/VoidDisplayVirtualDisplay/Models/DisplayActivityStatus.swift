@@ -2,15 +2,15 @@ import CoreGraphics
 import Foundation
 
 package struct DisplayActivityStatus: Equatable, Sendable {
-    package var isMonitoring: Bool
+    package var isPreviewing: Bool
     package var isSharing: Bool
 
-    package init(isMonitoring: Bool, isSharing: Bool) {
-        self.isMonitoring = isMonitoring
+    package init(isPreviewing: Bool, isSharing: Bool) {
+        self.isPreviewing = isPreviewing
         self.isSharing = isSharing
     }
 
-    package static let inactive = DisplayActivityStatus(isMonitoring: false, isSharing: false)
+    package static let inactive = DisplayActivityStatus(isPreviewing: false, isSharing: false)
 }
 
 @MainActor

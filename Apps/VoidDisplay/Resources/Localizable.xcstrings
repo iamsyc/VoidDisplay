@@ -302,13 +302,13 @@
         }
       }
     },
-    "Allow screen recording in System Settings to monitor displays." : {
+    "Allow screen recording in System Settings to preview displays." : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在系统设置中允许录屏权限，以便监看屏幕。"
+            "value" : "在系统设置中允许屏幕录制，以便预览显示器。"
           }
         }
       }
@@ -555,13 +555,13 @@
         }
       }
     },
-    "Choose how screen monitoring and sharing balance smoothness and resource usage." : {
-      "extractionState" : "stale",
+    "Choose how screen preview and sharing balance smoothness and resource usage." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择屏幕监看与共享在流畅度和资源占用之间的平衡方式。"
+            "value" : "选择屏幕预览与共享在流畅度和资源占用之间的平衡方式。"
           }
         }
       }
@@ -1431,13 +1431,13 @@
         }
       }
     },
-    "Failed to start monitoring." : {
-      "extractionState" : "stale",
+    "Failed to start preview." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启动监视失败。"
+            "value" : "启动预览失败。"
           }
         }
       }
@@ -1547,6 +1547,23 @@
         }
       }
     },
+    "Home" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主页"
+          }
+        }
+      }
+    },
     "Hz" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1586,13 +1603,13 @@
         }
       }
     },
-    "If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display." : {
+    "If a display is set to mirror mode, only one mirrored display appears here." : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "若将一个显示器设置为“镜像”，则此处仅显示被镜像的显示器。另一个镜像的显示器不会显示。"
+            "value" : "如果显示器设置为镜像模式，这里只显示其中一个镜像显示器。"
           }
         }
       }
@@ -1961,45 +1978,6 @@
         }
       }
     },
-    "Monitor" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "监看"
-          }
-        }
-      }
-    },
-    "Monitor Display" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Monitor"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "监看"
-          }
-        }
-      }
-    },
-    "Monitoring" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "监看中"
-          }
-        }
-      }
-    },
     "Move down" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2077,13 +2055,13 @@
         }
       }
     },
-    "No available display can be monitored right now." : {
+    "No available display can be previewed right now." : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前没有可监看的显示器。"
+            "value" : "当前没有可预览的显示器。"
           }
         }
       }
@@ -2193,7 +2171,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无可监看的屏幕"
+            "value" : "无可预览的屏幕"
           }
         }
       }
@@ -2220,13 +2198,13 @@
         }
       }
     },
-    "Not Monitoring" : {
-      "extractionState" : "stale",
+    "Not Previewing" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未监看"
+            "value" : "未预览"
           }
         }
       }
@@ -2299,17 +2277,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开局域网 Web 视图"
-          }
-        }
-      }
-    },
-    "Open Monitor" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开监看"
           }
         }
       }
@@ -2457,13 +2424,13 @@
         }
       }
     },
-    "Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the monitor settings." : {
+    "Please [go to the settings app](x-apple.systempreferences:com.apple.preference.displays) to adjust the display settings." : {
       "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更多显示器设置请[前往设置App](x-apple.systempreferences:com.apple.preference.displays)调整"
+            "value" : "请[前往系统设置](x-apple.systempreferences:com.apple.preference.displays)调整显示器设置。"
           }
         }
       }
@@ -2607,6 +2574,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预设分辨率"
+          }
+        }
+      }
+    },
+    "Preview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
+          }
+        }
+      }
+    },
+    "Previewing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览中"
           }
         }
       }
@@ -3217,6 +3206,17 @@
         }
       }
     },
+    "Screen Preview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕预览"
+          }
+        }
+      }
+    },
     "Screen Recording Permission Required" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3224,6 +3224,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要录屏权限"
+          }
+        }
+      }
+    },
+    "Screen Sharing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen Sharing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕共享"
           }
         }
       }
@@ -3454,13 +3471,13 @@
         }
       }
     },
-    "Start Monitoring Failed" : {
-      "extractionState" : "stale",
+    "Start Preview Failed" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启动监视失败"
+            "value" : "启动预览失败"
           }
         }
       }
@@ -3531,30 +3548,13 @@
         }
       }
     },
-    "Stop Monitor" : {
-      "extractionState" : "stale",
+    "Stop Preview" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "停止监看"
-          }
-        }
-      }
-    },
-    "Stop Monitoring" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止"
+            "value" : "停止预览"
           }
         }
       }
@@ -3924,6 +3924,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "虚拟显示器异常"
+          }
+        }
+      }
+    },
+    "Virtual Displays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Virtual Displays"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "虚拟显示器"
           }
         }
       }

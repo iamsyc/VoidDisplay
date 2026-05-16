@@ -204,9 +204,9 @@ extension DisplayRuntime {
             sharingCommander?.stopSharing(displayID: displayID)
         }
 
-        let monitoredDisplayIDs = Set(currentCaptureSnapshot().sessions.map(\.displayID))
-        for displayID in monitoredDisplayIDs where !visibleDisplayIDs.contains(displayID) {
-            captureCommander?.removeMonitoringSessions(displayID: displayID)
+        let previewedDisplayIDs = Set(currentCaptureSnapshot().sessions.map(\.displayID))
+        for displayID in previewedDisplayIDs where !visibleDisplayIDs.contains(displayID) {
+            captureCommander?.removePreviewSessions(displayID: displayID)
         }
     }
 

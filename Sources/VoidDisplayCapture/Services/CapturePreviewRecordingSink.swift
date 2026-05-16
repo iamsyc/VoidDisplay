@@ -15,7 +15,7 @@ package final class CapturePreviewRecordingSink: @unchecked Sendable, DisplayPre
 
     package init(
         destinationDirectory: URL,
-        session: ScreenMonitoringSession
+        session: ScreenPreviewSession
     ) {
         self.destinationDirectory = destinationDirectory
         self.metadata = CapturePreviewRecordingMetadata(

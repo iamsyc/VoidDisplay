@@ -80,13 +80,13 @@ package protocol DisplayRuntimeSharingCommanding {
 
 @MainActor
 package protocol DisplayRuntimeCaptureCommanding {
-    func removeMonitoringSessions(displayID: DisplayRuntimeDisplayID)
+    func removePreviewSessions(displayID: DisplayRuntimeDisplayID)
 }
 
 @MainActor
 package protocol DisplayRuntimeCaptureIntentCommanding {
     func applyCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult
-    func applyMonitorCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) async -> DisplayRuntimeCaptureIntentApplyResult
+    func applyPreviewCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) async -> DisplayRuntimeCaptureIntentApplyResult
     func applyLANWebViewCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) async -> DisplayRuntimeCaptureIntentApplyResult
     func applyDiagnosticsRecorderCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
@@ -94,7 +94,7 @@ package protocol DisplayRuntimeCaptureIntentCommanding {
 }
 
 extension DisplayRuntimeCaptureIntentCommanding {
-    package func applyMonitorCaptureIntent(
+    package func applyPreviewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
         applyCaptureIntent(intent)

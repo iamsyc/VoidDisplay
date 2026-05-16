@@ -50,13 +50,13 @@ struct CaptureSharingIsolationTests {
         )
         let startResult = await sharingController.startWebService(requestedPort: 8081)
 
-        let captureService = MockCaptureMonitoringService()
+        let captureService = MockCapturePreviewService()
         let captureSession = makeSession(id: UUID(), displayID: 777)
         captureService.currentSessions = [captureSession]
-        let captureController = CaptureController(captureMonitoringService: captureService)
+        let captureController = CaptureController(capturePreviewService: captureService)
 
-        captureController.activateMonitoringSession(id: captureSession.id)
-        try await captureController.setMonitoringSessionCapturesCursor(
+        captureController.activatePreviewSession(id: captureSession.id)
+        try await captureController.setPreviewSessionCapturesCursor(
             id: captureSession.id,
             capturesCursor: true
         )
@@ -71,11 +71,11 @@ struct CaptureSharingIsolationTests {
     }
 
     @Test func sharingMutationsDoNotRewriteCaptureSessions() async {
-        let captureService = MockCaptureMonitoringService()
+        let captureService = MockCapturePreviewService()
         let first = makeSession(id: UUID(), displayID: 1001)
         let second = makeSession(id: UUID(), displayID: 1002)
         captureService.currentSessions = [first, second]
-        let captureController = CaptureController(captureMonitoringService: captureService)
+        let captureController = CaptureController(capturePreviewService: captureService)
 
         let sharingService = MockSharingService()
         sharingService.activeSharingDisplayIDs = [1001]
@@ -93,15 +93,15 @@ struct CaptureSharingIsolationTests {
         sharingController.stopWebService()
 
         #expect(startResult == .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)))
-        #expect(captureController.screenCaptureSessions.map(\.id) == [first.id, second.id])
-        #expect(captureController.monitoringSession(for: first.id)?.displayID == 1001)
-        #expect(captureController.monitoringSession(for: second.id)?.displayID == 1002)
+        #expect(captureController.screenPreviewSessions.map(\.id) == [first.id, second.id])
+        #expect(captureController.previewSession(for: first.id)?.displayID == 1001)
+        #expect(captureController.previewSession(for: second.id)?.displayID == 1002)
         #expect(captureService.removeCallCount == 0)
         #expect(captureService.removeByDisplayCallCount == 0)
     }
 
-    private func makeSession(id: UUID, displayID: CGDirectDisplayID) -> ScreenMonitoringSession {
-        ScreenMonitoringSession(
+    private func makeSession(id: UUID, displayID: CGDirectDisplayID) -> ScreenPreviewSession {
+        ScreenPreviewSession(
             id: id,
             displayID: displayID,
             displayName: "Display \(displayID)",

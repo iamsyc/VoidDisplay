@@ -25,7 +25,7 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         guard let controller else { return .empty }
         return DisplayRuntimeCaptureSnapshot(
             startingDisplayIDs: controller.startingDisplayIDs.sorted(),
-            sessions: controller.screenCaptureSessions.map { session in
+            sessions: controller.screenPreviewSessions.map { session in
                 let metrics = session.previewSubscription.captureMetricsSnapshot()
                 return DisplayRuntimeCaptureSession(
                     id: session.id,
@@ -45,8 +45,8 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         )
     }
 
-    package func removeMonitoringSessions(displayID: DisplayRuntimeDisplayID) {
-        controller?.removeMonitoringSessions(displayID: displayID)
+    package func removePreviewSessions(displayID: DisplayRuntimeDisplayID) {
+        controller?.removePreviewSessions(displayID: displayID)
     }
 
     package func applyCaptureIntent(
@@ -62,12 +62,12 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
             return .applied(revision: intent.revision)
         }
         if let resolvedDisplayID = intent.resolvedDisplayID {
-            controller.removeMonitoringSessions(displayID: resolvedDisplayID)
+            controller.removePreviewSessions(displayID: resolvedDisplayID)
         }
         return .applied(revision: intent.revision)
     }
 
-    package func applyMonitorCaptureIntent(
+    package func applyPreviewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
         guard let controller else {
@@ -98,13 +98,13 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
                     failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
                 )
             }
-            return await acquireMonitorPreview(
+            return await acquirePreview(
                 display: display,
                 intent: intent,
                 controller: controller
             )
         case .drain:
-            controller.removeMonitoringSessions(displayID: resolvedDisplayID)
+            controller.removePreviewSessions(displayID: resolvedDisplayID)
             return .applied(revision: intent.revision)
         }
     }
@@ -173,12 +173,12 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
               intent.aggregateDemand?.consumerKinds.contains(.diagnosticsRecorder) == true
         else {
             if intent.kind == .drain {
-                controller.removeMonitoringSessions(displayID: resolvedDisplayID)
+                controller.removePreviewSessions(displayID: resolvedDisplayID)
             }
             return .applied(revision: intent.revision)
         }
 
-        if controller.screenCaptureSessions.contains(where: { $0.displayID == resolvedDisplayID }) {
+        if controller.screenPreviewSessions.contains(where: { $0.displayID == resolvedDisplayID }) {
             return .applied(revision: intent.revision)
         }
         if intent.aggregateDemand?.consumerKinds.contains(.lanWebView) == true {
@@ -214,15 +214,15 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         }
     }
 
-    private func acquireMonitorPreview(
+    private func acquirePreview(
         display: SCDisplay,
         intent: DisplayRuntimeCaptureIntent,
         controller: CaptureController
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
         do {
-            switch try await controller.startMonitoring(
+            switch try await controller.startPreview(
                 display: display,
-                metadata: monitorMetadata(for: display)
+                metadata: previewMetadata(for: display)
             ) {
             case .started:
                 return .applied(revision: intent.revision)
@@ -273,7 +273,7 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         controller: CaptureController
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
         do {
-            switch try await controller.startMonitoring(
+            switch try await controller.startPreview(
                 display: display,
                 metadata: diagnosticsRecorderMetadata(for: display)
             ) {
@@ -293,18 +293,18 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         }
     }
 
-    private func monitorMetadata(for display: SCDisplay) -> CaptureMonitoringDisplayMetadata {
-        CaptureMonitoringDisplayMetadata(
+    private func previewMetadata(for display: SCDisplay) -> CapturePreviewDisplayMetadata {
+        CapturePreviewDisplayMetadata(
             displayName: NSScreen.screens.first {
                 $0.cgDirectDisplayID == display.displayID
-            }?.localizedName ?? String(localized: "Monitor"),
+            }?.localizedName ?? String(localized: "Display"),
             resolutionText: "\(display.width) × \(display.height)",
             isVirtualDisplay: isManagedVirtualDisplay(display.displayID)
         )
     }
 
-    private func diagnosticsRecorderMetadata(for display: SCDisplay) -> CaptureMonitoringDisplayMetadata {
-        CaptureMonitoringDisplayMetadata(
+    private func diagnosticsRecorderMetadata(for display: SCDisplay) -> CapturePreviewDisplayMetadata {
+        CapturePreviewDisplayMetadata(
             displayName: "Preview Diagnostics",
             resolutionText: "\(display.width) × \(display.height)",
             isVirtualDisplay: isManagedVirtualDisplay(display.displayID)

@@ -67,6 +67,19 @@ struct ShareViewBehaviorTests {
         #expect(state == .serviceStopped)
     }
 
+    @Test func contentResolverReturnsLoadingWhenServiceRunsBeforeCatalogLoadStarts() {
+        let catalog = ScreenCaptureDisplayCatalogState()
+        catalog.hasScreenCapturePermission = true
+
+        let state = ShareViewContentResolver.resolve(
+            catalog: catalog,
+            isWebServiceRunning: true,
+            visibleDisplayCount: 0
+        )
+
+        #expect(state == .displaysLoading)
+    }
+
     @Test func lifecycleHandleAppearEnablesToolbarFallbackWhenMonitorRegistrationFails() {
         let monitor = ShareViewDisplayReconfigurationMonitor(startResults: [false])
         let lifecycle = DisplayTopologyRefreshLifecycleController(

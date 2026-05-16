@@ -6,8 +6,8 @@ import VoidDisplayRuntime
 
 package struct DisplaySurfaceActions {
     package let manageVirtualDisplay: @MainActor () -> Void
-    package let openMonitor: @MainActor () -> Void
-    package let stopMonitor: @MainActor (CGDirectDisplayID) -> Void
+    package let openPreview: @MainActor () -> Void
+    package let stopPreview: @MainActor (CGDirectDisplayID) -> Void
     package let openLANWebView: @MainActor () -> Void
     package let stopLANWebViewSharing: @MainActor (CGDirectDisplayID) -> Void
     package let stopWebService: @MainActor () -> Void
@@ -15,16 +15,16 @@ package struct DisplaySurfaceActions {
 
     package init(
         manageVirtualDisplay: @escaping @MainActor () -> Void = {},
-        openMonitor: @escaping @MainActor () -> Void = {},
-        stopMonitor: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
+        openPreview: @escaping @MainActor () -> Void = {},
+        stopPreview: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
         openLANWebView: @escaping @MainActor () -> Void = {},
         stopLANWebViewSharing: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
         stopWebService: @escaping @MainActor () -> Void = {},
         openDiagnostics: @escaping @MainActor () -> Void = {}
     ) {
         self.manageVirtualDisplay = manageVirtualDisplay
-        self.openMonitor = openMonitor
-        self.stopMonitor = stopMonitor
+        self.openPreview = openPreview
+        self.stopPreview = stopPreview
         self.openLANWebView = openLANWebView
         self.stopLANWebViewSharing = stopLANWebViewSharing
         self.stopWebService = stopWebService
@@ -139,7 +139,7 @@ package struct DisplaysView: View {
             metaBadges: [],
             iconSystemName: surface.isManagedVirtualDisplay ? "display.2" : "display",
             iconScreenTint: DisplayIconTintResolver.resolve(
-                isMonitoring: surface.isMonitoring,
+                isPreviewing: surface.isPreviewing,
                 isSharing: surface.isSharing
             ),
             isEmphasized: true,
@@ -153,11 +153,11 @@ package struct DisplaysView: View {
         for surface: DisplaySurfacePresentation
     ) {
         switch action.kind {
-        case .openMonitor:
-            surfaceActions.openMonitor()
-        case .stopMonitor:
+        case .openPreview:
+            surfaceActions.openPreview()
+        case .stopPreview:
             if let displayID = surface.displayID {
-                surfaceActions.stopMonitor(displayID)
+                surfaceActions.stopPreview(displayID)
             }
         case .openLANWebView:
             surfaceActions.openLANWebView()

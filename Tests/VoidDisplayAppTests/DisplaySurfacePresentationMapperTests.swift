@@ -9,10 +9,10 @@ struct DisplaySurfacePresentationMapperTests {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
         let displayID: DisplayRuntimeDisplayID = 4242
         let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
-        let monitorLease = makeLease(
+        let previewLease = makeLease(
             surfaceIdentity: identity,
             displayID: displayID,
-            kind: .monitor,
+            kind: .preview,
             state: .attached
         )
         let lanLease = makeLease(
@@ -74,14 +74,14 @@ struct DisplaySurfacePresentationMapperTests {
                 routes: [DisplayRuntimeShareRoute(displayID: displayID, hasConcreteRoute: true)]
             ),
             virtualDisplay: .empty,
-            consumerLeases: [monitorLease, lanLease].map(DisplayRuntimeConsumerLeaseSnapshot.init),
+            consumerLeases: [previewLease, lanLease].map(DisplayRuntimeConsumerLeaseSnapshot.init),
             aggregatedDemands: [
                 DisplayRuntimeAggregatedDemand(
                     surfaceIdentity: identity,
                     surfaceEpoch: .initial,
                     resolvedDisplayID: displayID,
-                    activeLeaseIDs: [monitorLease.id, lanLease.id],
-                    consumerKinds: [.monitor, .lanWebView],
+                    activeLeaseIDs: [previewLease.id, lanLease.id],
+                    consumerKinds: [.preview, .lanWebView],
                     effectivePixelSize: DisplayRuntimePixelSize(width: 1920, height: 1080),
                     effectiveFramesPerSecond: 60,
                     capturesCursor: false,
@@ -114,32 +114,32 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.title == "Virtual Display")
         #expect(surface.kindText == "Virtual Display")
         assertPublicDisplayNamingDoesNotExposeImplementationTerms(surface)
-        #expect(surface.isMonitoring)
+        #expect(surface.isPreviewing)
         #expect(surface.isSharing)
-        #expect(surface.canStopMonitor)
+        #expect(surface.canStopPreview)
         #expect(surface.canStopLANWebViewSharing)
         #expect(compactIDs(in: surface) == [
             "virtualDisplay",
-            "monitor",
+            "preview",
             "webView",
             "viewerCount"
         ])
         #expect(!compactIDs(in: surface).contains("kind"))
         #expect(!compactIDs(in: surface).contains("resolution"))
         #expect(compactValue("displays_virtual_display_status", in: surface) == "Enabled")
-        #expect(compactValue("displays_monitor_status", in: surface) == "Monitoring")
+        #expect(compactValue("displays_preview_status", in: surface) == "Previewing")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
         #expect(compactValue("displays_viewer_count", in: surface) == "3")
         #expect(compactValue("displays_issue_status", in: surface).isEmpty)
-        #expect(surface.accessibilitySummary.contains("Monitor: Monitoring"))
+        #expect(surface.accessibilitySummary.contains("Preview: Previewing"))
         #expect(surface.accessibilitySummary.contains("Web View: Sharing"))
         #expect(surface.accessibilitySummary.contains("Viewers: 3"))
         #expect(!surface.accessibilitySummary.contains("Issue:"))
         assertRowActionsDoNotContainManageVirtualDisplay(surface)
-        let stopMonitorAction = try #require(rowAction(.stopMonitor, in: surface))
-        #expect(stopMonitorAction.title == "Stop")
-        #expect(stopMonitorAction.help == "Stop Monitor")
-        #expect(stopMonitorAction.isEnabled)
+        let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
+        #expect(stopPreviewAction.title == "Stop")
+        #expect(stopPreviewAction.help == "Stop Preview")
+        #expect(stopPreviewAction.isEnabled)
         let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
         #expect(stopLANWebViewAction.title == "Stop")
         #expect(stopLANWebViewAction.help == "Stop Web View")
@@ -168,7 +168,7 @@ struct DisplaySurfacePresentationMapperTests {
         let failedLease = makeLease(
             surfaceIdentity: identity,
             displayID: displayID,
-            kind: .monitor,
+            kind: .preview,
             state: .failed,
             lastFailureCode: "capture_intent_permission_unavailable"
         )
@@ -206,14 +206,14 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.kindText == "Physical Display")
         assertPublicDisplayNamingDoesNotExposeImplementationTerms(surface)
         #expect(surface.hasFailure)
-        #expect(!surface.canStopMonitor)
+        #expect(!surface.canStopPreview)
         #expect(compactValue("displays_virtual_display_status", in: surface).isEmpty)
-        #expect(compactValue("displays_monitor_status", in: surface) == "Failed")
+        #expect(compactValue("displays_preview_status", in: surface) == "Failed")
         #expect(compactValue("displays_issue_status", in: surface) == "Needs attention")
         assertRowActionsDoNotContainManageVirtualDisplay(surface)
-        let openMonitorAction = try #require(rowAction(.openMonitor, in: surface))
-        #expect(openMonitorAction.isEnabled)
-        #expect(rowAction(.stopMonitor, in: surface) == nil)
+        let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
+        #expect(openPreviewAction.isEnabled)
+        #expect(rowAction(.stopPreview, in: surface) == nil)
         #expect(technicalValue("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
         #expect(!technicalValue("displays_surface_identity_value", in: surface).contains(String(displayID)))
         assertCompactStatusDoesNotExposeRuntimeTerms(surface)
@@ -304,21 +304,21 @@ struct DisplaySurfacePresentationMapperTests {
 
         let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
 
-        #expect(!surface.isMonitoring)
+        #expect(!surface.isPreviewing)
         #expect(!surface.isSharing)
-        #expect(!surface.canStopMonitor)
+        #expect(!surface.canStopPreview)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(compactValue("displays_monitor_status", in: surface) == "Off")
+        #expect(compactValue("displays_preview_status", in: surface) == "Off")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Route Ready")
         #expect(compactValue("displays_viewer_count", in: surface) == "2")
         assertRowActionsDoNotContainManageVirtualDisplay(surface)
-        let openMonitorAction = try #require(rowAction(.openMonitor, in: surface))
-        #expect(openMonitorAction.isEnabled)
+        let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
+        #expect(openPreviewAction.isEnabled)
         let openLANWebViewAction = try #require(rowAction(.openLANWebView, in: surface))
         #expect(openLANWebViewAction.title == "Web View")
         #expect(openLANWebViewAction.help == "Open Web View")
         #expect(openLANWebViewAction.isEnabled)
-        #expect(rowAction(.stopMonitor, in: surface) == nil)
+        #expect(rowAction(.stopPreview, in: surface) == nil)
         #expect(rowAction(.stopLANWebView, in: surface) == nil)
         assertUserFacingCopyDoesNotContainForbiddenTerms(surface)
     }
@@ -331,7 +331,7 @@ struct DisplaySurfacePresentationMapperTests {
             surfaceEpoch: .initial,
             resolvedDisplayID: displayID,
             activeLeaseIDs: [],
-            consumerKinds: [.monitor, .lanWebView],
+            consumerKinds: [.preview, .lanWebView],
             effectivePixelSize: DisplayRuntimePixelSize(width: 2560, height: 1440),
             effectiveFramesPerSecond: 60,
             capturesCursor: false,
@@ -386,15 +386,15 @@ struct DisplaySurfacePresentationMapperTests {
 
         let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
 
-        #expect(surface.isMonitoring)
+        #expect(surface.isPreviewing)
         #expect(surface.isSharing)
-        #expect(!surface.canStopMonitor)
+        #expect(!surface.canStopPreview)
         #expect(!surface.canStopLANWebViewSharing)
-        #expect(compactValue("displays_monitor_status", in: surface) == "Monitoring")
+        #expect(compactValue("displays_preview_status", in: surface) == "Previewing")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
         assertRowActionsDoNotContainManageVirtualDisplay(surface)
-        let stopMonitorAction = try #require(rowAction(.stopMonitor, in: surface))
-        #expect(!stopMonitorAction.isEnabled)
+        let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
+        #expect(!stopPreviewAction.isEnabled)
         let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
         #expect(!stopLANWebViewAction.isEnabled)
         #expect(technicalValue("displays_capture_state_status", in: surface) == "Capture, Attach, Applied")
@@ -453,7 +453,7 @@ struct DisplaySurfacePresentationMapperTests {
             "Effective Capture Intent",
             "Lease Status",
             "Last Failure Code",
-            "Monitor Consumer",
+            "Preview Consumer",
             "LAN Web View Consumer"
         ] {
             #expect(!combinedCompactStatusText.contains(forbiddenTerm))

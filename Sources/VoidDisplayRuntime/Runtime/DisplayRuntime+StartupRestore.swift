@@ -416,12 +416,12 @@ extension DisplayRuntime {
             postSnapshot: postConvergenceSnapshot,
             disabledTargetIdentity: nil
         )
-        let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+        let previewRestoreResults = makeDeferredPreviewRestoreResults(
             restoreIntents,
             topologyResult: topologyResult,
             disabledTargetIdentity: nil
         )
-        let restoreResults = sharingRestoreResults + monitoringRestoreResults
+        let restoreResults = sharingRestoreResults + previewRestoreResults
         updateTrace(context.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
@@ -486,7 +486,7 @@ extension DisplayRuntime {
             compensation: compensation ?? .init(
                 status: .skipped,
                 restoredSharingCount: 0,
-                restoredMonitoringCount: 0,
+                restoredPreviewCount: 0,
                 failedRestoreCount: 0,
                 virtualDisplayCommandOutcome: .notAttempted,
                 failureReason: reason
@@ -511,7 +511,7 @@ extension DisplayRuntime {
         DisplayRuntimeCompensationResult(
             status: compensationOutcome == .notAttempted ? .skipped : .degraded,
             restoredSharingCount: 0,
-            restoredMonitoringCount: 0,
+            restoredPreviewCount: 0,
             failedRestoreCount: 0,
             virtualDisplayCommandOutcome: compensationOutcome,
             failureReason: compensationFailureReason
@@ -525,7 +525,7 @@ extension DisplayRuntime {
         return DisplayRuntimeCompensationResult(
             status: .skipped,
             restoredSharingCount: 0,
-            restoredMonitoringCount: 0,
+            restoredPreviewCount: 0,
             failedRestoreCount: 0,
             virtualDisplayCommandOutcome: .notAttempted,
             failureReason: failure.reason

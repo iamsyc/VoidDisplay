@@ -2,7 +2,7 @@ import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 import VoidDisplayObservability
 import Foundation
-package struct CaptureMonitoringDisplayMetadata: Equatable, Sendable {
+package struct CapturePreviewDisplayMetadata: Equatable, Sendable {
     package let displayName: String
     package let resolutionText: String
     package let isVirtualDisplay: Bool

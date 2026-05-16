@@ -126,7 +126,7 @@ Batch 1 completion result:
 
 - Deleted `ScreenCatalogOrchestrator` because it only forwarded catalog actions to `DisplayRuntime` and owned no catalog policy.
 - Rewired Capture and Sharing catalog UI actions directly to `DisplayRuntime`, with privacy-settings opening kept as the only app-composition callback.
-- Removed the test that proved a runtime-bypassing monitoring session could survive `closeMonitoringSession`; retained tests now verify runtime consumer leases drive monitor and LAN Web View start/stop.
+- Removed the test that proved a runtime-bypassing preview session could survive `closePreviewSession`; retained tests now verify runtime consumer leases drive Screen Preview and LAN Web View start/stop.
 - Renamed the app startup task handoff so startup restore remains only `DisplayRuntime.restoreStartupVirtualDisplays(source: .startup)` without old startup-runtime task naming.
 - Retained VirtualDisplay lower-layer fallback hits that represent macOS callback polling, main-display policy continuity, serial-number continuity, diagnostics defaulting, or default user-facing error messages. These are not controller direct paths.
 
@@ -177,17 +177,17 @@ Goal: simplify resource tracking across capture and sharing without moving data 
 
 Audit focus:
 
-- `DisplayCaptureRegistry`, `DisplayCaptureSession`, `CaptureMonitoringLifecycleService`: identify whether registry tokens duplicate runtime lease identity or whether they represent actual session resources.
+- `DisplayCaptureRegistry`, `DisplayCaptureSession`, `CapturePreviewLifecycleService`: identify whether registry tokens duplicate runtime lease identity or whether they represent actual session resources.
 - `SharingService`, `DisplaySharingCoordinator`, `WebServer`, `RelaySessionHub`, `WebRTCSessionSupport`: separate route/shareID/viewer/session facts from runtime demand.
-- Monitor, LAN Web View, diagnostics recorder: remove repeated attach/detach branches where runtime lease already drives intent.
+- Screen Preview, LAN Web View, diagnostics recorder: remove repeated attach/detach branches where runtime lease already drives intent.
 - Sharing route/shareID stays data-plane ownership. Runtime may expose facts in snapshot, but does not own session lifecycle.
 
 Delete candidates:
 
-- Duplicate active sharing or active monitoring state derived only from runtime leases.
+- Duplicate active sharing or active preview state derived only from runtime leases.
 - Duplicate demand aggregation in App adapters or sharing state when runtime aggregate demand already exists.
 - Extra lifecycle token layers that never guard real capture/WebRTC/WebSocket resources.
-- Repeated monitor/LAN/diagnostics attach helpers if they differ only by hard-coded consumer kind and can be table-driven.
+- Repeated preview/LAN/diagnostics attach helpers if they differ only by hard-coded consumer kind and can be table-driven.
 - Integration tests that separately assert the same attach/detach lifecycle at registry, service, adapter, and runtime levels.
 
 Must retain:

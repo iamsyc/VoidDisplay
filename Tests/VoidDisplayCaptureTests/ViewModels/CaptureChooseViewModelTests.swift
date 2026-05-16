@@ -25,14 +25,14 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     sessions: { [] },
-                    monitoringSession: { _ in nil },
-                    monitoringSessionForDisplayID: { _ in nil },
+                    previewSession: { _ in nil },
+                    previewSessionForDisplayID: { _ in nil },
                     isStartingDisplayID: { _ in false },
-                    startMonitoring: { _, _ in .started(UUID()) },
+                    startPreview: { _, _ in .started(UUID()) },
                     attachPreviewSink: { _, _ in },
-                    activateMonitoringSession: { _ in },
-                    closeMonitoringSession: { _ in },
-                    setMonitoringSessionCapturesCursor: { _, _ in }
+                    activatePreviewSession: { _ in },
+                    closePreviewSession: { _ in },
+                    setPreviewSessionCapturesCursor: { _, _ in }
                 ),
                 virtualDisplayStatusProvider: .init(
                     isManagedVirtualDisplay: { $0 == 1234 }
@@ -43,7 +43,7 @@ struct CaptureChooseViewModelTests {
 
         #expect(sut.isVirtualDisplay(display))
         #expect(sut.resolutionText(for: display) == "1920 × 1080")
-        #expect(sut.displayName(for: display) == String(localized: "Monitor"))
+        #expect(sut.displayName(for: display) == String(localized: "Display"))
     }
 
     @Test func dependenciesExposeClosureResults() {
@@ -53,14 +53,14 @@ struct CaptureChooseViewModelTests {
         let dependencies = CaptureChooseViewModel.Dependencies(
             captureActions: .init(
                 sessions: { [session] },
-                monitoringSession: { $0 == sessionID ? session : nil },
-                monitoringSessionForDisplayID: { $0 == displayID ? session : nil },
+                previewSession: { $0 == sessionID ? session : nil },
+                previewSessionForDisplayID: { $0 == displayID ? session : nil },
                 isStartingDisplayID: { $0 == displayID },
-                startMonitoring: { _, _ in .started(sessionID) },
+                startPreview: { _, _ in .started(sessionID) },
                 attachPreviewSink: { _, _ in },
-                activateMonitoringSession: { _ in },
-                closeMonitoringSession: { _ in },
-                setMonitoringSessionCapturesCursor: { _, _ in }
+                activatePreviewSession: { _ in },
+                closePreviewSession: { _ in },
+                setPreviewSessionCapturesCursor: { _, _ in }
             ),
             virtualDisplayStatusProvider: .init(
                 isManagedVirtualDisplay: { $0 == displayID }
@@ -68,8 +68,8 @@ struct CaptureChooseViewModelTests {
         )
 
         #expect(dependencies.captureActions.sessions().map(\.id) == [sessionID])
-        #expect(dependencies.captureActions.monitoringSession(sessionID)?.id == sessionID)
-        #expect(dependencies.captureActions.monitoringSessionForDisplayID(displayID)?.displayID == displayID)
+        #expect(dependencies.captureActions.previewSession(sessionID)?.id == sessionID)
+        #expect(dependencies.captureActions.previewSessionForDisplayID(displayID)?.displayID == displayID)
         #expect(dependencies.captureActions.isStartingDisplayID(displayID))
         #expect(dependencies.virtualDisplayStatusProvider.isManagedVirtualDisplay(displayID))
     }
@@ -79,14 +79,14 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     sessions: { [] },
-                    monitoringSession: { _ in nil },
-                    monitoringSessionForDisplayID: { _ in nil },
+                    previewSession: { _ in nil },
+                    previewSessionForDisplayID: { _ in nil },
                     isStartingDisplayID: { $0 == 301 },
-                    startMonitoring: { _, _ in .started(UUID()) },
+                    startPreview: { _, _ in .started(UUID()) },
                     attachPreviewSink: { _, _ in },
-                    activateMonitoringSession: { _ in },
-                    closeMonitoringSession: { _ in },
-                    setMonitoringSessionCapturesCursor: { _, _ in }
+                    activatePreviewSession: { _ in },
+                    closePreviewSession: { _ in },
+                    setPreviewSessionCapturesCursor: { _, _ in }
                 ),
                 virtualDisplayStatusProvider: .init(
                     isManagedVirtualDisplay: { _ in false }
@@ -98,7 +98,7 @@ struct CaptureChooseViewModelTests {
         #expect(sut.isStarting(displayID: 302) == false)
     }
 
-    @Test func startMonitoringFailurePresentsUserFacingAlert() async {
+    @Test func startPreviewFailurePresentsUserFacingAlert() async {
         struct ControlledError: LocalizedError {
             var errorDescription: String? { "preview failed" }
         }
@@ -107,16 +107,16 @@ struct CaptureChooseViewModelTests {
             dependencies: .init(
                 captureActions: .init(
                     sessions: { [] },
-                    monitoringSession: { _ in nil },
-                    monitoringSessionForDisplayID: { _ in nil },
+                    previewSession: { _ in nil },
+                    previewSessionForDisplayID: { _ in nil },
                     isStartingDisplayID: { _ in false },
-                    startMonitoring: { _, _ in
+                    startPreview: { _, _ in
                         throw ControlledError()
                     },
                     attachPreviewSink: { _, _ in },
-                    activateMonitoringSession: { _ in },
-                    closeMonitoringSession: { _ in },
-                    setMonitoringSessionCapturesCursor: { _, _ in }
+                    activatePreviewSession: { _ in },
+                    closePreviewSession: { _ in },
+                    setPreviewSessionCapturesCursor: { _, _ in }
                 ),
                 virtualDisplayStatusProvider: .init(
                     isManagedVirtualDisplay: { _ in false }
@@ -126,28 +126,28 @@ struct CaptureChooseViewModelTests {
         let display = SharedMockSCDisplay.make(displayID: 777, width: 1920, height: 1080)
         var openedSessionIDs: [UUID] = []
 
-        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
 
         #expect(openedSessionIDs.isEmpty)
-        #expect(sut.userFacingAlert?.title == String(localized: "Start Monitoring Failed"))
+        #expect(sut.userFacingAlert?.title == String(localized: "Start Preview Failed"))
         #expect(sut.userFacingAlert?.message.isEmpty == false)
     }
 
-    @Test func startMonitoringCancellationDoesNotPresentUserFacingAlert() async {
+    @Test func startPreviewCancellationDoesNotPresentUserFacingAlert() async {
         let sut = CaptureChooseViewModel(
             dependencies: .init(
                 captureActions: .init(
                     sessions: { [] },
-                    monitoringSession: { _ in nil },
-                    monitoringSessionForDisplayID: { _ in nil },
+                    previewSession: { _ in nil },
+                    previewSessionForDisplayID: { _ in nil },
                     isStartingDisplayID: { _ in false },
-                    startMonitoring: { _, _ in
+                    startPreview: { _, _ in
                         throw CancellationError()
                     },
                     attachPreviewSink: { _, _ in },
-                    activateMonitoringSession: { _ in },
-                    closeMonitoringSession: { _ in },
-                    setMonitoringSessionCapturesCursor: { _, _ in }
+                    activatePreviewSession: { _ in },
+                    closePreviewSession: { _ in },
+                    setPreviewSessionCapturesCursor: { _, _ in }
                 ),
                 virtualDisplayStatusProvider: .init(
                     isManagedVirtualDisplay: { _ in false }
@@ -157,33 +157,33 @@ struct CaptureChooseViewModelTests {
         let display = SharedMockSCDisplay.make(displayID: 779, width: 1920, height: 1080)
         var openedSessionIDs: [UUID] = []
 
-        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
 
         #expect(openedSessionIDs.isEmpty)
         #expect(sut.userFacingAlert == nil)
     }
 
-    @Test func startMonitoringSuccessPassesMetadataToCaptureActions() async {
+    @Test func startPreviewSuccessPassesMetadataToCaptureActions() async {
         let expectedSessionID = UUID()
         let display = SharedMockSCDisplay.make(displayID: 778, width: 2560, height: 1440)
         var receivedDisplayID: CGDirectDisplayID?
-        var receivedMetadata: CaptureMonitoringDisplayMetadata?
+        var receivedMetadata: CapturePreviewDisplayMetadata?
         let sut = CaptureChooseViewModel(
             dependencies: .init(
                 captureActions: .init(
                     sessions: { [] },
-                    monitoringSession: { _ in nil },
-                    monitoringSessionForDisplayID: { _ in nil },
+                    previewSession: { _ in nil },
+                    previewSessionForDisplayID: { _ in nil },
                     isStartingDisplayID: { _ in false },
-                    startMonitoring: { display, metadata in
+                    startPreview: { display, metadata in
                         receivedDisplayID = display.displayID
                         receivedMetadata = metadata
                         return .started(expectedSessionID)
                     },
                     attachPreviewSink: { _, _ in },
-                    activateMonitoringSession: { _ in },
-                    closeMonitoringSession: { _ in },
-                    setMonitoringSessionCapturesCursor: { _, _ in }
+                    activatePreviewSession: { _ in },
+                    closePreviewSession: { _ in },
+                    setPreviewSessionCapturesCursor: { _, _ in }
                 ),
                 virtualDisplayStatusProvider: .init(
                     isManagedVirtualDisplay: { $0 == 778 }
@@ -192,11 +192,11 @@ struct CaptureChooseViewModelTests {
         )
         var openedSessionIDs: [UUID] = []
 
-        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
 
         #expect(receivedDisplayID == 778)
-        #expect(receivedMetadata == CaptureMonitoringDisplayMetadata(
-            displayName: String(localized: "Monitor"),
+        #expect(receivedMetadata == CapturePreviewDisplayMetadata(
+            displayName: String(localized: "Display"),
             resolutionText: "2560 × 1440",
             isVirtualDisplay: true
         ))
@@ -204,19 +204,19 @@ struct CaptureChooseViewModelTests {
         #expect(sut.userFacingAlert == nil)
     }
 
-    @Test func startMonitoringInvalidationDoesNotPresentUserFacingAlert() async {
+    @Test func startPreviewInvalidationDoesNotPresentUserFacingAlert() async {
         let sut = CaptureChooseViewModel(
             dependencies: .init(
                 captureActions: .init(
                     sessions: { [] },
-                    monitoringSession: { _ in nil },
-                    monitoringSessionForDisplayID: { _ in nil },
+                    previewSession: { _ in nil },
+                    previewSessionForDisplayID: { _ in nil },
                     isStartingDisplayID: { _ in false },
-                    startMonitoring: { _, _ in .invalidated },
+                    startPreview: { _, _ in .invalidated },
                     attachPreviewSink: { _, _ in },
-                    activateMonitoringSession: { _ in },
-                    closeMonitoringSession: { _ in },
-                    setMonitoringSessionCapturesCursor: { _, _ in }
+                    activatePreviewSession: { _ in },
+                    closePreviewSession: { _ in },
+                    setPreviewSessionCapturesCursor: { _, _ in }
                 ),
                 virtualDisplayStatusProvider: .init(
                     isManagedVirtualDisplay: { _ in false }
@@ -226,7 +226,7 @@ struct CaptureChooseViewModelTests {
         let display = SharedMockSCDisplay.make(displayID: 780, width: 1920, height: 1080)
         var openedSessionIDs: [UUID] = []
 
-        await sut.startMonitoring(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
 
         #expect(openedSessionIDs.isEmpty)
         #expect(sut.userFacingAlert == nil)
@@ -248,14 +248,14 @@ struct CaptureChooseViewModelTests {
         .init(
             captureActions: .init(
                 sessions: { [] },
-                monitoringSession: { _ in nil },
-                monitoringSessionForDisplayID: { _ in nil },
+                previewSession: { _ in nil },
+                previewSessionForDisplayID: { _ in nil },
                 isStartingDisplayID: { _ in false },
-                startMonitoring: { _, _ in .started(UUID()) },
+                startPreview: { _, _ in .started(UUID()) },
                 attachPreviewSink: { _, _ in },
-                activateMonitoringSession: { _ in },
-                closeMonitoringSession: { _ in },
-                setMonitoringSessionCapturesCursor: { _, _ in }
+                activatePreviewSession: { _ in },
+                closePreviewSession: { _ in },
+                setPreviewSessionCapturesCursor: { _, _ in }
             ),
             virtualDisplayStatusProvider: .init(
                 isManagedVirtualDisplay: { _ in false }
@@ -266,9 +266,9 @@ struct CaptureChooseViewModelTests {
     private func makeSession(
         id: UUID,
         displayID: CGDirectDisplayID
-    ) -> ScreenMonitoringSession {
+    ) -> ScreenPreviewSession {
         let captureSession = CaptureChooseDummySession()
-        return ScreenMonitoringSession(
+        return ScreenPreviewSession(
             id: id,
             displayID: displayID,
             displayName: "Display",

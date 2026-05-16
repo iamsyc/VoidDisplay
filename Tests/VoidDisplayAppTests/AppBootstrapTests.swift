@@ -13,7 +13,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
-    @Test func initUsesDefaultCaptureMonitoringServiceWhenInjectionIsOmitted() async {
+    @Test func initUsesDefaultCapturePreviewServiceWhenInjectionIsOmitted() async {
         let sharing = MockSharingService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
@@ -24,7 +24,7 @@ struct AppBootstrapTests {
             isRunningUnderXCTestOverride: true
         )
 
-        #expect(env.capture.screenCaptureSessions.isEmpty)
+        #expect(env.capture.screenPreviewSessions.isEmpty)
         #expect(sharing.startWebServiceCallCount == 0)
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
     }
@@ -32,7 +32,7 @@ struct AppBootstrapTests {
     @Test func initRegistersRuntimeSnapshotProvider() async throws {
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: MockVirtualDisplayFacade(),
             isRunningUnderXCTestOverride: true
@@ -66,7 +66,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -100,7 +100,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -137,7 +137,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -173,7 +173,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -216,7 +216,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -250,7 +250,7 @@ struct AppBootstrapTests {
         virtualDisplay.currentDisplayConfigs = [config]
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -308,7 +308,7 @@ struct AppBootstrapTests {
         virtualDisplay.createDisplayResult = .success(createdConfigID)
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -367,7 +367,7 @@ struct AppBootstrapTests {
         ]
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: MockCaptureMonitoringService(),
+            capturePreviewService: MockCapturePreviewService(),
             sharingService: MockSharingService(),
             virtualDisplayFacade: MockVirtualDisplayFacade(),
             isRunningUnderXCTestOverride: true
@@ -443,7 +443,7 @@ struct AppBootstrapTests {
         }
     }
 
-    @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
+    @Test func initCapturePreviewDiagnosticsScenarioBuildsPreviewSessionFromRuntimeConfiguration() async throws {
         let overrides = [
             (UITestRuntime.modeEnvironmentKey, "1"),
             (UITestRuntime.scenarioEnvironmentKey, UITestScenario.capturePreviewDiagnostics.rawValue),
@@ -465,8 +465,8 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment()
 
-        let session = try #require(env.capture.screenCaptureSessions.first)
-        #expect(env.capture.screenCaptureSessions.count == 1)
+        let session = try #require(env.capture.screenPreviewSessions.first)
+        #expect(env.capture.screenPreviewSessions.count == 1)
         #expect(session.displayName == "Preview Diagnostics")
         #expect(session.resolutionText == "3008 × 1692")
         #expect(session.capturesCursor == false)
@@ -476,7 +476,7 @@ struct AppBootstrapTests {
     @Test func previewEnvironmentDoesNotPersistPreferredPortToStandardDefaults() async {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
 
@@ -493,7 +493,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
@@ -515,12 +515,12 @@ struct AppBootstrapTests {
 
     @Test func initPreviewModeSkipsStartupSequence() async {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
@@ -534,12 +534,12 @@ struct AppBootstrapTests {
 
     @Test func initUITestModeAppliesFixtureAndSkipsServiceBoot() async {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = UITestVirtualDisplayFacade(scenario: .baseline)
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             startupPlan: .init(
@@ -555,12 +555,12 @@ struct AppBootstrapTests {
 
     @Test func initRunningUnderXCTestSkipsStartupSequence() async {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: true
@@ -574,7 +574,7 @@ struct AppBootstrapTests {
 
     @Test func initNormalModeRestoresStartupVirtualDisplaysThroughRuntimeWithoutStartingWebService() async throws {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         let fixtureConfig = VirtualDisplayConfig(
@@ -590,7 +590,7 @@ struct AppBootstrapTests {
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false

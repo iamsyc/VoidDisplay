@@ -302,7 +302,7 @@ struct DisplayRuntimeSnapshotTests {
         let sensitiveFixtures = runtimePrivacySensitiveFixtures()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: displayID, isMain: true)),
-            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: displayID, capturesCursor: true)),
+            captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: displayID, capturesCursor: true)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: displayID)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
@@ -456,10 +456,10 @@ struct DisplayRuntimeSnapshotTests {
             captureIntentCommander: FakeCaptureIntentCommander()
         )
 
-        let monitorLease = runtime.attachConsumer(
+        let previewLease = runtime.attachConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .monitor,
-            owner: .init(source: .localUI, redactedLabel: "local monitor"),
+            kind: .preview,
+            owner: .init(source: .localUI, redactedLabel: "local preview"),
             demand: consumerDemandSnapshotFixture(
                 sourceWidth: 2560,
                 sourceHeight: 1440,
@@ -493,10 +493,10 @@ struct DisplayRuntimeSnapshotTests {
 
         #expect(applyResult.outcome == .applied)
         #expect(snapshot.schemaVersion == 3)
-        #expect(Set(snapshot.consumerLeases.map(\.id)) == Set([monitorLease.id, lanLease.id]))
+        #expect(Set(snapshot.consumerLeases.map(\.id)) == Set([previewLease.id, lanLease.id]))
         #expect(Set(snapshot.consumerLeases.map(\.ownerSource)) == Set([.localUI, .sharingService]))
         #expect(snapshot.consumerLeases.map(\.state) == [.attached, .attached])
-        #expect(Set(aggregate.activeLeaseIDs) == Set([monitorLease.id, lanLease.id]))
+        #expect(Set(aggregate.activeLeaseIDs) == Set([previewLease.id, lanLease.id]))
         #expect(aggregate.qualityProfile == .mixed)
         #expect(aggregate.effectivePixelSize == .init(width: 3840, height: 2160))
         #expect(aggregate.effectiveFramesPerSecond == 60)
@@ -517,10 +517,10 @@ struct DisplayRuntimeSnapshotTests {
         )
         #expect(
             snapshot.consumerSummary.leaseCountsByKind.contains {
-                $0.kind == .monitor && $0.activeCount == 1 && $0.totalCount == 1
+                $0.kind == .preview && $0.activeCount == 1 && $0.totalCount == 1
             }
         )
-        #expect(Set(decoded.consumerLeases.map(\.id)) == Set([monitorLease.id, lanLease.id]))
+        #expect(Set(decoded.consumerLeases.map(\.id)) == Set([previewLease.id, lanLease.id]))
         #expect(decoded.aggregatedDemands.first?.activeViewerCount == 3)
         #expect(decoded.effectiveCaptureIntents.first?.intent.revision == latestRevision)
     }

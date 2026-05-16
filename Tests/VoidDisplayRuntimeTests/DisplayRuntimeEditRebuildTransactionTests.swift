@@ -98,7 +98,7 @@ struct DisplayRuntimeEditRebuildTransactionTests {
         #expect(trace.virtualDisplayCommandOutcome == .notAttempted)
         #expect(commander.rebuildCallCount == 0)
         #expect(commander.restoreConfigAfterFailedEditCallCount == 0)
-        #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removeMonitoring") })
+        #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removePreview") })
     }
     @Test func editRebuildSaveFailureStopsBeforeQuiesceAndRebuild() async throws {
         let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000004")!
@@ -130,7 +130,7 @@ struct DisplayRuntimeEditRebuildTransactionTests {
         #expect(trace.persistenceOutcome == .failed)
         #expect(trace.virtualDisplayCommandOutcome == .notAttempted)
         #expect(commander.rebuildCallCount == 0)
-        #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removeMonitoring") })
+        #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removePreview") })
     }
     @Test func editRebuildMissingOldConfigFailsBeforeSaveAndRebuild() async throws {
         let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000005")!

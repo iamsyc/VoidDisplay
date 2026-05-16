@@ -5,28 +5,28 @@ import CoreGraphics
 import Foundation
 
 @MainActor
-package final class CaptureMonitoringSessionStore {
-    private var sessions: [ScreenMonitoringSession]
+package final class CapturePreviewSessionStore {
+    private var sessions: [ScreenPreviewSession]
 
-    package init(initialSessions: [ScreenMonitoringSession] = []) {
+    package init(initialSessions: [ScreenPreviewSession] = []) {
         self.sessions = initialSessions
     }
 
-    package var currentSessions: [ScreenMonitoringSession] {
+    package var currentSessions: [ScreenPreviewSession] {
         sessions
     }
 
-    package func session(for id: UUID) -> ScreenMonitoringSession? {
+    package func session(for id: UUID) -> ScreenPreviewSession? {
         sessions.first { $0.id == id }
     }
 
-    package func add(_ session: ScreenMonitoringSession) {
+    package func add(_ session: ScreenPreviewSession) {
         sessions.append(session)
     }
 
     package func updateState(
         id: UUID,
-        state: ScreenMonitoringSession.State
+        state: ScreenPreviewSession.State
     ) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         let currentState = sessions[index].state
@@ -60,8 +60,8 @@ package final class CaptureMonitoringSessionStore {
     }
 
     private func shouldApplyStateTransition(
-        from currentState: ScreenMonitoringSession.State,
-        to nextState: ScreenMonitoringSession.State
+        from currentState: ScreenPreviewSession.State,
+        to nextState: ScreenPreviewSession.State
     ) -> Bool {
         switch (currentState, nextState) {
         case (.starting, .active):

@@ -186,7 +186,7 @@ final class RealEnvironmentE2ETests: XCTestCase {
     private func openSharingPage(_ app: XCUIApplication) throws {
         app.activate()
         try skipIfBlockingSystemDialogIsPresent(operation: "open sharing page")
-        assertExists(app, identifier: "sidebar_displays").tap()
+        assertExists(app, identifier: "sidebar_home").tap()
         assertExists(app, identifier: "displays_action_open_lan_web_view").tap()
         try skipIfBlockingSystemDialogIsPresent(operation: "open sharing page")
         assertExists(app, identifier: "detail_lan_web_view")

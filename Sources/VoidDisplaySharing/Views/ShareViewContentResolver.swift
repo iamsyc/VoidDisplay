@@ -32,7 +32,7 @@ package enum ShareViewContentResolver {
         if catalog.displays != nil {
             return visibleDisplayCount > 0 ? .displaysList : .empty
         }
-        if catalog.isLoadingDisplays {
+        if catalog.isLoadingDisplays || catalog.hasScreenCapturePermission == true {
             return .displaysLoading
         }
         return .empty

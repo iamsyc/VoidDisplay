@@ -229,30 +229,6 @@ extension XCTestCase {
     }
 
     @MainActor
-    func pageDownUntilHittable(
-        _ element: XCUIElement,
-        in app: XCUIApplication,
-        maxAttempts: Int = 4,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        for _ in 0..<maxAttempts {
-            if element.isHittable {
-                return
-            }
-            app.typeKey(XCUIKeyboardKey.pageDown, modifierFlags: [])
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-
-        XCTAssertTrue(
-            element.isHittable,
-            "Element did not become hittable after paging down.",
-            file: file,
-            line: line
-        )
-    }
-
-    @MainActor
     func waitForIdentifierByPolling(
         _ app: XCUIApplication,
         identifier: String,

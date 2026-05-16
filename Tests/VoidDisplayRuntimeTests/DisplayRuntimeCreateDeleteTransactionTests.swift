@@ -14,8 +14,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         let commander = FakeVirtualDisplayCommander()
         commander.createResult = createCommandResult(
             createdConfigID: createdConfigID,
-            serialNumber: 9401,
-            postDisplayID: 77
+            serialNumber: 9401
         )
         commander.onCreate = { _ in
             virtualDisplayProvider.setSnapshot(virtualDisplaySnapshot(configID: createdConfigID, displayID: 77))
@@ -55,13 +54,9 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         let failedResult = createCommandResult(
             createdConfigID: createdConfigID,
             serialNumber: 9402,
-            targetWasRunningAfterCommand: false,
-            postDisplayID: nil,
             persistenceOutcome: .rollbackFailed,
             runtimeCreationOutcome: .failed,
-            rollbackOutcome: .rollbackFailed,
-            runningConfigIDsAfterCommand: [],
-            managedDisplaysAfterCommand: []
+            rollbackOutcome: .rollbackFailed
         )
         let commander = FakeVirtualDisplayCommander()
         commander.createError = DisplayRuntimeVirtualDisplayCreateCommandError(
@@ -107,8 +102,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         let commander = FakeVirtualDisplayCommander()
         commander.createResult = createCommandResult(
             createdConfigID: createdConfigID,
-            serialNumber: 9403,
-            postDisplayID: 78
+            serialNumber: 9403
         )
         commander.onCreate = { _ in
             virtualDisplayProvider.setSnapshot(virtualDisplaySnapshot(configID: createdConfigID, displayID: 78))
@@ -147,7 +141,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         }
         let runtime = DisplayRuntime(
             catalogProvider: catalogProvider,
-            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: displayID, capturesCursor: true)),
+            captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: displayID, capturesCursor: true)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: displayID)),
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder),
@@ -171,7 +165,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         #expect(trace.targetConfigID == configID)
         #expect(trace.restoreResults.allSatisfy { $0.failureReason == "target_deleted" })
         #expect(recorder.events.firstIndex(of: "stopSharing:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
-        #expect(recorder.events.firstIndex(of: "removeMonitoring:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
+        #expect(recorder.events.firstIndex(of: "removePreview:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
     }
     @Test func deleteMissingConfigRecordsFailedTraceWithoutCommand() async throws {
         let missingID = UUID()

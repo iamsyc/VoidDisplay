@@ -34,8 +34,8 @@ func makeTestDisplayTopologySignatureEntry(
 }
 
 @MainActor
-final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
-    var currentSessions: [ScreenMonitoringSession] = []
+final class MockCapturePreviewService: CapturePreviewServiceProtocol {
+    var currentSessions: [ScreenPreviewSession] = []
     var addCallCount = 0
     var removeCallCount = 0
     var removeByDisplayCallCount = 0
@@ -43,25 +43,25 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
     var updateStateCallCount = 0
     var updateCapturesCursorCallCount = 0
 
-    func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
+    func previewSession(for id: UUID) -> ScreenPreviewSession? {
         currentSessions.first(where: { $0.id == id })
     }
 
-    func addMonitoringSession(_ session: ScreenMonitoringSession) {
+    func addPreviewSession(_ session: ScreenPreviewSession) {
         addCallCount += 1
         currentSessions.append(session)
     }
 
-    func updateMonitoringSessionState(
+    func updatePreviewSessionState(
         id: UUID,
-        state: ScreenMonitoringSession.State
+        state: ScreenPreviewSession.State
     ) {
         updateStateCallCount += 1
         guard let index = currentSessions.firstIndex(where: { $0.id == id }) else { return }
         currentSessions[index].state = state
     }
 
-    func updateMonitoringSessionCapturesCursor(
+    func updatePreviewSessionCapturesCursor(
         id: UUID,
         capturesCursor: Bool
     ) {
@@ -70,12 +70,12 @@ final class MockCaptureMonitoringService: CaptureMonitoringServiceProtocol {
         currentSessions[index].capturesCursor = capturesCursor
     }
 
-    func removeMonitoringSession(id: UUID) {
+    func removePreviewSession(id: UUID) {
         removeCallCount += 1
         currentSessions.removeAll { $0.id == id }
     }
 
-    func removeMonitoringSessions(displayID: CGDirectDisplayID) {
+    func removePreviewSessions(displayID: CGDirectDisplayID) {
         removeByDisplayCallCount += 1
         removedDisplayIDs.append(displayID)
         currentSessions.removeAll { $0.displayID == displayID }

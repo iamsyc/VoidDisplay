@@ -6,7 +6,7 @@ import SwiftUI
 // MARK: - Capture Display View
 package struct CaptureDisplayView: View {
     package let sessionId: UUID
-    private let monitoringActions: CaptureMonitoringActions
+    private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
 
     @Environment(\.dismiss) private var dismiss
@@ -25,16 +25,16 @@ package struct CaptureDisplayView: View {
 
     package init(
         sessionId: UUID,
-        monitoringActions: CaptureMonitoringActions,
+        previewActions: CapturePreviewActions,
         sharingStatusProvider: CaptureSharingStatusProvider
     ) {
         self.sessionId = sessionId
-        self.monitoringActions = monitoringActions
+        self.previewActions = previewActions
         self.sharingStatusProvider = sharingStatusProvider
     }
 
-    private var session: ScreenMonitoringSession? {
-        monitoringActions.monitoringSession(sessionId)
+    private var session: ScreenPreviewSession? {
+        previewActions.previewSession(sessionId)
     }
 
     private var isSharingDisplay: Bool {
@@ -91,7 +91,7 @@ package struct CaptureDisplayView: View {
             }
             capturesCursor = session?.capturesCursor ?? false
         }
-        .onChange(of: monitoringActions.sessions().map(\.id)) { _, ids in
+        .onChange(of: previewActions.sessions().map(\.id)) { _, ids in
             if !ids.contains(sessionId) {
                 dismiss()
             }
@@ -103,27 +103,27 @@ package struct CaptureDisplayView: View {
         }
         .onAppear {
             if let session {
-                monitoringActions.attachPreviewSink(renderer, sessionId)
+                previewActions.attachPreviewSink(renderer, sessionId)
                 if let destinationDirectory = CapturePreviewDiagnosticsRuntime.configuration()?.recordDirectoryURL {
                     let sink = CapturePreviewRecordingSink(
                         destinationDirectory: destinationDirectory,
                         session: session
                     )
                     diagnosticsRecorderTask = Task { @MainActor in
-                        let leaseToken = await monitoringActions.attachDiagnosticsRecorder(sessionId)
+                        let leaseToken = await previewActions.attachDiagnosticsRecorder(sessionId)
                         guard !Task.isCancelled else {
                             if let leaseToken {
-                                await monitoringActions.detachDiagnosticsRecorder(leaseToken)
+                                await previewActions.detachDiagnosticsRecorder(leaseToken)
                             }
                             return
                         }
                         guard let leaseToken else { return }
                         diagnosticsRecorderLeaseToken = leaseToken
                         recordingSink = sink
-                        monitoringActions.attachPreviewSink(sink, sessionId)
+                        previewActions.attachPreviewSink(sink, sessionId)
                     }
                 }
-                monitoringActions.activateMonitoringSession(sessionId)
+                previewActions.activatePreviewSession(sessionId)
             } else {
                 dismiss()
             }
@@ -134,11 +134,11 @@ package struct CaptureDisplayView: View {
             if let leaseToken = diagnosticsRecorderLeaseToken {
                 diagnosticsRecorderLeaseToken = nil
                 Task { @MainActor in
-                    await monitoringActions.detachDiagnosticsRecorder(leaseToken)
+                    await previewActions.detachDiagnosticsRecorder(leaseToken)
                 }
             }
             recordingSink = nil
-            monitoringActions.closeMonitoringSession(sessionId)
+            previewActions.closePreviewSession(sessionId)
             windowCoordinator.tearDown()
             renderer.flush()
             lastReportedRendererMetrics = nil
@@ -203,7 +203,7 @@ package extension CaptureDisplayView {
                 isUpdatingCursorCapture = true
                 Task {
                     do {
-                        try await monitoringActions.setMonitoringSessionCapturesCursor(sessionId, newValue)
+                        try await previewActions.setPreviewSessionCapturesCursor(sessionId, newValue)
                         await MainActor.run {
                             isUpdatingCursorCapture = false
                         }

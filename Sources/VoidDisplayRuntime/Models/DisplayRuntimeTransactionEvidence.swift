@@ -95,7 +95,7 @@ package nonisolated enum DisplayRuntimeCompensationStatus: String, Codable, Equa
 package nonisolated struct DisplayRuntimeCompensationResult: Codable, Equatable, Sendable {
     package let status: DisplayRuntimeCompensationStatus
     package let restoredSharingCount: Int
-    package let restoredMonitoringCount: Int
+    package let restoredPreviewCount: Int
     package let failedRestoreCount: Int
     package let persistenceOutcome: DisplayRuntimePersistenceOutcome?
     package let virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome?
@@ -104,7 +104,7 @@ package nonisolated struct DisplayRuntimeCompensationResult: Codable, Equatable,
     package init(
         status: DisplayRuntimeCompensationStatus,
         restoredSharingCount: Int,
-        restoredMonitoringCount: Int,
+        restoredPreviewCount: Int,
         failedRestoreCount: Int,
         persistenceOutcome: DisplayRuntimePersistenceOutcome? = nil,
         virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome? = nil,
@@ -112,7 +112,7 @@ package nonisolated struct DisplayRuntimeCompensationResult: Codable, Equatable,
     ) {
         self.status = status
         self.restoredSharingCount = restoredSharingCount
-        self.restoredMonitoringCount = restoredMonitoringCount
+        self.restoredPreviewCount = restoredPreviewCount
         self.failedRestoreCount = failedRestoreCount
         self.persistenceOutcome = persistenceOutcome
         self.virtualDisplayCommandOutcome = virtualDisplayCommandOutcome
@@ -122,7 +122,7 @@ package nonisolated struct DisplayRuntimeCompensationResult: Codable, Equatable,
     package static let notRequired = Self(
         status: .notRequired,
         restoredSharingCount: 0,
-        restoredMonitoringCount: 0,
+        restoredPreviewCount: 0,
         failedRestoreCount: 0
     )
 }

@@ -181,7 +181,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
         #expect(recorder.events.contains("stopSharing:111"))
         #expect(commander.enableCallCount == 1)
     }
-    @Test func enableTransactionRestoresPeerSharingAndDefersPeerMonitoringAfterStableTopology() async throws {
+    @Test func enableTransactionRestoresPeerSharingAndDefersPeerPreviewAfterStableTopology() async throws {
         let targetConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000008")!
         let peerConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000009")!
         let catalog = catalogSnapshot(displayIDs: [112, 113], mainDisplayID: nil)
@@ -210,7 +210,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
         }
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
-            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: 113, capturesCursor: true)),
+            captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: 113, capturesCursor: true)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 113)),
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
@@ -229,9 +229,9 @@ struct DisplayRuntimeLifecycleTransactionTests {
 
         #expect(recorder.events.contains("restoreSharing:113"))
         #expect(trace.restoreResults.contains {
-            $0.kind == .monitoring
+            $0.kind == .preview
                 && $0.previousDisplayID == 113
-                && $0.failureReason == "monitoring_restore_deferred_until_consumer_lease"
+                && $0.failureReason == "preview_restore_deferred_until_consumer_lease"
         })
         #expect(trace.scopeEscalationReason == .scopeEscalatedEnableMayPerformFleetRebuild)
     }
@@ -255,7 +255,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
         }
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 120, isMain: false)),
-            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: 120, capturesCursor: false)),
+            captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: 120, capturesCursor: false)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 120)),
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder),
@@ -273,16 +273,16 @@ struct DisplayRuntimeLifecycleTransactionTests {
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
         #expect(recorder.events.contains("stopSharing:120"))
-        #expect(recorder.events.contains("removeMonitoring:120"))
+        #expect(recorder.events.contains("removePreview:120"))
         #expect(recorder.events.allSatisfy { !$0.contains("restoreSharing:120") })
         #expect(trace.restoreResults.contains {
             $0.kind == .sharing && $0.failureReason == "target_disabled"
         })
         #expect(trace.restoreResults.contains {
-            $0.kind == .monitoring && $0.failureReason == "target_disabled"
+            $0.kind == .preview && $0.failureReason == "target_disabled"
         })
     }
-    @Test func disableTransactionRestoresPeerSharingAndDefersMonitoringAfterStableTopology() async throws {
+    @Test func disableTransactionRestoresPeerSharingAndDefersPreviewAfterStableTopology() async throws {
         let targetConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000011")!
         let peerConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000012")!
         let catalog = catalogSnapshot(displayIDs: [121, 122], mainDisplayID: 121)
@@ -304,7 +304,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
         }
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
-            captureProvider: FakeCaptureProvider(snapshot: monitoringCaptureSnapshot(displayID: 122, capturesCursor: false)),
+            captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: 122, capturesCursor: false)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 122)),
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
@@ -323,9 +323,9 @@ struct DisplayRuntimeLifecycleTransactionTests {
 
         #expect(recorder.events.contains("restoreSharing:122"))
         #expect(trace.restoreResults.contains {
-            $0.kind == .monitoring
+            $0.kind == .preview
                 && $0.previousDisplayID == 122
-                && $0.failureReason == "monitoring_restore_deferred_until_consumer_lease"
+                && $0.failureReason == "preview_restore_deferred_until_consumer_lease"
         })
     }
     @Test func disableTransactionWritesPeerRestoreSkipReasonWhenTopologyIsDegraded() async throws {

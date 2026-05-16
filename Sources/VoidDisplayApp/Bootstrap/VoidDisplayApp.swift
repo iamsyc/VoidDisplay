@@ -87,10 +87,10 @@ public struct VoidDisplayApplication: App {
         WindowGroup {
             Group {
                 if CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
-                   let sessionID = capture.screenCaptureSessions.first?.id {
+                   let sessionID = capture.screenPreviewSessions.first?.id {
                     CaptureDisplayView(
                         sessionId: sessionID,
-                        monitoringActions: CaptureUIComposition.monitoringActions(
+                        previewActions: CaptureUIComposition.previewActions(
                             capture: capture,
                             displayRuntime: displayRuntime
                         ),
@@ -117,11 +117,12 @@ public struct VoidDisplayApplication: App {
             .environment(navigation)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
+        .defaultSize(width: 1180, height: 720)
 
         WindowGroup(for: UUID.self) { $sessionId in
             CaptureDisplayWindowRoot(
                 sessionId: sessionId,
-                monitoringActions: CaptureUIComposition.monitoringActions(
+                previewActions: CaptureUIComposition.previewActions(
                     capture: capture,
                     displayRuntime: displayRuntime
                 ),
@@ -211,19 +212,19 @@ package enum AppBootstrap {
         }
 
         let scenario = UITestRuntime.scenario
-        let captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = {
+        let capturePreviewService: (any CapturePreviewServiceProtocol)? = {
             guard scenario == .capturePreviewDiagnostics,
                   let configuration = CapturePreviewDiagnosticsRuntime.configuration()
             else {
                 return nil
             }
-            return try? CapturePreviewDiagnosticsBootstrap.makeMonitoringService(
+            return try? CapturePreviewDiagnosticsBootstrap.makePreviewService(
                 configuration: configuration
             )
         }()
         let env = makeEnvironment(
             preview: false,
-            captureMonitoringService: captureMonitoringService,
+            capturePreviewService: capturePreviewService,
             virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: scenario),
             startupPlan: .init(
                 shouldRestoreVirtualDisplays: true
@@ -235,7 +236,7 @@ package enum AppBootstrap {
 
     package static func makeEnvironment(
         preview: Bool,
-        captureMonitoringService: (any CaptureMonitoringServiceProtocol)? = nil,
+        capturePreviewService: (any CapturePreviewServiceProtocol)? = nil,
         sharingService: (any SharingServiceProtocol)? = nil,
         virtualDisplayFacade: (any VirtualDisplayFacade)? = nil,
         appliedBadgeDisplayDuration: Duration = .seconds(2.5),
@@ -245,7 +246,7 @@ package enum AppBootstrap {
         let isRunningUnderXCTest = isRunningUnderXCTestOverride
             ?? (ProcessInfo.processInfo.environment[xCTestConfigurationEnvironmentKey] != nil)
         let resolvedStartupPlan = startupPlan ?? (isRunningUnderXCTest ? .skipAll : .standard)
-        let resolvedCaptureMonitoringService = captureMonitoringService ?? CaptureMonitoringService()
+        let resolvedCapturePreviewService = capturePreviewService ?? CapturePreviewService()
         let catalogService = ScreenCaptureCatalogService()
 
         var persistenceEnvironment = ProcessInfo.processInfo.environment
@@ -345,9 +346,9 @@ package enum AppBootstrap {
         }
 
         let capture = CaptureController(
-            captureMonitoringService: resolvedCaptureMonitoringService,
-            captureMonitoringLifecycleService: CaptureMonitoringLifecycleService(
-                captureMonitoringService: resolvedCaptureMonitoringService,
+            capturePreviewService: resolvedCapturePreviewService,
+            capturePreviewLifecycleService: CapturePreviewLifecycleService(
+                capturePreviewService: resolvedCapturePreviewService,
                 captureRegistry: captureRegistry
             ),
             catalogService: catalogService,

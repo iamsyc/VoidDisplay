@@ -212,7 +212,7 @@ extension DisplayRuntime {
                 compensation: .init(
                     status: .degraded,
                     restoredSharingCount: 0,
-                    restoredMonitoringCount: 0,
+                    restoredPreviewCount: 0,
                     failedRestoreCount: pauseIntents.count
                 ),
                 desiredEnabled: desiredEnabled,
@@ -254,12 +254,12 @@ extension DisplayRuntime {
             postSnapshot: postConvergenceSnapshot,
             disabledTargetIdentity: disabledTargetIdentity
         )
-        let monitoringRestoreResults = makeDeferredMonitoringRestoreResults(
+        let previewRestoreResults = makeDeferredPreviewRestoreResults(
             restoreIntents,
             topologyResult: topologyResult,
             disabledTargetIdentity: disabledTargetIdentity
         )
-        let restoreResults = sharingRestoreResults + monitoringRestoreResults
+        let restoreResults = sharingRestoreResults + previewRestoreResults
         updateTrace(context.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }

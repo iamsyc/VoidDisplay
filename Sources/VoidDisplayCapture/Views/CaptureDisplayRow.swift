@@ -10,7 +10,7 @@ package struct CaptureDisplayRow: View {
     package let resolutionText: String
     package let isVirtualDisplay: Bool
     package let isPrimaryDisplay: Bool
-    package let isMonitoring: Bool
+    package let isPreviewing: Bool
     package let isStarting: Bool
     package let isSharing: Bool
     package let onToggle: () -> Void
@@ -21,10 +21,10 @@ package struct CaptureDisplayRow: View {
             title: displayName,
             subtitle: resolutionText,
             status: AppRowStatus(
-                title: isMonitoring
-                    ? String(localized: "Monitoring")
-                    : String(localized: "Not Monitoring"),
-                tint: isMonitoring ? .green : .gray
+                title: isPreviewing
+                    ? String(localized: "Previewing")
+                    : String(localized: "Not Previewing"),
+                tint: isPreviewing ? .green : .gray
             ),
             metaBadges: [
                 AppBadgeModel(
@@ -43,7 +43,7 @@ package struct CaptureDisplayRow: View {
                 )
                 : nil,
             iconSystemName: "display",
-            iconScreenTint: DisplayIconTintResolver.resolve(isMonitoring: isMonitoring, isSharing: isSharing),
+            iconScreenTint: DisplayIconTintResolver.resolve(isPreviewing: isPreviewing, isSharing: isSharing),
             isEmphasized: true,
             accessibilityIdentifier: nil
         )
@@ -56,25 +56,25 @@ package struct CaptureDisplayRow: View {
                 if isStarting {
                     ProgressView()
                         .controlSize(.small)
-                } else if isMonitoring {
-                    Label(String(localized: "Stop Monitoring"), systemImage: "stop.fill")
+                } else if isPreviewing {
+                    Label(String(localized: "Stop Preview"), systemImage: "stop.fill")
                 } else {
-                    Label(String(localized: "Monitor Display"), systemImage: "play.fill")
+                    Label(String(localized: "Preview"), systemImage: "play.fill")
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(isMonitoring ? .red : .accentColor)
+            .tint(isPreviewing ? .red : .accentColor)
             .fixedSize(horizontal: true, vertical: false)
             .layoutPriority(1)
             .disabled(isStarting)
-            .accessibilityIdentifier("capture_monitor_toggle_\(display.displayID)")
+            .accessibilityIdentifier("capture_preview_toggle_\(display.displayID)")
         }
     }
 }
 
 @MainActor
-package struct MonitoringSessionRow: View {
-    package let session: ScreenMonitoringSession
+package struct PreviewSessionRow: View {
+    package let session: ScreenPreviewSession
     package let isSharing: Bool
     package let onStop: () -> Void
 
@@ -85,7 +85,7 @@ package struct MonitoringSessionRow: View {
             title: session.displayName,
             subtitle: session.resolutionText,
             status: AppRowStatus(
-                title: isStarting ? String(localized: "Starting") : String(localized: "Monitoring"),
+                title: isStarting ? String(localized: "Starting") : String(localized: "Previewing"),
                 tint: isStarting ? .orange : .green
             ),
             metaBadges: [
@@ -99,7 +99,7 @@ package struct MonitoringSessionRow: View {
                 )
             ],
             iconSystemName: "display",
-            iconScreenTint: DisplayIconTintResolver.resolve(isMonitoring: true, isSharing: isSharing),
+            iconScreenTint: DisplayIconTintResolver.resolve(isPreviewing: true, isSharing: isSharing),
             isEmphasized: true,
             accessibilityIdentifier: nil
         )
@@ -109,7 +109,7 @@ package struct MonitoringSessionRow: View {
                 onStop()
             } label: {
                 Label(
-                    isStarting ? String(localized: "Cancel Starting") : String(localized: "Stop Monitoring"),
+                    isStarting ? String(localized: "Cancel Starting") : String(localized: "Stop Preview"),
                     systemImage: "stop.fill"
                 )
             }

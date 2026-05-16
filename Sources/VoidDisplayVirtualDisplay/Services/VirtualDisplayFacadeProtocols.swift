@@ -88,63 +88,16 @@ package enum VirtualDisplayRuntimeTrackingClearOutcome: Equatable, Sendable {
     case failed
 }
 
-package struct VirtualDisplayCommandConfigEvidence: Equatable, Sendable {
-    package let id: UUID?
-    package let serialNumber: UInt32
-    package let desiredEnabled: Bool
-    package let physicalWidthMillimeters: UInt32
-    package let physicalHeightMillimeters: UInt32
-    package let modeCount: Int
-    package let maximumPixelWidth: UInt32
-    package let maximumPixelHeight: UInt32
-
-    package init(
-        id: UUID?,
-        serialNumber: UInt32,
-        desiredEnabled: Bool,
-        physicalWidthMillimeters: UInt32,
-        physicalHeightMillimeters: UInt32,
-        modeCount: Int,
-        maximumPixelWidth: UInt32,
-        maximumPixelHeight: UInt32
-    ) {
-        self.id = id
-        self.serialNumber = serialNumber
-        self.desiredEnabled = desiredEnabled
-        self.physicalWidthMillimeters = physicalWidthMillimeters
-        self.physicalHeightMillimeters = physicalHeightMillimeters
-        self.modeCount = modeCount
-        self.maximumPixelWidth = maximumPixelWidth
-        self.maximumPixelHeight = maximumPixelHeight
-    }
-}
-
-package struct VirtualDisplayStartupRestoreConfig: Equatable, Sendable {
-    package let id: UUID
-    package let desiredEnabled: Bool
-    package let evidence: VirtualDisplayCommandConfigEvidence
-
-    package init(
-        id: UUID,
-        desiredEnabled: Bool,
-        evidence: VirtualDisplayCommandConfigEvidence
-    ) {
-        self.id = id
-        self.desiredEnabled = desiredEnabled
-        self.evidence = evidence
-    }
-}
-
 package struct VirtualDisplayStartupRestoreConfigLoadResult: Equatable, Sendable {
     package let status: VirtualDisplayStartupRestoreConfigLoadStatus
-    package let configs: [VirtualDisplayStartupRestoreConfig]
+    package let configs: [VirtualDisplayConfig]
     package let failureReason: String?
     package let underlyingDomain: String?
     package let underlyingCode: Int?
 
     package init(
         status: VirtualDisplayStartupRestoreConfigLoadStatus,
-        configs: [VirtualDisplayStartupRestoreConfig],
+        configs: [VirtualDisplayConfig],
         failureReason: String? = nil,
         underlyingDomain: String? = nil,
         underlyingCode: Int? = nil
@@ -156,7 +109,7 @@ package struct VirtualDisplayStartupRestoreConfigLoadResult: Equatable, Sendable
         self.underlyingCode = underlyingCode
     }
 
-    package static func succeeded(configs: [VirtualDisplayStartupRestoreConfig]) -> Self {
+    package static func succeeded(configs: [VirtualDisplayConfig]) -> Self {
         Self(status: .succeeded, configs: configs)
     }
 
@@ -179,18 +132,15 @@ package struct VirtualDisplayStartupRestoreCommandRequest: Equatable, Sendable {
     package let transactionID: UUID
     package let runID: UUID
     package let configID: UUID
-    package let configEvidence: VirtualDisplayCommandConfigEvidence
 
     package init(
         transactionID: UUID,
         runID: UUID,
-        configID: UUID,
-        configEvidence: VirtualDisplayCommandConfigEvidence
+        configID: UUID
     ) {
         self.transactionID = transactionID
         self.runID = runID
         self.configID = configID
-        self.configEvidence = configEvidence
     }
 }
 
@@ -230,26 +180,17 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
 
 package struct VirtualDisplayCreateCommandResult: Equatable, Sendable {
     package let createdConfigID: UUID?
-    package let targetWasRunningAfterCommand: Bool
-    package let preDisplayID: CGDirectDisplayID?
-    package let postDisplayID: CGDirectDisplayID?
     package let persistenceOutcome: VirtualDisplayCommandPersistenceOutcome
     package let runtimeCreationOutcome: VirtualDisplayCommandRuntimeOutcome
     package let rollbackOutcome: VirtualDisplayCommandPersistenceOutcome
 
     package init(
         createdConfigID: UUID?,
-        targetWasRunningAfterCommand: Bool,
-        preDisplayID: CGDirectDisplayID?,
-        postDisplayID: CGDirectDisplayID?,
         persistenceOutcome: VirtualDisplayCommandPersistenceOutcome,
         runtimeCreationOutcome: VirtualDisplayCommandRuntimeOutcome,
         rollbackOutcome: VirtualDisplayCommandPersistenceOutcome
     ) {
         self.createdConfigID = createdConfigID
-        self.targetWasRunningAfterCommand = targetWasRunningAfterCommand
-        self.preDisplayID = preDisplayID
-        self.postDisplayID = postDisplayID
         self.persistenceOutcome = persistenceOutcome
         self.runtimeCreationOutcome = runtimeCreationOutcome
         self.rollbackOutcome = rollbackOutcome

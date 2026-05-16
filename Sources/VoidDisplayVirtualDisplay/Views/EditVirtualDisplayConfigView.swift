@@ -107,6 +107,17 @@ package struct EditVirtualDisplayConfigView: View {
             Divider()
 
             HStack(spacing: 8) {
+                if UITestRuntime.isEnabled && isRunning {
+                    Button {
+                        handleUITestSaveAndRebuildTapped()
+                    } label: {
+                        Text(verbatim: "Test Save and Rebuild")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_test_button")
+                }
+
                 Spacer()
 
                 switch EditVirtualDisplayWorkflow.actionLayout(isRunning: isRunning) {
@@ -490,6 +501,26 @@ package struct EditVirtualDisplayConfigView: View {
 
     private func removeMode(_ mode: ResolutionSelection) {
         selectedModes.removeAll { $0.id == mode.id }
+    }
+
+    private func handleUITestSaveAndRebuildTapped() {
+        guard isRunning else { return }
+        guard let analysis = analyzeSave(reportErrors: true) else { return }
+        guard !isSaveAndRebuildInFlight else { return }
+
+        var updatedConfig = analysis.updatedConfig
+        updatedConfig.physicalWidth += 1
+        let forcedAnalysis = VirtualDisplayEditSaveAnalyzer.SaveAnalysis(
+            updatedConfig: updatedConfig,
+            shouldApplyModesImmediately: false,
+            requiresSaveAndRebuild: true
+        )
+
+        isSaveAndRebuildInFlight = true
+        Task {
+            await performSaveAndRebuild(forcedAnalysis)
+            isSaveAndRebuildInFlight = false
+        }
     }
 
     private func validationErrorMessage(

@@ -6,7 +6,7 @@ import Foundation
 import ScreenCaptureKit
 import Testing
 
-private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+private final class CapturePreviewLifecycleDummySession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
 
     nonisolated(unsafe) var attachedSinkCount = 0
@@ -36,15 +36,15 @@ private final class CaptureMonitoringLifecycleDummySession: DisplayCaptureSessio
     nonisolated func stop() async {}
 }
 
-private final class CaptureMonitoringLifecyclePreviewSink: DisplayPreviewSink, @unchecked Sendable {
+private final class CapturePreviewLifecyclePreviewSink: DisplayPreviewSink, @unchecked Sendable {
     nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
-private final class CaptureMonitoringLifecycleCancelCounter: @unchecked Sendable {
+private final class CapturePreviewLifecycleCancelCounter: @unchecked Sendable {
     nonisolated(unsafe) var value = 0
 }
 
-private final class CaptureMonitoringLifecycleMockSCDisplayBox: NSObject {
+private final class CapturePreviewLifecycleMockSCDisplayBox: NSObject {
     @objc let displayID: CGDirectDisplayID
     @objc let width: Int
     @objc let height: Int
@@ -59,9 +59,9 @@ private final class CaptureMonitoringLifecycleMockSCDisplayBox: NSObject {
     }
 }
 
-private enum CaptureMonitoringLifecycleMockSCDisplay {
+private enum CapturePreviewLifecycleMockSCDisplay {
     static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = CaptureMonitoringLifecycleMockSCDisplayBox(
+        let box = CapturePreviewLifecycleMockSCDisplayBox(
             displayID: displayID,
             width: width,
             height: height
@@ -70,9 +70,9 @@ private enum CaptureMonitoringLifecycleMockSCDisplay {
     }
 }
 
-private struct CaptureMonitoringLifecycleControlledError: Error, Equatable {}
+private struct CapturePreviewLifecycleControlledError: Error, Equatable {}
 
-private actor CaptureMonitoringLifecycleAcquirePreviewGate {
+private actor CapturePreviewLifecycleAcquirePreviewGate {
     enum Outcome: Sendable {
         case success(DisplayPreviewSubscription)
         case failure(any Error & Sendable)
@@ -117,32 +117,32 @@ private actor CaptureMonitoringLifecycleAcquirePreviewGate {
 
 @Suite(.serialized)
 @MainActor
-struct CaptureMonitoringLifecycleServiceTests {
-    @Test func startMonitoringCreatesSessionAndReturnsID() async throws {
-        let service = MockCaptureMonitoringService()
+struct CapturePreviewLifecycleServiceTests {
+    @Test func startPreviewCreatesSessionAndReturnsID() async throws {
+        let service = MockCapturePreviewService()
         let previewRecord = makePreview(displayID: 701)
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in .started(previewRecord.subscription) }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 701,
             width: 1920,
             height: 1080
         )
-        let metadata = CaptureMonitoringDisplayMetadata(
+        let metadata = CapturePreviewDisplayMetadata(
             displayName: "Studio Display",
             resolutionText: "1920 × 1080",
             isVirtualDisplay: false
         )
 
-        let outcome = try await lifecycle.startMonitoring(display: display, metadata: metadata)
+        let outcome = try await lifecycle.startPreview(display: display, metadata: metadata)
         let sessionID: UUID
         switch outcome {
         case .started(let id):
             sessionID = id
         case .invalidated:
-            Issue.record("Expected monitoring start to succeed.")
+            Issue.record("Expected preview start to succeed.")
             return
         }
 
@@ -154,25 +154,25 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(service.currentSessions.first?.isVirtualDisplay == false)
     }
 
-    @Test func startMonitoringReusesExistingSessionIDForSameDisplay() async throws {
-        let service = MockCaptureMonitoringService()
+    @Test func startPreviewReusesExistingSessionIDForSameDisplay() async throws {
+        let service = MockCapturePreviewService()
         let existing = makeSession(id: UUID(), displayID: 702)
         service.currentSessions = [existing.session]
         var acquirePreviewCallCount = 0
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in
                 acquirePreviewCallCount += 1
                 return .started(makePreview(displayID: 702).subscription)
             }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 702,
             width: 1920,
             height: 1080
         )
 
-        let outcome = try await lifecycle.startMonitoring(
+        let outcome = try await lifecycle.startPreview(
             display: display,
             metadata: .init(
                 displayName: "Ignored",
@@ -185,7 +185,7 @@ struct CaptureMonitoringLifecycleServiceTests {
         case .started(let id):
             sessionID = id
         case .invalidated:
-            Issue.record("Expected monitoring start to reuse existing session.")
+            Issue.record("Expected preview start to reuse existing session.")
             return
         }
 
@@ -195,23 +195,23 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(service.currentSessions.count == 1)
     }
 
-    @Test func startMonitoringUsesInjectedAcquirePreview() async throws {
-        let service = MockCaptureMonitoringService()
+    @Test func startPreviewUsesInjectedAcquirePreview() async throws {
+        let service = MockCapturePreviewService()
         var usedInjectedAcquirePreview = false
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in
                 usedInjectedAcquirePreview = true
                 return .started(makePreview(displayID: 703).subscription)
             }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 703,
             width: 2560,
             height: 1440
         )
 
-        _ = try await lifecycle.startMonitoring(
+        _ = try await lifecycle.startPreview(
             display: display,
             metadata: .init(
                 displayName: "Preview Source",
@@ -223,14 +223,14 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(usedInjectedAcquirePreview)
     }
 
-    @Test func concurrentStartMonitoringForSameDisplayCreatesOneSessionAndOnePreviewAcquire() async throws {
-        let service = MockCaptureMonitoringService()
+    @Test func concurrentStartPreviewForSameDisplayCreatesOneSessionAndOnePreviewAcquire() async throws {
+        let service = MockCapturePreviewService()
         let preview = makePreview(displayID: 712)
-        let gate = CaptureMonitoringLifecycleAcquirePreviewGate(
+        let gate = CapturePreviewLifecycleAcquirePreviewGate(
             scriptedOutcomes: [.success(preview.subscription)]
         )
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in
                 switch await gate.nextOutcome() {
                 case .success(let subscription):
@@ -240,24 +240,24 @@ struct CaptureMonitoringLifecycleServiceTests {
                 }
             }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 712,
             width: 1920,
             height: 1080
         )
-        let metadata = CaptureMonitoringDisplayMetadata(
+        let metadata = CapturePreviewDisplayMetadata(
             displayName: "Shared Display",
             resolutionText: "1920 × 1080",
             isVirtualDisplay: false
         )
 
         let firstTask = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 1))
 
         let secondTask = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         let stayedSingleAcquire = await staysTrue {
             await gate.currentCallCount() == 1
@@ -273,14 +273,14 @@ struct CaptureMonitoringLifecycleServiceTests {
         case .started(let id):
             firstID = id
         case .invalidated:
-            Issue.record("Expected first monitoring start to succeed.")
+            Issue.record("Expected first preview start to succeed.")
             return
         }
         switch secondOutcome {
         case .started(let id):
             secondID = id
         case .invalidated:
-            Issue.record("Expected second monitoring start to reuse the same start outcome.")
+            Issue.record("Expected second preview start to reuse the same start outcome.")
             return
         }
 
@@ -291,12 +291,12 @@ struct CaptureMonitoringLifecycleServiceTests {
     }
 
     @Test func attachPreviewSinkTargetsRequestedSessionOnly() {
-        let service = MockCaptureMonitoringService()
+        let service = MockCapturePreviewService()
         let first = makeSession(id: UUID(), displayID: 704)
         let second = makeSession(id: UUID(), displayID: 705)
         service.currentSessions = [first.session, second.session]
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
-        let sink = CaptureMonitoringLifecyclePreviewSink()
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
+        let sink = CapturePreviewLifecyclePreviewSink()
 
         lifecycle.attachPreviewSink(sink, to: second.session.id)
 
@@ -304,27 +304,27 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(second.captureSession.attachedSinkCount == 1)
     }
 
-    @Test func activateMonitoringSessionPromotesOnlyRequestedSession() {
-        let service = MockCaptureMonitoringService()
+    @Test func activatePreviewSessionPromotesOnlyRequestedSession() {
+        let service = MockCapturePreviewService()
         let first = makeSession(id: UUID(), displayID: 706)
         let second = makeSession(id: UUID(), displayID: 707)
         service.currentSessions = [first.session, second.session]
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        lifecycle.activateMonitoringSession(id: second.session.id)
+        lifecycle.activatePreviewSession(id: second.session.id)
 
         #expect(service.currentSessions.first(where: { $0.id == first.session.id })?.state == .starting)
         #expect(service.currentSessions.first(where: { $0.id == second.session.id })?.state == .active)
         #expect(service.updateStateCallCount == 1)
     }
 
-    @Test func setMonitoringSessionCapturesCursorWritesBackOnlyAfterPreviewUpdateSucceeds() async throws {
-        let service = MockCaptureMonitoringService()
+    @Test func setPreviewSessionCapturesCursorWritesBackOnlyAfterPreviewUpdateSucceeds() async throws {
+        let service = MockCapturePreviewService()
         let record = makeSession(id: UUID(), displayID: 708)
         service.currentSessions = [record.session]
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        try await lifecycle.setMonitoringSessionCapturesCursor(
+        try await lifecycle.setPreviewSessionCapturesCursor(
             id: record.session.id,
             capturesCursor: true
         )
@@ -335,15 +335,15 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(service.currentSessions.first?.capturesCursor == true)
     }
 
-    @Test func setMonitoringSessionCapturesCursorDoesNotWriteBackWhenPreviewUpdateFails() async {
-        let service = MockCaptureMonitoringService()
+    @Test func setPreviewSessionCapturesCursorDoesNotWriteBackWhenPreviewUpdateFails() async {
+        let service = MockCapturePreviewService()
         let record = makeSession(id: UUID(), displayID: 709)
-        record.captureSession.cursorUpdateError = CaptureMonitoringLifecycleControlledError()
+        record.captureSession.cursorUpdateError = CapturePreviewLifecycleControlledError()
         service.currentSessions = [record.session]
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        await #expect(throws: CaptureMonitoringLifecycleControlledError.self) {
-            try await lifecycle.setMonitoringSessionCapturesCursor(
+        await #expect(throws: CapturePreviewLifecycleControlledError.self) {
+            try await lifecycle.setPreviewSessionCapturesCursor(
                 id: record.session.id,
                 capturesCursor: true
             )
@@ -354,42 +354,42 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(service.currentSessions.first?.capturesCursor == false)
     }
 
-    @Test func closeMonitoringSessionUsesRemovePathOnly() {
-        let service = MockCaptureMonitoringService()
+    @Test func closePreviewSessionUsesRemovePathOnly() {
+        let service = MockCapturePreviewService()
         let record = makeSession(id: UUID(), displayID: 710)
         service.currentSessions = [record.session]
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        lifecycle.closeMonitoringSession(id: record.session.id)
+        lifecycle.closePreviewSession(id: record.session.id)
 
         #expect(service.removeCallCount == 1)
         #expect(record.cancelCounter.value == 0)
         #expect(service.currentSessions.isEmpty)
     }
 
-    @Test func removeMonitoringSessionsRemovesSingleMatchingDisplaySession() {
+    @Test func removePreviewSessionsRemovesSingleMatchingDisplaySession() {
         let record = makeSession(id: UUID(), displayID: 714)
-        let service = CaptureMonitoringService(initialSessions: [record.session])
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let service = CapturePreviewService(initialSessions: [record.session])
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        lifecycle.removeMonitoringSessions(displayID: 714)
+        lifecycle.removePreviewSessions(displayID: 714)
 
         #expect(service.currentSessions.isEmpty)
         #expect(record.cancelCounter.value == 1)
     }
 
-    @Test func removeMonitoringSessionsRemovesAllMatchingSessionsAndPreservesOtherDisplays() {
+    @Test func removePreviewSessionsRemovesAllMatchingSessionsAndPreservesOtherDisplays() {
         let first = makeSession(id: UUID(), displayID: 715)
         let second = makeSession(id: UUID(), displayID: 715)
         let third = makeSession(id: UUID(), displayID: 716)
-        let service = CaptureMonitoringService(initialSessions: [
+        let service = CapturePreviewService(initialSessions: [
             first.session,
             second.session,
             third.session
         ])
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        lifecycle.removeMonitoringSessions(displayID: 715)
+        lifecycle.removePreviewSessions(displayID: 715)
 
         #expect(service.currentSessions.map(\.displayID) == [716])
         #expect(first.cancelCounter.value == 1)
@@ -397,13 +397,13 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(third.cancelCounter.value == 0)
     }
 
-    @Test func removeMonitoringSessionsIgnoresUnknownDisplayID() {
+    @Test func removePreviewSessionsIgnoresUnknownDisplayID() {
         let first = makeSession(id: UUID(), displayID: 717)
         let second = makeSession(id: UUID(), displayID: 718)
-        let service = CaptureMonitoringService(initialSessions: [first.session, second.session])
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
+        let service = CapturePreviewService(initialSessions: [first.session, second.session])
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
 
-        lifecycle.removeMonitoringSessions(displayID: 999)
+        lifecycle.removePreviewSessions(displayID: 999)
 
         #expect(service.currentSessions.map(\.id) == [first.session.id, second.session.id])
         #expect(first.cancelCounter.value == 0)
@@ -411,16 +411,16 @@ struct CaptureMonitoringLifecycleServiceTests {
     }
 
     @Test func failedInFlightStartClearsMutualExclusionAndAllowsRetry() async {
-        let service = MockCaptureMonitoringService()
+        let service = MockCapturePreviewService()
         let secondPreview = makePreview(displayID: 713)
-        let gate = CaptureMonitoringLifecycleAcquirePreviewGate(
+        let gate = CapturePreviewLifecycleAcquirePreviewGate(
             scriptedOutcomes: [
-                .failure(CaptureMonitoringLifecycleControlledError()),
+                .failure(CapturePreviewLifecycleControlledError()),
                 .success(secondPreview.subscription)
             ]
         )
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in
                 switch await gate.nextOutcome() {
                 case .success(let subscription):
@@ -430,29 +430,29 @@ struct CaptureMonitoringLifecycleServiceTests {
                 }
             }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 713,
             width: 1920,
             height: 1080
         )
-        let metadata = CaptureMonitoringDisplayMetadata(
+        let metadata = CapturePreviewDisplayMetadata(
             displayName: "Retry Display",
             resolutionText: "1920 × 1080",
             isVirtualDisplay: false
         )
 
         let firstTask = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 1))
         await gate.release(call: 1)
 
-        await #expect(throws: CaptureMonitoringLifecycleControlledError.self) {
+        await #expect(throws: CapturePreviewLifecycleControlledError.self) {
             try await firstTask.value
         }
 
         let retryTask = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 2))
         await gate.release(call: 2)
@@ -470,18 +470,18 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(service.currentSessions.first?.displayID == 713)
     }
 
-    @Test func removeMonitoringSessionsCancelsInFlightStartAndAllowsCleanRetry() async throws {
-        let service = CaptureMonitoringService()
+    @Test func removePreviewSessionsCancelsInFlightStartAndAllowsCleanRetry() async throws {
+        let service = CapturePreviewService()
         let firstPreview = makePreview(displayID: 719)
         let secondPreview = makePreview(displayID: 719)
-        let gate = CaptureMonitoringLifecycleAcquirePreviewGate(
+        let gate = CapturePreviewLifecycleAcquirePreviewGate(
             scriptedOutcomes: [
                 .success(firstPreview.subscription),
                 .success(secondPreview.subscription)
             ]
         )
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in
                 switch await gate.nextOutcome() {
                 case .success(let subscription):
@@ -491,36 +491,36 @@ struct CaptureMonitoringLifecycleServiceTests {
                 }
             }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 719,
             width: 1920,
             height: 1080
         )
-        let metadata = CaptureMonitoringDisplayMetadata(
+        let metadata = CapturePreviewDisplayMetadata(
             displayName: "Rebuild Display",
             resolutionText: "1920 × 1080",
             isVirtualDisplay: false
         )
 
         let firstTask = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 1))
 
-        lifecycle.removeMonitoringSessions(displayID: 719)
+        lifecycle.removePreviewSessions(displayID: 719)
         await gate.release(call: 1)
 
         let firstOutcome = try await firstTask.value
         if case .invalidated = firstOutcome {
         } else {
-            Issue.record("Expected in-flight start to be invalidated by removeMonitoringSessions.")
+            Issue.record("Expected in-flight start to be invalidated by removePreviewSessions.")
         }
 
         #expect(service.currentSessions.isEmpty)
         #expect(await waitUntil { firstPreview.cancelCounter.value == 1 })
 
         let retryTask = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 2))
         await gate.release(call: 2)
@@ -530,7 +530,7 @@ struct CaptureMonitoringLifecycleServiceTests {
         case .started(let id):
             retryID = id
         case .invalidated:
-            Issue.record("Expected retry monitoring start to succeed.")
+            Issue.record("Expected retry preview start to succeed.")
             return
         }
 
@@ -539,14 +539,14 @@ struct CaptureMonitoringLifecycleServiceTests {
         #expect(secondPreview.cancelCounter.value == 0)
     }
 
-    @Test func removeMonitoringSessionsPreventsStaleSessionWriteWhenAcquireResumesAfterInvalidation() async throws {
-        let service = CaptureMonitoringService()
+    @Test func removePreviewSessionsPreventsStaleSessionWriteWhenAcquireResumesAfterInvalidation() async throws {
+        let service = CapturePreviewService()
         let preview = makePreview(displayID: 720)
-        let gate = CaptureMonitoringLifecycleAcquirePreviewGate(
+        let gate = CapturePreviewLifecycleAcquirePreviewGate(
             scriptedOutcomes: [.success(preview.subscription)]
         )
-        let lifecycle = CaptureMonitoringLifecycleService(
-            captureMonitoringService: service,
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
             acquirePreview: { _, _ in
                 switch await gate.nextOutcome() {
                 case .success(let subscription):
@@ -556,29 +556,29 @@ struct CaptureMonitoringLifecycleServiceTests {
                 }
             }
         )
-        let display = CaptureMonitoringLifecycleMockSCDisplay.make(
+        let display = CapturePreviewLifecycleMockSCDisplay.make(
             displayID: 720,
             width: 1920,
             height: 1080
         )
-        let metadata = CaptureMonitoringDisplayMetadata(
+        let metadata = CapturePreviewDisplayMetadata(
             displayName: "Cancelled Display",
             resolutionText: "1920 × 1080",
             isVirtualDisplay: false
         )
 
         let task = Task { @MainActor in
-            try await lifecycle.startMonitoring(display: display, metadata: metadata)
+            try await lifecycle.startPreview(display: display, metadata: metadata)
         }
         #expect(await waitForAcquirePreviewCall(gate, count: 1))
 
-        lifecycle.removeMonitoringSessions(displayID: 720)
+        lifecycle.removePreviewSessions(displayID: 720)
         await gate.release(call: 1)
 
         let outcome = try await task.value
         if case .invalidated = outcome {
         } else {
-            Issue.record("Expected invalidated outcome after removing monitoring sessions.")
+            Issue.record("Expected invalidated outcome after removing preview sessions.")
         }
 
         #expect(service.currentSessions.isEmpty)
@@ -586,16 +586,16 @@ struct CaptureMonitoringLifecycleServiceTests {
     }
 
     @Test func unknownSessionIDsAreNoOpForActivateAttachAndClose() async throws {
-        let service = MockCaptureMonitoringService()
+        let service = MockCapturePreviewService()
         let record = makeSession(id: UUID(), displayID: 711)
         service.currentSessions = [record.session]
-        let lifecycle = CaptureMonitoringLifecycleService(captureMonitoringService: service)
-        let sink = CaptureMonitoringLifecyclePreviewSink()
+        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
+        let sink = CapturePreviewLifecyclePreviewSink()
 
-        lifecycle.activateMonitoringSession(id: UUID())
+        lifecycle.activatePreviewSession(id: UUID())
         lifecycle.attachPreviewSink(sink, to: UUID())
-        try await lifecycle.setMonitoringSessionCapturesCursor(id: UUID(), capturesCursor: true)
-        lifecycle.closeMonitoringSession(id: UUID())
+        try await lifecycle.setPreviewSessionCapturesCursor(id: UUID(), capturesCursor: true)
+        lifecycle.closePreviewSession(id: UUID())
 
         #expect(service.updateStateCallCount == 0)
         #expect(service.updateCapturesCursorCallCount == 0)
@@ -609,11 +609,11 @@ struct CaptureMonitoringLifecycleServiceTests {
         displayID: CGDirectDisplayID
     ) -> (
         subscription: DisplayPreviewSubscription,
-        captureSession: CaptureMonitoringLifecycleDummySession,
-        cancelCounter: CaptureMonitoringLifecycleCancelCounter
+        captureSession: CapturePreviewLifecycleDummySession,
+        cancelCounter: CapturePreviewLifecycleCancelCounter
     ) {
-        let captureSession = CaptureMonitoringLifecycleDummySession()
-        let cancelCounter = CaptureMonitoringLifecycleCancelCounter()
+        let captureSession = CapturePreviewLifecycleDummySession()
+        let cancelCounter = CapturePreviewLifecycleCancelCounter()
         let subscription = DisplayPreviewSubscription(
             displayID: displayID,
             resolutionText: "1920 × 1080",
@@ -635,12 +635,12 @@ struct CaptureMonitoringLifecycleServiceTests {
         id: UUID,
         displayID: CGDirectDisplayID
     ) -> (
-        session: ScreenMonitoringSession,
-        captureSession: CaptureMonitoringLifecycleDummySession,
-        cancelCounter: CaptureMonitoringLifecycleCancelCounter
+        session: ScreenPreviewSession,
+        captureSession: CapturePreviewLifecycleDummySession,
+        cancelCounter: CapturePreviewLifecycleCancelCounter
     ) {
         let preview = makePreview(displayID: displayID)
-        let session = ScreenMonitoringSession(
+        let session = ScreenPreviewSession(
             id: id,
             displayID: displayID,
             displayName: "Display \(displayID)",
@@ -654,7 +654,7 @@ struct CaptureMonitoringLifecycleServiceTests {
     }
 
     private func waitForAcquirePreviewCall(
-        _ gate: CaptureMonitoringLifecycleAcquirePreviewGate,
+        _ gate: CapturePreviewLifecycleAcquirePreviewGate,
         count: Int
     ) async -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion

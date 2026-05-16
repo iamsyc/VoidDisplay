@@ -9,17 +9,17 @@ import SwiftUI
 package struct CaptureDisplayWindowRoot: View {
     @Environment(\.dismiss) private var dismiss
     package let sessionId: UUID?
-    private let monitoringActions: CaptureMonitoringActions
+    private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
     @State private var hasSeenSessionID = false
 
     package init(
         sessionId: UUID?,
-        monitoringActions: CaptureMonitoringActions,
+        previewActions: CapturePreviewActions,
         sharingStatusProvider: CaptureSharingStatusProvider
     ) {
         self.sessionId = sessionId
-        self.monitoringActions = monitoringActions
+        self.previewActions = previewActions
         self.sharingStatusProvider = sharingStatusProvider
     }
 
@@ -28,10 +28,10 @@ package struct CaptureDisplayWindowRoot: View {
             if let sessionId {
                 CaptureDisplayView(
                     sessionId: sessionId,
-                    monitoringActions: monitoringActions,
+                    previewActions: previewActions,
                     sharingStatusProvider: sharingStatusProvider
                 )
-                    .navigationTitle("Monitor")
+                    .navigationTitle("Preview")
             } else {
                 Color.clear
             }

@@ -118,7 +118,7 @@ package nonisolated struct DisplayRuntimeEffectiveCaptureIntent: Codable, Equata
     }
 }
 
-package nonisolated struct DisplayRuntimeMonitorConsumerAttachResult: Equatable, Sendable {
+package nonisolated struct DisplayRuntimePreviewConsumerAttachResult: Equatable, Sendable {
     package let lease: DisplayRuntimeConsumerLease
     package let applyResult: DisplayRuntimeCaptureIntentApplyResult
 
@@ -131,7 +131,7 @@ package nonisolated struct DisplayRuntimeMonitorConsumerAttachResult: Equatable,
     }
 }
 
-package nonisolated struct DisplayRuntimeMonitorConsumerDetachResult: Equatable, Sendable {
+package nonisolated struct DisplayRuntimePreviewConsumerDetachResult: Equatable, Sendable {
     package let releasedLease: DisplayRuntimeConsumerLease?
     package let applyResult: DisplayRuntimeCaptureIntentApplyResult?
 

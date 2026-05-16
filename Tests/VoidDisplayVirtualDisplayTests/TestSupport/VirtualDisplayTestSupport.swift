@@ -4,11 +4,11 @@ import CoreGraphics
 import Foundation
 
 @MainActor
-final class MockCaptureMonitoringService {
+final class MockCapturePreviewService {
     var removeByDisplayCallCount = 0
     var removedDisplayIDs: [CGDirectDisplayID] = []
 
-    func removeMonitoringSessions(displayID: CGDirectDisplayID) {
+    func removePreviewSessions(displayID: CGDirectDisplayID) {
         removeByDisplayCallCount += 1
         removedDisplayIDs.append(displayID)
     }

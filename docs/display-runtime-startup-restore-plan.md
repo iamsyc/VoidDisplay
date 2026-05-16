@@ -13,7 +13,7 @@
 - LAN route、shareID、auth/security。
 - remote control、input injection、clipboard。
 - Capture/WebRTC/WebSocket/HTTP/frame pipeline。
-- LAN Web View 数据平面、Monitor 数据平面或 capture frame 数据平面。
+- LAN Web View 数据平面、Screen Preview 数据平面或 capture frame 数据平面。
 - Phase 7 叙事。
 
 任何实现批次只要需要触碰上述范围，就必须停止并重新开计划。不得把这些能力作为 startup restore transaction 的附带改动。
@@ -35,7 +35,7 @@ Startup restore 必须进入 `DisplayRuntime` transaction control plane。应用
 - `VoidDisplayVirtualDisplay` lower layer 不 import `VoidDisplayRuntime`。
 - `VoidDisplayRuntime` 不 import UI/App/Capture/Sharing/VirtualDisplay/ScreenCaptureKit。
 - 用户可见功能不变。已设置为 desired-enabled 的虚拟显示仍在启动后恢复。
-- 不改变 LAN Web View、Monitor、capture frame pipeline、WebRTC/WebSocket/HTTP、LAN route、shareID、认证、安全边界。
+- 不改变 LAN Web View、Screen Preview、capture frame pipeline、WebRTC/WebSocket/HTTP、LAN route、shareID、认证、安全边界。
 - 不引入旧 direct startup restore fallback。
 
 ## 当前问题
@@ -57,7 +57,7 @@ Startup restore 必须进入 `DisplayRuntime` transaction control plane。应用
 - transaction source 和 operation trace。
 - pre/post snapshot evidence。
 - topology stable / timedOut / unprovableDueToPermission 结果。
-- sharing / monitoring quiesce 与 restore 结果归因。
+- sharing / preview quiesce 与 restore 结果归因。
 - runtime observability snapshot refresh。
 
 结果是同一类 virtual display runtime side effect 在启动期和运行期有两套控制路径。运行期 transaction 能解释操作、失败和恢复影响；启动期 direct path 只能解释 lower restore failure，无法提供同等级的 runtime evidence。
@@ -149,7 +149,7 @@ Startup restore 必须进入 existing runtime transaction trace / observability 
 - lower restore command result。
 - post snapshot。
 - topology wait result。
-- sharing / monitoring restore result。
+- sharing / preview restore result。
 - per-config failure reason。
 - compensation evidence。
 - aggregate startup restore result。
@@ -246,8 +246,8 @@ Topology unprovableDueToPermission：
 
 Session restore failure：
 
-- sharing / monitoring restore 失败按现有 restore result 语义记录。
-- 不改变 LAN Web View、Monitor、capture frame pipeline、WebRTC/WebSocket/HTTP 或 LAN route/shareID/认证/安全边界。
+- sharing / preview restore 失败按现有 restore result 语义记录。
+- 不改变 LAN Web View、Screen Preview、capture frame pipeline、WebRTC/WebSocket/HTTP 或 LAN route/shareID/认证/安全边界。
 
 ## 分层边界
 

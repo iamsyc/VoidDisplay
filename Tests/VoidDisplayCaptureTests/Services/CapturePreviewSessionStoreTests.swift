@@ -4,7 +4,7 @@ import CoreGraphics
 import ScreenCaptureKit
 import Testing
 
-private final class CaptureMonitoringSessionStoreDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+private final class CapturePreviewSessionStoreDummySession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
 
     nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
@@ -18,15 +18,15 @@ private final class CaptureMonitoringSessionStoreDummySession: DisplayCaptureSes
     nonisolated func stop() async {}
 }
 
-private final class CaptureMonitoringSessionStoreCancellationCounter: @unchecked Sendable {
+private final class CapturePreviewSessionStoreCancellationCounter: @unchecked Sendable {
     nonisolated(unsafe) var value = 0
 }
 
 @Suite(.serialized)
 @MainActor
-struct CaptureMonitoringSessionStoreTests {
+struct CapturePreviewSessionStoreTests {
     @Test func addAndLookupSessionTracksCurrentSessions() {
-        let store = CaptureMonitoringSessionStore()
+        let store = CapturePreviewSessionStore()
         let record = makeSession(id: UUID(), displayID: 801)
 
         store.add(record.session)
@@ -39,7 +39,7 @@ struct CaptureMonitoringSessionStoreTests {
         let starting = makeSession(id: UUID(), displayID: 802).session
         var active = makeSession(id: UUID(), displayID: 803).session
         active.state = .active
-        let store = CaptureMonitoringSessionStore(initialSessions: [starting, active])
+        let store = CapturePreviewSessionStore(initialSessions: [starting, active])
 
         store.updateState(id: starting.id, state: .active)
         store.updateState(id: active.id, state: .starting)
@@ -51,7 +51,7 @@ struct CaptureMonitoringSessionStoreTests {
     @Test func updateCapturesCursorOnlyTouchesMatchingSession() {
         let first = makeSession(id: UUID(), displayID: 804).session
         let second = makeSession(id: UUID(), displayID: 805).session
-        let store = CaptureMonitoringSessionStore(initialSessions: [first, second])
+        let store = CapturePreviewSessionStore(initialSessions: [first, second])
 
         store.updateCapturesCursor(id: second.id, capturesCursor: true)
 
@@ -62,7 +62,7 @@ struct CaptureMonitoringSessionStoreTests {
     @Test func removeByIDCancelsSubscriptionAndDeletesSession() {
         let first = makeSession(id: UUID(), displayID: 806)
         let second = makeSession(id: UUID(), displayID: 807)
-        let store = CaptureMonitoringSessionStore(initialSessions: [first.session, second.session])
+        let store = CapturePreviewSessionStore(initialSessions: [first.session, second.session])
 
         store.remove(id: first.session.id)
 
@@ -75,7 +75,7 @@ struct CaptureMonitoringSessionStoreTests {
         let first = makeSession(id: UUID(), displayID: 808)
         let second = makeSession(id: UUID(), displayID: 808)
         let third = makeSession(id: UUID(), displayID: 809)
-        let store = CaptureMonitoringSessionStore(initialSessions: [
+        let store = CapturePreviewSessionStore(initialSessions: [
             first.session,
             second.session,
             third.session
@@ -93,11 +93,11 @@ struct CaptureMonitoringSessionStoreTests {
         id: UUID,
         displayID: CGDirectDisplayID
     ) -> (
-        session: ScreenMonitoringSession,
-        cancelCounter: CaptureMonitoringSessionStoreCancellationCounter
+        session: ScreenPreviewSession,
+        cancelCounter: CapturePreviewSessionStoreCancellationCounter
     ) {
-        let cancelCounter = CaptureMonitoringSessionStoreCancellationCounter()
-        let session = ScreenMonitoringSession(
+        let cancelCounter = CapturePreviewSessionStoreCancellationCounter()
+        let session = ScreenPreviewSession(
             id: id,
             displayID: displayID,
             displayName: "Display \(displayID)",
@@ -106,7 +106,7 @@ struct CaptureMonitoringSessionStoreTests {
             previewSubscription: DisplayPreviewSubscription(
                 displayID: displayID,
                 resolutionText: "1920 x 1080",
-                session: CaptureMonitoringSessionStoreDummySession(),
+                session: CapturePreviewSessionStoreDummySession(),
                 cancelClosure: { cancelCounter.value += 1 }
             ),
             capturesCursor: false,

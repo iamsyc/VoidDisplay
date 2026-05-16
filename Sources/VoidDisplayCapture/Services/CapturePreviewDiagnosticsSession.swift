@@ -10,9 +10,9 @@ import Foundation
 
 @MainActor
 package enum CapturePreviewDiagnosticsBootstrap {
-    package static func makeMonitoringService(
+    package static func makePreviewService(
         configuration: CapturePreviewDiagnosticsConfiguration
-    ) throws -> CaptureMonitoringService {
+    ) throws -> CapturePreviewService {
         let session = try UITestCapturePreviewSession(configuration: configuration)
         let previewSubscription = DisplayPreviewSubscription(
             displayID: session.displayID,
@@ -20,7 +20,7 @@ package enum CapturePreviewDiagnosticsBootstrap {
             session: session,
             cancelClosure: {}
         )
-        let monitoringSession = ScreenMonitoringSession(
+        let previewSession = ScreenPreviewSession(
             id: UUID(),
             displayID: session.displayID,
             displayName: "Preview Diagnostics",
@@ -30,7 +30,7 @@ package enum CapturePreviewDiagnosticsBootstrap {
             capturesCursor: false,
             state: .starting
         )
-        return CaptureMonitoringService(initialSessions: [monitoringSession])
+        return CapturePreviewService(initialSessions: [previewSession])
     }
 }
 package final class UITestCapturePreviewSession: @unchecked Sendable, DisplayCaptureSessioning {

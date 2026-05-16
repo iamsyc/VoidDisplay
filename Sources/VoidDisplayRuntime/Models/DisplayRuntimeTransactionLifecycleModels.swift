@@ -66,8 +66,6 @@ package nonisolated struct DisplayRuntimeVirtualDisplayLifecycleCommandResult: C
     package let desiredEnabled: Bool
     package let preDisplayID: DisplayRuntimeDisplayID?
     package let postDisplayID: DisplayRuntimeDisplayID?
-    package let runningConfigIDsAfterCommand: [UUID]
-    package let managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay]
     package let mayPerformFleetRebuild: Bool?
     package let requiresFleetQuiesce: Bool?
 
@@ -76,8 +74,6 @@ package nonisolated struct DisplayRuntimeVirtualDisplayLifecycleCommandResult: C
         desiredEnabled: Bool,
         preDisplayID: DisplayRuntimeDisplayID?,
         postDisplayID: DisplayRuntimeDisplayID?,
-        runningConfigIDsAfterCommand: [UUID],
-        managedDisplaysAfterCommand: [DisplayRuntimeManagedVirtualDisplay],
         mayPerformFleetRebuild: Bool?,
         requiresFleetQuiesce: Bool?
     ) {
@@ -85,10 +81,6 @@ package nonisolated struct DisplayRuntimeVirtualDisplayLifecycleCommandResult: C
         self.desiredEnabled = desiredEnabled
         self.preDisplayID = preDisplayID
         self.postDisplayID = postDisplayID
-        self.runningConfigIDsAfterCommand = runningConfigIDsAfterCommand.sorted { $0.uuidString < $1.uuidString }
-        self.managedDisplaysAfterCommand = managedDisplaysAfterCommand.sorted {
-            ($0.configID.uuidString, $0.displayID) < ($1.configID.uuidString, $1.displayID)
-        }
         self.mayPerformFleetRebuild = mayPerformFleetRebuild
         self.requiresFleetQuiesce = requiresFleetQuiesce
     }

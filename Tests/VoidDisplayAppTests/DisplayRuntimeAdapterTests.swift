@@ -61,7 +61,7 @@ struct DisplayRuntimeAdapterTests {
 
     @Test func captureIntentAdapterUnavailableFailsExplicitly() {
         var controller: CaptureController? = CaptureController(
-            captureMonitoringService: MockCaptureMonitoringService()
+            capturePreviewService: MockCapturePreviewService()
         )
         let sut = DisplayRuntimeCaptureAdapter(controller: controller!)
         controller = nil
@@ -88,9 +88,9 @@ struct DisplayRuntimeAdapterTests {
         catalogService.store.hasScreenCapturePermission = true
         catalogService.store.lastPreflightPermission = true
         catalogService.store.displays = [visibleDisplay]
-        let captureMonitoringService = MockCaptureMonitoringService()
+        let capturePreviewService = MockCapturePreviewService()
         let controller = CaptureController(
-            captureMonitoringService: captureMonitoringService,
+            capturePreviewService: capturePreviewService,
             catalogService: catalogService
         )
         let sut = DisplayRuntimeCaptureAdapter(controller: controller)
@@ -102,84 +102,84 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.outcome == .applied)
         #expect(result.revision.rawValue == 2)
         #expect(result.failureCode == nil)
-        #expect(captureMonitoringService.addCallCount == 0)
-        #expect(captureMonitoringService.removeCallCount == 0)
-        #expect(captureMonitoringService.removeByDisplayCallCount == 0)
-        #expect(captureMonitoringService.currentSessions.isEmpty)
+        #expect(capturePreviewService.addCallCount == 0)
+        #expect(capturePreviewService.removeCallCount == 0)
+        #expect(capturePreviewService.removeByDisplayCallCount == 0)
+        #expect(capturePreviewService.currentSessions.isEmpty)
     }
 
-    @Test func monitorStartAttachesRuntimeLeaseAndAcquiresPreviewThroughAdapter() async throws {
+    @Test func previewStartAttachesRuntimeLeaseAndAcquiresPreviewThroughAdapter() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8404, width: 2560, height: 1440)
-        let harness = monitorHarness(display: display)
-        let actions = CaptureUIComposition.monitoringActions(
+        let harness = previewHarness(display: display)
+        let actions = CaptureUIComposition.previewActions(
             capture: harness.controller,
             displayRuntime: harness.runtime
         )
 
-        let outcome = try await actions.startMonitoring(
+        let outcome = try await actions.startPreview(
             display,
-            CaptureMonitoringDisplayMetadata(
-                displayName: "Monitor Adapter",
+            CapturePreviewDisplayMetadata(
+                displayName: "Preview Adapter",
                 resolutionText: "2560 × 1440",
                 isVirtualDisplay: false
             )
         )
 
         guard case .started(let sessionID) = outcome else {
-            Issue.record("Expected monitor start to succeed.")
+            Issue.record("Expected preview start to succeed.")
             return
         }
         let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
-        #expect(harness.captureMonitoringService.addCallCount == 1)
-        #expect(harness.controller.monitoringSession(for: sessionID)?.displayID == display.displayID)
-        #expect(lease.kind == .monitor)
+        #expect(harness.capturePreviewService.addCallCount == 1)
+        #expect(harness.controller.previewSession(for: sessionID)?.displayID == display.displayID)
+        #expect(lease.kind == .preview)
         #expect(lease.state == .attached)
         #expect(effectiveIntent.intent.kind == .capture)
         #expect(effectiveIntent.intent.reason == .attach)
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
     }
 
-    @Test func monitorStartAndStopResolveManagedVirtualDisplaySurface() async throws {
+    @Test func previewStartAndStopResolveManagedVirtualDisplaySurface() async throws {
         let configID = UUID(uuidString: "13131313-1313-1313-1313-131313131313")!
         let display = SharedMockSCDisplay.make(displayID: 8416, width: 3008, height: 1692)
-        let harness = monitorHarness(
+        let harness = previewHarness(
             display: display,
             virtualDisplaySnapshot: managedVirtualDisplaySnapshot(
                 configID: configID,
                 displayID: display.displayID
             )
         )
-        let actions = CaptureUIComposition.monitoringActions(
+        let actions = CaptureUIComposition.previewActions(
             capture: harness.controller,
             displayRuntime: harness.runtime
         )
 
-        let outcome = try await actions.startMonitoring(
+        let outcome = try await actions.startPreview(
             display,
-            CaptureMonitoringDisplayMetadata(
-                displayName: "Managed Virtual Monitor",
+            CapturePreviewDisplayMetadata(
+                displayName: "Managed Virtual Preview",
                 resolutionText: "3008 x 1692",
                 isVirtualDisplay: true
             )
         )
 
         guard case .started(let sessionID) = outcome else {
-            Issue.record("Expected managed virtual monitor start to succeed.")
+            Issue.record("Expected managed virtual preview start to succeed.")
             return
         }
         let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
         let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
-        #expect(harness.captureMonitoringService.addCallCount == 1)
-        #expect(harness.controller.monitoringSession(for: sessionID)?.displayID == display.displayID)
+        #expect(harness.capturePreviewService.addCallCount == 1)
+        #expect(harness.controller.previewSession(for: sessionID)?.displayID == display.displayID)
         #expect(lease.surfaceIdentity == surfaceIdentity)
         #expect(lease.resolvedDisplayID == display.displayID)
         #expect(effectiveIntent.intent.surfaceIdentity == surfaceIdentity)
         #expect(effectiveIntent.intent.resolvedDisplayID == display.displayID)
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
 
-        actions.closeMonitoringSession(sessionID)
+        actions.closePreviewSession(sessionID)
 
         let releasedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let drainIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
@@ -189,31 +189,31 @@ struct DisplayRuntimeAdapterTests {
         #expect(drainIntent.intent.surfaceIdentity == surfaceIdentity)
         #expect(drainIntent.intent.kind == .drain)
         #expect(drainIntent.lastApplyResult?.outcome == .applied)
-        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 1)
-        #expect(harness.controller.screenCaptureSessions.isEmpty)
+        #expect(harness.capturePreviewService.removeByDisplayCallCount == 1)
+        #expect(harness.controller.screenPreviewSessions.isEmpty)
     }
 
-    @Test func monitorStopDetachesRuntimeLeaseAndDrainsPreviewThroughAdapter() async throws {
+    @Test func previewStopDetachesRuntimeLeaseAndDrainsPreviewThroughAdapter() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8405, width: 1920, height: 1080)
-        let harness = monitorHarness(display: display)
-        let actions = CaptureUIComposition.monitoringActions(
+        let harness = previewHarness(display: display)
+        let actions = CaptureUIComposition.previewActions(
             capture: harness.controller,
             displayRuntime: harness.runtime
         )
-        let outcome = try await actions.startMonitoring(
+        let outcome = try await actions.startPreview(
             display,
-            CaptureMonitoringDisplayMetadata(
-                displayName: "Monitor Adapter",
+            CapturePreviewDisplayMetadata(
+                displayName: "Preview Adapter",
                 resolutionText: "1920 × 1080",
                 isVirtualDisplay: false
             )
         )
         guard case .started(let sessionID) = outcome else {
-            Issue.record("Expected monitor start to succeed.")
+            Issue.record("Expected preview start to succeed.")
             return
         }
 
-        actions.closeMonitoringSession(sessionID)
+        actions.closePreviewSession(sessionID)
 
         let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
@@ -222,39 +222,39 @@ struct DisplayRuntimeAdapterTests {
         #expect(effectiveIntent.intent.kind == .drain)
         #expect(effectiveIntent.intent.reason == .detach)
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
-        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 1)
-        #expect(harness.captureMonitoringService.removedDisplayIDs == [display.displayID])
-        #expect(harness.controller.screenCaptureSessions.isEmpty)
+        #expect(harness.capturePreviewService.removeByDisplayCallCount == 1)
+        #expect(harness.capturePreviewService.removedDisplayIDs == [display.displayID])
+        #expect(harness.controller.screenPreviewSessions.isEmpty)
     }
 
-    @Test func monitorApplyFailsPermissionUnavailableWithoutStartingSession() async {
+    @Test func previewApplyFailsPermissionUnavailableWithoutStartingSession() async {
         let display = SharedMockSCDisplay.make(displayID: 8406, width: 1920, height: 1080)
-        let harness = monitorHarness(display: display, hasPermission: false)
+        let harness = previewHarness(display: display, hasPermission: false)
 
-        let result = await harness.adapter.applyMonitorCaptureIntent(
+        let result = await harness.adapter.applyPreviewCaptureIntent(
             captureIntent(displayID: display.displayID, revision: 3)
         )
 
         #expect(result.outcome == .failed)
         #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable)
-        #expect(harness.captureMonitoringService.addCallCount == 0)
-        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
-        #expect(harness.controller.screenCaptureSessions.isEmpty)
+        #expect(harness.capturePreviewService.addCallCount == 0)
+        #expect(harness.capturePreviewService.removeByDisplayCallCount == 0)
+        #expect(harness.controller.screenPreviewSessions.isEmpty)
     }
 
-    @Test func monitorApplyFailsDisplayUnavailableWithoutStartingSession() async {
+    @Test func previewApplyFailsDisplayUnavailableWithoutStartingSession() async {
         let display = SharedMockSCDisplay.make(displayID: 8407, width: 1920, height: 1080)
-        let harness = monitorHarness(display: display)
+        let harness = previewHarness(display: display)
 
-        let result = await harness.adapter.applyMonitorCaptureIntent(
+        let result = await harness.adapter.applyPreviewCaptureIntent(
             captureIntent(displayID: 8408, revision: 4)
         )
 
         #expect(result.outcome == .failed)
         #expect(result.failureCode == DisplayRuntimeCaptureIntentFailureCode.displayUnavailable)
-        #expect(harness.captureMonitoringService.addCallCount == 0)
-        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
-        #expect(harness.controller.screenCaptureSessions.isEmpty)
+        #expect(harness.capturePreviewService.addCallCount == 0)
+        #expect(harness.capturePreviewService.removeByDisplayCallCount == 0)
+        #expect(harness.controller.screenPreviewSessions.isEmpty)
     }
 
     @Test func lanWebViewStartAttachesUniqueRuntimeLeaseAndStartsSharingThroughIntent() async throws {
@@ -386,7 +386,7 @@ struct DisplayRuntimeAdapterTests {
 
     @Test func diagnosticsRecorderStandaloneAttachesLeaseAndStartsCaptureThroughAdapter() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8431, width: 2560, height: 1440)
-        let harness = monitorHarness(display: display)
+        let harness = previewHarness(display: display)
 
         let attachResult = await harness.runtime.attachDiagnosticsRecorderConsumer(
             surfaceIdentity: .physicalDisplay(displayID: display.displayID),
@@ -397,8 +397,8 @@ struct DisplayRuntimeAdapterTests {
         let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
         #expect(attachResult.applyResult.outcome == .applied)
-        #expect(harness.captureMonitoringService.addCallCount == 1)
-        #expect(harness.controller.screenCaptureSessions.first?.displayID == display.displayID)
+        #expect(harness.capturePreviewService.addCallCount == 1)
+        #expect(harness.controller.screenPreviewSessions.first?.displayID == display.displayID)
         #expect(lease.kind == .diagnosticsRecorder)
         #expect(lease.state == .attached)
         #expect(effectiveIntent.intent.kind == .capture)
@@ -410,28 +410,28 @@ struct DisplayRuntimeAdapterTests {
         )
 
         #expect(detachResult.applyResult?.outcome == .applied)
-        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 1)
-        #expect(harness.controller.screenCaptureSessions.isEmpty)
+        #expect(harness.capturePreviewService.removeByDisplayCallCount == 1)
+        #expect(harness.controller.screenPreviewSessions.isEmpty)
         #expect(harness.runtime.currentEffectiveCaptureIntentSnapshot().first?.intent.kind == .drain)
     }
 
-    @Test func diagnosticsRecorderReusesExistingMonitorSessionWithoutDuplicateCapture() async throws {
+    @Test func diagnosticsRecorderReusesExistingPreviewSessionWithoutDuplicateCapture() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8432, width: 1920, height: 1080)
-        let harness = monitorHarness(display: display)
-        let actions = CaptureUIComposition.monitoringActions(
+        let harness = previewHarness(display: display)
+        let actions = CaptureUIComposition.previewActions(
             capture: harness.controller,
             displayRuntime: harness.runtime
         )
-        let outcome = try await actions.startMonitoring(
+        let outcome = try await actions.startPreview(
             display,
-            CaptureMonitoringDisplayMetadata(
-                displayName: "Monitor Adapter",
+            CapturePreviewDisplayMetadata(
+                displayName: "Preview Adapter",
                 resolutionText: "1920 × 1080",
                 isVirtualDisplay: false
             )
         )
         guard case .started(let sessionID) = outcome else {
-            Issue.record("Expected monitor start to succeed.")
+            Issue.record("Expected preview start to succeed.")
             return
         }
 
@@ -442,16 +442,16 @@ struct DisplayRuntimeAdapterTests {
         let leases = harness.runtime.currentConsumerLeaseSnapshot()
         let diagnosticsLease = try #require(leases.first { $0.kind == .diagnosticsRecorder })
         let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
-        #expect(harness.captureMonitoringService.addCallCount == 1)
-        #expect(harness.captureMonitoringService.removeByDisplayCallCount == 0)
-        #expect(leases.filter { $0.kind == .monitor }.first?.state == .attached)
+        #expect(harness.capturePreviewService.addCallCount == 1)
+        #expect(harness.capturePreviewService.removeByDisplayCallCount == 0)
+        #expect(leases.filter { $0.kind == .preview }.first?.state == .attached)
         #expect(diagnosticsLease.state == .released)
         #expect(effectiveIntent.intent.kind == .capture)
-        #expect(effectiveIntent.intent.aggregateDemand?.consumerKinds == [.monitor])
+        #expect(effectiveIntent.intent.aggregateDemand?.consumerKinds == [.preview])
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
     }
 
-    @Test func diagnosticsRecorderReusesActiveLANWebViewPathWithoutStartingMonitoring() async throws {
+    @Test func diagnosticsRecorderReusesActiveLANWebViewPathWithoutStartingPreview() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8433, width: 3840, height: 2160)
         let harness = lanWebViewHarness(display: display)
 
@@ -468,7 +468,7 @@ struct DisplayRuntimeAdapterTests {
         let aggregate = try #require(harness.runtime.currentAggregatedDemandSnapshot().first)
         #expect(attachResult.applyResult.outcome == .applied)
         #expect(harness.sharingService.startSharingCallCount == 1)
-        #expect(harness.captureController.screenCaptureSessions.isEmpty)
+        #expect(harness.captureController.screenPreviewSessions.isEmpty)
         #expect(aggregate.consumerKinds == [.diagnosticsRecorder, .lanWebView])
         #expect(aggregate.effectivePixelSize == .init(width: 3840, height: 2160))
         #expect(aggregate.effectiveFramesPerSecond == 60)
@@ -664,15 +664,6 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.configID == config.id)
         #expect(result.preDisplayID == 8302)
         #expect(result.postDisplayID == 8302)
-        #expect(result.runningConfigIDsAfterCommand == [config.id])
-        #expect(result.managedDisplaysAfterCommand == [
-            DisplayRuntimeManagedVirtualDisplay(
-                configID: config.id,
-                serialNumber: 9301,
-                displayID: 8302,
-                isLiveRuntime: true
-            )
-        ])
     }
 
     @Test func virtualDisplayAdapterSnapshotMapsConfigAndManagedDisplayDTOFields() throws {
@@ -759,15 +750,6 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.desiredEnabled == true)
         #expect(result.preDisplayID == 8303)
         #expect(result.postDisplayID == 8303)
-        #expect(result.runningConfigIDsAfterCommand == [config.id])
-        #expect(result.managedDisplaysAfterCommand == [
-            DisplayRuntimeManagedVirtualDisplay(
-                configID: config.id,
-                serialNumber: 9302,
-                displayID: 8303,
-                isLiveRuntime: true
-            )
-        ])
     }
 
     @Test func virtualDisplayAdapterDisableUsesLowerFacade() async throws {
@@ -800,8 +782,6 @@ struct DisplayRuntimeAdapterTests {
         #expect(result.desiredEnabled == false)
         #expect(result.preDisplayID == 8304)
         #expect(result.postDisplayID == nil)
-        #expect(result.runningConfigIDsAfterCommand.isEmpty)
-        #expect(result.managedDisplaysAfterCommand.isEmpty)
     }
 
     @Test func virtualDisplayAdapterSaveConfigForRebuildUsesLowerFacadeAndReturnsPreviousConfig() async throws {
@@ -976,7 +956,7 @@ private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {
     }
 }
 
-private final class AdapterMonitorDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+private final class AdapterPreviewDummySession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
 
     nonisolated func attachPreviewSink(_: any DisplayPreviewSink) {}
@@ -989,13 +969,13 @@ private final class AdapterMonitorDummySession: DisplayCaptureSessioning, @unche
 }
 
 @MainActor
-private func monitorHarness(
+private func previewHarness(
     display: SCDisplay,
     hasPermission: Bool = true,
     virtualDisplaySnapshot: DisplayRuntimeVirtualDisplaySnapshot? = nil
 ) -> (
     catalogService: ScreenCaptureCatalogService,
-    captureMonitoringService: MockCaptureMonitoringService,
+    capturePreviewService: MockCapturePreviewService,
     controller: CaptureController,
     adapter: DisplayRuntimeCaptureAdapter,
     runtime: DisplayRuntime
@@ -1003,7 +983,7 @@ private func monitorHarness(
     let catalogService = ScreenCaptureCatalogService(
         permissionProvider: FailingScreenCapturePermissionProvider(),
         loadShareableDisplays: {
-            Issue.record("Monitor wiring tests must not load real shareable displays.")
+            Issue.record("Preview wiring tests must not load real shareable displays.")
             return [display]
         },
         activeDisplayIDsProvider: { [display.displayID] }
@@ -1012,23 +992,23 @@ private func monitorHarness(
     catalogService.store.lastPreflightPermission = hasPermission
     catalogService.store.displays = [display]
 
-    let captureMonitoringService = MockCaptureMonitoringService()
-    let lifecycleService = CaptureMonitoringLifecycleService(
-        captureMonitoringService: captureMonitoringService,
+    let capturePreviewService = MockCapturePreviewService()
+    let lifecycleService = CapturePreviewLifecycleService(
+        capturePreviewService: capturePreviewService,
         acquirePreview: { captureDisplay, _ in
             .started(
                 DisplayPreviewSubscription(
                     displayID: captureDisplay.displayID,
                     resolutionText: "\(captureDisplay.width) × \(captureDisplay.height)",
-                    session: AdapterMonitorDummySession(),
+                    session: AdapterPreviewDummySession(),
                     cancelClosure: {}
                 )
             )
         }
     )
     let controller = CaptureController(
-        captureMonitoringService: captureMonitoringService,
-        captureMonitoringLifecycleService: lifecycleService,
+        capturePreviewService: capturePreviewService,
+        capturePreviewLifecycleService: lifecycleService,
         catalogService: catalogService
     )
     let adapter = DisplayRuntimeCaptureAdapter(controller: controller)
@@ -1040,7 +1020,7 @@ private func monitorHarness(
     )
     return (
         catalogService: catalogService,
-        captureMonitoringService: captureMonitoringService,
+        capturePreviewService: capturePreviewService,
         controller: controller,
         adapter: adapter,
         runtime: runtime
@@ -1102,7 +1082,7 @@ private func lanWebViewHarness(
         catalogService: catalogService
     )
     let captureController = CaptureController(
-        captureMonitoringService: MockCaptureMonitoringService(),
+        capturePreviewService: MockCapturePreviewService(),
         catalogService: catalogService
     )
     let sharingAdapter = DisplayRuntimeSharingAdapter(controller: sharingController)

@@ -4,18 +4,18 @@ package nonisolated struct DisplayRuntimeSessionPauseIntent: Codable, Equatable,
     package let surfaceIdentity: DisplaySurfaceIdentity
     package let displayID: DisplayRuntimeDisplayID
     package let pauseSharing: Bool
-    package let pauseMonitoring: Bool
+    package let pausePreview: Bool
 
     package init(
         surfaceIdentity: DisplaySurfaceIdentity,
         displayID: DisplayRuntimeDisplayID,
         pauseSharing: Bool,
-        pauseMonitoring: Bool
+        pausePreview: Bool
     ) {
         self.surfaceIdentity = surfaceIdentity
         self.displayID = displayID
         self.pauseSharing = pauseSharing
-        self.pauseMonitoring = pauseMonitoring
+        self.pausePreview = pausePreview
     }
 }
 
@@ -24,29 +24,29 @@ package nonisolated struct DisplayRuntimeSessionRestoreIntent: Codable, Equatabl
     package let previousDisplayID: DisplayRuntimeDisplayID?
     package let resolvedDisplayID: DisplayRuntimeDisplayID?
     package let restoreSharing: Bool
-    package let restoreMonitoring: Bool
-    package let monitoringCapturesCursor: Bool
+    package let restorePreview: Bool
+    package let previewCapturesCursor: Bool
 
     package init(
         surfaceIdentity: DisplaySurfaceIdentity,
         previousDisplayID: DisplayRuntimeDisplayID?,
         resolvedDisplayID: DisplayRuntimeDisplayID?,
         restoreSharing: Bool,
-        restoreMonitoring: Bool,
-        monitoringCapturesCursor: Bool
+        restorePreview: Bool,
+        previewCapturesCursor: Bool
     ) {
         self.surfaceIdentity = surfaceIdentity
         self.previousDisplayID = previousDisplayID
         self.resolvedDisplayID = resolvedDisplayID
         self.restoreSharing = restoreSharing
-        self.restoreMonitoring = restoreMonitoring
-        self.monitoringCapturesCursor = monitoringCapturesCursor
+        self.restorePreview = restorePreview
+        self.previewCapturesCursor = previewCapturesCursor
     }
 }
 
 package nonisolated enum DisplayRuntimeSessionRestoreKind: String, Codable, Equatable, Sendable {
     case sharing
-    case monitoring
+    case preview
 }
 
 package nonisolated enum DisplayRuntimeSessionRestoreStatus: String, Codable, Equatable, Sendable {

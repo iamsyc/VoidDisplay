@@ -62,7 +62,7 @@ package final class VirtualDisplayConfigManager {
             AppLog.virtualDisplay.notice(
                 "Virtual display config load succeeded (\(self.configRepository.diagnosticsSummary, privacy: .public), configCount: \(loaded.count, privacy: .public))."
             )
-            return .succeeded(configs: loaded.map(VirtualDisplayStartupRestoreConfig.init(config:)))
+            return .succeeded(configs: loaded)
         case .failure(let error):
             configs = []
             restoreFailures = []
@@ -226,30 +226,4 @@ package final class VirtualDisplayConfigManager {
         configs = candidate
     }
 
-}
-
-private extension VirtualDisplayStartupRestoreConfig {
-    init(config: VirtualDisplayConfig) {
-        self.init(
-            id: config.id,
-            desiredEnabled: config.desiredEnabled,
-            evidence: VirtualDisplayCommandConfigEvidence(config: config)
-        )
-    }
-}
-
-private extension VirtualDisplayCommandConfigEvidence {
-    init(config: VirtualDisplayConfig) {
-        let maxPixels = config.maxPixelDimensions
-        self.init(
-            id: config.id,
-            serialNumber: config.serialNum,
-            desiredEnabled: config.desiredEnabled,
-            physicalWidthMillimeters: UInt32(clamping: config.physicalWidth),
-            physicalHeightMillimeters: UInt32(clamping: config.physicalHeight),
-            modeCount: config.modes.count,
-            maximumPixelWidth: maxPixels.width,
-            maximumPixelHeight: maxPixels.height
-        )
-    }
 }

@@ -255,7 +255,7 @@ package final class VirtualDisplayOrchestrator {
         } catch {
             let nsError = error as NSError
             AppLog.virtualDisplay.error(
-                "Startup virtual display restore failed (config: \(request.configID.uuidString, privacy: .public), serial: \(request.configEvidence.serialNumber, privacy: .public), errorDomain: \(nsError.domain, privacy: .public), errorCode: \(nsError.code, privacy: .public))."
+                "Startup virtual display restore failed (config: \(request.configID.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), errorDomain: \(nsError.domain, privacy: .public), errorCode: \(nsError.code, privacy: .public))."
             )
             return startupRestoreCommandResult(
                 request: request,
@@ -343,9 +343,6 @@ package final class VirtualDisplayOrchestrator {
         } catch {
             let result = VirtualDisplayCreateCommandResult(
                 createdConfigID: nil,
-                targetWasRunningAfterCommand: false,
-                preDisplayID: nil,
-                postDisplayID: nil,
                 persistenceOutcome: .failed,
                 runtimeCreationOutcome: .notAttempted,
                 rollbackOutcome: .notAttempted
@@ -358,12 +355,9 @@ package final class VirtualDisplayOrchestrator {
         }
 
         do {
-            let record = try runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
+            _ = try runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
             return VirtualDisplayCreateCommandResult(
                 createdConfigID: config.id,
-                targetWasRunningAfterCommand: runtimeTracker.isVirtualDisplayRunning(configId: config.id),
-                preDisplayID: nil,
-                postDisplayID: record.displayID,
                 persistenceOutcome: .saved,
                 runtimeCreationOutcome: .succeeded,
                 rollbackOutcome: .notAttempted
@@ -388,9 +382,6 @@ package final class VirtualDisplayOrchestrator {
                 )
                 let result = VirtualDisplayCreateCommandResult(
                     createdConfigID: config.id,
-                    targetWasRunningAfterCommand: false,
-                    preDisplayID: nil,
-                    postDisplayID: nil,
                     persistenceOutcome: .rollbackFailed,
                     runtimeCreationOutcome: .failed,
                     rollbackOutcome: .rollbackFailed
@@ -403,9 +394,6 @@ package final class VirtualDisplayOrchestrator {
             }
             let result = VirtualDisplayCreateCommandResult(
                 createdConfigID: config.id,
-                targetWasRunningAfterCommand: false,
-                preDisplayID: nil,
-                postDisplayID: nil,
                 persistenceOutcome: .rolledBack,
                 runtimeCreationOutcome: .failed,
                 rollbackOutcome: .rolledBack

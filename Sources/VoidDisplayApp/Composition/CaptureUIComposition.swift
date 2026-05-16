@@ -7,25 +7,25 @@ import ScreenCaptureKit
 
 @MainActor
 package enum CaptureUIComposition {
-    package static func monitoringActions(
+    package static func previewActions(
         capture: CaptureController,
         displayRuntime: DisplayRuntime
-    ) -> CaptureMonitoringActions {
-        CaptureMonitoringActions(
+    ) -> CapturePreviewActions {
+        CapturePreviewActions(
             sessions: {
-                capture.screenCaptureSessions
+                capture.screenPreviewSessions
             },
-            monitoringSession: { sessionID in
-                capture.monitoringSession(for: sessionID)
+            previewSession: { sessionID in
+                capture.previewSession(for: sessionID)
             },
-            monitoringSessionForDisplayID: { displayID in
-                capture.screenCaptureSessions.first(where: { $0.displayID == displayID })
+            previewSessionForDisplayID: { displayID in
+                capture.screenPreviewSessions.first(where: { $0.displayID == displayID })
             },
             isStartingDisplayID: { displayID in
                 capture.isStarting(displayID: displayID)
             },
-            startMonitoring: { display, metadata in
-                try await startRuntimeBackedMonitoring(
+            startPreview: { display, metadata in
+                try await startRuntimeBackedPreview(
                     display: display,
                     metadata: metadata,
                     capture: capture,
@@ -35,11 +35,11 @@ package enum CaptureUIComposition {
             attachPreviewSink: { sink, sessionID in
                 capture.attachPreviewSink(sink, to: sessionID)
             },
-            activateMonitoringSession: { sessionID in
-                capture.activateMonitoringSession(id: sessionID)
+            activatePreviewSession: { sessionID in
+                capture.activatePreviewSession(id: sessionID)
             },
             attachDiagnosticsRecorder: { sessionID in
-                guard let session = capture.monitoringSession(for: sessionID) else { return nil }
+                guard let session = capture.previewSession(for: sessionID) else { return nil }
                 guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
                     return nil
                 }
@@ -59,19 +59,19 @@ package enum CaptureUIComposition {
                     leaseID: DisplayRuntimeConsumerLeaseID(rawValue: leaseToken)
                 )
             },
-            closeMonitoringSession: { sessionID in
-                guard let session = capture.monitoringSession(for: sessionID) else {
+            closePreviewSession: { sessionID in
+                guard let session = capture.previewSession(for: sessionID) else {
                     return
                 }
                 guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
                     return
                 }
-                displayRuntime.detachMonitorConsumer(
+                displayRuntime.detachPreviewConsumer(
                     surfaceIdentity: surfaceIdentity
                 )
             },
-            setMonitoringSessionCapturesCursor: { sessionID, capturesCursor in
-                try await capture.setMonitoringSessionCapturesCursor(
+            setPreviewSessionCapturesCursor: { sessionID, capturesCursor in
+                try await capture.setPreviewSessionCapturesCursor(
                     id: sessionID,
                     capturesCursor: capturesCursor
                 )
@@ -80,7 +80,7 @@ package enum CaptureUIComposition {
     }
 
     private static func diagnosticsRecorderDemand(
-        for session: ScreenMonitoringSession
+        for session: ScreenPreviewSession
     ) -> DisplayRuntimeConsumerDemand {
         let sourcePixelSize = pixelSize(from: session.resolutionText)
         let preferredPixelSize = sourcePixelSize.map { size in
@@ -116,20 +116,20 @@ package enum CaptureUIComposition {
         return DisplayRuntimePixelSize(width: width, height: height)
     }
 
-    private static func startRuntimeBackedMonitoring(
+    private static func startRuntimeBackedPreview(
         display: SCDisplay,
-        metadata _: CaptureMonitoringDisplayMetadata,
+        metadata _: CapturePreviewDisplayMetadata,
         capture: CaptureController,
         displayRuntime: DisplayRuntime
     ) async throws -> DisplayStartOutcome<UUID> {
         guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(display.displayID) else {
-            throw DisplayRuntimeMonitorCaptureError(
+            throw DisplayRuntimePreviewCaptureError(
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
             )
         }
-        let result = await displayRuntime.attachMonitorConsumer(
+        let result = await displayRuntime.attachPreviewConsumer(
             surfaceIdentity: surfaceIdentity,
-            owner: .init(source: .localUI, redactedLabel: "monitor"),
+            owner: .init(source: .localUI, redactedLabel: "preview"),
             demand: DisplayRuntimeConsumerDemand(
                 sourcePixelSize: .init(width: display.width, height: display.height),
                 preferredPixelSize: nil,
@@ -144,14 +144,14 @@ package enum CaptureUIComposition {
 
         guard result.applyResult.outcome == .applied else {
             _ = displayRuntime.detachConsumer(leaseID: result.lease.id)
-            throw DisplayRuntimeMonitorCaptureError(
+            throw DisplayRuntimePreviewCaptureError(
                 failureCode: result.applyResult.failureCode
                     ?? DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         }
-        guard let session = capture.screenCaptureSessions.first(where: { $0.displayID == display.displayID }) else {
+        guard let session = capture.screenPreviewSessions.first(where: { $0.displayID == display.displayID }) else {
             _ = displayRuntime.detachConsumer(leaseID: result.lease.id)
-            throw DisplayRuntimeMonitorCaptureError(
+            throw DisplayRuntimePreviewCaptureError(
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         }
@@ -202,7 +202,7 @@ package enum CaptureUIComposition {
     }
 }
 
-private struct DisplayRuntimeMonitorCaptureError: LocalizedError {
+private struct DisplayRuntimePreviewCaptureError: LocalizedError {
     let failureCode: String
 
     var errorDescription: String? {

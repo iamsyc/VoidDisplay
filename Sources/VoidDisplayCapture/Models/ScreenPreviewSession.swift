@@ -5,9 +5,9 @@ import Foundation
 import ScreenCaptureKit
 import CoreGraphics
 
-// Main-actor-owned runtime resources for active monitoring windows.
+// Main-actor-owned runtime resources for active preview windows.
 // Do not pass across actors/threads.
-package struct ScreenMonitoringSession: Identifiable {
+package struct ScreenPreviewSession: Identifiable {
     package enum State {
         case starting
         case active
