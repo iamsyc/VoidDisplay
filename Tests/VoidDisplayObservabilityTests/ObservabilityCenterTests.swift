@@ -1,5 +1,6 @@
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayTestingSupport
 import Foundation
 import Testing
 

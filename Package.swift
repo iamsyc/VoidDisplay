@@ -176,7 +176,8 @@ let package = Package(
         .testTarget(
             name: "VoidDisplayObservabilityTests",
             dependencies: [
-                "VoidDisplayObservability"
+                "VoidDisplayObservability",
+                "VoidDisplayTestingSupport"
             ],
             swiftSettings: sharedSwiftSettings
         ),
