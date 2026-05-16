@@ -212,18 +212,6 @@ package final class VirtualDisplayRuntimeTracker {
         runningConfigIds.remove(configId)
     }
 
-    package func clearRuntimeTrackingForSerialNum(
-        _ serialNum: UInt32,
-        keepGeneration: Bool
-    ) {
-        let matchingConfigIDs = activeRuntimeHandlesByConfigId.compactMap { configId, runtimeHandle in
-            runtimeHandle.serialNum == serialNum ? configId : nil
-        }
-        for configID in matchingConfigIDs {
-            clearRuntimeTracking(configId: configID, keepGeneration: keepGeneration)
-        }
-    }
-
     package func rollbackEnableRuntimeState(configId: UUID) {
         clearRuntimeTracking(configId: configId, keepGeneration: true)
     }

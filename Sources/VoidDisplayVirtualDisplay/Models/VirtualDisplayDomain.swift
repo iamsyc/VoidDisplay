@@ -138,14 +138,6 @@ package struct VirtualDisplaySnapshot: Equatable {
     package func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
         runtimeDisplayIDByConfigId[configId]
     }
-
-    package func isManagedDisplay(_ displayID: CGDirectDisplayID) -> Bool {
-        managedDisplays.contains(where: { $0.displayID == displayID })
-    }
-
-    package func serialForManagedDisplay(_ displayID: CGDirectDisplayID) -> UInt32? {
-        managedDisplays.first(where: { $0.displayID == displayID })?.serialNum
-    }
 }
 package struct RuntimeDisplayRecord: Equatable {
     package let configId: UUID
