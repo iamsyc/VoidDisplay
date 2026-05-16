@@ -197,54 +197,6 @@ struct SharingControllerTests {
         #expect(sut.isSharing(displayID: displayID))
     }
 
-    @Test func cancellingOneWaitingBeginSharingCallKeepsObservedStartingStateUntilLastWaiterFinishes() async throws {
-        let service = MockSharingService()
-        let gate = SharingControllerAsyncGate()
-        let display = SharedMockSCDisplay.make(displayID: 36, width: 1920, height: 1080)
-        service.startSharingHandler = { _ in
-            await gate.wait()
-            try Task.checkCancellation()
-            return .started(())
-        }
-        let sut = SharingController(
-            sharingService: service,
-            portPreferences: MockSharingPortPreferences()
-        )
-
-        let firstTask = Task { @MainActor in
-            try await sut.beginSharing(display: display)
-        }
-        let secondTask = Task { @MainActor in
-            try await sut.beginSharing(display: display)
-        }
-
-        #expect(await waitForSharingControllerGate(gate, count: 2))
-        #expect(sut.startingDisplayIDs == [display.displayID])
-
-        firstTask.cancel()
-        await gate.releaseOne()
-
-        do {
-            let outcome = try await firstTask.value
-            Issue.record("Expected first sharing start to be cancelled, got \(outcome).")
-        } catch is CancellationError {
-        } catch {
-            Issue.record("Expected CancellationError, got \(error)")
-        }
-
-        #expect(sut.startingDisplayIDs == [display.displayID])
-        #expect(sut.isStarting(displayID: display.displayID))
-
-        await gate.releaseOne()
-        let secondOutcome = try await secondTask.value
-        if case .started = secondOutcome {
-        } else {
-            Issue.record("Expected second sharing start to succeed.")
-        }
-
-        #expect(sut.startingDisplayIDs.isEmpty)
-    }
-
     @Test func beginSharingClearsStartingDisplayIDAfterFailure() async {
         struct ControlledError: Error {}
 

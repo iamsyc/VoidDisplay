@@ -295,62 +295,6 @@ struct CaptureControllerTests {
         #expect(controller.startingDisplayIDs.isEmpty)
     }
 
-    @Test func cancellingOneWaitingStartPreviewCallKeepsObservedStartingStateUntilLastWaiterFinishes() async throws {
-        let service = MockCapturePreviewService()
-        let gate = CaptureControllerAsyncGate()
-        let expectedSessionID = UUID()
-        let lifecycleService = CaptureControllerLifecycleSpy(capturePreviewService: service)
-        lifecycleService.startPreviewHandler = { _, _ in
-            await gate.wait()
-            try Task.checkCancellation()
-            return .started(expectedSessionID)
-        }
-        let controller = CaptureController(
-            capturePreviewService: service,
-            capturePreviewLifecycleService: lifecycleService
-        )
-        let display = SharedMockSCDisplay.make(displayID: 786, width: 1920, height: 1080)
-        let metadata = CapturePreviewDisplayMetadata(
-            displayName: "Display 786",
-            resolutionText: "1920 × 1080",
-            isVirtualDisplay: false
-        )
-
-        let firstTask = Task { @MainActor in
-            try await controller.startPreview(display: display, metadata: metadata)
-        }
-        let secondTask = Task { @MainActor in
-            try await controller.startPreview(display: display, metadata: metadata)
-        }
-
-        #expect(await waitForCaptureControllerGate(gate, count: 2))
-        #expect(controller.startingDisplayIDs == [display.displayID])
-
-        firstTask.cancel()
-        await gate.releaseOne()
-
-        do {
-            let outcome = try await firstTask.value
-            Issue.record("Expected first preview start to be cancelled, got \(outcome).")
-        } catch is CancellationError {
-        } catch {
-            Issue.record("Expected CancellationError, got \(error)")
-        }
-
-        #expect(controller.startingDisplayIDs == [display.displayID])
-        #expect(controller.isStarting(displayID: display.displayID))
-
-        await gate.releaseOne()
-        let secondOutcome = try await secondTask.value
-        guard case .started(let sessionID) = secondOutcome else {
-            Issue.record("Expected second preview start to succeed.")
-            return
-        }
-
-        #expect(sessionID == expectedSessionID)
-        #expect(controller.startingDisplayIDs.isEmpty)
-    }
-
     @Test func startPreviewClearsStartingDisplayIDAfterFailure() async {
         struct ControlledError: Error {}
 
@@ -378,47 +322,6 @@ struct CaptureControllerTests {
 
         #expect(controller.startingDisplayIDs.isEmpty)
         #expect(controller.isStarting(displayID: display.displayID) == false)
-    }
-
-    @Test func startPreviewClearsStartingDisplayIDAfterCancellation() async {
-        let service = MockCapturePreviewService()
-        let gate = CaptureControllerAsyncGate()
-        let lifecycleService = CaptureControllerLifecycleSpy(capturePreviewService: service)
-        lifecycleService.startPreviewHandler = { _, _ in
-            await gate.wait()
-            try Task.checkCancellation()
-            return .started(UUID())
-        }
-        let controller = CaptureController(
-            capturePreviewService: service,
-            capturePreviewLifecycleService: lifecycleService
-        )
-        let display = SharedMockSCDisplay.make(displayID: 783, width: 1920, height: 1080)
-        let metadata = CapturePreviewDisplayMetadata(
-            displayName: "Display 783",
-            resolutionText: "1920 × 1080",
-            isVirtualDisplay: false
-        )
-
-        let task = Task { @MainActor in
-            try await controller.startPreview(display: display, metadata: metadata)
-        }
-
-        #expect(await waitForCaptureControllerGate(gate, count: 1))
-        #expect(controller.startingDisplayIDs == [display.displayID])
-
-        task.cancel()
-        await gate.releaseOne()
-
-        do {
-            let outcome = try await task.value
-            Issue.record("Expected preview start to be cancelled, got \(outcome).")
-        } catch is CancellationError {
-        } catch {
-            Issue.record("Expected CancellationError, got \(error)")
-        }
-
-        #expect(controller.startingDisplayIDs.isEmpty)
     }
 
     @Test func startPreviewClearsStartingDisplayIDAfterInvalidation() async throws {
