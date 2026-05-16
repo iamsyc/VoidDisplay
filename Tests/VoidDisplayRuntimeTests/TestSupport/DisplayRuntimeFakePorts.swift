@@ -271,11 +271,59 @@ final class FakeCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
         self.resultProvider = resultProvider
     }
 
-    func applyCaptureIntent(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult {
+    func applyPreviewCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        apply(intent)
+    }
+
+    func applyLANWebViewCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        apply(intent)
+    }
+
+    func applyDiagnosticsRecorderCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        apply(intent)
+    }
+
+    private func apply(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult {
         intents.append(intent)
         let result = resultProvider(intent)
         returnedResults.append(result)
         return result
+    }
+}
+
+@discardableResult
+func attachConsumerForTesting(
+    _ runtime: DisplayRuntime,
+    surfaceIdentity: DisplaySurfaceIdentity,
+    kind: DisplaySurfaceConsumerKind,
+    owner: DisplayRuntimeConsumerOwner,
+    demand: DisplayRuntimeConsumerDemand
+) async -> DisplayRuntimeConsumerLease {
+    switch kind {
+    case .preview:
+        await runtime.attachPreviewConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: owner,
+            demand: demand
+        ).lease
+    case .lanWebView:
+        await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: owner,
+            demand: demand
+        ).lease
+    case .diagnosticsRecorder:
+        await runtime.attachDiagnosticsRecorderConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: owner,
+            demand: demand
+        ).lease
     }
 }
 

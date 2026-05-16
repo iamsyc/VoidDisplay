@@ -2,21 +2,6 @@ import Foundation
 
 @MainActor
 extension DisplayRuntime {
-    package func attachConsumer(
-        surfaceIdentity: DisplaySurfaceIdentity,
-        kind: DisplaySurfaceConsumerKind,
-        owner: DisplayRuntimeConsumerOwner,
-        demand: DisplayRuntimeConsumerDemand
-    ) -> DisplayRuntimeConsumerLease {
-        attachConsumer(
-            surfaceIdentity: surfaceIdentity,
-            kind: kind,
-            owner: owner,
-            demand: demand,
-            submitsCaptureIntent: true
-        )
-    }
-
     package func attachPreviewConsumer(
         surfaceIdentity: DisplaySurfaceIdentity,
         owner: DisplayRuntimeConsumerOwner,
@@ -26,13 +11,11 @@ extension DisplayRuntime {
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: owner,
-            demand: demand,
-            submitsCaptureIntent: false
+            demand: demand
         )
         let intent = submitCaptureIntent(
             surfaceIdentity: surfaceIdentity,
-            reason: .attach,
-            appliesCommand: false
+            reason: .attach
         )
         let rawResult: DisplayRuntimeCaptureIntentApplyResult
         if let captureIntentCommander {
@@ -60,8 +43,7 @@ extension DisplayRuntime {
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: owner,
-            demand: demand,
-            submitsCaptureIntent: false
+            demand: demand
         )
         guard !hadExistingLease else {
             return DisplayRuntimeLANWebViewConsumerAttachResult(
@@ -72,8 +54,7 @@ extension DisplayRuntime {
 
         let intent = submitCaptureIntent(
             surfaceIdentity: surfaceIdentity,
-            reason: .attach,
-            appliesCommand: false
+            reason: .attach
         )
         let rawResult: DisplayRuntimeCaptureIntentApplyResult
         if let captureIntentCommander {
@@ -99,13 +80,11 @@ extension DisplayRuntime {
             surfaceIdentity: surfaceIdentity,
             kind: .diagnosticsRecorder,
             owner: owner,
-            demand: demand,
-            submitsCaptureIntent: false
+            demand: demand
         )
         let intent = submitCaptureIntent(
             surfaceIdentity: surfaceIdentity,
-            reason: .attach,
-            appliesCommand: false
+            reason: .attach
         )
         let rawResult: DisplayRuntimeCaptureIntentApplyResult
         if let captureIntentCommander {
@@ -148,8 +127,7 @@ extension DisplayRuntime {
         surfaceIdentity: DisplaySurfaceIdentity,
         kind: DisplaySurfaceConsumerKind,
         owner: DisplayRuntimeConsumerOwner,
-        demand: DisplayRuntimeConsumerDemand,
-        submitsCaptureIntent: Bool
+        demand: DisplayRuntimeConsumerDemand
     ) -> DisplayRuntimeConsumerLease {
         if kind == .lanWebView,
            let existingLease = currentDemandLeases(for: surfaceIdentity)
@@ -181,26 +159,14 @@ extension DisplayRuntime {
             demand: demand
         )
         consumerLeasesByID[lease.id] = lease
-        if submitsCaptureIntent {
-            submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
-        }
         return lease
-    }
-
-    @discardableResult
-    package func detachConsumer(
-        leaseID: DisplayRuntimeConsumerLeaseID
-    ) -> DisplayRuntimeConsumerLease? {
-        guard let releasedLease = releaseConsumerLease(leaseID: leaseID) else { return nil }
-        submitCaptureIntent(surfaceIdentity: releasedLease.surfaceIdentity, reason: .detach)
-        return releasedLease
     }
 
     @discardableResult
     package func detachPreviewConsumer(
         surfaceIdentity: DisplaySurfaceIdentity
-    ) -> DisplayRuntimePreviewConsumerDetachResult {
-        guard let lease = currentDemandLeases(for: surfaceIdentity)
+    ) async -> DisplayRuntimePreviewConsumerDetachResult {
+        guard let lease = currentUnreleasedLeases(for: surfaceIdentity)
             .first(where: { $0.kind == .preview })
         else {
             return DisplayRuntimePreviewConsumerDetachResult(
@@ -209,13 +175,29 @@ extension DisplayRuntime {
             )
         }
 
-        let releasedLease = detachConsumer(leaseID: lease.id)
-        let applyResult = currentEffectiveCaptureIntentSnapshot()
-            .first { $0.intent.surfaceIdentity == surfaceIdentity }?
-            .lastApplyResult
+        guard let releasedLease = releaseConsumerLease(leaseID: lease.id) else {
+            return DisplayRuntimePreviewConsumerDetachResult(
+                releasedLease: nil,
+                applyResult: nil
+            )
+        }
+
+        let intent = submitCaptureIntent(
+            surfaceIdentity: releasedLease.surfaceIdentity,
+            reason: .detach
+        )
+        let rawResult: DisplayRuntimeCaptureIntentApplyResult
+        if let captureIntentCommander {
+            rawResult = await captureIntentCommander.applyPreviewCaptureIntent(intent)
+        } else {
+            rawResult = .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
         return DisplayRuntimePreviewConsumerDetachResult(
             releasedLease: releasedLease,
-            applyResult: applyResult
+            applyResult: recordCaptureIntentApplyResult(rawResult)
         )
     }
 
@@ -223,7 +205,7 @@ extension DisplayRuntime {
     package func detachLANWebViewConsumer(
         surfaceIdentity: DisplaySurfaceIdentity
     ) async -> DisplayRuntimeLANWebViewConsumerDetachResult {
-        guard let lease = currentDemandLeases(for: surfaceIdentity)
+        guard let lease = currentUnreleasedLeases(for: surfaceIdentity)
             .first(where: { $0.kind == .lanWebView })
         else {
             return DisplayRuntimeLANWebViewConsumerDetachResult(
@@ -240,8 +222,7 @@ extension DisplayRuntime {
 
         let intent = submitCaptureIntent(
             surfaceIdentity: releasedLease.surfaceIdentity,
-            reason: .detach,
-            appliesCommand: false
+            reason: .detach
         )
         let rawResult: DisplayRuntimeCaptureIntentApplyResult
         if let captureIntentCommander {
@@ -273,8 +254,7 @@ extension DisplayRuntime {
 
         let intent = submitCaptureIntent(
             surfaceIdentity: releasedLease.surfaceIdentity,
-            reason: .detach,
-            appliesCommand: false
+            reason: .detach
         )
         let rawResult: DisplayRuntimeCaptureIntentApplyResult
         if let captureIntentCommander {
@@ -430,8 +410,7 @@ extension DisplayRuntime {
     @discardableResult
     private func submitCaptureIntent(
         surfaceIdentity: DisplaySurfaceIdentity,
-        reason: DisplayRuntimeCaptureIntentReason,
-        appliesCommand: Bool = true
+        reason: DisplayRuntimeCaptureIntentReason
     ) -> DisplayRuntimeCaptureIntent {
         let aggregateDemand = aggregateDemand(for: surfaceIdentity, surfaces: nil)
         let intent = DisplayRuntimeCaptureIntent(
@@ -445,9 +424,6 @@ extension DisplayRuntime {
         )
         captureIntentsByRevision[intent.revision] = intent
         effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
-        if appliesCommand, let applyResult = captureIntentCommander?.applyCaptureIntent(intent) {
-            _ = recordCaptureIntentApplyResult(applyResult)
-        }
         return intent
     }
 
@@ -462,6 +438,15 @@ extension DisplayRuntime {
         consumerLeasesByID.values
             .filter { $0.surfaceIdentity == surfaceIdentity }
             .filter { $0.state.contributesDemand }
+            .sorted(by: leaseSort)
+    }
+
+    private func currentUnreleasedLeases(
+        for surfaceIdentity: DisplaySurfaceIdentity
+    ) -> [DisplayRuntimeConsumerLease] {
+        consumerLeasesByID.values
+            .filter { $0.surfaceIdentity == surfaceIdentity }
+            .filter { $0.state != .released }
             .sorted(by: leaseSort)
     }
 

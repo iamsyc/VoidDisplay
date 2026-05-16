@@ -49,24 +49,6 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         controller?.removePreviewSessions(displayID: displayID)
     }
 
-    package func applyCaptureIntent(
-        _ intent: DisplayRuntimeCaptureIntent
-    ) -> DisplayRuntimeCaptureIntentApplyResult {
-        guard let controller else {
-            return .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
-        guard intent.kind == .drain else {
-            return .applied(revision: intent.revision)
-        }
-        if let resolvedDisplayID = intent.resolvedDisplayID {
-            controller.removePreviewSessions(displayID: resolvedDisplayID)
-        }
-        return .applied(revision: intent.revision)
-    }
-
     package func applyPreviewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {

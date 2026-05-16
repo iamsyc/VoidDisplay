@@ -66,7 +66,7 @@ package enum CaptureUIComposition {
                 guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
                     return
                 }
-                displayRuntime.detachPreviewConsumer(
+                await displayRuntime.detachPreviewConsumer(
                     surfaceIdentity: surfaceIdentity
                 )
             },
@@ -143,14 +143,14 @@ package enum CaptureUIComposition {
         )
 
         guard result.applyResult.outcome == .applied else {
-            _ = displayRuntime.detachConsumer(leaseID: result.lease.id)
+            _ = await displayRuntime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
             throw DisplayRuntimePreviewCaptureError(
                 failureCode: result.applyResult.failureCode
                     ?? DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         }
         guard let session = capture.screenPreviewSessions.first(where: { $0.displayID == display.displayID }) else {
-            _ = displayRuntime.detachConsumer(leaseID: result.lease.id)
+            _ = await displayRuntime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
             throw DisplayRuntimePreviewCaptureError(
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )

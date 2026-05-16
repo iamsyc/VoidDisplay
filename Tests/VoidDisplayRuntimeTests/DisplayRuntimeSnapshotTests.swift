@@ -7,7 +7,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeSnapshotTests {
-    @Test func managedVirtualDisplayIdentityUsesConfigID() {
+    @Test func managedVirtualDisplayIdentityUsesConfigID() async {
         let configID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let runtime = DisplayRuntime(
             virtualDisplayProvider: FakeVirtualDisplayProvider(
@@ -49,7 +49,7 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface?.managedVirtualDisplay?.maximumPixelWidth == 3840)
         #expect(surface?.managedVirtualDisplay?.maximumPixelHeight == 2160)
     }
-    @Test func physicalDisplayIsAuxiliarySurface() {
+    @Test func physicalDisplayIsAuxiliarySurface() async {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(
                 snapshot: .init(
@@ -85,7 +85,7 @@ struct DisplayRuntimeSnapshotTests {
         #expect(runtime.surfaceIdentityForDisplayID(201) == nil)
     }
 
-    @Test func surfaceIdentityForDisplayIDResolvesManagedVirtualSurface() {
+    @Test func surfaceIdentityForDisplayIDResolvesManagedVirtualSurface() async {
         let configID = UUID(uuidString: "12121212-1212-1212-1212-121212121212")!
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 77, isMain: false)),
@@ -100,7 +100,7 @@ struct DisplayRuntimeSnapshotTests {
         ])
     }
 
-    @Test func shareRouteDoesNotBecomeSurfaceIdentity() {
+    @Test func shareRouteDoesNotBecomeSurfaceIdentity() async {
         let runtime = DisplayRuntime(
             sharingProvider: FakeSharingProvider(
                 snapshot: .init(
@@ -129,7 +129,7 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface?.sharing?.hasRoute == true)
         #expect(surface?.sharing?.viewerCount == 2)
     }
-    @Test func runtimeSnapshotAggregatesPortStatesDeterministically() {
+    @Test func runtimeSnapshotAggregatesPortStatesDeterministically() async {
         let configID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
         let sessionID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
         let runtime = DisplayRuntime(
@@ -226,7 +226,7 @@ struct DisplayRuntimeSnapshotTests {
         #expect(snapshot.surfaces.first?.sharing?.viewerCount == 1)
         #expect(snapshot.surfaces.last?.capture?.isStarting == true)
     }
-    @Test func surfacesAreSortedByKindAndIdentity() {
+    @Test func surfacesAreSortedByKindAndIdentity() async {
         let firstConfigID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let secondConfigID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let runtime = DisplayRuntime(
@@ -285,7 +285,7 @@ struct DisplayRuntimeSnapshotTests {
             .physicalDisplay(displayID: 20)
         ])
     }
-    @Test func unavailableProvidersProduceEmptySnapshot() {
+    @Test func unavailableProvidersProduceEmptySnapshot() async {
         let snapshot = DisplayRuntime().makeSnapshot()
 
         #expect(snapshot.schemaVersion == 3)
@@ -306,7 +306,8 @@ struct DisplayRuntimeSnapshotTests {
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: displayID)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: .physicalDisplay(displayID: displayID),
             kind: .lanWebView,
             owner: .init(source: .sharingService, redactedLabel: sensitiveFixtures.joined(separator: " | ")),
@@ -347,7 +348,7 @@ struct DisplayRuntimeSnapshotTests {
         }
     }
 
-    @Test func duplicatePortEntriesConvergeWithoutDroppingSnapshot() throws {
+    @Test func duplicatePortEntriesConvergeWithoutDroppingSnapshot() async throws {
         let configID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(
@@ -449,14 +450,15 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface.catalog?.pixelWidth == 1920)
     }
 
-    @Test func snapshotEncodesConsumerDemandAndEffectiveIntent() throws {
+    @Test func snapshotEncodesConsumerDemandAndEffectiveIntent() async throws {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 501)
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 501, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
 
-        let previewLease = runtime.attachConsumer(
+        let previewLease = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI, redactedLabel: "local preview"),
@@ -466,7 +468,8 @@ struct DisplayRuntimeSnapshotTests {
                 capturesCursor: false
             )
         )
-        let lanLease = runtime.attachConsumer(
+        let lanLease = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: .init(source: .sharingService, redactedLabel: "lan view"),

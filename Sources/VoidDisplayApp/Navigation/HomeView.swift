@@ -62,7 +62,7 @@ package struct HomeView: View {
                 guard let session = previewActions.previewSessionForDisplayID(displayID) else {
                     return
                 }
-                previewActions.closePreviewSession(session.id)
+                Task { await previewActions.closePreviewSession(session.id) }
             },
             openLANWebView: {
                 openDisplayDestination(.lanWebView)

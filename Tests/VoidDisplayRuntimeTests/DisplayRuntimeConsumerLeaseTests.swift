@@ -7,7 +7,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeConsumerLeaseTests {
-    @Test func attachCreatesLeaseSnapshotAndCaptureIntent() {
+    @Test func attachCreatesLeaseSnapshotAndCaptureIntent() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
         let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
@@ -15,7 +15,8 @@ struct DisplayRuntimeConsumerLeaseTests {
             captureIntentCommander: captureIntentCommander
         )
 
-        let lease = runtime.attachConsumer(
+        let lease = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI, redactedLabel: "preview"),
@@ -38,23 +39,25 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 1))?.outcome == .applied)
     }
 
-    @Test func detachRemovesDemandAndEmitsDrainingIntentForLastLease() {
+    @Test func detachRemovesDemandAndEmitsDrainingIntentForLastLease() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 51)
         let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 51, isMain: true)),
             captureIntentCommander: captureIntentCommander
         )
-        let lease = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand(capturesCursor: false)
         )
 
-        let releasedLease = runtime.detachConsumer(leaseID: lease.id)
+        let detachResult = await runtime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
 
-        #expect(releasedLease?.state == .released)
+        #expect(detachResult.releasedLease?.state == .released)
+        #expect(detachResult.applyResult?.outcome == .applied)
         #expect(runtime.currentConsumerLeaseSnapshot().first?.state == .released)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(captureIntentCommander.intents.count == 2)
@@ -62,37 +65,6 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.last?.reason == .detach)
         #expect(captureIntentCommander.intents.last?.aggregateDemand == nil)
         #expect(captureIntentCommander.intents.last?.revision.rawValue == 2)
-    }
-
-    @Test func repeatedLanWebViewAttachReturnsExistingLeaseWithoutSecondIntent() {
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 77)
-        let captureIntentCommander = FakeCaptureIntentCommander()
-        let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 77, isMain: true)),
-            captureIntentCommander: captureIntentCommander
-        )
-
-        let firstLease = runtime.attachConsumer(
-            surfaceIdentity: surfaceIdentity,
-            kind: .lanWebView,
-            owner: .init(source: .sharingService, redactedLabel: "lan"),
-            demand: sourceDemand(activeViewerCount: 1)
-        )
-        let secondLease = runtime.attachConsumer(
-            surfaceIdentity: surfaceIdentity,
-            kind: .lanWebView,
-            owner: .init(source: .sharingService, redactedLabel: "lan"),
-            demand: sourceDemand(activeViewerCount: 3)
-        )
-
-        #expect(secondLease.id == firstLease.id)
-        #expect(secondLease.createdAt == firstLease.createdAt)
-        #expect(secondLease.updatedAt > firstLease.updatedAt)
-        #expect(runtime.currentConsumerLeaseSnapshot().count == 1)
-        #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 3)
-        #expect(runtime.currentAggregatedDemandSnapshot().first?.activeLeaseIDs == [firstLease.id])
-        #expect(runtime.currentAggregatedDemandSnapshot().first?.activeViewerCount == 3)
-        #expect(captureIntentCommander.intents.count == 1)
     }
 
     @Test func lanWebViewCommandBoundaryAppliesOnlyInitialAttachAndDetach() async {
@@ -131,32 +103,6 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 4)
     }
 
-    @Test func diagnosticsRecorderAttachCanProduceCaptureIntentAndDrainWhenLastLeaseReleases() async {
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 79)
-        let captureIntentCommander = FakeCaptureIntentCommander()
-        let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 79, isMain: true)),
-            captureIntentCommander: captureIntentCommander
-        )
-
-        let attachResult = await runtime.attachDiagnosticsRecorderConsumer(
-            surfaceIdentity: surfaceIdentity,
-            owner: .init(source: .diagnostics, redactedLabel: "recorder"),
-            demand: diagnosticsDemand()
-        )
-        let detachResult = await runtime.detachDiagnosticsRecorderConsumer(leaseID: attachResult.lease.id)
-
-        #expect(attachResult.lease.kind == .diagnosticsRecorder)
-        #expect(attachResult.applyResult.outcome == .applied)
-        #expect(detachResult.releasedLease?.id == attachResult.lease.id)
-        #expect(detachResult.releasedLease?.state == .released)
-        #expect(detachResult.applyResult?.outcome == .applied)
-        #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .drain])
-        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
-        #expect(captureIntentCommander.intents.first?.aggregateDemand?.consumerKinds == [.diagnosticsRecorder])
-        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
-    }
-
     @Test func diagnosticsRecorderDetachDoesNotDrainWhilePreviewLeaseRemains() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 80)
         let captureIntentCommander = FakeCaptureIntentCommander()
@@ -164,7 +110,8 @@ struct DisplayRuntimeConsumerLeaseTests {
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 80, isMain: true)),
             captureIntentCommander: captureIntentCommander
         )
-        let previewLease = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
@@ -179,24 +126,25 @@ struct DisplayRuntimeConsumerLeaseTests {
         let diagnosticsDetach = await runtime.detachDiagnosticsRecorderConsumer(
             leaseID: diagnosticsAttach.lease.id
         )
-        let previewDetach = runtime.detachConsumer(leaseID: previewLease.id)
+        let previewDetach = await runtime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
 
         #expect(diagnosticsDetach.releasedLease?.state == .released)
-        #expect(previewDetach?.state == .released)
+        #expect(previewDetach.releasedLease?.state == .released)
         #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .capture, .capture, .drain])
         #expect(captureIntentCommander.intents[2].aggregateDemand?.consumerKinds == [.preview])
         #expect(captureIntentCommander.intents.last?.aggregateDemand == nil)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
     }
 
-    @Test func surfaceEpochChangeStopsOldLeaseFromDrivingPreviousDisplayID() {
+    @Test func surfaceEpochChangeStopsOldLeaseFromDrivingPreviousDisplayID() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 88)
         let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 88, isMain: true)),
             captureIntentCommander: captureIntentCommander
         )
-        let lease = runtime.attachConsumer(
+        let lease = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
@@ -213,13 +161,14 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(staleLease?.state == .restarting)
         #expect(staleLease?.lastFailureCode == DisplayRuntimeCaptureIntentFailureCode.epochMismatch)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
-        #expect(captureIntentCommander.intents.last?.kind == .drain)
-        #expect(captureIntentCommander.intents.last?.surfaceEpoch == nextEpoch)
-        #expect(captureIntentCommander.intents.last?.resolvedDisplayID == 89)
-        #expect(captureIntentCommander.intents.last?.resolvedDisplayID != lease.resolvedDisplayID)
+        let effectiveIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
+        #expect(effectiveIntent?.intent.kind == .drain)
+        #expect(effectiveIntent?.intent.surfaceEpoch == nextEpoch)
+        #expect(effectiveIntent?.intent.resolvedDisplayID == 89)
+        #expect(effectiveIntent?.intent.resolvedDisplayID != lease.resolvedDisplayID)
     }
 
-    @Test func captureIntentCommandPortRecordsAttachDetachEpochChangedRevisionsAndApplyResults() {
+    @Test func captureIntentCommandPortRecordsAttachDetachRevisionsAndApplyResults() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 90)
         let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
@@ -227,74 +176,32 @@ struct DisplayRuntimeConsumerLeaseTests {
             captureIntentCommander: captureIntentCommander
         )
 
-        let lease = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
             demand: sourceDemand()
         )
-        _ = runtime.advanceSurfaceEpoch(
+        let nextEpoch = runtime.advanceSurfaceEpoch(
             surfaceIdentity: surfaceIdentity,
             resolvedDisplayID: 91
         )
-        _ = runtime.detachConsumer(leaseID: lease.id)
+        let epochIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
+        let detachResult = await runtime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
 
-        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .epochChanged, .detach])
-        #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 2, 3])
-        #expect(captureIntentCommander.returnedResults.map(\.outcome) == [.applied, .applied, .applied])
+        #expect(epochIntent?.intent.reason == .epochChanged)
+        #expect(epochIntent?.intent.surfaceEpoch == nextEpoch)
+        #expect(detachResult.applyResult?.outcome == .applied)
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
+        #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 3])
+        #expect(captureIntentCommander.returnedResults.map(\.outcome) == [.applied, .applied])
         #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 1))?.outcome == .applied)
-        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 2))?.outcome == .applied)
         #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 3))?.outcome == .applied)
         #expect(runtime.currentLatestCaptureIntentRevision()?.rawValue == 3)
     }
 
-    @Test func staleApplyResultIsIgnoredAndCannotOverwriteNewerFailure() {
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 91)
-        let captureIntentCommander = FakeCaptureIntentCommander()
-        let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 91, isMain: true)),
-            captureIntentCommander: captureIntentCommander
-        )
-        _ = runtime.attachConsumer(
-            surfaceIdentity: surfaceIdentity,
-            kind: .preview,
-            owner: .init(source: .localUI),
-            demand: sourceDemand()
-        )
-        let firstRevision = captureIntentCommander.intents[0].revision
-        _ = runtime.attachConsumer(
-            surfaceIdentity: surfaceIdentity,
-            kind: .diagnosticsRecorder,
-            owner: .init(source: .diagnostics),
-            demand: diagnosticsDemand()
-        )
-        let secondRevision = captureIntentCommander.intents[1].revision
-
-        let currentResult = runtime.recordCaptureIntentApplyResult(
-            .init(
-                revision: secondRevision,
-                outcome: .failed,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
-            )
-        )
-        let staleResult = runtime.recordCaptureIntentApplyResult(
-            .init(
-                revision: firstRevision,
-                outcome: .failed,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
-            )
-        )
-
-        let effectiveIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
-        #expect(currentResult.outcome == .failed)
-        #expect(staleResult.outcome == .ignored)
-        #expect(effectiveIntent?.intent.revision == secondRevision)
-        #expect(effectiveIntent?.lastFailureCode == DisplayRuntimeCaptureIntentFailureCode.applyFailed)
-        #expect(runtime.captureIntentApplyResult(for: secondRevision)?.outcome == .failed)
-        #expect(runtime.captureIntentApplyResult(for: firstRevision)?.outcome == .ignored)
-    }
-
-    @Test func stalePortApplyResultIsIgnoredAndDoesNotReplaceEffectiveIntent() {
+    @Test func stalePortApplyResultIsIgnoredAndDoesNotReplaceEffectiveIntent() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 92)
         var firstRevision: DisplayRuntimeCaptureIntentRevision?
         let captureIntentCommander = FakeCaptureIntentCommander { intent in
@@ -311,7 +218,8 @@ struct DisplayRuntimeConsumerLeaseTests {
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 92, isMain: true)),
             captureIntentCommander: captureIntentCommander
         )
-        let lease = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
@@ -319,7 +227,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
         let attachedRevision = captureIntentCommander.intents[0].revision
 
-        _ = runtime.detachConsumer(leaseID: lease.id)
+        _ = await runtime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
 
         let effectiveIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
         #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])

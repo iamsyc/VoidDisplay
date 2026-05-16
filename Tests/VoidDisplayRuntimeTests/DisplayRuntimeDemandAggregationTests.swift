@@ -7,20 +7,22 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeDemandAggregationTests {
-    @Test func previewAndLanWebViewAggregateToMixedRealtimeSourceQuality() throws {
+    @Test func previewAndLanWebViewAggregateToMixedRealtimeSourceQuality() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 101, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 101)
 
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
             demand: aggregateDemand(width: 2560, height: 1440, capturesCursor: false, activeViewerCount: 0)
         )
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: .init(source: .sharingService),
@@ -44,14 +46,15 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == false)
     }
 
-    @Test func automaticAndSmoothPreserveSourceResolutionAndFrameRate() throws {
+    @Test func automaticAndSmoothPreserveSourceResolutionAndFrameRate() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 102, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 102)
 
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: .init(source: .sharingService),
@@ -72,14 +75,15 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == false)
     }
 
-    @Test func powerEfficientAllowsExplicitDowngrade() throws {
+    @Test func powerEfficientAllowsExplicitDowngrade() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 103, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 103)
 
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: .init(source: .sharingService),
@@ -101,14 +105,15 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == true)
     }
 
-    @Test func diagnosticsRecorderCannotDowngradeActiveLanWebViewQuality() throws {
+    @Test func diagnosticsRecorderCannotDowngradeActiveLanWebViewQuality() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 104, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 104)
 
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: .init(source: .sharingService),
@@ -122,7 +127,8 @@ struct DisplayRuntimeDemandAggregationTests {
                 activeViewerCount: 1
             )
         )
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .diagnosticsRecorder,
             owner: .init(source: .diagnostics),
@@ -148,14 +154,15 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == false)
     }
 
-    @Test func diagnosticsRecorderAndPreviewPreserveRealtimeSourceQualityAndCursorDemand() throws {
+    @Test func diagnosticsRecorderAndPreviewPreserveRealtimeSourceQualityAndCursorDemand() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 106, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 106)
 
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
@@ -167,7 +174,8 @@ struct DisplayRuntimeDemandAggregationTests {
                 latencyPreference: .realtime
             )
         )
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .diagnosticsRecorder,
             owner: .init(source: .diagnostics),
@@ -193,20 +201,22 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == false)
     }
 
-    @Test func cursorDemandUsesOrSemantics() throws {
+    @Test func cursorDemandUsesOrSemantics() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 105, isMain: true)),
             captureIntentCommander: FakeCaptureIntentCommander()
         )
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 105)
 
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: .init(source: .localUI),
             demand: aggregateDemand(width: 1920, height: 1080, capturesCursor: false)
         )
-        _ = runtime.attachConsumer(
+        _ = await attachConsumerForTesting(
+            runtime,
             surfaceIdentity: surfaceIdentity,
             kind: .diagnosticsRecorder,
             owner: .init(source: .diagnostics),

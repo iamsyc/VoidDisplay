@@ -18,9 +18,8 @@ struct ObservabilitySnapshotProviderTests {
         ]
         let runtime = DisplayRuntime()
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 888)
-        let lease = runtime.attachConsumer(
+        let lease = await runtime.attachLANWebViewConsumer(
             surfaceIdentity: surfaceIdentity,
-            kind: .lanWebView,
             owner: .init(source: .sharingService, redactedLabel: sensitiveInputs.joined(separator: " ")),
             demand: DisplayRuntimeConsumerDemand(
                 sourcePixelSize: .init(width: 3840, height: 2160),
@@ -32,7 +31,7 @@ struct ObservabilitySnapshotProviderTests {
                 latencyPreference: .realtime,
                 activeViewerCount: 2
             )
-        )
+        ).lease
         let provider = AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: runtime))
 
         let section = try await provider.makeSnapshot()

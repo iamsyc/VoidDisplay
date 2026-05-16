@@ -17,7 +17,7 @@ package struct CapturePreviewActions {
     package var activatePreviewSession: @MainActor (UUID) -> Void
     package var attachDiagnosticsRecorder: @MainActor (UUID) async -> UUID?
     package var detachDiagnosticsRecorder: @MainActor (UUID) async -> Void
-    package var closePreviewSession: @MainActor (UUID) -> Void
+    package var closePreviewSession: @MainActor (UUID) async -> Void
     package var setPreviewSessionCapturesCursor: @MainActor (UUID, Bool) async throws -> Void
 
     package init(
@@ -33,7 +33,7 @@ package struct CapturePreviewActions {
         activatePreviewSession: @escaping @MainActor (UUID) -> Void,
         attachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> UUID? = { _ in UUID() },
         detachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> Void = { _ in },
-        closePreviewSession: @escaping @MainActor (UUID) -> Void,
+        closePreviewSession: @escaping @MainActor (UUID) async -> Void,
         setPreviewSessionCapturesCursor: @escaping @MainActor (UUID, Bool) async throws -> Void
     ) {
         self.sessions = sessions

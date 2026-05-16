@@ -32,14 +32,14 @@ struct DisplayRuntimeAdapterTests {
         ])
     }
 
-    @Test func captureIntentAdapterUnavailableFailsExplicitly() {
+    @Test func captureIntentAdapterUnavailableFailsExplicitly() async {
         var controller: CaptureController? = CaptureController(
             capturePreviewService: MockCapturePreviewService()
         )
         let sut = DisplayRuntimeCaptureAdapter(controller: controller!)
         controller = nil
 
-        let result = sut.applyCaptureIntent(
+        let result = await sut.applyPreviewCaptureIntent(
             DisplayRuntimeCaptureIntent(
                 surfaceIdentity: .physicalDisplay(displayID: 8401),
                 surfaceEpoch: .initial,
@@ -95,7 +95,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(captureIntent.intent.resolvedDisplayID == display.displayID)
         #expect(captureIntent.lastApplyResult?.outcome == .applied)
 
-        actions.closePreviewSession(sessionID)
+        await actions.closePreviewSession(sessionID)
 
         let releasedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let drainIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)

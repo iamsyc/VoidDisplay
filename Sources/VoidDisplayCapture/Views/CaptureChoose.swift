@@ -194,7 +194,7 @@ package struct IsCapturing: View {
                     session: session,
                     isSharing: sharingStatusProvider.isDisplaySharing(session.displayID)
                 ) {
-                    previewActions.closePreviewSession(session.id)
+                    Task { await previewActions.closePreviewSession(session.id) }
                 }
             }
         }
@@ -221,7 +221,7 @@ package struct IsCapturing: View {
             isSharing: sharingStatusProvider.isDisplaySharing(display.displayID)
         ) {
             if isPreviewing, let session = previewSession {
-                previewActions.closePreviewSession(session.id)
+                Task { await previewActions.closePreviewSession(session.id) }
             } else {
                 Task {
                     await viewModel.startPreview(display: display) { sessionId in

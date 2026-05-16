@@ -138,7 +138,7 @@ package struct CaptureDisplayView: View {
                 }
             }
             recordingSink = nil
-            previewActions.closePreviewSession(sessionId)
+            Task { await previewActions.closePreviewSession(sessionId) }
             windowCoordinator.tearDown()
             renderer.flush()
             lastReportedRendererMetrics = nil
