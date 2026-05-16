@@ -226,18 +226,6 @@ package struct VirtualDisplayView: View {
             iconScreenTint: iconScreenTint,
             uiTestOpenEditAccessibilityIdentifier: UITestRuntime.isEnabled && isFirst
                 ? "virtual_display_open_edit_test_button"
-                : nil,
-            uiTestShowRebuildingAccessibilityIdentifier: UITestRuntime.isEnabled && isFirst
-                ? "virtual_display_show_rebuilding_test_button"
-                : nil,
-            uiTestShowRebuildFailedAccessibilityIdentifier: UITestRuntime.isEnabled && isFirst
-                ? "virtual_display_show_rebuild_failed_test_button"
-                : nil,
-            onUITestShowRebuilding: UITestRuntime.isEnabled && isFirst
-                ? { virtualDisplay.applyUITestPresentationState(scenario: .virtualDisplayRebuilding) }
-                : nil,
-            onUITestShowRebuildFailed: UITestRuntime.isEnabled && isFirst
-                ? { virtualDisplay.applyUITestPresentationState(scenario: .virtualDisplayRebuildFailed) }
                 : nil
         )
     }

@@ -26,10 +26,6 @@ package struct VirtualDisplayRow: View {
     package let onRetryRebuild: () -> Void
     package let iconScreenTint: Color?
     package let uiTestOpenEditAccessibilityIdentifier: String?
-    package let uiTestShowRebuildingAccessibilityIdentifier: String?
-    package let uiTestShowRebuildFailedAccessibilityIdentifier: String?
-    package let onUITestShowRebuilding: (() -> Void)?
-    package let onUITestShowRebuildFailed: (() -> Void)?
 
     private var isRowBusy: Bool {
         isToggling || isRebuilding
@@ -69,7 +65,6 @@ package struct VirtualDisplayRow: View {
                     toggleButton
                     setPrimaryButton
                     uiTestOpenEditButton
-                    uiTestStateButtons
                     editButton
                     deleteButton
                 }
@@ -79,7 +74,6 @@ package struct VirtualDisplayRow: View {
                     rebuildAction
                     toggleButton
                     uiTestOpenEditButton
-                    uiTestStateButtons
                     AppQuickActionsMenu {
                         Button(
                             String(localized: "Set as Primary"),
@@ -206,24 +200,6 @@ package struct VirtualDisplayRow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .accessibilityIdentifier(uiTestOpenEditAccessibilityIdentifier)
-        }
-    }
-
-    @ViewBuilder
-    private var uiTestStateButtons: some View {
-        if let uiTestShowRebuildingAccessibilityIdentifier,
-           let onUITestShowRebuilding,
-           let uiTestShowRebuildFailedAccessibilityIdentifier,
-           let onUITestShowRebuildFailed {
-            Button("Test Rebuilding", action: onUITestShowRebuilding)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityIdentifier(uiTestShowRebuildingAccessibilityIdentifier)
-
-            Button("Test Failed", role: .destructive, action: onUITestShowRebuildFailed)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityIdentifier(uiTestShowRebuildFailedAccessibilityIdentifier)
         }
     }
 

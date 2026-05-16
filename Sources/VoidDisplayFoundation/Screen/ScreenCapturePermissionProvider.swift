@@ -24,12 +24,6 @@ package struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionPro
             return true
         case .settingsFeedback:
             return true
-        case .virtualDisplayRebuilding:
-            return true
-        case .virtualDisplayRebuildFailed:
-            return true
-        case .virtualDisplayRebuildPending:
-            return true
         case .permissionDenied:
             return false
         }

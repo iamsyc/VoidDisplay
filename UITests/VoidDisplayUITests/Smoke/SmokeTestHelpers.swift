@@ -6,8 +6,6 @@ enum SmokeScenario: String {
     case displayCatalogLoading = "display_catalog_loading"
     case permissionDenied = "permission_denied"
     case settingsFeedback = "settings_feedback"
-    case virtualDisplayRebuilding = "virtual_display_rebuilding"
-    case virtualDisplayRebuildFailed = "virtual_display_rebuild_failed"
 }
 
 extension XCTestCase {

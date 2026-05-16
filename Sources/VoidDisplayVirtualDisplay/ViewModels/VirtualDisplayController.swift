@@ -110,50 +110,6 @@ package final class VirtualDisplayController {
         requestSnapshotRefresh()
     }
 
-    package func applyUITestPresentationState(scenario: UITestScenario) {
-        rebuildPresentationState = RebuildPresentationState()
-
-        for tasks in rebuildTasksByConfigId.values {
-            for task in tasks.values {
-                task.cancel()
-            }
-        }
-        rebuildTasksByConfigId.removeAll()
-        rebuildPresentationWaiterCountByConfigId.removeAll()
-
-        for task in appliedBadgeClearTasksByConfigId.values {
-            task.cancel()
-        }
-        appliedBadgeClearTasksByConfigId.removeAll()
-        rebuildRequestCount = 0
-
-        switch scenario {
-        case .baseline:
-            break
-        case .displayCatalogLoading:
-            break
-        case .permissionDenied:
-            break
-        case .settingsFeedback:
-            break
-        case .virtualDisplayRebuilding:
-            if let firstID = displayConfigs.first?.id {
-                rebuildPresentationState.beginRebuild(configId: firstID)
-            }
-        case .virtualDisplayRebuildFailed:
-            if let firstID = displayConfigs.first?.id {
-                rebuildPresentationState.markRebuildFailure(
-                    configId: firstID,
-                    message: String(localized: "Failed to rebuild virtual display.")
-                )
-            }
-        case .virtualDisplayRebuildPending:
-            break
-        }
-
-        syncRebuildPresentationState()
-    }
-
     package func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
         runtimeDisplayIDByConfigId[configId]
     }

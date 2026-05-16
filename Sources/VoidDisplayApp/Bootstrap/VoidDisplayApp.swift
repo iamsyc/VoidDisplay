@@ -209,7 +209,6 @@ package enum AppBootstrap {
                 shouldRestoreVirtualDisplays: true
             )
         )
-        env.virtualDisplay.applyUITestPresentationState(scenario: scenario)
         return env
     }
 
