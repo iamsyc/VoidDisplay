@@ -32,10 +32,6 @@ package final class CapturePreviewLifecycleService: CapturePreviewLifecycleServi
         }
     }
 
-    package func isStarting(displayID: CGDirectDisplayID) -> Bool {
-        startCoordinator.isStarting(kind: .preview, displayID: displayID)
-    }
-
     package func startPreview(
         display: SCDisplay,
         metadata: CapturePreviewDisplayMetadata

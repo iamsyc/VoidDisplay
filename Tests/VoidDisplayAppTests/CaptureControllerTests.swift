@@ -83,10 +83,6 @@ private final class CaptureControllerLifecycleSpy: CapturePreviewLifecycleServic
         self.eventRecorder = eventRecorder
     }
 
-    func isStarting(displayID: CGDirectDisplayID) -> Bool {
-        base.isStarting(displayID: displayID)
-    }
-
     func startPreview(
         display: SCDisplay,
         metadata: CapturePreviewDisplayMetadata

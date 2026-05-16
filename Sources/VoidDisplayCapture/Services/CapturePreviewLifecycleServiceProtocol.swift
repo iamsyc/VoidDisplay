@@ -6,7 +6,6 @@ import ScreenCaptureKit
 
 @MainActor
 package protocol CapturePreviewLifecycleServiceProtocol: AnyObject {
-    func isStarting(displayID: CGDirectDisplayID) -> Bool
     func startPreview(
         display: SCDisplay,
         metadata: CapturePreviewDisplayMetadata
