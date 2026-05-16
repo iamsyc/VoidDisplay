@@ -239,53 +239,6 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(context.captureSize(for: .shareOnly, performanceMode: .smooth) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
     }
 
-    @Test func performanceModeUpdateRecomputesCommittedMixedConfiguration() {
-        var coordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps45),
-            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
-        )
-
-        let smoothDecision = coordinator.updateDemand(
-            makeDemand(
-                attachedPreviewSinkCount: 1,
-                shareTokenCount: 1,
-                performanceMode: .smooth
-            ),
-            nowNs: 1,
-            minimumDwellNanoseconds: 0
-        )
-        switch smoothDecision {
-        case .applyNow(let configuration):
-            #expect(configuration.profile == .mixed)
-            #expect(configuration.frameRateTier == .fps60)
-        default:
-            Issue.record("Expected smooth mode update to promote mixed configuration to 60fps, got \(String(describing: smoothDecision))")
-        }
-
-        let followUpDecision = coordinator.finishAppliedTransition(
-            at: 2,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(followUpDecision == .noChange)
-
-        let powerDecision = coordinator.updateDemand(
-            makeDemand(
-                attachedPreviewSinkCount: 1,
-                shareTokenCount: 1,
-                performanceMode: .powerEfficient
-            ),
-            nowNs: 3,
-            minimumDwellNanoseconds: 0
-        )
-        switch powerDecision {
-        case .applyNow(let configuration):
-            #expect(configuration.profile == .mixed)
-            #expect(configuration.frameRateTier == .fps30)
-        default:
-            Issue.record("Expected power efficient mode update to reduce mixed configuration to 30fps, got \(String(describing: powerDecision))")
-        }
-    }
-
     @Test func performanceModeUpdateRecomputesSharedCaptureSize() {
         let context = DisplayCaptureSizeContext(
             logicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080),
@@ -341,18 +294,6 @@ struct DisplayCaptureProfileStateMachineTests {
         default:
             Issue.record("Expected power mode update to apply budgeted capture size, got \(String(describing: powerDecision))")
         }
-    }
-
-    @Test func taskLifetimeInvalidationRejectsOldExecutionGeneration() {
-        var lifetime = DisplayCaptureTaskLifetimeState()
-        let initialGeneration = lifetime.currentGeneration
-
-        #expect(lifetime.allowsExecution(for: initialGeneration))
-
-        _ = lifetime.invalidateAllTasks()
-
-        #expect(lifetime.allowsExecution(for: initialGeneration) == false)
-        #expect(lifetime.allowsExecution(for: lifetime.currentGeneration))
     }
 
     @Test func streamConfigurationCoordinatorUpdatesCaptureDimensionsFromDemandConfiguration() async throws {

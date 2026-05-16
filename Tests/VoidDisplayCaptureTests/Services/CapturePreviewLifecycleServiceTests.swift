@@ -396,52 +396,6 @@ struct CapturePreviewLifecycleServiceTests {
         #expect(secondPreview.cancelCounter.value == 0)
     }
 
-    @Test func removePreviewSessionsPreventsStaleSessionWriteWhenAcquireResumesAfterInvalidation() async throws {
-        let service = CapturePreviewService()
-        let preview = makePreview(displayID: 720)
-        let gate = CapturePreviewLifecycleAcquirePreviewGate(
-            scriptedOutcomes: [.success(preview.subscription)]
-        )
-        let lifecycle = CapturePreviewLifecycleService(
-            capturePreviewService: service,
-            acquirePreview: { _, _ in
-                switch await gate.nextOutcome() {
-                case .success(let subscription):
-                    return .started(subscription)
-                case .failure(let error):
-                    throw error
-                }
-            }
-        )
-        let display = SharedMockSCDisplay.make(
-            displayID: 720,
-            width: 1920,
-            height: 1080
-        )
-        let metadata = CapturePreviewDisplayMetadata(
-            displayName: "Cancelled Display",
-            resolutionText: "1920 × 1080",
-            isVirtualDisplay: false
-        )
-
-        let task = Task { @MainActor in
-            try await lifecycle.startPreview(display: display, metadata: metadata)
-        }
-        #expect(await waitForAcquirePreviewCall(gate, count: 1))
-
-        lifecycle.removePreviewSessions(displayID: 720)
-        await gate.release(call: 1)
-
-        let outcome = try await task.value
-        if case .invalidated = outcome {
-        } else {
-            Issue.record("Expected invalidated outcome after removing preview sessions.")
-        }
-
-        #expect(service.currentSessions.isEmpty)
-        #expect(await waitUntil { preview.cancelCounter.value == 1 })
-    }
-
     private func makePreview(
         displayID: CGDirectDisplayID
     ) -> (

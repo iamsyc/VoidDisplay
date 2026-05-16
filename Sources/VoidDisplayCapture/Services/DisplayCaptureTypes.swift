@@ -277,10 +277,6 @@ package nonisolated struct DisplayCaptureConfigurationCoordinatorState: Sendable
         inFlightConfiguration = nil
     }
 
-    private var currentDesiredProfile: DisplayCaptureProfile? {
-        demand.desiredProfile
-    }
-
     private mutating func evaluateTransition(
         nowNs: UInt64,
         minimumDwellNanoseconds: UInt64
