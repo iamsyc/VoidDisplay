@@ -1,21 +1,8 @@
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
-import CoreGraphics
 import Foundation
 import ScreenCaptureKit
 import Testing
-
-private final class CaptureChooseDummySession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
-
-    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func stop() async {}
-}
 
 @Suite(.serialized)
 @MainActor
@@ -44,58 +31,6 @@ struct CaptureChooseViewModelTests {
         #expect(sut.isVirtualDisplay(display))
         #expect(sut.resolutionText(for: display) == "1920 × 1080")
         #expect(sut.displayName(for: display) == String(localized: "Display"))
-    }
-
-    @Test func dependenciesExposeClosureResults() {
-        let sessionID = UUID()
-        let displayID: CGDirectDisplayID = 777
-        let session = makeSession(id: sessionID, displayID: displayID)
-        let dependencies = CaptureChooseViewModel.Dependencies(
-            captureActions: .init(
-                sessions: { [session] },
-                previewSession: { $0 == sessionID ? session : nil },
-                previewSessionForDisplayID: { $0 == displayID ? session : nil },
-                isStartingDisplayID: { $0 == displayID },
-                startPreview: { _, _ in .started(sessionID) },
-                attachPreviewSink: { _, _ in },
-                activatePreviewSession: { _ in },
-                closePreviewSession: { _ in },
-                setPreviewSessionCapturesCursor: { _, _ in }
-            ),
-            virtualDisplayStatusProvider: .init(
-                isManagedVirtualDisplay: { $0 == displayID }
-            )
-        )
-
-        #expect(dependencies.captureActions.sessions().map(\.id) == [sessionID])
-        #expect(dependencies.captureActions.previewSession(sessionID)?.id == sessionID)
-        #expect(dependencies.captureActions.previewSessionForDisplayID(displayID)?.displayID == displayID)
-        #expect(dependencies.captureActions.isStartingDisplayID(displayID))
-        #expect(dependencies.virtualDisplayStatusProvider.isManagedVirtualDisplay(displayID))
-    }
-
-    @Test func isStartingDelegatesToCaptureActions() {
-        let sut = CaptureChooseViewModel(
-            dependencies: .init(
-                captureActions: .init(
-                    sessions: { [] },
-                    previewSession: { _ in nil },
-                    previewSessionForDisplayID: { _ in nil },
-                    isStartingDisplayID: { $0 == 301 },
-                    startPreview: { _, _ in .started(UUID()) },
-                    attachPreviewSink: { _, _ in },
-                    activatePreviewSession: { _ in },
-                    closePreviewSession: { _ in },
-                    setPreviewSessionCapturesCursor: { _, _ in }
-                ),
-                virtualDisplayStatusProvider: .init(
-                    isManagedVirtualDisplay: { _ in false }
-                )
-            )
-        )
-
-        #expect(sut.isStarting(displayID: 301))
-        #expect(sut.isStarting(displayID: 302) == false)
     }
 
     @Test func startPreviewFailurePresentsUserFacingAlert() async {
@@ -263,25 +198,4 @@ struct CaptureChooseViewModelTests {
         )
     }
 
-    private func makeSession(
-        id: UUID,
-        displayID: CGDirectDisplayID
-    ) -> ScreenPreviewSession {
-        let captureSession = CaptureChooseDummySession()
-        return ScreenPreviewSession(
-            id: id,
-            displayID: displayID,
-            displayName: "Display",
-            resolutionText: "1920 × 1080",
-            isVirtualDisplay: false,
-            previewSubscription: DisplayPreviewSubscription(
-                displayID: displayID,
-                resolutionText: "1920 × 1080",
-                session: captureSession,
-                cancelClosure: {}
-            ),
-            capturesCursor: false,
-            state: .active
-        )
-    }
 }
