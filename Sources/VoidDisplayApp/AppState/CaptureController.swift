@@ -196,13 +196,4 @@ package final class CaptureController {
         )
     }
 
-#if DEBUG
-    package func installStartingDisplayIDsForTesting(_ displayIDs: Set<CGDirectDisplayID>) {
-        startTracker.clearAll()
-        for displayID in displayIDs {
-            _ = startTracker.begin(displayID: displayID)
-        }
-        syncCapturePreviewState()
-    }
-#endif
 }

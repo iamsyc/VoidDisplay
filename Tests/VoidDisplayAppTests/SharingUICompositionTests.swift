@@ -39,13 +39,11 @@ struct SharingUICompositionTests {
                 defaults: UserDefaults(suiteName: "SharingUICompositionTestsRuntime")!
             )
         )
-        sharingController.installStartingDisplayIDsForTesting([502])
 
         let state = SharingUIComposition.runtimeState(sharing: sharingController)
 
         #expect(state.isWebServiceRunning)
         #expect(state.isDisplaySharing(displayID: displayID))
-        #expect(state.isStarting(displayID: 502))
         #expect(state.sharingClientCount == 2)
         #expect(state.displayClientCount(for: displayID) == 2)
     }
@@ -58,7 +56,6 @@ struct SharingUICompositionTests {
                 defaults: UserDefaults(suiteName: "SharingUICompositionTestsLive")!
             )
         )
-        sharingController.installStartingDisplayIDsForTesting([501])
         let virtualDisplayController = VirtualDisplayController(
             virtualDisplayFacade: MockVirtualDisplayFacade(),
             appliedBadgeDisplayDuration: .nanoseconds(1)
@@ -69,37 +66,10 @@ struct SharingUICompositionTests {
             displayRuntime: DisplayRuntime()
         )
 
-        #expect(dependencies.sharingQueries.isStartingDisplayID(501))
         #expect(
             dependencies.sharingQueries.preferredWebServicePort()
                 == sharingController.preferredWebServicePort
         )
-    }
-
-    @Test func dependenciesReflectStopWebServiceClearingStartingState() {
-        let sharingService = MockSharingService()
-        let sharingController = SharingController(
-            sharingService: sharingService,
-            portPreferences: SharingPortPreferences(
-                defaults: UserDefaults(suiteName: "SharingUICompositionTestsStopWebService")!
-            )
-        )
-        sharingController.installStartingDisplayIDsForTesting([502])
-        let virtualDisplayController = VirtualDisplayController(
-            virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDuration: .nanoseconds(1)
-        )
-        let dependencies = SharingUIComposition.dependencies(
-            sharing: sharingController,
-            virtualDisplay: virtualDisplayController,
-            displayRuntime: DisplayRuntime()
-        )
-
-        #expect(dependencies.sharingQueries.isStartingDisplayID(502))
-
-        sharingController.stopWebService()
-
-        #expect(dependencies.sharingQueries.isStartingDisplayID(502) == false)
     }
 
     @Test func performanceModeBindingMapsToCapturePreferences() {

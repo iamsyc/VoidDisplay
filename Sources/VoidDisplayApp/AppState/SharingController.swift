@@ -351,15 +351,6 @@ package final class SharingController {
         )
     }
 
-#if DEBUG
-    package func installStartingDisplayIDsForTesting(_ displayIDs: Set<CGDirectDisplayID>) {
-        startTracker.clearAll()
-        for displayID in displayIDs {
-            _ = startTracker.begin(displayID: displayID)
-        }
-        syncSharingState()
-    }
-#endif
 }
 
 private struct SharingControllerRuntimeState {

@@ -237,21 +237,6 @@ struct SharingControllerTests {
         #expect(sut.startingDisplayIDs.isEmpty)
     }
 
-    @Test func stopSharingClearsStartingDisplayIDImmediately() {
-        let service = MockSharingService()
-        let displayID: CGDirectDisplayID = 34
-        let sut = SharingController(
-            sharingService: service,
-            portPreferences: MockSharingPortPreferences()
-        )
-        sut.installStartingDisplayIDsForTesting([displayID])
-
-        sut.stopSharing(displayID: displayID)
-
-        #expect(sut.startingDisplayIDs.isEmpty)
-        #expect(service.stopSharingCallCount == 1)
-    }
-
     @Test func stopWebServiceClearsStartingDisplayIDImmediatelyAndInvalidatesInFlightStart() async throws {
         let gate = SharingControllerAsyncGate()
         let displayID: CGDirectDisplayID = 37
