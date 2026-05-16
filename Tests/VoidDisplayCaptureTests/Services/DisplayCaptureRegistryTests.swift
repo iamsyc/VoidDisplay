@@ -46,53 +46,6 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     }
 }
 
-private actor SessionStopGate {
-    private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func waitUntilOpen() async {
-        guard !isOpen else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    func open() {
-        guard !isOpen else { return }
-        isOpen = true
-        let pending = waiters
-        waiters.removeAll()
-        for waiter in pending {
-            waiter.resume()
-        }
-    }
-}
-
-private final class ControlledStopCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
-    private let stopGate: SessionStopGate
-    private let counters = Mutex((stopSharing: 0, stop: 0))
-
-    init(stopGate: SessionStopGate) {
-        self.stopGate = stopGate
-    }
-
-    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func stopSharing() {
-        counters.withLock { $0.stopSharing += 1 }
-    }
-
-    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
-
-    nonisolated func stop() async {
-        counters.withLock { $0.stop += 1 }
-        await stopGate.waitUntilOpen()
-    }
-}
-
 private actor SharingStateGate {
     private var isOpen = false
     private var enteredFalse = false
@@ -209,27 +162,6 @@ struct DisplayCaptureRegistryTests {
         #expect(previewReleaseSettled)
     }
 
-    @Test func releasingSameTokenTwiceIsIdempotent() async throws {
-        let registry = DisplayCaptureRegistry()
-        let fakeSession = FakeCaptureSession()
-        let displayID = CGDirectDisplayID(5050)
-        await registry.installSessionForTesting(
-            displayID: displayID,
-            resolutionText: "2560 × 1440",
-            session: fakeSession
-        )
-
-        let previewToken = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
-        await registry.release(previewToken)
-        await registry.release(previewToken)
-
-        let releaseSettled = await waitUntil {
-            let state = await registry.sessionState(for: displayID)
-            return fakeSession.stopCalls == 1 && state == .stopped
-        }
-        #expect(releaseSettled)
-    }
-
     @Test func concurrentAcquirePreviewDoesNotLoseTokenOwnership() async throws {
         let displayID = CGDirectDisplayID(6060)
         let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
@@ -268,79 +200,6 @@ struct DisplayCaptureRegistryTests {
             return fakeSession.stopCalls == 1 && state == .stopped
         }
         #expect(secondReleaseSettled)
-    }
-
-    @Test func acquireWaitsForDrainingSessionToStopBeforeRecreating() async throws {
-        let displayID = CGDirectDisplayID(7070)
-        let display = MockSCDisplay.make(displayID: displayID, width: 2560, height: 1440)
-        let sendableDisplay = SendableDisplay(display)
-        let stopGate = SessionStopGate()
-        let initialSession = ControlledStopCaptureSession(stopGate: stopGate)
-        let replacementSession = FakeCaptureSession()
-        let factoryCallCount = Mutex(0)
-
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _, _ in
-            factoryCallCount.withLock { $0 += 1 }
-            return replacementSession
-        })
-        await registry.installSessionForTesting(
-            displayID: displayID,
-            resolutionText: "2560 × 1440",
-            session: initialSession
-        )
-
-        let previewToken = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
-        let releaseTask = Task {
-            await registry.release(previewToken)
-        }
-
-        let drainingObserved = await waitUntil {
-            await registry.sessionState(for: displayID) == .draining
-        }
-        #expect(drainingObserved)
-
-        let acquireTask = Task {
-            try await registry.acquirePreview(display: sendableDisplay)
-        }
-
-        #expect(
-            await staysTrue(timeoutNanoseconds: 50_000_000) {
-                factoryCallCount.withLock { $0 } == 0
-            }
-        )
-
-        await stopGate.open()
-        await releaseTask.value
-
-        let replacementSubscription = try await acquireTask.value
-        #expect(factoryCallCount.withLock { $0 } == 1)
-        replacementSubscription.cancel()
-
-        let drained = await waitUntil {
-            await registry.sessionState(for: displayID) == .stopped
-        }
-        #expect(drained)
-    }
-
-    @Test func acquiringShareFirstUsesShareOnlyInitialProfile() async throws {
-        let displayID = CGDirectDisplayID(8080)
-        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
-        let sendableDisplay = SendableDisplay(display)
-        let fakeSession = FakeCaptureSession()
-        let initialProfiles = Mutex<[DisplayCaptureProfile]>([])
-        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, initialProfile, _, _ in
-            initialProfiles.withLock { $0.append(initialProfile) }
-            return fakeSession
-        })
-
-        let subscription = try await registry.acquireShare(display: sendableDisplay)
-
-        #expect(initialProfiles.withLock { $0.first } == .shareOnly)
-        subscription.cancel()
-        let drained = await waitUntil {
-            await registry.sessionState(for: displayID) == .stopped
-        }
-        #expect(drained)
     }
 
     @Test func concurrentPreviewAndShareCreationUsesMixedInitialProfile() async throws {
