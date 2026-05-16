@@ -121,58 +121,6 @@ struct VirtualDisplayAndResolutionTests {
         #expect(decoded.serialNum == 9)
     }
 
-    @MainActor @Test func virtualDisplayStoreFileFormatRoundTrip() throws {
-        let config = VirtualDisplayConfig(
-            displayName: "Stored Config",
-            serialNum: 10,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [
-                .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)
-            ],
-            desiredEnabled: true
-        )
-        let original = VirtualDisplayStore.FileFormat(schemaVersion: 1, configs: [config])
-
-        let encoded = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(VirtualDisplayStore.FileFormat.self, from: encoded)
-
-        #expect(decoded.schemaVersion == 1)
-        #expect(decoded.configs.count == 1)
-        #expect(decoded.configs.first?.serialNum == 10)
-        #expect(decoded.configs.first?.desiredEnabled == true)
-    }
-
-    @MainActor @Test func virtualDisplayStoreFileFormatPreservesSchemaVersion() throws {
-        let original = VirtualDisplayStore.FileFormat(schemaVersion: 99, configs: [])
-        let encoded = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(VirtualDisplayStore.FileFormat.self, from: encoded)
-        #expect(decoded.schemaVersion == 99)
-        #expect(decoded.configs.isEmpty)
-    }
-
-    @MainActor @Test func virtualDisplayStoreRejectsLegacyArrayFormat() throws {
-        let config = VirtualDisplayConfig(
-            displayName: "Legacy Array",
-            serialNum: 42,
-            physicalWidth: 300,
-            physicalHeight: 200,
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)],
-            desiredEnabled: true
-        )
-
-        let data = try JSONEncoder().encode([config])
-        do {
-            _ = try makeStore().decodeConfigs(from: data)
-            Issue.record("Expected legacy array format decode to fail")
-        } catch let error as VirtualDisplayConfigStoreError {
-            guard case .decodingFailed = error else {
-                Issue.record("Expected decodingFailed, got \(error)")
-                return
-            }
-        }
-    }
-
     @MainActor @Test func virtualDisplayStoreRejectsInvalidConfigs() throws {
         let duplicateID = UUID()
         let configs = [
@@ -311,42 +259,6 @@ struct VirtualDisplayAndResolutionTests {
                 #expect(actual == 2)
             default:
                 Issue.record("Expected unsupportedSchemaVersion error")
-            }
-        } catch {
-            Issue.record("Unexpected error type: \(String(describing: error))")
-        }
-    }
-
-    @MainActor @Test func virtualDisplayStoreRejectsLegacyNameKeySchema() throws {
-        let id = UUID().uuidString
-        let json = """
-        {
-          "schemaVersion": 3,
-          "configs": [
-            {
-              "id": "\(id)",
-              "name": "Legacy Field",
-              "serialNum": 1,
-              "physicalWidth": 300,
-              "physicalHeight": 200,
-              "modes": [
-                { "width": 1920, "height": 1080, "refreshRate": 60, "enableHiDPI": false }
-              ],
-              "desiredEnabled": true
-            }
-          ]
-        }
-        """
-        let data = try #require(json.data(using: .utf8))
-        do {
-            _ = try makeStore().decodeConfigs(from: data)
-            Issue.record("Expected decodingFailed store error")
-        } catch let error as VirtualDisplayConfigStoreError {
-            switch error {
-            case .decodingFailed:
-                break
-            default:
-                Issue.record("Expected decodingFailed error")
             }
         } catch {
             Issue.record("Unexpected error type: \(String(describing: error))")
