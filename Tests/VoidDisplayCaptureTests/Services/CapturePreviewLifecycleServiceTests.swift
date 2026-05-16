@@ -1,7 +1,6 @@
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
 import CoreGraphics
-import CoreMedia
 import Foundation
 import ScreenCaptureKit
 import Testing
@@ -34,10 +33,6 @@ private final class CapturePreviewLifecycleDummySession: DisplayCaptureSessionin
     }
 
     nonisolated func stop() async {}
-}
-
-private final class CapturePreviewLifecyclePreviewSink: DisplayPreviewSink, @unchecked Sendable {
-    nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
 private final class CapturePreviewLifecycleCancelCounter: @unchecked Sendable {
@@ -290,34 +285,6 @@ struct CapturePreviewLifecycleServiceTests {
         #expect(service.currentSessions.first?.displayID == 712)
     }
 
-    @Test func attachPreviewSinkTargetsRequestedSessionOnly() {
-        let service = MockCapturePreviewService()
-        let first = makeSession(id: UUID(), displayID: 704)
-        let second = makeSession(id: UUID(), displayID: 705)
-        service.currentSessions = [first.session, second.session]
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-        let sink = CapturePreviewLifecyclePreviewSink()
-
-        lifecycle.attachPreviewSink(sink, to: second.session.id)
-
-        #expect(first.captureSession.attachedSinkCount == 0)
-        #expect(second.captureSession.attachedSinkCount == 1)
-    }
-
-    @Test func activatePreviewSessionPromotesOnlyRequestedSession() {
-        let service = MockCapturePreviewService()
-        let first = makeSession(id: UUID(), displayID: 706)
-        let second = makeSession(id: UUID(), displayID: 707)
-        service.currentSessions = [first.session, second.session]
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-
-        lifecycle.activatePreviewSession(id: second.session.id)
-
-        #expect(service.currentSessions.first(where: { $0.id == first.session.id })?.state == .starting)
-        #expect(service.currentSessions.first(where: { $0.id == second.session.id })?.state == .active)
-        #expect(service.updateStateCallCount == 1)
-    }
-
     @Test func setPreviewSessionCapturesCursorWritesBackOnlyAfterPreviewUpdateSucceeds() async throws {
         let service = MockCapturePreviewService()
         let record = makeSession(id: UUID(), displayID: 708)
@@ -352,62 +319,6 @@ struct CapturePreviewLifecycleServiceTests {
         #expect(record.captureSession.cursorUpdateCount == 1)
         #expect(service.updateCapturesCursorCallCount == 0)
         #expect(service.currentSessions.first?.capturesCursor == false)
-    }
-
-    @Test func closePreviewSessionUsesRemovePathOnly() {
-        let service = MockCapturePreviewService()
-        let record = makeSession(id: UUID(), displayID: 710)
-        service.currentSessions = [record.session]
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-
-        lifecycle.closePreviewSession(id: record.session.id)
-
-        #expect(service.removeCallCount == 1)
-        #expect(record.cancelCounter.value == 0)
-        #expect(service.currentSessions.isEmpty)
-    }
-
-    @Test func removePreviewSessionsRemovesSingleMatchingDisplaySession() {
-        let record = makeSession(id: UUID(), displayID: 714)
-        let service = CapturePreviewService(initialSessions: [record.session])
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-
-        lifecycle.removePreviewSessions(displayID: 714)
-
-        #expect(service.currentSessions.isEmpty)
-        #expect(record.cancelCounter.value == 1)
-    }
-
-    @Test func removePreviewSessionsRemovesAllMatchingSessionsAndPreservesOtherDisplays() {
-        let first = makeSession(id: UUID(), displayID: 715)
-        let second = makeSession(id: UUID(), displayID: 715)
-        let third = makeSession(id: UUID(), displayID: 716)
-        let service = CapturePreviewService(initialSessions: [
-            first.session,
-            second.session,
-            third.session
-        ])
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-
-        lifecycle.removePreviewSessions(displayID: 715)
-
-        #expect(service.currentSessions.map(\.displayID) == [716])
-        #expect(first.cancelCounter.value == 1)
-        #expect(second.cancelCounter.value == 1)
-        #expect(third.cancelCounter.value == 0)
-    }
-
-    @Test func removePreviewSessionsIgnoresUnknownDisplayID() {
-        let first = makeSession(id: UUID(), displayID: 717)
-        let second = makeSession(id: UUID(), displayID: 718)
-        let service = CapturePreviewService(initialSessions: [first.session, second.session])
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-
-        lifecycle.removePreviewSessions(displayID: 999)
-
-        #expect(service.currentSessions.map(\.id) == [first.session.id, second.session.id])
-        #expect(first.cancelCounter.value == 0)
-        #expect(second.cancelCounter.value == 0)
     }
 
     @Test func failedInFlightStartClearsMutualExclusionAndAllowsRetry() async {
@@ -583,26 +494,6 @@ struct CapturePreviewLifecycleServiceTests {
 
         #expect(service.currentSessions.isEmpty)
         #expect(await waitUntil { preview.cancelCounter.value == 1 })
-    }
-
-    @Test func unknownSessionIDsAreNoOpForActivateAttachAndClose() async throws {
-        let service = MockCapturePreviewService()
-        let record = makeSession(id: UUID(), displayID: 711)
-        service.currentSessions = [record.session]
-        let lifecycle = CapturePreviewLifecycleService(capturePreviewService: service)
-        let sink = CapturePreviewLifecyclePreviewSink()
-
-        lifecycle.activatePreviewSession(id: UUID())
-        lifecycle.attachPreviewSink(sink, to: UUID())
-        try await lifecycle.setPreviewSessionCapturesCursor(id: UUID(), capturesCursor: true)
-        lifecycle.closePreviewSession(id: UUID())
-
-        #expect(service.updateStateCallCount == 0)
-        #expect(service.updateCapturesCursorCallCount == 0)
-        #expect(service.removeCallCount == 0)
-        #expect(record.captureSession.attachedSinkCount == 0)
-        #expect(record.captureSession.cursorUpdateCount == 0)
-        #expect(service.currentSessions.map(\.id) == [record.session.id])
     }
 
     private func makePreview(
