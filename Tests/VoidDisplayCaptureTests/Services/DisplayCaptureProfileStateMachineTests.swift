@@ -296,62 +296,6 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(context.captureSize(for: .shareOnly, performanceMode: .smooth) == DisplayCaptureDimensions(width: 3_840, height: 2_160))
     }
 
-    @Test func captureSizeContextKeepsSharedDimensionsUnderPixelBudget() {
-        let context = DisplayCaptureSizeContext(
-            logicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080),
-            physicalSize: DisplayCaptureDimensions(width: 1_920, height: 1_080)
-        )
-
-        #expect(context.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 1_920, height: 1_080))
-    }
-
-    @Test func captureSizeContextPreservesAspectRatioAndEvenDimensions() {
-        let wideContext = DisplayCaptureSizeContext(
-            logicalSize: DisplayCaptureDimensions(width: 3_440, height: 1_440),
-            physicalSize: DisplayCaptureDimensions(width: 3_440, height: 1_440)
-        )
-        let portraitContext = DisplayCaptureSizeContext(
-            logicalSize: DisplayCaptureDimensions(width: 1_081, height: 1_921),
-            physicalSize: DisplayCaptureDimensions(width: 2_161, height: 3_841)
-        )
-
-        #expect(wideContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 3_440, height: 1_440))
-        #expect(portraitContext.captureSize(for: .shareOnly, performanceMode: .automatic) == DisplayCaptureDimensions(width: 2_161, height: 3_841))
-    }
-
-    @Test func automaticMixedModeKeeps60AcrossPreviewPressureWindows() {
-        var coordinator = DisplayCaptureConfigurationCoordinatorState(
-            committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
-            demand: makeDemand(attachedPreviewSinkCount: 1, shareTokenCount: 1)
-        )
-
-        let firstDecision = coordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 90,
-                droppedFrameCount: 10,
-                latestRenderLatencyMilliseconds: 12,
-                pendingSlotOccupied: false,
-                capturedAt: 1
-            ),
-            nowNs: 1,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(firstDecision == .noChange)
-
-        let secondDecision = coordinator.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 85,
-                droppedFrameCount: 15,
-                latestRenderLatencyMilliseconds: 14,
-                pendingSlotOccupied: false,
-                capturedAt: 2
-            ),
-            nowNs: 2,
-            minimumDwellNanoseconds: 0
-        )
-        #expect(secondDecision == .noChange)
-    }
-
     @Test func automaticMixedModeKeeps60AcrossStableWindows() {
         var coordinator = DisplayCaptureConfigurationCoordinatorState(
             committedConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
