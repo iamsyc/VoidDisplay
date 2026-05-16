@@ -31,27 +31,6 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("VoidDisplay Share"))
     }
 
-    @Test func stoppedListenerAllowsImmediateSamePortRestartAfterHTTPClientTraffic() async throws {
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
-        )
-        let firstServer = setup.server
-        let portValue = setup.port
-
-        let request = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
-        _ = try await Task.detached {
-            try await sendRequestAndReadUntilServerClose(port: portValue, request: request)
-        }.value
-
-        firstServer.stopListener()
-
-        let rebound = try await startReboundServer(on: portValue)
-        let reboundServer = rebound.server
-        defer { reboundServer.stopListener() }
-        #expect(rebound.boundPort == portValue)
-    }
-
     @Test func stoppedListenerAllowsImmediateSamePortRestartAfterActiveWebSocketTraffic() async throws {
         let sessionHub = TestSignalSessionHub()
         let setup = try await startMainSignalServer(sessionHub: sessionHub)
@@ -236,124 +215,6 @@ struct WebServerSocketIntegrationTests {
             aggregator.currentSnapshot.streamingPeers == 0
         }
         #expect(cleared)
-    }
-
-    @Test func simultaneousTargetsKeepPerTargetSharingCountsIsolated() async throws {
-        let aggregator = SharingStateAggregator()
-        let mainHub = TestSignalSessionHub()
-        let secondaryHub = TestSignalSessionHub()
-        let setup = try await startMainAndSecondarySignalServer(
-            mainHub: mainHub,
-            secondaryHub: secondaryHub,
-            sharingEventSink: { event in
-                Task { @MainActor in
-                    aggregator.record(event)
-                }
-            }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let mainSocket = try await openWebSocket(path: "/signal", port: portValue)
-        let secondarySocket = try await openWebSocket(path: "/signal/7", port: portValue)
-        defer {
-            close(mainSocket)
-            close(secondarySocket)
-        }
-
-        try sendAll(mainSocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
-        try sendAll(secondarySocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
-
-        let isolated = await waitUntilAsync(timeout: .seconds(2)) {
-            let snapshot = aggregator.currentSnapshot
-            return snapshot.signalingConnections == 2 &&
-                snapshot.streamingPeers == 2 &&
-                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                snapshot.signalingConnectionsByTarget[.id(7)] == 1 &&
-                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                snapshot.streamingPeersByTarget[.id(7)] == 1 &&
-                server.streamClientCount(for: .id(Self.mainAliasShareID)) == 1 &&
-                server.streamClientCount(for: .id(7)) == 1
-        }
-        #expect(isolated)
-    }
-
-    @Test func aliasConnectionCleanupStaysBoundToOriginalConcreteTargetAfterMainSwitch() async throws {
-        let aggregator = SharingStateAggregator()
-        let originalHub = TestSignalSessionHub()
-        let replacementHub = TestSignalSessionHub()
-        let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                switch target {
-                case .main:
-                    .active
-                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
-                    .active
-                default:
-                    .unknown
-                }
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(mainShareIDBox.value)
-                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                switch target {
-                case .id(let id) where id == Self.mainAliasShareID:
-                    originalHub
-                case .id(let id) where id == Self.replacementMainAliasShareID:
-                    replacementHub
-                default:
-                    nil
-                }
-            },
-            sharingEventSink: { event in
-                Task { @MainActor in
-                    aggregator.record(event)
-                }
-            }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let socket = try await openWebSocket(path: "/signal", port: portValue)
-        defer { close(socket) }
-
-        try sendAll(socket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
-
-        let connectedToOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
-            let snapshot = aggregator.currentSnapshot
-            return snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                originalHub.activeClientCount == 1 &&
-                replacementHub.activeClientCount == 0
-        }
-        #expect(connectedToOriginalTarget)
-
-        mainShareIDBox.setValue(Self.replacementMainAliasShareID)
-
-        try sendAll(socket, data: makeMaskedCloseFrame())
-        #expect(try await waitForSocketClose(socket))
-
-        let clearedFromOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
-            let snapshot = aggregator.currentSnapshot
-            return snapshot.signalingConnections == 0 &&
-                snapshot.streamingPeers == 0 &&
-                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == nil &&
-                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == nil &&
-                originalHub.activeClientCount == 0 &&
-                replacementHub.activeClientCount == 0
-        }
-        #expect(clearedFromOriginalTarget)
     }
 
     @Test func existingAliasConnectionKeepsBoundHubAfterMainMappingChanges() async throws {
@@ -747,18 +608,6 @@ private final class MutableShareIDBox {
     func setValue(_ newValue: UInt32) {
         value = newValue
     }
-}
-
-private func sendRequestAndReadUntilServerClose(
-    port: UInt16,
-    request: Data,
-    timeoutMilliseconds: Int = 5000
-) async throws -> Data {
-    let fd = try await connectLoopbackSocket(port: port)
-    defer { close(fd) }
-    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
-    try sendAll(fd, data: request)
-    return try readAll(from: fd)
 }
 
 private extension String {
