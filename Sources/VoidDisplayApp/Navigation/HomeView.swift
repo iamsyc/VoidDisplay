@@ -93,7 +93,6 @@ package struct HomeView: View {
                 Section("Display") {
                     NavigationLink(value: AppSidebarItem.home) {
                         Label("Home", systemImage: "house")
-                            .accessibilityIdentifier("sidebar_home")
                     }
                     .tag(AppSidebarItem.home)
                     .simultaneousGesture(TapGesture().onEnded {
@@ -103,21 +102,18 @@ package struct HomeView: View {
 
                     NavigationLink(value: AppSidebarItem.screen) {
                         Label("Displays", systemImage: "display")
-                            .accessibilityIdentifier("sidebar_displays")
                     }
                     .tag(AppSidebarItem.screen)
                     .accessibilityIdentifier("sidebar_displays")
 
                     NavigationLink(value: AppSidebarItem.virtualDisplay) {
                         Label("Virtual Displays", systemImage: "display.2")
-                            .accessibilityIdentifier("sidebar_virtual_display")
                     }
                     .tag(AppSidebarItem.virtualDisplay)
                     .accessibilityIdentifier("sidebar_virtual_display")
 
                     NavigationLink(value: AppSidebarItem.screenPreview) {
                         Label("Screen Preview", systemImage: "dot.scope.display")
-                            .accessibilityIdentifier("sidebar_screen_preview")
                     }
                     .tag(AppSidebarItem.screenPreview)
                     .accessibilityIdentifier("sidebar_screen_preview")
@@ -126,7 +122,6 @@ package struct HomeView: View {
                 Section("Sharing") {
                     NavigationLink(value: AppSidebarItem.screenSharing) {
                         Label("Screen Sharing", systemImage: "display")
-                            .accessibilityIdentifier("sidebar_screen_sharing")
                     }
                     .tag(AppSidebarItem.screenSharing)
                     .accessibilityIdentifier("sidebar_screen_sharing")
@@ -135,7 +130,6 @@ package struct HomeView: View {
                 Section(String(localized: "Diagnostics")) {
                     NavigationLink(value: AppSidebarItem.diagnostics) {
                         Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
-                            .accessibilityIdentifier("sidebar_diagnostics")
                     }
                     .tag(AppSidebarItem.diagnostics)
                     .accessibilityIdentifier("sidebar_diagnostics")
