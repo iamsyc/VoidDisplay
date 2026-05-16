@@ -105,102 +105,6 @@ struct DisplayRuntimeDemandAggregationTests {
         #expect(aggregate.permitsExplicitDowngrade == true)
     }
 
-    @Test func diagnosticsRecorderCannotDowngradeActiveLanWebViewQuality() async throws {
-        let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 104, isMain: true)),
-            captureIntentCommander: FakeCaptureIntentCommander()
-        )
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 104)
-
-        _ = await attachConsumerForTesting(
-            runtime,
-            surfaceIdentity: surfaceIdentity,
-            kind: .lanWebView,
-            owner: .init(source: .sharingService),
-            demand: aggregateDemand(
-                width: 3840,
-                height: 2160,
-                preferredWidth: 3840,
-                preferredHeight: 2160,
-                preferredFramesPerSecond: 60,
-                powerProfile: .automatic,
-                activeViewerCount: 1
-            )
-        )
-        _ = await attachConsumerForTesting(
-            runtime,
-            surfaceIdentity: surfaceIdentity,
-            kind: .diagnosticsRecorder,
-            owner: .init(source: .diagnostics),
-            demand: aggregateDemand(
-                width: 3840,
-                height: 2160,
-                preferredWidth: 1280,
-                preferredHeight: 720,
-                preferredFramesPerSecond: 15,
-                capturesCursor: true,
-                powerProfile: .powerEfficient,
-                latencyPreference: .recording
-            )
-        )
-
-        let aggregate = try #require(runtime.currentAggregatedDemandSnapshot().first)
-        #expect(aggregate.qualityProfile == .mixed)
-        #expect(aggregate.powerProfile == .automatic)
-        #expect(aggregate.latencyPreference == .realtime)
-        #expect(aggregate.effectivePixelSize == .init(width: 3840, height: 2160))
-        #expect(aggregate.effectiveFramesPerSecond == 60)
-        #expect(aggregate.capturesCursor == true)
-        #expect(aggregate.permitsExplicitDowngrade == false)
-    }
-
-    @Test func diagnosticsRecorderAndPreviewPreserveRealtimeSourceQualityAndCursorDemand() async throws {
-        let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 106, isMain: true)),
-            captureIntentCommander: FakeCaptureIntentCommander()
-        )
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 106)
-
-        _ = await attachConsumerForTesting(
-            runtime,
-            surfaceIdentity: surfaceIdentity,
-            kind: .preview,
-            owner: .init(source: .localUI),
-            demand: aggregateDemand(
-                width: 2560,
-                height: 1440,
-                capturesCursor: false,
-                powerProfile: .automatic,
-                latencyPreference: .realtime
-            )
-        )
-        _ = await attachConsumerForTesting(
-            runtime,
-            surfaceIdentity: surfaceIdentity,
-            kind: .diagnosticsRecorder,
-            owner: .init(source: .diagnostics),
-            demand: aggregateDemand(
-                width: 2560,
-                height: 1440,
-                preferredWidth: 1280,
-                preferredHeight: 720,
-                preferredFramesPerSecond: 15,
-                capturesCursor: true,
-                powerProfile: .powerEfficient,
-                latencyPreference: .recording
-            )
-        )
-
-        let aggregate = try #require(runtime.currentAggregatedDemandSnapshot().first)
-        #expect(aggregate.qualityProfile == .mixed)
-        #expect(aggregate.powerProfile == .automatic)
-        #expect(aggregate.latencyPreference == .realtime)
-        #expect(aggregate.effectivePixelSize == .init(width: 2560, height: 1440))
-        #expect(aggregate.effectiveFramesPerSecond == 60)
-        #expect(aggregate.capturesCursor == true)
-        #expect(aggregate.permitsExplicitDowngrade == false)
-    }
-
     @Test func cursorDemandUsesOrSemantics() async throws {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 105, isMain: true)),
@@ -218,14 +122,14 @@ struct DisplayRuntimeDemandAggregationTests {
         _ = await attachConsumerForTesting(
             runtime,
             surfaceIdentity: surfaceIdentity,
-            kind: .diagnosticsRecorder,
-            owner: .init(source: .diagnostics),
+            kind: .lanWebView,
+            owner: .init(source: .sharingService),
             demand: aggregateDemand(
                 width: 1920,
                 height: 1080,
                 capturesCursor: true,
                 powerProfile: .automatic,
-                latencyPreference: .recording
+                latencyPreference: .realtime
             )
         )
 

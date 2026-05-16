@@ -71,36 +71,6 @@ extension DisplayRuntime {
         )
     }
 
-    package func attachDiagnosticsRecorderConsumer(
-        surfaceIdentity: DisplaySurfaceIdentity,
-        owner: DisplayRuntimeConsumerOwner,
-        demand: DisplayRuntimeConsumerDemand
-    ) async -> DisplayRuntimeDiagnosticsRecorderAttachResult {
-        let lease = attachConsumer(
-            surfaceIdentity: surfaceIdentity,
-            kind: .diagnosticsRecorder,
-            owner: owner,
-            demand: demand
-        )
-        let intent = submitCaptureIntent(
-            surfaceIdentity: surfaceIdentity,
-            reason: .attach
-        )
-        let rawResult: DisplayRuntimeCaptureIntentApplyResult
-        if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyDiagnosticsRecorderCaptureIntent(intent)
-        } else {
-            rawResult = .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
-        return DisplayRuntimeDiagnosticsRecorderAttachResult(
-            lease: lease,
-            applyResult: recordCaptureIntentApplyResult(rawResult)
-        )
-    }
-
     @discardableResult
     package func updateLANWebViewConsumerDemand(
         surfaceIdentity: DisplaySurfaceIdentity,
@@ -234,38 +204,6 @@ extension DisplayRuntime {
             )
         }
         return DisplayRuntimeLANWebViewConsumerDetachResult(
-            releasedLease: releasedLease,
-            applyResult: recordCaptureIntentApplyResult(rawResult)
-        )
-    }
-
-    @discardableResult
-    package func detachDiagnosticsRecorderConsumer(
-        leaseID: DisplayRuntimeConsumerLeaseID
-    ) async -> DisplayRuntimeDiagnosticsRecorderDetachResult {
-        guard consumerLeasesByID[leaseID]?.kind == .diagnosticsRecorder,
-              let releasedLease = releaseConsumerLease(leaseID: leaseID)
-        else {
-            return DisplayRuntimeDiagnosticsRecorderDetachResult(
-                releasedLease: nil,
-                applyResult: nil
-            )
-        }
-
-        let intent = submitCaptureIntent(
-            surfaceIdentity: releasedLease.surfaceIdentity,
-            reason: .detach
-        )
-        let rawResult: DisplayRuntimeCaptureIntentApplyResult
-        if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyDiagnosticsRecorderCaptureIntent(intent)
-        } else {
-            rawResult = .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
-        return DisplayRuntimeDiagnosticsRecorderDetachResult(
             releasedLease: releasedLease,
             applyResult: recordCaptureIntentApplyResult(rawResult)
         )

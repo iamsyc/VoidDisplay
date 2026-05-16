@@ -38,27 +38,6 @@ package enum CaptureUIComposition {
             activatePreviewSession: { sessionID in
                 capture.activatePreviewSession(id: sessionID)
             },
-            attachDiagnosticsRecorder: { sessionID in
-                guard let session = capture.previewSession(for: sessionID) else { return nil }
-                guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
-                    return nil
-                }
-                let result = await displayRuntime.attachDiagnosticsRecorderConsumer(
-                    surfaceIdentity: surfaceIdentity,
-                    owner: .init(source: .diagnostics, redactedLabel: "diagnostics-recorder"),
-                    demand: diagnosticsRecorderDemand(for: session)
-                )
-                guard result.applyResult.outcome == .applied else {
-                    _ = await displayRuntime.detachDiagnosticsRecorderConsumer(leaseID: result.lease.id)
-                    return nil
-                }
-                return result.lease.id.rawValue
-            },
-            detachDiagnosticsRecorder: { leaseToken in
-                _ = await displayRuntime.detachDiagnosticsRecorderConsumer(
-                    leaseID: DisplayRuntimeConsumerLeaseID(rawValue: leaseToken)
-                )
-            },
             closePreviewSession: { sessionID in
                 guard let session = capture.previewSession(for: sessionID) else {
                     return
@@ -77,43 +56,6 @@ package enum CaptureUIComposition {
                 )
             }
         )
-    }
-
-    private static func diagnosticsRecorderDemand(
-        for session: ScreenPreviewSession
-    ) -> DisplayRuntimeConsumerDemand {
-        let sourcePixelSize = pixelSize(from: session.resolutionText)
-        let preferredPixelSize = sourcePixelSize.map { size in
-            DisplayRuntimePixelSize(
-                width: min(size.width, 1280),
-                height: min(size.height, 720)
-            )
-        }
-        return DisplayRuntimeConsumerDemand(
-            sourcePixelSize: sourcePixelSize,
-            preferredPixelSize: preferredPixelSize,
-            sourceFramesPerSecond: 60,
-            preferredFramesPerSecond: 15,
-            capturesCursor: session.capturesCursor,
-            powerProfile: .powerEfficient,
-            latencyPreference: .recording
-        )
-    }
-
-    private static func pixelSize(from resolutionText: String) -> DisplayRuntimePixelSize? {
-        let separators: [Character] = ["x", "X", "×", ","]
-        guard let separator = separators.first(where: resolutionText.contains) else { return nil }
-        let parts = resolutionText.split(separator: separator, maxSplits: 1)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard parts.count == 2,
-              let width = Int(parts[0]),
-              let height = Int(parts[1]),
-              width > 0,
-              height > 0
-        else {
-            return nil
-        }
-        return DisplayRuntimePixelSize(width: width, height: height)
     }
 
     private static func startRuntimeBackedPreview(

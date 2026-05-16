@@ -103,39 +103,6 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 4)
     }
 
-    @Test func diagnosticsRecorderDetachDoesNotDrainWhilePreviewLeaseRemains() async {
-        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 80)
-        let captureIntentCommander = FakeCaptureIntentCommander()
-        let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 80, isMain: true)),
-            captureIntentCommander: captureIntentCommander
-        )
-        _ = await attachConsumerForTesting(
-            runtime,
-            surfaceIdentity: surfaceIdentity,
-            kind: .preview,
-            owner: .init(source: .localUI),
-            demand: sourceDemand()
-        )
-        let diagnosticsAttach = await runtime.attachDiagnosticsRecorderConsumer(
-            surfaceIdentity: surfaceIdentity,
-            owner: .init(source: .diagnostics, redactedLabel: "recorder"),
-            demand: diagnosticsDemand()
-        )
-
-        let diagnosticsDetach = await runtime.detachDiagnosticsRecorderConsumer(
-            leaseID: diagnosticsAttach.lease.id
-        )
-        let previewDetach = await runtime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
-
-        #expect(diagnosticsDetach.releasedLease?.state == .released)
-        #expect(previewDetach.releasedLease?.state == .released)
-        #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .capture, .capture, .drain])
-        #expect(captureIntentCommander.intents[2].aggregateDemand?.consumerKinds == [.preview])
-        #expect(captureIntentCommander.intents.last?.aggregateDemand == nil)
-        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
-    }
-
     @Test func surfaceEpochChangeStopsOldLeaseFromDrivingPreviousDisplayID() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 88)
         let captureIntentCommander = FakeCaptureIntentCommander()
@@ -254,17 +221,5 @@ private func sourceDemand(
         powerProfile: powerProfile,
         latencyPreference: .realtime,
         activeViewerCount: activeViewerCount
-    )
-}
-
-private func diagnosticsDemand() -> DisplayRuntimeConsumerDemand {
-    DisplayRuntimeConsumerDemand(
-        sourcePixelSize: .init(width: 1920, height: 1080),
-        preferredPixelSize: .init(width: 1280, height: 720),
-        sourceFramesPerSecond: 60,
-        preferredFramesPerSecond: 15,
-        capturesCursor: false,
-        powerProfile: .powerEfficient,
-        latencyPreference: .recording
     )
 }

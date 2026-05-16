@@ -12,9 +12,6 @@ package struct CaptureDisplayView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var renderer = ZeroCopyPreviewRenderer()
-    @State private var recordingSink: CapturePreviewRecordingSink?
-    @State private var diagnosticsRecorderLeaseToken: UUID?
-    @State private var diagnosticsRecorderTask: Task<Void, Never>?
     @State private var window: NSWindow?
     @State private var windowCoordinator = CapturePreviewWindowCoordinator()
     @State private var hasAppliedInitialSize = false
@@ -85,9 +82,6 @@ package struct CaptureDisplayView: View {
         }
         .toolbarTitleDisplayMode(.inline)
         .onAppear {
-            if let diagnosticsScaleMode = initialPreviewScaleModeOverride {
-                scaleMode = diagnosticsScaleMode
-            }
             capturesCursor = session?.capturesCursor ?? false
         }
         .onChange(of: previewActions.sessions().map(\.id)) { _, ids in
@@ -101,42 +95,14 @@ package struct CaptureDisplayView: View {
             }
         }
         .onAppear {
-            if let session {
+            if session != nil {
                 previewActions.attachPreviewSink(renderer, sessionId)
-                if let destinationDirectory = CapturePreviewDiagnosticsRuntime.configuration()?.recordDirectoryURL {
-                    let sink = CapturePreviewRecordingSink(
-                        destinationDirectory: destinationDirectory,
-                        session: session
-                    )
-                    diagnosticsRecorderTask = Task { @MainActor in
-                        let leaseToken = await previewActions.attachDiagnosticsRecorder(sessionId)
-                        guard !Task.isCancelled else {
-                            if let leaseToken {
-                                await previewActions.detachDiagnosticsRecorder(leaseToken)
-                            }
-                            return
-                        }
-                        guard let leaseToken else { return }
-                        diagnosticsRecorderLeaseToken = leaseToken
-                        recordingSink = sink
-                        previewActions.attachPreviewSink(sink, sessionId)
-                    }
-                }
                 previewActions.activatePreviewSession(sessionId)
             } else {
                 dismiss()
             }
         }
         .onDisappear {
-            diagnosticsRecorderTask?.cancel()
-            diagnosticsRecorderTask = nil
-            if let leaseToken = diagnosticsRecorderLeaseToken {
-                diagnosticsRecorderLeaseToken = nil
-                Task { @MainActor in
-                    await previewActions.detachDiagnosticsRecorder(leaseToken)
-                }
-            }
-            recordingSink = nil
             Task { await previewActions.closePreviewSession(sessionId) }
             windowCoordinator.tearDown()
             renderer.flush()
@@ -149,7 +115,7 @@ package struct CaptureDisplayView: View {
                 scaleMode: scaleMode,
                 framePixelSize: renderer.framePixelSize,
                 aspect: preferredAspect(),
-                targetContentWidth: CapturePreviewDiagnosticsRuntime.configuration()?.targetContentWidth
+                targetContentWidth: nil
             )
                 .allowsHitTesting(false)
         }
@@ -199,17 +165,5 @@ package extension CaptureDisplayView {
             resolutionText: session?.resolutionText,
             framePixelSize: renderer.framePixelSize
         )
-    }
-
-    private var initialPreviewScaleModeOverride: CapturePreviewScaleMode? {
-        guard let override = CapturePreviewDiagnosticsRuntime.configuration()?.initialScaleMode else {
-            return nil
-        }
-        switch override {
-        case .fit:
-            return .fit
-        case .native:
-            return .native
-        }
     }
 }

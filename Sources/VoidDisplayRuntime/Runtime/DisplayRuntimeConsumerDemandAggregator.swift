@@ -98,8 +98,6 @@ package nonisolated enum DisplayRuntimeConsumerDemandAggregator {
             return .previewOnly
         case .lanWebView:
             return .lanWebViewOnly
-        case .diagnosticsRecorder:
-            return .diagnosticsOnly
         case nil:
             return .mixed
         }

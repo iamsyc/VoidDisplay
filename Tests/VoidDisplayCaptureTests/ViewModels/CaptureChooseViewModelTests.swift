@@ -160,8 +160,6 @@ struct CaptureChooseViewModelTests {
             startPreview: startPreview,
             attachPreviewSink: { _, _ in },
             activatePreviewSession: { _ in },
-            attachDiagnosticsRecorder: { _ in nil },
-            detachDiagnosticsRecorder: { _ in },
             closePreviewSession: { _ in },
             setPreviewSessionCapturesCursor: { _, _ in }
         )

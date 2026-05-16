@@ -1,6 +1,7 @@
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
 import CoreGraphics
+import CoreMedia
 import CoreVideo
 import Foundation
 import ScreenCaptureKit
@@ -53,6 +54,69 @@ final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
 enum AsyncTestTimeouts {
     static let shortStabilityWindow: UInt64 = 1_500_000_000
     static let defaultAsyncAssertion: UInt64 = 3_000_000_000
+}
+
+final class TestCapturePreviewSession: @unchecked Sendable {
+    private nonisolated(unsafe) let sampleBuffer: CMSampleBuffer
+
+    init(sourcePixelSize: CGSize) throws {
+        self.sampleBuffer = try Self.makeSampleBuffer(sourcePixelSize: sourcePixelSize)
+    }
+
+    nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
+        sink.submitFrame(sampleBuffer)
+    }
+
+    private static func makeSampleBuffer(sourcePixelSize: CGSize) throws -> CMSampleBuffer {
+        let width = max(1, Int(sourcePixelSize.width.rounded()))
+        let height = max(1, Int(sourcePixelSize.height.rounded()))
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_32BGRA,
+            nil,
+            &pixelBuffer
+        )
+        guard status == kCVReturnSuccess, let pixelBuffer else {
+            throw TestSampleBufferError.pixelBufferCreationFailed(status)
+        }
+
+        var formatDescription: CMVideoFormatDescription?
+        let formatStatus = CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &formatDescription
+        )
+        guard formatStatus == noErr, let formatDescription else {
+            throw TestSampleBufferError.formatDescriptionCreationFailed(formatStatus)
+        }
+
+        var timing = CMSampleTimingInfo(
+            duration: .invalid,
+            presentationTimeStamp: .zero,
+            decodeTimeStamp: .invalid
+        )
+        var sampleBuffer: CMSampleBuffer?
+        let sampleStatus = CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescription: formatDescription,
+            sampleTiming: &timing,
+            sampleBufferOut: &sampleBuffer
+        )
+        guard sampleStatus == noErr, let sampleBuffer else {
+            throw TestSampleBufferError.sampleBufferCreationFailed(sampleStatus)
+        }
+        return sampleBuffer
+    }
+}
+
+private enum TestSampleBufferError: Error {
+    case pixelBufferCreationFailed(CVReturn)
+    case formatDescriptionCreationFailed(OSStatus)
+    case sampleBufferCreationFailed(OSStatus)
 }
 
 @MainActor

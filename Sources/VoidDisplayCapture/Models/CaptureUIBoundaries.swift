@@ -15,8 +15,6 @@ package struct CapturePreviewActions {
     ) async throws -> DisplayStartOutcome<UUID>
     package var attachPreviewSink: @MainActor (any DisplayPreviewSink, UUID) -> Void
     package var activatePreviewSession: @MainActor (UUID) -> Void
-    package var attachDiagnosticsRecorder: @MainActor (UUID) async -> UUID?
-    package var detachDiagnosticsRecorder: @MainActor (UUID) async -> Void
     package var closePreviewSession: @MainActor (UUID) async -> Void
     package var setPreviewSessionCapturesCursor: @MainActor (UUID, Bool) async throws -> Void
 
@@ -31,8 +29,6 @@ package struct CapturePreviewActions {
         ) async throws -> DisplayStartOutcome<UUID>,
         attachPreviewSink: @escaping @MainActor (any DisplayPreviewSink, UUID) -> Void,
         activatePreviewSession: @escaping @MainActor (UUID) -> Void,
-        attachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> UUID?,
-        detachDiagnosticsRecorder: @escaping @MainActor (UUID) async -> Void,
         closePreviewSession: @escaping @MainActor (UUID) async -> Void,
         setPreviewSessionCapturesCursor: @escaping @MainActor (UUID, Bool) async throws -> Void
     ) {
@@ -43,8 +39,6 @@ package struct CapturePreviewActions {
         self.startPreview = startPreview
         self.attachPreviewSink = attachPreviewSink
         self.activatePreviewSession = activatePreviewSession
-        self.attachDiagnosticsRecorder = attachDiagnosticsRecorder
-        self.detachDiagnosticsRecorder = detachDiagnosticsRecorder
         self.closePreviewSession = closePreviewSession
         self.setPreviewSessionCapturesCursor = setPreviewSessionCapturesCursor
     }

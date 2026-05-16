@@ -86,17 +86,7 @@ public struct VoidDisplayApplication: App {
     public var body: some Scene {
         WindowGroup {
             Group {
-                if CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
-                   let sessionID = capture.screenPreviewSessions.first?.id {
-                    CaptureDisplayView(
-                        sessionId: sessionID,
-                        previewActions: CaptureUIComposition.previewActions(
-                            capture: capture,
-                            displayRuntime: displayRuntime
-                        ),
-                        sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing)
-                    )
-                } else if UITestRuntime.scenario == .settingsFeedback {
+                if UITestRuntime.scenario == .settingsFeedback {
                     AppSettingsView(
                         observability: observability,
                         feedbackController: feedbackController
@@ -212,19 +202,8 @@ package enum AppBootstrap {
         }
 
         let scenario = UITestRuntime.scenario
-        let capturePreviewService: (any CapturePreviewServiceProtocol)? = {
-            guard scenario == .capturePreviewDiagnostics,
-                  let configuration = CapturePreviewDiagnosticsRuntime.configuration()
-            else {
-                return nil
-            }
-            return try? CapturePreviewDiagnosticsBootstrap.makePreviewService(
-                configuration: configuration
-            )
-        }()
         let env = makeEnvironment(
             preview: false,
-            capturePreviewService: capturePreviewService,
             virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: scenario),
             startupPlan: .init(
                 shouldRestoreVirtualDisplays: true

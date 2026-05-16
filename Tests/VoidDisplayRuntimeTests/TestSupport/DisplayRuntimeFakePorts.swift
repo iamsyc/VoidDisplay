@@ -283,12 +283,6 @@ final class FakeCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
         apply(intent)
     }
 
-    func applyDiagnosticsRecorderCaptureIntent(
-        _ intent: DisplayRuntimeCaptureIntent
-    ) async -> DisplayRuntimeCaptureIntentApplyResult {
-        apply(intent)
-    }
-
     private func apply(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult {
         intents.append(intent)
         let result = resultProvider(intent)
@@ -314,12 +308,6 @@ func attachConsumerForTesting(
         ).lease
     case .lanWebView:
         await runtime.attachLANWebViewConsumer(
-            surfaceIdentity: surfaceIdentity,
-            owner: owner,
-            demand: demand
-        ).lease
-    case .diagnosticsRecorder:
-        await runtime.attachDiagnosticsRecorderConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: owner,
             demand: demand

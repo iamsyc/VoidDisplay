@@ -29,7 +29,6 @@ package nonisolated struct DisplaySurfaceEpoch: Codable, Comparable, Equatable, 
 package nonisolated enum DisplaySurfaceConsumerKind: String, Codable, Equatable, Hashable, Sendable {
     case preview
     case lanWebView
-    case diagnosticsRecorder
 }
 
 package nonisolated enum DisplayRuntimeConsumerOwnerSource: String, Codable, Equatable, Hashable, Sendable {

@@ -138,14 +138,8 @@ struct DisplaySampleFanoutTests {
     }
 
     private func makeSampleBuffer() async throws -> CMSampleBuffer {
-        let session = try UITestCapturePreviewSession(
-            configuration: .init(
-                sourcePixelSize: CGSize(width: 64, height: 64),
-                targetContentWidth: nil,
-                replayImageURL: nil,
-                recordDirectoryURL: nil,
-                initialScaleMode: nil
-            )
+        let session = try TestCapturePreviewSession(
+            sourcePixelSize: CGSize(width: 64, height: 64)
         )
         let sink = SampleBufferCaptureSink()
         session.attachPreviewSink(sink)

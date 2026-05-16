@@ -19,13 +19,11 @@ package struct HomeView: View {
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
-    @Environment(\.openWindow) private var openWindow
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController
     private let displayRuntime: DisplayRuntime
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
-    @State private var hasAutoOpenedCapturePreview = false
     @State private var displayDestination: DisplayDestination = .overview
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -189,7 +187,6 @@ package struct HomeView: View {
         }
         .onAppear {
             columnVisibility = .all
-            autoOpenCapturePreviewWindowIfNeeded()
         }
     }
 
@@ -326,18 +323,6 @@ package struct HomeView: View {
         navigation.sidebarSelection = .home
     }
 
-    private func autoOpenCapturePreviewWindowIfNeeded() {
-        guard CapturePreviewDiagnosticsRuntime.shouldAutoOpenPreviewWindow,
-              !hasAutoOpenedCapturePreview,
-              let sessionID = capture.screenPreviewSessions.first?.id
-        else {
-            return
-        }
-
-        navigation.sidebarSelection = .screenPreview
-        openWindow(value: sessionID)
-        hasAutoOpenedCapturePreview = true
-    }
 }
 
 private struct AppDisplayActivityStatusProvider: DisplayActivityStatusProviding {
