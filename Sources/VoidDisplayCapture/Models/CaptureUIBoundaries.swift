@@ -48,18 +48,6 @@ package struct CapturePreviewActions {
         self.closePreviewSession = closePreviewSession
         self.setPreviewSessionCapturesCursor = setPreviewSessionCapturesCursor
     }
-
-    package static let noop = CapturePreviewActions(
-        sessions: { [] },
-        previewSession: { _ in nil },
-        previewSessionForDisplayID: { _ in nil },
-        isStartingDisplayID: { _ in false },
-        startPreview: { _, _ in .invalidated },
-        attachPreviewSink: { _, _ in },
-        activatePreviewSession: { _ in },
-        closePreviewSession: { _ in },
-        setPreviewSessionCapturesCursor: { _, _ in }
-    )
 }
 
 @MainActor
@@ -69,8 +57,6 @@ package struct CaptureSharingStatusProvider {
     package init(isDisplaySharing: @escaping @MainActor (CGDirectDisplayID) -> Bool) {
         self.isDisplaySharing = isDisplaySharing
     }
-
-    package static let none = CaptureSharingStatusProvider { _ in false }
 }
 
 @MainActor
@@ -80,8 +66,6 @@ package struct CaptureVirtualDisplayStatusProvider {
     package init(isManagedVirtualDisplay: @escaping @MainActor (CGDirectDisplayID) -> Bool) {
         self.isManagedVirtualDisplay = isManagedVirtualDisplay
     }
-
-    package static let none = CaptureVirtualDisplayStatusProvider { _ in false }
 }
 
 @MainActor
@@ -111,14 +95,4 @@ package struct CaptureCatalogActions {
         self.forceRefresh = forceRefresh
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
     }
-
-    package static let noop = CaptureCatalogActions(
-        handleAppear: {},
-        handleDisappear: {},
-        handleTopologyChanged: {},
-        requestPermission: {},
-        refreshPermission: {},
-        forceRefresh: {},
-        openScreenCapturePrivacySettings: { _ in }
-    )
 }
