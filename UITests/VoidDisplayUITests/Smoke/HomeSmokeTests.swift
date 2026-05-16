@@ -96,11 +96,7 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     private func openHomeOverview(in app: XCUIApplication) {
-        if smokeElement(app, identifier: "displays_overview_toolbar_button").exists {
-            tapIdentifier(app, identifier: "displays_overview_toolbar_button")
-        } else {
-            tapIdentifier(app, identifier: "sidebar_home")
-        }
+        tapIdentifier(app, identifier: "displays_overview_toolbar_button")
         assertAllExist(app, identifiers: ["detail_home", "display_surface_row"], timeout: 1.5)
     }
 }
