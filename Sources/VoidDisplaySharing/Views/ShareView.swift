@@ -290,14 +290,3 @@ package struct ShareView: View {
         return items
     }
 }
-
-#Preview {
-    ShareView(
-        catalogState: ScreenCaptureDisplayCatalogState(),
-        dependencies: .noop,
-        runtimeState: .inactive,
-        catalogActions: .noop,
-        displayStatusProvider: .none,
-        performanceMode: .automatic
-    )
-}

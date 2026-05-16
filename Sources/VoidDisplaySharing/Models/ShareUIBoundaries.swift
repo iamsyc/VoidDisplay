@@ -32,16 +32,6 @@ package struct ShareCatalogActions {
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
     }
 
-    package static let noop = ShareCatalogActions(
-        handleAppear: {},
-        handleDisappear: {},
-        handleTopologyChanged: {},
-        requestPermission: {},
-        refreshPermission: {},
-        forceRefresh: {},
-        handleSharingServiceStateChanged: { _ in },
-        openScreenCapturePrivacySettings: { _ in }
-    )
 }
 
 package struct ShareDisplayStatus: Equatable, Sendable {
