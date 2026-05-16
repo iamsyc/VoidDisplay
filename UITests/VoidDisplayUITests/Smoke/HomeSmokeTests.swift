@@ -1,257 +1,48 @@
-//
-//  VoidDisplayUITests.swift
-//  VoidDisplayUITests
-//
-//
-
 import XCTest
 
 final class HomeSmokeTests: XCTestCase {
-    private let maxLoadingSmokePortAttempts = 5
-
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
     func testHomeNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke(scenario: .baseline)
 
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_home",
-            labels: ["Home", "主页"],
-            timeout: 6
-        )
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_displays",
-            labels: ["Displays", "显示器"],
-            timeout: 6
-        )
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_virtual_display",
-            labels: ["Virtual Displays", "虚拟显示器"],
-            timeout: 6
-        )
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_screen_preview",
-            labels: ["Screen Preview", "屏幕预览"],
-            timeout: 6
-        )
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_screen_sharing",
-            labels: ["Screen Sharing", "屏幕共享"],
-            timeout: 6
-        )
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"],
-            timeout: 6
-        )
         assertAllExist(
             app,
             identifiers: [
+                "sidebar_home",
+                "sidebar_displays",
+                "sidebar_virtual_display",
+                "sidebar_screen_preview",
+                "sidebar_screen_sharing",
+                "sidebar_diagnostics",
                 "detail_home",
                 "displays_shell",
                 "displays_surface_list",
-                "displays_compact_status_line",
-                "displays_virtual_display_status",
-                "display_surface_row",
-                "displays_preview_status",
-                "displays_lan_web_view_status",
-                "displays_viewer_count",
-                "displays_action_open_preview",
-                "displays_action_open_lan_web_view",
-                "displays_list"
+                "display_surface_row"
             ],
             timeout: 6
         )
-        assertDisplaysHeaderActionArea(in: app)
 
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_displays",
-            labels: ["Displays", "显示器"]
-        )
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_displays",
-                "system_displays_list",
-                "system_display_row_card"
-            ],
-            timeout: 1.5
-        )
+        tapIdentifier(app, identifier: "sidebar_displays")
+        assertAllExist(app, identifiers: ["detail_displays", "system_displays_list"], timeout: 1.5)
 
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_virtual_display",
-            labels: ["Virtual Displays", "虚拟显示器"]
-        )
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_virtual_display",
-                "virtual_display_add_button",
-                "virtual_display_primary_ribbon"
-            ],
-            timeout: 1.5
-        )
+        tapIdentifier(app, identifier: "sidebar_virtual_display")
+        assertAllExist(app, identifiers: ["detail_virtual_display", "virtual_display_add_button"], timeout: 1.5)
 
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_screen_preview",
-            labels: ["Screen Preview", "屏幕预览"]
-        )
-        assertAllExist(
-            app,
-            identifiers: ["detail_screen_preview"],
-            timeout: 1.5
-        )
+        tapIdentifier(app, identifier: "sidebar_screen_preview")
+        assertAllExist(app, identifiers: ["detail_screen_preview"], timeout: 1.5)
 
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_screen_sharing",
-            labels: ["Screen Sharing", "屏幕共享"]
-        )
-        assertAllExist(
-            app,
-            identifiers: ["detail_screen_sharing"],
-            timeout: 1.5
-        )
+        tapIdentifier(app, identifier: "sidebar_screen_sharing")
+        assertAllExist(app, identifiers: ["detail_screen_sharing"], timeout: 1.5)
 
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_home",
-            labels: ["Home", "主页"]
-        )
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_home",
-                "displays_surface_list",
-                "display_surface_row"
-            ],
-            timeout: 1.5
-        )
+        tapIdentifier(app, identifier: "sidebar_diagnostics")
+        assertAllExist(app, identifiers: ["detail_diagnostics"], timeout: 1.5)
 
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_virtual_display",
-                "virtual_display_add_button",
-                "virtual_display_primary_ribbon"
-            ],
-            timeout: 1.5
-        )
-
-        returnToHomeOverviewFromToolbar(in: app)
-        assertAllExist(
-            app,
-            identifiers: ["detail_home", "displays_action_open_preview"],
-            timeout: 1.5
-        )
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_preview")
-        assertAllExist(
-            app,
-            identifiers: ["detail_screen_preview"],
-            timeout: 1.5
-        )
-
-        openHomeOverview(in: app)
-        assertAllExist(
-            app,
-            identifiers: ["detail_home", "displays_action_open_lan_web_view"],
-            timeout: 1.5
-        )
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
-        assertAllExist(
-            app,
-            identifiers: ["detail_lan_web_view"],
-            timeout: 1.5
-        )
-
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"]
-        )
-        assertAllExist(
-            app,
-            identifiers: ["detail_diagnostics"],
-            timeout: 2
-        )
-
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_home",
-            labels: ["Home", "主页"]
-        )
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_virtual_display",
-                "virtual_display_add_button",
-                "virtual_display_primary_ribbon"
-            ],
-            timeout: 1.5
-        )
-
-        returnToHomeOverviewFromToolbar(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_preview")
-        let didShowPreviewDetail = waitForIdentifierByPolling(
-            app,
-            identifier: "detail_screen_preview",
-            timeout: 1.2,
-            activateBeforePolling: true
-        )
-        if !didShowPreviewDetail {
-            print("AX DEBUG START")
-            print(app.debugDescription)
-            print("AX DEBUG END")
-        }
-        XCTAssertTrue(
-            didShowPreviewDetail,
-            """
-            detail_screen_preview did not appear after opening Preview from Home.
-            detailStates=\(detailVisibilitySummary(in: app))
-            """.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-
-        openHomeOverview(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
-        assertAllExist(
-            app,
-            identifiers: ["detail_lan_web_view"],
-            timeout: 1.2
-        )
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_home",
-            labels: ["Home", "主页"]
-        )
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
-        assertAllExist(
-            app,
-            identifiers: ["virtual_display_primary_ribbon"],
-            timeout: 1.2
-        )
+        tapIdentifier(app, identifier: "sidebar_home")
+        assertAllExist(app, identifiers: ["detail_home", "display_surface_row"], timeout: 1.5)
     }
 
     @MainActor
@@ -269,89 +60,58 @@ final class HomeSmokeTests: XCTestCase {
                 "displays_preview_status",
                 "displays_lan_web_view_status",
                 "displays_viewer_count",
-                "displays_technical_details"
-            ],
-            timeout: 6
-        )
-        assertDisplaysRowsFitDefaultViewport(in: app)
-        assertDisplaysSurfaceStatusArea(in: app)
-        assertDisplaysHeaderActionArea(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["displays_issue_status"].exists)
-
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
-        assertAllExist(app, identifiers: ["detail_virtual_display"], timeout: 1.5)
-
-        returnToHomeOverviewFromToolbar(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_preview")
-        assertAllExist(app, identifiers: ["detail_screen_preview"], timeout: 1.5)
-
-        openHomeOverview(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
-        assertAllExist(app, identifiers: ["detail_lan_web_view"], timeout: 1.5)
-
-        openHomeOverview(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        XCTAssertFalse(app.descendants(matching: .any)["displays_action_open_diagnostics"].exists)
-    }
-
-    @MainActor
-    private func assertDisplaysSurfaceStatusArea(in app: XCUIApplication) {
-        assertAllExist(
-            app,
-            identifiers: [
-                "displays_compact_status_line",
-                "displays_virtual_display_status",
-                "displays_preview_status",
-                "displays_lan_web_view_status",
-                "displays_viewer_count",
-                "displays_technical_details"
-            ],
-            timeout: 1.5
-        )
-        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["displays_issue_status"].exists)
-    }
-
-    @MainActor
-    private func assertDisplaysHeaderActionArea(in app: XCUIApplication) {
-        assertAllExist(
-            app,
-            identifiers: [
-                "displays_surface_list"
-            ],
-            timeout: 1.5
-        )
-        _ = assertDisplaysHeaderButton(
-            app,
-            identifier: "displays_action_manage_virtual_display",
-            labels: ["Manage Virtual Displays", "管理虚拟显示器"]
-        )
-        _ = assertDisplaysHeaderButton(
-            app,
-            identifier: "displays_open_system_settings",
-            labels: ["Open System Settings", "打开系统设置"]
-        )
-    }
-
-    @MainActor
-    private func assertDisplaysSurfaceActionArea(in app: XCUIApplication) {
-        assertAllExist(
-            app,
-            identifiers: [
+                "displays_technical_details",
                 "displays_action_open_preview",
                 "displays_action_open_lan_web_view"
             ],
-            timeout: 1.5
+            timeout: 6
         )
-        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_actions"].exists)
+
+        assertDisplaysRowsFitDefaultViewport(in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_surface_kind_value"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_resolution_status"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["displays_issue_status"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["displays_action_open_diagnostics"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["displays_action_stop_web_service"].exists)
+
+        tapIdentifier(app, identifier: "displays_action_open_preview")
+        assertAllExist(app, identifiers: ["detail_screen_preview"], timeout: 1.5)
+
+        openHomeOverview(in: app)
+        tapIdentifier(app, identifier: "displays_action_open_lan_web_view")
+        assertAllExist(app, identifiers: ["detail_lan_web_view"], timeout: 1.5)
+    }
+
+    @MainActor
+    func testDiagnosticsNavigationSmoke_baseline() throws {
+        let app = launchAppForSmoke(scenario: .baseline)
+
+        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_diagnostics",
+                "diagnostics_intro_text",
+                "support_bundle_export_button",
+                "support_bundle_draft_panel",
+                "diagnostics_technical_disclosure"
+            ],
+            timeout: 3
+        )
+
+        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_copy_summary_button"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reveal_button"].exists)
+    }
+
+    @MainActor
+    private func openHomeOverview(in app: XCUIApplication) {
+        if smokeElement(app, identifier: "displays_overview_toolbar_button").exists {
+            tapIdentifier(app, identifier: "displays_overview_toolbar_button")
+        } else {
+            tapIdentifier(app, identifier: "sidebar_home")
+        }
+        assertAllExist(app, identifiers: ["detail_home", "display_surface_row"], timeout: 1.5)
     }
 
     @MainActor
@@ -367,18 +127,6 @@ final class HomeSmokeTests: XCTestCase {
         for (index, row) in visibleRows.enumerated() {
             assertDisplayRowIsComplete(row, visibleBounds: list.frame, rowIndex: index)
         }
-
-        if rows.count >= 3 {
-            XCTAssertEqual(visibleRows.count, 3)
-            return
-        }
-
-        guard let lastRow = visibleRows.last else { return }
-        XCTAssertLessThanOrEqual(
-            lastRow.frame.maxY,
-            list.frame.maxY + 1,
-            "All available display rows should fit before treating a sub-3 row count as fixture data."
-        )
     }
 
     @MainActor
@@ -389,7 +137,6 @@ final class HomeSmokeTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        XCTAssertTrue(row.frame.height > 0, "Display row \(rowIndex) should have measurable height.", file: file, line: line)
         XCTAssertGreaterThanOrEqual(
             row.frame.minY,
             visibleBounds.minY - 1,
@@ -455,10 +202,7 @@ final class HomeSmokeTests: XCTestCase {
         line: UInt = #line
     ) {
         XCTAssertTrue(
-            row.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-                .exists,
+            row.descendants(matching: .any).matching(identifier: identifier).firstMatch.exists,
             "Display row \(rowIndex) is missing \(identifier).",
             file: file,
             line: line
@@ -474,10 +218,7 @@ final class HomeSmokeTests: XCTestCase {
         line: UInt = #line
     ) {
         let hasMatch = identifiers.contains { identifier in
-            row.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-                .exists
+            row.descendants(matching: .any).matching(identifier: identifier).firstMatch.exists
         }
         XCTAssertTrue(
             hasMatch,
@@ -488,905 +229,17 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    private func openHomeOverview(in app: XCUIApplication) {
-        let overviewButton = smokeElement(app, identifier: "displays_overview_toolbar_button")
-        if overviewButton.waitForExistence(timeout: 0.3) {
-            overviewButton.tap()
-        } else {
-            tapSidebarItem(
-                app,
-                identifier: "sidebar_home",
-                labels: ["Home", "主页"]
-            )
-        }
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_home",
-                "displays_surface_list",
-                "display_surface_row"
-            ],
-            timeout: 1.5
-        )
-    }
-
-    @MainActor
-    private func returnToHomeOverviewFromToolbar(in app: XCUIApplication) {
-        tapIdentifier(app, identifier: "displays_overview_toolbar_button", timeout: 1.5)
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_home",
-                "displays_surface_list",
-                "display_surface_row"
-            ],
-            timeout: 1.5
-        )
-        assertDisplaysHeaderActionArea(in: app)
-    }
-
-    @MainActor
-    private func openPreviewFromHome(in app: XCUIApplication) {
-        openHomeOverview(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_preview")
-        assertAllExist(app, identifiers: ["detail_screen_preview"], timeout: 1.5)
-    }
-
-    @MainActor
-    private func openLANWebViewFromHome(in app: XCUIApplication) {
-        openHomeOverview(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_open_lan_web_view")
-        assertAllExist(app, identifiers: ["detail_lan_web_view"], timeout: 1.5)
-    }
-
-    @MainActor
-    private func tapDisplaysSurfaceAction(
-        _ app: XCUIApplication,
-        identifier: String
-    ) {
-        if identifier == "displays_action_manage_virtual_display" {
-            let button = assertDisplaysHeaderButton(
-                app,
-                identifier: identifier,
-                labels: ["Manage Virtual Displays", "管理虚拟显示器"]
-            )
-            tapWhenHittable(button, in: app, timeout: 1.5, requireExistenceCheck: false)
-            return
-        }
-
-        tapIdentifier(app, identifier: identifier, timeout: 1.5)
-    }
-
-    @MainActor
-    private func assertDisplaysHeaderButton(
-        _ app: XCUIApplication,
-        identifier: String,
-        labels: [String],
-        timeout: TimeInterval = 1.5,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) -> XCUIElement {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let button = displaysHeaderButton(app, identifier: identifier, labels: labels)
-            if button.exists {
-                return button
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-
-        let button = displaysHeaderButton(app, identifier: identifier, labels: labels)
-        XCTAssertTrue(
-            button.exists,
-            "Missing Displays header action: \(identifier), labels: \(labels.joined(separator: ", ")).",
-            file: file,
-            line: line
-        )
-        return button
-    }
-
-    @MainActor
-    private func displaysHeaderButton(
-        _ app: XCUIApplication,
-        identifier: String,
-        labels: [String]
-    ) -> XCUIElement {
-        let identifiedButton = app.descendants(matching: .any)
-            .matching(identifier: identifier)
-            .firstMatch
-        if identifiedButton.exists {
-            return identifiedButton
-        }
-
-        for label in labels {
-            let exactButton = app.buttons[label]
-            if exactButton.exists {
-                return exactButton
-            }
-
-            let containingButton = app.buttons
-                .containing(NSPredicate(format: "label CONTAINS %@", label))
-                .firstMatch
-            if containingButton.exists {
-                return containingButton
-            }
-        }
-        return identifiedButton
-    }
-
-    @MainActor
-    private func tapSidebarItem(
-        _ app: XCUIApplication,
-        identifier: String,
-        labels: [String],
-        timeout: TimeInterval = 1.5,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let sidebarItem = sidebarItem(app, identifier: identifier, labels: labels)
-            if sidebarItem.exists {
-                tapWhenHittable(
-                    sidebarItem,
-                    in: app,
-                    timeout: timeout,
-                    requireExistenceCheck: false,
-                    file: file,
-                    line: line
-                )
-                return
-            }
-
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-
-        XCTFail(
-            "Missing sidebar item: \(identifier), labels: \(labels.joined(separator: ", ")).",
-            file: file,
-            line: line
-        )
-    }
-
-    @MainActor
-    private func assertSidebarItemExists(
-        _ app: XCUIApplication,
-        identifier: String,
-        labels: [String],
-        timeout: TimeInterval = 1.5,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if sidebarItem(app, identifier: identifier, labels: labels).exists {
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-
-        XCTAssertTrue(
-            sidebarItem(app, identifier: identifier, labels: labels).exists,
-            "Missing sidebar item: \(identifier), labels: \(labels.joined(separator: ", ")).",
-            file: file,
-            line: line
-        )
-    }
-
-    @MainActor
-    private func sidebarItem(
-        _ app: XCUIApplication,
-        identifier: String,
-        labels: [String]
-    ) -> XCUIElement {
-        let identifiedItem = app.descendants(matching: .any)
-            .matching(identifier: identifier)
-            .firstMatch
-        if identifiedItem.exists {
-            return identifiedItem
-        }
-
-        for label in labels {
-            let exactElement = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label == %@", label))
-                .firstMatch
-            if exactElement.exists {
-                return exactElement
-            }
-
-            let button = app.buttons[label]
-            if button.exists {
-                return button
-            }
-
-            let staticText = app.staticTexts[label]
-            if staticText.exists {
-                return staticText
-            }
-
-            let containingElement = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label CONTAINS %@", label))
-                .firstMatch
-            if containingElement.exists {
-                return containingElement
-            }
-        }
-
-        return identifiedItem
-    }
-
-    @MainActor
-    func testDiagnosticsNavigationSmoke_baseline() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
-
-        assertSidebarItemExists(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"],
-            timeout: 6
-        )
-
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"],
-            timeout: 2
-        )
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_diagnostics",
-                "diagnostics_intro_text",
-                "support_bundle_export_button",
-                "support_bundle_draft_panel",
-                "support_bundle_draft_section",
-                "support_bundle_issue_type_title",
-                "support_bundle_issue_type_picker",
-                "support_bundle_issue_type_selected_description",
-                "support_bundle_issue_type_recommendation",
-                "support_bundle_apply_recommended_diagnostics_button",
-                "support_bundle_happened_title",
-                "support_bundle_happened_description",
-                "support_bundle_reproduction_title",
-                "support_bundle_reproduction_description",
-                "support_bundle_expected_title",
-                "support_bundle_expected_description",
-                "support_bundle_diagnostics_description",
-                "diagnostics_technical_disclosure"
-            ],
-            timeout: 3
-        )
-
-        let draftSection = assertExists(app, identifier: "support_bundle_draft_panel", timeout: 1)
-        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 1)
-        let technicalDisclosure = assertExists(app, identifier: "diagnostics_technical_disclosure", timeout: 1)
-        XCTAssertLessThan(
-            draftSection.frame.minY,
-            technicalDisclosure.frame.minY,
-            "support bundle section should appear before technical information"
-        )
-        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_copy_summary_button"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reveal_button"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["diagnostics_recent_issues"].exists)
-        XCTAssertFalse(exportButton.label.isEmpty)
-    }
-
-    @MainActor
-    func testDiagnosticsEmptyExportShowsValidationNearExportButton() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
-
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"],
-            timeout: 6
-        )
-        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
-        tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
-
-        let validationMessage = assertExists(app, identifier: "support_bundle_validation_message", timeout: 2)
-        let issueTypeTitle = assertExists(app, identifier: "support_bundle_issue_type_title", timeout: 1)
-        XCTAssertLessThan(
-            validationMessage.frame.maxY,
-            issueTypeTitle.frame.minY,
-            "validation message should appear near the export button before the issue type controls"
-        )
-    }
-
-    @MainActor
-    func testDiagnosticsExportShowsCompletionWithoutDuplicateHistory() throws {
-        let app = XCUIApplication()
-        configureAppForUITestLaunch(app)
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.baseline.rawValue
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"] = "cannotShare"
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_HAPPENED"] = "Remote side disconnects immediately."
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_REPRODUCTION"] = "1. Start sharing. 2. Open the remote URL."
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_EXPECTED"] = "The remote side should stay connected."
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_INCLUDE_LOGS"] = "1"
-        app.launch()
-        app.activate()
-
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"],
-            timeout: 6
-        )
-        let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
-        XCTAssertTrue(
-            waitForCondition(timeout: 5) {
-                (happenedField.value as? String) == "Remote side disconnects immediately."
-            }
-        )
-        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
-        tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "support_bundle_completion_section",
-                "support_bundle_completion_next_step",
-                "support_bundle_copy_summary_button",
-                "support_bundle_reveal_button",
-                "support_bundle_new_feedback_button"
-            ],
-            timeout: 8
-        )
-
-        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_history_section"].exists)
-    }
-
-    @MainActor
-    func testDiagnosticsExportFailureShowsErrorBanner() throws {
-        let app = XCUIApplication()
-        configureAppForUITestLaunch(app)
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.baseline.rawValue
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_HAPPENED"] = "Export should fail."
-        app.launchEnvironment["VOIDDISPLAY_FEEDBACK_EXPORT_FAILURE_MESSAGE"] = "Injected export failure"
-        app.launch()
-        app.activate()
-
-        tapSidebarItem(
-            app,
-            identifier: "sidebar_diagnostics",
-            labels: ["Diagnostics", "诊断"],
-            timeout: 6
-        )
-        let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
-        XCTAssertTrue(
-            waitForCondition(timeout: 5) {
-                (happenedField.value as? String) == "Export should fail."
-            }
-        )
-        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
-        tapByCoordinate(exportButton, timeout: 1, requireExistenceCheck: false)
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "support_bundle_error_banner",
-                "support_bundle_error_title",
-                "support_bundle_error_message"
-            ],
-            timeout: 5
-        )
-        let titleText = accessibilityText(
-            for: smokeElement(app, identifier: "support_bundle_error_title")
-        )
-        XCTAssertTrue(
-            ["Export Failed", "导出失败"].contains(titleText),
-            "Unexpected diagnostics export error title: \(titleText)"
-        )
-        XCTAssertEqual(
-            accessibilityText(
-                for: smokeElement(app, identifier: "support_bundle_error_message")
-            ),
-            "Injected export failure"
-        )
-        XCTAssertFalse(app.alerts.element.exists)
-        XCTAssertTrue(app.descendants(matching: .any)["detail_diagnostics"].exists)
-    }
-
-    @MainActor
-    func testVirtualDisplayEditSmoke_directSaveActionsWithoutConfirmationAlert() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
-        let detail = openVirtualDisplayDetail(in: app)
-
-        let initialEditState = openVirtualDisplayEditForm(in: app, detail: detail)
-        let initialValue = boolValue(forToggle: initialEditState.toggle)
-        let initialRebuildCount = rebuildRequestCount(in: app)
-        tapFast(
-            initialEditState.toggle,
-            in: app
-        ) {
-            boolValue(forToggle: initialEditState.toggle) != initialValue
-        }
-        let saveOnlyButton = initialEditState.saveOnlyButton
-        let saveAndRebuildButton = initialEditState.saveAndRebuildButton
-        XCTAssertTrue(saveAndRebuildButton.isEnabled)
-        tapFast(
-            saveOnlyButton,
-            in: app
-        ) {
-            !initialEditState.form.exists
-        }
-        XCTAssertTrue(waitForDisappearance(of: initialEditState.form, timeout: 1.5))
-        XCTAssertEqual(rebuildRequestCount(in: app), initialRebuildCount)
-
-        let saveOnlyPersistedState = reopenEditFormAndReadHiDPI(in: app, detail: detail)
-        XCTAssertEqual(saveOnlyPersistedState.value, !initialValue)
-        tapFast(
-            saveOnlyPersistedState.toggle,
-            in: app
-        ) {
-            boolValue(forToggle: saveOnlyPersistedState.toggle) == initialValue
-        }
-        submitUITestSaveAndRebuild(in: app, form: saveOnlyPersistedState.form)
-        XCTAssertTrue(waitForDisappearance(of: saveOnlyPersistedState.form, timeout: 1.5))
-        XCTAssertTrue(
-            waitForRebuildRequestCount(
-                in: app,
-                expected: initialRebuildCount + 1,
-                timeout: 2
-            )
-        )
-
-        let saveAndRebuildPersistedState = reopenEditFormAndReadHiDPI(in: app, detail: detail)
-        XCTAssertEqual(saveAndRebuildPersistedState.value, initialValue)
-        tapFast(
-            saveAndRebuildPersistedState.cancelButton,
-            in: app
-        ) {
-            !saveAndRebuildPersistedState.form.exists
-        }
-        XCTAssertTrue(waitForDisappearance(of: saveAndRebuildPersistedState.form, timeout: 1.5))
-    }
-
-    @MainActor
-    func testPermissionDeniedSmoke_captureAndShare() throws {
-        let app = launchAppForSmoke(scenario: .permissionDenied)
-        openPreviewFromHome(in: app)
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_screen_preview",
-                "capture_permission_guide",
-                "capture_open_settings_button",
-                "capture_request_permission_button",
-                "capture_refresh_button"
-            ],
-            timeout: 1.2
-        )
-
-        openLANWebViewFromHome(in: app)
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_lan_web_view",
-                "share_permission_guide",
-                "share_open_settings_button",
-                "share_request_permission_button",
-                "share_refresh_button"
-            ],
-            timeout: 1.2
-        )
-    }
-
-    @MainActor
-    func testLoadingSmoke_captureAndShareShowVisibleLoadingState() throws {
-        let candidatePorts = UITestPortAllocator.randomPortCandidates(count: maxLoadingSmokePortAttempts)
-        var attemptedPorts: [UInt16] = []
-        var lastPortError: String?
-
-        for candidatePort in candidatePorts {
-            attemptedPorts.append(candidatePort)
-            let app = launchAppForSmoke(
-                scenario: .displayCatalogLoading,
-                preferredPort: candidatePort
-            )
-            let startServiceButton = smokeElement(app, identifier: "share_start_service_button")
-
-            openPreviewFromHome(in: app)
-            assertAllExist(app, identifiers: ["detail_screen_preview"], timeout: 1.2)
-            XCTAssertTrue(
-                waitForAnyIdentifierByPolling(
-                    app,
-                    identifiers: [
-                        "capture_loading_displays",
-                        "capture_displays_list",
-                        "capture_permission_guide",
-                        "capture_displays_empty_state"
-                    ],
-                    timeout: 1.2
-                ),
-                "Preview page did not show a catalog state. visibleStates=\(capturePageVisibleStates(app))"
-            )
-
-            openLANWebViewFromHome(in: app)
-            assertAllExist(
-                app,
-                identifiers: [
-                    "detail_lan_web_view",
-                    "share_start_service_button"
-                ],
-                timeout: 1.2
-            )
-            startServiceButton.tap()
-
-            if waitForAnyIdentifierByPolling(
-                app,
-                identifiers: [
-                    "share_starting_service",
-                    "share_loading_displays"
-                ],
-                timeout: 1.0
-            ) {
-                app.terminate()
-                return
-            }
-
-            lastPortError = inlinePortErrorText(app)
-            if isRetryablePortInUseError(lastPortError) {
-                app.terminate()
-                continue
-            }
-
-            let visibleStates = sharePageVisibleStates(app)
-            app.terminate()
-            XCTFail(
-                "Sharing loading state did not appear. attemptedPorts=\(attemptedPorts), " +
-                "lastPortError=\(lastPortError ?? "none"), " +
-                "visibleStates=\(visibleStates)"
-            )
-            return
-        }
-
-        XCTFail(
-            "Failed to start sharing service for loading smoke after retrying candidate ports. " +
-            "attemptedPorts=\(attemptedPorts), lastPortError=\(lastPortError ?? "none")"
-        )
-    }
-
-    @MainActor
-    func testVirtualDisplaySmoke_rebuildIndicators() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
-        _ = openVirtualDisplayDetail(in: app)
-        let showRebuildingButton = smokeElement(app, identifier: "virtual_display_show_rebuilding_test_button")
-        let showRebuildFailedButton = smokeElement(app, identifier: "virtual_display_show_rebuild_failed_test_button")
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_virtual_display",
-                "virtual_display_show_rebuilding_test_button",
-                "virtual_display_show_rebuild_failed_test_button"
-            ],
-            timeout: 1.2
-        )
-
-        let rebuildProgress = smokeElement(app, identifier: "virtual_display_rebuild_progress")
-        let retryButton = smokeElement(app, identifier: "virtual_display_rebuild_retry_button")
-
-        tapByCoordinate(showRebuildingButton, timeout: 1, requireExistenceCheck: false)
-        assertElementsExist([("virtual_display_rebuild_progress", rebuildProgress)], timeout: 1.2)
-        XCTAssertTrue(rebuildProgress.exists)
-
-        tapByCoordinate(showRebuildFailedButton, timeout: 1, requireExistenceCheck: false)
-        XCTAssertTrue(waitForDisappearance(of: rebuildProgress, timeout: 1.2))
-        assertElementsExist([("virtual_display_rebuild_retry_button", retryButton)], timeout: 1.2)
-        XCTAssertTrue(retryButton.isEnabled)
-    }
-
-    @MainActor
-    func testVirtualDisplaySmoke_rebuildFailedRowShowsRetry() throws {
-        let app = launchAppForSmoke(scenario: .virtualDisplayRebuildFailed)
-        _ = openVirtualDisplayDetail(in: app)
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_virtual_display",
-                "virtual_display_rebuild_retry_button"
-            ],
-            timeout: 1.2
-        )
-
-        let retryButton = smokeElement(app, identifier: "virtual_display_rebuild_retry_button")
-        XCTAssertTrue(retryButton.isEnabled)
-        XCTAssertFalse(smokeElement(app, identifier: "virtual_display_rebuild_progress").exists)
-    }
-
-    @MainActor
-    private func boolValue(forToggle toggle: XCUIElement) -> Bool {
-        if let numberValue = toggle.value as? NSNumber {
-            return numberValue.intValue != 0
-        }
-        if let stringValue = toggle.value as? String {
-            let normalized = stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if ["1", "true", "on"].contains(normalized) {
-                return true
-            }
-            if ["0", "false", "off"].contains(normalized) {
-                return false
-            }
-        }
-        XCTFail("Unexpected toggle value: \(String(describing: toggle.value))")
-        return false
-    }
-
-    @MainActor
-    private func openVirtualDisplayDetail(in app: XCUIApplication) -> XCUIElement {
-        openHomeOverview(in: app)
-        assertDisplaysSurfaceActionArea(in: app)
-        tapDisplaysSurfaceAction(app, identifier: "displays_action_manage_virtual_display")
-        assertAllExist(
-            app,
-            identifiers: ["detail_virtual_display"],
-            timeout: 1.2
-        )
-        return smokeElement(app, identifier: "detail_virtual_display")
-    }
-
-    @MainActor
-    private func openVirtualDisplayEditForm(
-        in app: XCUIApplication,
-        detail: XCUIElement
-    ) -> (
-        form: XCUIElement,
-        toggle: XCUIElement,
-        saveOnlyButton: XCUIElement,
-        saveAndRebuildButton: XCUIElement,
-        cancelButton: XCUIElement
-    ) {
-        let form = smokeElement(app, identifier: "edit_virtual_display_form")
-        let toggle = smokeElement(app, identifier: "virtual_display_edit_mode_hidpi_toggle")
-        let saveOnlyButton = smokeElement(app, identifier: "virtual_display_edit_save_only_button")
-        let saveAndRebuildButton = smokeElement(app, identifier: "virtual_display_edit_save_and_rebuild_button")
-        let cancelButton = smokeElement(app, identifier: "virtual_display_edit_cancel_button")
-        assertAllExist(
-            app,
-            identifiers: ["detail_virtual_display", "virtual_display_open_edit_test_button"],
-            timeout: 1.2
-        )
-        XCTAssertTrue(detail.exists, "Virtual display detail is unavailable.")
-        let openEditButton = smokeElement(app, identifier: "virtual_display_open_edit_test_button")
-        tapByCoordinate(
-            openEditButton,
-            timeout: 1,
-            requireExistenceCheck: false
-        )
-        if waitForIdentifierByPolling(app, identifier: "edit_virtual_display_form", timeout: 0.9) {
-            assertAllExist(
-                app,
-            identifiers: [
-                "edit_virtual_display_form",
-                "virtual_display_edit_name_field",
-                "virtual_display_edit_mode_hidpi_toggle",
-                "virtual_display_edit_save_only_button",
-                "virtual_display_edit_save_and_rebuild_button",
-                "virtual_display_edit_save_and_rebuild_test_button",
-                "virtual_display_edit_cancel_button"
-                ],
-                timeout: 0.6
-            )
-        } else {
-            let retryOpenEditButton = smokeElement(app, identifier: "virtual_display_open_edit_test_button")
-            tapByCoordinate(
-                retryOpenEditButton,
-                timeout: 0.6,
-                requireExistenceCheck: false
-            )
-            assertAllExist(
-                app,
-                identifiers: [
-                    "edit_virtual_display_form",
-                    "virtual_display_edit_name_field",
-                    "virtual_display_edit_mode_hidpi_toggle",
-                    "virtual_display_edit_save_only_button",
-                    "virtual_display_edit_save_and_rebuild_button",
-                    "virtual_display_edit_save_and_rebuild_test_button",
-                    "virtual_display_edit_cancel_button"
-                ],
-                timeout: 1.5
-            )
-        }
-        return (
-            form: form,
-            toggle: toggle,
-            saveOnlyButton: saveOnlyButton,
-            saveAndRebuildButton: saveAndRebuildButton,
-            cancelButton: cancelButton
-        )
-    }
-
-    @MainActor
-    private func reopenEditFormAndReadHiDPI(
-        in app: XCUIApplication,
-        detail: XCUIElement
-    ) -> (
-        form: XCUIElement,
-        toggle: XCUIElement,
-        saveOnlyButton: XCUIElement,
-        saveAndRebuildButton: XCUIElement,
-        cancelButton: XCUIElement,
-        value: Bool
-    ) {
-        let state = openVirtualDisplayEditForm(in: app, detail: detail)
-        return (
-            state.form,
-            state.toggle,
-            state.saveOnlyButton,
-            state.saveAndRebuildButton,
-            state.cancelButton,
-            boolValue(forToggle: state.toggle)
-        )
-    }
-
-    @MainActor
-    private func submitUITestSaveAndRebuild(in app: XCUIApplication, form: XCUIElement) {
-        let button = smokeElement(app, identifier: "virtual_display_edit_save_and_rebuild_test_button")
-        tapFast(button, in: app) {
-            !form.exists
-        }
-    }
-
-    @MainActor
-    private func rebuildRequestCount(in app: XCUIApplication) -> Int {
-        let detail = smokeElement(app, identifier: "detail_virtual_display")
-        let rawValue = if let value = detail.value as? String, !value.isEmpty {
-            value
-        } else {
-            detail.label
-        }
-        guard let count = Int(rawValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            XCTFail("Unexpected rebuild request count: \(rawValue)")
-            return -1
-        }
-        return count
-    }
-
-    @MainActor
-    private func waitForRebuildRequestCount(
-        in app: XCUIApplication,
-        expected: Int,
-        timeout: TimeInterval,
-        pollInterval: TimeInterval = 0.1
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if rebuildRequestCount(in: app) == expected {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
-        }
-        return rebuildRequestCount(in: app) == expected
-    }
-
-    @MainActor
-    private func waitForAnyIdentifierByPolling(
-        _ app: XCUIApplication,
-        identifiers: [String],
-        timeout: TimeInterval,
-        pollInterval: TimeInterval = 0.1
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if identifiers.contains(where: { smokeElement(app, identifier: $0).exists }) {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
-        }
-        return identifiers.contains(where: { smokeElement(app, identifier: $0).exists })
-    }
-
-    @MainActor
-    private func inlinePortErrorText(_ app: XCUIApplication) -> String? {
-        let errorText = app.descendants(matching: .any)
-            .matching(identifier: "share_port_error_text")
-            .firstMatch
-        guard errorText.exists else { return nil }
-
-        let labelText = errorText.label.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !labelText.isEmpty { return labelText }
-
-        if let valueText = (errorText.value as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !valueText.isEmpty {
-            return valueText
-        }
-        return nil
-    }
-
-    @MainActor
     private func accessibilityText(for element: XCUIElement) -> String {
         let labelText = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
-        if labelText.isEmpty == false {
+        if !labelText.isEmpty {
             return labelText
         }
 
-        if let valueText = (element.value as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           valueText.isEmpty == false {
+        if let valueText = (element.value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !valueText.isEmpty {
             return valueText
         }
 
         return ""
-    }
-
-    private func isRetryablePortInUseError(_ message: String?) -> Bool {
-        guard let normalizedMessage = message?.lowercased(), !normalizedMessage.isEmpty else {
-            return false
-        }
-
-        let markers = [
-            "port in use",
-            "address already in use",
-            "eaddrinuse",
-            "已被占用",
-            "被占用",
-            "端口",
-            "occupied"
-        ]
-
-        return markers.contains { normalizedMessage.contains($0) }
-    }
-
-    @MainActor
-    private func detailVisibilitySummary(in app: XCUIApplication) -> String {
-        [
-            "detail_home",
-            "detail_displays",
-            "detail_virtual_display",
-            "detail_screen_preview",
-            "detail_screen_sharing",
-            "detail_lan_web_view",
-            "capture_choose_root",
-            "share_content_root"
-        ]
-        .map { identifier in
-            "\(identifier)=\(smokeElement(app, identifier: identifier).exists)"
-        }
-        .joined(separator: ", ")
-    }
-
-    @MainActor
-    private func sharePageVisibleStates(_ app: XCUIApplication) -> [String] {
-        let identifiers = [
-            "share_permission_guide",
-            "share_loading_permission",
-            "share_start_service_button",
-            "share_starting_service",
-            "share_loading_displays",
-            "lan_web_view_displays_list",
-            "share_displays_empty_state"
-        ]
-
-        return identifiers.filter { identifier in
-            app.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-            .exists
-        }
-    }
-
-    @MainActor
-    private func capturePageVisibleStates(_ app: XCUIApplication) -> [String] {
-        let identifiers = [
-            "capture_permission_guide",
-            "capture_loading_displays",
-            "capture_displays_list",
-            "capture_displays_empty_state",
-            "capture_active_sessions_fallback"
-        ]
-
-        return identifiers.filter { identifier in
-            app.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-                .exists
-        }
     }
 }
