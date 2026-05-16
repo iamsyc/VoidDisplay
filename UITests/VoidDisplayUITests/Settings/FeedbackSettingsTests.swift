@@ -9,7 +9,7 @@ final class FeedbackSettingsTests: XCTestCase {
     func testFeedbackSettingsShowsDiagnosticsEntryOnly() throws {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.settingsFeedback.rawValue
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = "settings_feedback"
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"] = "virtualDisplayFailure"
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_HAPPENED"] = "Virtual display does not restore."
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_REPRODUCTION"] = "1. Launch the app. 2. Restore displays."

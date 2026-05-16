@@ -79,7 +79,7 @@ struct AppBootstrapTests {
     @Test func initUITestModeAppliesFixtureAndSkipsServiceBoot() async {
         let sharing = MockSharingService()
         let capture = MockCapturePreviewService()
-        let virtualDisplay = UITestVirtualDisplayFacade(scenario: .baseline)
+        let virtualDisplay = UITestVirtualDisplayFacade()
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,

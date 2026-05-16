@@ -7,7 +7,7 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     func testHomeNavigationSmoke_baseline() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
+        let app = launchAppForSmoke()
 
         assertAllExist(
             app,
@@ -47,7 +47,7 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     func testDisplaysSurfaceConvergenceSmoke_baseline() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
+        let app = launchAppForSmoke()
 
         assertAllExist(
             app,
@@ -74,7 +74,7 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     func testDiagnosticsNavigationSmoke_baseline() throws {
-        let app = launchAppForSmoke(scenario: .baseline)
+        let app = launchAppForSmoke()
 
         tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
 

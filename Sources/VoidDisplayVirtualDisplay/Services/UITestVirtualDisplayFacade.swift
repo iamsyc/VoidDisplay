@@ -33,10 +33,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         }
     }
 
-    private let scenario: UITestScenario
-
-    package init(scenario: UITestScenario) {
-        self.scenario = scenario
+    package init() {
         let fixtureConfigs = UITestFixture.virtualDisplayConfigs()
         self.configs = fixtureConfigs
         self.runningConfigIds = Set(fixtureConfigs.prefix(1).map(\.id))

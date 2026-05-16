@@ -1,13 +1,6 @@
 import Foundation
 import XCTest
 
-enum SmokeScenario: String {
-    case baseline
-    case displayCatalogLoading = "display_catalog_loading"
-    case permissionDenied = "permission_denied"
-    case settingsFeedback = "settings_feedback"
-}
-
 extension XCTestCase {
     @MainActor
     func configureAppForWindowRestorationIsolatedLaunch(_ app: XCUIApplication) {
@@ -38,12 +31,11 @@ extension XCTestCase {
 
     @MainActor
     func launchAppForSmoke(
-        scenario: SmokeScenario,
         preferredPort: UInt16? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = scenario.rawValue
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = "baseline"
         if let preferredPort {
             app.launchArguments.append(contentsOf: [
                 "-sharing.preferredPort",

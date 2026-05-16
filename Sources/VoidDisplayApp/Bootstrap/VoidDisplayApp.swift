@@ -201,10 +201,9 @@ package enum AppBootstrap {
             return makeEnvironment(preview: false)
         }
 
-        let scenario = UITestRuntime.scenario
         let env = makeEnvironment(
             preview: false,
-            virtualDisplayFacade: UITestVirtualDisplayFacade(scenario: scenario),
+            virtualDisplayFacade: UITestVirtualDisplayFacade(),
             startupPlan: .init(
                 shouldRestoreVirtualDisplays: true
             )
