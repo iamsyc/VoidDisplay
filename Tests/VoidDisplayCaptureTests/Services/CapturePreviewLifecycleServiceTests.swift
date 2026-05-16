@@ -39,32 +39,6 @@ private final class CapturePreviewLifecycleCancelCounter: @unchecked Sendable {
     nonisolated(unsafe) var value = 0
 }
 
-private final class CapturePreviewLifecycleMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum CapturePreviewLifecycleMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = CapturePreviewLifecycleMockSCDisplayBox(
-            displayID: displayID,
-            width: width,
-            height: height
-        )
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 private struct CapturePreviewLifecycleControlledError: Error, Equatable {}
 
 private actor CapturePreviewLifecycleAcquirePreviewGate {
@@ -120,7 +94,7 @@ struct CapturePreviewLifecycleServiceTests {
             capturePreviewService: service,
             acquirePreview: { _, _ in .started(previewRecord.subscription) }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 701,
             width: 1920,
             height: 1080
@@ -161,7 +135,7 @@ struct CapturePreviewLifecycleServiceTests {
                 return .started(makePreview(displayID: 702).subscription)
             }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 702,
             width: 1920,
             height: 1080
@@ -200,7 +174,7 @@ struct CapturePreviewLifecycleServiceTests {
                 return .started(makePreview(displayID: 703).subscription)
             }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 703,
             width: 2560,
             height: 1440
@@ -235,7 +209,7 @@ struct CapturePreviewLifecycleServiceTests {
                 }
             }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 712,
             width: 1920,
             height: 1080
@@ -341,7 +315,7 @@ struct CapturePreviewLifecycleServiceTests {
                 }
             }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 713,
             width: 1920,
             height: 1080
@@ -402,7 +376,7 @@ struct CapturePreviewLifecycleServiceTests {
                 }
             }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 719,
             width: 1920,
             height: 1080
@@ -467,7 +441,7 @@ struct CapturePreviewLifecycleServiceTests {
                 }
             }
         )
-        let display = CapturePreviewLifecycleMockSCDisplay.make(
+        let display = SharedMockSCDisplay.make(
             displayID: 720,
             width: 1920,
             height: 1080

@@ -164,7 +164,7 @@ struct DisplayCaptureRegistryTests {
 
     @Test func concurrentAcquirePreviewDoesNotLoseTokenOwnership() async throws {
         let displayID = CGDirectDisplayID(6060)
-        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let sendableDisplay = SendableDisplay(display)
         let gate = CaptureSessionFactoryGate()
         let fakeSession = FakeCaptureSession()
@@ -204,7 +204,7 @@ struct DisplayCaptureRegistryTests {
 
     @Test func concurrentPreviewAndShareCreationUsesMixedInitialProfile() async throws {
         let displayID = CGDirectDisplayID(9090)
-        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let sendableDisplay = SendableDisplay(display)
         let fakeSession = FakeCaptureSession()
         let factoryGate = CaptureSessionFactoryGate()
@@ -235,7 +235,7 @@ struct DisplayCaptureRegistryTests {
 
     @Test func releaseWhileSetSharingActiveSuspendsDoesNotOverwriteConcurrentAcquire() async throws {
         let displayID = CGDirectDisplayID(10010)
-        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let sendableDisplay = SendableDisplay(display)
         let gate = SharingStateGate()
         let session = BlockingSetSharingActiveSession(gate: gate)
@@ -278,7 +278,7 @@ struct DisplayCaptureRegistryTests {
 
     @Test func updatingPerformanceModePropagatesToExistingSessionsAndNewSessions() async throws {
         let displayID = CGDirectDisplayID(11011)
-        let display = MockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let sendableDisplay = SendableDisplay(display)
         let installedSession = FakeCaptureSession()
         let createdSession = FakeCaptureSession()
@@ -309,7 +309,7 @@ struct DisplayCaptureRegistryTests {
         subscription.cancel()
 
         let newDisplayID = CGDirectDisplayID(11012)
-        let newDisplay = MockSCDisplay.make(displayID: newDisplayID, width: 1280, height: 720)
+        let newDisplay = SharedMockSCDisplay.make(displayID: newDisplayID, width: 1280, height: 720)
         let newSubscription = try await registry.acquireShare(display: SendableDisplay(newDisplay))
         #expect(createdModes.withLock { $0.first } == .powerEfficient)
         newSubscription.cancel()
@@ -667,27 +667,5 @@ private actor CaptureSessionFactoryGate {
         for waiter in pendingWaiters {
             waiter.resume()
         }
-    }
-}
-
-private final class MockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum MockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = MockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
     }
 }
