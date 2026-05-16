@@ -465,10 +465,6 @@ package extension DisplayCaptureSession {
         return scaled.value > 0 ? UInt64(scaled.value) : 0
     }
 
-    nonisolated static func clampedPreviewFramesPerSecond(for refreshRate: Double) -> Int {
-        sourceFramesPerSecond(for: refreshRate)
-    }
-
     nonisolated static func sourceFramesPerSecond(for refreshRate: Double) -> Int {
         let normalizedRefreshRate = refreshRate > 0 ? refreshRate : 60.0
         return max(1, Int(normalizedRefreshRate.rounded()))

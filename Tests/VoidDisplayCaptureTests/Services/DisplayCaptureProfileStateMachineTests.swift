@@ -148,12 +148,6 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(demand.isEmpty == false)
     }
 
-    @Test func previewFrameRateKeepsHighRefreshAndPreservesFallback() {
-        #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 144) == 144)
-        #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 50) == 50)
-        #expect(DisplayCaptureSession.clampedPreviewFramesPerSecond(for: 0) == 60)
-    }
-
     @Test func captureProfileFrameRatesMatchCurrentDefaults() {
         #expect(
             DisplayCaptureSession.captureFramesPerSecond(

@@ -18,10 +18,6 @@ private final class PreviewSinkMailbox: @unchecked Sendable {
 
     private let sink: any DisplayPreviewSink
     private let state = Mutex(State())
-#if DEBUG
-    nonisolated(unsafe) var willStartDrainForTesting: (@Sendable () -> Void)?
-#endif
-
     nonisolated init(sink: any DisplayPreviewSink) {
         self.sink = sink
     }
@@ -37,9 +33,6 @@ private final class PreviewSinkMailbox: @unchecked Sendable {
         }
         guard shouldStartDraining else { return }
 
-#if DEBUG
-        willStartDrainForTesting?()
-#endif
         Task.detached { [weak self] in
             self?.drain()
         }
@@ -77,18 +70,12 @@ private final class PreviewSinkMailbox: @unchecked Sendable {
 }
 package final class DisplaySampleFanout: Sendable {
     private let mailboxes = Mutex<[ObjectIdentifier: PreviewSinkMailbox]>([:])
-#if DEBUG
-    nonisolated(unsafe) var willStartDrainForTesting: (@Sendable () -> Void)?
-#endif
 
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
         let key = ObjectIdentifier(sink as AnyObject)
         mailboxes.withLock { mailboxes in
             guard mailboxes[key] == nil else { return }
             let mailbox = PreviewSinkMailbox(sink: sink)
-#if DEBUG
-            mailbox.willStartDrainForTesting = willStartDrainForTesting
-#endif
             mailboxes[key] = mailbox
         }
     }
