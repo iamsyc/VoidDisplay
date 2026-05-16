@@ -478,17 +478,6 @@
         }
       }
     },
-    "Cancel Starting" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消启动"
-          }
-        }
-      }
-    },
     "Cannot Share" : {
       "extractionState" : "stale",
       "localizations" : {

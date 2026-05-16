@@ -42,29 +42,11 @@ package struct IsCapturing: View {
         self.catalogActions = catalogActions
     }
 
-    private var shouldShowActiveSessionFallback: Bool {
-        guard !previewActions.sessions().isEmpty else { return false }
-        if viewModel.catalog.hasScreenCapturePermission == true,
-           let displays = viewModel.catalog.displays,
-           !viewModel.visibleDisplays(from: displays).isEmpty {
-            return false
-        }
-        return true
-    }
-
     package var body: some View {
         @Bindable var bindableViewModel = viewModel
 
         VStack(spacing: 0) {
             catalogContent
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if shouldShowActiveSessionFallback {
-                    VStack(spacing: 0) {
-                        activePreviewSessionsFallback
-                        Divider()
-                    }
-                }
-            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 Task { await catalogActions.handleAppear() }
@@ -185,22 +167,6 @@ package struct IsCapturing: View {
             .padding(.bottom, AppUI.Spacing.medium)
         }
         .accessibilityIdentifier("capture_displays_list")
-    }
-
-    private var activePreviewSessionsFallback: some View {
-        VStack(spacing: AppUI.List.sectionSpacing) {
-            ForEach(previewActions.sessions()) { session in
-                PreviewSessionRow(
-                    session: session,
-                    isSharing: sharingStatusProvider.isDisplaySharing(session.displayID)
-                ) {
-                    Task { await previewActions.closePreviewSession(session.id) }
-                }
-            }
-        }
-        .appListContentInsets()
-        .frame(maxWidth: .infinity, alignment: .top)
-        .accessibilityIdentifier("capture_active_sessions_fallback")
     }
 
     private func captureDisplayRowComponent(_ display: SCDisplay) -> some View {
