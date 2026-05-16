@@ -50,13 +50,10 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     var saveConfigForRebuildError: Error?
     var restoreConfigAfterFailedEditError: Error?
     var moveConfigError: Error?
-    var moveConfigToFirstEnabledPositionError: Error?
     var resetAllVirtualDisplayDataError: Error?
     var reconcileMainDisplayPolicyIfNeededCallCount = 0
     var reconcileMainDisplayPolicyIfNeededError: Error?
     var moveConfigResult = false
-    var moveConfigToFirstEnabledPositionCallCount = 0
-    var moveConfigToFirstEnabledPositionIDs: [UUID] = []
     var configForEditRebuildCallCount = 0
     var configForEditRebuildIDs: [UUID] = []
     var saveConfigForRebuildCallCount = 0
@@ -367,11 +364,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
 
     @discardableResult
     func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool {
-        moveConfigToFirstEnabledPositionCallCount += 1
-        moveConfigToFirstEnabledPositionIDs.append(configId)
-        if let moveConfigToFirstEnabledPositionError {
-            throw moveConfigToFirstEnabledPositionError
-        }
         guard moveConfigResult else { return false }
         guard let sourceIndex = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else {
             return false
