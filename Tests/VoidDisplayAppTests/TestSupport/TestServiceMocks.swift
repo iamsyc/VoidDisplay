@@ -58,8 +58,6 @@ final class MockCapturePreviewService: CapturePreviewServiceProtocol {
     var removeCallCount = 0
     var removeByDisplayCallCount = 0
     var removedDisplayIDs: [CGDirectDisplayID] = []
-    var updateStateCallCount = 0
-    var updateCapturesCursorCallCount = 0
 
     func previewSession(for id: UUID) -> ScreenPreviewSession? {
         currentSessions.first(where: { $0.id == id })
@@ -74,7 +72,6 @@ final class MockCapturePreviewService: CapturePreviewServiceProtocol {
         id: UUID,
         state: ScreenPreviewSession.State
     ) {
-        updateStateCallCount += 1
         guard let index = currentSessions.firstIndex(where: { $0.id == id }) else { return }
         currentSessions[index].state = state
     }
@@ -83,7 +80,6 @@ final class MockCapturePreviewService: CapturePreviewServiceProtocol {
         id: UUID,
         capturesCursor: Bool
     ) {
-        updateCapturesCursorCallCount += 1
         guard let index = currentSessions.firstIndex(where: { $0.id == id }) else { return }
         currentSessions[index].capturesCursor = capturesCursor
     }
@@ -117,12 +113,7 @@ final class MockSharingService: SharingServiceProtocol {
     var startResult: WebServiceStartResult = .started(
         WebServiceBinding(requestedPort: 8081, boundPort: 8081)
     )
-    var lastStartRequestedPort: UInt16?
     var startWebServiceCallCount = 0
-    var stopWebServiceCallCount = 0
-    var registerShareableDisplaysCallCount = 0
-    var registeredShareableDisplays: [SCDisplay] = []
-    var registeredVirtualSerialsByDisplayID: [CGDirectDisplayID: UInt32?] = [:]
     var stopSharingCallCount = 0
     var stopAllSharingCallCount = 0
     var startSharingCallCount = 0
@@ -130,7 +121,6 @@ final class MockSharingService: SharingServiceProtocol {
     var streamClientCountsByTarget: [ShareTarget: Int] = [:]
     var shareIDByDisplayID: [CGDirectDisplayID: UInt32] = [:]
     var shareTargetByDisplayID: [CGDirectDisplayID: ShareTarget] = [:]
-    var onStopSharing: (@MainActor @Sendable (CGDirectDisplayID) -> Void)?
     var startSharingHandler: StartSharingHandler?
     private var sharingStateObservers: [UUID: @MainActor @Sendable (SharingStateSnapshot) -> Void] = [:]
 
@@ -152,7 +142,6 @@ final class MockSharingService: SharingServiceProtocol {
     @discardableResult
     func startWebService(requestedPort: UInt16) async -> WebServiceStartResult {
         startWebServiceCallCount += 1
-        lastStartRequestedPort = requestedPort
         switch startResult {
         case .started(let binding), .alreadyRunning(let binding):
             isWebServiceRunning = true
@@ -178,7 +167,6 @@ final class MockSharingService: SharingServiceProtocol {
     }
 
     func stopWebService() {
-        stopWebServiceCallCount += 1
         isWebServiceRunning = false
         webServiceLifecycleState = .stopped
         onWebServiceLifecycleStateChanged?(webServiceLifecycleState)
@@ -187,17 +175,9 @@ final class MockSharingService: SharingServiceProtocol {
     }
 
     func registerShareableDisplays(
-        _ displays: [SCDisplay],
-        virtualSerialResolver: (CGDirectDisplayID) -> UInt32?
-    ) {
-        registerShareableDisplaysCallCount += 1
-        registeredShareableDisplays = displays
-        registeredVirtualSerialsByDisplayID = Dictionary(
-            uniqueKeysWithValues: displays.map { display in
-                (display.displayID, virtualSerialResolver(display.displayID))
-            }
-        )
-    }
+        _: [SCDisplay],
+        virtualSerialResolver _: (CGDirectDisplayID) -> UInt32?
+    ) {}
 
     func startSharing(display: SCDisplay) async throws -> DisplayStartOutcome<Void> {
         startSharingCallCount += 1
@@ -214,7 +194,6 @@ final class MockSharingService: SharingServiceProtocol {
         stopSharingCallCount += 1
         activeSharingDisplayIDs.remove(displayID)
         hasAnyActiveSharing = !activeSharingDisplayIDs.isEmpty
-        onStopSharing?(displayID)
     }
 
     func stopAllSharing() {
