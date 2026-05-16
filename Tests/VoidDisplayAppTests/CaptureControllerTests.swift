@@ -40,32 +40,6 @@ private final class CaptureControllerPreviewSink: DisplayPreviewSink, @unchecked
     nonisolated func submitFrame(_ _: CMSampleBuffer) {}
 }
 
-private final class CaptureControllerMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum CaptureControllerMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = CaptureControllerMockSCDisplayBox(
-            displayID: displayID,
-            width: width,
-            height: height
-        )
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 private actor CaptureControllerAsyncGate {
     private var waitCount = 0
     private var continuations: [CheckedContinuation<Void, Never>] = []
@@ -195,7 +169,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 77, width: 2560, height: 1440)
+        let display = SharedMockSCDisplay.make(displayID: 77, width: 2560, height: 1440)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 77",
             resolutionText: "2560 × 1440",
@@ -227,7 +201,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 781, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 781, width: 1920, height: 1080)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 781",
             resolutionText: "1920 × 1080",
@@ -275,7 +249,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 785, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 785, width: 1920, height: 1080)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 785",
             resolutionText: "1920 × 1080",
@@ -335,7 +309,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 786, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 786, width: 1920, height: 1080)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 786",
             resolutionText: "1920 × 1080",
@@ -389,7 +363,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 782, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 782, width: 1920, height: 1080)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 782",
             resolutionText: "1920 × 1080",
@@ -419,7 +393,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 783, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 783, width: 1920, height: 1080)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 783",
             resolutionText: "1920 × 1080",
@@ -455,7 +429,7 @@ struct CaptureControllerTests {
             capturePreviewService: service,
             capturePreviewLifecycleService: lifecycleService
         )
-        let display = CaptureControllerMockSCDisplay.make(displayID: 784, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 784, width: 1920, height: 1080)
         let metadata = CapturePreviewDisplayMetadata(
             displayName: "Display 784",
             resolutionText: "1920 × 1080",

@@ -1,5 +1,6 @@
 @testable import VoidDisplayFoundation
 @testable import VoidDisplaySharing
+@testable import VoidDisplayTestingSupport
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
@@ -20,8 +21,8 @@ struct ShareViewModelTests {
     }
 
     @Test func visibleDisplaysFiltersDisplaysMissingFromCurrentTopology() {
-        let displayA = LocalMockSCDisplay.make(displayID: 1234, width: 1920, height: 1080)
-        let displayB = LocalMockSCDisplay.make(displayID: 5678, width: 1920, height: 1080)
+        let displayA = SharedMockSCDisplay.make(displayID: 1234, width: 1920, height: 1080)
+        let displayB = SharedMockSCDisplay.make(displayID: 5678, width: 1920, height: 1080)
         let sut = ShareViewModel(
             activeDisplayIDsProvider: { Set<CGDirectDisplayID>([1234]) },
             dependencies: makeShareDependencies(isWebServiceRunning: { true })
@@ -133,7 +134,7 @@ struct ShareViewModelTests {
     }
 
     @Test func startSharingWithInvalidPortSkipsServiceStartAndSharing() async {
-        let display = LocalMockSCDisplay.make(displayID: 7001, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 7001, width: 1920, height: 1080)
         var startCallCount = 0
         var beginSharingCallCount = 0
         let sut = ShareViewModel(
@@ -160,7 +161,7 @@ struct ShareViewModelTests {
     }
 
     @Test func startSharingServiceStartFailureShowsInlineErrorAndSkipsSharing() async {
-        let display = LocalMockSCDisplay.make(displayID: 7002, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 7002, width: 1920, height: 1080)
         var beginSharingCallCount = 0
         let sut = ShareViewModel(
             dependencies: makeShareDependencies(
@@ -181,7 +182,7 @@ struct ShareViewModelTests {
     }
 
     @Test func startSharingFailureStopsShareAndPresentsLocalizedAlert() async {
-        let display = LocalMockSCDisplay.make(displayID: 7003, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 7003, width: 1920, height: 1080)
         var stopSharingDisplayIDs: [CGDirectDisplayID] = []
         let sut = ShareViewModel(
             dependencies: makeShareDependencies(
@@ -204,7 +205,7 @@ struct ShareViewModelTests {
     }
 
     @Test func startSharingInvalidationEndsSilentlyWithoutStoppingShare() async {
-        let display = LocalMockSCDisplay.make(displayID: 7004, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 7004, width: 1920, height: 1080)
         var stopSharingCallCount = 0
         let sut = ShareViewModel(
             dependencies: makeShareDependencies(
@@ -224,7 +225,7 @@ struct ShareViewModelTests {
     }
 
     @Test func startSharingWithRunningServiceDelegatesToSharingLayer() async {
-        let display = LocalMockSCDisplay.make(displayID: 7005, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 7005, width: 1920, height: 1080)
         var beginSharingCallCount = 0
         let sut = ShareViewModel(
             dependencies: makeShareDependencies(
@@ -310,28 +311,6 @@ private func makeShareDependencies(
             virtualSerialForManagedDisplay: virtualSerialForManagedDisplay
         )
     )
-}
-
-private final class LocalMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum LocalMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = LocalMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
 }
 
 @MainActor

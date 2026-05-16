@@ -8,28 +8,6 @@ import CoreGraphics
 import ScreenCaptureKit
 import Testing
 
-private final class SharingControllerMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum SharingControllerMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = SharingControllerMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 private actor SharingControllerAsyncGate {
     private var waitCount = 0
     private var continuations: [CheckedContinuation<Void, Never>] = []
@@ -134,7 +112,7 @@ struct SharingControllerTests {
     @Test func beginSharingPublishesStartingDisplayIDWhileRequestIsInFlight() async throws {
         let service = MockSharingService()
         let gate = SharingControllerAsyncGate()
-        let display = SharingControllerMockSCDisplay.make(displayID: 31, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 31, width: 1920, height: 1080)
         service.startSharingHandler = { display in
             await gate.wait()
             return .started(())
@@ -166,7 +144,7 @@ struct SharingControllerTests {
     @Test func duplicateBeginSharingCallsShareSameUnderlyingStartOutcome() async throws {
         let gate = SharingControllerAsyncGate()
         let displayID: CGDirectDisplayID = 35
-        let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             shareFrameConsumer: TestSignalSessionHub(),
@@ -222,7 +200,7 @@ struct SharingControllerTests {
     @Test func cancellingOneWaitingBeginSharingCallKeepsObservedStartingStateUntilLastWaiterFinishes() async throws {
         let service = MockSharingService()
         let gate = SharingControllerAsyncGate()
-        let display = SharingControllerMockSCDisplay.make(displayID: 36, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 36, width: 1920, height: 1080)
         service.startSharingHandler = { _ in
             await gate.wait()
             try Task.checkCancellation()
@@ -271,7 +249,7 @@ struct SharingControllerTests {
         struct ControlledError: Error {}
 
         let service = MockSharingService()
-        let display = SharingControllerMockSCDisplay.make(displayID: 32, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 32, width: 1920, height: 1080)
         service.startSharingHandler = { _ in
             throw ControlledError()
         }
@@ -291,7 +269,7 @@ struct SharingControllerTests {
 
     @Test func beginSharingClearsStartingDisplayIDAfterInvalidation() async throws {
         let service = MockSharingService()
-        let display = SharingControllerMockSCDisplay.make(displayID: 33, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 33, width: 1920, height: 1080)
         service.startSharingHandler = { _ in .invalidated }
         let sut = SharingController(
             sharingService: service,
@@ -325,7 +303,7 @@ struct SharingControllerTests {
     @Test func stopWebServiceClearsStartingDisplayIDImmediatelyAndInvalidatesInFlightStart() async throws {
         let gate = SharingControllerAsyncGate()
         let displayID: CGDirectDisplayID = 37
-        let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             shareFrameConsumer: TestSignalSessionHub(),
