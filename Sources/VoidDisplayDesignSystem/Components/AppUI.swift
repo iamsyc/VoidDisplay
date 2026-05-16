@@ -175,32 +175,6 @@ package struct AppMaterialBar: ViewModifier {
     }
 }
 
-/// Sidebar selection pill: translucent highlight + fine border + soft shadow.
-package struct AppSidebarSelectionPill: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    package let isSelected: Bool
-
-    package func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, AppUI.Spacing.small - 1)
-            .padding(.vertical, AppUI.Spacing.xSmall + 2)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                        .fill(AppUI.Surface.sidebarSelectionFill(for: colorScheme))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                                .stroke(
-                                    AppUI.Surface.sidebarSelectionStroke(for: colorScheme),
-                                    lineWidth: AppUI.Stroke.subtle
-                                )
-                        }
-                        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
-                }
-            }
-    }
-}
-
 /// Action button using native SwiftUI styles.
 package struct AppActionButton: ViewModifier {
     package let variant: AppActionVariant
@@ -254,24 +228,6 @@ package extension View {
         } else {
             self
         }
-    }
-
-    func appListRowStyle() -> some View {
-        self
-            .listRowInsets(
-                EdgeInsets(
-                    top: AppUI.List.listVerticalInset,
-                    leading: AppUI.List.contentInsetLeading,
-                    bottom: AppUI.List.listVerticalInset,
-                    trailing: AppUI.List.contentInsetTrailing
-                )
-            )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-    }
-
-    func appSidebarSelectionPill(isSelected: Bool) -> some View {
-        modifier(AppSidebarSelectionPill(isSelected: isSelected))
     }
 
     func appActionButtonStyle(variant: AppActionVariant = .default) -> some View {

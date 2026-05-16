@@ -212,10 +212,6 @@ package final class VirtualDisplayConfigManager {
 
     // MARK: - Persistence
 
-    package func persistConfigs(reason: VirtualDisplayConfigRepository.PersistReason) throws {
-        try configRepository.save(configs, reason: reason)
-    }
-
     private func mutateConfigs(
         reason: VirtualDisplayConfigRepository.PersistReason,
         _ mutation: (inout [VirtualDisplayConfig]) throws -> Void
