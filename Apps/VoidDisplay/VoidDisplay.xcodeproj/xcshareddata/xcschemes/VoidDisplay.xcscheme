@@ -48,7 +48,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Terminate Existing VoidDisplay"
-               scriptText = "/usr/bin/pkill -9 -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true&#10;/usr/bin/pkill -9 -f &apos;debugserver.*[V]oidDisplay\\.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true">
+               scriptText = "/usr/bin/pgrep -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; | while read pid; do ppid=$(/bin/ps -o ppid= -p &quot;$pid&quot; | /usr/bin/tr -d &apos;[:space:]&apos;); parent=$(/bin/ps -o comm= -p &quot;$ppid&quot;); case &quot;$parent&quot; in *debugserver) /bin/kill -9 &quot;$ppid&quot; &gt;/dev/null 2&gt;&amp;1 || true ;; esac; /bin/kill -9 &quot;$pid&quot; &gt;/dev/null 2&gt;&amp;1 || true; done">
             </ActionContent>
          </ExecutionAction>
       </PreActions>
@@ -81,7 +81,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Terminate Existing VoidDisplay"
-               scriptText = "/usr/bin/pkill -9 -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true&#10;/usr/bin/pkill -9 -f &apos;debugserver.*[V]oidDisplay\\.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true">
+               scriptText = "/usr/bin/pgrep -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; | while read pid; do ppid=$(/bin/ps -o ppid= -p &quot;$pid&quot; | /usr/bin/tr -d &apos;[:space:]&apos;); parent=$(/bin/ps -o comm= -p &quot;$ppid&quot;); case &quot;$parent&quot; in *debugserver) /bin/kill -9 &quot;$ppid&quot; &gt;/dev/null 2&gt;&amp;1 || true ;; esac; /bin/kill -9 &quot;$pid&quot; &gt;/dev/null 2&gt;&amp;1 || true; done">
             </ActionContent>
          </ExecutionAction>
       </PreActions>

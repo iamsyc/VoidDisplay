@@ -13,6 +13,7 @@ import VoidDisplayFoundation
 //
 
 import AppKit
+import Darwin
 import Foundation
 import SwiftUI
 
@@ -68,6 +69,7 @@ public struct VoidDisplayApplication: App {
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     public init() {
+        AppSingleInstanceGuard.acquireSingleInstanceLockOrExit()
         let env = AppBootstrap.makeEnvironment()
         _capture = State(initialValue: env.capture)
         _sharing = State(initialValue: env.sharing)
@@ -155,8 +157,191 @@ private enum AppTerminationCleanup {
 
 @MainActor
 private final class VoidDisplayApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_: Notification) {
+        AppSingleInstanceGuard.terminateDuplicateRunningApplications()
+    }
+
     func applicationWillTerminate(_: Notification) {
         AppTerminationCleanup.run()
+    }
+}
+
+@MainActor
+package enum AppSingleInstanceGuard {
+    private static var lockFileDescriptor: Int32 = -1
+
+    package struct RunningInstance: Equatable {
+        package let processIdentifier: pid_t
+        package let bundleIdentifier: String?
+
+        package init(processIdentifier: pid_t, bundleIdentifier: String?) {
+            self.processIdentifier = processIdentifier
+            self.bundleIdentifier = bundleIdentifier
+        }
+    }
+
+    package static func duplicateProcessIdentifiers(
+        currentProcessIdentifier: pid_t,
+        bundleIdentifier: String?,
+        runningInstances: [RunningInstance]
+    ) -> [pid_t] {
+        guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
+            return []
+        }
+
+        return runningInstances
+            .filter {
+                $0.processIdentifier != currentProcessIdentifier
+                    && $0.bundleIdentifier == bundleIdentifier
+            }
+            .map(\.processIdentifier)
+            .sorted()
+    }
+
+    static func acquireSingleInstanceLockOrExit() {
+        guard acquireSingleInstanceLock(bundleIdentifier: Bundle.main.bundleIdentifier) else {
+            activateExistingApplication(
+                currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
+                bundleIdentifier: Bundle.main.bundleIdentifier
+            )
+            exit(EXIT_SUCCESS)
+        }
+    }
+
+    @discardableResult
+    static func terminateDuplicateRunningApplications() -> Int {
+        let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
+        let bundleIdentifier = Bundle.main.bundleIdentifier
+        let duplicateProcessIdentifiers = Set(
+            duplicateProcessIdentifiers(
+                currentProcessIdentifier: currentProcessIdentifier,
+                bundleIdentifier: bundleIdentifier,
+                runningInstances: NSWorkspace.shared.runningApplications.map {
+                    RunningInstance(
+                        processIdentifier: $0.processIdentifier,
+                        bundleIdentifier: $0.bundleIdentifier
+                    )
+                }
+            )
+        )
+        guard !duplicateProcessIdentifiers.isEmpty else {
+            return 0
+        }
+
+        terminateApplications(processIdentifiers: duplicateProcessIdentifiers, bundleIdentifier: bundleIdentifier)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            forceKillRemainingApplications(
+                processIdentifiers: duplicateProcessIdentifiers,
+                bundleIdentifier: bundleIdentifier
+            )
+        }
+        return duplicateProcessIdentifiers.count
+    }
+
+    package static func lockFileName(bundleIdentifier: String?) -> String {
+        let rawName = bundleIdentifier?.isEmpty == false ? bundleIdentifier! : "voiddisplay"
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+        let sanitizedName = String(rawName.unicodeScalars.map { scalar in
+            allowedCharacters.contains(scalar) ? Character(scalar) : "_"
+        })
+        return "\(sanitizedName).single-instance.lock"
+    }
+
+    private static func acquireSingleInstanceLock(bundleIdentifier: String?) -> Bool {
+        if lockFileDescriptor >= 0 {
+            return true
+        }
+
+        guard let lockFileURL = lockFileURL(bundleIdentifier: bundleIdentifier) else {
+            return false
+        }
+        let descriptor = open(lockFileURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else {
+            return false
+        }
+        _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
+
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            close(descriptor)
+            return false
+        }
+
+        lockFileDescriptor = descriptor
+        writeCurrentProcessIdentifier(to: descriptor)
+        return true
+    }
+
+    private static func lockFileURL(bundleIdentifier: String?) -> URL? {
+        guard let applicationSupportURL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            return nil
+        }
+
+        let lockDirectoryURL = applicationSupportURL.appendingPathComponent("VoidDisplay", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: lockDirectoryURL,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            return nil
+        }
+
+        return lockDirectoryURL.appendingPathComponent(
+            lockFileName(bundleIdentifier: bundleIdentifier),
+            isDirectory: false
+        )
+    }
+
+    private static func writeCurrentProcessIdentifier(to descriptor: Int32) {
+        _ = ftruncate(descriptor, 0)
+        _ = lseek(descriptor, 0, SEEK_SET)
+        let pidText = "\(ProcessInfo.processInfo.processIdentifier)\n"
+        pidText.withCString { pointer in
+            _ = write(descriptor, pointer, strlen(pointer))
+        }
+    }
+
+    private static func activateExistingApplication(currentProcessIdentifier: pid_t, bundleIdentifier: String?) {
+        guard let bundleIdentifier else {
+            return
+        }
+
+        NSWorkspace.shared.runningApplications
+            .first {
+                $0.processIdentifier != currentProcessIdentifier
+                    && $0.bundleIdentifier == bundleIdentifier
+            }?
+            .activate(options: [.activateAllWindows])
+    }
+
+    private static func terminateApplications(processIdentifiers: Set<pid_t>, bundleIdentifier: String?) {
+        NSWorkspace.shared.runningApplications
+            .filter {
+                processIdentifiers.contains($0.processIdentifier)
+                    && $0.bundleIdentifier == bundleIdentifier
+            }
+            .forEach {
+                if !$0.terminate() {
+                    $0.forceTerminate()
+                }
+            }
+    }
+
+    private static func forceKillRemainingApplications(processIdentifiers: Set<pid_t>, bundleIdentifier: String?) {
+        let remainingApplications = NSWorkspace.shared.runningApplications.filter {
+            processIdentifiers.contains($0.processIdentifier)
+                && $0.bundleIdentifier == bundleIdentifier
+        }
+        remainingApplications.forEach {
+            if !$0.isTerminated {
+                $0.forceTerminate()
+                kill($0.processIdentifier, SIGKILL)
+            }
+        }
     }
 }
 

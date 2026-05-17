@@ -13,6 +13,49 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
+    @Test func singleInstanceGuardSelectsOnlyOtherProcessesWithSameBundleIdentifier() {
+        let duplicates = AppSingleInstanceGuard.duplicateProcessIdentifiers(
+            currentProcessIdentifier: 10,
+            bundleIdentifier: "com.developerchen.voiddisplay",
+            runningInstances: [
+                .init(processIdentifier: 10, bundleIdentifier: "com.developerchen.voiddisplay"),
+                .init(processIdentifier: 11, bundleIdentifier: "com.developerchen.voiddisplay"),
+                .init(processIdentifier: 12, bundleIdentifier: "com.example.other"),
+                .init(processIdentifier: 13, bundleIdentifier: nil),
+                .init(processIdentifier: 14, bundleIdentifier: "com.developerchen.voiddisplay")
+            ]
+        )
+
+        #expect(duplicates == [11, 14])
+    }
+
+    @Test func singleInstanceGuardDoesNothingWithoutBundleIdentifier() {
+        let duplicates = AppSingleInstanceGuard.duplicateProcessIdentifiers(
+            currentProcessIdentifier: 10,
+            bundleIdentifier: nil,
+            runningInstances: [
+                .init(processIdentifier: 11, bundleIdentifier: "com.developerchen.voiddisplay")
+            ]
+        )
+
+        #expect(duplicates.isEmpty)
+    }
+
+    @Test func singleInstanceGuardBuildsStableSanitizedLockFileName() {
+        #expect(
+            AppSingleInstanceGuard.lockFileName(bundleIdentifier: "com.developerchen.voiddisplay")
+                == "com.developerchen.voiddisplay.single-instance.lock"
+        )
+        #expect(
+            AppSingleInstanceGuard.lockFileName(bundleIdentifier: "com developerchen/voiddisplay")
+                == "com_developerchen_voiddisplay.single-instance.lock"
+        )
+        #expect(
+            AppSingleInstanceGuard.lockFileName(bundleIdentifier: nil)
+                == "voiddisplay.single-instance.lock"
+        )
+    }
+
     @Test func initRegistersRuntimeSnapshotProvider() async throws {
         let env = AppBootstrap.makeEnvironment(
             preview: true,
