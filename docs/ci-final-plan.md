@@ -76,7 +76,7 @@ Release workflow 在发布前用内联 GitHub API 逻辑验证目标 commit 的 
 
 `Brewfile` 只作为本地 fallback。CI 以 `mise.toml` 为准。
 
-Xcode 版本由 `.github/actions/xcode-select` 和 `scripts/lib/xcode.sh` 双重校验。默认期望 Xcode `26.4` 和 Swift `6.x`，临时切换必须显式设置 `EXPECTED_XCODE_VERSION_PREFIX`。
+Xcode 版本由 `.github/actions/xcode-select` 和 `scripts/lib/xcode.sh` 双重校验。默认期望安装路径优先使用 Xcode `26.5.0`，`xcodebuild` 版本前缀为 `26.5`，Swift 为 `6.x`，临时切换必须显式设置 `EXPECTED_XCODE_VERSION_PREFIX`。
 
 所有外部 GitHub Actions 必须固定到 40 位 commit SHA，并在同一行保留来源版本注释。
 

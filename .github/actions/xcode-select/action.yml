@@ -5,7 +5,7 @@ inputs:
   preferred_path:
     description: Preferred DEVELOPER_DIR path.
     required: false
-    default: /Applications/Xcode_26.4.app/Contents/Developer
+    default: /Applications/Xcode-26.5.0.app/Contents/Developer
   fallback_path:
     description: Fallback DEVELOPER_DIR path when preferred path is unavailable.
     required: false
@@ -13,7 +13,7 @@ inputs:
   expected_xcode_version_prefix:
     description: Required Xcode version prefix.
     required: false
-    default: "26.4"
+    default: "26.5"
   expected_swift_version_prefix:
     description: Required Swift version prefix.
     required: false
@@ -37,7 +37,7 @@ runs:
         expected_swift="${{ inputs.expected_swift_version_prefix }}"
 
         selected=""
-        for candidate in "$preferred" "/Applications/Xcode-26.4.0.app/Contents/Developer" "/Applications/Xcode_26.4.app/Contents/Developer" "$fallback"; do
+        for candidate in "$preferred" "/Applications/Xcode-26.5.0.app/Contents/Developer" "/Applications/Xcode_26.5.app/Contents/Developer" "/Applications/Xcode_26.5.0.app/Contents/Developer" "$fallback"; do
           if [ ! -d "$candidate" ]; then
             continue
           fi
