@@ -196,6 +196,9 @@ package struct HomeView: View {
         case .overview:
             DisplaysView(
                 displayRuntime: displayRuntime,
+                virtualDisplayNamesByConfigID: Dictionary(
+                    uniqueKeysWithValues: virtualDisplay.displayConfigs.map { ($0.id, $0.displayName) }
+                ),
                 surfaceActions: displaySurfaceActions
             )
         case .virtualDisplay:

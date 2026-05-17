@@ -29,19 +29,23 @@ package struct DisplaySurfaceActions {
 package struct DisplaysView: View {
     @Environment(\.openURL) private var openURL
     private let displayRuntime: DisplayRuntime
+    private let virtualDisplayNamesByConfigID: [UUID: String]
     private let surfaceActions: DisplaySurfaceActions
 
     package init(
         displayRuntime: DisplayRuntime,
+        virtualDisplayNamesByConfigID: [UUID: String] = [:],
         surfaceActions: DisplaySurfaceActions = DisplaySurfaceActions()
     ) {
         self.displayRuntime = displayRuntime
+        self.virtualDisplayNamesByConfigID = virtualDisplayNamesByConfigID
         self.surfaceActions = surfaceActions
     }
 
     package var body: some View {
         let presentation = DisplaySurfacePresentationMapper.makePresentation(
-            snapshot: displayRuntime.makeSnapshot()
+            snapshot: displayRuntime.makeSnapshot(),
+            virtualDisplayNamesByConfigID: virtualDisplayNamesByConfigID
         )
 
         ScrollView {

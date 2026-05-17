@@ -126,7 +126,10 @@ package enum DisplaySurfaceStatusTone: Equatable {
 }
 
 package enum DisplaySurfacePresentationMapper {
-    package static func makePresentation(snapshot: DisplayRuntimeSnapshot) -> DisplaySurfaceListPresentation {
+    package static func makePresentation(
+        snapshot: DisplayRuntimeSnapshot,
+        virtualDisplayNamesByConfigID: [UUID: String] = [:]
+    ) -> DisplaySurfaceListPresentation {
         let virtualDisplayCount = snapshot.surfaces.count { $0.kind == .managedVirtualDisplay }
         let physicalDisplayCount = snapshot.surfaces.count { $0.kind == .physicalDisplay }
         var virtualDisplayIndex = 0
@@ -144,7 +147,8 @@ package enum DisplaySurfacePresentationMapper {
             return makeSurfacePresentation(
                 surface: surface,
                 snapshot: snapshot,
-                ordinal: ordinal
+                ordinal: ordinal,
+                virtualDisplayNamesByConfigID: virtualDisplayNamesByConfigID
             )
         }
         return DisplaySurfaceListPresentation(surfaces: surfaces)
@@ -153,7 +157,8 @@ package enum DisplaySurfacePresentationMapper {
     private static func makeSurfacePresentation(
         surface: DisplaySurface,
         snapshot: DisplayRuntimeSnapshot,
-        ordinal: Int?
+        ordinal: Int?,
+        virtualDisplayNamesByConfigID: [UUID: String]
     ) -> DisplaySurfacePresentation {
         let leases = snapshot.consumerLeases.filter { $0.surfaceIdentity == surface.identity }
         let aggregate = snapshot.aggregatedDemands.first { $0.surfaceIdentity == surface.identity }
@@ -181,7 +186,11 @@ package enum DisplaySurfacePresentationMapper {
             runtimeConsumerKinds: runtimeConsumerKinds
         )
         let viewerCount = max(surface.sharing?.viewerCount ?? 0, aggregate?.activeViewerCount ?? 0)
-        let title = title(for: surface, ordinal: ordinal)
+        let title = title(
+            for: surface,
+            ordinal: ordinal,
+            virtualDisplayNamesByConfigID: virtualDisplayNamesByConfigID
+        )
         let subtitle = subtitle(for: surface)
         let virtualDisplayStatus = virtualDisplayStatus(for: surface.managedVirtualDisplay)
         let previewStatus = previewStatus(
@@ -312,19 +321,28 @@ package enum DisplaySurfacePresentationMapper {
         leases.contains { $0.state.contributesDemand } || runtimeConsumerKinds.contains(kind)
     }
 
-    private static func title(for surface: DisplaySurface, ordinal: Int?) -> String {
+    private static func title(
+        for surface: DisplaySurface,
+        ordinal: Int?,
+        virtualDisplayNamesByConfigID: [UUID: String]
+    ) -> String {
         switch surface.kind {
         case .managedVirtualDisplay:
+            if let configID = surface.managedVirtualDisplay?.configID,
+               let displayName = virtualDisplayNamesByConfigID[configID]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !displayName.isEmpty {
+                return displayName
+            }
             if let ordinal {
-                String(format: String(localized: "Virtual Display %lld"), Int64(ordinal))
+                return String(format: String(localized: "Virtual Display %lld"), Int64(ordinal))
             } else {
-                String(localized: "Virtual Display")
+                return String(localized: "Virtual Display")
             }
         case .physicalDisplay:
             if let ordinal {
-                String(format: String(localized: "Physical Display %lld"), Int64(ordinal))
+                return String(format: String(localized: "Physical Display %lld"), Int64(ordinal))
             } else {
-                String(localized: "Physical Display")
+                return String(localized: "Physical Display")
             }
         }
     }

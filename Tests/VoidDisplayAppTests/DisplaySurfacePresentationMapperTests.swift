@@ -108,10 +108,13 @@ struct DisplaySurfacePresentationMapperTests {
             ]
         )
 
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot)
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: snapshot,
+            virtualDisplayNamesByConfigID: [configID: "虚拟显示器 13 寸"]
+        )
         let surface = try #require(presentation.surfaces.first)
 
-        #expect(surface.title == "Virtual Display")
+        #expect(surface.title == "虚拟显示器 13 寸")
         #expect(surface.isPreviewing)
         #expect(surface.isSharing)
         #expect(compactIDs(in: surface) == [
@@ -147,6 +150,7 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(identityText.hasPrefix("ID hash "))
         #expect(!identityText.contains(configID.uuidString))
         #expect(!identityText.contains(String(displayID)))
+        #expect(!surface.accessibilitySummary.contains(configID.uuidString))
         #expect(technicalTitles(in: surface) == [
             "Display Identifier",
             "Capture State",
