@@ -48,7 +48,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Terminate Existing VoidDisplay"
-               scriptText = "/usr/bin/pkill -9 -f &apos;/VoidDisplay.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true&#10;/usr/bin/pkill -9 -f &apos;debugserver.*VoidDisplay\\.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true">
+               scriptText = "/usr/bin/pkill -9 -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true&#10;/usr/bin/pkill -9 -f &apos;debugserver.*[V]oidDisplay\\.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true">
             </ActionContent>
          </ExecutionAction>
       </PreActions>
@@ -76,6 +76,15 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
+      <PreActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Terminate Existing VoidDisplay"
+               scriptText = "/usr/bin/pkill -9 -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true&#10;/usr/bin/pkill -9 -f &apos;debugserver.*[V]oidDisplay\\.app/Contents/MacOS/VoidDisplay&apos; &gt;/dev/null 2&gt;&amp;1 || true">
+            </ActionContent>
+         </ExecutionAction>
+      </PreActions>
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
