@@ -283,7 +283,7 @@ package enum DisplaySurfacePresentationMapper {
         if let issueStatus = issueStatus(for: lastFailureCode) {
             compactStatusItems.append(DisplaySurfaceStatusItemPresentation(
                 id: "issue",
-                title: String(localized: "Issue"),
+                title: String(localized: "Last Failure"),
                 value: issueStatus.value,
                 accessibilityIdentifier: "displays_issue_status",
                 tone: issueStatus.tone
@@ -436,7 +436,7 @@ package enum DisplaySurfacePresentationMapper {
         case false:
             return (String(localized: "Disabled"), .neutral)
         case nil:
-            return (String(localized: "Needs attention"), .danger)
+            return (String(localized: "Configuration Missing"), .danger)
         }
 
         let runtimeStatus = virtualDisplayRuntimeStatus(
@@ -456,10 +456,10 @@ package enum DisplaySurfacePresentationMapper {
         snapshot: DisplayRuntimeSnapshot
     ) -> (value: String, tone: DisplaySurfaceStatusTone) {
         if state.hasRebuildFailure || state.hasRestoreFailure {
-            return (String(localized: "Could Not Start"), .danger)
+            return (String(localized: "Startup Failed"), .danger)
         }
         if recentStartupRestoreFailureReason(configID: state.configID, snapshot: snapshot) != nil {
-            return (String(localized: "Could Not Start"), .danger)
+            return (String(localized: "Startup Failed"), .danger)
         }
         if surface.currentDisplayID != nil && (state.isRunning || state.isLiveRuntime) {
             return (String(localized: "Running"), .success)
@@ -562,10 +562,13 @@ package enum DisplaySurfacePresentationMapper {
     }
 
     private static func issueStatus(for lastFailureCode: String?) -> (value: String, tone: DisplaySurfaceStatusTone)? {
-        guard lastFailureCode != nil else {
+        guard let lastFailureCode else {
             return nil
         }
-        return (String(localized: "Needs attention"), .danger)
+        if lastFailureCode.hasPrefix("startup_restore_") || lastFailureCode.hasPrefix("virtual_display_") {
+            return (String(localized: "Startup Failed"), .danger)
+        }
+        return (String(localized: "Failed"), .danger)
     }
 
     private static func rowActions(

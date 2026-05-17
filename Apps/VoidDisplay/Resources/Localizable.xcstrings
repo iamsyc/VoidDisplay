@@ -401,17 +401,6 @@
         }
       }
     },
-    "Attention Needed" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要处理"
-          }
-        }
-      }
-    },
     "Automatic" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -599,6 +588,23 @@
         }
       }
     },
+    "Configuration Missing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration Missing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置缺失"
+          }
+        }
+      }
+    },
     "Copy display address" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -683,23 +689,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "创建或启用虚拟显示器，即可开始使用 HiDPI 远程桌面和局域网 Web 视图。"
-          }
-        }
-      }
-    },
-    "Could Not Start" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Could Not Start"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动失败"
           }
         }
       }
@@ -915,6 +904,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "诊断"
+          }
+        }
+      }
+    },
+    "Diagnostics Warning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics Warning"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断警告"
           }
         }
       }
@@ -2013,17 +2019,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名称"
-          }
-        }
-      }
-    },
-    "Needs attention" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要处理"
           }
         }
       }
@@ -3137,6 +3132,23 @@
         }
       }
     },
+    "Review the recent events below, then export another support package if needed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review the recent events below, then export another support package if needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看下面的最近事件，必要时再导出一个支持包。"
+          }
+        }
+      }
+    },
     "Route Ready" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3216,6 +3228,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行态快照"
+          }
+        }
+      }
+    },
+    "Runtime Snapshot Unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runtime Snapshot Unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行态快照不可用"
           }
         }
       }

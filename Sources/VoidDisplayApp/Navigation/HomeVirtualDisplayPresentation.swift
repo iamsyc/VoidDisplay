@@ -194,11 +194,11 @@ package enum HomeVirtualDisplayPresentationMapper {
         virtualDisplayStatus: DisplaySurfaceStatusItemPresentation?,
         hasIssue: Bool
     ) -> String {
-        if hasIssue {
-            return String(localized: "Needs attention")
-        }
         if let virtualDisplayStatus {
             return virtualDisplayStatus.value
+        }
+        if hasIssue, config.desiredEnabled {
+            return "\(String(localized: "Enabled")) · \(String(localized: "Startup Failed"))"
         }
         return config.desiredEnabled ? String(localized: "Enabled") : String(localized: "Disabled")
     }
@@ -209,11 +209,11 @@ package enum HomeVirtualDisplayPresentationMapper {
         virtualDisplayStatus: DisplaySurfaceStatusItemPresentation?,
         hasIssue: Bool
     ) -> DisplaySurfaceStatusTone {
-        if hasIssue {
-            return .danger
-        }
         if let virtualDisplayStatus {
             return virtualDisplayStatus.tone
+        }
+        if hasIssue {
+            return .danger
         }
         return config.desiredEnabled ? .warning : .neutral
     }

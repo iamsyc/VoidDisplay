@@ -36,8 +36,11 @@ struct DiagnosticsUserFacingCopyTests {
             "desired enabled",
             "Restore Failed",
             "restore failed",
+            "Needs attention",
+            "Attention Needed",
             "期望启用",
-            "恢复失败"
+            "恢复失败",
+            "需要处理"
         ]
         let displaysHomeForbiddenFragments = globalForbiddenFragments + [
             "Consumer",

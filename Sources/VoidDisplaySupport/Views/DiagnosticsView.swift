@@ -457,11 +457,13 @@ package struct DiagnosticsView: View {
         runtimeSummary: RuntimeDiagnosticsSummary
     ) -> String {
         guard runtimeSummary.isAvailable else {
-            return String(localized: "Attention Needed")
+            return String(localized: "Runtime Snapshot Unavailable")
         }
-        if snapshot.health.recentIssueCount > 0 ||
-            (snapshot.health.highestSeverity ?? .debug) >= .warning {
-            return String(localized: "Attention Needed")
+        if snapshot.health.recentIssueCount > 0 {
+            return String(localized: "Recent Issues")
+        }
+        if (snapshot.health.highestSeverity ?? .debug) >= .warning {
+            return String(localized: "Diagnostics Warning")
         }
         return String(localized: "Looks Good")
     }
@@ -523,9 +525,11 @@ package struct DiagnosticsView: View {
             return String(localized: "Refresh diagnostics, then export a support package if the runtime snapshot stays unavailable.")
         }
 
-        if snapshot.health.recentIssueCount > 0 ||
-            (snapshot.health.highestSeverity ?? .debug) >= .warning {
+        if snapshot.health.recentIssueCount > 0 {
             return String(localized: "Review the recent issues below, then export another support package if needed.")
+        }
+        if (snapshot.health.highestSeverity ?? .debug) >= .warning {
+            return String(localized: "Review the recent events below, then export another support package if needed.")
         }
         return String(localized: "If the issue happened recently, export a support package now.")
     }

@@ -119,7 +119,7 @@ struct HomeVirtualDisplayPresentationTests {
 
         let card = try #require(presentation.cards.first)
         #expect(card.hasIssue)
-        #expect(card.statusLabel == "Needs attention")
+        #expect(card.statusLabel == "Enabled · Startup Failed")
         #expect(presentation.summary.recentFailureCount == 1)
         #expect(presentation.summary.lastFailureCode == "virtual_display_rebuild_failed")
     }

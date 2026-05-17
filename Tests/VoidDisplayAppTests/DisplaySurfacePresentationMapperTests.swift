@@ -303,8 +303,8 @@ struct DisplaySurfacePresentationMapperTests {
         )
 
         let item = try #require(presentation.surfaces.first)
-        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Could Not Start")
-        #expect(compactValue("displays_issue_status", in: item) == "Needs attention")
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Startup Failed")
+        #expect(compactValue("displays_issue_status", in: item) == "Startup Failed")
     }
 
     @Test func managedVirtualDisplayStatusIgnoresOlderStartupFailureAfterNewerStartupSuccess() throws {
@@ -386,6 +386,17 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(compactValue("displays_virtual_display_status", in: item) == "Disabled")
     }
 
+    @Test func managedVirtualDisplayStatusShowsMissingConfigurationWhenDesiredStateIsUnavailable() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000120"))
+        let surface = managedVirtualSurface(configID: configID, desiredEnabled: nil)
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(surface: surface)
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Configuration Missing")
+    }
+
     @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() throws {
         let displayID: DisplayRuntimeDisplayID = 77
         let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
@@ -429,7 +440,7 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.title == "Physical Display")
         #expect(compactValue("displays_virtual_display_status", in: surface).isEmpty)
         #expect(compactValue("displays_preview_status", in: surface) == "Failed")
-        #expect(compactValue("displays_issue_status", in: surface) == "Needs attention")
+        #expect(compactValue("displays_issue_status", in: surface) == "Failed")
         let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
         #expect(openPreviewAction.isEnabled)
         #expect(rowAction(.stopPreview, in: surface) == nil)
