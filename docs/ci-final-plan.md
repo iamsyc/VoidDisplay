@@ -240,6 +240,7 @@ Branch protection 只要求 `ci-gate`。由于管理员可以绕过分支保护�
 ```bash
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
+scripts/dev/validate.sh
 scripts/ci/static.sh
 scripts/ci/unit.sh
 scripts/ci/xcode.sh --action build --configuration Debug
@@ -248,6 +249,8 @@ scripts/ci/release_smoke.sh --arch arm64 --label arm64
 scripts/release/build.sh --tag vX.Y.Z --arch arm64 --label arm64
 scripts/release/verify.sh --assets-dir .ai-tmp/release-arm64/release-assets --tag vX.Y.Z --label arm64 --arch arm64
 ```
+
+`scripts/dev/validate.sh` 是日常开发本地验证主入口，串联 static、SwiftPM/Go unit、Xcode Debug build 和默认 UI smoke。该入口默认按宿主机架构选择 Xcode destination，也允许用 `--destination` 覆盖。Xcode `VoidDisplay` scheme 仅覆盖 app build/run 和 UI test；Cmd-U 不代表 SwiftPM 单测通过。
 
 本地命令和 CI 命令必须保持等价。新增 CI 能力时，优先新增或扩展脚本，再改 workflow 调度。
 

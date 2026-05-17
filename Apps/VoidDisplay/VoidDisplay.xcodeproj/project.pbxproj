@@ -21,13 +21,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		191C03A82FA7A470003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
-		191C052B2FA9B0B6003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
-		191C06AC2FA9B215003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
-		191C082F2FAA014B003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
-		191CF8352F9FDDA7003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
-		191CFBFB2FA0AC5E003F7F65 /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
-		195211152FB0DB2E00D3888F /* VoidDisplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = VoidDisplay.xcodeproj; sourceTree = "<group>"; };
 		BA0465D02E90E53C00012958 /* VoidDisplay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoidDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BA0465E72E90E53D00012958 /* VoidDisplayUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoidDisplayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -74,41 +67,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		191C03AA2FA7A470003F7F65 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
-		191C052D2FA9B0B6003F7F65 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
-		191C06AE2FA9B215003F7F65 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
-		191C08312FAA014B003F7F65 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
-		191CF8372F9FDDA7003F7F65 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
-		191CFBFD2FA0AC5E003F7F65 /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
-		195211172FB0DB2E00D3888F /* Products */ = {
-			isa = PBXGroup;
-			name = Products;
-			sourceTree = "<group>";
-		};
 		BA0465C72E90E53C00012958 = {
 			isa = PBXGroup;
 			children = (
@@ -210,36 +168,6 @@
 			preferredProjectObjectVersion = 90;
 			productRefGroup = BA0465D12E90E53C00012958 /* Products */;
 			projectDirPath = "";
-			projectReferences = (
-				{
-					ProductGroup = 191C03AA2FA7A470003F7F65 /* Products */;
-					ProjectRef = 191C03A82FA7A470003F7F65 /* VoidDisplay.xcodeproj */;
-				},
-				{
-					ProductGroup = 191C08312FAA014B003F7F65 /* Products */;
-					ProjectRef = 191C082F2FAA014B003F7F65 /* VoidDisplay.xcodeproj */;
-				},
-				{
-					ProductGroup = 191CF8372F9FDDA7003F7F65 /* Products */;
-					ProjectRef = 191CF8352F9FDDA7003F7F65 /* VoidDisplay.xcodeproj */;
-				},
-				{
-					ProductGroup = 195211172FB0DB2E00D3888F /* Products */;
-					ProjectRef = 195211152FB0DB2E00D3888F /* VoidDisplay.xcodeproj */;
-				},
-				{
-					ProductGroup = 191C052D2FA9B0B6003F7F65 /* Products */;
-					ProjectRef = 191C052B2FA9B0B6003F7F65 /* VoidDisplay.xcodeproj */;
-				},
-				{
-					ProductGroup = 191C06AE2FA9B215003F7F65 /* Products */;
-					ProjectRef = 191C06AC2FA9B215003F7F65 /* VoidDisplay.xcodeproj */;
-				},
-				{
-					ProductGroup = 191CFBFD2FA0AC5E003F7F65 /* Products */;
-					ProjectRef = 191CFBFB2FA0AC5E003F7F65 /* VoidDisplay.xcodeproj */;
-				},
-			);
 			projectRoot = "";
 			targets = (
 				BA0465CF2E90E53C00012958 /* VoidDisplay */,

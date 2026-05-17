@@ -46,6 +46,7 @@ scripts/dev/doctor.sh
 Common gates:
 
 ```sh
+scripts/dev/validate.sh
 scripts/ci/static.sh
 scripts/ci/unit.sh
 scripts/ci/xcode.sh --action build --configuration Debug
@@ -57,6 +58,10 @@ scripts/ci/release_smoke.sh --arch arm64 --label arm64
 scripts/ci/full_regression.sh --out-dir .ai-tmp/full-regression
 scripts/ci/coverage.sh --out-dir .ai-tmp/coverage
 ```
+
+`scripts/dev/validate.sh` is the local validation entrypoint for normal development. It runs static checks, SwiftPM unit tests, Go unit tests, Xcode Debug build, and the default UI smoke test through the same scripts CI uses. It defaults the Xcode destination from the host architecture; pass `--destination` to override it, or `--skip-ui-smoke` only when local macOS UI automation authorization is unavailable and report that as an environment limitation.
+
+The shared Xcode `VoidDisplay` scheme is the app build/run and UI test scheme. Cmd-U does not run SwiftPM tests from `Tests/`; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for unit coverage.
 
 `scripts/ci/xcode.sh --action test` requires `--only-testing` or `--test-plan`.
 
