@@ -97,6 +97,49 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.runningConfigIds.count == 1)
     }
 
+    @Test func initNormalModeHydratesVirtualDisplayConfigsBeforeStartupTaskCompletes() async {
+        let sharing = MockSharingService()
+        let capture = MockCapturePreviewService()
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let fixtureConfig = VirtualDisplayConfig(
+            displayName: "Named Startup Display",
+            serialNum: 13,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [fixtureConfig]
+        virtualDisplay.runtimeDisplayIDByConfigId[fixtureConfig.id] = 10_013
+
+        let sut = AppBootstrap.makeEnvironment(
+            preview: false,
+            capturePreviewService: capture,
+            sharingService: sharing,
+            virtualDisplayFacade: virtualDisplay,
+            isRunningUnderXCTestOverride: false
+        )
+
+        #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
+        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [fixtureConfig.id])
+        #expect(sut.virtualDisplay.displayConfigs.map(\.displayName) == ["Named Startup Display"])
+        await sut.waitForStartupTasks()
+        #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
+    }
+
+    @Test func initNormalModeKeepsObservabilityInTestIsolationWhenRunningUnderXCTest() async {
+        let sut = AppBootstrap.makeEnvironment(
+            preview: false,
+            capturePreviewService: MockCapturePreviewService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            isRunningUnderXCTestOverride: false
+        )
+
+        let dataDirectoryURL = await sut.observability.dataDirectoryURL()
+        #expect(dataDirectoryURL?.path.contains(".tests") == true)
+    }
+
     @Test func initNormalModeRestoresStartupVirtualDisplaysThroughRuntimeWithoutStartingWebService() async throws {
         let sharing = MockSharingService()
         let capture = MockCapturePreviewService()

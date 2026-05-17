@@ -92,7 +92,7 @@ package struct VirtualDisplayView: View {
         .onChange(of: virtualDisplay.restoreFailures) { _, newValue in
             viewModel.handleRestoreFailuresChanged(newValue)
         }
-        .alert(String(localized: "Restore Failed"), isPresented: $viewModel.showRestoreFailureAlert) {
+        .alert(String(localized: "Startup Failed"), isPresented: $viewModel.showRestoreFailureAlert) {
             Button("OK") {
                 viewModel.acknowledgeRestoreFailures()
             }

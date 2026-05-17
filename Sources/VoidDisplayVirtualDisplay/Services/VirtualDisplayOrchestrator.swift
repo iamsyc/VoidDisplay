@@ -195,7 +195,7 @@ package final class VirtualDisplayOrchestrator {
     // MARK: - Load / Restore / Reset
 
     package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
-        configManager.loadPersistedConfigs()
+        configManager.loadPersistedConfigsIfNeeded()
     }
 
     package func loadPersistedConfigs() {
@@ -263,7 +263,9 @@ package final class VirtualDisplayOrchestrator {
                 postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
                 restoreOutcome: .failed,
                 didProduceVerifiableSideEffect: false,
-                failureReason: "startup_restore_lower_command_failed"
+                failureReason: "startup_restore_lower_command_failed",
+                underlyingDomain: nsError.domain,
+                underlyingCode: nsError.code
             )
         }
     }
@@ -835,7 +837,9 @@ package final class VirtualDisplayOrchestrator {
         postDisplayID: CGDirectDisplayID?,
         restoreOutcome: VirtualDisplayStartupRestoreCommandOutcome,
         didProduceVerifiableSideEffect: Bool,
-        failureReason: String?
+        failureReason: String?,
+        underlyingDomain: String? = nil,
+        underlyingCode: Int? = nil
     ) -> VirtualDisplayStartupRestoreCommandResult {
         VirtualDisplayStartupRestoreCommandResult(
             transactionID: request.transactionID,
@@ -844,7 +848,9 @@ package final class VirtualDisplayOrchestrator {
             postDisplayID: postDisplayID,
             restoreOutcome: restoreOutcome,
             didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
-            failureReason: failureReason
+            failureReason: failureReason,
+            underlyingDomain: underlyingDomain,
+            underlyingCode: underlyingCode
         )
     }
 

@@ -687,6 +687,23 @@
         }
       }
     },
+    "Could Not Start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could Not Start"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动失败"
+          }
+        }
+      }
+    },
     "Current Status" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -941,7 +958,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已停用"
+            "value" : "停用"
           }
         }
       }
@@ -1172,7 +1189,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已启用"
+            "value" : "启用"
           }
         }
       }
@@ -2198,6 +2215,23 @@
         }
       }
     },
+    "Not Running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Running"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未运行"
+          }
+        }
+      }
+    },
     "Not Sharing" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2383,6 +2417,23 @@
     "Physical Display" : {
       "extractionState" : "stale",
       "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理显示器"
+          }
+        }
+      }
+    },
+    "Physical Displays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Physical Displays"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -2705,6 +2756,23 @@
         }
       }
     },
+    "Recent Failures" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent Failures"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近失败"
+          }
+        }
+      }
+    },
     "Recent issues:" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2991,13 +3059,19 @@
         }
       }
     },
-    "Restore Failed" : {
-      "extractionState" : "stale",
+    "Startup Failed" : {
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup Failed"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "恢复失败"
+            "value" : "启动失败"
           }
         }
       }
@@ -3081,6 +3155,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行中"
+          }
+        }
+      }
+    },
+    "Running Virtual Displays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running Virtual Displays"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行中的虚拟显示器"
           }
         }
       }

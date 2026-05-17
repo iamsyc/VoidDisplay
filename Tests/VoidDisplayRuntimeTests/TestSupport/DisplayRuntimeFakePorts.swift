@@ -580,6 +580,8 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
                     restoreOutcome: result.restoreOutcome,
                     didProduceVerifiableSideEffect: result.didProduceVerifiableSideEffect,
                     failureReason: result.failureReason,
+                    underlyingDomain: result.underlyingDomain,
+                    underlyingCode: result.underlyingCode,
                     compensationOutcome: result.compensationOutcome,
                     compensationFailureReason: result.compensationFailureReason
                 )

@@ -284,7 +284,9 @@ struct DisplayRuntimeStartupRestoreTests {
                 postDisplayID: nil,
                 restoreOutcome: .failed,
                 didProduceVerifiableSideEffect: false,
-                failureReason: "driver_restore_failed"
+                failureReason: "driver_restore_failed",
+                underlyingDomain: "CGVirtualDisplay",
+                underlyingCode: -7
             )
         ]
         let runtime = DisplayRuntime(
@@ -307,7 +309,11 @@ struct DisplayRuntimeStartupRestoreTests {
         #expect(commander.startupRestoreCallCount == 1)
         #expect(trace.startupRestoreCommandResult?.restoreOutcome == .failed)
         #expect(trace.startupRestoreCommandResult?.didProduceVerifiableSideEffect == false)
+        #expect(trace.startupRestoreCommandResult?.underlyingDomain == "CGVirtualDisplay")
+        #expect(trace.startupRestoreCommandResult?.underlyingCode == -7)
         #expect(trace.failure?.reason == "driver_restore_failed")
+        #expect(trace.failure?.underlyingDomain == "CGVirtualDisplay")
+        #expect(trace.failure?.underlyingCode == -7)
         #expect(trace.topologyStabilityResult == nil)
         #expect(trace.virtualDisplayCommandOutcome == .failed)
     }

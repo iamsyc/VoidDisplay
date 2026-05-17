@@ -32,6 +32,9 @@ struct RuntimeDiagnosticsSummaryTests {
         #expect(summary.isAvailable)
         #expect(summary.schemaVersion == 3)
         #expect(summary.surfaceCount == 1)
+        #expect(summary.virtualDisplayCount == 0)
+        #expect(summary.runningVirtualDisplayCount == 0)
+        #expect(summary.physicalDisplayCount == 1)
         #expect(summary.totalConsumerLeaseCount == 1)
         #expect(summary.activeConsumerLeaseCount == 1)
         #expect(summary.aggregatedDemandCount == 1)
@@ -39,12 +42,16 @@ struct RuntimeDiagnosticsSummaryTests {
         #expect(summary.effectiveCaptureIntentCount == 1)
         #expect(summary.activeTransactionCount == 0)
         #expect(summary.recentTransactionCount == 1)
+        #expect(summary.recentFailureCount == 1)
         #expect(summary.lastFailureCode == "runtime_rebuild_failed")
 
         let renderedSummary = [
             summary.statusCode,
             summary.schemaVersion.map(String.init) ?? "",
             "\(summary.surfaceCount)",
+            "\(summary.virtualDisplayCount)",
+            "\(summary.runningVirtualDisplayCount)",
+            "\(summary.physicalDisplayCount)",
             "\(summary.totalConsumerLeaseCount)",
             "\(summary.activeConsumerLeaseCount)",
             "\(summary.aggregatedDemandCount)",
@@ -52,6 +59,7 @@ struct RuntimeDiagnosticsSummaryTests {
             "\(summary.effectiveCaptureIntentCount)",
             "\(summary.activeTransactionCount)",
             "\(summary.recentTransactionCount)",
+            "\(summary.recentFailureCount)",
             summary.lastFailureCode ?? ""
         ].joined(separator: "\n")
         for fixture in sensitiveFixtures {
@@ -71,7 +79,163 @@ struct RuntimeDiagnosticsSummaryTests {
         #expect(summary.statusCode == "unavailable:runtime_section_missing")
         #expect(summary.schemaVersion == nil)
         #expect(summary.surfaceCount == 0)
+        #expect(summary.virtualDisplayCount == 0)
+        #expect(summary.runningVirtualDisplayCount == 0)
+        #expect(summary.physicalDisplayCount == 0)
+        #expect(summary.recentFailureCount == 0)
         #expect(summary.lastFailureCode == nil)
+    }
+
+    @Test func summarySeparatesVirtualRunningAndPhysicalDisplayCounts() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000301"))
+        let state = try makeState(sections: [
+            "runtime": runtimeSection(DisplayRuntimeSnapshot(
+                surfaces: [
+                    DisplaySurface(
+                        identity: .managedVirtualDisplay(configID: configID),
+                        kind: .managedVirtualDisplay,
+                        currentDisplayID: 301,
+                        isAuxiliary: false,
+                        catalog: nil,
+                        capture: nil,
+                        sharing: nil,
+                        managedVirtualDisplay: DisplayRuntimeManagedVirtualDisplaySurfaceState(
+                            configID: configID,
+                            serialNumber: 31,
+                            desiredEnabled: true,
+                            isRunning: true,
+                            isLiveRuntime: true,
+                            isRebuilding: false,
+                            hasRecentApplySuccess: false,
+                            hasRebuildFailure: false,
+                            hasRestoreFailure: false,
+                            modeCount: 1,
+                            maximumPixelWidth: 1920,
+                            maximumPixelHeight: 1080
+                        )
+                    ),
+                    DisplaySurface(
+                        identity: .physicalDisplay(displayID: 401),
+                        kind: .physicalDisplay,
+                        currentDisplayID: 401,
+                        isAuxiliary: false,
+                        catalog: nil,
+                        capture: nil,
+                        sharing: nil,
+                        managedVirtualDisplay: nil
+                    )
+                ],
+                catalog: .empty,
+                capture: .empty,
+                sharing: .empty,
+                virtualDisplay: .empty
+            ))
+        ])
+
+        let summary = RuntimeDiagnosticsSummary(state: state)
+
+        #expect(summary.surfaceCount == 2)
+        #expect(summary.virtualDisplayCount == 1)
+        #expect(summary.runningVirtualDisplayCount == 1)
+        #expect(summary.physicalDisplayCount == 1)
+    }
+
+    @Test func summaryCountsRecentRuntimeFailures() throws {
+        let trace = DisplayRuntimeTransactionTrace(
+            id: .init(rawValue: try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000401"))),
+            kind: .virtualDisplayStartupRestore,
+            source: .startup,
+            status: .failed,
+            phases: [.init(phase: .failed)],
+            affectedSurfaces: [],
+            preSnapshotEvidence: nil,
+            postSnapshotEvidence: nil,
+            pauseIntents: [],
+            restoreIntents: [],
+            restoreResults: [],
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "startup_restore_lower_command_failed",
+                underlyingDomain: "CGVirtualDisplay",
+                underlyingCode: -7,
+                recoverability: .retryable
+            ),
+            compensation: .notRequired,
+            coalescedRequestCount: 1
+        )
+        let state = try makeState(sections: [
+            "runtime": runtimeSection(DisplayRuntimeSnapshot(
+                surfaces: [],
+                catalog: .empty,
+                capture: .empty,
+                sharing: .empty,
+                virtualDisplay: .empty,
+                transactions: .init(activeTransactions: [], recentTransactions: [trace])
+            ))
+        ])
+
+        let summary = RuntimeDiagnosticsSummary(state: state)
+
+        #expect(summary.recentFailureCount == 1)
+        #expect(summary.lastFailureCode == "startup_restore_lower_command_failed")
+    }
+
+    @Test func summaryReportsNewestRecentRuntimeFailure() throws {
+        let olderTrace = DisplayRuntimeTransactionTrace(
+            id: .init(rawValue: try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000402"))),
+            kind: .virtualDisplayStartupRestore,
+            source: .startup,
+            status: .failed,
+            phases: [.init(phase: .failed)],
+            affectedSurfaces: [],
+            preSnapshotEvidence: nil,
+            postSnapshotEvidence: nil,
+            pauseIntents: [],
+            restoreIntents: [],
+            restoreResults: [],
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "older_startup_failure",
+                recoverability: .retryable
+            ),
+            compensation: .notRequired,
+            coalescedRequestCount: 1
+        )
+        let newerTrace = DisplayRuntimeTransactionTrace(
+            id: .init(rawValue: try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000403"))),
+            kind: .virtualDisplayStartupRestore,
+            source: .startup,
+            status: .failed,
+            phases: [.init(phase: .failed)],
+            affectedSurfaces: [],
+            preSnapshotEvidence: nil,
+            postSnapshotEvidence: nil,
+            pauseIntents: [],
+            restoreIntents: [],
+            restoreResults: [],
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "newer_startup_failure",
+                recoverability: .retryable
+            ),
+            compensation: .notRequired,
+            coalescedRequestCount: 1
+        )
+        let state = try makeState(sections: [
+            "runtime": runtimeSection(DisplayRuntimeSnapshot(
+                surfaces: [],
+                catalog: .empty,
+                capture: .empty,
+                sharing: .empty,
+                virtualDisplay: .empty,
+                transactions: .init(activeTransactions: [], recentTransactions: [newerTrace, olderTrace])
+            ))
+        ])
+
+        let summary = RuntimeDiagnosticsSummary(state: state)
+
+        #expect(summary.recentFailureCount == 2)
+        #expect(summary.lastFailureCode == "newer_startup_failure")
     }
 
     @Test func summaryMarksRuntimeSectionDecodeFailureAsDegradedWithoutLeakingSectionValues() throws {
@@ -97,6 +261,10 @@ struct RuntimeDiagnosticsSummaryTests {
         #expect(summary.statusCode == "degraded:runtime_section_decode_failed")
         #expect(summary.schemaVersion == nil)
         #expect(summary.surfaceCount == 0)
+        #expect(summary.virtualDisplayCount == 0)
+        #expect(summary.runningVirtualDisplayCount == 0)
+        #expect(summary.physicalDisplayCount == 0)
+        #expect(summary.recentFailureCount == 0)
 
         let renderedSummary = [
             summary.statusCode,

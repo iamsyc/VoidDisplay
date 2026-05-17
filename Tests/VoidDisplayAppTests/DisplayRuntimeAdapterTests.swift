@@ -195,6 +195,50 @@ struct DisplayRuntimeAdapterTests {
             )
         ])
     }
+
+    @Test func startupRestoreAdapterMapsLowerFailureEvidence() async throws {
+        let configID = UUID(uuidString: "14141414-1414-1414-1414-141414141414")!
+        let transactionID = DisplayRuntimeTransactionID()
+        let facade = MockVirtualDisplayFacade()
+        facade.startupRestoreCommandResultsByConfigID[configID] = VirtualDisplayStartupRestoreCommandResult(
+            transactionID: transactionID.rawValue,
+            configID: configID,
+            preDisplayID: nil,
+            postDisplayID: nil,
+            restoreOutcome: .failed,
+            didProduceVerifiableSideEffect: false,
+            failureReason: "startup_restore_lower_command_failed",
+            underlyingDomain: "CGVirtualDisplay",
+            underlyingCode: -7
+        )
+        let controller = VirtualDisplayController(
+            virtualDisplayFacade: facade,
+            appliedBadgeDisplayDuration: .nanoseconds(1)
+        )
+        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
+
+        let result = try await sut.restoreVirtualDisplayForStartup(
+            request: DisplayRuntimeStartupRestoreCommandRequest(
+                transactionID: transactionID,
+                runID: .init(),
+                configID: configID,
+                configEvidence: DisplayRuntimeVirtualDisplayConfigEvidence(
+                    id: configID,
+                    serialNumber: 14,
+                    desiredEnabled: true,
+                    physicalWidthMillimeters: 300,
+                    physicalHeightMillimeters: 200,
+                    modeCount: 1,
+                    maximumPixelWidth: 1920,
+                    maximumPixelHeight: 1080
+                )
+            )
+        )
+
+        #expect(result.failureReason == "startup_restore_lower_command_failed")
+        #expect(result.underlyingDomain == "CGVirtualDisplay")
+        #expect(result.underlyingCode == -7)
+    }
 }
 
 private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {

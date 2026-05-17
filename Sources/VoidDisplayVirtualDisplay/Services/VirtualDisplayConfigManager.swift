@@ -11,6 +11,7 @@ package final class VirtualDisplayConfigManager {
 
     private var configs: [VirtualDisplayConfig] = []
     private var restoreFailures: [VirtualDisplayRestoreFailure] = []
+    private var persistedConfigLoadResult: VirtualDisplayStartupRestoreConfigLoadResult?
 
     /// Called to resolve active serial numbers from the runtime tracker for serial allocation.
     private let activeSerialNumbersProvider: () -> Set<UInt32>
@@ -56,13 +57,14 @@ package final class VirtualDisplayConfigManager {
 
     @discardableResult
     package func loadPersistedConfigs() -> VirtualDisplayStartupRestoreConfigLoadResult {
+        let result: VirtualDisplayStartupRestoreConfigLoadResult
         switch configRepository.load() {
         case .success(let loaded):
             configs = loaded
             AppLog.virtualDisplay.notice(
                 "Virtual display config load succeeded (\(self.configRepository.diagnosticsSummary, privacy: .public), configCount: \(loaded.count, privacy: .public))."
             )
-            return .succeeded(configs: loaded)
+            result = .succeeded(configs: loaded)
         case .failure(let error):
             configs = []
             restoreFailures = []
@@ -70,12 +72,21 @@ package final class VirtualDisplayConfigManager {
                 "Virtual display config load failed (\(self.configRepository.diagnosticsSummary, privacy: .public)): \(String(describing: error), privacy: .public)"
             )
             let nsError = error as NSError
-            return .failed(
+            result = .failed(
                 reason: "startup_persisted_config_load_failed",
                 underlyingDomain: nsError.domain,
                 underlyingCode: nsError.code
             )
         }
+        persistedConfigLoadResult = result
+        return result
+    }
+
+    package func loadPersistedConfigsIfNeeded() -> VirtualDisplayStartupRestoreConfigLoadResult {
+        if let persistedConfigLoadResult {
+            return persistedConfigLoadResult
+        }
+        return loadPersistedConfigs()
     }
 
     package func clearRestoreFailures() {
@@ -90,6 +101,7 @@ package final class VirtualDisplayConfigManager {
         try configRepository.reset()
         configs.removeAll()
         restoreFailures.removeAll()
+        persistedConfigLoadResult = .succeeded(configs: [])
     }
 
     // MARK: - CRUD
@@ -220,6 +232,7 @@ package final class VirtualDisplayConfigManager {
         try mutation(&candidate)
         try configRepository.save(candidate, reason: reason)
         configs = candidate
+        persistedConfigLoadResult = .succeeded(configs: configs)
     }
 
 }

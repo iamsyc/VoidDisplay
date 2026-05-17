@@ -18,6 +18,9 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
     package let availability: RuntimeDiagnosticsAvailability
     package let schemaVersion: Int?
     package let surfaceCount: Int
+    package let virtualDisplayCount: Int
+    package let runningVirtualDisplayCount: Int
+    package let physicalDisplayCount: Int
     package let totalConsumerLeaseCount: Int
     package let activeConsumerLeaseCount: Int
     package let aggregatedDemandCount: Int
@@ -25,6 +28,7 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
     package let effectiveCaptureIntentCount: Int
     package let activeTransactionCount: Int
     package let recentTransactionCount: Int
+    package let recentFailureCount: Int
     package let lastFailureCode: String?
 
     package init(state: ObservabilityStateSnapshot?) {
@@ -62,6 +66,12 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         availability = .available
         schemaVersion = runtime.schemaVersion
         surfaceCount = runtime.surfaces.count
+        virtualDisplayCount = runtime.surfaces.count { $0.kind == .managedVirtualDisplay }
+        runningVirtualDisplayCount = runtime.surfaces.count {
+            guard let managed = $0.managedVirtualDisplay else { return false }
+            return $0.currentDisplayID != nil && (managed.isRunning || managed.isLiveRuntime)
+        }
+        physicalDisplayCount = runtime.surfaces.count { $0.kind == .physicalDisplay }
         totalConsumerLeaseCount = runtime.consumerSummary.totalLeaseCount
         activeConsumerLeaseCount = runtime.consumerSummary.activeLeaseCount
         aggregatedDemandCount = runtime.aggregatedDemands.count
@@ -69,6 +79,7 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         effectiveCaptureIntentCount = runtime.effectiveCaptureIntents.count
         activeTransactionCount = runtime.transactions.activeTransactions.count
         recentTransactionCount = runtime.transactions.recentTransactions.count
+        recentFailureCount = Self.recentFailureCount(from: runtime)
         lastFailureCode = Self.latestFailureCode(from: runtime)
     }
 
@@ -84,6 +95,9 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         self.availability = availability
         schemaVersion = nil
         surfaceCount = 0
+        virtualDisplayCount = 0
+        runningVirtualDisplayCount = 0
+        physicalDisplayCount = 0
         totalConsumerLeaseCount = 0
         activeConsumerLeaseCount = 0
         aggregatedDemandCount = 0
@@ -91,12 +105,24 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         effectiveCaptureIntentCount = 0
         activeTransactionCount = 0
         recentTransactionCount = 0
+        recentFailureCount = 0
         lastFailureCode = nil
+    }
+
+    private static func recentFailureCount(from runtime: DisplayRuntimeSnapshot) -> Int {
+        let transactionFailures = runtime.transactions.recentTransactions.count {
+            $0.failure != nil || $0.compensation.failureReason != nil
+        }
+        let intentFailures = runtime.effectiveCaptureIntents.count {
+            $0.lastFailureCode != nil || $0.lastApplyResult?.failureCode != nil || $0.intent.lastFailureCode != nil
+        }
+        let leaseFailures = runtime.consumerLeases.count { $0.lastFailureCode != nil }
+        return transactionFailures + intentFailures + leaseFailures
     }
 
     private static func latestFailureCode(from runtime: DisplayRuntimeSnapshot) -> String? {
         let transactionsByRecency =
-            Array(runtime.transactions.recentTransactions.reversed()) +
+            runtime.transactions.recentTransactions +
             Array(runtime.transactions.activeTransactions.reversed())
         for transaction in transactionsByRecency {
             if let reason = transaction.failure?.reason {

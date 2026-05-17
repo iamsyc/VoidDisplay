@@ -237,13 +237,25 @@ package struct DiagnosticsView: View {
                 spacing: AppUI.Spacing.small
             ) {
                 DiagnosticsMetricTile(
-                    title: String(localized: "Displays"),
-                    value: "\(runtimeSummary.surfaceCount)",
-                    systemImage: "display",
+                    title: String(localized: "Virtual Displays"),
+                    value: "\(runtimeSummary.virtualDisplayCount)",
+                    systemImage: "display.2",
                     tint: .blue
                 )
                 DiagnosticsMetricTile(
-                    title: String(localized: "Active Viewer Count"),
+                    title: String(localized: "Running Virtual Displays"),
+                    value: "\(runtimeSummary.runningVirtualDisplayCount)",
+                    systemImage: "checkmark.rectangle.stack",
+                    tint: runtimeSummary.runningVirtualDisplayCount > 0 ? .green : .secondary
+                )
+                DiagnosticsMetricTile(
+                    title: String(localized: "Physical Displays"),
+                    value: "\(runtimeSummary.physicalDisplayCount)",
+                    systemImage: "display",
+                    tint: .cyan
+                )
+                DiagnosticsMetricTile(
+                    title: String(localized: "Active Viewers"),
                     value: "\(runtimeSummary.activeViewerCount)",
                     systemImage: "person.2",
                     tint: .green
@@ -261,10 +273,10 @@ package struct DiagnosticsView: View {
                     tint: runtimeSummary.activeTransactionCount > 0 ? .orange : .secondary
                 )
                 DiagnosticsMetricTile(
-                    title: String(localized: "Recent Transactions"),
-                    value: "\(runtimeSummary.recentTransactionCount)",
-                    systemImage: "list.bullet.rectangle",
-                    tint: .teal
+                    title: String(localized: "Recent Failures"),
+                    value: "\(runtimeSummary.recentFailureCount)",
+                    systemImage: runtimeSummary.recentFailureCount == 0 ? "checkmark.circle" : "exclamationmark.triangle",
+                    tint: runtimeSummary.recentFailureCount == 0 ? .green : .orange
                 )
                 DiagnosticsMetricTile(
                     title: String(localized: "Last Failure"),

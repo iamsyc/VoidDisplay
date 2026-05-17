@@ -162,6 +162,8 @@ func startupRestoreCommandResult(
     restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .succeeded,
     didProduceVerifiableSideEffect: Bool = true,
     failureReason: String? = nil,
+    underlyingDomain: String? = nil,
+    underlyingCode: Int? = nil,
     compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
     compensationFailureReason: String? = nil
 ) -> DisplayRuntimeStartupRestoreCommandResult {
@@ -173,6 +175,8 @@ func startupRestoreCommandResult(
         restoreOutcome: restoreOutcome,
         didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
         failureReason: failureReason,
+        underlyingDomain: underlyingDomain,
+        underlyingCode: underlyingCode,
         compensationOutcome: compensationOutcome,
         compensationFailureReason: compensationFailureReason
     )

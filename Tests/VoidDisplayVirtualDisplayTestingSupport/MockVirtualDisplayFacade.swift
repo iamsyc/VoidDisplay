@@ -17,6 +17,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     )
 
     var loadPersistedConfigsCallCount = 0
+    private var cachedStartupConfigLoadResult: VirtualDisplayStartupRestoreConfigLoadResult?
     var startupRestoreCommandRequests: [VirtualDisplayStartupRestoreCommandRequest] = []
     var startupConfigLoadResult: VirtualDisplayStartupRestoreConfigLoadResult?
     var startupRestoreCommandResultsByConfigID: [UUID: VirtualDisplayStartupRestoreCommandResult] = [:]
@@ -99,11 +100,13 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     }
 
     func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
-        loadPersistedConfigsCallCount += 1
-        if let startupConfigLoadResult {
-            return startupConfigLoadResult
+        if let cachedStartupConfigLoadResult {
+            return cachedStartupConfigLoadResult
         }
-        return .succeeded(configs: currentDisplayConfigs)
+        loadPersistedConfigsCallCount += 1
+        let result = startupConfigLoadResult ?? .succeeded(configs: currentDisplayConfigs)
+        cachedStartupConfigLoadResult = result
+        return result
     }
 
     func restoreVirtualDisplayForStartupCommand(
@@ -161,6 +164,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         currentRunningConfigIds = []
         currentRestoreFailures = []
         runtimeDisplayIDByConfigId = [:]
+        cachedStartupConfigLoadResult = .succeeded(configs: [])
         return removed
     }
 
@@ -205,6 +209,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == configId }) else { return }
         currentDisplayConfigs[index].desiredEnabled = enabled
+        refreshCachedStartupConfigLoadResult()
     }
 
     func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
@@ -294,6 +299,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         currentDisplayConfigs.removeAll { $0.id == configId }
         currentRunningConfigIds.remove(configId)
         runtimeDisplayIDByConfigId[configId] = nil
+        refreshCachedStartupConfigLoadResult()
         return VirtualDisplayDeleteCommandResult(
             configID: configId,
             targetWasRunning: targetWasRunning,
@@ -312,6 +318,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
         currentDisplayConfigs[index] = updated
+        refreshCachedStartupConfigLoadResult()
     }
 
     func configForEditRebuild(_ configId: UUID) -> VirtualDisplayConfig? {
@@ -328,6 +335,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == updated.id }) else { return }
         currentDisplayConfigs[index] = updated
+        refreshCachedStartupConfigLoadResult()
     }
 
     func restoreConfigAfterFailedEdit(_ previous: VirtualDisplayConfig) throws {
@@ -338,6 +346,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         }
         guard let index = currentDisplayConfigs.firstIndex(where: { $0.id == previous.id }) else { return }
         currentDisplayConfigs[index] = previous
+        refreshCachedStartupConfigLoadResult()
     }
 
     func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool {
@@ -359,6 +368,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
             return false
         }
         currentDisplayConfigs.swapAt(index, destinationIndex)
+        refreshCachedStartupConfigLoadResult()
         return true
     }
 
@@ -379,6 +389,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         }
         let config = currentDisplayConfigs.remove(at: sourceIndex)
         currentDisplayConfigs.insert(config, at: firstEnabledIndex)
+        refreshCachedStartupConfigLoadResult()
         return true
     }
 
@@ -407,6 +418,11 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
 
     func nextAvailableSerialNumber() -> UInt32 {
         1
+    }
+
+    private func refreshCachedStartupConfigLoadResult() {
+        guard cachedStartupConfigLoadResult != nil else { return }
+        cachedStartupConfigLoadResult = .succeeded(configs: currentDisplayConfigs)
     }
 
     private func startupRestoreCommandResult(

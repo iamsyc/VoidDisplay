@@ -220,6 +220,8 @@ extension DisplayRuntimeStartupRestoreCommandResult {
             restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.restoreOutcome),
             didProduceVerifiableSideEffect: lowerResult.didProduceVerifiableSideEffect,
             failureReason: lowerResult.failureReason,
+            underlyingDomain: lowerResult.underlyingDomain,
+            underlyingCode: lowerResult.underlyingCode,
             compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome(lowerResult.compensationOutcome),
             compensationFailureReason: lowerResult.compensationFailureReason
         )

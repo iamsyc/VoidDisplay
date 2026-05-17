@@ -230,6 +230,9 @@ package enum AppBootstrap {
         if preview {
             persistenceEnvironment[PersistenceContext.uiTestModeEnvironmentKey] = "1"
         }
+        if isRunningInsideTestBundle() {
+            persistenceEnvironment[PersistenceContext.persistenceModeEnvironmentKey] = PersistenceContext.testIsolatedModeValue
+        }
         let persistenceContext = PersistenceContext.resolve(environment: persistenceEnvironment)
         let capturePerformancePreferences = CapturePerformancePreferences(
             defaults: persistenceContext.userDefaults
@@ -318,6 +321,9 @@ package enum AppBootstrap {
                 configRepository: configRepository,
                 runtimeDriver: makeVirtualDisplayRuntimeDriver()
             )
+        }
+        if resolvedStartupPlan.shouldRestoreVirtualDisplays {
+            _ = resolvedVirtualDisplayFacade.loadPersistedVirtualDisplayConfigsForStartupRestoreCommand()
         }
 
         let capture = CaptureController(
@@ -492,5 +498,17 @@ package enum AppBootstrap {
         )
 
         return env
+    }
+
+    private static func isRunningInsideTestBundle() -> Bool {
+        if Bundle.main.bundleURL.pathExtension == "xctest" {
+            return true
+        }
+        if CommandLine.arguments.contains(where: { $0.contains(".xctest") }) {
+            return true
+        }
+        return Bundle.allBundles.contains { bundle in
+            bundle.bundleURL.pathExtension == "xctest"
+        }
     }
 }

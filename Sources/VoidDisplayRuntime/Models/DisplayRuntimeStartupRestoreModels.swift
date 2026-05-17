@@ -167,6 +167,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandResult: Codable, E
     package let restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let didProduceVerifiableSideEffect: Bool
     package let failureReason: String?
+    package let underlyingDomain: String?
+    package let underlyingCode: Int?
     package let compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let compensationFailureReason: String?
 
@@ -178,6 +180,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandResult: Codable, E
         restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome,
         didProduceVerifiableSideEffect: Bool,
         failureReason: String? = nil,
+        underlyingDomain: String? = nil,
+        underlyingCode: Int? = nil,
         compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome = .notAttempted,
         compensationFailureReason: String? = nil
     ) {
@@ -188,6 +192,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandResult: Codable, E
         self.restoreOutcome = restoreOutcome
         self.didProduceVerifiableSideEffect = didProduceVerifiableSideEffect
         self.failureReason = failureReason
+        self.underlyingDomain = underlyingDomain
+        self.underlyingCode = underlyingCode
         self.compensationOutcome = compensationOutcome
         self.compensationFailureReason = compensationFailureReason
     }
@@ -200,6 +206,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
     package let restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let didProduceVerifiableSideEffect: Bool
     package let failureReason: String?
+    package let underlyingDomain: String?
+    package let underlyingCode: Int?
     package let compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome
     package let compensationFailureReason: String?
 
@@ -210,6 +218,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
         self.restoreOutcome = commandResult.restoreOutcome
         self.didProduceVerifiableSideEffect = commandResult.didProduceVerifiableSideEffect
         self.failureReason = commandResult.failureReason
+        self.underlyingDomain = commandResult.underlyingDomain
+        self.underlyingCode = commandResult.underlyingCode
         self.compensationOutcome = commandResult.compensationOutcome
         self.compensationFailureReason = commandResult.compensationFailureReason
     }
@@ -221,6 +231,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
         restoreOutcome: DisplayRuntimeVirtualDisplayCommandOutcome,
         didProduceVerifiableSideEffect: Bool,
         failureReason: String?,
+        underlyingDomain: String?,
+        underlyingCode: Int?,
         compensationOutcome: DisplayRuntimeVirtualDisplayCommandOutcome,
         compensationFailureReason: String?
     ) {
@@ -230,6 +242,8 @@ package nonisolated struct DisplayRuntimeStartupRestoreCommandTrace: Codable, Eq
         self.restoreOutcome = restoreOutcome
         self.didProduceVerifiableSideEffect = didProduceVerifiableSideEffect
         self.failureReason = failureReason
+        self.underlyingDomain = underlyingDomain
+        self.underlyingCode = underlyingCode
         self.compensationOutcome = compensationOutcome
         self.compensationFailureReason = compensationFailureReason
     }

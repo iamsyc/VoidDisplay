@@ -381,6 +381,8 @@ extension DisplayRuntime {
                 topologyResult: topologyResult,
                 postSnapshot: makeSnapshot(),
                 recoverability: .retryable,
+                underlyingDomain: commandResult.underlyingDomain,
+                underlyingCode: commandResult.underlyingCode,
                 compensation: startupRestoreCompensationResult(
                     compensationOutcome: commandResult.compensationOutcome,
                     compensationFailureReason: commandResult.compensationFailureReason
@@ -467,11 +469,15 @@ extension DisplayRuntime {
         topologyResult: DisplayRuntimeTopologyStabilityResult?,
         postSnapshot: DisplayRuntimeSnapshot,
         recoverability: DisplayRuntimeTransactionRecoverability,
+        underlyingDomain: String? = nil,
+        underlyingCode: Int? = nil,
         compensation: DisplayRuntimeCompensationResult? = nil
     ) -> DisplayRuntimeStartupRestoreConfigResult {
         let failure = DisplayRuntimeTransactionFailure(
             phase: phase,
             reason: reason,
+            underlyingDomain: underlyingDomain,
+            underlyingCode: underlyingCode,
             recoverability: recoverability
         )
         _ = finalizeTransaction(

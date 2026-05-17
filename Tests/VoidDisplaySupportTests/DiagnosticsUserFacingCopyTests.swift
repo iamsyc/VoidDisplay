@@ -31,7 +31,13 @@ struct DiagnosticsUserFacingCopyTests {
             "Physical auxiliary",
             "Physical Auxiliary Display",
             "物理辅助",
-            "监看"
+            "监看",
+            "Desired Enabled",
+            "desired enabled",
+            "Restore Failed",
+            "restore failed",
+            "期望启用",
+            "恢复失败"
         ]
         let displaysHomeForbiddenFragments = globalForbiddenFragments + [
             "Consumer",

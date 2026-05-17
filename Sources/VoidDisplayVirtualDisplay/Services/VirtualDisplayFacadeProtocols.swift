@@ -152,6 +152,8 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
     package let restoreOutcome: VirtualDisplayStartupRestoreCommandOutcome
     package let didProduceVerifiableSideEffect: Bool
     package let failureReason: String?
+    package let underlyingDomain: String?
+    package let underlyingCode: Int?
     package let compensationOutcome: VirtualDisplayStartupRestoreCommandOutcome
     package let compensationFailureReason: String?
 
@@ -163,6 +165,8 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
         restoreOutcome: VirtualDisplayStartupRestoreCommandOutcome,
         didProduceVerifiableSideEffect: Bool,
         failureReason: String? = nil,
+        underlyingDomain: String? = nil,
+        underlyingCode: Int? = nil,
         compensationOutcome: VirtualDisplayStartupRestoreCommandOutcome = .notAttempted,
         compensationFailureReason: String? = nil
     ) {
@@ -173,6 +177,8 @@ package struct VirtualDisplayStartupRestoreCommandResult: Equatable, Sendable {
         self.restoreOutcome = restoreOutcome
         self.didProduceVerifiableSideEffect = didProduceVerifiableSideEffect
         self.failureReason = failureReason
+        self.underlyingDomain = underlyingDomain
+        self.underlyingCode = underlyingCode
         self.compensationOutcome = compensationOutcome
         self.compensationFailureReason = compensationFailureReason
     }
