@@ -141,6 +141,41 @@ struct DisplayRuntimeAdapterTests {
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
     }
 
+    @Test func lanWebViewStartResolvesManagedVirtualDisplaySurface() async throws {
+        let configID = UUID(uuidString: "15151515-1515-1515-1515-151515151515")!
+        let display = SharedMockSCDisplay.make(displayID: 8422, width: 2560, height: 1440)
+        let harness = lanWebViewHarness(
+            display: display,
+            virtualDisplaySnapshot: managedVirtualDisplaySnapshot(
+                configID: configID,
+                displayID: display.displayID
+            )
+        )
+        let dependencies = SharingUIComposition.dependencies(
+            sharing: harness.sharingController,
+            virtualDisplay: VirtualDisplayController(
+                virtualDisplayFacade: MockVirtualDisplayFacade(),
+                appliedBadgeDisplayDuration: .nanoseconds(1)
+            ),
+            displayRuntime: harness.runtime
+        )
+
+        let outcome = try await dependencies.sharingActions.beginSharing(display)
+
+        guard case .started = outcome else {
+            Issue.record("Expected managed virtual LAN Web View sharing start to succeed.")
+            return
+        }
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        let effectiveIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
+        #expect(lease.surfaceIdentity == surfaceIdentity)
+        #expect(lease.resolvedDisplayID == display.displayID)
+        #expect(effectiveIntent.intent.surfaceIdentity == surfaceIdentity)
+        #expect(effectiveIntent.intent.resolvedDisplayID == display.displayID)
+        #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+    }
+
     @Test func virtualDisplayAdapterSnapshotMapsConfigAndManagedDisplayDTOFields() throws {
         let config = VirtualDisplayConfig(
             displayName: "Snapshot Mapping",
@@ -319,7 +354,8 @@ private final class AdapterTestVirtualDisplayProvider: DisplayRuntimeVirtualDisp
 
 @MainActor
 private func lanWebViewHarness(
-    display: SCDisplay
+    display: SCDisplay,
+    virtualDisplaySnapshot: DisplayRuntimeVirtualDisplaySnapshot? = nil
 ) -> (
     catalogService: ScreenCaptureCatalogService,
     sharingService: MockSharingService,
@@ -369,6 +405,7 @@ private func lanWebViewHarness(
         catalogProvider: DisplayRuntimeCatalogAdapter(service: catalogService),
         captureProvider: captureAdapter,
         sharingProvider: sharingAdapter,
+        virtualDisplayProvider: virtualDisplaySnapshot.map(AdapterTestVirtualDisplayProvider.init),
         sharingCommander: sharingAdapter,
         captureIntentCommander: captureAdapter
     )

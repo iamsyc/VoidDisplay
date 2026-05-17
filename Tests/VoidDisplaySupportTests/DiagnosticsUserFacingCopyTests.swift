@@ -79,7 +79,6 @@ struct DiagnosticsUserFacingCopyTests {
 
         let displaysHomeSourceFiles = [
             repositoryRoot.appendingPathComponent("Sources/VoidDisplayApp/Navigation/HomeView.swift"),
-            repositoryRoot.appendingPathComponent("Sources/VoidDisplayApp/Navigation/DisplaysView.swift"),
             repositoryRoot.appendingPathComponent("Sources/VoidDisplayApp/Navigation/DisplaySurfacePresentation.swift")
         ]
         for fileURL in displaysHomeSourceFiles {

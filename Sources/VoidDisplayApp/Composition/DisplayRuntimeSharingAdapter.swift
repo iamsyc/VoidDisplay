@@ -94,9 +94,14 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
             )
         }
+        guard let surfaceIdentity = runtime.surfaceIdentityForDisplayID(display.displayID) else {
+            throw DisplayRuntimeLANWebViewCaptureError(
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
 
         let result = await runtime.attachLANWebViewConsumer(
-            surfaceIdentity: .physicalDisplay(displayID: display.displayID),
+            surfaceIdentity: surfaceIdentity,
             owner: .init(source: .sharingService, redactedLabel: "lan"),
             demand: lanWebViewDemand(
                 display: display,
@@ -115,7 +120,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
 
         guard applyResult.outcome == .applied else {
             _ = await runtime.detachLANWebViewConsumer(
-                surfaceIdentity: .physicalDisplay(displayID: display.displayID)
+                surfaceIdentity: surfaceIdentity
             )
             throw DisplayRuntimeLANWebViewCaptureError(
                 failureCode: applyResult.failureCode
@@ -129,8 +134,11 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         displayID: CGDirectDisplayID,
         runtime: DisplayRuntime
     ) async {
+        guard let surfaceIdentity = runtime.surfaceIdentityForDisplayID(displayID) else {
+            return
+        }
         _ = await runtime.detachLANWebViewConsumer(
-            surfaceIdentity: .physicalDisplay(displayID: displayID)
+            surfaceIdentity: surfaceIdentity
         )
     }
 
@@ -162,8 +170,9 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         )
         for displayID in controller.activeSharingDisplayIDs {
             guard let display = displaysByID[displayID] else { continue }
+            guard let surfaceIdentity = runtime.surfaceIdentityForDisplayID(displayID) else { continue }
             _ = runtime.updateLANWebViewConsumerDemand(
-                surfaceIdentity: .physicalDisplay(displayID: displayID),
+                surfaceIdentity: surfaceIdentity,
                 demand: lanWebViewDemand(
                     display: display,
                     activeViewerCount: controller.sharingClientCounts[displayID] ?? 0

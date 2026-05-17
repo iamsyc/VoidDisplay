@@ -30,6 +30,10 @@ package struct EditVirtualDisplayConfigView: View {
     @State private var localAlert: UserFacingAlertState?
     @State private var isSaveAndRebuildInFlight = false
 
+    package init(configId: UUID) {
+        self.configId = configId
+    }
+
     private var isRunning: Bool {
         virtualDisplay.isVirtualDisplayRunning(configId: configId)
     }

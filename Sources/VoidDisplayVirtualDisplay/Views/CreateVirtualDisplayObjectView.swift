@@ -50,6 +50,10 @@ package struct CreateVirtualDisplay: View {
     @Binding var isShow: Bool
     @Environment(VirtualDisplayController.self) private var virtualDisplay
 
+    package init(isShow: Binding<Bool>) {
+        _isShow = isShow
+    }
+
     private func clearFocus() {
         focusedField = nil
     }
