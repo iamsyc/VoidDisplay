@@ -778,7 +778,7 @@ private struct HomeVirtualDisplayCard: View {
                 .layoutPriority(1)
                 .frame(width: HomeLayout.cardStatusWidth, alignment: .leading)
 
-            actionCluster
+            actionStack
                 .frame(width: HomeLayout.cardActionWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
@@ -792,7 +792,7 @@ private struct HomeVirtualDisplayCard: View {
 
                 Spacer(minLength: AppUI.Spacing.medium)
 
-                moreMenu
+                toggleButton
             }
 
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
@@ -814,7 +814,7 @@ private struct HomeVirtualDisplayCard: View {
 
                 Spacer(minLength: AppUI.Spacing.medium)
 
-                moreMenu
+                toggleButton
             }
 
             statusGrid
@@ -860,22 +860,20 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityIdentifier("home_card_status_grid")
     }
 
-    private var actionCluster: some View {
-        HStack(spacing: AppUI.Spacing.xSmall + 2) {
+    private var actionStack: some View {
+        VStack(alignment: .trailing, spacing: AppUI.Spacing.small) {
             toggleButton
-            Divider()
-                .frame(height: 22)
             secondaryActionCluster
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: true, vertical: true)
     }
 
     private var compactActionCluster: some View {
         HStack(spacing: AppUI.Spacing.xSmall + 2) {
-            toggleButton
             compactPreviewButton
             compactWebViewButton
             compactEditButton
+            moreMenu
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -1105,6 +1103,7 @@ private struct HomeVirtualDisplayCard: View {
                 .font(.title3)
         }
         .menuStyle(.button)
+        .menuIndicator(.hidden)
         .buttonStyle(.borderless)
         .help(Text("More"))
         .accessibilityLabel(Text("More"))
