@@ -203,6 +203,23 @@
         }
       }
     },
+    "Active Port" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active Port"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前端口"
+          }
+        }
+      }
+    },
     "Active Transactions" : {
       "extractionState" : "stale",
       "localizations" : {

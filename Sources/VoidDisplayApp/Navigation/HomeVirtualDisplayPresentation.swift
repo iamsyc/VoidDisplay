@@ -22,25 +22,19 @@ package struct HomeRuntimeSummaryPresentation: Equatable {
     package let previewingCount: Int
     package let sharingCount: Int
     package let activeViewerCount: Int
-    package let recentFailureCount: Int
-    package let lastFailureCode: String?
 
     package init(
         virtualDisplayCount: Int,
         runningVirtualDisplayCount: Int,
         previewingCount: Int,
         sharingCount: Int,
-        activeViewerCount: Int,
-        recentFailureCount: Int,
-        lastFailureCode: String?
+        activeViewerCount: Int
     ) {
         self.virtualDisplayCount = virtualDisplayCount
         self.runningVirtualDisplayCount = runningVirtualDisplayCount
         self.previewingCount = previewingCount
         self.sharingCount = sharingCount
         self.activeViewerCount = activeViewerCount
-        self.recentFailureCount = recentFailureCount
-        self.lastFailureCode = lastFailureCode
     }
 }
 
@@ -132,9 +126,8 @@ package enum HomeVirtualDisplayPresentationMapper {
                 sharePageAddresses: sharePageAddresses
             )
         }
-        let configIDs = Set(displayConfigs.map(\.id))
         return HomeVirtualDisplaySurfacePresentation(
-            summary: makeSummary(snapshot: snapshot, cards: cards, configIDs: configIDs),
+            summary: makeSummary(cards: cards),
             cards: cards
         )
     }
@@ -185,19 +178,13 @@ package enum HomeVirtualDisplayPresentationMapper {
         )
     }
 
-    private static func makeSummary(
-        snapshot: DisplayRuntimeSnapshot,
-        cards: [HomeVirtualDisplayCardPresentation],
-        configIDs: Set<UUID>
-    ) -> HomeRuntimeSummaryPresentation {
+    private static func makeSummary(cards: [HomeVirtualDisplayCardPresentation]) -> HomeRuntimeSummaryPresentation {
         HomeRuntimeSummaryPresentation(
             virtualDisplayCount: cards.count,
             runningVirtualDisplayCount: cards.count { $0.isRunning },
             previewingCount: cards.count { $0.isPreviewing },
             sharingCount: cards.count { $0.isSharing },
-            activeViewerCount: cards.reduce(0) { $0 + $1.viewerCount },
-            recentFailureCount: recentFailureCount(snapshot: snapshot, cards: cards, configIDs: configIDs),
-            lastFailureCode: latestFailureCode(snapshot: snapshot, configIDs: configIDs)
+            activeViewerCount: cards.reduce(0) { $0 + $1.viewerCount }
         )
     }
 
@@ -294,134 +281,5 @@ package enum HomeVirtualDisplayPresentationMapper {
             return false
         }
         return surface.currentDisplayID != nil && (state.isRunning || state.isLiveRuntime)
-    }
-
-    private static func recentFailureCount(
-        snapshot: DisplayRuntimeSnapshot,
-        cards: [HomeVirtualDisplayCardPresentation],
-        configIDs: Set<UUID>
-    ) -> Int {
-        let transactionFailures = snapshot.transactions.recentTransactions.count {
-            isTransactionRelevant($0, configIDs: configIDs) &&
-                ($0.failure != nil || $0.compensation.failureReason != nil)
-        }
-        let intentFailures = snapshot.effectiveCaptureIntents.count {
-            isManagedIdentity($0.intent.surfaceIdentity, in: configIDs) &&
-                ($0.lastFailureCode != nil ||
-                $0.lastApplyResult?.failureCode != nil ||
-                    $0.intent.lastFailureCode != nil)
-        }
-        let leaseFailures = snapshot.consumerLeases.count {
-            isManagedIdentity($0.surfaceIdentity, in: configIDs) && $0.lastFailureCode != nil
-        }
-        let surfaceFailures = snapshot.surfaces.count {
-            guard isCurrentManagedSurface($0, configIDs: configIDs) else { return false }
-            return $0.managedVirtualDisplay?.hasRebuildFailure == true ||
-                $0.managedVirtualDisplay?.hasRestoreFailure == true
-        }
-        let sharingLifecycleFailures = hasCurrentSharingLifecycleFailure(
-            snapshot: snapshot,
-            configIDs: configIDs
-        ) ? 1 : 0
-        let runtimeFailureCount = transactionFailures + intentFailures + leaseFailures +
-            surfaceFailures + sharingLifecycleFailures
-        let issueCardCount = cards.count { $0.hasIssue }
-        return max(runtimeFailureCount, issueCardCount)
-    }
-
-    private static func latestFailureCode(
-        snapshot: DisplayRuntimeSnapshot,
-        configIDs: Set<UUID>
-    ) -> String? {
-        let transactionsByRecency =
-            Array(snapshot.transactions.recentTransactions.reversed()) +
-            Array(snapshot.transactions.activeTransactions.reversed())
-        for transaction in transactionsByRecency {
-            guard isTransactionRelevant(transaction, configIDs: configIDs) else { continue }
-            if let reason = transaction.failure?.reason {
-                return reason
-            }
-            if let reason = transaction.compensation.failureReason {
-                return reason
-            }
-        }
-
-        for intent in snapshot.effectiveCaptureIntents.reversed() {
-            guard isManagedIdentity(intent.intent.surfaceIdentity, in: configIDs) else { continue }
-            if let code = intent.lastFailureCode ?? intent.lastApplyResult?.failureCode ?? intent.intent.lastFailureCode {
-                return code
-            }
-        }
-
-        for surface in snapshot.surfaces {
-            guard isCurrentManagedSurface(surface, configIDs: configIDs) else { continue }
-            if surface.managedVirtualDisplay?.hasRebuildFailure == true {
-                return "virtual_display_rebuild_failed"
-            }
-            if surface.managedVirtualDisplay?.hasRestoreFailure == true {
-                return "virtual_display_restore_failed"
-            }
-        }
-
-        if hasCurrentSharingLifecycleFailure(snapshot: snapshot, configIDs: configIDs),
-           let reason = snapshot.sharing.lifecycle.failureReason {
-            return reason
-        }
-
-        return snapshot.consumerLeases.reversed().compactMap {
-            isManagedIdentity($0.surfaceIdentity, in: configIDs) ? $0.lastFailureCode : nil
-        }.first
-    }
-
-    private static func isCurrentManagedSurface(
-        _ surface: DisplaySurface,
-        configIDs: Set<UUID>
-    ) -> Bool {
-        configID(for: surface).map(configIDs.contains) ?? false
-    }
-
-    private static func isManagedIdentity(
-        _ identity: DisplaySurfaceIdentity,
-        in configIDs: Set<UUID>
-    ) -> Bool {
-        guard identity.kind == .managedVirtualDisplay,
-              let configID = UUID(uuidString: identity.stableID) else {
-            return false
-        }
-        return configIDs.contains(configID)
-    }
-
-    private static func isTransactionRelevant(
-        _ trace: DisplayRuntimeTransactionTrace,
-        configIDs: Set<UUID>
-    ) -> Bool {
-        if trace.targetConfigID.map(configIDs.contains) == true {
-            return true
-        }
-        if trace.createdConfigID.map(configIDs.contains) == true {
-            return true
-        }
-        if (trace.startupRestoreIntent?.configID).map(configIDs.contains) == true {
-            return true
-        }
-        if (trace.startupRestoreCommandResult?.configID).map(configIDs.contains) == true {
-            return true
-        }
-        return trace.affectedSurfaces.contains { surface in
-            configIDs.contains(surface.configID) || isManagedIdentity(surface.identity, in: configIDs)
-        }
-    }
-
-    private static func hasCurrentSharingLifecycleFailure(
-        snapshot: DisplayRuntimeSnapshot,
-        configIDs: Set<UUID>
-    ) -> Bool {
-        guard snapshot.sharing.lifecycle.phase == .failed,
-              snapshot.sharing.lifecycle.failureReason != nil else {
-            return false
-        }
-        return snapshot.surfaces.contains { surface in
-            isCurrentManagedSurface(surface, configIDs: configIDs) && surface.sharing != nil
-        }
     }
 }

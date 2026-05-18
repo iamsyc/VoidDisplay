@@ -86,6 +86,37 @@ struct SharingControllerTests {
         #expect(sut.preferredWebServicePort == requestedPort)
     }
 
+    @Test func startWebServiceDoesNotPersistRequestedPortOnFailure() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let preferences = MockSharingPortPreferences()
+        let service = MockSharingService()
+        service.startResult = .failed(.portInUse(port: requestedPort))
+        let sut = SharingController(
+            sharingService: service,
+            portPreferences: preferences
+        )
+
+        let startResult = await sut.startWebService(requestedPort: requestedPort)
+
+        #expect(startResult == .failed(.portInUse(port: requestedPort)))
+        #expect(preferences.savedPorts.isEmpty)
+        #expect(sut.preferredWebServicePort == 8081)
+    }
+
+    @Test func savePreferredWebServicePortPersistsWithoutStartingService() {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let preferences = MockSharingPortPreferences()
+        let sut = SharingController(
+            sharingService: MockSharingService(),
+            portPreferences: preferences
+        )
+
+        sut.savePreferredWebServicePort(requestedPort)
+
+        #expect(preferences.savedPorts == [requestedPort])
+        #expect(sut.preferredWebServicePort == requestedPort)
+    }
+
     @Test func stopSharingAndStopAllSharingSyncState() {
         let service = MockSharingService()
         let first: CGDirectDisplayID = 11

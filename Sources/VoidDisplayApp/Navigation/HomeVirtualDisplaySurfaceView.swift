@@ -28,6 +28,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
     @State private var createView = false
     @State private var editingConfig: EditingConfig?
     @State private var actionAlert: UserFacingAlertState?
+    @State private var sharingPortInput = ""
+    @State private var sharingPortErrorMessage: String?
     @State private var isConfigStoreDetailsExpanded = false
 
     private struct EditingConfig: Identifiable {
@@ -49,6 +51,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         self.displayRuntime = displayRuntime
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
         _viewModel = State(initialValue: VirtualDisplayListViewModel(controller: virtualDisplay))
+        _sharingPortInput = State(initialValue: String(sharing.preferredWebServicePort))
     }
 
     package var body: some View {
@@ -154,6 +157,11 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 await displayRuntime.handleSharingServiceStateChanged(isRunning: isRunning)
             }
         }
+        .onChange(of: sharing.preferredWebServicePort) { oldValue, newValue in
+            if sharingPortInput == String(oldValue) || sharingPortErrorMessage == nil {
+                sharingPortInput = String(newValue)
+            }
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
         ) { _ in
@@ -213,23 +221,13 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func summaryPanel(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.small + 2) {
             summaryStatusLayout(summary)
 
-            if let lastFailureCode = summary.lastFailureCode {
-                HStack(alignment: .firstTextBaseline, spacing: AppUI.Spacing.small) {
-                    Text("Diagnostic Code")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(lastFailureCode)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.orange)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-                .accessibilityIdentifier("home_last_failure_code")
-            }
+            Divider()
+                .padding(.vertical, 1)
+
+            sharingSettingsPanel
         }
         .padding(.horizontal, AppUI.Spacing.large)
         .padding(.vertical, AppUI.Spacing.medium)
@@ -247,22 +245,23 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func summaryStatusLayout(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HomeSummaryDistributedLayout(
-            primaryItemCount: 3,
-            minimumColumnSpacing: AppUI.Spacing.small,
-            rowSpacing: AppUI.Spacing.small
-        ) {
-            summaryVirtualDisplayMetric(summary)
-            summaryRunningMetric(summary)
-            summaryFailureMetric(summary)
-            summaryPreviewChip(summary)
-            summaryWebViewChip(summary)
-            summaryViewersChip(summary)
-            summaryPermissionChip
-            summaryPerformanceChip
-            permissionAction
+        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: AppUI.Spacing.large * 3) {
+                    summaryVirtualDisplayMetric(summary)
+                    summaryRunningMetric(summary)
+                    Spacer(minLength: 0)
+                }
+
+                VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                    summaryVirtualDisplayMetric(summary)
+                    summaryRunningMetric(summary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            summaryStatusStrip(summary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func summaryVirtualDisplayMetric(_ summary: HomeRuntimeSummaryPresentation) -> some View {
@@ -283,65 +282,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
         )
     }
 
-    private func summaryFailureMetric(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HomeSummaryMetric(
-            title: String(localized: "Recent Failures"),
-            value: "\(summary.recentFailureCount)",
-            systemImage: summary.recentFailureCount == 0 ? "checkmark.circle" : "exclamationmark.triangle",
-            tint: summary.recentFailureCount == 0 ? .green : .orange
-        )
-    }
-
-    private func summaryPreviewChip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HomeSummaryChip(
-            title: String(localized: "Preview"),
-            value: "\(summary.previewingCount)",
-            systemImage: "dot.scope.display",
-            tint: summary.previewingCount > 0 ? .green : .secondary,
-            isLowPriority: summary.previewingCount == 0
-        )
-    }
-
-    private func summaryWebViewChip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HomeSummaryChip(
-            title: String(localized: "Web View"),
-            value: "\(summary.sharingCount)",
-            systemImage: "network",
-            tint: summary.sharingCount > 0 ? .green : .secondary,
-            isLowPriority: summary.sharingCount == 0
-        )
-    }
-
-    private func summaryViewersChip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HomeSummaryChip(
-            title: String(localized: "Viewers"),
-            value: "\(summary.activeViewerCount)",
-            systemImage: "person.2",
-            tint: summary.activeViewerCount > 0 ? .blue : .secondary,
-            isLowPriority: summary.activeViewerCount == 0
-        )
-    }
-
-    private var summaryPermissionChip: some View {
-        HomeSummaryChip(
-            title: String(localized: "Screen Recording"),
-            value: permissionLabel,
-            systemImage: permissionSystemImage,
-            tint: permissionTint,
-            isLowPriority: false
-        )
-    }
-
-    private var summaryPerformanceChip: some View {
-        HomeSummaryChip(
-            title: String(localized: "Performance"),
-            value: performanceLabel,
-            systemImage: "speedometer",
-            tint: .purple,
-            isLowPriority: false
-        )
-    }
-
     @ViewBuilder
     private var permissionAction: some View {
         if capture.displayCatalogState.hasScreenCapturePermission == false {
@@ -355,6 +295,207 @@ package struct HomeVirtualDisplaySurfaceView: View {
             .appActionButtonStyle(variant: .default)
             .accessibilityIdentifier("home_open_privacy_settings_button")
         }
+    }
+
+    private func summaryStatusStrip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                summaryPreviewStatus(summary)
+                summaryStatusDivider
+                summaryWebViewStatus(summary)
+                summaryStatusDivider
+                summaryViewersStatus(summary)
+                summaryStatusDivider
+                summaryPermissionStatus
+                permissionAction
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                    summaryPreviewStatus(summary)
+                    summaryStatusDivider
+                    summaryWebViewStatus(summary)
+                    summaryStatusDivider
+                    summaryViewersStatus(summary)
+                }
+                HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                    summaryPermissionStatus
+                    permissionAction
+                }
+            }
+        }
+        .padding(.horizontal, AppUI.Spacing.small)
+        .padding(.vertical, AppUI.Spacing.xSmall + 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(colorScheme == .dark ? .white.opacity(0.035) : .black.opacity(0.018))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(colorScheme == .dark ? .white.opacity(0.07) : .black.opacity(0.045), lineWidth: AppUI.Stroke.subtle)
+        )
+        .accessibilityIdentifier("home_summary_status_strip")
+    }
+
+    private func summaryPreviewStatus(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryStatusItem(
+            title: String(localized: "Preview"),
+            value: "\(summary.previewingCount)",
+            systemImage: "dot.scope.display",
+            tint: summary.previewingCount > 0 ? .green : .secondary,
+            isActive: summary.previewingCount > 0
+        )
+    }
+
+    private func summaryWebViewStatus(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryStatusItem(
+            title: String(localized: "Web View"),
+            value: "\(summary.sharingCount)",
+            systemImage: "network",
+            tint: summary.sharingCount > 0 ? .green : .secondary,
+            isActive: summary.sharingCount > 0
+        )
+    }
+
+    private func summaryViewersStatus(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryStatusItem(
+            title: String(localized: "Viewers"),
+            value: "\(summary.activeViewerCount)",
+            systemImage: "person.2",
+            tint: summary.activeViewerCount > 0 ? .blue : .secondary,
+            isActive: summary.activeViewerCount > 0
+        )
+    }
+
+    private var summaryPermissionStatus: some View {
+        HomeSummaryStatusItem(
+            title: String(localized: "Screen Recording"),
+            value: permissionLabel,
+            systemImage: permissionSystemImage,
+            tint: permissionTint,
+            isActive: capture.displayCatalogState.hasScreenCapturePermission != nil
+        )
+    }
+
+    private var summaryStatusDivider: some View {
+        Divider()
+            .frame(height: 16)
+    }
+
+    private var sharingSettingsPanel: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                sharingSettingsTitle
+                    .frame(minWidth: 112, alignment: .leading)
+
+                Divider()
+                    .frame(height: 24)
+
+                sharingPerformanceControl
+                    .frame(width: 300, alignment: .leading)
+
+                Divider()
+                    .frame(height: 24)
+
+                sharingPortControl
+                    .frame(minWidth: 250, alignment: .leading)
+
+                Spacer(minLength: AppUI.Spacing.small)
+            }
+
+            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                sharingSettingsTitle
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: AppUI.Spacing.medium) {
+                        sharingPerformanceControl
+                        sharingPortControl
+                    }
+                    VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                        sharingPerformanceControl
+                        sharingPortControl
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("home_sharing_settings_panel")
+    }
+
+    private var sharingSettingsTitle: some View {
+        Label("Screen Sharing", systemImage: "network")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    private var sharingPerformanceControl: some View {
+        HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+            Text("Performance")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Capture Performance", selection: capturePerformanceModeBinding) {
+                Text("Automatic").tag(CapturePerformanceMode.automatic)
+                Text("Smooth").tag(CapturePerformanceMode.smooth)
+                Text("Power Efficient").tag(CapturePerformanceMode.powerEfficient)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .tint(.gray)
+            .frame(width: 286)
+            .accessibilityIdentifier("home_sharing_performance_picker")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var sharingPortControl: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+                Text("Port")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                TextField("8089", text: sharingPortInputBinding)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 72)
+                    .onSubmit {
+                        savePreferredSharingPort()
+                    }
+                    .accessibilityIdentifier("home_sharing_port_input")
+
+                if isSharingPortDirty {
+                    Button {
+                        savePreferredSharingPort()
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .appActionButtonStyle(variant: .default)
+                    .controlSize(.small)
+                    .frame(width: 30)
+                    .help(Text("Apply"))
+                    .accessibilityLabel(Text("Apply"))
+                    .accessibilityIdentifier("home_sharing_port_apply_button")
+                }
+
+                if sharing.isWebServiceRunning {
+                    HomeSharingPortStatusBadge(port: sharing.webServicePortValue)
+                }
+            }
+
+            if let sharingPortErrorMessage {
+                Text(sharingPortErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(height: 14, alignment: .leading)
+                    .accessibilityIdentifier("home_sharing_port_error_text")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func cardGrid(_ cards: [HomeVirtualDisplayCardPresentation]) -> some View {
@@ -580,7 +721,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private func prepareWebViewSharing() async -> Bool {
         if !sharing.isWebServiceRunning {
-            let result = await sharing.startWebService(requestedPort: sharing.preferredWebServicePort)
+            guard let requestedPort = requestedSharingPortForStart() else {
+                return false
+            }
+            let result = await sharing.startWebService(requestedPort: requestedPort)
             if case .failed(let failure) = result {
                 presentActionError(
                     title: String(localized: "Share Failed"),
@@ -591,6 +735,29 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
         await displayRuntime.handleSharingServiceStateChanged(isRunning: sharing.isWebServiceRunning)
         return sharing.isWebServiceRunning
+    }
+
+    private func requestedSharingPortForStart() -> UInt16? {
+        switch SharePortValidationError.parse(sharingPortInput) {
+        case .success(let port):
+            sharingPortInput = String(port)
+            sharingPortErrorMessage = nil
+            return port
+        case .failure(let validationError):
+            sharingPortErrorMessage = validationError.userMessage
+            return nil
+        }
+    }
+
+    private func savePreferredSharingPort() {
+        switch SharePortValidationError.parse(sharingPortInput) {
+        case .success(let port):
+            sharing.savePreferredWebServicePort(port)
+            sharingPortInput = String(port)
+            sharingPortErrorMessage = nil
+        case .failure(let validationError):
+            sharingPortErrorMessage = validationError.userMessage
+        }
     }
 
     private func refreshCatalogForHomeSurface(force: Bool = false) async {
@@ -693,15 +860,25 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private var performanceLabel: String {
-        switch capturePerformancePreferences.mode {
-        case .automatic:
-            String(localized: "Automatic")
-        case .smooth:
-            String(localized: "Smooth")
-        case .powerEfficient:
-            String(localized: "Power Efficient")
-        }
+    private var capturePerformanceModeBinding: Binding<CapturePerformanceMode> {
+        Binding(
+            get: { capturePerformancePreferences.mode },
+            set: { capturePerformancePreferences.saveMode($0) }
+        )
+    }
+
+    private var sharingPortInputBinding: Binding<String> {
+        Binding(
+            get: { sharingPortInput },
+            set: { newValue in
+                sharingPortInput = String(newValue.prefix(5))
+                sharingPortErrorMessage = nil
+            }
+        )
+    }
+
+    private var isSharingPortDirty: Bool {
+        sharingPortInput.trimmingCharacters(in: .whitespacesAndNewlines) != String(sharing.preferredWebServicePort)
     }
 }
 
@@ -1234,14 +1411,12 @@ private struct HomeSummaryMetric: View {
     }
 }
 
-private struct HomeSummaryChip: View {
+private struct HomeSummaryStatusItem: View {
     let title: String
     let value: String
     let systemImage: String
     let tint: Color
-    let isLowPriority: Bool
-
-    @Environment(\.colorScheme) private var colorScheme
+    let isActive: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1256,37 +1431,33 @@ private struct HomeSummaryChip: View {
 
             Text(value)
                 .fontWeight(.semibold)
-                .foregroundStyle(tint)
+                .foregroundStyle(isActive ? tint : .secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
         .font(.caption)
-        .padding(.horizontal, AppUI.Spacing.small - 1)
-        .padding(.vertical, AppUI.Spacing.xSmall)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(chipFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(chipStroke, lineWidth: AppUI.Stroke.subtle)
-        )
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(title): \(value)"))
     }
+}
 
-    private var chipFill: Color {
-        if isLowPriority {
-            return colorScheme == .dark ? .white.opacity(0.035) : .black.opacity(0.024)
-        }
-        return colorScheme == .dark ? .white.opacity(0.06) : .black.opacity(0.035)
-    }
+private struct HomeSharingPortStatusBadge: View {
+    let port: UInt16
 
-    private var chipStroke: Color {
-        if isLowPriority {
-            return colorScheme == .dark ? .white.opacity(0.06) : .black.opacity(0.045)
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+
+            Text(verbatim: "\(String(localized: "Active Port")) \(String(port))")
+                .foregroundStyle(.secondary)
         }
-        return colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.06)
+            .font(.caption.weight(.medium))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .help(Text("Active Port"))
+            .accessibilityIdentifier("home_sharing_active_port_badge")
     }
 }
 

@@ -101,7 +101,7 @@ struct HomeVirtualDisplayPresentationTests {
         #expect(presentation.summary.activeViewerCount == 2)
     }
 
-    @Test func marksCardsAndSummaryWhenVirtualDisplayNeedsAttention() throws {
+    @Test func marksCardWhenVirtualDisplayNeedsAttention() throws {
         let configID = try #require(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc"))
         let snapshot = DisplayRuntimeSnapshot(
             surfaces: [
@@ -126,8 +126,6 @@ struct HomeVirtualDisplayPresentationTests {
         let card = try #require(presentation.cards.first)
         #expect(card.hasIssue)
         #expect(card.statusLabel == "Enabled · Startup Failed")
-        #expect(presentation.summary.recentFailureCount == 1)
-        #expect(presentation.summary.lastFailureCode == "virtual_display_rebuild_failed")
     }
 
     @Test func enabledButStoppedVirtualDisplayDoesNotReadAsRunning() throws {
@@ -216,18 +214,9 @@ struct HomeVirtualDisplayPresentationTests {
         #expect(card.operationalStatusItems.map(\.value) == ["Off", "Off", "0"])
     }
 
-    @Test func summaryIgnoresRuntimeFailuresOutsideCurrentCards() throws {
+    @Test func summaryUsesCurrentConfigCardsOnly() throws {
         let currentID = try #require(UUID(uuidString: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"))
         let staleID = try #require(UUID(uuidString: "ffffffff-ffff-ffff-ffff-ffffffffffff"))
-        let staleIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: staleID)
-        let staleLease = makeLease(
-            surfaceIdentity: staleIdentity,
-            displayID: 7202,
-            kind: .preview,
-            state: .failed,
-            lastFailureCode: "stale_lease_failed"
-        )
-        let revision = DisplayRuntimeCaptureIntentRevision(rawValue: 7)
         let snapshot = DisplayRuntimeSnapshot(
             surfaces: [
                 managedSurface(
@@ -240,31 +229,13 @@ struct HomeVirtualDisplayPresentationTests {
                     displayID: 7202,
                     desiredEnabled: true,
                     isRunning: true,
-                    isLiveRuntime: true,
-                    hasRebuildFailure: true
+                    isLiveRuntime: true
                 )
             ],
             catalog: .empty,
             capture: .empty,
             sharing: .empty,
-            virtualDisplay: .empty,
-            transactions: .init(
-                activeTransactions: [],
-                recentTransactions: [
-                    transactionTrace(
-                        configID: staleID,
-                        reason: "stale_transaction_failed"
-                    )
-                ]
-            ),
-            consumerLeases: [staleLease].map(DisplayRuntimeConsumerLeaseSnapshot.init),
-            effectiveCaptureIntents: [
-                failedIntent(
-                    surfaceIdentity: staleIdentity,
-                    revision: revision,
-                    failureCode: "stale_intent_failed"
-                )
-            ]
+            virtualDisplay: .empty
         )
 
         let presentation = HomeVirtualDisplayPresentationMapper.makePresentation(
@@ -274,11 +245,9 @@ struct HomeVirtualDisplayPresentationTests {
 
         #expect(presentation.summary.virtualDisplayCount == 1)
         #expect(presentation.summary.runningVirtualDisplayCount == 0)
-        #expect(presentation.summary.recentFailureCount == 0)
-        #expect(presentation.summary.lastFailureCode == nil)
     }
 
-    @Test func summaryReportsSharingLifecycleFailureForCurrentCard() throws {
+    @Test func marksCardWhenSharingLifecycleFails() throws {
         let configID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
         let snapshot = DisplayRuntimeSnapshot(
             surfaces: [
@@ -326,8 +295,6 @@ struct HomeVirtualDisplayPresentationTests {
 
         let card = try #require(presentation.cards.first)
         #expect(card.hasIssue)
-        #expect(presentation.summary.recentFailureCount == 1)
-        #expect(presentation.summary.lastFailureCode == "sharing_lifecycle_failed")
     }
 
     private func config(
@@ -385,8 +352,7 @@ struct HomeVirtualDisplayPresentationTests {
         displayID: DisplayRuntimeDisplayID,
         kind: DisplaySurfaceConsumerKind,
         state: DisplayRuntimeConsumerLeaseState,
-        activeViewerCount: Int = 0,
-        lastFailureCode: String? = nil
+        activeViewerCount: Int = 0
     ) -> DisplayRuntimeConsumerLease {
         DisplayRuntimeConsumerLease(
             surfaceIdentity: surfaceIdentity,
@@ -407,64 +373,7 @@ struct HomeVirtualDisplayPresentationTests {
                 powerProfile: .automatic,
                 latencyPreference: .realtime,
                 activeViewerCount: activeViewerCount
-            ),
-            lastFailureCode: lastFailureCode
-        )
-    }
-
-    private func failedIntent(
-        surfaceIdentity: DisplaySurfaceIdentity,
-        revision: DisplayRuntimeCaptureIntentRevision,
-        failureCode: String
-    ) -> DisplayRuntimeEffectiveCaptureIntent {
-        DisplayRuntimeEffectiveCaptureIntent(
-            intent: DisplayRuntimeCaptureIntent(
-                surfaceIdentity: surfaceIdentity,
-                surfaceEpoch: .initial,
-                resolvedDisplayID: nil,
-                aggregateDemand: nil,
-                kind: .capture,
-                reason: .attach,
-                revision: revision,
-                lastFailureCode: failureCode
-            ),
-            lastApplyResult: .failed(revision: revision, failureCode: failureCode),
-            lastFailureCode: failureCode
-        )
-    }
-
-    private func transactionTrace(
-        configID: UUID,
-        reason: String
-    ) -> DisplayRuntimeTransactionTrace {
-        DisplayRuntimeTransactionTrace(
-            id: .init(),
-            kind: .virtualDisplayRebuild,
-            source: .diagnostics,
-            status: .failed,
-            phases: [.init(phase: .failed)],
-            affectedSurfaces: [
-                DisplayRuntimeAffectedSurface(
-                    identity: .managedVirtualDisplay(configID: configID),
-                    configID: configID,
-                    preDisplayID: nil,
-                    serialNumber: nil,
-                    reason: .requestedConfig
-                )
-            ],
-            preSnapshotEvidence: nil,
-            postSnapshotEvidence: nil,
-            pauseIntents: [],
-            restoreIntents: [],
-            restoreResults: [],
-            failure: DisplayRuntimeTransactionFailure(
-                phase: .executingVirtualDisplayCommand,
-                reason: reason,
-                recoverability: .retryable
-            ),
-            compensation: .notRequired,
-            coalescedRequestCount: 1,
-            targetConfigID: configID
+            )
         )
     }
 }
