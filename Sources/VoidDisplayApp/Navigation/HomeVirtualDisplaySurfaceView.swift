@@ -13,6 +13,7 @@ import VoidDisplayVirtualDisplay
 
 @MainActor
 package struct HomeVirtualDisplaySurfaceView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
 
@@ -72,6 +73,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
                     cardGrid(presentation.cards)
                 }
             }
+            .frame(maxWidth: HomeLayout.contentMaxWidth, alignment: .topLeading)
             .appListContentInsets()
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -181,14 +183,9 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-            Label("Virtual Displays", systemImage: "display.2")
-                .font(.title2.weight(.semibold))
-                .accessibilityIdentifier("home_virtual_display_surface")
-            Text("Manage virtual displays, preview, and Web View from one place.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
+        Label("Virtual Displays", systemImage: "display.2")
+            .font(.title2.weight(.semibold))
+            .accessibilityIdentifier("home_virtual_display_surface")
     }
 
     private var headerActions: some View {
@@ -215,39 +212,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func summaryPanel(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                    Label("Current Status", systemImage: summary.recentFailureCount > 0 ? "exclamationmark.triangle" : "checkmark.circle")
-                        .font(.headline)
-                        .foregroundStyle(summary.recentFailureCount > 0 ? .orange : .primary)
-                    Spacer(minLength: AppUI.Spacing.large)
-                    permissionAction
-                }
-
-                VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
-                    Label("Current Status", systemImage: summary.recentFailureCount > 0 ? "exclamationmark.triangle" : "checkmark.circle")
-                        .font(.headline)
-                        .foregroundStyle(summary.recentFailureCount > 0 ? .orange : .primary)
-                    permissionAction
-                }
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: AppUI.Spacing.large) {
-                    summaryPrimaryMetrics(summary)
-
-                    Divider()
-                        .frame(height: 38)
-
-                    summaryChipRow(summary)
-                }
-
-                VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-                    summaryPrimaryMetrics(summary)
-                    summaryChipGrid(summary)
-                }
-            }
+        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+            summaryStatusLayout(summary)
 
             if let lastFailureCode = summary.lastFailureCode {
                 HStack(alignment: .firstTextBaseline, spacing: AppUI.Spacing.small) {
@@ -266,80 +232,112 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
         .padding(.horizontal, AppUI.Spacing.large)
         .padding(.vertical, AppUI.Spacing.medium)
-        .appPanelStyle()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AppUI.Surface.cardFill(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(AppUI.Surface.cardStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
+        )
+        .accessibilityLabel(Text("Current Status"))
         .accessibilityIdentifier("home_summary_panel")
     }
 
-    private func summaryPrimaryMetrics(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HStack(spacing: AppUI.Spacing.medium) {
-            HomeSummaryMetric(
-                title: String(localized: "Virtual Displays"),
-                value: "\(summary.virtualDisplayCount)",
-                systemImage: "display.2",
-                tint: .blue
-            )
-            HomeSummaryMetric(
-                title: String(localized: "Running"),
-                value: "\(summary.runningVirtualDisplayCount)",
-                systemImage: "checkmark.rectangle.stack",
-                tint: summary.runningVirtualDisplayCount > 0 ? .green : .secondary
-            )
-            HomeSummaryMetric(
-                title: String(localized: "Recent Failures"),
-                value: "\(summary.recentFailureCount)",
-                systemImage: summary.recentFailureCount == 0 ? "checkmark.circle" : "exclamationmark.triangle",
-                tint: summary.recentFailureCount == 0 ? .green : .orange
-            )
-        }
-    }
-
-    private func summaryChipRow(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        HStack(spacing: AppUI.Spacing.small) {
-            summaryChips(summary)
-        }
-    }
-
-    private func summaryChipGrid(_ summary: HomeRuntimeSummaryPresentation) -> some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 126), spacing: AppUI.Spacing.small, alignment: .top)],
-            alignment: .leading,
-            spacing: AppUI.Spacing.small
+    private func summaryStatusLayout(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryDistributedLayout(
+            primaryItemCount: 3,
+            minimumColumnSpacing: AppUI.Spacing.small,
+            rowSpacing: AppUI.Spacing.small
         ) {
-            summaryChips(summary)
+            summaryVirtualDisplayMetric(summary)
+            summaryRunningMetric(summary)
+            summaryFailureMetric(summary)
+            summaryPreviewChip(summary)
+            summaryWebViewChip(summary)
+            summaryViewersChip(summary)
+            summaryPermissionChip
+            summaryPerformanceChip
+            permissionAction
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func summaryChips(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+    private func summaryVirtualDisplayMetric(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryMetric(
+            title: String(localized: "Virtual Displays"),
+            value: "\(summary.virtualDisplayCount)",
+            systemImage: "display.2",
+            tint: .blue
+        )
+    }
+
+    private func summaryRunningMetric(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryMetric(
+            title: String(localized: "Running"),
+            value: "\(summary.runningVirtualDisplayCount)",
+            systemImage: "checkmark.rectangle.stack",
+            tint: summary.runningVirtualDisplayCount > 0 ? .green : .secondary
+        )
+    }
+
+    private func summaryFailureMetric(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HomeSummaryMetric(
+            title: String(localized: "Recent Failures"),
+            value: "\(summary.recentFailureCount)",
+            systemImage: summary.recentFailureCount == 0 ? "checkmark.circle" : "exclamationmark.triangle",
+            tint: summary.recentFailureCount == 0 ? .green : .orange
+        )
+    }
+
+    private func summaryPreviewChip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
         HomeSummaryChip(
             title: String(localized: "Preview"),
             value: "\(summary.previewingCount)",
             systemImage: "dot.scope.display",
-            tint: summary.previewingCount > 0 ? .green : .secondary
+            tint: summary.previewingCount > 0 ? .green : .secondary,
+            isLowPriority: summary.previewingCount == 0
         )
+    }
+
+    private func summaryWebViewChip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
         HomeSummaryChip(
             title: String(localized: "Web View"),
             value: "\(summary.sharingCount)",
             systemImage: "network",
-            tint: summary.sharingCount > 0 ? .green : .secondary
+            tint: summary.sharingCount > 0 ? .green : .secondary,
+            isLowPriority: summary.sharingCount == 0
         )
+    }
+
+    private func summaryViewersChip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
         HomeSummaryChip(
             title: String(localized: "Viewers"),
             value: "\(summary.activeViewerCount)",
             systemImage: "person.2",
-            tint: summary.activeViewerCount > 0 ? .blue : .secondary
+            tint: summary.activeViewerCount > 0 ? .blue : .secondary,
+            isLowPriority: summary.activeViewerCount == 0
         )
+    }
+
+    private var summaryPermissionChip: some View {
         HomeSummaryChip(
             title: String(localized: "Screen Recording"),
             value: permissionLabel,
             systemImage: permissionSystemImage,
-            tint: permissionTint
+            tint: permissionTint,
+            isLowPriority: false
         )
+    }
+
+    private var summaryPerformanceChip: some View {
         HomeSummaryChip(
             title: String(localized: "Performance"),
             value: performanceLabel,
             systemImage: "speedometer",
-            tint: .purple
+            tint: .purple,
+            isLowPriority: false
         )
     }
 
@@ -718,6 +716,13 @@ private enum HomeVirtualDisplayCardAction {
     case delete
 }
 
+private enum HomeLayout {
+    static let contentMaxWidth: CGFloat = 1240
+    static let cardIdentityWidth: CGFloat = 330
+    static let cardStatusWidth: CGFloat = 300
+    static let cardActionWidth: CGFloat = 420
+}
+
 private struct HomeVirtualDisplayCard: View {
     let card: HomeVirtualDisplayCardPresentation
     let isFirst: Bool
@@ -764,18 +769,19 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     private var wideLayout: some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.large) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
             identityBlock
                 .layoutPriority(2)
-                .frame(minWidth: 310, idealWidth: 360, maxWidth: 430, alignment: .leading)
+                .frame(width: HomeLayout.cardIdentityWidth, alignment: .leading)
 
             statusGrid
                 .layoutPriority(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: HomeLayout.cardStatusWidth, alignment: .leading)
 
             actionCluster
+                .frame(width: HomeLayout.cardActionWidth, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
     }
 
     private var compactLayout: some View {
@@ -850,28 +856,38 @@ private struct HomeVirtualDisplayCard: View {
                 HomeInlineStatusPill(item: item)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("home_card_status_grid")
     }
 
     private var actionCluster: some View {
-        HStack(spacing: AppUI.Spacing.small) {
+        HStack(spacing: AppUI.Spacing.xSmall + 2) {
             toggleButton
-            previewButton
-            webViewButton
-            editButton
-            moreMenu
+            Divider()
+                .frame(height: 22)
+            secondaryActionCluster
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
     private var compactActionCluster: some View {
-        HStack(spacing: AppUI.Spacing.small) {
+        HStack(spacing: AppUI.Spacing.xSmall + 2) {
             toggleButton
             compactPreviewButton
             compactWebViewButton
             compactEditButton
         }
         .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var secondaryActionCluster: some View {
+        HStack(spacing: AppUI.Spacing.xSmall + 2) {
+            previewButton
+            webViewButton
+            editButton
+            moreMenu
+        }
+        .padding(.leading, 2)
     }
 
     @ViewBuilder
@@ -958,6 +974,7 @@ private struct HomeVirtualDisplayCard: View {
         .appActionButtonStyle(variant: .default)
         .disabled(isPreviewActionDisabled)
         .controlSize(.small)
+        .frame(minWidth: 78)
         .accessibilityIdentifier("home_virtual_display_preview_button")
     }
 
@@ -998,6 +1015,7 @@ private struct HomeVirtualDisplayCard: View {
         .appActionButtonStyle(variant: .default)
         .disabled(isWebViewActionDisabled)
         .controlSize(.small)
+        .frame(minWidth: 92)
         .accessibilityIdentifier("home_virtual_display_web_view_button")
     }
 
@@ -1030,6 +1048,7 @@ private struct HomeVirtualDisplayCard: View {
         .appActionButtonStyle(variant: .default)
         .disabled(isBusy)
         .controlSize(.small)
+        .frame(minWidth: 68)
         .accessibilityIdentifier("virtual_display_edit_button")
     }
 
@@ -1136,7 +1155,7 @@ private struct HomeSummaryMetric: View {
                     .minimumScaleFactor(0.75)
             }
         }
-        .frame(minWidth: 104, alignment: .leading)
+        .frame(minWidth: 96, alignment: .leading)
     }
 }
 
@@ -1145,6 +1164,7 @@ private struct HomeSummaryChip: View {
     let value: String
     let systemImage: String
     let tint: Color
+    let isLowPriority: Bool
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -1166,18 +1186,32 @@ private struct HomeSummaryChip: View {
                 .minimumScaleFactor(0.82)
         }
         .font(.caption)
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall + 1)
+        .padding(.horizontal, AppUI.Spacing.small - 1)
+        .padding(.vertical, AppUI.Spacing.xSmall)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(colorScheme == .dark ? .white.opacity(0.06) : .black.opacity(0.035))
+                .fill(chipFill)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.06), lineWidth: AppUI.Stroke.subtle)
+                .stroke(chipStroke, lineWidth: AppUI.Stroke.subtle)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(title): \(value)"))
+    }
+
+    private var chipFill: Color {
+        if isLowPriority {
+            return colorScheme == .dark ? .white.opacity(0.035) : .black.opacity(0.024)
+        }
+        return colorScheme == .dark ? .white.opacity(0.06) : .black.opacity(0.035)
+    }
+
+    private var chipStroke: Color {
+        if isLowPriority {
+            return colorScheme == .dark ? .white.opacity(0.06) : .black.opacity(0.045)
+        }
+        return colorScheme == .dark ? .white.opacity(0.10) : .black.opacity(0.06)
     }
 }
 
@@ -1247,14 +1281,14 @@ private struct HomeInlineStatusPill: View {
 
     private func statusFill(isLowPriority: Bool) -> Color {
         if isLowPriority {
-            return colorScheme == .dark ? .white.opacity(0.05) : .black.opacity(0.035)
+            return colorScheme == .dark ? .white.opacity(0.035) : .black.opacity(0.024)
         }
         return item.tone.tint.opacity(colorScheme == .dark ? 0.18 : 0.10)
     }
 
     private func statusStroke(isLowPriority: Bool) -> Color {
         if isLowPriority {
-            return colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.06)
+            return colorScheme == .dark ? .white.opacity(0.055) : .black.opacity(0.045)
         }
         return item.tone.tint.opacity(colorScheme == .dark ? 0.28 : 0.20)
     }

@@ -4211,23 +4211,6 @@
         }
       }
     },
-    "Manage virtual displays, preview, and Web View from one place." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manage virtual displays, preview, and Web View from one place."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在一个位置管理虚拟显示器、预览和 Web 查看。"
-          }
-        }
-      }
-    },
     "More" : {
       "extractionState" : "manual",
       "localizations" : {
