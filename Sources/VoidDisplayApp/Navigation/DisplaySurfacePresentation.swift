@@ -187,7 +187,7 @@ package enum DisplaySurfacePresentationMapper {
             return true
         }
         if let sharing = surface.sharing,
-           sharing.isStarting || sharing.isActive || sharing.viewerCount > 0 || sharing.hasRoute {
+           sharing.isStarting || sharing.isActive || sharing.viewerCount > 0 {
             return true
         }
         return false
@@ -554,9 +554,6 @@ package enum DisplaySurfacePresentationMapper {
         }
         if hasRuntimeDemand {
             return (String(localized: "Sharing"), .success)
-        }
-        if surface.sharing?.hasRoute == true {
-            return (String(localized: "Route Ready"), .info)
         }
         return (String(localized: "Off"), .neutral)
     }

@@ -74,19 +74,25 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [
                 config(id: firstID, name: "Desk Display", desiredEnabled: true),
                 config(id: secondID, name: "Spare Display", desiredEnabled: false)
+            ],
+            sharePageAddresses: [
+                7101: "http://127.0.0.1:18090/display/7101"
             ]
         )
 
         #expect(presentation.cards.map(\.id) == [firstID, secondID])
         #expect(presentation.cards[0].title == "Desk Display")
         #expect(presentation.cards[0].displayID == 7101)
+        #expect(presentation.cards[0].shareAddress == "http://127.0.0.1:18090/display/7101")
         #expect(presentation.cards[0].isRunning)
         #expect(presentation.cards[0].isPreviewing)
         #expect(presentation.cards[0].isSharing)
         #expect(presentation.cards[0].viewerCount == 2)
+        #expect(presentation.cards[0].operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
         #expect(presentation.cards[0].statusLabel == "Enabled · Running")
         #expect(presentation.cards[1].title == "Spare Display")
         #expect(presentation.cards[1].displayID == nil)
+        #expect(presentation.cards[1].shareAddress == nil)
         #expect(presentation.cards[1].statusLabel == "Disabled")
         #expect(presentation.summary.virtualDisplayCount == 2)
         #expect(presentation.summary.runningVirtualDisplayCount == 1)
@@ -151,6 +157,63 @@ struct HomeVirtualDisplayPresentationTests {
         #expect(card.statusLabel == "Enabled · Not Running")
         #expect(!card.isRunning)
         #expect(presentation.summary.runningVirtualDisplayCount == 0)
+    }
+
+    @Test func routeOnlyShareAddressKeepsDefaultHomeOperationalStatus() throws {
+        let configID = try #require(UUID(uuidString: "12121212-1212-1212-1212-121212121212"))
+        let displayID: DisplayRuntimeDisplayID = 7404
+        let snapshot = DisplayRuntimeSnapshot(
+            surfaces: [
+                managedSurface(
+                    configID: configID,
+                    displayID: displayID,
+                    desiredEnabled: true,
+                    isRunning: true,
+                    isLiveRuntime: true,
+                    sharing: DisplayRuntimeSharingSurfaceState(
+                        displayID: displayID,
+                        isStarting: false,
+                        isActive: false,
+                        viewerCount: 0,
+                        hasRoute: true
+                    )
+                )
+            ],
+            catalog: .empty,
+            capture: .empty,
+            sharing: DisplayRuntimeSharingSnapshot(
+                activeSharingDisplayIDs: [],
+                startingDisplayIDs: [],
+                isSharing: false,
+                isWebServiceRunning: true,
+                preferredPort: nil,
+                sharingClientCount: 0,
+                sharingClientCounts: [],
+                lifecycle: DisplayRuntimeSharingLifecycle(
+                    phase: .running,
+                    requestedPort: nil,
+                    boundPort: nil,
+                    failureReason: nil,
+                    hasFailureMessage: false
+                ),
+                routes: [DisplayRuntimeShareRoute(displayID: displayID, hasConcreteRoute: true)]
+            ),
+            virtualDisplay: .empty
+        )
+
+        let presentation = HomeVirtualDisplayPresentationMapper.makePresentation(
+            snapshot: snapshot,
+            displayConfigs: [config(id: configID, name: "Link Ready Display", desiredEnabled: true)],
+            sharePageAddresses: [
+                displayID: "http://127.0.0.1:18090/display/7404"
+            ]
+        )
+
+        let card = try #require(presentation.cards.first)
+        #expect(card.shareAddress == "http://127.0.0.1:18090/display/7404")
+        #expect(card.isSharing == false)
+        #expect(card.operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
+        #expect(card.operationalStatusItems.map(\.value) == ["Off", "Off", "0"])
     }
 
     @Test func summaryIgnoresRuntimeFailuresOutsideCurrentCards() throws {

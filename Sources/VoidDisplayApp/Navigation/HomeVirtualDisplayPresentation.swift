@@ -47,6 +47,7 @@ package struct HomeRuntimeSummaryPresentation: Equatable {
 package struct HomeVirtualDisplayCardPresentation: Identifiable, Equatable {
     package let id: UUID
     package let displayID: CGDirectDisplayID?
+    package let shareAddress: String?
     package let title: String
     package let subtitle: String
     package let desiredEnabled: Bool
@@ -58,11 +59,13 @@ package struct HomeVirtualDisplayCardPresentation: Identifiable, Equatable {
     package let statusTone: DisplaySurfaceStatusTone
     package let hasIssue: Bool
     package let compactStatusItems: [DisplaySurfaceStatusItemPresentation]
+    package let operationalStatusItems: [DisplaySurfaceStatusItemPresentation]
     package let accessibilitySummary: String
 
     package init(
         id: UUID,
         displayID: CGDirectDisplayID?,
+        shareAddress: String?,
         title: String,
         subtitle: String,
         desiredEnabled: Bool,
@@ -74,10 +77,12 @@ package struct HomeVirtualDisplayCardPresentation: Identifiable, Equatable {
         statusTone: DisplaySurfaceStatusTone,
         hasIssue: Bool,
         compactStatusItems: [DisplaySurfaceStatusItemPresentation],
+        operationalStatusItems: [DisplaySurfaceStatusItemPresentation],
         accessibilitySummary: String
     ) {
         self.id = id
         self.displayID = displayID
+        self.shareAddress = shareAddress
         self.title = title
         self.subtitle = subtitle
         self.desiredEnabled = desiredEnabled
@@ -89,6 +94,7 @@ package struct HomeVirtualDisplayCardPresentation: Identifiable, Equatable {
         self.statusTone = statusTone
         self.hasIssue = hasIssue
         self.compactStatusItems = compactStatusItems
+        self.operationalStatusItems = operationalStatusItems
         self.accessibilitySummary = accessibilitySummary
     }
 }
@@ -96,7 +102,8 @@ package struct HomeVirtualDisplayCardPresentation: Identifiable, Equatable {
 package enum HomeVirtualDisplayPresentationMapper {
     package static func makePresentation(
         snapshot: DisplayRuntimeSnapshot,
-        displayConfigs: [VirtualDisplayConfig]
+        displayConfigs: [VirtualDisplayConfig],
+        sharePageAddresses: [CGDirectDisplayID: String] = [:]
     ) -> HomeVirtualDisplaySurfacePresentation {
         let namesByConfigID = Dictionary(
             uniqueKeysWithValues: displayConfigs.map { ($0.id, $0.displayName) }
@@ -121,7 +128,8 @@ package enum HomeVirtualDisplayPresentationMapper {
             makeCard(
                 config: config,
                 surface: surfacesByConfigID[config.id],
-                runtimeSurface: runtimeSurfacesByConfigID[config.id]
+                runtimeSurface: runtimeSurfacesByConfigID[config.id],
+                sharePageAddresses: sharePageAddresses
             )
         }
         let configIDs = Set(displayConfigs.map(\.id))
@@ -134,12 +142,15 @@ package enum HomeVirtualDisplayPresentationMapper {
     private static func makeCard(
         config: VirtualDisplayConfig,
         surface: DisplaySurfacePresentation?,
-        runtimeSurface: DisplaySurface?
+        runtimeSurface: DisplaySurface?,
+        sharePageAddresses: [CGDirectDisplayID: String]
     ) -> HomeVirtualDisplayCardPresentation {
         let virtualDisplayStatus = surface?.compactStatusItems.first { $0.id == "virtualDisplay" }
         let hasIssue = surface?.compactStatusItems.contains { $0.id == "issue" } ?? false
+        let compactStatusItems = surface?.compactStatusItems ?? fallbackStatusItems(for: config)
         let viewerCount = surface?.compactStatusItems.first { $0.id == "viewerCount" }
             .flatMap { Int($0.value) } ?? 0
+        let displayID = surface?.displayID
         let isRunning = runtimeSurface.map(isRunningVirtualDisplay) ?? false
         let statusLabel = statusLabel(
             config: config,
@@ -156,7 +167,8 @@ package enum HomeVirtualDisplayPresentationMapper {
 
         return HomeVirtualDisplayCardPresentation(
             id: config.id,
-            displayID: surface?.displayID,
+            displayID: displayID,
+            shareAddress: displayID.flatMap { sharePageAddresses[$0] },
             title: surface?.title ?? config.displayName,
             subtitle: VirtualDisplayRowPresentation.subtitleText(for: config),
             desiredEnabled: config.desiredEnabled,
@@ -167,7 +179,8 @@ package enum HomeVirtualDisplayPresentationMapper {
             statusLabel: statusLabel,
             statusTone: statusTone,
             hasIssue: hasIssue,
-            compactStatusItems: surface?.compactStatusItems ?? fallbackStatusItems(for: config),
+            compactStatusItems: compactStatusItems,
+            operationalStatusItems: operationalStatusItems(from: compactStatusItems),
             accessibilitySummary: surface?.accessibilitySummary ?? "\(config.displayName), \(statusLabel)"
         )
     }
@@ -247,6 +260,19 @@ package enum HomeVirtualDisplayPresentationMapper {
                 accessibilityIdentifier: "home_viewer_count"
             )
         ]
+    }
+
+    private static func operationalStatusItems(
+        from items: [DisplaySurfaceStatusItemPresentation]
+    ) -> [DisplaySurfaceStatusItemPresentation] {
+        items.filter { item in
+            switch item.id {
+            case "virtualDisplay", "issue":
+                false
+            default:
+                true
+            }
+        }
     }
 
     private static func configID(for surface: DisplaySurfacePresentation) -> UUID? {

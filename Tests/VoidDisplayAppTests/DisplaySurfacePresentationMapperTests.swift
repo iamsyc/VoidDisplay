@@ -203,13 +203,35 @@ struct DisplaySurfacePresentationMapperTests {
                         mirrorsDisplayID: nil
                     ),
                     capture: nil,
-                    sharing: nil,
+                    sharing: DisplayRuntimeSharingSurfaceState(
+                        displayID: 900,
+                        isStarting: false,
+                        isActive: false,
+                        viewerCount: 0,
+                        hasRoute: true
+                    ),
                     managedVirtualDisplay: nil
                 )
             ],
             catalog: .empty,
             capture: .empty,
-            sharing: .empty,
+            sharing: DisplayRuntimeSharingSnapshot(
+                activeSharingDisplayIDs: [],
+                startingDisplayIDs: [],
+                isSharing: false,
+                isWebServiceRunning: true,
+                preferredPort: nil,
+                sharingClientCount: 0,
+                sharingClientCounts: [],
+                lifecycle: DisplayRuntimeSharingLifecycle(
+                    phase: .running,
+                    requestedPort: nil,
+                    boundPort: nil,
+                    failureReason: nil,
+                    hasFailureMessage: false
+                ),
+                routes: [DisplayRuntimeShareRoute(displayID: 900, hasConcreteRoute: true)]
+            ),
             virtualDisplay: .empty,
             consumerLeases: [],
             aggregatedDemands: [],
@@ -535,7 +557,7 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(!surface.isPreviewing)
         #expect(!surface.isSharing)
         #expect(compactValue("displays_preview_status", in: surface) == "Off")
-        #expect(compactValue("displays_lan_web_view_status", in: surface) == "Route Ready")
+        #expect(compactValue("displays_lan_web_view_status", in: surface) == "Off")
         #expect(compactValue("displays_viewer_count", in: surface) == "2")
         let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
         #expect(openPreviewAction.isEnabled)

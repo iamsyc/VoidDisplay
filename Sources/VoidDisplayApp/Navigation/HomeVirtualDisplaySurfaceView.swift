@@ -57,7 +57,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
         let presentation = HomeVirtualDisplayPresentationMapper.makePresentation(
             snapshot: displayRuntime.makeSnapshot(),
-            displayConfigs: virtualDisplay.displayConfigs
+            displayConfigs: virtualDisplay.displayConfigs,
+            sharePageAddresses: SharingUIComposition.runtimeState(sharing: sharing).sharePageAddresses
         )
 
         ScrollView {
@@ -740,6 +741,7 @@ private struct HomeVirtualDisplayCard: View {
     let perform: (HomeVirtualDisplayCardAction) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
     @State private var isHovered = false
 
     private var isBusy: Bool {
@@ -774,9 +776,13 @@ private struct HomeVirtualDisplayCard: View {
                 .layoutPriority(2)
                 .frame(width: HomeLayout.cardIdentityWidth, alignment: .leading)
 
-            statusGrid
-                .layoutPriority(1)
-                .frame(width: HomeLayout.cardStatusWidth, alignment: .leading)
+            if hasOperationalStatusItems {
+                statusGrid
+                    .layoutPriority(1)
+                    .frame(width: HomeLayout.cardStatusWidth, alignment: .leading)
+            } else {
+                Spacer(minLength: AppUI.Spacing.medium)
+            }
 
             actionStack
                 .frame(width: HomeLayout.cardActionWidth, alignment: .trailing)
@@ -796,7 +802,9 @@ private struct HomeVirtualDisplayCard: View {
             }
 
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                statusGrid
+                if hasOperationalStatusItems {
+                    statusGrid
+                }
 
                 Spacer(minLength: AppUI.Spacing.medium)
 
@@ -817,7 +825,9 @@ private struct HomeVirtualDisplayCard: View {
                 toggleButton
             }
 
-            statusGrid
+            if hasOperationalStatusItems {
+                statusGrid
+            }
 
             compactActionCluster
         }
@@ -852,7 +862,7 @@ private struct HomeVirtualDisplayCard: View {
 
     private var statusGrid: some View {
         HStack(spacing: AppUI.Spacing.small + 2) {
-            ForEach(operationalStatusItems) { item in
+            ForEach(card.operationalStatusItems) { item in
                 HomeInlineStatusPill(item: item)
             }
         }
@@ -872,6 +882,7 @@ private struct HomeVirtualDisplayCard: View {
         HStack(spacing: AppUI.Spacing.xSmall + 2) {
             compactPreviewButton
             compactWebViewButton
+            compactCopyShareAddressButton
             compactEditButton
             moreMenu
         }
@@ -882,6 +893,7 @@ private struct HomeVirtualDisplayCard: View {
         HStack(spacing: AppUI.Spacing.xSmall + 2) {
             previewButton
             webViewButton
+            copyShareAddressButton
             editButton
             moreMenu
         }
@@ -926,11 +938,8 @@ private struct HomeVirtualDisplayCard: View {
         }
     }
 
-    private var operationalStatusItems: [DisplaySurfaceStatusItemPresentation] {
-        let items = card.compactStatusItems.filter { item in
-            item.id != "virtualDisplay" && item.id != "issue"
-        }
-        return items.isEmpty ? card.compactStatusItems : items
+    private var hasOperationalStatusItems: Bool {
+        !card.operationalStatusItems.isEmpty
     }
 
     private var toggleButton: some View {
@@ -1037,6 +1046,60 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityIdentifier("home_virtual_display_web_view_button")
     }
 
+    @ViewBuilder
+    private var copyShareAddressButton: some View {
+        if let shareAddress {
+            Button {
+                copyShareAddress()
+            } label: {
+                Label(String(localized: "Copy Link"), systemImage: "doc.on.doc")
+            }
+            .appActionButtonStyle(variant: .default)
+            .controlSize(.small)
+            .frame(minWidth: 82)
+            .help(shareAddress)
+            .accessibilityValue(Text(verbatim: shareAddress))
+            .accessibilityIdentifier("home_virtual_display_copy_share_address_button")
+        }
+    }
+
+    @ViewBuilder
+    private var compactCopyShareAddressButton: some View {
+        if let shareAddress {
+            Button {
+                copyShareAddress()
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .appActionButtonStyle(variant: .default)
+            .controlSize(.small)
+            .frame(minWidth: 32)
+            .help(shareAddress)
+            .accessibilityLabel(Text("Copy Link"))
+            .accessibilityValue(Text(verbatim: shareAddress))
+            .accessibilityIdentifier("home_virtual_display_copy_share_address_button")
+        }
+    }
+
+    private func openSharePage() {
+        guard card.isSharing, let shareURL else { return }
+        openURL(shareURL)
+    }
+
+    private func copyShareAddress() {
+        guard let shareAddress else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(shareAddress, forType: .string)
+    }
+
+    private var shareAddress: String? {
+        card.shareAddress
+    }
+
+    private var shareURL: URL? {
+        shareAddress.flatMap(URL.init(string:))
+    }
+
     private var editButton: some View {
         Button {
             perform(.edit)
@@ -1067,6 +1130,19 @@ private struct HomeVirtualDisplayCard: View {
 
     private var moreMenu: some View {
         Menu {
+            if shareAddress != nil {
+                Button("Open Share Page", systemImage: "link") {
+                    openSharePage()
+                }
+                .disabled(!card.isSharing || shareURL == nil)
+
+                Button("Copy display address", systemImage: "doc.on.doc") {
+                    copyShareAddress()
+                }
+
+                Divider()
+            }
+
             Button("Set as Primary", systemImage: isPrimary ? "star.circle.fill" : "star.circle") {
                 perform(.setPrimary)
             }
