@@ -742,12 +742,11 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            identityHeader
-            statusGrid
-            actionBar
+        ViewThatFits(in: .horizontal) {
+            wideLayout
+            compactLayout
+            narrowLayout
         }
-        .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
         .padding(AppUI.Spacing.large)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -764,7 +763,62 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityLabel(Text(card.accessibilitySummary))
     }
 
-    private var identityHeader: some View {
+    private var wideLayout: some View {
+        HStack(alignment: .center, spacing: AppUI.Spacing.large) {
+            identityBlock
+                .layoutPriority(2)
+                .frame(minWidth: 310, idealWidth: 360, maxWidth: 430, alignment: .leading)
+
+            statusGrid
+                .layoutPriority(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            actionCluster
+        }
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                identityBlock
+                    .layoutPriority(1)
+
+                Spacer(minLength: AppUI.Spacing.medium)
+
+                moreMenu
+            }
+
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                statusGrid
+
+                Spacer(minLength: AppUI.Spacing.medium)
+
+                compactActionCluster
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+    }
+
+    private var narrowLayout: some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                identityBlock
+                    .layoutPriority(1)
+
+                Spacer(minLength: AppUI.Spacing.medium)
+
+                moreMenu
+            }
+
+            statusGrid
+
+            compactActionCluster
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var identityBlock: some View {
         HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
             Image(systemName: "display")
                 .font(.system(size: 28, weight: .regular))
@@ -774,22 +828,10 @@ private struct HomeVirtualDisplayCard: View {
                 .appTileStyle()
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall) {
-                HStack(spacing: AppUI.Spacing.xSmall + 2) {
-                    Text(card.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    primaryStatusBadge
-
-                    if isPrimary {
-                        HomeStatusBadge(
-                            title: String(localized: "Primary Display"),
-                            tone: .success
-                        )
-                        .accessibilityIdentifier("virtual_display_primary_ribbon")
-                    }
-                }
+                Text(card.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Text(card.subtitle)
                     .font(.subheadline)
@@ -797,17 +839,13 @@ private struct HomeVirtualDisplayCard: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                applyStateBadges
+                statusBadgeRow
             }
-
-            Spacer(minLength: 0)
-
-            moreMenu
         }
     }
 
     private var statusGrid: some View {
-        HStack(spacing: AppUI.Spacing.small) {
+        HStack(spacing: AppUI.Spacing.small + 2) {
             ForEach(operationalStatusItems) { item in
                 HomeInlineStatusPill(item: item)
             }
@@ -815,14 +853,25 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityIdentifier("home_card_status_grid")
     }
 
-    private var actionBar: some View {
+    private var actionCluster: some View {
         HStack(spacing: AppUI.Spacing.small) {
             toggleButton
             previewButton
             webViewButton
             editButton
+            moreMenu
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var compactActionCluster: some View {
+        HStack(spacing: AppUI.Spacing.small) {
+            toggleButton
+            compactPreviewButton
+            compactWebViewButton
+            compactEditButton
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder
@@ -842,9 +891,19 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     @ViewBuilder
-    private var applyStateBadges: some View {
-        if hasRecentApplySuccess {
-            HStack(spacing: 6) {
+    private var statusBadgeRow: some View {
+        HStack(spacing: 6) {
+            primaryStatusBadge
+
+            if isPrimary {
+                HomeStatusBadge(
+                    title: String(localized: "Primary Display"),
+                    tone: .success
+                )
+                .accessibilityIdentifier("virtual_display_primary_ribbon")
+            }
+
+            if hasRecentApplySuccess {
                 HomeStatusBadge(
                     title: String(localized: "Applied"),
                     tone: .success
@@ -902,6 +961,26 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityIdentifier("home_virtual_display_preview_button")
     }
 
+    private var compactPreviewButton: some View {
+        Button {
+            perform(.preview)
+        } label: {
+            if isPreviewStarting {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: card.isPreviewing ? "stop.fill" : "dot.scope.display")
+            }
+        }
+        .appActionButtonStyle(variant: .default)
+        .disabled(isPreviewActionDisabled)
+        .controlSize(.small)
+        .frame(minWidth: 32)
+        .help(Text(card.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
+        .accessibilityLabel(Text(card.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
+        .accessibilityIdentifier("home_virtual_display_preview_button")
+    }
+
     private var webViewButton: some View {
         Button {
             perform(.webView)
@@ -922,6 +1001,26 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityIdentifier("home_virtual_display_web_view_button")
     }
 
+    private var compactWebViewButton: some View {
+        Button {
+            perform(.webView)
+        } label: {
+            if isWebViewStarting {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: card.isSharing ? "stop.fill" : "network")
+            }
+        }
+        .appActionButtonStyle(variant: .default)
+        .disabled(isWebViewActionDisabled)
+        .controlSize(.small)
+        .frame(minWidth: 32)
+        .help(Text(card.isSharing ? String(localized: "Stop Web View") : String(localized: "Web View")))
+        .accessibilityLabel(Text(card.isSharing ? String(localized: "Stop Web View") : String(localized: "Web View")))
+        .accessibilityIdentifier("home_virtual_display_web_view_button")
+    }
+
     private var editButton: some View {
         Button {
             perform(.edit)
@@ -931,6 +1030,21 @@ private struct HomeVirtualDisplayCard: View {
         .appActionButtonStyle(variant: .default)
         .disabled(isBusy)
         .controlSize(.small)
+        .accessibilityIdentifier("virtual_display_edit_button")
+    }
+
+    private var compactEditButton: some View {
+        Button {
+            perform(.edit)
+        } label: {
+            Image(systemName: "square.and.pencil")
+        }
+        .appActionButtonStyle(variant: .default)
+        .disabled(isBusy)
+        .controlSize(.small)
+        .frame(minWidth: 32)
+        .help(Text("Edit"))
+        .accessibilityLabel(Text("Edit"))
         .accessibilityIdentifier("virtual_display_edit_button")
     }
 
@@ -1093,10 +1207,6 @@ private struct HomeInlineStatusPill: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(isLowPriority ? .secondary : item.tone.tint)
                 .frame(width: 13)
-
-            Text(item.title)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
 
             Text(item.value)
                 .font(.caption.weight(.semibold))
