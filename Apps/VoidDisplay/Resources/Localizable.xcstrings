@@ -3549,7 +3549,7 @@
       }
     },
     "Sharing" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3698,6 +3698,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止服务"
+          }
+        }
+      }
+    },
+    "Stop Sharing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Sharing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止共享"
           }
         }
       }
@@ -4200,19 +4217,19 @@
         }
       }
     },
-    "Display is not available for Web View." : {
+    "Display is not available for sharing." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Display is not available for Web View."
+            "value" : "Display is not available for sharing."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示器当前不可用于 Web 查看。"
+            "value" : "显示器当前不可用于共享。"
           }
         }
       }
@@ -4337,6 +4354,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Web 服务启动请求已被新的请求替代。"
+          }
+        }
+      }
+    },
+    "Web Sharing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web Sharing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web 共享"
           }
         }
       }

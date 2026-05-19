@@ -381,7 +381,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private func summaryWebViewStatus(_ summary: HomeRuntimeSummaryPresentation) -> some View {
         HomeSummaryStatusItem(
-            title: String(localized: "Web View"),
+            title: String(localized: "Web Sharing"),
             value: "\(summary.sharingCount)",
             systemImage: "network",
             tint: summary.sharingCount > 0 ? .green : .secondary,
@@ -416,11 +416,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private var sharingSettingsPanel: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.large) {
                 sharingSettingsTitle
-                    .frame(minWidth: 112, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
 
-                sharingSettingsDivider
                 sharingSettingsControlsInline
 
                 Spacer(minLength: AppUI.Spacing.small)
@@ -444,7 +443,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private var sharingSettingsControlsInline: some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.small) {
             sharingPerformanceControl
             sharingSettingsDivider
             sharingPortControl
@@ -476,7 +475,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private var sharingSettingsTitle: some View {
         Label("Screen Sharing", systemImage: "network")
-            .font(.subheadline.weight(.semibold))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(.primary)
     }
 
@@ -516,7 +515,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         .pickerStyle(.segmented)
         .controlSize(.small)
         .tint(.gray)
-        .frame(width: 224, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityIdentifier("home_sharing_performance_picker")
     }
 
@@ -525,7 +524,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
             TextField("8089", text: sharingPortInputBinding)
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.trailing)
-                .frame(width: 72)
+                .frame(width: 60)
                 .onSubmit {
                     savePreferredSharingPort()
                 }
@@ -755,7 +754,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
             guard let display = await resolveDisplay(displayID: displayID) else {
                 presentActionError(
                     title: String(localized: "Share Failed"),
-                    message: String(localized: "Display is not available for Web View.")
+                    message: String(localized: "Display is not available for sharing.")
                 )
                 return
             }
@@ -1258,7 +1257,7 @@ private struct HomeVirtualDisplayCard: View {
                     .controlSize(.small)
             } else {
                 Label(
-                    card.isSharing ? String(localized: "Stop Web View") : String(localized: "Web View"),
+                    card.isSharing ? String(localized: "Stop") : String(localized: "Sharing"),
                     systemImage: card.isSharing ? "stop.fill" : "network"
                 )
             }
@@ -1285,8 +1284,8 @@ private struct HomeVirtualDisplayCard: View {
         .disabled(isWebViewActionDisabled)
         .controlSize(.small)
         .frame(minWidth: 32)
-        .help(Text(card.isSharing ? String(localized: "Stop Web View") : String(localized: "Web View")))
-        .accessibilityLabel(Text(card.isSharing ? String(localized: "Stop Web View") : String(localized: "Web View")))
+        .help(Text(card.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
+        .accessibilityLabel(Text(card.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
         .accessibilityIdentifier("home_virtual_display_web_view_button")
     }
 

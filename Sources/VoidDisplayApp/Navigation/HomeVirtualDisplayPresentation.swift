@@ -236,7 +236,7 @@ package enum HomeVirtualDisplayPresentationMapper {
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "webView",
-                title: String(localized: "Web View"),
+                title: String(localized: "Web Sharing"),
                 value: String(localized: "Off"),
                 accessibilityIdentifier: "home_web_view_status"
             ),

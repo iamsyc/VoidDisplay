@@ -267,7 +267,7 @@ package enum DisplaySurfacePresentationMapper {
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "webView",
-                title: String(localized: "Web View"),
+                title: String(localized: "Web Sharing"),
                 value: lanWebViewStatus.value,
                 accessibilityIdentifier: "displays_lan_web_view_status",
                 tone: lanWebViewStatus.tone
@@ -596,7 +596,7 @@ package enum DisplaySurfacePresentationMapper {
                 ? DisplaySurfaceRowActionPresentation(
                     kind: .stopLANWebView,
                     title: String(localized: "Stop"),
-                    help: String(localized: "Stop Web View"),
+                    help: String(localized: "Stop Sharing"),
                     systemImage: "stop.circle",
                     accessibilityIdentifier: "displays_action_stop_lan_web_view",
                     isEnabled: canStopLANWebViewSharing,
@@ -604,8 +604,8 @@ package enum DisplaySurfacePresentationMapper {
                 )
                 : DisplaySurfaceRowActionPresentation(
                     kind: .openLANWebView,
-                    title: String(localized: "Web View"),
-                    help: String(localized: "Open Web View"),
+                    title: String(localized: "Sharing"),
+                    help: String(localized: "Sharing"),
                     systemImage: "network",
                     accessibilityIdentifier: "displays_action_open_lan_web_view",
                     isEnabled: true
