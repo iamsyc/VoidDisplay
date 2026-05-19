@@ -963,7 +963,7 @@ private enum HomeVirtualDisplayCardAction {
 private enum HomeLayout {
     static let contentMaxWidth: CGFloat = 1240
     static let cardIdentityWidth: CGFloat = 330
-    static let cardStatusWidth: CGFloat = 300
+    static let cardStatusWidth: CGFloat = 360
     static let cardActionWidth: CGFloat = 420
 }
 
@@ -1104,9 +1104,9 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     private var statusGrid: some View {
-        HStack(spacing: AppUI.Spacing.small + 2) {
+        HStack(spacing: AppUI.Spacing.medium) {
             ForEach(card.operationalStatusItems) { item in
-                HomeInlineStatusPill(item: item)
+                HomeInlineStatusText(item: item)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -1566,35 +1566,28 @@ private struct HomeStatusBadge: View {
     }
 }
 
-private struct HomeInlineStatusPill: View {
+private struct HomeInlineStatusText: View {
     let item: DisplaySurfaceStatusItemPresentation
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let isLowPriority = item.tone == .neutral
         HStack(spacing: 5) {
             Image(systemName: systemImage)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isLowPriority ? .secondary : item.tone.tint)
+                .foregroundStyle(iconForegroundColor)
                 .frame(width: 13)
 
+            Text(item.title)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
             Text(item.value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isLowPriority ? .secondary : item.tone.tint)
+                .fontWeight(.semibold)
+                .foregroundStyle(valueForegroundColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .font(.caption)
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall + 1)
-        .background(
-            statusFill(isLowPriority: isLowPriority),
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(statusStroke(isLowPriority: isLowPriority), lineWidth: AppUI.Stroke.subtle)
-        )
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("\(item.title): \(item.value)"))
         .accessibilityIdentifier(item.accessibilityIdentifier)
@@ -1615,18 +1608,25 @@ private struct HomeInlineStatusPill: View {
         }
     }
 
-    private func statusFill(isLowPriority: Bool) -> Color {
-        if isLowPriority {
-            return colorScheme == .dark ? .white.opacity(0.035) : .black.opacity(0.024)
+    private var iconForegroundColor: Color {
+        switch item.tone {
+        case .neutral:
+            Color.secondary
+        default:
+            item.tone.tint
         }
-        return item.tone.tint.opacity(colorScheme == .dark ? 0.18 : 0.10)
     }
 
-    private func statusStroke(isLowPriority: Bool) -> Color {
-        if isLowPriority {
-            return colorScheme == .dark ? .white.opacity(0.055) : .black.opacity(0.045)
+    private var valueForegroundColor: Color {
+        if item.id == "viewerCount" {
+            return .primary
         }
-        return item.tone.tint.opacity(colorScheme == .dark ? 0.28 : 0.20)
+        return switch item.tone {
+        case .neutral:
+            Color.secondary
+        default:
+            item.tone.tint
+        }
     }
 }
 
