@@ -65,7 +65,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         )
 
         ScrollView {
-            VStack(alignment: .leading, spacing: AppUI.Spacing.large) {
+            VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
                 header
                 summaryPanel(presentation.summary)
 
@@ -225,21 +225,18 @@ package struct HomeVirtualDisplaySurfaceView: View {
             summaryStatusLayout(summary)
 
             Divider()
-                .padding(.vertical, 1)
+                .opacity(0.55)
 
             sharingSettingsPanel
         }
         .padding(.horizontal, AppUI.Spacing.large)
-        .padding(.vertical, AppUI.Spacing.medium)
+        .padding(.top, AppUI.Spacing.small)
+        .padding(.bottom, AppUI.Spacing.medium)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AppUI.Surface.cardFill(for: colorScheme))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(AppUI.Surface.cardStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
-        )
+        .overlay(alignment: .bottom) {
+            Divider()
+                .opacity(0.65)
+        }
         .accessibilityLabel(Text("Current Status"))
         .accessibilityIdentifier("home_summary_panel")
     }
@@ -289,15 +286,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                 summaryVirtualDisplayMetric(summary)
-                summaryStatusDivider
                 summaryRunningMetric(summary)
-                summaryStatusDivider
-                summaryPreviewStatus(summary)
-                summaryStatusDivider
-                summaryWebViewStatus(summary)
-                summaryStatusDivider
-                summaryViewersStatus(summary)
                 Spacer(minLength: AppUI.Spacing.small)
+                summaryLiveActivityCluster(summary)
+                summaryStatusDivider
                 summaryPermissionStatus
                 permissionAction
             }
@@ -307,17 +299,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 summaryActivityStatusRow(summary)
             }
         }
-        .padding(.horizontal, AppUI.Spacing.small)
-        .padding(.vertical, AppUI.Spacing.xSmall + 1)
+        .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(colorScheme == .dark ? .white.opacity(0.035) : .black.opacity(0.018))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(colorScheme == .dark ? .white.opacity(0.07) : .black.opacity(0.045), lineWidth: AppUI.Stroke.subtle)
-        )
         .accessibilityIdentifier("home_summary_status_strip")
     }
 
@@ -348,17 +331,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private func summaryActivityStatusRow(_ summary: HomeRuntimeSummaryPresentation) -> some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 0) {
-                summaryPreviewStatus(summary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                summaryStatusDivider
-                summaryWebViewStatus(summary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                summaryStatusDivider
-                summaryViewersStatus(summary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            summaryLiveActivityCluster(summary)
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall) {
                 summaryPreviewStatus(summary)
@@ -367,6 +340,15 @@ package struct HomeVirtualDisplaySurfaceView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func summaryLiveActivityCluster(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+            summaryPreviewStatus(summary)
+            summaryWebViewStatus(summary)
+            summaryViewersStatus(summary)
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func summaryPreviewStatus(_ summary: HomeRuntimeSummaryPresentation) -> some View {
@@ -412,6 +394,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private var summaryStatusDivider: some View {
         Divider()
             .frame(height: 16)
+            .opacity(0.65)
     }
 
     private var sharingSettingsPanel: some View {
@@ -421,8 +404,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
                     .fixedSize(horizontal: true, vertical: false)
 
                 sharingSettingsControlsInline
-
-                Spacer(minLength: AppUI.Spacing.small)
             }
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
@@ -565,7 +546,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func cardGrid(_ cards: [HomeVirtualDisplayCardPresentation]) -> some View {
-        LazyVStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+        LazyVStack(alignment: .leading, spacing: AppUI.Spacing.small + 2) {
             ForEach(cards) { card in
                 HomeVirtualDisplayCard(
                     card: card,
@@ -962,9 +943,8 @@ private enum HomeVirtualDisplayCardAction {
 
 private enum HomeLayout {
     static let contentMaxWidth: CGFloat = 1240
-    static let cardIdentityWidth: CGFloat = 330
-    static let cardStatusWidth: CGFloat = 360
-    static let cardActionWidth: CGFloat = 420
+    static let cardIdentityMinWidth: CGFloat = 300
+    static let cardStatusMinWidth: CGFloat = 280
 }
 
 private struct HomeVirtualDisplayCard: View {
@@ -997,7 +977,8 @@ private struct HomeVirtualDisplayCard: View {
             compactLayout
             narrowLayout
         }
-        .padding(AppUI.Spacing.large)
+        .padding(.horizontal, AppUI.Spacing.large)
+        .padding(.vertical, AppUI.Spacing.medium)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(AppUI.Surface.cardFill(for: colorScheme))
@@ -1006,6 +987,15 @@ private struct HomeVirtualDisplayCard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(cardStroke, lineWidth: AppUI.Stroke.subtle)
         )
+        .overlay(alignment: .leading) {
+            if showsStatusAccent {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(statusAccent.opacity(colorScheme == .dark ? 0.72 : 0.58))
+                    .frame(width: 3)
+                    .padding(.vertical, AppUI.Spacing.medium)
+                    .padding(.leading, 1)
+            }
+        }
         .onHover { hovered in
             isHovered = hovered
         }
@@ -1014,27 +1004,28 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     private var wideLayout: some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.large) {
             identityBlock
                 .layoutPriority(2)
-                .frame(width: HomeLayout.cardIdentityWidth, alignment: .leading)
+                .frame(minWidth: HomeLayout.cardIdentityMinWidth, alignment: .leading)
 
             if hasOperationalStatusItems {
                 statusGrid
                     .layoutPriority(1)
-                    .frame(width: HomeLayout.cardStatusWidth, alignment: .leading)
+                    .frame(minWidth: HomeLayout.cardStatusMinWidth, alignment: .leading)
             } else {
                 Spacer(minLength: AppUI.Spacing.medium)
             }
 
+            Spacer(minLength: AppUI.Spacing.small)
+
             actionStack
-                .frame(width: HomeLayout.cardActionWidth, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
     }
 
     private var compactLayout: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                 identityBlock
                     .layoutPriority(1)
@@ -1054,7 +1045,7 @@ private struct HomeVirtualDisplayCard: View {
                 compactActionCluster
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
     }
 
     private var narrowLayout: some View {
@@ -1078,12 +1069,12 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     private var identityBlock: some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.small + 2) {
             Image(systemName: "display")
-                .font(.system(size: 28, weight: .regular))
+                .font(.system(size: 25, weight: .regular))
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.primary.opacity(0.88), iconTint)
-                .frame(width: 46, height: 46)
+                .frame(width: 40, height: 40)
                 .appTileStyle()
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall) {
@@ -1114,9 +1105,9 @@ private struct HomeVirtualDisplayCard: View {
     }
 
     private var actionStack: some View {
-        VStack(alignment: .trailing, spacing: AppUI.Spacing.small) {
+        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+            compactActionCluster
             toggleButton
-            secondaryActionCluster
         }
         .fixedSize(horizontal: true, vertical: true)
     }
@@ -1130,17 +1121,6 @@ private struct HomeVirtualDisplayCard: View {
             moreMenu
         }
         .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var secondaryActionCluster: some View {
-        HStack(spacing: AppUI.Spacing.xSmall + 2) {
-            previewButton
-            webViewButton
-            copyShareAddressButton
-            editButton
-            moreMenu
-        }
-        .padding(.leading, 2)
     }
 
     @ViewBuilder
@@ -1203,29 +1183,8 @@ private struct HomeVirtualDisplayCard: View {
         .tint(card.isRunning ? .orange : .green)
         .disabled(isBusy)
         .controlSize(.regular)
-        .frame(minWidth: 94)
+        .frame(minWidth: 86)
         .accessibilityIdentifier("virtual_display_toggle_button")
-    }
-
-    private var previewButton: some View {
-        Button {
-            perform(.preview)
-        } label: {
-            if isPreviewStarting {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Label(
-                    card.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview"),
-                    systemImage: card.isPreviewing ? "stop.fill" : "dot.scope.display"
-                )
-            }
-        }
-        .appActionButtonStyle(variant: .default)
-        .disabled(isPreviewActionDisabled)
-        .controlSize(.small)
-        .frame(minWidth: 78)
-        .accessibilityIdentifier("home_virtual_display_preview_button")
     }
 
     private var compactPreviewButton: some View {
@@ -1248,27 +1207,6 @@ private struct HomeVirtualDisplayCard: View {
         .accessibilityIdentifier("home_virtual_display_preview_button")
     }
 
-    private var webViewButton: some View {
-        Button {
-            perform(.webView)
-        } label: {
-            if isWebViewStarting {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Label(
-                    card.isSharing ? String(localized: "Stop") : String(localized: "Sharing"),
-                    systemImage: card.isSharing ? "stop.fill" : "network"
-                )
-            }
-        }
-        .appActionButtonStyle(variant: .default)
-        .disabled(isWebViewActionDisabled)
-        .controlSize(.small)
-        .frame(minWidth: 92)
-        .accessibilityIdentifier("home_virtual_display_web_view_button")
-    }
-
     private var compactWebViewButton: some View {
         Button {
             perform(.webView)
@@ -1287,23 +1225,6 @@ private struct HomeVirtualDisplayCard: View {
         .help(Text(card.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
         .accessibilityLabel(Text(card.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
         .accessibilityIdentifier("home_virtual_display_web_view_button")
-    }
-
-    @ViewBuilder
-    private var copyShareAddressButton: some View {
-        if let shareAddress {
-            Button {
-                copyShareAddress()
-            } label: {
-                Label(String(localized: "Copy Link"), systemImage: "doc.on.doc")
-            }
-            .appActionButtonStyle(variant: .default)
-            .controlSize(.small)
-            .frame(minWidth: 82)
-            .help(shareAddress)
-            .accessibilityValue(Text(verbatim: shareAddress))
-            .accessibilityIdentifier("home_virtual_display_copy_share_address_button")
-        }
     }
 
     @ViewBuilder
@@ -1341,19 +1262,6 @@ private struct HomeVirtualDisplayCard: View {
 
     private var shareURL: URL? {
         shareAddress.flatMap(URL.init(string:))
-    }
-
-    private var editButton: some View {
-        Button {
-            perform(.edit)
-        } label: {
-            Label("Edit", systemImage: "square.and.pencil")
-        }
-        .appActionButtonStyle(variant: .default)
-        .disabled(isBusy)
-        .controlSize(.small)
-        .frame(minWidth: 68)
-        .accessibilityIdentifier("virtual_display_edit_button")
     }
 
     private var compactEditButton: some View {
@@ -1444,6 +1352,17 @@ private struct HomeVirtualDisplayCard: View {
             return AppUI.Surface.cardHoverStroke(for: colorScheme)
         }
         return AppUI.Surface.cardStroke(for: colorScheme)
+    }
+
+    private var showsStatusAccent: Bool {
+        card.isRunning || card.hasIssue || rebuildFailureMessage != nil
+    }
+
+    private var statusAccent: Color {
+        if card.hasIssue || rebuildFailureMessage != nil {
+            return .orange
+        }
+        return card.isRunning ? .green : .secondary
     }
 }
 
@@ -1560,8 +1479,8 @@ private struct HomeStatusBadge: View {
             .font(.caption.weight(.medium))
             .lineLimit(1)
             .padding(.horizontal, AppUI.Spacing.small - 1)
-            .padding(.vertical, AppUI.Spacing.xSmall)
-            .background(tone.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .padding(.vertical, AppUI.Spacing.xSmall - 1)
+            .background(tone.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .foregroundStyle(tone.tint)
     }
 }
@@ -1581,7 +1500,7 @@ private struct HomeInlineStatusText: View {
                 .lineLimit(1)
 
             Text(item.value)
-                .fontWeight(.semibold)
+                .fontWeight(valueFontWeight)
                 .foregroundStyle(valueForegroundColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -1623,10 +1542,14 @@ private struct HomeInlineStatusText: View {
         }
         return switch item.tone {
         case .neutral:
-            Color.secondary
+            Color.secondary.opacity(0.72)
         default:
             item.tone.tint
         }
+    }
+
+    private var valueFontWeight: Font.Weight {
+        item.tone == .neutral ? .regular : .semibold
     }
 }
 
