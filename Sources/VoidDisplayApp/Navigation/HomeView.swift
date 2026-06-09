@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import VoidDisplayCapture
+import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 import VoidDisplayObservability
 import VoidDisplayRuntime
@@ -15,6 +16,7 @@ package struct HomeView: View {
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
+    @Environment(AppearancePreferences.self) private var appearancePreferences
 
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController
@@ -43,7 +45,7 @@ package struct HomeView: View {
             List(selection: $bindableNavigation.sidebarSelection) {
                 Section("Main") {
                     NavigationLink(value: AppSidebarItem.home) {
-                        Label("Home", systemImage: "house")
+                        Label(String(localized: "Displays"), systemImage: "display.2")
                     }
                     .tag(AppSidebarItem.home)
                     .accessibilityIdentifier("sidebar_home")
@@ -73,7 +75,8 @@ package struct HomeView: View {
                             displayRuntime: displayRuntime,
                             openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                         )
-                        .navigationTitle("Home")
+                        .appSkin(appearancePreferences.skinID)
+                        .navigationTitle(String(localized: "Displays"))
                         .accessibilityIdentifier("detail_home")
                     case .diagnostics:
                         DiagnosticsView(

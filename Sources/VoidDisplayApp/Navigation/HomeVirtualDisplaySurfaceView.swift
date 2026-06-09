@@ -14,6 +14,7 @@ import VoidDisplayVirtualDisplay
 @MainActor
 package struct HomeVirtualDisplaySurfaceView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
 
@@ -64,20 +65,19 @@ package struct HomeVirtualDisplaySurfaceView: View {
             sharePageAddresses: SharingUIComposition.runtimeState(sharing: sharing).sharePageAddresses
         )
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-                header
-                summaryPanel(presentation.summary)
+        let cardStates = cardRenderStates(for: presentation.cards)
+        let theme = AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
 
-                if virtualDisplay.configStorePresentation.hasLoadFailure {
-                    configStoreErrorPanel
-                } else if presentation.cards.isEmpty {
-                    emptyState
-                } else {
-                    cardGrid(presentation.cards)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: surfaceSpacing) {
+                header
+
+                surfaceContent(
+                    presentation: presentation,
+                    cardStates: cardStates
+                )
             }
-            .frame(maxWidth: HomeLayout.contentMaxWidth, alignment: .topLeading)
+            .frame(maxWidth: theme.density.contentMaxWidth, alignment: .topLeading)
             .appListContentInsets()
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -169,6 +169,49 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 await displayRuntime.handleCatalogTopologyChanged()
             }
         }
+        .appSkin(skinID)
+    }
+
+    private var surfaceSpacing: CGFloat {
+        skinID == .dashboard ? AppUI.Spacing.large : AppUI.Spacing.medium
+    }
+
+    @ViewBuilder
+    private func surfaceContent(
+        presentation: HomeVirtualDisplaySurfacePresentation,
+        cardStates: [HomeVirtualDisplayCardRenderState]
+    ) -> some View {
+        switch skinID {
+        case .classic:
+            summaryPanel(presentation.summary)
+            cardContent(isEmpty: cardStates.isEmpty) {
+                HomeClassicRenderer(cardStates: cardStates)
+            }
+        case .compact:
+            summaryPanel(presentation.summary)
+            cardContent(isEmpty: cardStates.isEmpty) {
+                HomeCompactRenderer(cardStates: cardStates)
+            }
+        case .dashboard:
+            dashboardStatusBoard(presentation.summary)
+            cardContent(isEmpty: cardStates.isEmpty) {
+                HomeDashboardRenderer(cardStates: cardStates)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cardContent<Content: View>(
+        isEmpty: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if virtualDisplay.configStorePresentation.hasLoadFailure {
+            configStoreErrorPanel
+        } else if isEmpty {
+            emptyState
+        } else {
+            content()
+        }
     }
 
     private var header: some View {
@@ -239,6 +282,66 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
         .accessibilityLabel(Text("Current Status"))
         .accessibilityIdentifier("home_summary_panel")
+    }
+
+    private func dashboardStatusBoard(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: AppUI.Spacing.large) {
+                    dashboardMetricStrip(summary)
+                    Spacer(minLength: AppUI.Spacing.medium)
+                    sharingSettingsPanel
+                        .frame(maxWidth: 520, alignment: .leading)
+                }
+
+                VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+                    dashboardMetricStrip(summary)
+                    Divider()
+                    sharingSettingsPanel
+                }
+            }
+        }
+        .padding(.horizontal, AppUI.Spacing.large)
+        .padding(.vertical, AppUI.Spacing.medium)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appPanelStyle()
+        .accessibilityIdentifier("home_dashboard_status_board")
+    }
+
+    private func dashboardMetricStrip(_ summary: HomeRuntimeSummaryPresentation) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.large) {
+                HomeSummaryMetric(
+                    title: String(localized: "Virtual Displays"),
+                    value: "\(summary.virtualDisplayCount)",
+                    systemImage: "display.2",
+                    tint: .blue
+                )
+                HomeSummaryMetric(
+                    title: String(localized: "Running"),
+                    value: "\(summary.runningVirtualDisplayCount)",
+                    systemImage: "checkmark.rectangle.stack",
+                    tint: summary.runningVirtualDisplayCount > 0 ? .green : .secondary
+                )
+                HomeSummaryMetric(
+                    title: String(localized: "Web Sharing"),
+                    value: "\(summary.sharingCount)",
+                    systemImage: "network",
+                    tint: summary.sharingCount > 0 ? .green : .secondary
+                )
+                HomeSummaryMetric(
+                    title: String(localized: "Viewers"),
+                    value: "\(summary.activeViewerCount)",
+                    systemImage: "person.2",
+                    tint: summary.activeViewerCount > 0 ? .blue : .secondary
+                )
+            }
+
+            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                summaryPrimaryStatusRow(summary)
+                summaryActivityStatusRow(summary)
+            }
+        }
     }
 
     private func summaryStatusLayout(_ summary: HomeRuntimeSummaryPresentation) -> some View {
@@ -545,31 +648,29 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private func cardGrid(_ cards: [HomeVirtualDisplayCardPresentation]) -> some View {
-        LazyVStack(alignment: .leading, spacing: AppUI.Spacing.small + 2) {
-            ForEach(cards) { card in
-                HomeVirtualDisplayCard(
-                    card: card,
-                    isFirst: cards.first?.id == card.id,
-                    isLast: cards.last?.id == card.id,
-                    isToggling: viewModel.isToggling(configId: card.id),
-                    isRebuilding: virtualDisplay.isRebuilding(configId: card.id),
-                    hasRecentApplySuccess: virtualDisplay.hasRecentApplySuccess(configId: card.id),
-                    rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: card.id),
-                    isPrimary: viewModel.isPrimaryDisplay(configID: card.id),
-                    canSetAsPrimary: canSetAsPrimary(card),
-                    isPreviewActionDisabled: isPreviewActionDisabled(card),
-                    isPreviewStarting: card.displayID.map(capture.isStarting(displayID:)) ?? false,
-                    isWebViewActionDisabled: isWebViewActionDisabled(card),
-                    isWebViewStarting: card.displayID.map(sharing.isStarting(displayID:)) ?? false,
-                    perform: { action in
-                        perform(action, for: card)
-                    }
-                )
-                .accessibilityIdentifier("home_virtual_display_card")
-            }
+    private func cardRenderStates(
+        for cards: [HomeVirtualDisplayCardPresentation]
+    ) -> [HomeVirtualDisplayCardRenderState] {
+        cards.map { card in
+            HomeVirtualDisplayCardRenderState(
+                card: card,
+                isFirst: cards.first?.id == card.id,
+                isLast: cards.last?.id == card.id,
+                isToggling: viewModel.isToggling(configId: card.id),
+                isRebuilding: virtualDisplay.isRebuilding(configId: card.id),
+                hasRecentApplySuccess: virtualDisplay.hasRecentApplySuccess(configId: card.id),
+                rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: card.id),
+                isPrimary: viewModel.isPrimaryDisplay(configID: card.id),
+                canSetAsPrimary: canSetAsPrimary(card),
+                isPreviewActionDisabled: isPreviewActionDisabled(card),
+                isPreviewStarting: card.displayID.map(capture.isStarting(displayID:)) ?? false,
+                isWebViewActionDisabled: isWebViewActionDisabled(card),
+                isWebViewStarting: card.displayID.map(sharing.isStarting(displayID:)) ?? false,
+                perform: { action in
+                    perform(action, for: card)
+                }
+            )
         }
-        .accessibilityIdentifier("home_virtual_display_card_grid")
     }
 
     private var configStoreErrorPanel: some View {
@@ -650,6 +751,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
             } else {
                 startWebView(card)
             }
+        case .openSharePage:
+            openSharePage(card)
+        case .copyShareAddress:
+            copyShareAddress(card)
         case .edit:
             editingConfig = EditingConfig(id: card.id)
         case .moveUp:
@@ -764,6 +869,22 @@ package struct HomeVirtualDisplaySurfaceView: View {
             await DisplayRuntimeSharingAdapter(controller: sharing)
                 .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
         }
+    }
+
+    private func openSharePage(_ card: HomeVirtualDisplayCardPresentation) {
+        guard card.isSharing,
+              let shareAddress = card.shareAddress,
+              let shareURL = URL(string: shareAddress)
+        else {
+            return
+        }
+        openURL(shareURL)
+    }
+
+    private func copyShareAddress(_ card: HomeVirtualDisplayCardPresentation) {
+        guard let shareAddress = card.shareAddress else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(shareAddress, forType: .string)
     }
 
     private func prepareWebViewSharing() async -> Bool {
@@ -933,6 +1054,8 @@ private enum HomeVirtualDisplayCardAction {
     case toggle
     case preview
     case webView
+    case openSharePage
+    case copyShareAddress
     case edit
     case moveUp
     case moveDown
@@ -947,7 +1070,7 @@ private enum HomeLayout {
     static let cardStatusMinWidth: CGFloat = 280
 }
 
-private struct HomeVirtualDisplayCard: View {
+private struct HomeVirtualDisplayCardRenderState: Identifiable {
     let card: HomeVirtualDisplayCardPresentation
     let isFirst: Bool
     let isLast: Bool
@@ -963,28 +1086,183 @@ private struct HomeVirtualDisplayCard: View {
     let isWebViewStarting: Bool
     let perform: (HomeVirtualDisplayCardAction) -> Void
 
+    var id: UUID { card.id }
+}
+
+private enum HomeVirtualDisplayCardStyle {
+    case classic
+    case compact
+    case dashboard
+}
+
+private struct HomeClassicRenderer: View {
+    let cardStates: [HomeVirtualDisplayCardRenderState]
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.openURL) private var openURL
+    @Environment(\.appSkinID) private var skinID
+
+    var body: some View {
+        let theme = AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
+        LazyVStack(alignment: .leading, spacing: theme.density.cardSpacing) {
+            ForEach(cardStates) { state in
+                HomeVirtualDisplayCard(state: state, style: .classic)
+                    .accessibilityIdentifier("home_virtual_display_card")
+            }
+        }
+        .accessibilityIdentifier("home_virtual_display_card_grid")
+    }
+}
+
+private struct HomeCompactRenderer: View {
+    let cardStates: [HomeVirtualDisplayCardRenderState]
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
+
+    var body: some View {
+        let theme = AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
+        LazyVStack(alignment: .leading, spacing: theme.density.cardSpacing) {
+            ForEach(cardStates) { state in
+                HomeVirtualDisplayCard(state: state, style: .compact)
+                    .accessibilityIdentifier("home_virtual_display_card")
+            }
+        }
+        .accessibilityIdentifier("home_virtual_display_card_grid")
+    }
+}
+
+package enum HomeDashboardCardGroup: String, CaseIterable, Identifiable {
+    case attention
+    case active
+    case idle
+
+    package var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .attention:
+            "Attention"
+        case .active:
+            "Active"
+        case .idle:
+            "Idle"
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        "home_dashboard_group_\(rawValue)"
+    }
+}
+
+package struct HomeDashboardCardGroupSection: Identifiable {
+    package let group: HomeDashboardCardGroup
+    package let cards: [HomeVirtualDisplayCardPresentation]
+
+    package var id: HomeDashboardCardGroup { group }
+}
+
+package enum HomeDashboardCardGroupResolver {
+    package static func groupedCards(
+        _ cards: [HomeVirtualDisplayCardPresentation]
+    ) -> [HomeDashboardCardGroupSection] {
+        HomeDashboardCardGroup.allCases.compactMap { group in
+            let matches = cards.filter { card in
+                self.group(for: card) == group
+            }
+            guard !matches.isEmpty else { return nil }
+            return HomeDashboardCardGroupSection(group: group, cards: matches)
+        }
+    }
+
+    package static func group(
+        for card: HomeVirtualDisplayCardPresentation
+    ) -> HomeDashboardCardGroup {
+        if card.hasIssue || card.statusTone == .warning || card.statusTone == .danger {
+            return .attention
+        }
+        if card.isRunning || card.isPreviewing || card.isSharing || card.viewerCount > 0 {
+            return .active
+        }
+        return .idle
+    }
+}
+
+private struct HomeDashboardRenderer: View {
+    let cardStates: [HomeVirtualDisplayCardRenderState]
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
+
+    var body: some View {
+        let theme = AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
+        let statesByID = Dictionary(uniqueKeysWithValues: cardStates.map { ($0.id, $0) })
+        let groups = HomeDashboardCardGroupResolver.groupedCards(cardStates.map(\.card))
+
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            ForEach(groups) { entry in
+                let group = entry.group
+                let cards = entry.cards
+                VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                    Text(group.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .accessibilityIdentifier(group.accessibilityIdentifier)
+
+                    LazyVStack(alignment: .leading, spacing: theme.density.cardSpacing) {
+                        ForEach(cards) { card in
+                            if let state = statesByID[card.id] {
+                                HomeVirtualDisplayCard(state: state, style: .dashboard)
+                                    .accessibilityIdentifier("home_virtual_display_card")
+                            }
+                        }
+                    }
+                }
+                .accessibilityIdentifier(group.accessibilityIdentifier)
+            }
+        }
+        .accessibilityIdentifier("home_virtual_display_card_grid")
+    }
+}
+
+private struct HomeVirtualDisplayCard: View {
+    let state: HomeVirtualDisplayCardRenderState
+    let style: HomeVirtualDisplayCardStyle
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
     @State private var isHovered = false
+
+    private var card: HomeVirtualDisplayCardPresentation { state.card }
+    private var isFirst: Bool { state.isFirst }
+    private var isLast: Bool { state.isLast }
+    private var isToggling: Bool { state.isToggling }
+    private var isRebuilding: Bool { state.isRebuilding }
+    private var hasRecentApplySuccess: Bool { state.hasRecentApplySuccess }
+    private var rebuildFailureMessage: String? { state.rebuildFailureMessage }
+    private var isPrimary: Bool { state.isPrimary }
+    private var canSetAsPrimary: Bool { state.canSetAsPrimary }
+    private var isPreviewActionDisabled: Bool { state.isPreviewActionDisabled }
+    private var isPreviewStarting: Bool { state.isPreviewStarting }
+    private var isWebViewActionDisabled: Bool { state.isWebViewActionDisabled }
+    private var isWebViewStarting: Bool { state.isWebViewStarting }
+    private func perform(_ action: HomeVirtualDisplayCardAction) { state.perform(action) }
 
     private var isBusy: Bool {
         isToggling || isRebuilding
     }
 
+    private var theme: AppTheme {
+        AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
+    }
+
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            wideLayout
-            compactLayout
-            narrowLayout
-        }
-        .padding(.horizontal, AppUI.Spacing.large)
-        .padding(.vertical, AppUI.Spacing.medium)
+        cardBody
+        .padding(.horizontal, theme.density.cardHorizontalPadding)
+        .padding(.vertical, theme.density.cardVerticalPadding)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AppUI.Surface.cardFill(for: colorScheme))
+            RoundedRectangle(cornerRadius: theme.density.cardCornerRadius, style: .continuous)
+                .fill(AppUI.Surface.cardFill(for: colorScheme, skinID: skinID))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: theme.density.cardCornerRadius, style: .continuous)
                 .stroke(cardStroke, lineWidth: AppUI.Stroke.subtle)
         )
         .overlay(alignment: .leading) {
@@ -1001,6 +1279,22 @@ private struct HomeVirtualDisplayCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(card.accessibilitySummary))
+    }
+
+    @ViewBuilder
+    private var cardBody: some View {
+        switch style {
+        case .classic:
+            ViewThatFits(in: .horizontal) {
+                wideLayout
+                compactLayout
+                narrowLayout
+            }
+        case .compact:
+            compactRowLayout
+        case .dashboard:
+            dashboardLayout
+        }
     }
 
     private var wideLayout: some View {
@@ -1068,6 +1362,49 @@ private struct HomeVirtualDisplayCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
+    private var compactRowLayout: some View {
+        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+            compactIdentityBlock
+                .layoutPriority(2)
+                .frame(minWidth: 240, alignment: .leading)
+
+            if hasOperationalStatusItems {
+                statusGrid
+                    .layoutPriority(1)
+                    .frame(minWidth: 250, alignment: .leading)
+            }
+
+            Spacer(minLength: AppUI.Spacing.small)
+
+            compactActionCluster
+            toggleButton
+        }
+        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+    }
+
+    private var dashboardLayout: some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                identityBlock
+                    .layoutPriority(1)
+
+                Spacer(minLength: AppUI.Spacing.medium)
+
+                toggleButton
+            }
+
+            if hasOperationalStatusItems {
+                statusGrid
+            }
+
+            HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+                compactActionCluster
+                Spacer(minLength: AppUI.Spacing.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
     private var identityBlock: some View {
         HStack(alignment: .center, spacing: AppUI.Spacing.small + 2) {
             Image(systemName: "display")
@@ -1090,6 +1427,34 @@ private struct HomeVirtualDisplayCard: View {
                     .truncationMode(.tail)
 
                 statusBadgeRow
+            }
+        }
+    }
+
+    private var compactIdentityBlock: some View {
+        HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+            Image(systemName: "display")
+                .font(.system(size: 20, weight: .regular))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.primary.opacity(0.88), iconTint)
+                .frame(width: 30, height: 30)
+                .appTileStyle()
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(card.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    primaryStatusBadge
+                }
+
+                Text(card.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
     }
@@ -1231,7 +1596,7 @@ private struct HomeVirtualDisplayCard: View {
     private var compactCopyShareAddressButton: some View {
         if let shareAddress {
             Button {
-                copyShareAddress()
+                perform(.copyShareAddress)
             } label: {
                 Image(systemName: "doc.on.doc")
             }
@@ -1243,17 +1608,6 @@ private struct HomeVirtualDisplayCard: View {
             .accessibilityValue(Text(verbatim: shareAddress))
             .accessibilityIdentifier("home_virtual_display_copy_share_address_button")
         }
-    }
-
-    private func openSharePage() {
-        guard card.isSharing, let shareURL else { return }
-        openURL(shareURL)
-    }
-
-    private func copyShareAddress() {
-        guard let shareAddress else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(shareAddress, forType: .string)
     }
 
     private var shareAddress: String? {
@@ -1283,12 +1637,12 @@ private struct HomeVirtualDisplayCard: View {
         Menu {
             if shareAddress != nil {
                 Button("Open Share Page", systemImage: "link") {
-                    openSharePage()
+                    perform(.openSharePage)
                 }
                 .disabled(!card.isSharing || shareURL == nil)
 
                 Button("Copy display address", systemImage: "doc.on.doc") {
-                    copyShareAddress()
+                    perform(.copyShareAddress)
                 }
 
                 Divider()
@@ -1346,12 +1700,13 @@ private struct HomeVirtualDisplayCard: View {
 
     private var cardStroke: Color {
         if card.hasIssue || rebuildFailureMessage != nil {
-            return .orange.opacity(colorScheme == .dark ? 0.52 : 0.36)
+            return AppThemeStatusPalette.resolve(skinID: skinID).warning
+                .opacity(colorScheme == .dark ? 0.52 : 0.36)
         }
         if isHovered {
-            return AppUI.Surface.cardHoverStroke(for: colorScheme)
+            return AppUI.Surface.cardHoverStroke(for: colorScheme, skinID: skinID)
         }
-        return AppUI.Surface.cardStroke(for: colorScheme)
+        return AppUI.Surface.cardStroke(for: colorScheme, skinID: skinID)
     }
 
     private var showsStatusAccent: Bool {
@@ -1360,9 +1715,9 @@ private struct HomeVirtualDisplayCard: View {
 
     private var statusAccent: Color {
         if card.hasIssue || rebuildFailureMessage != nil {
-            return .orange
+            return AppThemeStatusPalette.resolve(skinID: skinID).warning
         }
-        return card.isRunning ? .green : .secondary
+        return card.isRunning ? AppThemeStatusPalette.resolve(skinID: skinID).success : .secondary
     }
 }
 
@@ -1473,20 +1828,23 @@ private struct HomeSharingPortStatusBadge: View {
 private struct HomeStatusBadge: View {
     let title: String
     let tone: DisplaySurfaceStatusTone
+    @Environment(\.appSkinID) private var skinID
 
     var body: some View {
+        let tint = tone.tint(skinID: skinID)
         Text(title)
             .font(.caption.weight(.medium))
             .lineLimit(1)
             .padding(.horizontal, AppUI.Spacing.small - 1)
             .padding(.vertical, AppUI.Spacing.xSmall - 1)
-            .background(tone.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .foregroundStyle(tone.tint)
+            .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .foregroundStyle(tint)
     }
 }
 
 private struct HomeInlineStatusText: View {
     let item: DisplaySurfaceStatusItemPresentation
+    @Environment(\.appSkinID) private var skinID
 
     var body: some View {
         HStack(spacing: 5) {
@@ -1532,7 +1890,7 @@ private struct HomeInlineStatusText: View {
         case .neutral:
             Color.secondary
         default:
-            item.tone.tint
+            item.tone.tint(skinID: skinID)
         }
     }
 
@@ -1544,7 +1902,7 @@ private struct HomeInlineStatusText: View {
         case .neutral:
             Color.secondary.opacity(0.72)
         default:
-            item.tone.tint
+            item.tone.tint(skinID: skinID)
         }
     }
 
@@ -1554,18 +1912,19 @@ private struct HomeInlineStatusText: View {
 }
 
 private extension DisplaySurfaceStatusTone {
-    var tint: Color {
-        switch self {
+    func tint(skinID: AppSkinID) -> Color {
+        let palette = AppThemeStatusPalette.resolve(skinID: skinID)
+        return switch self {
         case .neutral:
-            .gray
+            palette.neutral
         case .info:
-            .blue
+            palette.info
         case .success:
-            .green
+            palette.success
         case .warning:
-            .orange
+            palette.warning
         case .danger:
-            .red
+            palette.danger
         }
     }
 }

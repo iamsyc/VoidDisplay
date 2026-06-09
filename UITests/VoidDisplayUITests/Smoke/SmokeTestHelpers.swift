@@ -31,7 +31,8 @@ extension XCTestCase {
 
     @MainActor
     func launchAppForSmoke(
-        preferredPort: UInt16? = nil
+        preferredPort: UInt16? = nil,
+        skinID: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
@@ -40,6 +41,12 @@ extension XCTestCase {
             app.launchArguments.append(contentsOf: [
                 "-sharing.preferredPort",
                 String(preferredPort)
+            ])
+        }
+        if let skinID {
+            app.launchArguments.append(contentsOf: [
+                "-appearance.skinID",
+                skinID
             ])
         }
         app.launch()

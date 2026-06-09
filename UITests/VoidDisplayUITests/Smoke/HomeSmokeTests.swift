@@ -59,6 +59,52 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testVirtualDisplayCardSurfaceSmoke_compactSkin() throws {
+        let app = launchAppForSmoke(skinID: "compact")
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_home",
+                "home_virtual_display_surface",
+                "home_summary_panel",
+                "home_virtual_display_card_grid",
+                "home_virtual_display_card",
+                "home_card_status_grid",
+                "virtual_display_toggle_button",
+                "home_virtual_display_preview_button",
+                "home_virtual_display_web_view_button",
+                "virtual_display_edit_button",
+                "home_virtual_display_more_button"
+            ],
+            timeout: 6
+        )
+    }
+
+    @MainActor
+    func testVirtualDisplayCardSurfaceSmoke_dashboardSkin() throws {
+        let app = launchAppForSmoke(skinID: "dashboard")
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "detail_home",
+                "home_virtual_display_surface",
+                "home_dashboard_status_board",
+                "home_virtual_display_card_grid",
+                "home_virtual_display_card",
+                "home_card_status_grid",
+                "virtual_display_toggle_button",
+                "home_virtual_display_preview_button",
+                "home_virtual_display_web_view_button",
+                "virtual_display_edit_button",
+                "home_virtual_display_more_button"
+            ],
+            timeout: 6
+        )
+    }
+
+    @MainActor
     func testDiagnosticsNavigationSmoke_baseline() throws {
         let app = launchAppForSmoke()
 

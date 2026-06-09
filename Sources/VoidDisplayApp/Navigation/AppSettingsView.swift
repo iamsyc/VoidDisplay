@@ -1,6 +1,7 @@
 import Foundation
 import VoidDisplayVirtualDisplay
 import VoidDisplayCapture
+import VoidDisplayDesignSystem
 import VoidDisplaySupport
 import VoidDisplayObservability
 import VoidDisplayFoundation
@@ -10,6 +11,7 @@ package struct AppSettingsView: View {
     @Environment(AppNavigationController.self) private var navigation
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
+    @Environment(AppearancePreferences.self) private var appearancePreferences
     @State private var showResetConfirmation = false
     @State private var resetCompleted = false
 
@@ -41,6 +43,23 @@ package struct AppSettingsView: View {
                         Text("Automatic").tag(CapturePerformanceMode.automatic)
                         Text("Smooth").tag(CapturePerformanceMode.smooth)
                         Text("Power Efficient").tag(CapturePerformanceMode.powerEfficient)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Appearance")
+                        .font(.headline)
+
+                    Text("Choose how the Home display surface is arranged.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Home Layout", selection: skinIDBinding) {
+                        ForEach(AppSkinID.allCases) { skinID in
+                            Text(skinTitle(for: skinID))
+                                .tag(skinID)
+                        }
                     }
                     .pickerStyle(.segmented)
                 }
@@ -111,6 +130,24 @@ package struct AppSettingsView: View {
             get: { capturePerformancePreferences.mode },
             set: { capturePerformancePreferences.saveMode($0) }
         )
+    }
+
+    private var skinIDBinding: Binding<AppSkinID> {
+        Binding(
+            get: { appearancePreferences.skinID },
+            set: { appearancePreferences.saveSkinID($0) }
+        )
+    }
+
+    private func skinTitle(for skinID: AppSkinID) -> LocalizedStringKey {
+        switch skinID {
+        case .classic:
+            "Classic"
+        case .compact:
+            "Compact"
+        case .dashboard:
+            "Dashboard"
+        }
     }
 
     private func openDiagnostics() {

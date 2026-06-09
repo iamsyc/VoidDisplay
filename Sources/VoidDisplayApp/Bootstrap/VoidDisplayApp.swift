@@ -1,6 +1,7 @@
 import VoidDisplayVirtualDisplay
 import VoidDisplayCGVirtualDisplay
 import VoidDisplayCapture
+import VoidDisplayDesignSystem
 import VoidDisplaySharing
 import VoidDisplaySupport
 import VoidDisplayObservability
@@ -25,6 +26,7 @@ package struct AppEnvironment {
     package let virtualDisplay: VirtualDisplayController
     package let displayRuntime: DisplayRuntime
     package let capturePerformancePreferences: CapturePerformancePreferences
+    package let appearancePreferences: AppearancePreferences
     package let feedbackController: AppSettingsFeedbackController
     package let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
     private let startupTask: Task<Void, Never>
@@ -36,6 +38,7 @@ package struct AppEnvironment {
         virtualDisplay: VirtualDisplayController,
         displayRuntime: DisplayRuntime,
         capturePerformancePreferences: CapturePerformancePreferences,
+        appearancePreferences: AppearancePreferences,
         feedbackController: AppSettingsFeedbackController,
         openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void,
         startupTask: Task<Void, Never>
@@ -46,6 +49,7 @@ package struct AppEnvironment {
         self.virtualDisplay = virtualDisplay
         self.displayRuntime = displayRuntime
         self.capturePerformancePreferences = capturePerformancePreferences
+        self.appearancePreferences = appearancePreferences
         self.feedbackController = feedbackController
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
         self.startupTask = startupTask
@@ -62,6 +66,7 @@ public struct VoidDisplayApplication: App {
     @State private var sharing: SharingController
     @State private var virtualDisplay: VirtualDisplayController
     @State private var capturePerformancePreferences: CapturePerformancePreferences
+    @State private var appearancePreferences: AppearancePreferences
     @State private var navigation: AppNavigationController
     @State private var feedbackController: AppSettingsFeedbackController
     private let observability: ObservabilityCenter
@@ -75,6 +80,7 @@ public struct VoidDisplayApplication: App {
         _sharing = State(initialValue: env.sharing)
         _virtualDisplay = State(initialValue: env.virtualDisplay)
         _capturePerformancePreferences = State(initialValue: env.capturePerformancePreferences)
+        _appearancePreferences = State(initialValue: env.appearancePreferences)
         _navigation = State(initialValue: AppNavigationController())
         _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
@@ -106,6 +112,7 @@ public struct VoidDisplayApplication: App {
             .environment(sharing)
             .environment(virtualDisplay)
             .environment(capturePerformancePreferences)
+            .environment(appearancePreferences)
             .environment(navigation)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
@@ -123,6 +130,7 @@ public struct VoidDisplayApplication: App {
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
+                .appSkin(appearancePreferences.skinID)
         }
         .windowToolbarStyle(.unifiedCompact(showsTitle: true))
 
@@ -135,7 +143,9 @@ public struct VoidDisplayApplication: App {
                 .environment(sharing)
                 .environment(virtualDisplay)
                 .environment(capturePerformancePreferences)
+                .environment(appearancePreferences)
                 .environment(navigation)
+                .appSkin(appearancePreferences.skinID)
         }
     }
 }
@@ -422,6 +432,9 @@ package enum AppBootstrap {
         let capturePerformancePreferences = CapturePerformancePreferences(
             defaults: persistenceContext.userDefaults
         )
+        let appearancePreferences = AppearancePreferences(
+            defaults: persistenceContext.userDefaults
+        )
         let sanitizer = ObservabilitySanitizer()
         let observability = ObservabilityCenter(
             eventStore: EventStore(directoryURL: persistenceContext.observabilityEventsDirectoryURL),
@@ -675,6 +688,7 @@ package enum AppBootstrap {
             virtualDisplay: virtualDisplay,
             displayRuntime: displayRuntime,
             capturePerformancePreferences: capturePerformancePreferences,
+            appearancePreferences: appearancePreferences,
             feedbackController: feedbackController,
             openScreenCapturePrivacySettings: { openURL in
                 catalogService.openScreenCapturePrivacySettings(openURL: openURL)
