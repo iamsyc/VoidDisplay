@@ -56,7 +56,7 @@ package struct AppSettingsView: View {
                         .foregroundStyle(.secondary)
 
                     Picker("Home Layout", selection: skinIDBinding) {
-                        ForEach(AppSkinID.allCases) { skinID in
+                        ForEach(HomeSkinRegistry.allSkinIDs) { skinID in
                             Text(skinTitle(for: skinID))
                                 .tag(skinID)
                         }
@@ -140,14 +140,7 @@ package struct AppSettingsView: View {
     }
 
     private func skinTitle(for skinID: AppSkinID) -> LocalizedStringKey {
-        switch skinID {
-        case .classic:
-            "Classic"
-        case .compact:
-            "Compact"
-        case .dashboard:
-            "Dashboard"
-        }
+        HomeSkinRegistry.title(for: skinID)
     }
 
     private func openDiagnostics() {
