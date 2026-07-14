@@ -3565,6 +3565,23 @@
         }
       }
     },
+    "Sharing Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sharing Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享设置"
+          }
+        }
+      }
+    },
     "Sharing cannot start, disconnects quickly, or the remote side cannot connect." : {
       "extractionState" : "stale",
       "localizations" : {

@@ -2,6 +2,58 @@ import SwiftUI
 import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 
+package struct HomeSharingSettingsPopoverButton: View {
+    package let context: HomeSkinContext
+    @State private var isPresented = false
+
+    package init(context: HomeSkinContext) {
+        self.context = context
+    }
+
+    package var body: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "network")
+
+                Text("Sharing Settings")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .appActionButtonStyle(variant: .default)
+        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+            HomeSharingSettingsPanel(context: context)
+                .padding(AppUI.Spacing.large)
+                .frame(width: 460, alignment: .leading)
+        }
+        .help(Text(labelText))
+        .accessibilityLabel(Text("Sharing Settings"))
+        .accessibilityValue(Text(labelText))
+        .accessibilityIdentifier("home_sharing_settings_popover_button")
+    }
+
+    private var labelText: String {
+        "\(String(localized: "Sharing")) \(performanceModeLabel) · \(context.sharingSettings.portInput)"
+    }
+
+    private var performanceModeLabel: String {
+        switch context.sharingSettings.performanceMode {
+        case .automatic:
+            String(localized: "Automatic")
+        case .smooth:
+            String(localized: "Smooth")
+        case .powerEfficient:
+            String(localized: "Power Efficient")
+        }
+    }
+}
+
 package struct HomeSharingSettingsPanel: View {
     package let context: HomeSkinContext
 
@@ -24,6 +76,7 @@ package struct HomeSharingSettingsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home_sharing_settings_panel")
     }
 
@@ -74,6 +127,7 @@ package struct HomeSharingSettingsPanel: View {
             performancePicker
         }
         .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
     }
 
     private var portControl: some View {
@@ -86,6 +140,7 @@ package struct HomeSharingSettingsPanel: View {
             portErrorText
         }
         .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
     }
 
     private func controlLabel(_ title: LocalizedStringKey) -> some View {

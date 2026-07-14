@@ -16,7 +16,8 @@ final class HomeSmokeTests: XCTestCase {
                 "sidebar_diagnostics",
                 "detail_home",
                 "home_virtual_display_surface",
-                "home_summary_panel",
+                "home_summary_status_strip",
+                "home_sharing_settings_popover_button",
                 "home_virtual_display_card"
             ],
             timeout: 6
@@ -43,7 +44,8 @@ final class HomeSmokeTests: XCTestCase {
             identifiers: [
                 "detail_home",
                 "home_virtual_display_surface",
-                "home_summary_panel",
+                "home_summary_status_strip",
+                "home_sharing_settings_popover_button",
                 "home_virtual_display_card_grid",
                 "home_virtual_display_card",
                 "home_card_status_grid",
@@ -55,6 +57,17 @@ final class HomeSmokeTests: XCTestCase {
                 "home_add_virtual_display_button"
             ],
             timeout: 6
+        )
+
+        tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
+        assertAllExist(
+            app,
+            identifiers: [
+                "home_sharing_settings_panel",
+                "home_sharing_performance_picker",
+                "home_sharing_port_input"
+            ],
+            timeout: 2
         )
     }
 

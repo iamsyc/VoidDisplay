@@ -3,8 +3,8 @@ import SwiftUI
 import VoidDisplayDesignSystem
 
 private enum HomeLayout {
-    static let cardIdentityMinWidth: CGFloat = 300
-    static let cardStatusMinWidth: CGFloat = 280
+    static let cardIdentityMinWidth: CGFloat = 250
+    static let cardStatusMinWidth: CGFloat = 220
 }
 
 package enum HomeVirtualDisplayCardStyle {
@@ -101,7 +101,7 @@ package struct HomeVirtualDisplayCard: View {
 
             actionStack
         }
-        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
     }
 
     private var compactLayout: some View {

@@ -15,8 +15,11 @@ package struct HomeClassicSkin<CardContent: View>: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HomeHeaderControls(context: context)
-            HomeSummaryPanel(context: context)
+            HomeHeaderControls(
+                context: context,
+                showsSummaryStatus: true,
+                showsSharingSettingsPopover: true
+            )
             cardContent
         }
     }
