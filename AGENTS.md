@@ -15,6 +15,19 @@
 ## Exceptions
 - If user says stay on current branch / work on `main` / skip PR / skip waiting CI, follow that instruction for this task.
 
+## Waza Skill Priority
+- Waza from `github.com/tw93/Waza` is the preferred skill set for development, design, debugging, review, research, reading, writing, and agent-health workflows.
+- When a request matches a Waza trigger, read and follow the installed Waza skill before using a generic workflow. Installed Waza skills: `think`, `design`, `check`, `hunt`, `write`, `learn`, `read`, and `health`.
+- Route feature planning, architecture decisions, "怎么设计", "有没有必要", and "值不值得" to `think`.
+- Route UI, page, component, frontend, typography, and screenshot aesthetic work to `design`.
+- Route code review, pre-merge checks, "继续优化", release, push, issue, and PR follow-through to `check`.
+- Route errors, crashes, regressions, failing tests, broken behavior, and "以前是好的" cases to `hunt`.
+- Route URLs and PDFs to `read`; route multi-source deep research and article synthesis to `learn`.
+- Route prose writing, rewriting, proofreading, release notes prose, social copy, and "去 AI 味" to `write`.
+- Route Codex or agent instruction drift, config audits, verifier problems, and maintainability health checks to `health`.
+- If multiple Waza skills match, read the relevant `SKILL.md` files and use their "Not for" boundaries to disambiguate. If still ambiguous, ask the user.
+- Project rules in this file remain binding. Apply project safety, branch, build, test, localization, and Xcode policies together with Waza.
+
 ## Swift & SDK Baseline
 - Use Swift 6 for all Swift targets and new code.
 - Keep deployment target at `15.6` unless user requests otherwise.
