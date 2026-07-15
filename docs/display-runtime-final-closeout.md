@@ -37,6 +37,14 @@ Diagnostics uses the runtime section as the primary structured state. Support bu
 
 Screen Preview, LAN Web View, and diagnostics recorder use consumer leases. Runtime aggregates demand and records effective capture intent, while the app layer resolves concrete display and service objects.
 
+Virtual display transactions also reconcile active Preview and LAN Web View leases. A transaction drains the old display through CaptureIntent, advances one surface epoch, and rebinds the same lease ID to the resolved display after topology convergence. Failure exits run the same compensation path and leave an unresolved lease in a diagnosable failed state.
+
+Consumer quiesce must apply before the lower virtual display command can run. CaptureIntent application is serialized per surface and consumer kind; a superseded queued revision is invalidated before adapter dispatch. Restore keeps a lease nonterminal until the adapter applies the current revision, preserves performance-profile changes made during restart, and never resurrects a lease released while restoration is in flight.
+
+Preview window identity derives from the Runtime preview lease ID. Capture session identity is replaceable and no longer controls window lifetime. Restarting and failed windows remain open; retry and close operate on the stable lease even when the prior capture session has disappeared.
+
+Runtime catalog convergence, transaction quiesce, restoration, cursor changes, and performance profile changes all pass through the lease ledger and CaptureIntent adapters. The removed direct capture teardown and sharing stop / restore command ports are not compatibility surfaces.
+
 Capture, WebRTC, WebSocket, HTTP, streaming transport, relay process handling, frame fanout, pixel buffers, sample buffers, and encoder pipeline remain outside DisplayRuntime.
 
 LAN Web View remains local-network observation only. This refactor line does not add auth, accounts, passwords, public relay expansion, remote control, input injection, clipboard control, browser agent control, or external control endpoints.

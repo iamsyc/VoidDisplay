@@ -12,6 +12,7 @@ struct DisplayRuntimeRebuildTransactionTests {
         let sessionID = UUID(uuidString: "66666666-6666-6666-6666-666666666666")!
         let recorder = RuntimeOperationRecorder()
         let catalog = catalogSnapshot(displayID: 77, isMain: false)
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             captureProvider: FakeCaptureProvider(
@@ -36,25 +37,42 @@ struct DisplayRuntimeRebuildTransactionTests {
                 visibleDisplays: visibleDisplays(from: catalog)
             ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand(capturesCursor: true)
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(result.status == .completedWithRecoveryFailures)
-        #expect(result.hasSessionRecoveryFailures)
+        #expect(result.status == .completed)
+        #expect(!result.hasSessionRecoveryFailures)
         #expect(recorder.events == [
             "refresh:topologyChanged",
-            "stopSharing:77",
-            "removePreview:77",
+            "applyLAN:drain",
+            "applyPreview:drain",
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged",
             "registerShareable:77",
-            "restoreSharing:77"
+            "applyLAN:capture",
+            "applyPreview:capture"
         ])
         #expect(trace.phases.contains(.init(phase: .waitingForTopology)))
         #expect(trace.phases.contains(.init(phase: .restoringSessions)))
@@ -90,16 +108,16 @@ struct DisplayRuntimeRebuildTransactionTests {
             ),
             .init(
                 kind: .preview,
-                status: .skipped,
+                status: .restored,
                 previousDisplayID: 77,
                 resolvedDisplayID: 77,
-                failureReason: "preview_restore_deferred_until_consumer_lease"
+                failureReason: nil
             )
         ])
-        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.status == .completed)
         #expect(trace.compensation.restoredSharingCount == 1)
-        #expect(trace.compensation.restoredPreviewCount == 0)
-        #expect(trace.compensation.failedRestoreCount == 1)
+        #expect(trace.compensation.restoredPreviewCount == 1)
+        #expect(trace.compensation.failedRestoreCount == 0)
     }
     @Test func rebuildTransactionDoesNotWriteNoOpPauseIntentWithoutSessionDemand() async throws {
         let configID = UUID(uuidString: "57575757-5757-5757-5757-575757575757")!
@@ -115,7 +133,6 @@ struct DisplayRuntimeRebuildTransactionTests {
                 visibleDisplays: visibleDisplays(from: catalog)
             ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
             virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
@@ -133,11 +150,135 @@ struct DisplayRuntimeRebuildTransactionTests {
             "refresh:topologyChanged"
         ])
     }
+
+    @Test func attachIsRejectedWhileSurfaceTransactionIsBusy() async throws {
+        let configID = UUID(uuidString: "56565656-5656-5656-5656-565656565656")!
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let catalog = catalogSnapshot(displayID: 56, isMain: false)
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 56)
+            ),
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            captureIntentCommander: FakeCaptureIntentCommander(),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(delayNanoseconds: 100_000_000),
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        let transaction = Task { @MainActor in
+            try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        }
+        for _ in 0..<1_000 where !runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity) {
+            await Task.yield()
+        }
+
+        let outcome = await runtime.attachPreviewConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+
+        #expect(outcome == .rejected(
+            failureCode: DisplayRuntimeCaptureIntentFailureCode.consumerLeaseRestarting
+        ))
+        _ = try await transaction.value
+        #expect(!runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity))
+        #expect(runtime.currentConsumerLeaseSnapshot().isEmpty)
+    }
+
+    @Test func commandFailureCompensatesExistingPreviewLease() async throws {
+        let configID = UUID(uuidString: "57575757-5757-5757-5757-575757575758")!
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let catalog = catalogSnapshot(displayID: 57, isMain: false)
+        let commander = FakeVirtualDisplayCommander()
+        commander.error = NSError(domain: "Rebuild", code: 57)
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 57)
+            ),
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            captureIntentCommander: FakeCaptureIntentCommander(),
+            virtualDisplayCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand(capturesCursor: true)
+        )
+
+        await #expect(throws: (any Error).self) {
+            try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        }
+
+        let restoredLease = runtime.consumerLease(leaseID: lease.id)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+        #expect(restoredLease?.state == .attached)
+        #expect(restoredLease?.resolvedDisplayID == 57)
+        #expect(restoredLease?.surfaceEpoch.rawValue == 2)
+        #expect(trace.restoreResults.first?.status == .restored)
+        #expect(trace.compensation.status == .completed)
+        #expect(!runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity))
+    }
+
+    @Test func quiesceFailureCompensatesLeaseAndSkipsVirtualDisplayCommand() async throws {
+        let configID = UUID(uuidString: "C0C0C0C0-C0C0-C0C0-C0C0-C0C0C0C0C0C0")!
+        let catalog = catalogSnapshot(displayID: 103, isMain: false)
+        let captureIntentCommander = FakeCaptureIntentCommander { intent in
+            if intent.reason == .transactionQuiesce {
+                return .failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
+                )
+            }
+            return .applied(revision: intent.revision)
+        }
+        let virtualDisplayCommander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 103)
+            ),
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            captureIntentCommander: captureIntentCommander,
+            virtualDisplayCommander: virtualDisplayCommander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(result.virtualDisplayCommandSucceeded == false)
+        #expect(virtualDisplayCommander.rebuildCallCount == 0)
+        #expect(trace.failure?.phase == .quiescingSessions)
+        #expect(trace.failure?.reason == "consumer_session_quiesce_failed")
+        #expect(trace.compensation.status == .completed)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attached)
+        #expect(runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity) == false)
+        #expect(captureIntentCommander.intents.map(\.reason) == [
+            .attach,
+            .transactionQuiesce,
+            .epochChanged
+        ])
+    }
     @Test func rebuildTransactionDeduplicatesManagedDisplayEntriesBeforeQuiesce() async throws {
         let configID = UUID(uuidString: "58585858-5858-5858-5858-585858585858")!
         let sessionID = UUID(uuidString: "59595959-5959-5959-5959-595959595959")!
         let recorder = RuntimeOperationRecorder()
         let catalog = catalogSnapshot(displayID: 58, isMain: false)
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             captureProvider: FakeCaptureProvider(
@@ -169,10 +310,26 @@ struct DisplayRuntimeRebuildTransactionTests {
                 visibleDisplays: visibleDisplays(from: catalog)
             ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         _ = try await runtime.rebuildVirtualDisplay(configID: configID, source: .virtualDisplayRowRetry)
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
@@ -188,13 +345,14 @@ struct DisplayRuntimeRebuildTransactionTests {
         ])
         #expect(recorder.events == [
             "refresh:topologyChanged",
-            "stopSharing:58",
-            "removePreview:58",
+            "applyLAN:drain",
+            "applyPreview:drain",
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
             "refresh:topologyChanged",
             "registerShareable:58",
-            "restoreSharing:58"
+            "applyLAN:capture",
+            "applyPreview:capture"
         ])
     }
     @Test func rebuildTransactionWritesFailedTraceForMissingConfig() async throws {
@@ -318,17 +476,27 @@ struct DisplayRuntimeRebuildTransactionTests {
     @Test func rebuildTransactionMarksRecoveryFailureWhenSharingRestoreFails() async throws {
         let configID = UUID(uuidString: "D1D1D1D1-D1D1-D1D1-D1D1-D1D1D1D1D1D1")!
         let catalog = catalogSnapshot(displayID: 101, isMain: false)
-        let sharingCommander = FakeSharingCommander(
-            restoreResult: .failed("display_not_found")
-        )
+        let captureIntentCommander = FakeCaptureIntentCommander { intent in
+            if intent.kind == .capture, intent.reason == .epochChanged {
+                return .failed(revision: intent.revision, failureCode: "display_not_found")
+            }
+            return .applied(revision: intent.revision)
+        }
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 101)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 101)),
             catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
-            sharingCommander: sharingCommander,
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: .managedVirtualDisplay(configID: configID),
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
         )
 
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
@@ -336,7 +504,6 @@ struct DisplayRuntimeRebuildTransactionTests {
 
         #expect(result.status == .completedWithRecoveryFailures)
         #expect(result.virtualDisplayCommandSucceeded)
-        #expect(sharingCommander.restoredDisplayIDs == [101])
         #expect(trace.restoreResults == [
             .init(
                 kind: .sharing,
@@ -348,91 +515,85 @@ struct DisplayRuntimeRebuildTransactionTests {
         ])
         #expect(trace.compensation.status == .degraded)
         #expect(trace.compensation.failedRestoreCount == 1)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
         #expect(trace.failure == nil)
     }
     @Test func rebuildTransactionMarksRecoveryFailureWhenSharingRestoreInvalidates() async throws {
         let configID = UUID(uuidString: "D2D2D2D2-D2D2-D2D2-D2D2-D2D2D2D2D2D2")!
         let catalog = catalogSnapshot(displayID: 102, isMain: false)
-        let sharingCommander = FakeSharingCommander(
-            restoreResult: .invalidated("sharing_start_invalidated")
-        )
+        let captureIntentCommander = FakeCaptureIntentCommander { intent in
+            if intent.kind == .capture, intent.reason == .epochChanged {
+                return DisplayRuntimeCaptureIntentApplyResult(
+                    revision: intent.revision,
+                    outcome: .ignored,
+                    failureCode: "sharing_start_invalidated"
+                )
+            }
+            return .applied(revision: intent.revision)
+        }
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 102)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 102)),
             catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
-            sharingCommander: sharingCommander,
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: .managedVirtualDisplay(configID: configID),
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
         )
 
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
         #expect(result.status == .completedWithRecoveryFailures)
-        #expect(sharingCommander.restoredDisplayIDs == [102])
         #expect(trace.restoreResults.first?.status == .invalidated)
         #expect(trace.restoreResults.first?.failureReason == "sharing_start_invalidated")
         #expect(trace.compensation.status == .degraded)
         #expect(trace.failure == nil)
     }
-    @Test func rebuildTransactionSkipsSharingRestoreWhenPostWebServiceStopped() async throws {
+    @Test func detachingLANConsumerPreservesPreviewDemand() async throws {
         let configID = UUID(uuidString: "D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3")!
-        let catalog = catalogSnapshot(displayID: 104, isMain: false)
-        let sharingProvider = FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 104))
-        let sharingCommander = FakeSharingCommander()
-        var refreshCount = 0
+        let surface = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
-            catalogProvider: FakeCatalogProvider(snapshot: catalog),
-            sharingProvider: sharingProvider,
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 104, isMain: false)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 104)),
-            catalogCommander: FakeCatalogCommander(
-                visibleDisplays: visibleDisplays(from: catalog),
-                onRefresh: {
-                    refreshCount += 1
-                    if refreshCount >= 2 {
-                        sharingProvider.setSnapshot(stoppedSharingSnapshot(previousDisplayID: 104))
-                    }
-                }
-            ),
-            sharingCommander: sharingCommander,
-            virtualDisplayCommander: FakeVirtualDisplayCommander(),
-            topologyWaitPolicy: fastTopologyWaitPolicy()
+            captureIntentCommander: captureIntentCommander
+        )
+        let previewLease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        let lanLease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
         )
 
-        let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
-        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+        _ = await runtime.detachLANWebViewConsumer(surfaceIdentity: surface)
 
-        #expect(result.status == .completedWithRecoveryFailures)
-        #expect(trace.topologyStabilityResult?.status == .stable)
-        #expect(trace.restoreIntents == [
-            .init(
-                surfaceIdentity: .managedVirtualDisplay(configID: configID),
-                previousDisplayID: 104,
-                resolvedDisplayID: 104,
-                restoreSharing: true,
-                restorePreview: false,
-                previewCapturesCursor: false
-            )
-        ])
-        #expect(trace.restoreResults == [
-            .init(
-                kind: .sharing,
-                status: .skipped,
-                previousDisplayID: 104,
-                resolvedDisplayID: 104,
-                failureReason: "web_service_not_running"
-            )
-        ])
-        #expect(sharingCommander.restoredDisplayIDs.isEmpty)
-        #expect(trace.compensation.status == .degraded)
-        #expect(trace.compensation.failedRestoreCount == 1)
-        #expect(trace.failure == nil)
+        #expect(runtime.consumerLease(leaseID: previewLease.id)?.state == .attached)
+        #expect(runtime.consumerLease(leaseID: lanLease.id)?.state == .released)
+        #expect(runtime.currentAggregatedDemandSnapshot().first?.consumerKinds == [.preview])
+        #expect(captureIntentCommander.intents.last?.kind == .capture)
+        #expect(captureIntentCommander.intents.last?.aggregateDemand?.consumerKinds == [.preview])
     }
-    @Test func rebuildTransactionRecordsPreviewRestoreIntentAsDeferredEvidence() async throws {
+    @Test func rebuildTransactionRebindsPreviewUsingStableLeaseIdentity() async throws {
         let configID = UUID(uuidString: "D4D4D4D4-D4D4-D4D4-D4D4-D4D4D4D4D4D4")!
         let catalog = catalogSnapshot(displayID: 105, isMain: false)
         let recorder = RuntimeOperationRecorder()
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             captureProvider: FakeCaptureProvider(
@@ -443,17 +604,24 @@ struct DisplayRuntimeRebuildTransactionTests {
                 recorder: recorder,
                 visibleDisplays: visibleDisplays(from: catalog)
             ),
-            sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: .managedVirtualDisplay(configID: configID),
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand(capturesCursor: true)
+        )
+        recorder.events.removeAll()
 
         let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(result.status == .completedWithRecoveryFailures)
-        #expect(result.hasSessionRecoveryFailures)
+        #expect(result.status == .completed)
+        #expect(!result.hasSessionRecoveryFailures)
         #expect(trace.topologyStabilityResult?.status == .stable)
         #expect(trace.restoreIntents == [
             .init(
@@ -468,33 +636,36 @@ struct DisplayRuntimeRebuildTransactionTests {
         #expect(trace.restoreResults == [
             .init(
                 kind: .preview,
-                status: .skipped,
+                status: .restored,
                 previousDisplayID: 105,
                 resolvedDisplayID: 105,
-                failureReason: "preview_restore_deferred_until_consumer_lease"
+                failureReason: nil
             )
         ])
         #expect(recorder.events == [
             "refresh:topologyChanged",
-            "removePreview:105",
+            "applyPreview:drain",
             "rebuild:\(configID.uuidString)",
             "refresh:topologyChanged",
-            "refresh:topologyChanged"
+            "refresh:topologyChanged",
+            "applyPreview:capture"
         ])
-        #expect(recorder.events.allSatisfy { !$0.contains("startPreview") })
-        #expect(recorder.events.allSatisfy { !$0.contains("setPreviewSessionCapturesCursor") })
-        #expect(trace.compensation.status == .degraded)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.id == lease.id)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attached)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.surfaceEpoch.rawValue == 2)
+        #expect(trace.compensation.status == .completed)
         #expect(trace.compensation.restoredSharingCount == 0)
-        #expect(trace.compensation.restoredPreviewCount == 0)
-        #expect(trace.compensation.failedRestoreCount == 1)
+        #expect(trace.compensation.restoredPreviewCount == 1)
+        #expect(trace.compensation.failedRestoreCount == 0)
         #expect(trace.failure == nil)
     }
-    @Test func rebuildTransactionSkipsSharingRestoreWhenTopologyCannotProveStable() async throws {
+    @Test func rebuildTransactionCompensatesSharingWhenTopologyCannotProveStable() async throws {
         struct Scenario {
             let expectedStatus: DisplayRuntimeTopologyStabilityStatus
             let catalog: DisplayRuntimeCatalogSnapshot
             let refreshResults: [DisplayRuntimeCatalogRefreshResult]
             let maximumSampleCount: Int
+            let canResolveOldDisplay: Bool
         }
 
         let scenarios: [Scenario] = [
@@ -511,13 +682,15 @@ struct DisplayRuntimeRebuildTransactionTests {
                     topologySignature: []
                 ),
                 refreshResults: [.clearedSnapshot],
-                maximumSampleCount: 4
+                maximumSampleCount: 4,
+                canResolveOldDisplay: false
             ),
             .init(
                 expectedStatus: .failed,
                 catalog: catalogSnapshot(displayID: 103, isMain: false),
                 refreshResults: [.reusedSnapshot, .failed],
-                maximumSampleCount: 4
+                maximumSampleCount: 4,
+                canResolveOldDisplay: true
             ),
             .init(
                 expectedStatus: .timedOut,
@@ -532,21 +705,29 @@ struct DisplayRuntimeRebuildTransactionTests {
                     topologySignature: []
                 ),
                 refreshResults: [.reusedSnapshot],
-                maximumSampleCount: 2
+                maximumSampleCount: 2,
+                canResolveOldDisplay: false
             )
         ]
 
         for scenario in scenarios {
             let configID = UUID()
-            let sharingCommander = FakeSharingCommander()
+            let captureIntentCommander = FakeCaptureIntentCommander()
             let runtime = DisplayRuntime(
                 catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
                 sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 103)),
                 virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 103)),
                 catalogCommander: FakeCatalogCommander(refreshResults: scenario.refreshResults),
-                sharingCommander: sharingCommander,
+                captureIntentCommander: captureIntentCommander,
                 virtualDisplayCommander: FakeVirtualDisplayCommander(),
                 topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: scenario.maximumSampleCount)
+            )
+            let lease = await attachConsumerForTesting(
+                runtime,
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                kind: .lanWebView,
+                owner: .init(source: .runtimeTest),
+                demand: runtimeConsumerDemand()
             )
 
             let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
@@ -554,26 +735,43 @@ struct DisplayRuntimeRebuildTransactionTests {
 
             #expect(result.status == .completedWithRecoveryFailures)
             #expect(trace.topologyStabilityResult?.status == scenario.expectedStatus)
-            #expect(trace.restoreResults == [
-                .init(
-                    kind: .sharing,
-                    status: .skipped,
-                    previousDisplayID: 103,
-                    resolvedDisplayID: nil,
-                    failureReason: "topology_\(scenario.expectedStatus.rawValue)"
-                )
-            ])
-            #expect(sharingCommander.restoredDisplayIDs.isEmpty)
-            #expect(trace.compensation.status == .degraded)
+            if scenario.canResolveOldDisplay {
+                #expect(trace.restoreResults == [
+                    .init(
+                        kind: .sharing,
+                        status: .restored,
+                        previousDisplayID: 103,
+                        resolvedDisplayID: 103,
+                        failureReason: nil
+                    )
+                ])
+                #expect(trace.compensation.status == .degraded)
+                #expect(trace.compensation.failedRestoreCount == 0)
+                #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attached)
+            } else {
+                #expect(trace.restoreResults == [
+                    .init(
+                        kind: .sharing,
+                        status: .failed,
+                        previousDisplayID: 103,
+                        resolvedDisplayID: nil,
+                        failureReason: "topology_\(scenario.expectedStatus.rawValue)"
+                    )
+                ])
+                #expect(trace.compensation.status == .degraded)
+                #expect(trace.compensation.failedRestoreCount == 1)
+                #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
+            }
             #expect(trace.failure == nil)
         }
     }
-    @Test func rebuildTransactionSkipsPreviewRestoreWhenTopologyCannotProveStable() async throws {
+    @Test func rebuildTransactionCompensatesPreviewWhenTopologyCannotProveStable() async throws {
         struct Scenario {
             let expectedStatus: DisplayRuntimeTopologyStabilityStatus
             let catalog: DisplayRuntimeCatalogSnapshot
             let refreshResults: [DisplayRuntimeCatalogRefreshResult]
             let maximumSampleCount: Int
+            let canResolveOldDisplay: Bool
         }
 
         let scenarios: [Scenario] = [
@@ -590,13 +788,15 @@ struct DisplayRuntimeRebuildTransactionTests {
                     topologySignature: []
                 ),
                 refreshResults: [.clearedSnapshot],
-                maximumSampleCount: 4
+                maximumSampleCount: 4,
+                canResolveOldDisplay: false
             ),
             .init(
                 expectedStatus: .failed,
                 catalog: catalogSnapshot(displayID: 106, isMain: false),
                 refreshResults: [.reusedSnapshot, .failed],
-                maximumSampleCount: 4
+                maximumSampleCount: 4,
+                canResolveOldDisplay: true
             ),
             .init(
                 expectedStatus: .timedOut,
@@ -611,13 +811,15 @@ struct DisplayRuntimeRebuildTransactionTests {
                     topologySignature: []
                 ),
                 refreshResults: [.reusedSnapshot],
-                maximumSampleCount: 2
+                maximumSampleCount: 2,
+                canResolveOldDisplay: false
             )
         ]
 
         for scenario in scenarios {
             let configID = UUID()
             let recorder = RuntimeOperationRecorder()
+            let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
             let runtime = DisplayRuntime(
                 catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
                 captureProvider: FakeCaptureProvider(
@@ -628,10 +830,18 @@ struct DisplayRuntimeRebuildTransactionTests {
                     recorder: recorder,
                     refreshResults: scenario.refreshResults
                 ),
-                captureCommander: FakeCaptureCommander(recorder: recorder),
+                captureIntentCommander: captureIntentCommander,
                 virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
                 topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: scenario.maximumSampleCount)
             )
+            let lease = await attachConsumerForTesting(
+                runtime,
+                surfaceIdentity: .managedVirtualDisplay(configID: configID),
+                kind: .preview,
+                owner: .init(source: .runtimeTest),
+                demand: runtimeConsumerDemand()
+            )
+            recorder.events.removeAll()
 
             let result = try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
             let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
@@ -648,20 +858,38 @@ struct DisplayRuntimeRebuildTransactionTests {
                     previewCapturesCursor: false
                 )
             ])
-            #expect(trace.restoreResults == [
-                .init(
-                    kind: .preview,
-                    status: .skipped,
-                    previousDisplayID: 106,
-                    resolvedDisplayID: nil,
-                    failureReason: "topology_\(scenario.expectedStatus.rawValue)"
-                )
-            ])
-            #expect(recorder.events.allSatisfy { !$0.contains("startPreview") })
-            #expect(recorder.events.allSatisfy { !$0.contains("setPreviewSessionCapturesCursor") })
-            #expect(trace.compensation.status == .degraded)
-            #expect(trace.compensation.restoredPreviewCount == 0)
-            #expect(trace.compensation.failedRestoreCount == 1)
+            #expect(recorder.events.contains("applyPreview:drain"))
+            if scenario.canResolveOldDisplay {
+                #expect(trace.restoreResults == [
+                    .init(
+                        kind: .preview,
+                        status: .restored,
+                        previousDisplayID: 106,
+                        resolvedDisplayID: 106,
+                        failureReason: nil
+                    )
+                ])
+                #expect(recorder.events.contains("applyPreview:capture"))
+                #expect(trace.compensation.status == .degraded)
+                #expect(trace.compensation.restoredPreviewCount == 1)
+                #expect(trace.compensation.failedRestoreCount == 0)
+                #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attached)
+            } else {
+                #expect(trace.restoreResults == [
+                    .init(
+                        kind: .preview,
+                        status: .failed,
+                        previousDisplayID: 106,
+                        resolvedDisplayID: nil,
+                        failureReason: "topology_\(scenario.expectedStatus.rawValue)"
+                    )
+                ])
+                #expect(recorder.events.allSatisfy { $0 != "applyPreview:capture" })
+                #expect(trace.compensation.status == .degraded)
+                #expect(trace.compensation.restoredPreviewCount == 0)
+                #expect(trace.compensation.failedRestoreCount == 1)
+                #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
+            }
             #expect(trace.failure == nil)
         }
     }

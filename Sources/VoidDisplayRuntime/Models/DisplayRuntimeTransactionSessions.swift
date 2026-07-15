@@ -77,26 +77,3 @@ package nonisolated struct DisplayRuntimeSessionRestoreResult: Codable, Equatabl
         self.failureReason = failureReason
     }
 }
-
-package nonisolated struct DisplayRuntimeSharingRestoreCommandResult: Codable, Equatable, Sendable {
-    package let status: DisplayRuntimeSessionRestoreStatus
-    package let failureReason: String?
-
-    package init(
-        status: DisplayRuntimeSessionRestoreStatus,
-        failureReason: String?
-    ) {
-        self.status = status
-        self.failureReason = failureReason
-    }
-
-    package static let restored = Self(status: .restored, failureReason: nil)
-
-    package static func failed(_ reason: String) -> Self {
-        Self(status: .failed, failureReason: reason)
-    }
-
-    package static func invalidated(_ reason: String) -> Self {
-        Self(status: .invalidated, failureReason: reason)
-    }
-}

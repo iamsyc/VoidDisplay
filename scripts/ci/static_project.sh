@@ -139,6 +139,17 @@ validate_swift_scripts() {
 	xcrun swiftc -typecheck "$ROOT_DIR/scripts/release/render_dmg_background.swift"
 }
 
+validate_ui_tests_do_not_synthesize_keyboard_input() {
+	local violations
+	violations="$(
+		rg -n '\.(typeKey|typeText)\b|XCUIKeyboardKey' \
+			"$ROOT_DIR/UITests" "$ROOT_DIR/Tests" || true
+	)"
+	fail_on_output \
+		"UI tests must not synthesize keyboard input because it can trigger input-method authorization prompts." \
+		"$violations"
+}
+
 validate_xcode_shell_build_phase
 validate_xcode_log_scanner
 validate_swiftpm_log_scanner
@@ -146,5 +157,6 @@ validate_bootstrap_profile_fixtures
 validate_classify_fixtures
 validate_swift_style
 validate_swift_scripts
+validate_ui_tests_do_not_synthesize_keyboard_input
 
 info "Static project gate passed."

@@ -701,6 +701,8 @@ package enum DisplaySurfacePresentationMapper {
             String(localized: "Transaction quiesce")
         case .performanceModeChanged:
             String(localized: "Performance mode changed")
+        case .retry:
+            String(localized: "Retry")
         }
     }
 

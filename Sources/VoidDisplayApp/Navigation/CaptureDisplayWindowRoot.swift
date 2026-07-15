@@ -8,26 +8,26 @@ import Foundation
 import SwiftUI
 package struct CaptureDisplayWindowRoot: View {
     @Environment(\.dismiss) private var dismiss
-    package let sessionId: UUID?
+    package let previewID: CapturePreviewID?
     private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
-    @State private var hasSeenSessionID = false
+    @State private var hasSeenPreviewID = false
 
     package init(
-        sessionId: UUID?,
+        previewID: CapturePreviewID?,
         previewActions: CapturePreviewActions,
         sharingStatusProvider: CaptureSharingStatusProvider
     ) {
-        self.sessionId = sessionId
+        self.previewID = previewID
         self.previewActions = previewActions
         self.sharingStatusProvider = sharingStatusProvider
     }
 
     package var body: some View {
         Group {
-            if let sessionId {
+            if let previewID {
                 CaptureDisplayView(
-                    sessionId: sessionId,
+                    previewID: previewID,
                     previewActions: previewActions,
                     sharingStatusProvider: sharingStatusProvider
                 )
@@ -36,17 +36,17 @@ package struct CaptureDisplayWindowRoot: View {
                 Color.clear
             }
         }
-        .task(id: sessionId) {
-            if sessionId != nil {
-                hasSeenSessionID = true
+        .task(id: previewID) {
+            if previewID != nil {
+                hasSeenPreviewID = true
                 return
             }
 
             // Value-based windows can briefly render before their payload is
-            // attached. Give SwiftUI one turn to supply the session ID.
-            if !hasSeenSessionID {
+            // attached. Give SwiftUI one turn to supply the stable preview ID.
+            if !hasSeenPreviewID {
                 try? await Task.sleep(for: .milliseconds(150))
-                guard sessionId == nil, !hasSeenSessionID else { return }
+                guard previewID == nil, !hasSeenPreviewID else { return }
                 dismiss()
                 return
             }

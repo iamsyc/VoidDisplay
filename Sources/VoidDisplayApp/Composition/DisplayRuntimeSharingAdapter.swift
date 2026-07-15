@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ScreenCaptureKit
+import VoidDisplayCapture
 import VoidDisplayFoundation
 import VoidDisplayRuntime
 import VoidDisplaySharing
@@ -8,16 +9,23 @@ import VoidDisplaySharing
 @MainActor
 package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding, DisplayRuntimeSharingCommanding {
     private weak var controller: SharingController?
+    private weak var capturePerformancePreferences: CapturePerformancePreferences?
 
-    package init(controller: SharingController) {
+    package init(
+        controller: SharingController,
+        capturePerformancePreferences: CapturePerformancePreferences
+    ) {
         self.controller = controller
+        self.capturePerformancePreferences = capturePerformancePreferences
     }
 
     package func configureLANWebViewDemandSync(runtime: DisplayRuntime) {
         guard let controller else { return }
         controller.configureRuntimeStateDidChange { [weak self, weak runtime] in
             guard let self, let runtime else { return }
-            self.refreshLANWebViewConsumerDemands(runtime: runtime)
+            Task { @MainActor in
+                await self.refreshLANWebViewConsumerDemands(runtime: runtime)
+            }
         }
     }
 
@@ -55,36 +63,6 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         }
     }
 
-    package func stopSharing(displayID: DisplayRuntimeDisplayID) {
-        controller?.stopSharing(displayID: displayID)
-    }
-
-    package func restoreSharing(displayID: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult {
-        guard let controller else {
-            return .failed("sharing_controller_unavailable")
-        }
-        guard controller.isWebServiceRunning else {
-            return .init(status: .skipped, failureReason: "web_service_not_running")
-        }
-        guard let display = (controller.displayCatalogState.displays ?? []).first(where: { $0.displayID == displayID }) else {
-            return .failed("display_not_found")
-        }
-        guard controller.sharePagePath(for: displayID) != nil else {
-            return .failed("shareable_display_not_registered")
-        }
-
-        do {
-            switch try await controller.beginSharing(display: display) {
-            case .started:
-                return .restored
-            case .invalidated:
-                return .invalidated("sharing_start_invalidated")
-            }
-        } catch {
-            return .failed(String(describing: error))
-        }
-    }
-
     package func beginLANWebViewSharing(
         display: SCDisplay,
         runtime: DisplayRuntime
@@ -100,7 +78,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
             )
         }
 
-        let result = await runtime.attachLANWebViewConsumer(
+        let outcome = await runtime.attachLANWebViewConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: .init(source: .sharingService, redactedLabel: "lan"),
             demand: lanWebViewDemand(
@@ -109,13 +87,13 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
             )
         )
 
-        guard let applyResult = result.applyResult else {
-            guard controller.isSharing(displayID: display.displayID) else {
+        guard case let .attached(_, applyResult) = outcome else {
+            guard case let .rejected(failureCode) = outcome else {
                 throw DisplayRuntimeLANWebViewCaptureError(
                     failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
                 )
             }
-            return .started(())
+            throw DisplayRuntimeLANWebViewCaptureError(failureCode: failureCode)
         }
 
         guard applyResult.outcome == .applied else {
@@ -144,7 +122,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
 
     package func stopAllLANWebViewSharing(runtime: DisplayRuntime) async {
         let activeSurfaceIdentities = runtime.currentConsumerLeaseSnapshot()
-            .filter { $0.kind == .lanWebView && $0.state.contributesDemand }
+            .filter { $0.kind == .lanWebView && $0.state != .released }
             .map(\.surfaceIdentity)
         for surfaceIdentity in activeSurfaceIdentities {
             _ = await runtime.detachLANWebViewConsumer(surfaceIdentity: surfaceIdentity)
@@ -161,7 +139,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         return result
     }
 
-    private func refreshLANWebViewConsumerDemands(runtime: DisplayRuntime) {
+    private func refreshLANWebViewConsumerDemands(runtime: DisplayRuntime) async {
         guard let controller else { return }
         let displaysByID = Dictionary(
             uniqueKeysWithValues: (controller.displayCatalogState.displays ?? []).map { display in
@@ -171,7 +149,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         for displayID in controller.activeSharingDisplayIDs {
             guard let display = displaysByID[displayID] else { continue }
             guard let surfaceIdentity = runtime.surfaceIdentityForDisplayID(displayID) else { continue }
-            _ = runtime.updateLANWebViewConsumerDemand(
+            _ = await runtime.updateLANWebViewConsumerDemand(
                 surfaceIdentity: surfaceIdentity,
                 demand: lanWebViewDemand(
                     display: display,
@@ -192,7 +170,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
             sourceFramesPerSecond: 60,
             preferredFramesPerSecond: nil,
             capturesCursor: false,
-            powerProfile: .automatic,
+            powerProfile: capturePerformancePreferences?.mode.runtimeCapturePowerProfile ?? .automatic,
             latencyPreference: .realtime,
             activeViewerCount: activeViewerCount
         )

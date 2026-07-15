@@ -10,6 +10,25 @@
 
 Phase 4 把 Monitor、LAN Web View、diagnostics recorder 统一建模为 `DisplaySurface` consumer lease，并由 `DisplayRuntime` 聚合这些 consumer 的 capture demand。
 
+## 2026-07-15 Transaction Reconciliation Addendum
+
+Phase 4 后续审查确认，consumer lease 还必须参与虚拟显示事务的 quiesce、恢复和补偿，单纯 attach / detach 与 epoch 失效不足以保证 session 生命周期收敛。当前实现采用以下固定规则：
+
+- Preview 和 LAN Web View 通过同一个 CaptureIntent port 进入 Capture 与 Sharing adapter。Runtime 不再提供直接 teardown、sharing stop 或 sharing restore command port。
+- 事务开始时，affected surface 进入 busy，每个 surface 只推进一次 epoch。现有 lease 保留 ID 与 demand，状态转为 `restarting`，旧 display ID 只用于生成 `.drain` intent。任何 consumer quiesce apply 失败都会先补偿并终止后续虚拟显示命令。
+- busy 期间的新 attach 返回 `consumer_lease_restarting`，不会生成有效 demand。
+- topology 稳定后，同一 lease ID 使用新 display ID 和当前保留的 demand 重新绑定。恢复 apply 期间 lease 保持 `attaching`，只有真实 apply 成功后才进入 `attached`，结果同时写入 transaction restore evidence。
+- disable 和 delete 释放目标 surface 的 lease；同一事务中的 peer surface 继续恢复。
+- 命令失败、commander 缺失、topology timeout 或权限不可证明时进入统一 compensation。Runtime 刷新 topology，能够解析旧 display 时恢复原 demand，无法解析时将 lease 标为 `failed` 并保留 failure code。所有出口清除 busy。
+- Catalog convergence 复用同一 reconciliation，不允许绕过 lease ledger 直接销毁底层 session。
+- Preview lease ID 同时提供稳定窗口身份。底层 capture session 可替换，窗口保持打开并按 lease 当前 resolved display 重绑 renderer。恢复失败时窗口保留 Retry 与 Close。
+- 每个 surface、每种 consumer 最多存在一个未释放 lease。Preview detach、cursor 更新、retry 和 resolution wait 均以 lease ID 为边界。
+- 同一 surface 与 consumer kind 的 CaptureIntent apply 按 revision 串行。等待执行的旧 revision 会在调用 adapter 前失效，避免过期副作用覆盖最新 demand。
+- 恢复期间发生的显式 detach 保持 `released`，恢复流程不得重新激活该 lease。
+- Capture performance preference 的初始值写入 Preview 与 LAN demand，后续变化同步更新 Capture data plane 与所有未释放 Runtime leases。恢复使用期间更新后的最新 power profile。
+
+本节是已完成架构的校正记录，不重新开放 Phase 4 待办。
+
 核心边界固定：
 
 - `DisplayRuntime` 是控制平面，只保存 lease、aggregate demand、effective capture intent、状态和诊断证据。

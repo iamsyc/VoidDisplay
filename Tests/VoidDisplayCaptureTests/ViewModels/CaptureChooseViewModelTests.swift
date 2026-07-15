@@ -41,11 +41,11 @@ struct CaptureChooseViewModelTests {
             )
         )
         let display = SharedMockSCDisplay.make(displayID: 777, width: 1920, height: 1080)
-        var openedSessionIDs: [UUID] = []
+        var openedPreviewIDs: [CapturePreviewID] = []
 
-        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedPreviewIDs.append($0) }
 
-        #expect(openedSessionIDs.isEmpty)
+        #expect(openedPreviewIDs.isEmpty)
         #expect(sut.userFacingAlert?.title == String(localized: "Start Preview Failed"))
         #expect(sut.userFacingAlert?.message.isEmpty == false)
     }
@@ -64,16 +64,16 @@ struct CaptureChooseViewModelTests {
             )
         )
         let display = SharedMockSCDisplay.make(displayID: 779, width: 1920, height: 1080)
-        var openedSessionIDs: [UUID] = []
+        var openedPreviewIDs: [CapturePreviewID] = []
 
-        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedPreviewIDs.append($0) }
 
-        #expect(openedSessionIDs.isEmpty)
+        #expect(openedPreviewIDs.isEmpty)
         #expect(sut.userFacingAlert == nil)
     }
 
     @Test func startPreviewSuccessPassesMetadataToCaptureActions() async {
-        let expectedSessionID = UUID()
+        let expectedPreviewID = CapturePreviewID(rawValue: UUID())
         let display = SharedMockSCDisplay.make(displayID: 778, width: 2560, height: 1440)
         var receivedDisplayID: CGDirectDisplayID?
         var receivedMetadata: CapturePreviewDisplayMetadata?
@@ -83,7 +83,7 @@ struct CaptureChooseViewModelTests {
                     startPreview: { display, metadata in
                         receivedDisplayID = display.displayID
                         receivedMetadata = metadata
-                        return .started(expectedSessionID)
+                        return .started(expectedPreviewID)
                     }
                 ),
                 virtualDisplayStatusProvider: .init(
@@ -91,9 +91,9 @@ struct CaptureChooseViewModelTests {
                 )
             )
         )
-        var openedSessionIDs: [UUID] = []
+        var openedPreviewIDs: [CapturePreviewID] = []
 
-        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedPreviewIDs.append($0) }
 
         #expect(receivedDisplayID == 778)
         #expect(receivedMetadata == CapturePreviewDisplayMetadata(
@@ -101,7 +101,7 @@ struct CaptureChooseViewModelTests {
             resolutionText: "2560 × 1440",
             isVirtualDisplay: true
         ))
-        #expect(openedSessionIDs == [expectedSessionID])
+        #expect(openedPreviewIDs == [expectedPreviewID])
         #expect(sut.userFacingAlert == nil)
     }
 
@@ -117,11 +117,11 @@ struct CaptureChooseViewModelTests {
             )
         )
         let display = SharedMockSCDisplay.make(displayID: 780, width: 1920, height: 1080)
-        var openedSessionIDs: [UUID] = []
+        var openedPreviewIDs: [CapturePreviewID] = []
 
-        await sut.startPreview(display: display) { openedSessionIDs.append($0) }
+        await sut.startPreview(display: display) { openedPreviewIDs.append($0) }
 
-        #expect(openedSessionIDs.isEmpty)
+        #expect(openedPreviewIDs.isEmpty)
         #expect(sut.userFacingAlert == nil)
     }
 
@@ -150,18 +150,23 @@ struct CaptureChooseViewModelTests {
         startPreview: @escaping @MainActor (
             SCDisplay,
             CapturePreviewDisplayMetadata
-        ) async throws -> DisplayStartOutcome<UUID> = { _, _ in .started(UUID()) }
+        ) async throws -> DisplayStartOutcome<CapturePreviewID> = {
+            _, _ in .started(CapturePreviewID(rawValue: UUID()))
+        }
     ) -> CapturePreviewActions {
         .init(
             sessions: { [] },
             previewSession: { _ in nil },
-            previewSessionForDisplayID: { _ in nil },
+            previewState: { _ in .released },
+            previewIDForDisplayID: { _ in nil },
             isStartingDisplayID: { _ in false },
             startPreview: startPreview,
             attachPreviewSink: { _, _ in },
             activatePreviewSession: { _ in },
-            closePreviewSession: { _ in },
-            setPreviewSessionCapturesCursor: { _, _ in }
+            waitForPreviewResolution: { _ in .released },
+            retryPreview: { _ in .released },
+            closePreview: { _ in },
+            setPreviewCapturesCursor: { _, _ in }
         )
     }
 

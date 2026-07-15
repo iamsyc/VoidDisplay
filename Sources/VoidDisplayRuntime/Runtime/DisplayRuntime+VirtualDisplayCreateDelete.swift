@@ -214,7 +214,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedSurfaces
         )
         if topologyResult.status == .stable {
-            convergeToVisibleDisplaysFromCurrentCatalog()
+            await convergeToVisibleDisplaysFromCurrentCatalog()
             await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
         }
         let finalStatus = transactionStatus(after: topologyResult, restoreResults: [])
@@ -318,10 +318,51 @@ extension DisplayRuntime {
         }
 
         await appendPhase(.quiescingSessions, transactionID: context.transactionID)
-        quiesceSessions(pauseIntents)
+        let consumerTransition = await beginConsumerTransition(
+            affectedSurfaces: affectedSurfaces
+        )
+        guard !consumerTransition.hasQuiesceFailure else {
+            let restoreResults = await compensateConsumerQuiesceFailure(
+                consumerTransition,
+                transactionID: context.transactionID
+            )
+            let terminal = finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: .virtualDisplayDelete,
+                status: .failed,
+                phase: .failed,
+                failure: .init(
+                    phase: .quiescingSessions,
+                    reason: "consumer_session_quiesce_failed",
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: makeSnapshot(),
+                compensation: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                ),
+                persistenceOutcome: .notAttempted,
+                virtualDisplayCommandOutcome: .notAttempted,
+                runtimeTrackingClearOutcome: .notAttempted
+            )
+            return deleteTransactionResult(
+                context: context,
+                terminal: terminal,
+                targetWasRunning: targetWasRunning,
+                persistenceOutcome: .notAttempted,
+                virtualDisplayCommandOutcome: .notAttempted,
+                runtimeTrackingClearOutcome: .notAttempted,
+                topologyResult: nil
+            )
+        }
 
         await appendPhase(.executingVirtualDisplayCommand, transactionID: context.transactionID)
         guard let virtualDisplayCommander else {
+            let restoreResults = await compensateConsumerTransition(consumerTransition)
+            updateTrace(context.transactionID) { trace in
+                trace.replacing(restoreResults: restoreResults)
+            }
             let terminal = finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
@@ -334,6 +375,10 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
+                compensation: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                ),
                 persistenceOutcome: .notAttempted,
                 virtualDisplayCommandOutcome: .notAttempted,
                 runtimeTrackingClearOutcome: .notAttempted
@@ -359,7 +404,11 @@ extension DisplayRuntime {
         do {
             commandResult = try await virtualDisplayCommander.deleteVirtualDisplay(request: commandRequest)
         } catch let commandError as DisplayRuntimeVirtualDisplayDeleteCommandError {
+            let restoreResults = await compensateConsumerTransition(consumerTransition)
             recordDeleteCommandFacts(commandError.result, transactionID: context.transactionID)
+            updateTrace(context.transactionID) { trace in
+                trace.replacing(restoreResults: restoreResults)
+            }
             _ = finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
@@ -372,12 +421,20 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
+                compensation: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                ),
                 persistenceOutcome: commandError.result.persistenceOutcome,
                 virtualDisplayCommandOutcome: commandError.result.virtualDisplayCommandOutcome,
                 runtimeTrackingClearOutcome: commandError.result.runtimeTrackingClearOutcome
             )
             throw commandError
         } catch {
+            let restoreResults = await compensateConsumerTransition(consumerTransition)
+            updateTrace(context.transactionID) { trace in
+                trace.replacing(restoreResults: restoreResults)
+            }
             _ = finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
@@ -391,6 +448,10 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
+                compensation: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                ),
                 persistenceOutcome: .failed,
                 virtualDisplayCommandOutcome: .failed,
                 runtimeTrackingClearOutcome: .notAttempted
@@ -407,7 +468,7 @@ extension DisplayRuntime {
                 affectedSurfaces: affectedSurfaces
             )
             if result.status == .stable {
-                convergeToVisibleDisplaysFromCurrentCatalog()
+                await convergeToVisibleDisplaysFromCurrentCatalog()
                 await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
             }
             topologyResult = result
@@ -434,25 +495,12 @@ extension DisplayRuntime {
             await appendPhase(.restoringSessions, transactionID: context.transactionID)
         }
         let targetIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: context.configID)
-        let restoreResults: [DisplayRuntimeSessionRestoreResult]
-        if let topologyResult {
-            let sharingRestoreResults = await restoreSharingSessions(
-                restoreIntents,
-                topologyResult: topologyResult,
-                postSnapshot: postConvergenceSnapshot,
-                disabledTargetIdentity: targetIdentity,
-                targetSkipReason: "target_deleted"
-            )
-            let previewRestoreResults = makeDeferredPreviewRestoreResults(
-                restoreIntents,
-                topologyResult: topologyResult,
-                disabledTargetIdentity: targetIdentity,
-                targetSkipReason: "target_deleted"
-            )
-            restoreResults = sharingRestoreResults + previewRestoreResults
-        } else {
-            restoreResults = []
-        }
+        let restoreResults = await completeConsumerTransition(
+            consumerTransition,
+            snapshot: postConvergenceSnapshot,
+            topologyResult: topologyResult,
+            releasedSurfaceReasons: [targetIdentity: "target_deleted"]
+        )
         updateTrace(context.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
@@ -473,9 +521,12 @@ extension DisplayRuntime {
                 compensationResult(
                     after: $0,
                     restoreResults: restoreResults,
-                    restoreIntentCount: restoreIntents.count
+                    restoreIntentCount: consumerTransition.restoreIntentCount
                 )
-            } ?? .notRequired,
+            } ?? consumerCompensationResult(
+                restoreResults: restoreResults,
+                restoreIntentCount: consumerTransition.restoreIntentCount
+            ),
             persistenceOutcome: commandResult.persistenceOutcome,
             virtualDisplayCommandOutcome: commandResult.virtualDisplayCommandOutcome,
             runtimeTrackingClearOutcome: commandResult.runtimeTrackingClearOutcome

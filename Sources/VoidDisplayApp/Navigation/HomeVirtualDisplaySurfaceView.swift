@@ -391,9 +391,13 @@ package struct HomeVirtualDisplaySurfaceView: View {
         guard let displayID = card.displayID else { return }
         Task {
             if let existingSession = CaptureUIComposition
-                .previewActions(capture: capture, displayRuntime: displayRuntime)
-                .previewSessionForDisplayID(displayID) {
-                openWindow(value: existingSession.id)
+                .previewActions(
+                    capture: capture,
+                    displayRuntime: displayRuntime,
+                    capturePerformancePreferences: capturePerformancePreferences
+                )
+                .previewIDForDisplayID(displayID) {
+                openWindow(value: existingSession)
                 return
             }
             guard let display = await resolveDisplay(displayID: displayID) else {
@@ -405,7 +409,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
             }
             let actions = CaptureUIComposition.previewActions(
                 capture: capture,
-                displayRuntime: displayRuntime
+                displayRuntime: displayRuntime,
+                capturePerformancePreferences: capturePerformancePreferences
             )
             do {
                 let outcome = try await actions.startPreview(
@@ -416,8 +421,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
                         isVirtualDisplay: true
                     )
                 )
-                if case .started(let sessionID) = outcome {
-                    openWindow(value: sessionID)
+                if case .started(let previewID) = outcome {
+                    openWindow(value: previewID)
                 }
             } catch is CancellationError {
             } catch {
@@ -436,10 +441,15 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func stopPreview(_ card: HomeVirtualDisplayCardPresentation) {
         guard let displayID = card.displayID else { return }
         Task {
-            guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(displayID) else {
+            let actions = CaptureUIComposition.previewActions(
+                capture: capture,
+                displayRuntime: displayRuntime,
+                capturePerformancePreferences: capturePerformancePreferences
+            )
+            guard let previewID = actions.previewIDForDisplayID(displayID) else {
                 return
             }
-            _ = await displayRuntime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
+            await actions.closePreview(previewID)
         }
     }
 
@@ -455,11 +465,17 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 return
             }
             do {
-                _ = try await DisplayRuntimeSharingAdapter(controller: sharing)
+                _ = try await DisplayRuntimeSharingAdapter(
+                    controller: sharing,
+                    capturePerformancePreferences: capturePerformancePreferences
+                )
                     .beginLANWebViewSharing(display: display, runtime: displayRuntime)
             } catch is CancellationError {
             } catch {
-                await DisplayRuntimeSharingAdapter(controller: sharing)
+                await DisplayRuntimeSharingAdapter(
+                    controller: sharing,
+                    capturePerformancePreferences: capturePerformancePreferences
+                )
                     .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
                 AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
                 presentActionError(
@@ -476,7 +492,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func stopWebView(_ card: HomeVirtualDisplayCardPresentation) {
         guard let displayID = card.displayID else { return }
         Task {
-            await DisplayRuntimeSharingAdapter(controller: sharing)
+            await DisplayRuntimeSharingAdapter(
+                controller: sharing,
+                capturePerformancePreferences: capturePerformancePreferences
+            )
                 .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
         }
     }
@@ -582,6 +601,11 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func isPreviewActionDisabled(_ card: HomeVirtualDisplayCardPresentation) -> Bool {
+        if displayRuntime.isConsumerTransitionBusy(
+            surfaceIdentity: .managedVirtualDisplay(configID: card.id)
+        ) {
+            return true
+        }
         guard let displayID = card.displayID else { return true }
         if capture.isStarting(displayID: displayID) { return true }
         if card.isPreviewing { return false }
@@ -589,6 +613,11 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func isWebViewActionDisabled(_ card: HomeVirtualDisplayCardPresentation) -> Bool {
+        if displayRuntime.isConsumerTransitionBusy(
+            surfaceIdentity: .managedVirtualDisplay(configID: card.id)
+        ) {
+            return true
+        }
         guard let displayID = card.displayID else { return true }
         if sharing.isStarting(displayID: displayID) { return true }
         if card.isSharing { return false }

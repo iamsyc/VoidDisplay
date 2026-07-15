@@ -77,7 +77,10 @@ package struct HomeVirtualDisplayCard: View {
                 narrowLayout
             }
         case .compact:
-            compactRowLayout
+            ViewThatFits(in: .horizontal) {
+                compactRowLayout
+                compactColumnLayout
+            }
         case .dashboard:
             dashboardLayout
         }
@@ -152,12 +155,10 @@ package struct HomeVirtualDisplayCard: View {
         HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
             compactIdentityBlock
                 .layoutPriority(2)
-                .frame(minWidth: 240, alignment: .leading)
 
             if hasOperationalStatusItems {
                 statusGrid
                     .layoutPriority(1)
-                    .frame(minWidth: 250, alignment: .leading)
             }
 
             Spacer(minLength: AppUI.Spacing.small)
@@ -166,6 +167,24 @@ package struct HomeVirtualDisplayCard: View {
             toggleButton
         }
         .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+    }
+
+    private var compactColumnLayout: some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
+                compactIdentityBlock
+                    .layoutPriority(1)
+                Spacer(minLength: AppUI.Spacing.small)
+                toggleButton
+            }
+
+            if hasOperationalStatusItems {
+                statusGrid
+            }
+
+            compactActionCluster
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var dashboardLayout: some View {

@@ -6,29 +6,12 @@ extension DisplayRuntime {
         surfaceIdentity: DisplaySurfaceIdentity,
         owner: DisplayRuntimeConsumerOwner,
         demand: DisplayRuntimeConsumerDemand
-    ) async -> DisplayRuntimePreviewConsumerAttachResult {
-        let lease = attachConsumer(
+    ) async -> DisplayRuntimeConsumerAttachOutcome {
+        await attachConsumer(
             surfaceIdentity: surfaceIdentity,
             kind: .preview,
             owner: owner,
             demand: demand
-        )
-        let intent = submitCaptureIntent(
-            surfaceIdentity: surfaceIdentity,
-            reason: .attach
-        )
-        let rawResult: DisplayRuntimeCaptureIntentApplyResult
-        if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyPreviewCaptureIntent(intent)
-        } else {
-            rawResult = .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
-        return DisplayRuntimePreviewConsumerAttachResult(
-            lease: lease,
-            applyResult: recordCaptureIntentApplyResult(rawResult)
         )
     }
 
@@ -36,61 +19,13 @@ extension DisplayRuntime {
         surfaceIdentity: DisplaySurfaceIdentity,
         owner: DisplayRuntimeConsumerOwner,
         demand: DisplayRuntimeConsumerDemand
-    ) async -> DisplayRuntimeLANWebViewConsumerAttachResult {
-        let hadExistingLease = currentDemandLeases(for: surfaceIdentity)
-            .contains { $0.kind == .lanWebView }
-        let lease = attachConsumer(
+    ) async -> DisplayRuntimeConsumerAttachOutcome {
+        await attachConsumer(
             surfaceIdentity: surfaceIdentity,
             kind: .lanWebView,
             owner: owner,
             demand: demand
         )
-        guard !hadExistingLease else {
-            return DisplayRuntimeLANWebViewConsumerAttachResult(
-                lease: lease,
-                applyResult: nil
-            )
-        }
-
-        let intent = submitCaptureIntent(
-            surfaceIdentity: surfaceIdentity,
-            reason: .attach
-        )
-        let rawResult: DisplayRuntimeCaptureIntentApplyResult
-        if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyLANWebViewCaptureIntent(intent)
-        } else {
-            rawResult = .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
-        return DisplayRuntimeLANWebViewConsumerAttachResult(
-            lease: lease,
-            applyResult: recordCaptureIntentApplyResult(rawResult)
-        )
-    }
-
-    @discardableResult
-    package func updateLANWebViewConsumerDemand(
-        surfaceIdentity: DisplaySurfaceIdentity,
-        demand: DisplayRuntimeConsumerDemand
-    ) -> DisplayRuntimeConsumerLease? {
-        guard let existingLease = currentDemandLeases(for: surfaceIdentity)
-            .first(where: { $0.kind == .lanWebView })
-        else {
-            return nil
-        }
-        let now = Date()
-        let updatedLease = existingLease.updated(
-            state: existingLease.state,
-            updatedAt: now > existingLease.updatedAt
-                ? now
-                : existingLease.updatedAt.addingTimeInterval(0.000_001),
-            demand: demand
-        )
-        consumerLeasesByID[existingLease.id] = updatedLease
-        return updatedLease
     }
 
     private func attachConsumer(
@@ -98,76 +33,207 @@ extension DisplayRuntime {
         kind: DisplaySurfaceConsumerKind,
         owner: DisplayRuntimeConsumerOwner,
         demand: DisplayRuntimeConsumerDemand
-    ) -> DisplayRuntimeConsumerLease {
-        if kind == .lanWebView,
-           let existingLease = currentDemandLeases(for: surfaceIdentity)
-           .first(where: { $0.kind == .lanWebView }) {
-            let now = Date()
-            let updatedLease = existingLease.updated(
-                state: existingLease.state,
-                updatedAt: now > existingLease.updatedAt
-                    ? now
-                    : existingLease.updatedAt.addingTimeInterval(0.000_001),
-                demand: demand
+    ) async -> DisplayRuntimeConsumerAttachOutcome {
+        guard !consumerTransitionBusySurfaces.contains(surfaceIdentity) else {
+            return .rejected(
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.consumerLeaseRestarting
             )
-            consumerLeasesByID[existingLease.id] = updatedLease
-            return updatedLease
         }
 
-        let now = Date()
-        let surfaceEpoch = currentSurfaceEpoch(for: surfaceIdentity)
-        let resolvedDisplayID = resolvedDisplayID(for: surfaceIdentity, surfaces: nil)
-        let lease = DisplayRuntimeConsumerLease(
-            surfaceIdentity: surfaceIdentity,
-            surfaceEpoch: surfaceEpoch,
-            resolvedDisplayID: resolvedDisplayID,
-            kind: kind,
-            owner: owner,
-            createdAt: now,
-            updatedAt: now,
-            state: .attached,
-            demand: demand
+        let lease: DisplayRuntimeConsumerLease
+        if let existingLease = currentUnreleasedLeases(for: surfaceIdentity)
+            .first(where: { $0.kind == kind }) {
+            guard existingLease.state == .attached else {
+                return .rejected(
+                    failureCode: existingLease.state == .restarting
+                        ? DisplayRuntimeCaptureIntentFailureCode.consumerLeaseRestarting
+                        : DisplayRuntimeCaptureIntentFailureCode.consumerLeaseAlreadyExists
+                )
+            }
+            lease = replaceLease(
+                existingLease,
+                state: .attaching,
+                demand: demand,
+                lastFailureCode: nil
+            )
+        } else {
+            let now = Date.now
+            lease = DisplayRuntimeConsumerLease(
+                surfaceIdentity: surfaceIdentity,
+                surfaceEpoch: currentSurfaceEpoch(for: surfaceIdentity),
+                resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity, surfaces: nil),
+                kind: kind,
+                owner: owner,
+                createdAt: now,
+                updatedAt: now,
+                state: .attaching,
+                demand: demand
+            )
+            consumerLeasesByID[lease.id] = lease
+        }
+
+        let intent = submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
+        let applyResult = await applyCaptureIntent(intent, consumerKind: kind)
+        if let currentLease = consumerLeasesByID[lease.id], currentLease.state == .attaching {
+            if applyResult.outcome == .applied {
+                _ = replaceLease(
+                    currentLease,
+                    state: .attached,
+                    demand: currentLease.demand,
+                    lastFailureCode: nil
+                )
+            } else {
+                _ = markConsumerLeaseFailed(
+                    leaseID: lease.id,
+                    failureCode: captureIntentFailureCode(for: applyResult)
+                )
+                let correctiveIntent = submitCaptureIntent(
+                    surfaceIdentity: surfaceIdentity,
+                    reason: .detach
+                )
+                _ = await applyCaptureIntent(correctiveIntent, consumerKind: kind)
+            }
+        }
+        return .attached(
+            lease: consumerLeasesByID[lease.id] ?? lease,
+            applyResult: applyResult
         )
-        consumerLeasesByID[lease.id] = lease
-        return lease
+    }
+
+    @discardableResult
+    package func updatePreviewConsumerDemand(
+        leaseID: DisplayRuntimeConsumerLeaseID,
+        demand: DisplayRuntimeConsumerDemand
+    ) async -> DisplayRuntimeCaptureIntentApplyResult? {
+        guard let lease = consumerLeasesByID[leaseID],
+              lease.kind == .preview,
+              lease.state == .attached,
+              !consumerTransitionBusySurfaces.contains(lease.surfaceIdentity)
+        else {
+            return nil
+        }
+        _ = replaceLease(lease, state: .attached, demand: demand, lastFailureCode: nil)
+        let intent = submitCaptureIntent(surfaceIdentity: lease.surfaceIdentity, reason: .attach)
+        let applyResult = await applyCaptureIntent(intent, consumerKind: .preview)
+        if shouldCompensateCaptureIntent(intent, after: applyResult),
+           consumerLeasesByID[leaseID]?.demand == demand {
+            _ = replaceLease(
+                consumerLeasesByID[leaseID] ?? lease,
+                state: .attached,
+                demand: lease.demand,
+                lastFailureCode: captureIntentFailureCode(for: applyResult)
+            )
+            let correctiveIntent = submitCaptureIntent(
+                surfaceIdentity: lease.surfaceIdentity,
+                reason: .attach
+            )
+            let correctiveResult = await applyCaptureIntent(correctiveIntent, consumerKind: .preview)
+            await failLeaseIfCurrentCompensationDidNotApply(
+                leaseID: leaseID,
+                intent: correctiveIntent,
+                applyResult: correctiveResult,
+                consumerKind: .preview
+            )
+        }
+        return applyResult
+    }
+
+    @discardableResult
+    package func updateLANWebViewConsumerDemand(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        demand: DisplayRuntimeConsumerDemand
+    ) async -> DisplayRuntimeCaptureIntentApplyResult? {
+        guard let lease = currentDemandLeases(for: surfaceIdentity)
+            .first(where: { $0.kind == .lanWebView }),
+              lease.state == .attached,
+              !consumerTransitionBusySurfaces.contains(surfaceIdentity)
+        else {
+            return nil
+        }
+        _ = replaceLease(lease, state: .attached, demand: demand, lastFailureCode: nil)
+        let intent = submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
+        let applyResult = await applyCaptureIntent(intent, consumerKind: .lanWebView)
+        if shouldCompensateCaptureIntent(intent, after: applyResult),
+           consumerLeasesByID[lease.id]?.demand == demand {
+            _ = replaceLease(
+                consumerLeasesByID[lease.id] ?? lease,
+                state: .attached,
+                demand: lease.demand,
+                lastFailureCode: captureIntentFailureCode(for: applyResult)
+            )
+            let correctiveIntent = submitCaptureIntent(
+                surfaceIdentity: surfaceIdentity,
+                reason: .attach
+            )
+            let correctiveResult = await applyCaptureIntent(correctiveIntent, consumerKind: .lanWebView)
+            await failLeaseIfCurrentCompensationDidNotApply(
+                leaseID: lease.id,
+                intent: correctiveIntent,
+                applyResult: correctiveResult,
+                consumerKind: .lanWebView
+            )
+        }
+        return applyResult
+    }
+
+    package func updateConsumerPowerProfile(
+        _ powerProfile: DisplayRuntimeCapturePowerProfile
+    ) async {
+        let unreleasedLeases = consumerLeasesByID.values.filter { $0.state != .released }
+        for lease in unreleasedLeases {
+            _ = replaceLease(
+                lease,
+                state: lease.state,
+                demand: lease.demand.replacing(powerProfile: powerProfile),
+                lastFailureCode: lease.lastFailureCode
+            )
+        }
+
+        let attachedLeases = unreleasedLeases.filter { $0.state == .attached }
+        for surfaceIdentity in Set(attachedLeases.map(\.surfaceIdentity)) {
+            let intent = submitCaptureIntent(
+                surfaceIdentity: surfaceIdentity,
+                reason: .performanceModeChanged
+            )
+            let kinds = Set(currentDemandLeases(for: surfaceIdentity).map(\.kind))
+            for kind in kinds.sorted(by: { $0.rawValue < $1.rawValue }) {
+                _ = await applyCaptureIntent(intent, consumerKind: kind)
+            }
+        }
     }
 
     @discardableResult
     package func detachPreviewConsumer(
-        surfaceIdentity: DisplaySurfaceIdentity
+        leaseID: DisplayRuntimeConsumerLeaseID
     ) async -> DisplayRuntimePreviewConsumerDetachResult {
-        guard let lease = currentUnreleasedLeases(for: surfaceIdentity)
-            .first(where: { $0.kind == .preview })
-        else {
+        guard let lease = consumerLeasesByID[leaseID], lease.kind == .preview else {
             return DisplayRuntimePreviewConsumerDetachResult(
                 releasedLease: nil,
                 applyResult: nil
             )
         }
-
-        guard let releasedLease = releaseConsumerLease(leaseID: lease.id) else {
+        if lease.state == .released {
             return DisplayRuntimePreviewConsumerDetachResult(
-                releasedLease: nil,
+                releasedLease: lease,
                 applyResult: nil
             )
         }
 
+        let releasedLease = replaceLease(
+            lease,
+            state: .released,
+            demand: nil,
+            lastFailureCode: nil
+        )
+        notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
         let intent = submitCaptureIntent(
             surfaceIdentity: releasedLease.surfaceIdentity,
             reason: .detach
         )
-        let rawResult: DisplayRuntimeCaptureIntentApplyResult
-        if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyPreviewCaptureIntent(intent)
-        } else {
-            rawResult = .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
+        let applyResult = await applyCaptureIntent(intent, consumerKind: .preview)
         return DisplayRuntimePreviewConsumerDetachResult(
             releasedLease: releasedLease,
-            applyResult: recordCaptureIntentApplyResult(rawResult)
+            applyResult: applyResult
         )
     }
 
@@ -183,42 +249,144 @@ extension DisplayRuntime {
                 applyResult: nil
             )
         }
-        guard let releasedLease = releaseConsumerLease(leaseID: lease.id) else {
+        if lease.state == .released {
             return DisplayRuntimeLANWebViewConsumerDetachResult(
-                releasedLease: nil,
+                releasedLease: lease,
                 applyResult: nil
             )
         }
 
+        let releasedLease = replaceLease(
+            lease,
+            state: .released,
+            demand: nil,
+            lastFailureCode: nil
+        )
         let intent = submitCaptureIntent(
             surfaceIdentity: releasedLease.surfaceIdentity,
             reason: .detach
         )
-        let rawResult: DisplayRuntimeCaptureIntentApplyResult
-        if let captureIntentCommander {
-            rawResult = await captureIntentCommander.applyLANWebViewCaptureIntent(intent)
-        } else {
-            rawResult = .failed(
-                revision: intent.revision,
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
-            )
-        }
+        let applyResult = await applyCaptureIntent(intent, consumerKind: .lanWebView)
         return DisplayRuntimeLANWebViewConsumerDetachResult(
             releasedLease: releasedLease,
-            applyResult: recordCaptureIntentApplyResult(rawResult)
+            applyResult: applyResult
         )
     }
 
-    private func releaseConsumerLease(
+    package func retryPreviewConsumer(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) async -> DisplayRuntimeConsumerLease? {
+        guard let lease = consumerLeasesByID[leaseID],
+              lease.kind == .preview,
+              lease.state != .released,
+              !consumerTransitionBusySurfaces.contains(lease.surfaceIdentity)
+        else {
+            return consumerLeasesByID[leaseID]
+        }
+
+        consumerTransitionBusySurfaces.insert(lease.surfaceIdentity)
+        defer { consumerTransitionBusySurfaces.remove(lease.surfaceIdentity) }
+        let nextEpoch = currentSurfaceEpoch(for: lease.surfaceIdentity).advanced()
+        surfaceEpochs[lease.surfaceIdentity] = nextEpoch
+        _ = replaceLease(
+            lease,
+            state: .restarting,
+            surfaceEpoch: nextEpoch,
+            demand: nil,
+            lastFailureCode: nil
+        )
+        await refreshCatalogTopologyForTransaction()
+        let snapshot = makeSnapshot()
+        guard consumerLeasesByID[leaseID]?.state != .released else {
+            notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
+            return consumerLeasesByID[leaseID]
+        }
+        let displayID = resolvedVisibleDisplayID(
+            for: lease.surfaceIdentity,
+            snapshot: snapshot
+        )
+        guard let displayID else {
+            _ = replaceLease(
+                consumerLeasesByID[leaseID] ?? lease,
+                state: .failed,
+                surfaceEpoch: nextEpoch,
+                resolvedDisplayID: .some(nil),
+                demand: nil,
+                lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+            notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
+            return consumerLeasesByID[leaseID]
+        }
+
+        surfaceResolvedDisplayIDs[lease.surfaceIdentity] = displayID
+        _ = replaceLease(
+            consumerLeasesByID[leaseID] ?? lease,
+            state: .attaching,
+            surfaceEpoch: nextEpoch,
+            resolvedDisplayID: .some(displayID),
+            demand: nil,
+            lastFailureCode: nil
+        )
+        let intent = submitCaptureIntent(surfaceIdentity: lease.surfaceIdentity, reason: .retry)
+        let applyResult = await applyCaptureIntent(intent, consumerKind: .preview)
+        if let currentLease = consumerLeasesByID[leaseID], currentLease.state == .attaching {
+            if applyResult.outcome == .applied {
+                _ = replaceLease(
+                    currentLease,
+                    state: .attached,
+                    demand: currentLease.demand,
+                    lastFailureCode: nil
+                )
+            } else {
+                _ = markConsumerLeaseFailed(
+                    leaseID: leaseID,
+                    failureCode: captureIntentFailureCode(for: applyResult)
+                )
+                let correctiveIntent = submitCaptureIntent(
+                    surfaceIdentity: lease.surfaceIdentity,
+                    reason: .detach
+                )
+                _ = await applyCaptureIntent(correctiveIntent, consumerKind: .preview)
+            }
+        }
+        notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
+        return consumerLeasesByID[leaseID]
+    }
+
+    package func consumerLease(
         leaseID: DisplayRuntimeConsumerLeaseID
     ) -> DisplayRuntimeConsumerLease? {
-        guard let lease = consumerLeasesByID[leaseID] else { return nil }
-        let releasedLease = lease.updated(
-            state: .released,
-            updatedAt: Date()
-        )
-        consumerLeasesByID[leaseID] = releasedLease
-        return releasedLease
+        consumerLeasesByID[leaseID]
+    }
+
+    package func isConsumerTransitionBusy(
+        surfaceIdentity: DisplaySurfaceIdentity
+    ) -> Bool {
+        consumerTransitionBusySurfaces.contains(surfaceIdentity)
+    }
+
+    package func waitForPreviewConsumerResolution(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) async -> DisplayRuntimeConsumerLease? {
+        if let lease = terminalPreviewLease(leaseID: leaseID) {
+            return lease
+        }
+        guard consumerLeasesByID[leaseID] != nil else { return nil }
+
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if let lease = terminalPreviewLease(leaseID: leaseID) {
+                    continuation.resume(returning: lease)
+                    return
+                }
+                previewLeaseWaiters[leaseID, default: [:]][waiterID] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelPreviewLeaseWaiter(leaseID: leaseID, waiterID: waiterID)
+            }
+        }
     }
 
     package func currentConsumerLeaseSnapshot() -> [DisplayRuntimeConsumerLease] {
@@ -280,7 +448,6 @@ extension DisplayRuntime {
         surfaceIdentity: DisplaySurfaceIdentity,
         resolvedDisplayID: DisplayRuntimeDisplayID? = nil
     ) -> DisplaySurfaceEpoch {
-        let now = Date()
         let nextEpoch = currentSurfaceEpoch(for: surfaceIdentity).advanced()
         surfaceEpochs[surfaceIdentity] = nextEpoch
         if let resolvedDisplayID {
@@ -290,15 +457,15 @@ extension DisplayRuntime {
         }
 
         for lease in currentDemandLeases(for: surfaceIdentity) where lease.surfaceEpoch != nextEpoch {
-            consumerLeasesByID[lease.id] = lease.updated(
+            _ = replaceLease(
+                lease,
                 state: .restarting,
-                surfaceEpoch: lease.surfaceEpoch,
-                resolvedDisplayID: lease.resolvedDisplayID,
-                updatedAt: now,
+                surfaceEpoch: nextEpoch,
+                demand: nil,
                 lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.epochMismatch
             )
         }
-        submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .epochChanged)
+        _ = submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .epochChanged)
         return nextEpoch
     }
 
@@ -317,7 +484,6 @@ extension DisplayRuntime {
 
         let acceptedResult = result.outcome == .ignored ? result.ignored() : result
         captureIntentApplyResultsByRevision[acceptedResult.revision] = acceptedResult
-
         let failureCode = acceptedResult.outcome == .failed ? acceptedResult.failureCode : nil
         effectiveCaptureIntentsBySurface[intent.surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(
             intent: intent,
@@ -333,7 +499,7 @@ extension DisplayRuntime {
         captureIntentApplyResultsByRevision[revision]
     }
 
-    private func aggregateDemand(
+    func aggregateDemand(
         for surfaceIdentity: DisplaySurfaceIdentity,
         surfaces: [DisplaySurface]?
     ) -> DisplayRuntimeAggregatedDemand? {
@@ -346,31 +512,150 @@ extension DisplayRuntime {
     }
 
     @discardableResult
-    private func submitCaptureIntent(
+    func submitCaptureIntent(
         surfaceIdentity: DisplaySurfaceIdentity,
         reason: DisplayRuntimeCaptureIntentReason
     ) -> DisplayRuntimeCaptureIntent {
         let aggregateDemand = aggregateDemand(for: surfaceIdentity, surfaces: nil)
-        let intent = DisplayRuntimeCaptureIntent(
+        return submitCaptureIntent(
             surfaceIdentity: surfaceIdentity,
             surfaceEpoch: currentSurfaceEpoch(for: surfaceIdentity),
             resolvedDisplayID: resolvedDisplayID(for: surfaceIdentity, surfaces: nil),
             aggregateDemand: aggregateDemand,
             kind: aggregateDemand == nil ? .drain : .capture,
+            reason: reason
+        )
+    }
+
+    @discardableResult
+    func submitCaptureIntent(
+        surfaceIdentity: DisplaySurfaceIdentity,
+        surfaceEpoch: DisplaySurfaceEpoch,
+        resolvedDisplayID: DisplayRuntimeDisplayID?,
+        aggregateDemand: DisplayRuntimeAggregatedDemand?,
+        kind: DisplayRuntimeCaptureIntentKind,
+        reason: DisplayRuntimeCaptureIntentReason
+    ) -> DisplayRuntimeCaptureIntent {
+        captureIntentRevisionCounter += 1
+        let intent = DisplayRuntimeCaptureIntent(
+            surfaceIdentity: surfaceIdentity,
+            surfaceEpoch: surfaceEpoch,
+            resolvedDisplayID: resolvedDisplayID,
+            aggregateDemand: aggregateDemand,
+            kind: kind,
             reason: reason,
-            revision: nextCaptureIntentRevision()
+            revision: DisplayRuntimeCaptureIntentRevision(rawValue: captureIntentRevisionCounter)
         )
         captureIntentsByRevision[intent.revision] = intent
         effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
         return intent
     }
 
-    private func nextCaptureIntentRevision() -> DisplayRuntimeCaptureIntentRevision {
-        captureIntentRevisionCounter += 1
-        return DisplayRuntimeCaptureIntentRevision(rawValue: captureIntentRevisionCounter)
+    func applyCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent,
+        consumerKind: DisplaySurfaceConsumerKind
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        let key = DisplayRuntimeCaptureIntentApplyKey(
+            surfaceIdentity: intent.surfaceIdentity,
+            consumerKind: consumerKind
+        )
+        let tailID = UUID()
+        let previousTask = captureIntentApplyTails[key]?.task
+        let task = Task { @MainActor [weak self] in
+            if let previousTask {
+                _ = await previousTask.value
+            }
+            guard let self else {
+                return DisplayRuntimeCaptureIntentApplyResult.failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+                )
+            }
+            defer {
+                if self.captureIntentApplyTails[key]?.id == tailID {
+                    self.captureIntentApplyTails.removeValue(forKey: key)
+                }
+            }
+            guard self.effectiveCaptureIntentsBySurface[intent.surfaceIdentity]?.intent.revision
+                    == intent.revision
+            else {
+                return self.recordCaptureIntentApplyResult(
+                    DisplayRuntimeCaptureIntentApplyResult(
+                        revision: intent.revision,
+                        outcome: .ignored,
+                        failureCode: DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
+                    )
+                )
+            }
+            return await self.applyCurrentCaptureIntent(intent, consumerKind: consumerKind)
+        }
+        captureIntentApplyTails[key] = DisplayRuntimeCaptureIntentApplyTail(
+            id: tailID,
+            task: task
+        )
+        return await task.value
     }
 
-    private func currentDemandLeases(
+    private func applyCurrentCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent,
+        consumerKind: DisplaySurfaceConsumerKind
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        let rawResult: DisplayRuntimeCaptureIntentApplyResult
+        if let captureIntentCommander {
+            switch consumerKind {
+            case .preview:
+                rawResult = await captureIntentCommander.applyPreviewCaptureIntent(intent)
+            case .lanWebView:
+                rawResult = await captureIntentCommander.applyLANWebViewCaptureIntent(intent)
+            }
+        } else {
+            rawResult = .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.adapterUnavailable
+            )
+        }
+        return recordCaptureIntentApplyResult(rawResult)
+    }
+
+    func captureIntentFailureCode(
+        for result: DisplayRuntimeCaptureIntentApplyResult
+    ) -> String {
+        result.failureCode ?? (result.outcome == .ignored
+            ? DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
+            : DisplayRuntimeCaptureIntentFailureCode.applyFailed)
+    }
+
+    private func shouldCompensateCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent,
+        after result: DisplayRuntimeCaptureIntentApplyResult
+    ) -> Bool {
+        guard result.outcome != .applied else { return false }
+        return effectiveCaptureIntentsBySurface[intent.surfaceIdentity]?.intent.revision
+            == intent.revision
+    }
+
+    private func failLeaseIfCurrentCompensationDidNotApply(
+        leaseID: DisplayRuntimeConsumerLeaseID,
+        intent: DisplayRuntimeCaptureIntent,
+        applyResult: DisplayRuntimeCaptureIntentApplyResult,
+        consumerKind: DisplaySurfaceConsumerKind
+    ) async {
+        guard shouldCompensateCaptureIntent(intent, after: applyResult),
+              let failedLease = markConsumerLeaseFailed(
+                leaseID: leaseID,
+                failureCode: captureIntentFailureCode(for: applyResult)
+              )
+        else {
+            return
+        }
+        let drainIntent = submitCaptureIntent(
+            surfaceIdentity: failedLease.surfaceIdentity,
+            reason: .detach
+        )
+        _ = await applyCaptureIntent(drainIntent, consumerKind: consumerKind)
+    }
+
+    func currentDemandLeases(
         for surfaceIdentity: DisplaySurfaceIdentity
     ) -> [DisplayRuntimeConsumerLease] {
         consumerLeasesByID.values
@@ -379,7 +664,7 @@ extension DisplayRuntime {
             .sorted(by: leaseSort)
     }
 
-    private func currentUnreleasedLeases(
+    func currentUnreleasedLeases(
         for surfaceIdentity: DisplaySurfaceIdentity
     ) -> [DisplayRuntimeConsumerLease] {
         consumerLeasesByID.values
@@ -388,7 +673,7 @@ extension DisplayRuntime {
             .sorted(by: leaseSort)
     }
 
-    private func resolvedDisplayID(
+    func resolvedDisplayID(
         for surfaceIdentity: DisplaySurfaceIdentity,
         surfaces: [DisplaySurface]?
     ) -> DisplayRuntimeDisplayID? {
@@ -403,6 +688,105 @@ extension DisplayRuntime {
         return makeSnapshot().surfaces.first {
             $0.identity == surfaceIdentity
         }?.currentDisplayID
+    }
+
+    func resolvedVisibleDisplayID(
+        for surfaceIdentity: DisplaySurfaceIdentity,
+        snapshot: DisplayRuntimeSnapshot
+    ) -> DisplayRuntimeDisplayID? {
+        let visibleDisplayIDs = Set(snapshot.catalog.loadedDisplays.map(\.displayID))
+        guard let surface = snapshot.surfaces.first(where: { $0.identity == surfaceIdentity }),
+              let displayID = surface.currentDisplayID,
+              surface.managedVirtualDisplay?.isRunning != false,
+              visibleDisplayIDs.contains(displayID)
+        else {
+            return nil
+        }
+        return displayID
+    }
+
+    @discardableResult
+    func replaceLease(
+        _ lease: DisplayRuntimeConsumerLease,
+        state: DisplayRuntimeConsumerLeaseState,
+        surfaceEpoch: DisplaySurfaceEpoch? = nil,
+        resolvedDisplayID: DisplayRuntimeDisplayID?? = nil,
+        demand: DisplayRuntimeConsumerDemand?,
+        lastFailureCode: String?
+    ) -> DisplayRuntimeConsumerLease {
+        let now = Date.now
+        let updatedAt = now > lease.updatedAt
+            ? now
+            : lease.updatedAt.addingTimeInterval(0.000_001)
+        let updatedLease = DisplayRuntimeConsumerLease(
+            id: lease.id,
+            surfaceIdentity: lease.surfaceIdentity,
+            surfaceEpoch: surfaceEpoch ?? lease.surfaceEpoch,
+            resolvedDisplayID: resolvedDisplayID ?? lease.resolvedDisplayID,
+            kind: lease.kind,
+            owner: lease.owner,
+            createdAt: lease.createdAt,
+            updatedAt: updatedAt,
+            state: state,
+            demand: demand ?? lease.demand,
+            lastFailureCode: lastFailureCode
+        )
+        consumerLeasesByID[lease.id] = updatedLease
+        return updatedLease
+    }
+
+    @discardableResult
+    func markConsumerLeaseFailed(
+        leaseID: DisplayRuntimeConsumerLeaseID,
+        failureCode: String
+    ) -> DisplayRuntimeConsumerLease? {
+        guard let lease = consumerLeasesByID[leaseID], lease.state != .released else { return nil }
+        let failedLease = replaceLease(
+            lease,
+            state: .failed,
+            demand: nil,
+            lastFailureCode: failureCode
+        )
+        notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
+        return failedLease
+    }
+
+    func notifyPreviewLeaseWaitersIfTerminal(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) {
+        guard let lease = terminalPreviewLease(leaseID: leaseID),
+              let waiters = previewLeaseWaiters.removeValue(forKey: leaseID)
+        else {
+            return
+        }
+        for continuation in waiters.values {
+            continuation.resume(returning: lease)
+        }
+    }
+
+    private func terminalPreviewLease(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) -> DisplayRuntimeConsumerLease? {
+        guard let lease = consumerLeasesByID[leaseID] else { return nil }
+        switch lease.state {
+        case .attached, .failed, .released:
+            return lease
+        case .attaching, .restarting, .draining:
+            return nil
+        }
+    }
+
+    private func cancelPreviewLeaseWaiter(
+        leaseID: DisplayRuntimeConsumerLeaseID,
+        waiterID: UUID
+    ) {
+        guard let continuation = previewLeaseWaiters[leaseID]?.removeValue(forKey: waiterID) else {
+            return
+        }
+        if previewLeaseWaiters[leaseID]?.isEmpty == true {
+            previewLeaseWaiters.removeValue(forKey: leaseID)
+        }
+        continuation.resume(returning: consumerLeasesByID[leaseID])
     }
 
     private func leaseSort(
@@ -442,30 +826,5 @@ extension DisplayRuntime {
             return lhs.surfaceIdentity.stableID < rhs.surfaceIdentity.stableID
         }
         return lhs.revision < rhs.revision
-    }
-}
-
-private extension DisplayRuntimeConsumerLease {
-    func updated(
-        state: DisplayRuntimeConsumerLeaseState,
-        surfaceEpoch: DisplaySurfaceEpoch? = nil,
-        resolvedDisplayID: DisplayRuntimeDisplayID? = nil,
-        updatedAt: Date,
-        demand: DisplayRuntimeConsumerDemand? = nil,
-        lastFailureCode: String? = nil
-    ) -> DisplayRuntimeConsumerLease {
-        DisplayRuntimeConsumerLease(
-            id: id,
-            surfaceIdentity: surfaceIdentity,
-            surfaceEpoch: surfaceEpoch ?? self.surfaceEpoch,
-            resolvedDisplayID: resolvedDisplayID ?? self.resolvedDisplayID,
-            kind: kind,
-            owner: owner,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            state: state,
-            demand: demand ?? self.demand,
-            lastFailureCode: lastFailureCode
-        )
     }
 }

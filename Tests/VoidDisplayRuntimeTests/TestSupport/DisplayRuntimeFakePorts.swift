@@ -178,20 +178,15 @@ final class FakeCatalogCommander: DisplayRuntimeCatalogProviding, DisplayRuntime
 @MainActor
 final class FakeSharingCommander: DisplayRuntimeSharingProviding, DisplayRuntimeSharingCommanding {
     private let recorder: RuntimeOperationRecorder?
-    private let restoreResult: DisplayRuntimeSharingRestoreCommandResult
     var snapshot: DisplayRuntimeSharingSnapshot
     private(set) var registeredDisplays: [[DisplayRuntimeShareableDisplayRegistration]] = []
-    private(set) var stoppedDisplayIDs: [DisplayRuntimeDisplayID] = []
-    private(set) var restoredDisplayIDs: [DisplayRuntimeDisplayID] = []
 
     init(
         snapshot: DisplayRuntimeSharingSnapshot = .empty,
-        recorder: RuntimeOperationRecorder? = nil,
-        restoreResult: DisplayRuntimeSharingRestoreCommandResult = .restored
+        recorder: RuntimeOperationRecorder? = nil
     ) {
         self.snapshot = snapshot
         self.recorder = recorder
-        self.restoreResult = restoreResult
     }
 
     func makeSharingSnapshot() -> DisplayRuntimeSharingSnapshot {
@@ -204,39 +199,20 @@ final class FakeSharingCommander: DisplayRuntimeSharingProviding, DisplayRuntime
         recorder?.append("registerShareable:\(displayIDs.map(String.init).joined(separator: ","))")
     }
 
-    func stopSharing(displayID: DisplayRuntimeDisplayID) {
-        stoppedDisplayIDs.append(displayID)
-        recorder?.append("stopSharing:\(displayID)")
-    }
-
-    func restoreSharing(displayID: DisplayRuntimeDisplayID) async -> DisplayRuntimeSharingRestoreCommandResult {
-        restoredDisplayIDs.append(displayID)
-        recorder?.append("restoreSharing:\(displayID)")
-        return restoreResult
-    }
 }
 
 @MainActor
-final class FakeCaptureCommander: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureCommanding {
-    private let recorder: RuntimeOperationRecorder?
+final class FakeCaptureCommander: DisplayRuntimeCaptureProviding {
     var snapshot: DisplayRuntimeCaptureSnapshot
-    private(set) var removedDisplayIDs: [DisplayRuntimeDisplayID] = []
 
     init(
-        snapshot: DisplayRuntimeCaptureSnapshot = .empty,
-        recorder: RuntimeOperationRecorder? = nil
+        snapshot: DisplayRuntimeCaptureSnapshot = .empty
     ) {
         self.snapshot = snapshot
-        self.recorder = recorder
     }
 
     func makeCaptureSnapshot() -> DisplayRuntimeCaptureSnapshot {
         snapshot
-    }
-
-    func removePreviewSessions(displayID: DisplayRuntimeDisplayID) {
-        removedDisplayIDs.append(displayID)
-        recorder?.append("removePreview:\(displayID)")
     }
 }
 
@@ -260,34 +236,70 @@ final class FakeCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
 
     private(set) var intents: [DisplayRuntimeCaptureIntent] = []
     private(set) var returnedResults: [DisplayRuntimeCaptureIntentApplyResult] = []
+    var shouldGateApply = false
 
     private let resultProvider: ResultProvider
+    private let recorder: RuntimeOperationRecorder?
+    private var applyContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var applyCallWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
 
     init(
+        recorder: RuntimeOperationRecorder? = nil,
         resultProvider: @escaping ResultProvider = {
             .applied(revision: $0.revision)
         }
     ) {
+        self.recorder = recorder
         self.resultProvider = resultProvider
     }
 
     func applyPreviewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
-        apply(intent)
+        recorder?.append("applyPreview:\(intent.kind.rawValue)")
+        return await apply(intent)
     }
 
     func applyLANWebViewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
-        apply(intent)
+        recorder?.append("applyLAN:\(intent.kind.rawValue)")
+        return await apply(intent)
     }
 
-    private func apply(_ intent: DisplayRuntimeCaptureIntent) -> DisplayRuntimeCaptureIntentApplyResult {
+    func waitForApplyCalls(_ count: Int) async {
+        guard intents.count < count else { return }
+        await withCheckedContinuation { continuation in
+            applyCallWaiters[count, default: []].append(continuation)
+        }
+    }
+
+    func releaseApply(call: Int) {
+        applyContinuations.removeValue(forKey: call)?.resume()
+    }
+
+    private func apply(_ intent: DisplayRuntimeCaptureIntent) async -> DisplayRuntimeCaptureIntentApplyResult {
         intents.append(intent)
+        let callIndex = intents.count
+        resumeApplyCallWaiters()
+        if shouldGateApply {
+            await withCheckedContinuation { continuation in
+                applyContinuations[callIndex] = continuation
+            }
+        }
         let result = resultProvider(intent)
         returnedResults.append(result)
         return result
+    }
+
+    private func resumeApplyCallWaiters() {
+        let readyCounts = applyCallWaiters.keys.filter { intents.count >= $0 }
+        for count in readyCounts {
+            let waiters = applyCallWaiters.removeValue(forKey: count) ?? []
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
     }
 }
 
@@ -299,20 +311,44 @@ func attachConsumerForTesting(
     owner: DisplayRuntimeConsumerOwner,
     demand: DisplayRuntimeConsumerDemand
 ) async -> DisplayRuntimeConsumerLease {
+    let outcome: DisplayRuntimeConsumerAttachOutcome
     switch kind {
     case .preview:
-        await runtime.attachPreviewConsumer(
+        outcome = await runtime.attachPreviewConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: owner,
             demand: demand
-        ).lease
+        )
     case .lanWebView:
-        await runtime.attachLANWebViewConsumer(
+        outcome = await runtime.attachLANWebViewConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: owner,
             demand: demand
-        ).lease
+        )
     }
+    switch outcome {
+    case let .attached(lease, _):
+        return lease
+    case let .rejected(failureCode):
+        fatalError("Consumer attach rejected in test setup: \(failureCode)")
+    }
+}
+
+func runtimeConsumerDemand(
+    capturesCursor: Bool = false,
+    powerProfile: DisplayRuntimeCapturePowerProfile = .automatic,
+    activeViewerCount: Int = 0
+) -> DisplayRuntimeConsumerDemand {
+    DisplayRuntimeConsumerDemand(
+        sourcePixelSize: .init(width: 1920, height: 1080),
+        preferredPixelSize: .init(width: 1280, height: 720),
+        sourceFramesPerSecond: 60,
+        preferredFramesPerSecond: 30,
+        capturesCursor: capturesCursor,
+        powerProfile: powerProfile,
+        latencyPreference: .realtime,
+        activeViewerCount: activeViewerCount
+    )
 }
 
 @MainActor

@@ -110,7 +110,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
         #expect(trace.persistenceOutcome == .saved)
         #expect(trace.virtualDisplayCommandOutcome == .failed)
         #expect(trace.failure?.recoverability == .retryable)
-        #expect(trace.compensation.status == .degraded)
+        #expect(trace.compensation.status == .notRequired)
     }
     @Test func enableTransactionFleetRiskExpandsAffectedScopeToRunningManagedDisplays() async throws {
         let targetConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000004")!
@@ -151,6 +151,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
         let peerConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000007")!
         let recorder = RuntimeOperationRecorder()
         let commander = FakeVirtualDisplayCommander(recorder: recorder)
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         commander.enablePreflight = .init(
             configID: targetConfigID,
             targetPreDisplayID: nil,
@@ -168,9 +169,18 @@ struct DisplayRuntimeLifecycleTransactionTests {
             ),
             catalogCommander: FakeCatalogCommander(recorder: recorder),
             sharingCommander: FakeSharingCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: .managedVirtualDisplay(configID: peerConfigID),
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         _ = try await runtime.setVirtualDisplayDesiredEnabled(
             configID: targetConfigID,
@@ -178,10 +188,10 @@ struct DisplayRuntimeLifecycleTransactionTests {
             source: .virtualDisplayRowToggle
         )
 
-        #expect(recorder.events.contains("stopSharing:111"))
+        #expect(recorder.events.contains("applyLAN:drain"))
         #expect(commander.enableCallCount == 1)
     }
-    @Test func enableTransactionRestoresPeerSharingAndDefersPeerPreviewAfterStableTopology() async throws {
+    @Test func enableTransactionRestoresPeerConsumerLeasesAfterStableTopology() async throws {
         let targetConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000008")!
         let peerConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000009")!
         let catalog = catalogSnapshot(displayIDs: [112, 113], mainDisplayID: nil)
@@ -192,6 +202,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
             )
         )
         let recorder = RuntimeOperationRecorder()
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let commander = FakeVirtualDisplayCommander(recorder: recorder)
         commander.enablePreflight = .init(
             configID: targetConfigID,
@@ -215,10 +226,26 @@ struct DisplayRuntimeLifecycleTransactionTests {
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let peerSurface = DisplaySurfaceIdentity.managedVirtualDisplay(configID: peerConfigID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: peerSurface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand(capturesCursor: true)
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: peerSurface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         _ = try await runtime.setVirtualDisplayDesiredEnabled(
             configID: targetConfigID,
@@ -227,18 +254,21 @@ struct DisplayRuntimeLifecycleTransactionTests {
         )
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(recorder.events.contains("restoreSharing:113"))
+        #expect(recorder.events.contains("applyLAN:capture"))
         #expect(trace.restoreResults.contains {
             $0.kind == .preview
                 && $0.previousDisplayID == 113
-                && $0.failureReason == "preview_restore_deferred_until_consumer_lease"
+                && $0.resolvedDisplayID == 113
+                && $0.status == .restored
         })
+        #expect(trace.restoreResults.contains { $0.kind == .sharing && $0.status == .restored })
         #expect(trace.scopeEscalationReason == .scopeEscalatedEnableMayPerformFleetRebuild)
     }
     @Test func disableTransactionQuiescesAndNeverRestoresDisabledTarget() async throws {
         let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000010")!
         let virtualDisplayProvider = FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 120))
         let recorder = RuntimeOperationRecorder()
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let commander = FakeVirtualDisplayCommander(recorder: recorder)
         commander.onSetDesiredEnabled = { _, enabled in
             virtualDisplayProvider.setSnapshot(
@@ -260,10 +290,26 @@ struct DisplayRuntimeLifecycleTransactionTests {
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let surface = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let previewLease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        let lanLease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         _ = try await runtime.setVirtualDisplayDesiredEnabled(
             configID: configID,
@@ -272,9 +318,10 @@ struct DisplayRuntimeLifecycleTransactionTests {
         )
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(recorder.events.contains("stopSharing:120"))
-        #expect(recorder.events.contains("removePreview:120"))
-        #expect(recorder.events.allSatisfy { !$0.contains("restoreSharing:120") })
+        #expect(recorder.events.contains("applyLAN:drain"))
+        #expect(recorder.events.contains("applyPreview:drain"))
+        #expect(runtime.consumerLease(leaseID: previewLease.id)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: lanLease.id)?.state == .released)
         #expect(trace.restoreResults.contains {
             $0.kind == .sharing && $0.failureReason == "target_disabled"
         })
@@ -282,7 +329,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
             $0.kind == .preview && $0.failureReason == "target_disabled"
         })
     }
-    @Test func disableTransactionRestoresPeerSharingAndDefersPreviewAfterStableTopology() async throws {
+    @Test func disableTransactionRestoresPeerConsumerLeasesAfterStableTopology() async throws {
         let targetConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000011")!
         let peerConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000012")!
         let catalog = catalogSnapshot(displayIDs: [121, 122], mainDisplayID: 121)
@@ -293,6 +340,7 @@ struct DisplayRuntimeLifecycleTransactionTests {
             ])
         )
         let recorder = RuntimeOperationRecorder()
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let commander = FakeVirtualDisplayCommander(recorder: recorder)
         commander.onDisable = { _ in
             virtualDisplayProvider.setSnapshot(
@@ -309,10 +357,26 @@ struct DisplayRuntimeLifecycleTransactionTests {
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let peerSurface = DisplaySurfaceIdentity.managedVirtualDisplay(configID: peerConfigID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: peerSurface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: peerSurface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         _ = try await runtime.setVirtualDisplayDesiredEnabled(
             configID: targetConfigID,
@@ -321,17 +385,27 @@ struct DisplayRuntimeLifecycleTransactionTests {
         )
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(recorder.events.contains("restoreSharing:122"))
+        #expect(recorder.events.contains("applyLAN:capture"))
         #expect(trace.restoreResults.contains {
             $0.kind == .preview
                 && $0.previousDisplayID == 122
-                && $0.failureReason == "preview_restore_deferred_until_consumer_lease"
+                && $0.status == .restored
         })
     }
     @Test func disableTransactionWritesPeerRestoreSkipReasonWhenTopologyIsDegraded() async throws {
         let targetConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000013")!
         let peerConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000014")!
-        let catalog = catalogSnapshot(displayIDs: [123, 124], mainDisplayID: 123)
+        let catalog = DisplayRuntimeCatalogSnapshot(
+            hasScreenCapturePermission: false,
+            lastPreflightPermission: false,
+            lastRequestPermission: nil,
+            isLoadingDisplays: false,
+            hasLoadError: false,
+            lastLoadError: nil,
+            loadedDisplays: [],
+            topologySignature: []
+        )
+        let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 124)),
@@ -343,8 +417,16 @@ struct DisplayRuntimeLifecycleTransactionTests {
             ),
             catalogCommander: FakeCatalogCommander(refreshResults: [.reusedSnapshot, .failed]),
             sharingCommander: FakeSharingCommander(),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 4)
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: .managedVirtualDisplay(configID: peerConfigID),
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
         )
 
         _ = try await runtime.setVirtualDisplayDesiredEnabled(
@@ -354,12 +436,13 @@ struct DisplayRuntimeLifecycleTransactionTests {
         )
         let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
 
-        #expect(trace.topologyStabilityResult?.status == .failed)
+        #expect(trace.topologyStabilityResult?.status == .unprovableDueToPermission)
         #expect(trace.restoreResults.contains {
             $0.kind == .sharing
                 && $0.previousDisplayID == 124
-                && $0.failureReason == "topology_failed"
+                && $0.failureReason == "topology_unprovableDueToPermission"
         })
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
     }
     @Test func disableTransactionMissingConfigFailsWithoutCommand() async throws {
         let missingConfigID = UUID(uuidString: "E0010000-0000-0000-0000-000000000015")!

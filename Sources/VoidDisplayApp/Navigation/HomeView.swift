@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import SwiftUI
 import VoidDisplayCapture
@@ -24,7 +23,6 @@ package struct HomeView: View {
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var contentFocusRequest = 0
 
     package init(
         observability: ObservabilityCenter,
@@ -89,21 +87,10 @@ package struct HomeView: View {
                 }
                 .id(detailIdentity)
             }
-            .background(alignment: .topLeading) {
-                HomeContentFocusAnchor(request: contentFocusRequest)
-                    .frame(width: 1, height: 1)
-                    .opacity(0)
-                    .accessibilityHidden(true)
-            }
         }
         .onAppear {
             columnVisibility = .all
-            requestContentFocus()
         }
-    }
-
-    private func requestContentFocus() {
-        contentFocusRequest &+= 1
     }
 
     private var detailIdentity: String {
@@ -113,62 +100,5 @@ package struct HomeView: View {
         case .diagnostics:
             "diagnostics"
         }
-    }
-}
-
-private struct HomeContentFocusAnchor: NSViewRepresentable {
-    let request: Int
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context _: Context) -> SilentFocusView {
-        SilentFocusView()
-    }
-
-    func updateNSView(_ nsView: SilentFocusView, context: Context) {
-        guard context.coordinator.lastRequest != request else {
-            return
-        }
-        context.coordinator.lastRequest = request
-        nsView.requestFocus()
-    }
-
-    final class Coordinator {
-        var lastRequest: Int?
-    }
-}
-
-private final class SilentFocusView: NSView {
-    private var shouldApplyFocus = false
-
-    override var acceptsFirstResponder: Bool {
-        true
-    }
-
-    override var focusRingType: NSFocusRingType {
-        get { .none }
-        set {}
-    }
-
-    func requestFocus() {
-        shouldApplyFocus = true
-        DispatchQueue.main.async { [weak self] in
-            self?.applyFocusIfPossible()
-        }
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        applyFocusIfPossible()
-    }
-
-    private func applyFocusIfPossible() {
-        guard shouldApplyFocus, let window else {
-            return
-        }
-        shouldApplyFocus = false
-        window.makeFirstResponder(self)
     }
 }

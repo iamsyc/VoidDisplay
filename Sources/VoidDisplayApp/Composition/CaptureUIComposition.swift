@@ -9,17 +9,25 @@ import ScreenCaptureKit
 package enum CaptureUIComposition {
     package static func previewActions(
         capture: CaptureController,
-        displayRuntime: DisplayRuntime
+        displayRuntime: DisplayRuntime,
+        capturePerformancePreferences: CapturePerformancePreferences
     ) -> CapturePreviewActions {
         CapturePreviewActions(
             sessions: {
                 capture.screenPreviewSessions
             },
-            previewSession: { sessionID in
-                capture.previewSession(for: sessionID)
+            previewSession: { previewID in
+                previewSession(
+                    previewID: previewID,
+                    capture: capture,
+                    displayRuntime: displayRuntime
+                )
             },
-            previewSessionForDisplayID: { displayID in
-                capture.screenPreviewSessions.first(where: { $0.displayID == displayID })
+            previewState: { previewID in
+                previewState(previewID: previewID, displayRuntime: displayRuntime)
+            },
+            previewIDForDisplayID: { displayID in
+                previewID(displayID: displayID, displayRuntime: displayRuntime)
             },
             isStartingDisplayID: { displayID in
                 capture.isStarting(displayID: displayID)
@@ -29,31 +37,60 @@ package enum CaptureUIComposition {
                     display: display,
                     metadata: metadata,
                     capture: capture,
+                    displayRuntime: displayRuntime,
+                    powerProfile: capturePerformancePreferences.mode.runtimeCapturePowerProfile
+                )
+            },
+            attachPreviewSink: { sink, previewID in
+                guard let session = previewSession(
+                    previewID: previewID,
+                    capture: capture,
                     displayRuntime: displayRuntime
-                )
-            },
-            attachPreviewSink: { sink, sessionID in
-                capture.attachPreviewSink(sink, to: sessionID)
-            },
-            activatePreviewSession: { sessionID in
-                capture.activatePreviewSession(id: sessionID)
-            },
-            closePreviewSession: { sessionID in
-                guard let session = capture.previewSession(for: sessionID) else {
+                ) else {
                     return
                 }
-                guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(session.displayID) else {
+                capture.attachPreviewSink(sink, to: session.id)
+            },
+            activatePreviewSession: { previewID in
+                guard let session = previewSession(
+                    previewID: previewID,
+                    capture: capture,
+                    displayRuntime: displayRuntime
+                ) else {
                     return
                 }
-                await displayRuntime.detachPreviewConsumer(
-                    surfaceIdentity: surfaceIdentity
+                capture.activatePreviewSession(id: session.id)
+            },
+            waitForPreviewResolution: { previewID in
+                let lease = await displayRuntime.waitForPreviewConsumerResolution(
+                    leaseID: .init(rawValue: previewID.rawValue)
+                )
+                return previewState(lease: lease)
+            },
+            retryPreview: { previewID in
+                let lease = await displayRuntime.retryPreviewConsumer(
+                    leaseID: .init(rawValue: previewID.rawValue)
+                )
+                return previewState(lease: lease)
+            },
+            closePreview: { previewID in
+                _ = await displayRuntime.detachPreviewConsumer(
+                    leaseID: .init(rawValue: previewID.rawValue)
                 )
             },
-            setPreviewSessionCapturesCursor: { sessionID, capturesCursor in
-                try await capture.setPreviewSessionCapturesCursor(
-                    id: sessionID,
-                    capturesCursor: capturesCursor
-                )
+            setPreviewCapturesCursor: { previewID, capturesCursor in
+                let leaseID = DisplayRuntimeConsumerLeaseID(rawValue: previewID.rawValue)
+                guard let lease = displayRuntime.consumerLease(leaseID: leaseID),
+                      let applyResult = await displayRuntime.updatePreviewConsumerDemand(
+                        leaseID: leaseID,
+                        demand: lease.demand.replacing(capturesCursor: capturesCursor)
+                      ),
+                      applyResult.outcome == .applied
+                else {
+                    throw DisplayRuntimePreviewCaptureError(
+                        failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
+                    )
+                }
             }
         )
     }
@@ -62,14 +99,15 @@ package enum CaptureUIComposition {
         display: SCDisplay,
         metadata _: CapturePreviewDisplayMetadata,
         capture: CaptureController,
-        displayRuntime: DisplayRuntime
-    ) async throws -> DisplayStartOutcome<UUID> {
+        displayRuntime: DisplayRuntime,
+        powerProfile: DisplayRuntimeCapturePowerProfile
+    ) async throws -> DisplayStartOutcome<CapturePreviewID> {
         guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(display.displayID) else {
             throw DisplayRuntimePreviewCaptureError(
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
             )
         }
-        let result = await displayRuntime.attachPreviewConsumer(
+        let outcome = await displayRuntime.attachPreviewConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: .init(source: .localUI, redactedLabel: "preview"),
             demand: DisplayRuntimeConsumerDemand(
@@ -79,25 +117,93 @@ package enum CaptureUIComposition {
                 sourceFramesPerSecond: 60,
                 preferredFramesPerSecond: nil,
                 capturesCursor: false,
-                powerProfile: .automatic,
+                powerProfile: powerProfile,
                 latencyPreference: .realtime
             )
         )
 
-        guard result.applyResult.outcome == .applied else {
-            _ = await displayRuntime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
+        guard case let .attached(lease, applyResult) = outcome else {
+            guard case let .rejected(failureCode) = outcome else {
+                throw DisplayRuntimePreviewCaptureError(
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
+                )
+            }
             throw DisplayRuntimePreviewCaptureError(
-                failureCode: result.applyResult.failureCode
+                failureCode: failureCode
+            )
+        }
+        guard applyResult.outcome == .applied else {
+            _ = await displayRuntime.detachPreviewConsumer(leaseID: lease.id)
+            throw DisplayRuntimePreviewCaptureError(
+                failureCode: applyResult.failureCode
                     ?? DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         }
-        guard let session = capture.screenPreviewSessions.first(where: { $0.displayID == display.displayID }) else {
-            _ = await displayRuntime.detachPreviewConsumer(surfaceIdentity: surfaceIdentity)
+        guard capture.screenPreviewSessions.contains(where: { $0.displayID == display.displayID }) else {
+            _ = await displayRuntime.detachPreviewConsumer(leaseID: lease.id)
             throw DisplayRuntimePreviewCaptureError(
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         }
-        return .started(session.id)
+        return .started(CapturePreviewID(rawValue: lease.id.rawValue))
+    }
+
+    private static func previewSession(
+        previewID: CapturePreviewID,
+        capture: CaptureController,
+        displayRuntime: DisplayRuntime
+    ) -> ScreenPreviewSession? {
+        guard let displayID = displayRuntime.consumerLease(
+            leaseID: .init(rawValue: previewID.rawValue)
+        )?.resolvedDisplayID else {
+            return nil
+        }
+        return capture.screenPreviewSessions.first { $0.displayID == displayID }
+    }
+
+    private static func previewID(
+        displayID: CGDirectDisplayID,
+        displayRuntime: DisplayRuntime
+    ) -> CapturePreviewID? {
+        guard let surfaceIdentity = displayRuntime.surfaceIdentityForDisplayID(displayID),
+              let lease = displayRuntime.currentConsumerLeaseSnapshot().first(where: {
+                  $0.surfaceIdentity == surfaceIdentity
+                      && $0.kind == .preview
+                      && $0.state != .released
+              }) else {
+            return nil
+        }
+        return CapturePreviewID(rawValue: lease.id.rawValue)
+    }
+
+    private static func previewState(
+        previewID: CapturePreviewID,
+        displayRuntime: DisplayRuntime
+    ) -> CapturePreviewState {
+        previewState(
+            lease: displayRuntime.consumerLease(
+                leaseID: .init(rawValue: previewID.rawValue)
+            )
+        )
+    }
+
+    private static func previewState(
+        lease: DisplayRuntimeConsumerLease?
+    ) -> CapturePreviewState {
+        guard let lease else { return .released }
+        switch lease.state {
+        case .attaching, .restarting, .draining:
+            return .restarting
+        case .attached:
+            return .active
+        case .failed:
+            return .failed(
+                failureCode: lease.lastFailureCode
+                    ?? DisplayRuntimeCaptureIntentFailureCode.applyFailed
+            )
+        case .released:
+            return .released
+        }
     }
 
     package static func sharingStatusProvider(sharing: SharingController) -> CaptureSharingStatusProvider {

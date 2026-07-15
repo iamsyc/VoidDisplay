@@ -5,6 +5,12 @@ nonisolated struct ActiveVirtualDisplayTransactionKey: Hashable {
     let configID: UUID
 }
 
+nonisolated struct ActiveVirtualDisplayCoalescibleTail: Sendable {
+    let key: ActiveVirtualDisplayTransactionKey
+    let transactionID: DisplayRuntimeTransactionID
+    let task: Task<DisplayRuntimeVirtualDisplayRebuildTransactionResult, Error>
+}
+
 nonisolated struct ActiveVirtualDisplayTransactionContext: Sendable {
     let transactionID: DisplayRuntimeTransactionID
     let kind: DisplayRuntimeTransactionKind
@@ -27,12 +33,13 @@ extension DisplayRuntime {
         execute: @escaping @MainActor (ActiveVirtualDisplayTransactionContext) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult
     ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
         let key = ActiveVirtualDisplayTransactionKey(kind: kind, configID: configID)
-        if let activeTask = activeVirtualDisplayTransactionTasksByKey[key],
-           let transactionID = activeVirtualDisplayTransactionIDsByKey[key] {
-            incrementCoalescedRequestCount(transactionID: transactionID)
+        if let coalescibleTail = coalescibleVirtualDisplayTransactionTail,
+           coalescibleTail.key == key {
+            incrementCoalescedRequestCount(transactionID: coalescibleTail.transactionID)
             await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-            return try await activeTask.value
+            return try await coalescibleTail.task.value
         }
+        coalescibleVirtualDisplayTransactionTail = nil
 
         let context = ActiveVirtualDisplayTransactionContext(
             transactionID: DisplayRuntimeTransactionID(),
@@ -45,8 +52,9 @@ extension DisplayRuntime {
 
         let task = Task { @MainActor in
             defer {
-                self.activeVirtualDisplayTransactionTasksByKey[key] = nil
-                self.activeVirtualDisplayTransactionIDsByKey[key] = nil
+                if self.coalescibleVirtualDisplayTransactionTail?.transactionID == context.transactionID {
+                    self.coalescibleVirtualDisplayTransactionTail = nil
+                }
             }
             if let previousTail {
                 await previousTail.value
@@ -56,8 +64,11 @@ extension DisplayRuntime {
         virtualDisplayTransactionQueueTail = Task { @MainActor in
             _ = try? await task.value
         }
-        activeVirtualDisplayTransactionTasksByKey[key] = task
-        activeVirtualDisplayTransactionIDsByKey[key] = context.transactionID
+        coalescibleVirtualDisplayTransactionTail = ActiveVirtualDisplayCoalescibleTail(
+            key: key,
+            transactionID: context.transactionID,
+            task: task
+        )
         await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
 
         return try await task.value
@@ -68,6 +79,7 @@ extension DisplayRuntime {
         saveGate: DisplayRuntimeAsyncGate<DisplayRuntimeVirtualDisplayEditRebuildSaveGateResult>,
         execute: @escaping @MainActor () async -> DisplayRuntimeVirtualDisplayRebuildTransactionResult
     ) async -> DisplayRuntimeVirtualDisplayEditRebuildTransactionHandle {
+        coalescibleVirtualDisplayTransactionTail = nil
         let terminalResultGate = DisplayRuntimeAsyncGate<DisplayRuntimeVirtualDisplayRebuildTransactionResult>()
         let previousTail = virtualDisplayTransactionQueueTail
 
@@ -95,6 +107,7 @@ extension DisplayRuntime {
         context: ActiveVirtualDisplayInventoryTransactionContext,
         execute: @escaping @MainActor () async throws -> Result
     ) async throws -> Result {
+        coalescibleVirtualDisplayTransactionTail = nil
         let previousTail = virtualDisplayTransactionQueueTail
         setActiveTrace(makeInitialTrace(
             transactionID: context.transactionID,
@@ -118,6 +131,7 @@ extension DisplayRuntime {
         context: ActiveVirtualDisplayTransactionContext,
         execute: @escaping @MainActor () async throws -> Result
     ) async throws -> Result {
+        coalescibleVirtualDisplayTransactionTail = nil
         let previousTail = virtualDisplayTransactionQueueTail
         setActiveTrace(makeInitialTrace(for: context))
         let task = Task { @MainActor in

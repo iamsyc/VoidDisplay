@@ -179,7 +179,34 @@ extension DisplayRuntime {
         }
 
         await appendPhase(.quiescingSessions, transactionID: context.transactionID)
-        quiesceSessions(pauseIntents)
+        let consumerTransition = await beginConsumerTransition(
+            affectedSurfaces: affectedScope.surfaces
+        )
+        guard !consumerTransition.hasQuiesceFailure else {
+            let restoreResults = await compensateConsumerQuiesceFailure(
+                consumerTransition,
+                transactionID: context.transactionID
+            )
+            return finalizeTransaction(
+                transactionID: context.transactionID,
+                kind: context.kind,
+                status: .failed,
+                phase: .failed,
+                failure: .init(
+                    phase: .quiescingSessions,
+                    reason: "consumer_session_quiesce_failed",
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: makeSnapshot(),
+                compensation: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                ),
+                desiredEnabled: desiredEnabled,
+                virtualDisplayCommandOutcome: .notAttempted
+            )
+        }
 
         await appendPhase(.executingVirtualDisplayCommand, transactionID: context.transactionID)
         do {
@@ -196,6 +223,10 @@ extension DisplayRuntime {
                 trace.replacing(virtualDisplayCommandOutcome: .succeeded)
             }
         } catch {
+            let restoreResults = await compensateConsumerTransition(consumerTransition)
+            updateTrace(context.transactionID) { trace in
+                trace.replacing(restoreResults: restoreResults)
+            }
             _ = finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
@@ -209,11 +240,9 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
-                compensation: .init(
-                    status: .degraded,
-                    restoredSharingCount: 0,
-                    restoredPreviewCount: 0,
-                    failedRestoreCount: pauseIntents.count
+                compensation: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
                 ),
                 desiredEnabled: desiredEnabled,
                 virtualDisplayCommandOutcome: .failed
@@ -227,7 +256,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedScope.surfaces
         )
         if topologyResult.status == .stable {
-            convergeToVisibleDisplaysFromCurrentCatalog()
+            await convergeToVisibleDisplaysFromCurrentCatalog()
             await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
         }
         let postConvergenceSnapshot = makeSnapshot()
@@ -248,18 +277,13 @@ extension DisplayRuntime {
         let disabledTargetIdentity: DisplaySurfaceIdentity? = desiredEnabled
             ? nil
             : .managedVirtualDisplay(configID: context.configID)
-        let sharingRestoreResults = await restoreSharingSessions(
-            restoreIntents,
+        let releasedSurfaceReasons = disabledTargetIdentity.map { [$0: "target_disabled"] } ?? [:]
+        let restoreResults = await completeConsumerTransition(
+            consumerTransition,
+            snapshot: postConvergenceSnapshot,
             topologyResult: topologyResult,
-            postSnapshot: postConvergenceSnapshot,
-            disabledTargetIdentity: disabledTargetIdentity
+            releasedSurfaceReasons: releasedSurfaceReasons
         )
-        let previewRestoreResults = makeDeferredPreviewRestoreResults(
-            restoreIntents,
-            topologyResult: topologyResult,
-            disabledTargetIdentity: disabledTargetIdentity
-        )
-        let restoreResults = sharingRestoreResults + previewRestoreResults
         updateTrace(context.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
@@ -280,7 +304,7 @@ extension DisplayRuntime {
             compensation: compensationResult(
                 after: topologyResult,
                 restoreResults: restoreResults,
-                restoreIntentCount: restoreIntents.count
+                restoreIntentCount: consumerTransition.restoreIntentCount
             ),
             desiredEnabled: desiredEnabled
         )

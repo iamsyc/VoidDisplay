@@ -1,8 +1,8 @@
 # DisplayRuntime Phase 2: Catalog Convergence Into Runtime
 
 状态：已完成历史记录
-依据：[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)、[DisplayRuntime Phase 1 执行计划](./display-runtime-phase-1-plan.md)、[产品定位与架构重构前置结论](./product-positioning.md)  
-范围：screen catalog permission、topology refresh、visible display convergence 控制面迁入 `VoidDisplayRuntime`。  
+依据：[DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)、[DisplayRuntime Phase 1 执行计划](./display-runtime-phase-1-plan.md)、[产品定位与架构重构前置结论](./product-positioning.md)
+范围：screen catalog permission、topology refresh、visible display convergence 控制面迁入 `VoidDisplayRuntime`。
 归档说明：Phase 2 已完成。本文保留为当时的执行记录，不再作为当前待办清单。
 导航：当前阅读顺序见 [DisplayRuntime 文档索引](./display-runtime-index.md)。
 

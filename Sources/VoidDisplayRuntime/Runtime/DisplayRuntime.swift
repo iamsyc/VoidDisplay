@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 package nonisolated struct DisplayRuntimeTopologyWaitPolicy: Equatable, Sendable {
     package let requiredStableSampleCount: Int
@@ -18,7 +19,18 @@ package nonisolated struct DisplayRuntimeTopologyWaitPolicy: Equatable, Sendable
     package static let `default` = Self()
 }
 
+nonisolated struct DisplayRuntimeCaptureIntentApplyKey: Hashable, Sendable {
+    let surfaceIdentity: DisplaySurfaceIdentity
+    let consumerKind: DisplaySurfaceConsumerKind
+}
+
+nonisolated struct DisplayRuntimeCaptureIntentApplyTail: Sendable {
+    let id: UUID
+    let task: Task<DisplayRuntimeCaptureIntentApplyResult, Never>
+}
+
 @MainActor
+@Observable
 package final class DisplayRuntime {
     let catalogProvider: (any DisplayRuntimeCatalogProviding)?
     let captureProvider: (any DisplayRuntimeCaptureProviding)?
@@ -26,7 +38,6 @@ package final class DisplayRuntime {
     let virtualDisplayProvider: (any DisplayRuntimeVirtualDisplayProviding)?
     let catalogCommander: (any DisplayRuntimeCatalogCommanding)?
     let sharingCommander: (any DisplayRuntimeSharingCommanding)?
-    let captureCommander: (any DisplayRuntimeCaptureCommanding)?
     let captureIntentCommander: (any DisplayRuntimeCaptureIntentCommanding)?
     let virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)?
     let startupRestoreCommander: (any DisplayRuntimeStartupRestoreCommanding)?
@@ -42,20 +53,22 @@ package final class DisplayRuntime {
     var captureIntentApplyResultsByRevision: [
         DisplayRuntimeCaptureIntentRevision: DisplayRuntimeCaptureIntentApplyResult
     ] = [:]
+    var consumerTransitionBusySurfaces: Set<DisplaySurfaceIdentity> = []
+    @ObservationIgnored var previewLeaseWaiters: [
+        DisplayRuntimeConsumerLeaseID: [UUID: CheckedContinuation<DisplayRuntimeConsumerLease?, Never>]
+    ] = [:]
+    @ObservationIgnored var captureIntentApplyTails: [
+        DisplayRuntimeCaptureIntentApplyKey: DisplayRuntimeCaptureIntentApplyTail
+    ] = [:]
 
-    var topologyRefreshTask: Task<Void, Never>?
-    var hasPendingTopologyChange = false
-    var virtualDisplayTransactionQueueTail: Task<Void, Never>?
-    var activeVirtualDisplayTransactionTasksByKey: [
-        ActiveVirtualDisplayTransactionKey: Task<DisplayRuntimeVirtualDisplayRebuildTransactionResult, Error>
-    ] = [:]
-    var activeVirtualDisplayTransactionIDsByKey: [
-        ActiveVirtualDisplayTransactionKey: DisplayRuntimeTransactionID
-    ] = [:]
+    @ObservationIgnored var topologyRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var hasPendingTopologyChange = false
+    @ObservationIgnored var virtualDisplayTransactionQueueTail: Task<Void, Never>?
+    @ObservationIgnored var coalescibleVirtualDisplayTransactionTail: ActiveVirtualDisplayCoalescibleTail?
     var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]
     var recentTransactionTraces: [DisplayRuntimeTransactionTrace] = []
-    var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
-    var activeStartupRestoreCoalescedRequestCount = 0
+    @ObservationIgnored var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
+    @ObservationIgnored var activeStartupRestoreCoalescedRequestCount = 0
     var completedStartupRestoreResult: DisplayRuntimeStartupRestoreResult?
 
     package init(
@@ -65,7 +78,6 @@ package final class DisplayRuntime {
         virtualDisplayProvider: (any DisplayRuntimeVirtualDisplayProviding)? = nil,
         catalogCommander: (any DisplayRuntimeCatalogCommanding)? = nil,
         sharingCommander: (any DisplayRuntimeSharingCommanding)? = nil,
-        captureCommander: (any DisplayRuntimeCaptureCommanding)? = nil,
         captureIntentCommander: (any DisplayRuntimeCaptureIntentCommanding)? = nil,
         virtualDisplayCommander: (any DisplayRuntimeVirtualDisplayCommanding)? = nil,
         startupRestoreCommander: (any DisplayRuntimeStartupRestoreCommanding)? = nil,
@@ -78,7 +90,6 @@ package final class DisplayRuntime {
         self.virtualDisplayProvider = virtualDisplayProvider
         self.catalogCommander = catalogCommander
         self.sharingCommander = sharingCommander
-        self.captureCommander = captureCommander
         self.captureIntentCommander = captureIntentCommander
         self.virtualDisplayCommander = virtualDisplayCommander
         self.startupRestoreCommander = startupRestoreCommander

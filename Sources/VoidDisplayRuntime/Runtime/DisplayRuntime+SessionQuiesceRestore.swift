@@ -64,132 +64,6 @@ extension DisplayRuntime {
             }
     }
 
-    func restoreSharingSessions(
-        _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
-        topologyResult: DisplayRuntimeTopologyStabilityResult,
-        postSnapshot: DisplayRuntimeSnapshot,
-        disabledTargetIdentity: DisplaySurfaceIdentity?,
-        targetSkipReason: String = "target_disabled"
-    ) async -> [DisplayRuntimeSessionRestoreResult] {
-        let sharingRestoreIntents = restoreIntents.filter(\.restoreSharing)
-        guard !sharingRestoreIntents.isEmpty else { return [] }
-
-        let disabledTargetResults = sharingRestoreIntents
-            .filter { $0.surfaceIdentity == disabledTargetIdentity }
-            .map {
-                makeRestoreResult(
-                    kind: .sharing,
-                    intent: $0,
-                    status: .skipped,
-                    failureReason: targetSkipReason
-                )
-            }
-        let peerSharingRestoreIntents = sharingRestoreIntents.filter { $0.surfaceIdentity != disabledTargetIdentity }
-        guard !peerSharingRestoreIntents.isEmpty else { return disabledTargetResults }
-
-        guard topologyResult.status == .stable else {
-            return disabledTargetResults + peerSharingRestoreIntents.map {
-                makeRestoreResult(
-                    kind: .sharing,
-                    intent: $0,
-                    status: .skipped,
-                    failureReason: "topology_\(topologyResult.status.rawValue)"
-                )
-            }
-        }
-
-        guard postSnapshot.sharing.isWebServiceRunning else {
-            return disabledTargetResults + peerSharingRestoreIntents.map {
-                makeRestoreResult(
-                    kind: .sharing,
-                    intent: $0,
-                    status: .skipped,
-                    failureReason: "web_service_not_running"
-                )
-            }
-        }
-
-        let visibleDisplayIDs = Set(postSnapshot.catalog.loadedDisplays.map(\.displayID))
-        var results: [DisplayRuntimeSessionRestoreResult] = disabledTargetResults
-        for intent in peerSharingRestoreIntents {
-            guard let resolvedDisplayID = intent.resolvedDisplayID else {
-                results.append(
-                    makeRestoreResult(
-                        kind: .sharing,
-                        intent: intent,
-                        status: .skipped,
-                        failureReason: "resolved_display_unavailable"
-                    )
-                )
-                continue
-            }
-            guard visibleDisplayIDs.contains(resolvedDisplayID) else {
-                results.append(
-                    makeRestoreResult(
-                        kind: .sharing,
-                        intent: intent,
-                        status: .skipped,
-                        failureReason: "resolved_display_not_visible"
-                    )
-                )
-                continue
-            }
-            guard let sharingCommander else {
-                results.append(
-                    makeRestoreResult(
-                        kind: .sharing,
-                        intent: intent,
-                        status: .failed,
-                        failureReason: "sharing_commander_unavailable"
-                    )
-                )
-                continue
-            }
-
-            let commandResult = await sharingCommander.restoreSharing(displayID: resolvedDisplayID)
-            results.append(
-                makeRestoreResult(
-                    kind: .sharing,
-                    intent: intent,
-                    status: commandResult.status,
-                    failureReason: commandResult.failureReason
-                )
-            )
-        }
-        return results
-    }
-
-    func makeDeferredPreviewRestoreResults(
-        _ restoreIntents: [DisplayRuntimeSessionRestoreIntent],
-        topologyResult: DisplayRuntimeTopologyStabilityResult,
-        disabledTargetIdentity: DisplaySurfaceIdentity?,
-        targetSkipReason: String = "target_disabled"
-    ) -> [DisplayRuntimeSessionRestoreResult] {
-        let previewRestoreIntents = restoreIntents.filter(\.restorePreview)
-        guard !previewRestoreIntents.isEmpty else { return [] }
-
-        return previewRestoreIntents.map { intent in
-            let failureReason: String = {
-                guard intent.surfaceIdentity != disabledTargetIdentity else {
-                    return targetSkipReason
-                }
-                guard topologyResult.status == .stable else {
-                    return "topology_\(topologyResult.status.rawValue)"
-                }
-                guard intent.resolvedDisplayID != nil else {
-                    return "resolved_display_unavailable"
-                }
-                return "preview_restore_deferred_until_consumer_lease"
-            }()
-            return makeRestoreResult(
-                kind: .preview,
-                intent: intent,
-                status: .skipped,
-                failureReason: failureReason
-            )
-        }
-    }
-
     func transactionStatus(
         after topologyResult: DisplayRuntimeTopologyStabilityResult,
         restoreResults: [DisplayRuntimeSessionRestoreResult]
@@ -212,6 +86,7 @@ extension DisplayRuntime {
         restoreIntentCount: Int
     ) -> DisplayRuntimeCompensationResult {
         let restoredSharingCount = restoreResults.filter { $0.kind == .sharing && $0.status == .restored }.count
+        let restoredPreviewCount = restoreResults.filter { $0.kind == .preview && $0.status == .restored }.count
         let failedRestoreCount = restoreResults.filter {
             $0.status != .restored && !isTargetTerminalSkipReason($0.failureReason)
         }.count
@@ -223,17 +98,64 @@ extension DisplayRuntime {
             return .init(
                 status: failedRestoreCount == 0 ? .completed : .degraded,
                 restoredSharingCount: restoredSharingCount,
-                restoredPreviewCount: 0,
+                restoredPreviewCount: restoredPreviewCount,
                 failedRestoreCount: failedRestoreCount
             )
         case .unprovableDueToPermission, .failed, .timedOut:
             return .init(
                 status: .degraded,
                 restoredSharingCount: restoredSharingCount,
-                restoredPreviewCount: 0,
+                restoredPreviewCount: restoredPreviewCount,
                 failedRestoreCount: failedRestoreCount
             )
         }
+    }
+
+    func consumerCompensationResult(
+        restoreResults: [DisplayRuntimeSessionRestoreResult],
+        restoreIntentCount: Int
+    ) -> DisplayRuntimeCompensationResult {
+        guard restoreIntentCount > 0 else { return .notRequired }
+        let restoredSharingCount = restoreResults.count {
+            $0.kind == .sharing && $0.status == .restored
+        }
+        let restoredPreviewCount = restoreResults.count {
+            $0.kind == .preview && $0.status == .restored
+        }
+        let failedRestoreCount = restoreResults.count {
+            $0.status != .restored && !isTargetTerminalSkipReason($0.failureReason)
+        }
+        return DisplayRuntimeCompensationResult(
+            status: failedRestoreCount == 0 ? .completed : .degraded,
+            restoredSharingCount: restoredSharingCount,
+            restoredPreviewCount: restoredPreviewCount,
+            failedRestoreCount: failedRestoreCount
+        )
+    }
+
+    func mergingCompensation(
+        _ primary: DisplayRuntimeCompensationResult,
+        with consumer: DisplayRuntimeCompensationResult
+    ) -> DisplayRuntimeCompensationResult {
+        let status: DisplayRuntimeCompensationStatus
+        if primary.status == .degraded || consumer.status == .degraded {
+            status = .degraded
+        } else if primary.status == .completed || consumer.status == .completed {
+            status = .completed
+        } else if primary.status == .skipped || consumer.status == .skipped {
+            status = .skipped
+        } else {
+            status = .notRequired
+        }
+        return DisplayRuntimeCompensationResult(
+            status: status,
+            restoredSharingCount: primary.restoredSharingCount + consumer.restoredSharingCount,
+            restoredPreviewCount: primary.restoredPreviewCount + consumer.restoredPreviewCount,
+            failedRestoreCount: primary.failedRestoreCount + consumer.failedRestoreCount,
+            persistenceOutcome: primary.persistenceOutcome,
+            virtualDisplayCommandOutcome: primary.virtualDisplayCommandOutcome,
+            failureReason: primary.failureReason ?? consumer.failureReason
+        )
     }
 
     func makePauseIntents(
@@ -271,33 +193,9 @@ extension DisplayRuntime {
         return intentsByDisplayID.values.sorted { $0.displayID < $1.displayID }
     }
 
-    func quiesceSessions(_ pauseIntents: [DisplayRuntimeSessionPauseIntent]) {
-        for intent in pauseIntents.sorted(by: { $0.displayID < $1.displayID }) {
-            if intent.pauseSharing {
-                sharingCommander?.stopSharing(displayID: intent.displayID)
-            }
-            if intent.pausePreview {
-                captureCommander?.removePreviewSessions(displayID: intent.displayID)
-            }
-        }
-    }
-
-    private func makeRestoreResult(
-        kind: DisplayRuntimeSessionRestoreKind,
-        intent: DisplayRuntimeSessionRestoreIntent,
-        status: DisplayRuntimeSessionRestoreStatus,
-        failureReason: String?
-    ) -> DisplayRuntimeSessionRestoreResult {
-        DisplayRuntimeSessionRestoreResult(
-            kind: kind,
-            status: status,
-            previousDisplayID: intent.previousDisplayID,
-            resolvedDisplayID: intent.resolvedDisplayID,
-            failureReason: failureReason
-        )
-    }
-
     private func isTargetTerminalSkipReason(_ reason: String?) -> Bool {
-        reason == "target_disabled" || reason == "target_deleted"
+        reason == "target_disabled"
+            || reason == "target_deleted"
+            || reason == "consumer_lease_released"
     }
 }

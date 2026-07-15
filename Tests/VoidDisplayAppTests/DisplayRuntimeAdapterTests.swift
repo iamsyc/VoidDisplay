@@ -68,7 +68,8 @@ struct DisplayRuntimeAdapterTests {
         )
         let actions = CaptureUIComposition.previewActions(
             capture: harness.controller,
-            displayRuntime: harness.runtime
+            displayRuntime: harness.runtime,
+            capturePerformancePreferences: adapterTestPerformancePreferences(mode: .powerEfficient)
         )
 
         let outcome = try await actions.startPreview(
@@ -80,7 +81,7 @@ struct DisplayRuntimeAdapterTests {
             )
         )
 
-        guard case .started(let sessionID) = outcome else {
+        guard case .started(let previewID) = outcome else {
             Issue.record("Expected managed virtual preview start to succeed.")
             return
         }
@@ -88,14 +89,15 @@ struct DisplayRuntimeAdapterTests {
         let attachedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let captureIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
         #expect(harness.capturePreviewService.addCallCount == 1)
-        #expect(harness.controller.previewSession(for: sessionID)?.displayID == display.displayID)
+        #expect(actions.previewSession(previewID)?.displayID == display.displayID)
         #expect(attachedLease.surfaceIdentity == surfaceIdentity)
         #expect(attachedLease.resolvedDisplayID == display.displayID)
+        #expect(attachedLease.demand.powerProfile == .powerEfficient)
         #expect(captureIntent.intent.surfaceIdentity == surfaceIdentity)
         #expect(captureIntent.intent.resolvedDisplayID == display.displayID)
         #expect(captureIntent.lastApplyResult?.outcome == .applied)
 
-        await actions.closePreviewSession(sessionID)
+        await actions.closePreview(previewID)
 
         let releasedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let drainIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
@@ -109,16 +111,73 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.controller.screenPreviewSessions.isEmpty)
     }
 
+    @Test func previewIDSurvivesCaptureSessionReplacementAndResolvesNewDisplay() async throws {
+        let configID = UUID(uuidString: "14141414-1414-1414-1414-141414141415")!
+        let firstDisplay = SharedMockSCDisplay.make(displayID: 8417, width: 1920, height: 1080)
+        let replacementDisplay = SharedMockSCDisplay.make(displayID: 8418, width: 2560, height: 1440)
+        let harness = previewHarness(
+            display: firstDisplay,
+            virtualDisplaySnapshot: managedVirtualDisplaySnapshot(
+                configID: configID,
+                displayID: firstDisplay.displayID
+            )
+        )
+        let actions = CaptureUIComposition.previewActions(
+            capture: harness.controller,
+            displayRuntime: harness.runtime,
+            capturePerformancePreferences: adapterTestPerformancePreferences()
+        )
+        let outcome = try await actions.startPreview(
+            firstDisplay,
+            CapturePreviewDisplayMetadata(
+                displayName: "Stable Preview",
+                resolutionText: "1920 × 1080",
+                isVirtualDisplay: true
+            )
+        )
+        guard case let .started(previewID) = outcome else {
+            Issue.record("Expected preview to start")
+            return
+        }
+        let firstSessionID = try #require(actions.previewSession(previewID)?.id)
+        let virtualDisplayProvider = try #require(harness.virtualDisplayProvider)
+
+        virtualDisplayProvider.setSnapshot(
+            managedVirtualDisplaySnapshot(configID: configID, displayID: replacementDisplay.displayID)
+        )
+        harness.catalogService.store.displays = [replacementDisplay]
+        harness.controller.removePreviewSessions(displayID: firstDisplay.displayID)
+        _ = harness.runtime.advanceSurfaceEpoch(
+            surfaceIdentity: .managedVirtualDisplay(configID: configID)
+        )
+
+        let restoredState = await actions.retryPreview(previewID)
+        let replacementSession = try #require(actions.previewSession(previewID))
+
+        #expect(restoredState == .active)
+        #expect(replacementSession.id != firstSessionID)
+        #expect(replacementSession.displayID == replacementDisplay.displayID)
+        #expect(actions.previewIDForDisplayID(replacementDisplay.displayID) == previewID)
+        #expect(harness.runtime.consumerLease(
+            leaseID: .init(rawValue: previewID.rawValue)
+        )?.resolvedDisplayID == replacementDisplay.displayID)
+    }
+
     @Test func lanWebViewStartAttachesRuntimeLeaseAndStartsSharingThroughIntent() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8421, width: 3840, height: 2160)
-        let harness = lanWebViewHarness(display: display)
+        let capturePerformancePreferences = adapterTestPerformancePreferences(mode: .powerEfficient)
+        let harness = lanWebViewHarness(
+            display: display,
+            capturePerformancePreferences: capturePerformancePreferences
+        )
         let dependencies = SharingUIComposition.dependencies(
             sharing: harness.sharingController,
             virtualDisplay: VirtualDisplayController(
                 virtualDisplayFacade: MockVirtualDisplayFacade(),
                 appliedBadgeDisplayDuration: .nanoseconds(1)
             ),
-            displayRuntime: harness.runtime
+            displayRuntime: harness.runtime,
+            capturePerformancePreferences: capturePerformancePreferences
         )
 
         let outcome = try await dependencies.sharingActions.beginSharing(display)
@@ -135,6 +194,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(lease.state == .attached)
         #expect(lease.demand.sourcePixelSize == .init(width: 3840, height: 2160))
         #expect(lease.demand.activeViewerCount == 0)
+        #expect(lease.demand.powerProfile == .powerEfficient)
         #expect(effectiveIntent.intent.kind == .capture)
         #expect(effectiveIntent.intent.reason == .attach)
         #expect(effectiveIntent.intent.aggregateDemand?.consumerKinds == [.lanWebView])
@@ -144,8 +204,10 @@ struct DisplayRuntimeAdapterTests {
     @Test func lanWebViewStartResolvesManagedVirtualDisplaySurface() async throws {
         let configID = UUID(uuidString: "15151515-1515-1515-1515-151515151515")!
         let display = SharedMockSCDisplay.make(displayID: 8422, width: 2560, height: 1440)
+        let capturePerformancePreferences = adapterTestPerformancePreferences()
         let harness = lanWebViewHarness(
             display: display,
+            capturePerformancePreferences: capturePerformancePreferences,
             virtualDisplaySnapshot: managedVirtualDisplaySnapshot(
                 configID: configID,
                 displayID: display.displayID
@@ -157,7 +219,8 @@ struct DisplayRuntimeAdapterTests {
                 virtualDisplayFacade: MockVirtualDisplayFacade(),
                 appliedBadgeDisplayDuration: .nanoseconds(1)
             ),
-            displayRuntime: harness.runtime
+            displayRuntime: harness.runtime,
+            capturePerformancePreferences: capturePerformancePreferences
         )
 
         let outcome = try await dependencies.sharingActions.beginSharing(display)
@@ -174,6 +237,28 @@ struct DisplayRuntimeAdapterTests {
         #expect(effectiveIntent.intent.surfaceIdentity == surfaceIdentity)
         #expect(effectiveIntent.intent.resolvedDisplayID == display.displayID)
         #expect(effectiveIntent.lastApplyResult?.outcome == .applied)
+    }
+
+    @Test func stopAllLANWebViewSharingReleasesRestartingLease() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8423, width: 1920, height: 1080)
+        let capturePerformancePreferences = adapterTestPerformancePreferences()
+        let harness = lanWebViewHarness(
+            display: display,
+            capturePerformancePreferences: capturePerformancePreferences
+        )
+        let adapter = DisplayRuntimeSharingAdapter(
+            controller: harness.sharingController,
+            capturePerformancePreferences: capturePerformancePreferences
+        )
+        _ = try await adapter.beginLANWebViewSharing(display: display, runtime: harness.runtime)
+        let lease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
+        _ = harness.runtime.advanceSurfaceEpoch(surfaceIdentity: lease.surfaceIdentity)
+
+        await adapter.stopAllLANWebViewSharing(runtime: harness.runtime)
+
+        #expect(harness.runtime.consumerLease(leaseID: lease.id)?.state == .released)
+        #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
     }
 
     @Test func virtualDisplayAdapterSnapshotMapsConfigAndManagedDisplayDTOFields() throws {
@@ -292,7 +377,8 @@ private func previewHarness(
     catalogService: ScreenCaptureCatalogService,
     capturePreviewService: MockCapturePreviewService,
     controller: CaptureController,
-    runtime: DisplayRuntime
+    runtime: DisplayRuntime,
+    virtualDisplayProvider: AdapterTestVirtualDisplayProvider?
 ) {
     let catalogService = ScreenCaptureCatalogService(
         permissionProvider: FailingScreenCapturePermissionProvider(),
@@ -326,22 +412,24 @@ private func previewHarness(
         catalogService: catalogService
     )
     let adapter = DisplayRuntimeCaptureAdapter(controller: controller)
+    let virtualDisplayProvider = virtualDisplaySnapshot.map(AdapterTestVirtualDisplayProvider.init)
     let runtime = DisplayRuntime(
         catalogProvider: DisplayRuntimeCatalogAdapter(service: catalogService),
         captureProvider: adapter,
-        virtualDisplayProvider: virtualDisplaySnapshot.map(AdapterTestVirtualDisplayProvider.init),
+        virtualDisplayProvider: virtualDisplayProvider,
         captureIntentCommander: adapter
     )
     return (
         catalogService: catalogService,
         capturePreviewService: capturePreviewService,
         controller: controller,
-        runtime: runtime
+        runtime: runtime,
+        virtualDisplayProvider: virtualDisplayProvider
     )
 }
 
 private final class AdapterTestVirtualDisplayProvider: DisplayRuntimeVirtualDisplayProviding {
-    private let snapshot: DisplayRuntimeVirtualDisplaySnapshot
+    private var snapshot: DisplayRuntimeVirtualDisplaySnapshot
 
     init(snapshot: DisplayRuntimeVirtualDisplaySnapshot) {
         self.snapshot = snapshot
@@ -350,11 +438,16 @@ private final class AdapterTestVirtualDisplayProvider: DisplayRuntimeVirtualDisp
     func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
         snapshot
     }
+
+    func setSnapshot(_ snapshot: DisplayRuntimeVirtualDisplaySnapshot) {
+        self.snapshot = snapshot
+    }
 }
 
 @MainActor
 private func lanWebViewHarness(
     display: SCDisplay,
+    capturePerformancePreferences: CapturePerformancePreferences,
     virtualDisplaySnapshot: DisplayRuntimeVirtualDisplaySnapshot? = nil
 ) -> (
     catalogService: ScreenCaptureCatalogService,
@@ -396,7 +489,10 @@ private func lanWebViewHarness(
         capturePreviewService: MockCapturePreviewService(),
         catalogService: catalogService
     )
-    let sharingAdapter = DisplayRuntimeSharingAdapter(controller: sharingController)
+    let sharingAdapter = DisplayRuntimeSharingAdapter(
+        controller: sharingController,
+        capturePerformancePreferences: capturePerformancePreferences
+    )
     let captureAdapter = DisplayRuntimeCaptureAdapter(
         controller: captureController,
         sharingController: sharingController
@@ -418,6 +514,17 @@ private func lanWebViewHarness(
         captureAdapter: captureAdapter,
         runtime: runtime
     )
+}
+
+@MainActor
+private func adapterTestPerformancePreferences(
+    mode: CapturePerformanceMode = .automatic
+) -> CapturePerformancePreferences {
+    let suiteName = "DisplayRuntimeAdapterTests.performance.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defaults.set(mode.rawValue, forKey: CapturePerformancePreferenceKeys.mode)
+    return CapturePerformancePreferences(defaults: defaults)
 }
 
 private func managedVirtualDisplaySnapshot(

@@ -32,11 +32,14 @@ extension XCTestCase {
     @MainActor
     func launchAppForSmoke(
         preferredPort: UInt16? = nil,
-        skinID: String? = nil
+        skinID: String? = nil,
+        windowSize: (width: Int, height: Int)? = nil,
+        advanceFocus: Bool = false,
+        scenario: String = "baseline"
     ) -> XCUIApplication {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = "baseline"
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = scenario
         if let preferredPort {
             app.launchArguments.append(contentsOf: [
                 "-sharing.preferredPort",
@@ -48,6 +51,13 @@ extension XCTestCase {
                 "-appearance.skinID",
                 skinID
             ])
+        }
+        if let windowSize {
+            app.launchEnvironment["VOIDDISPLAY_UI_TEST_WINDOW_WIDTH"] = String(windowSize.width)
+            app.launchEnvironment["VOIDDISPLAY_UI_TEST_WINDOW_HEIGHT"] = String(windowSize.height)
+        }
+        if advanceFocus {
+            app.launchEnvironment["VOIDDISPLAY_UI_TEST_ADVANCE_FOCUS"] = "1"
         }
         app.launch()
         app.activate()

@@ -63,7 +63,12 @@ struct SharingUICompositionTests {
         let dependencies = SharingUIComposition.dependencies(
             sharing: sharingController,
             virtualDisplay: virtualDisplayController,
-            displayRuntime: DisplayRuntime()
+            displayRuntime: DisplayRuntime(),
+            capturePerformancePreferences: CapturePerformancePreferences(
+                defaults: UserDefaults(
+                    suiteName: "SharingUICompositionTests.dependencies.\(UUID().uuidString)"
+                )!
+            )
         )
 
         #expect(

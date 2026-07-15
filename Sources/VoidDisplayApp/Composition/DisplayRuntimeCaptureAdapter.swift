@@ -6,7 +6,7 @@ import VoidDisplayFoundation
 import VoidDisplayRuntime
 
 @MainActor
-package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureCommanding, DisplayRuntimeCaptureIntentCommanding {
+package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding, DisplayRuntimeCaptureIntentCommanding {
     private weak var controller: CaptureController?
     private weak var sharingController: SharingController?
     private let isManagedVirtualDisplay: @MainActor (DisplayRuntimeDisplayID) -> Bool
@@ -45,10 +45,6 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         )
     }
 
-    package func removePreviewSessions(displayID: DisplayRuntimeDisplayID) {
-        controller?.removePreviewSessions(displayID: displayID)
-    }
-
     package func applyPreviewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
@@ -65,30 +61,30 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
             )
         }
 
-        switch intent.kind {
-        case .capture:
-            if controller.displayCatalogState.hasScreenCapturePermission == false
-                || controller.displayCatalogState.lastPreflightPermission == false {
-                return .failed(
-                    revision: intent.revision,
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
-                )
-            }
-            guard let display = resolveDisplay(displayID: resolvedDisplayID, in: controller) else {
-                return .failed(
-                    revision: intent.revision,
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
-                )
-            }
-            return await acquirePreview(
-                display: display,
-                intent: intent,
-                controller: controller
-            )
-        case .drain:
+        guard intent.kind == .capture,
+              intent.aggregateDemand?.consumerKinds.contains(.preview) == true
+        else {
             controller.removePreviewSessions(displayID: resolvedDisplayID)
             return .applied(revision: intent.revision)
         }
+        if controller.displayCatalogState.hasScreenCapturePermission == false
+            || controller.displayCatalogState.lastPreflightPermission == false {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.permissionUnavailable
+            )
+        }
+        guard let display = resolveDisplay(displayID: resolvedDisplayID, in: controller) else {
+            return .failed(
+                revision: intent.revision,
+                failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+            )
+        }
+        return await acquirePreview(
+            display: display,
+            intent: intent,
+            controller: controller
+        )
     }
 
     package func applyLANWebViewCaptureIntent(
@@ -150,11 +146,20 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         controller: CaptureController
     ) async -> DisplayRuntimeCaptureIntentApplyResult {
         do {
-            switch try await controller.startPreview(
+            let outcome = try await controller.startPreview(
                 display: display,
                 metadata: previewMetadata(for: display)
-            ) {
+            )
+            switch outcome {
             case .started:
+                if let capturesCursor = intent.aggregateDemand?.capturesCursor,
+                   let session = controller.screenPreviewSessions.first(where: { $0.displayID == display.displayID }),
+                   session.capturesCursor != capturesCursor {
+                    try await controller.setPreviewSessionCapturesCursor(
+                        id: session.id,
+                        capturesCursor: capturesCursor
+                    )
+                }
                 return .applied(revision: intent.revision)
             case .invalidated:
                 return .failed(
