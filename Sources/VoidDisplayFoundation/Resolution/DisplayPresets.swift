@@ -51,10 +51,4 @@ package struct DisplayCalculator {
         let multiplier = hiDPI ? 2 : 1
         return (logicalWidth * multiplier, logicalHeight * multiplier)
     }
-    
-    /// Calculate PPI (Pixels Per Inch) for given resolution and physical size
-    package static func calculatePPI(widthPixels: Int, heightPixels: Int, diagonalInches: Double) -> Double {
-        let diagonalPixels = sqrt(Double(widthPixels * widthPixels + heightPixels * heightPixels))
-        return diagonalPixels / diagonalInches
-    }
 }

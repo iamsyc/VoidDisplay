@@ -32,9 +32,11 @@ let package = Package(
                 "VoidDisplayVirtualDisplay",
                 "VoidDisplayCGVirtualDisplay",
                 "VoidDisplayCapture",
+                "VoidDisplayDesignSystem",
                 "VoidDisplaySharing",
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
+                "VoidDisplayRuntime",
                 "VoidDisplayFoundation"
             ],
             swiftSettings: sharedSwiftSettings
@@ -87,11 +89,20 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
         .target(
+            name: "VoidDisplayRuntime",
+            dependencies: [
+                "VoidDisplayFoundation",
+                "VoidDisplayObservability"
+            ],
+            swiftSettings: sharedSwiftSettings
+        ),
+        .target(
             name: "VoidDisplaySupport",
             dependencies: [
                 "VoidDisplayDesignSystem",
                 "VoidDisplayFoundation",
-                "VoidDisplayObservability"
+                "VoidDisplayObservability",
+                "VoidDisplayRuntime"
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -122,7 +133,9 @@ let package = Package(
                 "VoidDisplayCapture",
                 "VoidDisplaySharing",
                 "VoidDisplaySupport",
+                "VoidDisplayDesignSystem",
                 "VoidDisplayObservability",
+                "VoidDisplayRuntime",
                 "VoidDisplayFoundation",
                 "VoidDisplayTestingSupport",
                 "VoidDisplaySharingTestingSupport",
@@ -165,7 +178,18 @@ let package = Package(
         .testTarget(
             name: "VoidDisplayObservabilityTests",
             dependencies: [
-                "VoidDisplayObservability"
+                "VoidDisplayObservability",
+                "VoidDisplayTestingSupport"
+            ],
+            swiftSettings: sharedSwiftSettings
+        ),
+        .testTarget(
+            name: "VoidDisplayRuntimeTests",
+            dependencies: [
+                "VoidDisplayRuntime",
+                "VoidDisplayFoundation",
+                "VoidDisplayObservability",
+                "VoidDisplayTestingSupport"
             ],
             swiftSettings: sharedSwiftSettings
         ),
@@ -174,6 +198,7 @@ let package = Package(
             dependencies: [
                 "VoidDisplaySupport",
                 "VoidDisplayObservability",
+                "VoidDisplayRuntime",
                 "VoidDisplayFoundation",
                 "VoidDisplayTestingSupport"
             ],

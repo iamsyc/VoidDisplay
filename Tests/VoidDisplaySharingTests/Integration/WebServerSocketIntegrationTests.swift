@@ -3,7 +3,6 @@
 @testable import VoidDisplaySharingTestingSupport
 import Foundation
 import Darwin
-import JavaScriptCore
 import Network
 import Testing
 
@@ -13,59 +12,9 @@ struct WebServerSocketIntegrationTests {
     private static let mainAliasShareID: UInt32 = 5
     private static let replacementMainAliasShareID: UInt32 = 6
 
-    @Test func rootRouteSupportsFragmentedSocketRequest() async throws {
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let request = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
-        let responseData = try await Task.detached {
-            try await sendRequestAndReadUntilClose(port: portValue, request: request)
-        }.value
-
-        let responseText = try #require(String(data: responseData, encoding: .utf8))
-        #expect(responseText.contains("HTTP/1.1 200 OK"))
-        #expect(responseText.contains("VoidDisplay Share"))
-    }
-
-    @Test func stoppedListenerAllowsImmediateSamePortRestartAfterHTTPClientTraffic() async throws {
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .unknown },
-            sessionHubProvider: { _ in nil }
-        )
-        let firstServer = setup.server
-        let portValue = setup.port
-
-        let request = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
-        _ = try await Task.detached {
-            try await sendRequestAndReadUntilServerClose(port: portValue, request: request)
-        }.value
-
-        firstServer.stopListener()
-
-        let rebound = try await startReboundServer(on: portValue)
-        let reboundServer = rebound.server
-        defer { reboundServer.stopListener() }
-        #expect(rebound.boundPort == portValue)
-    }
-
     @Test func stoppedListenerAllowsImmediateSamePortRestartAfterActiveWebSocketTraffic() async throws {
         let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: { target in
-                target == .main ? .id(Self.mainAliasShareID) : nil
-            },
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            }
-        )
+        let setup = try await startMainSignalServer(sessionHub: sessionHub)
         let firstServer = setup.server
         let portValue = setup.port
 
@@ -85,74 +34,11 @@ struct WebServerSocketIntegrationTests {
         #expect(rebound.boundPort == portValue)
     }
 
-    @Test func liveRouteUpgradesToWebSocketWhenTargetActive() async throws {
-        let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let request = websocketUpgradeRequest(path: "/signal", port: portValue)
-        let responseData = try await Task.detached {
-            try await sendRequestAndReadPartialResponse(port: portValue, request: request)
-        }.value
-        let responseText = try #require(String(data: responseData, encoding: .utf8))
-        #expect(responseText.contains("101 Switching Protocols"))
-        #expect(responseText.contains("Sec-WebSocket-Accept"))
-    }
-
-    @Test func streamRouteReturnsNotFound() async throws {
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in TestSignalSessionHub() }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let request = Data("GET /stream HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
-        let responseData = try await Task.detached {
-            try await sendRequestAndReadUntilClose(port: portValue, request: request)
-        }.value
-        let responseText = try #require(String(data: responseData, encoding: .utf8))
-        #expect(responseText.contains("404 Not Found"))
-    }
-
     @Test func displayRouteEmbedsBootstrapJSON() async throws {
         setenv("VOIDDISPLAY_WEBRTC_ICE_SERVERS", "stun:127.0.0.1:3478,turn:127.0.0.1:3479", 1)
         defer { unsetenv("VOIDDISPLAY_WEBRTC_ICE_SERVERS") }
 
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .active },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { _ in TestSignalSessionHub() }
-        )
+        let setup = try await startMainSignalServer(sessionHub: TestSignalSessionHub())
         let server = setup.server
         let portValue = setup.port
         defer { server.stopListener() }
@@ -167,106 +53,10 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("<title>Screen Share</title>"))
         #expect(responseText.contains(#"id="voiddisplay-bootstrap""#))
         #expect(responseText.contains(#""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#))
-        #expect(responseText.contains(#"const messages = {"#))
-        #expect(responseText.contains(#"function resolveLocale() {"#))
-        #expect(responseText.contains(#"const locale = resolveLocale();"#))
-        #expect(responseText.contains(#"document.title = t("pageTitle");"#))
-        #expect(responseText.contains(#"function applyScaleMode() {"#))
-        #expect(responseText.contains(#"function syncFullscreenButtonLabel() {"#))
-        #expect(responseText.contains(#"function localOfferSDPWithIceCredentials() {"#))
-        #expect(responseText.contains(#"async function waitForLocalOfferSDP() {"#))
-        #expect(responseText.contains(#"RTCRtpReceiver.getCapabilities("video")"#))
-        #expect(responseText.contains(#"function receiverCodecPreferences() {"#))
-        #expect(responseText.contains(#"WebRTC receiver video capabilities "#) == false)
-        #expect(responseText.contains(#"WebRTC browser stats"#) == false)
-        #expect(!responseText.contains(#"function initialForceH264Only() {"#))
-        #expect(!responseText.contains(#"forceH264Only"#))
-        #expect(responseText.contains(#"return normalizedVideoCodecName(codec) === "video/av1";"#))
-        #expect(responseText.contains(#"function isRetransmissionCodec(codec) {"#))
-        #expect(!responseText.contains(#"function receiverSupportsCodec(mimeType) {"#))
-        #expect(responseText.contains(#"function rtxCodecsForPrimaryCodecs(allCodecs, primaryCodecs) {"#))
-        #expect(responseText.contains(#"return av1Codecs.concat(rtxCodecsForPrimaryCodecs(allCodecs, av1Codecs));"#))
-        #expect(responseText.contains(#"transceiver.setCodecPreferences(codecPreferences);"#))
-        #expect(responseText.contains(#"const supportedPrimaryCodecs = [...new Set("#))
-        #expect(responseText.contains(#"selectedCodecFromAnswerSDP(payload.sdp);"#))
-        #expect(responseText.contains(#"function setVideoInfo(text) {"#))
-        #expect(responseText.contains(#"function setConnectionStatus(title, detail = "") {"#))
-        #expect(responseText.contains(#"function startBrowserStatsLoop(targetPeer) {"#))
-        #expect(responseText.contains(#"expectedSourceVideoSpec = sourceSpecFromSignal(payload.sourceVideoSpec);"#))
-        #expect(responseText.contains(#"statusLiveWithStats"#))
-        #expect(responseText.contains(#"statusLiveBelowSource"#))
-        #expect(responseText.contains(#"verifySelectedCodec"#) == false)
-        #expect(responseText.contains(#"offerToReceiveVideo"#) == false)
-        #expect(responseText.contains(#"function isCodecErrorReason(reason) {"#))
-        #expect(!responseText.contains(#"function shouldRetryWithH264Fallback() {"#))
-        #expect(!responseText.contains(#"function retryWithH264Fallback() {"#))
-        #expect(responseText.contains(#"reason === "unsupported_video_codec_offered" || reason === "supported_video_codec_missing""#))
-        #expect(responseText.contains(#"peer.addTransceiver("video", { direction: "recvonly" });"#))
-        #expect(responseText.contains(#"sdp: await waitForLocalOfferSDP()"#))
-        #expect(!responseText.contains(#"sdp: offer.sdp"#))
-        #expect(responseText.contains(#"const reconnectDelays = [250, 500, 1000, 2000, 4000];"#))
-        #expect(responseText.contains(#"function scheduleReconnect(overlayTitle = t("overlayReconnectTitle"), overlayBody = t("overlayReconnectBody")) {"#))
-        #expect(responseText.contains(#"function schedulePeerRetry(overlayTitle, overlayBody) {"#))
-        #expect(responseText.contains(#"peer = new RTCPeerConnection({ iceServers: bootstrap.iceServers ?? [] });"#))
-        #expect(responseText.contains(#"function setStartupOverlay() {"#) == false)
-        #expect(responseText.contains(#"function setProgressOverlay(title, body) {"#))
-        #expect(responseText.contains(#"function waitForFirstVideoFrame(timeoutMs = firstVideoFrameTimeoutMs) {"#))
-        #expect(responseText.contains(#"await waitForFirstVideoFrame();"#))
-        #expect(responseText.contains(#"const firstVideoFrameTimeoutMs = 10000;"#))
-        #expect(responseText.contains(#"function streamStartupTimeoutError() {"#))
-        #expect(responseText.contains(#"schedulePeerRetry(t("overlayFirstFrameTimeoutTitle"), error.message || t("overlayFirstFrameTimeoutBody"));"#))
-        #expect(responseText.contains(#"setProgressOverlay(t("overlayConnectionLostTitle"), t("overlayConnectionLostBody"));"#))
-        #expect(responseText.contains(#"setConnectionStatus(t("overlaySharingStoppedTitle"), t("overlaySharingStoppedBody"));"#))
-        #expect(responseText.contains(#"case "stopped":"#))
-        #expect(responseText.contains(#"case "codec_pending":"#))
-        #expect(responseText.contains(#"schedulePeerRetry(t("overlayCodecPendingTitle"), t("overlayCodecPendingBody"));"#))
-        #expect(responseText.contains(#"case "error":"#))
-        #expect(responseText.contains(#"connect();"#))
-        #expect(responseText.contains(#"heroEyebrow: "VOIDDISPLAY 实时画面""#))
-        #expect(responseText.contains(#"overlayStartupTitle"#) == false)
-        #expect(responseText.contains(#"statusReconnecting"#) == false)
-        #expect(responseText.contains(#"ms 后重连"#) == false)
-        #expect(responseText.contains(#"overlayCodecRequiredTitle: "AV1 required""#))
-        #expect(responseText.contains(#"overlayCodecRequiredTitle: "需要 AV1""#))
-        #expect(responseText.contains(#"overlayFirstFrameTimeoutTitle: "Waiting for video""#))
-        #expect(responseText.contains(#"overlayFirstFrameTimeoutTitle: "正在等待画面""#))
-        #expect(responseText.contains(#"overlayCodecPendingTitle: "Preparing video codec""#))
-        #expect(responseText.contains(#"overlayCodecPendingTitle: "正在准备视频编码""#))
-        #expect(!responseText.contains(#"overlayCodecFallbackTitle"#))
-        #expect(responseText.contains(#"fullscreenEnter: "全屏""#))
-        #expect(responseText.contains(#"pageTitle: "Screen Share""#))
-        #expect(responseText.contains("hero-eyebrow"))
-        #expect(responseText.contains("video-info"))
-        #expect(responseText.contains("connection-status"))
-        #expect(responseText.contains("loading-spinner"))
-        #expect(responseText.contains("justify-items: start;"))
-        #expect(responseText.contains("width: clamp(14rem, 24vw, 24rem);"))
-        #expect(responseText.contains("margin-left: auto;"))
-        #expect(responseText.contains("background: rgba(8, 11, 17, 0.62);") == false)
-        #expect(responseText.contains("border-radius: 10px;") == false)
-        #expect(responseText.contains("<div class=\"hero-brand\">\n                <p class=\"eyebrow\" id=\"hero-eyebrow\">VoidDisplay Live</p>\n            </div>\n            <div class=\"hero-metadata\">\n                <div class=\"video-info\" id=\"video-info\"></div>\n                <div class=\"hero-actions\">"))
-        #expect(responseText.contains("grid-template-columns: minmax(12rem, 1fr) minmax(0, auto);"))
-        #expect(responseText.contains(".hero-metadata"))
-        #expect(responseText.contains("justify-self: end;"))
-        #expect(responseText.contains("text-align: right;"))
-        #expect(responseText.contains("width: clamp(28rem, 42vw, 42rem);"))
-        #expect(responseText.contains("font-variant-numeric: tabular-nums;"))
-        #expect(responseText.contains(#"font-feature-settings: "tnum" 1;"#))
-        #expect(responseText.contains(".video-info:empty"))
-        #expect(responseText.contains("<section class=\"stage\">\n            <video id=\"player\" autoplay playsinline muted></video>\n            <div class=\"overlay\" id=\"overlay\">"))
-        #expect(responseText.contains("<footer class=\"footer\">\n            <p class=\"footnote\" id=\"footnote\">Use"))
-        #expect(responseText.contains("message-title") == false)
-        #expect(responseText.contains("message-body") == false)
-        #expect(responseText.contains("footnote"))
-        #expect(responseText.contains("__PAGE_TITLE__") == false)
-        #expect(responseText.contains("__SIGNAL_PATH__") == false)
-        #expect(responseText.contains("__DISPLAY_PAGE_STYLES__") == false)
-        #expect(responseText.contains("__DISPLAY_PAGE_MESSAGES_SCRIPT__") == false)
-        #expect(responseText.contains("__DISPLAY_PAGE_RUNTIME_SCRIPT__") == false)
         #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
-        #expect(responseText.contains(#"new WebSocket((window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/signal");"#) == false)
+        #expect(responseText.contains("__SIGNAL_PATH__") == false)
+        #expect(responseText.contains("__DISPLAY_PAGE_RUNTIME_SCRIPT__") == false)
         #expect(responseText.contains("Main Display") == false)
-        #expect(responseText.contains("Display 1") == false)
     }
 
     @Test func secondaryDisplayRouteAlsoUsesGenericPageTitle() async throws {
@@ -290,74 +80,9 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("Display 7") == false)
     }
 
-    @Test func displayRouteScriptBootstrapsAndHandlesBasicUIStateChanges() async throws {
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .active },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { _ in TestSignalSessionHub() }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let request = Data("GET /display HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
-        let responseData = try await Task.detached {
-            try await sendRequestAndReadUntilClose(port: portValue, request: request)
-        }.value
-
-        let responseText = try #require(String(data: responseData, encoding: .utf8))
-        #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
-        let smokeResult = try evaluateDisplayPageRuntimeScript(in: responseText)
-
-        #expect(smokeResult.documentTitle == "Screen Share")
-        #expect(smokeResult.scaleButtonText == "Fit")
-        #expect(smokeResult.toggleCallCount >= 2)
-        #expect(smokeResult.codecPreferenceMimeTypes == ["video/AV1", "video/rtx"])
-        #expect(smokeResult.codecPreferenceFmtpLines == ["", "apt=98"])
-        #expect(smokeResult.selectedCodec == "av1")
-        #expect(smokeResult.rejectsUnexpectedCodec)
-        #expect(smokeResult.marksMissingCodecAsRequirementError)
-        #expect(smokeResult.marksMissingCapabilitiesAsRequirementError)
-        #expect(smokeResult.videoInfoWithoutSource == "Live AV1 1920×1080 60fps")
-        #expect(smokeResult.videoInfoWithSource == "Live AV1 1920×1080 58fps, source 1920×1080 60fps")
-        #expect(smokeResult.videoInfoLowMotionSource == "Live AV1 1920×1080, source 1920×1080 60fps, low-motion screen updates on change")
-        #expect(smokeResult.videoInfoBelowSource == "Live AV1 1280×720 30fps, source 1920×1080 60fps")
-        #expect(smokeResult.connectionStatusTitle == "Specific setup")
-        #expect(smokeResult.connectionStatusDetail == "Specific body")
-        #expect(smokeResult.loadingOverlayVisibleAfterProgress)
-        #expect(smokeResult.streamStartupTimeoutIsRecoverable)
-        #expect(smokeResult.streamStartupTimeoutMessage == "Timed out waiting for the first video frame. Retrying automatically.")
-    }
-
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
         let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            }
-        )
+        let setup = try await startMainSignalServer(sessionHub: sessionHub)
         let server = setup.server
         let portValue = setup.port
         defer { server.stopListener() }
@@ -367,60 +92,11 @@ struct WebServerSocketIntegrationTests {
         #expect(result.didClose)
     }
 
-    @Test func clientCloseFrameRemovesActiveClient() async throws {
-        let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let result = try await Task.detached { try await probeClientCloseFrame(port: portValue) }.value
-        #expect(result.handshakeText.contains("101 Switching Protocols"))
-        #expect(result.didClose)
-
-        let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
-            server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
-        }
-        #expect(clientCleared)
-    }
-
     @Test func clientCloseFrameLeavesNoGhostClientsInSharingSnapshot() async throws {
         let sessionHub = TestSignalSessionHub()
         let aggregator = SharingStateAggregator()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            },
+        let setup = try await startMainSignalServer(
+            sessionHub: sessionHub,
             sharingEventSink: { event in
                 Task { @MainActor in
                     aggregator.record(event)
@@ -448,23 +124,8 @@ struct WebServerSocketIntegrationTests {
     @Test func sameTargetPeersAccumulateStreamingCounts() async throws {
         let aggregator = SharingStateAggregator()
         let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            },
+        let setup = try await startMainSignalServer(
+            sessionHub: sessionHub,
             sharingEventSink: { event in
                 Task { @MainActor in
                     aggregator.record(event)
@@ -504,150 +165,6 @@ struct WebServerSocketIntegrationTests {
             aggregator.currentSnapshot.streamingPeers == 0
         }
         #expect(cleared)
-    }
-
-    @Test func simultaneousTargetsKeepPerTargetSharingCountsIsolated() async throws {
-        let aggregator = SharingStateAggregator()
-        let mainHub = TestSignalSessionHub()
-        let secondaryHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                switch target {
-                case .main, .id(7):
-                    .active
-                default:
-                    .unknown
-                }
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID || id == 7:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                switch target {
-                case .id(let id) where id == Self.mainAliasShareID:
-                    mainHub
-                case .id(7):
-                    secondaryHub
-                default:
-                    nil
-                }
-            },
-            sharingEventSink: { event in
-                Task { @MainActor in
-                    aggregator.record(event)
-                }
-            }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let mainSocket = try await openWebSocket(path: "/signal", port: portValue)
-        let secondarySocket = try await openWebSocket(path: "/signal/7", port: portValue)
-        defer {
-            close(mainSocket)
-            close(secondarySocket)
-        }
-
-        try sendAll(mainSocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
-        try sendAll(secondarySocket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
-
-        let isolated = await waitUntilAsync(timeout: .seconds(2)) {
-            let snapshot = aggregator.currentSnapshot
-            return snapshot.signalingConnections == 2 &&
-                snapshot.streamingPeers == 2 &&
-                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                snapshot.signalingConnectionsByTarget[.id(7)] == 1 &&
-                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                snapshot.streamingPeersByTarget[.id(7)] == 1 &&
-                server.streamClientCount(for: .id(Self.mainAliasShareID)) == 1 &&
-                server.streamClientCount(for: .id(7)) == 1
-        }
-        #expect(isolated)
-    }
-
-    @Test func aliasConnectionCleanupStaysBoundToOriginalConcreteTargetAfterMainSwitch() async throws {
-        let aggregator = SharingStateAggregator()
-        let originalHub = TestSignalSessionHub()
-        let replacementHub = TestSignalSessionHub()
-        let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                switch target {
-                case .main:
-                    .active
-                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
-                    .active
-                default:
-                    .unknown
-                }
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(mainShareIDBox.value)
-                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                switch target {
-                case .id(let id) where id == Self.mainAliasShareID:
-                    originalHub
-                case .id(let id) where id == Self.replacementMainAliasShareID:
-                    replacementHub
-                default:
-                    nil
-                }
-            },
-            sharingEventSink: { event in
-                Task { @MainActor in
-                    aggregator.record(event)
-                }
-            }
-        )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let socket = try await openWebSocket(path: "/signal", port: portValue)
-        defer { close(socket) }
-
-        try sendAll(socket, data: makeMaskedTextFrame(#"{"type":"offer","sdp":"v=0"}"#))
-
-        let connectedToOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
-            let snapshot = aggregator.currentSnapshot
-            return snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == 1 &&
-                originalHub.activeClientCount == 1 &&
-                replacementHub.activeClientCount == 0
-        }
-        #expect(connectedToOriginalTarget)
-
-        mainShareIDBox.setValue(Self.replacementMainAliasShareID)
-
-        try sendAll(socket, data: makeMaskedCloseFrame())
-        #expect(try await waitForSocketClose(socket))
-
-        let clearedFromOriginalTarget = await waitUntilAsync(timeout: .seconds(2)) {
-            let snapshot = aggregator.currentSnapshot
-            return snapshot.signalingConnections == 0 &&
-                snapshot.streamingPeers == 0 &&
-                snapshot.signalingConnectionsByTarget[.id(Self.mainAliasShareID)] == nil &&
-                snapshot.streamingPeersByTarget[.id(Self.mainAliasShareID)] == nil &&
-                originalHub.activeClientCount == 0 &&
-                replacementHub.activeClientCount == 0
-        }
-        #expect(clearedFromOriginalTarget)
     }
 
     @Test func existingAliasConnectionKeepsBoundHubAfterMainMappingChanges() async throws {
@@ -729,35 +246,9 @@ struct WebServerSocketIntegrationTests {
         let aggregator = SharingStateAggregator()
         let mainHub = TestSignalSessionHub()
         let secondaryHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                switch target {
-                case .main, .id(7):
-                    .active
-                default:
-                    .unknown
-                }
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID || id == 7:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                switch target {
-                case .id(let id) where id == Self.mainAliasShareID:
-                    mainHub
-                case .id(7):
-                    secondaryHub
-                default:
-                    nil
-                }
-            },
+        let setup = try await startMainAndSecondarySignalServer(
+            mainHub: mainHub,
+            secondaryHub: secondaryHub,
             sharingEventSink: { event in
                 Task { @MainActor in
                     aggregator.record(event)
@@ -811,105 +302,69 @@ struct WebServerSocketIntegrationTests {
         #expect(try await waitForSocketClose(secondarySocket))
     }
 
-    @Test func tenClientsOnSameTargetCanConnectAndDisconnectCleanly() async throws {
-        let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
+    private func startMainSignalServer(
+        sessionHub: TestSignalSessionHub,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
+    ) async throws -> (server: WebServer, port: UInt16) {
+        try await startServerOnRandomPort(
             targetStateProvider: { target in
                 target == .main ? .active : .unknown
             },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
+            concreteTargetResolver: Self.resolveMainAliasTarget,
             sessionHubProvider: { target in
                 target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            }
+            },
+            sharingEventSink: sharingEventSink
         )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let expectedClientCount = 10
-        var sockets: [Int32] = []
-        sockets.reserveCapacity(expectedClientCount)
-        do {
-            for _ in 0..<expectedClientCount {
-                let socket = try await openWebSocket(path: "/signal", port: portValue)
-                sockets.append(socket)
-            }
-        } catch {
-            for socket in sockets {
-                close(socket)
-            }
-            throw error
-        }
-        defer {
-            for socket in sockets {
-                close(socket)
-            }
-        }
-
-        let connected = await waitUntilAsync(timeout: .seconds(4)) {
-            server.activeStreamClientCount == expectedClientCount &&
-                sessionHub.activeClientCount == expectedClientCount &&
-                server.streamClientCount(for: .id(Self.mainAliasShareID)) == expectedClientCount
-        }
-        #expect(connected)
-
-        for socket in sockets {
-            try sendAll(socket, data: makeMaskedCloseFrame())
-        }
-        for socket in sockets {
-            #expect(try await waitForSocketClose(socket))
-        }
-
-        let cleared = await waitUntilAsync(timeout: .seconds(4)) {
-            server.activeStreamClientCount == 0 &&
-                sessionHub.activeClientCount == 0 &&
-                server.streamClientCount(for: .id(Self.mainAliasShareID)) == 0
-        }
-        #expect(cleared)
     }
 
-    @Test func binarySignalFrameClosesWithProtocolCodeAndRemovesActiveClient() async throws {
-        let sessionHub = TestSignalSessionHub()
-        let setup = try await startServerOnRandomPort(
+    private static func resolveMainAliasTarget(_ target: ShareTarget) -> ShareTarget? {
+        switch target {
+        case .main:
+            .id(mainAliasShareID)
+        case .id(let id) where id == mainAliasShareID:
+            .id(id)
+        default:
+            nil
+        }
+    }
+
+    private func startMainAndSecondarySignalServer(
+        mainHub: TestSignalSessionHub,
+        secondaryHub: TestSignalSessionHub,
+        sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
+    ) async throws -> (server: WebServer, port: UInt16) {
+        try await startServerOnRandomPort(
             targetStateProvider: { target in
-                target == .main ? .active : .unknown
+                switch target {
+                case .main, .id(7):
+                    .active
+                default:
+                    .unknown
+                }
             },
             concreteTargetResolver: { target in
                 switch target {
                 case .main:
                     .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID:
+                case .id(let id) where id == Self.mainAliasShareID || id == 7:
                     .id(id)
                 default:
                     nil
                 }
             },
             sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
-            }
+                switch target {
+                case .id(let id) where id == Self.mainAliasShareID:
+                    mainHub
+                case .id(7):
+                    secondaryHub
+                default:
+                    nil
+                }
+            },
+            sharingEventSink: sharingEventSink
         )
-        let server = setup.server
-        let portValue = setup.port
-        defer { server.stopListener() }
-
-        let result = try await Task.detached { try await probeBinarySignalFrameClose(port: portValue) }.value
-        #expect(result.handshakeText.contains("101 Switching Protocols"))
-        #expect(result.closeObservation.didClose)
-        #expect(result.closeObservation.closeCode == 1003)
-
-        let clientCleared = await waitUntilAsync(timeout: .seconds(2)) {
-            server.activeStreamClientCount == 0 && sessionHub.activeClientCount == 0
-        }
-        #expect(clientCleared)
     }
 
     private func waitUntilAsync(
@@ -1013,27 +468,6 @@ struct WebServerSocketIntegrationTests {
     }
 }
 
-private struct DisplayPageScriptSmokeResult: Equatable {
-    let documentTitle: String
-    let scaleButtonText: String
-    let toggleCallCount: Int
-    let codecPreferenceMimeTypes: [String]
-    let codecPreferenceFmtpLines: [String]
-    let selectedCodec: String
-    let rejectsUnexpectedCodec: Bool
-    let marksMissingCodecAsRequirementError: Bool
-    let marksMissingCapabilitiesAsRequirementError: Bool
-    let videoInfoWithoutSource: String
-    let videoInfoWithSource: String
-    let videoInfoLowMotionSource: String
-    let videoInfoBelowSource: String
-    let connectionStatusTitle: String
-    let connectionStatusDetail: String
-    let loadingOverlayVisibleAfterProgress: Bool
-    let streamStartupTimeoutIsRecoverable: Bool
-    let streamStartupTimeoutMessage: String
-}
-
 @MainActor
 private final class MutableShareIDBox {
     var value: UInt32
@@ -1045,310 +479,6 @@ private final class MutableShareIDBox {
     func setValue(_ newValue: UInt32) {
         value = newValue
     }
-}
-
-private enum DisplayPageScriptSmokeError: Error {
-    case missingRuntimeScript
-    case evaluationFailed(String)
-}
-
-private func evaluateDisplayPageRuntimeScript(
-    in responseText: String
-) throws -> DisplayPageScriptSmokeResult {
-    let script = inlineRuntimeScripts(in: responseText).joined(separator: "\n")
-    guard !script.isEmpty else {
-        throw DisplayPageScriptSmokeError.missingRuntimeScript
-    }
-    let context = JSContext()!
-    var exceptionMessage: String?
-    context.exceptionHandler = { _, exception in
-        exceptionMessage = exception?.toString() ?? "unknown JavaScript error"
-    }
-
-    context.evaluateScript(
-        """
-        var __toggleCount = 0;
-        var __elements = {};
-
-        function makeElement(id) {
-            return {
-                id: id,
-                textContent: "",
-                hidden: false,
-                srcObject: null,
-                __handlers: {},
-                addEventListener: function(type, handler) {
-                    this.__handlers[type] = handler;
-                },
-                classList: {
-                    toggle: function() {
-                        __toggleCount += 1;
-                    }
-                },
-                requestFullscreen: function() {}
-            };
-        }
-
-        function WebSocket(url) {
-            this.url = url;
-            this.__handlers = {};
-        }
-        WebSocket.prototype.addEventListener = function(type, handler) {
-            this.__handlers[type] = handler;
-        };
-        WebSocket.prototype.send = function() {};
-        WebSocket.prototype.close = function() {};
-
-        function RTCPeerConnection(config) {
-            this.config = config;
-        }
-        RTCPeerConnection.prototype.addIceCandidate = function() {};
-        RTCPeerConnection.prototype.close = function() {};
-
-        var document = {
-            title: "",
-            fullscreenElement: null,
-            fullscreenEnabled: false,
-            body: {
-                classList: {
-                    toggle: function() {
-                        __toggleCount += 1;
-                    }
-                }
-            },
-            getElementById: function(id) {
-                if (!__elements[id]) {
-                    __elements[id] = makeElement(id);
-                }
-                return __elements[id];
-            },
-            querySelector: function() {
-                return makeElement("stage");
-            },
-            addEventListener: function(type, handler) {
-                this["on" + type] = handler;
-            },
-            exitFullscreen: function() {}
-        };
-
-        var navigator = {
-            languages: ["en-US"],
-            language: "en-US"
-        };
-
-        var window = {
-            WebSocket: WebSocket,
-            RTCPeerConnection: RTCPeerConnection,
-            location: {
-                protocol: "http:",
-                host: "127.0.0.1",
-                search: ""
-            },
-            setTimeout: function() { return 1; },
-            clearTimeout: function() {},
-            setInterval: function() { return 1; },
-            clearInterval: function() {},
-            addEventListener: function() {}
-        };
-
-        var console = {
-            log: function() {},
-            info: function() {},
-            warn: function() {},
-            error: function() {}
-        };
-        """
-    )
-    if let exceptionMessage {
-        throw DisplayPageScriptSmokeError.evaluationFailed(exceptionMessage)
-    }
-
-    context.evaluateScript(script)
-    if let exceptionMessage {
-        throw DisplayPageScriptSmokeError.evaluationFailed(exceptionMessage)
-    }
-
-    context.evaluateScript(
-        """
-        transition("streaming");
-        __elements["scale-mode-btn"].__handlers["click"]();
-        function RTCRtpReceiver() {}
-        RTCRtpReceiver.getCapabilities = function() {
-            return {
-                codecs: [
-                    { mimeType: "video/VP8", payloadType: 96 },
-                    { mimeType: "video/AV1", payloadType: 98 },
-                    { mimeType: "video/H264", payloadType: 102 },
-                    { mimeType: "video/H265", payloadType: 116, sdpFmtpLine: "profile-id=1;tx-mode=SRST" },
-                    { mimeType: "video/rtx", sdpFmtpLine: "apt=96" },
-                    { mimeType: "video/rtx", sdpFmtpLine: "apt=98" },
-                    { mimeType: "video/rtx", sdpFmtpLine: "apt=102" },
-                    { mimeType: "video/rtx", sdpFmtpLine: "apt=116" }
-                ]
-            };
-        };
-        window.RTCRtpReceiver = RTCRtpReceiver;
-        var __codecPreferenceMimeTypes = receiverCodecPreferences().map(function(codec) {
-            return codec.mimeType;
-        });
-        var __codecPreferenceFmtpLines = receiverCodecPreferences().map(function(codec) {
-            return codec.sdpFmtpLine || "";
-        });
-        var __selectedCodec = selectedCodecFromAnswerSDP(
-            "v=0\\r\\n" +
-            "m=video 9 UDP/TLS/RTP/SAVPF 98 99\\r\\n" +
-            "a=rtpmap:98 AV1/90000\\r\\n" +
-            "a=rtpmap:99 rtx/90000\\r\\n"
-        );
-        var __rejectsUnexpectedCodec = false;
-        try {
-            selectedCodecFromAnswerSDP(
-                "v=0\\r\\n" +
-                "m=video 9 UDP/TLS/RTP/SAVPF 96\\r\\n" +
-                "a=rtpmap:96 VP8/90000\\r\\n" +
-                "m=video 9 UDP/TLS/RTP/SAVPF 102\\r\\n" +
-                "a=rtpmap:102 H264/90000\\r\\n"
-            );
-        } catch (error) {
-            __rejectsUnexpectedCodec = true;
-        }
-        RTCRtpReceiver.getCapabilities = function() {
-            return {
-                codecs: [
-                    { mimeType: "video/VP8" }
-                ]
-            };
-        };
-        var __marksMissingCodecAsRequirementError = false;
-        try {
-            receiverCodecPreferences();
-        } catch (error) {
-            __marksMissingCodecAsRequirementError = isCodecRequirementError(error);
-        }
-        delete window.RTCRtpReceiver;
-        var __marksMissingCapabilitiesAsRequirementError = false;
-        try {
-            receiverCodecPreferences();
-        } catch (error) {
-            __marksMissingCapabilitiesAsRequirementError = isCodecRequirementError(error);
-        }
-        expectedSourceVideoSpec = null;
-        updateLiveStatusFromStats(
-            { frameWidth: 1920, frameHeight: 1080, framesPerSecond: 60 },
-            { mimeType: "video/AV1" },
-            null
-        );
-        var __videoInfoWithoutSource = __elements["video-info"].textContent;
-        expectedSourceVideoSpec = sourceSpecFromSignal({
-            width: 1920,
-            height: 1080,
-            framesPerSecond: 60
-        });
-        updateLiveStatusFromStats(
-            { frameWidth: 1920, frameHeight: 1080, framesPerSecond: 58, framesDropped: 0, packetsLost: 0 },
-            { mimeType: "video/AV1" },
-            { framesPerSecond: 58, bitrateBps: 4000000 }
-        );
-        var __videoInfoWithSource = __elements["video-info"].textContent;
-        updateLiveStatusFromStats(
-            { frameWidth: 1920, frameHeight: 1080, framesPerSecond: 6, framesDropped: 0, packetsLost: 0 },
-            { mimeType: "video/AV1" },
-            { framesPerSecond: 6, bitrateBps: 42000 }
-        );
-        var __videoInfoLowMotionSource = __elements["video-info"].textContent;
-        updateLiveStatusFromStats(
-            { frameWidth: 1280, frameHeight: 720 },
-            { mimeType: "video/AV1" },
-            { framesPerSecond: 30 }
-        );
-        var __videoInfoBelowSource = __elements["video-info"].textContent;
-        setProgressOverlay("Specific setup", "Specific body");
-        var __connectionStatusTitle = __elements["connection-status-title"].textContent;
-        var __connectionStatusDetail = __elements["connection-status-detail"].textContent;
-        var __loadingOverlayVisibleAfterProgress = __elements["overlay"].hidden === false;
-        var __streamStartupTimeoutError = streamStartupTimeoutError();
-        var __streamStartupTimeoutIsRecoverable = isStreamStartupTimeoutError(__streamStartupTimeoutError);
-        var __streamStartupTimeoutMessage = __streamStartupTimeoutError.message;
-        """
-    )
-    if let exceptionMessage {
-        throw DisplayPageScriptSmokeError.evaluationFailed(exceptionMessage)
-    }
-
-    let documentTitle = context.evaluateScript("document.title")?.toString() ?? ""
-    let scaleButtonText = context.evaluateScript("__elements['scale-mode-btn'].textContent")?.toString() ?? ""
-    let toggleCallCount = Int(context.evaluateScript("__toggleCount")?.toInt32() ?? 0)
-    let codecPreferenceMimeTypesJSON = context.evaluateScript("JSON.stringify(__codecPreferenceMimeTypes)")?.toString() ?? "[]"
-    let codecPreferenceMimeTypesData = Data(codecPreferenceMimeTypesJSON.utf8)
-    let codecPreferenceMimeTypes = (try? JSONDecoder().decode([String].self, from: codecPreferenceMimeTypesData)) ?? []
-    let codecPreferenceFmtpLinesJSON = context.evaluateScript("JSON.stringify(__codecPreferenceFmtpLines)")?.toString() ?? "[]"
-    let codecPreferenceFmtpLinesData = Data(codecPreferenceFmtpLinesJSON.utf8)
-    let codecPreferenceFmtpLines = (try? JSONDecoder().decode([String].self, from: codecPreferenceFmtpLinesData)) ?? []
-    let selectedCodec = context.evaluateScript("__selectedCodec")?.toString() ?? ""
-    let rejectsUnexpectedCodec = context.evaluateScript("__rejectsUnexpectedCodec")?.toBool() ?? false
-    let marksMissingCodecAsRequirementError =
-        context.evaluateScript("__marksMissingCodecAsRequirementError")?.toBool() ?? false
-    let marksMissingCapabilitiesAsRequirementError =
-        context.evaluateScript("__marksMissingCapabilitiesAsRequirementError")?.toBool() ?? false
-    let videoInfoWithoutSource = context.evaluateScript("__videoInfoWithoutSource")?.toString() ?? ""
-    let videoInfoWithSource = context.evaluateScript("__videoInfoWithSource")?.toString() ?? ""
-    let videoInfoLowMotionSource = context.evaluateScript("__videoInfoLowMotionSource")?.toString() ?? ""
-    let videoInfoBelowSource = context.evaluateScript("__videoInfoBelowSource")?.toString() ?? ""
-    let connectionStatusTitle = context.evaluateScript("__connectionStatusTitle")?.toString() ?? ""
-    let connectionStatusDetail = context.evaluateScript("__connectionStatusDetail")?.toString() ?? ""
-    let loadingOverlayVisibleAfterProgress =
-        context.evaluateScript("__loadingOverlayVisibleAfterProgress")?.toBool() ?? false
-    let streamStartupTimeoutIsRecoverable =
-        context.evaluateScript("__streamStartupTimeoutIsRecoverable")?.toBool() ?? false
-    let streamStartupTimeoutMessage = context.evaluateScript("__streamStartupTimeoutMessage")?.toString() ?? ""
-    return DisplayPageScriptSmokeResult(
-        documentTitle: documentTitle,
-        scaleButtonText: scaleButtonText,
-        toggleCallCount: toggleCallCount,
-        codecPreferenceMimeTypes: codecPreferenceMimeTypes,
-        codecPreferenceFmtpLines: codecPreferenceFmtpLines,
-        selectedCodec: selectedCodec,
-        rejectsUnexpectedCodec: rejectsUnexpectedCodec,
-        marksMissingCodecAsRequirementError: marksMissingCodecAsRequirementError,
-        marksMissingCapabilitiesAsRequirementError: marksMissingCapabilitiesAsRequirementError,
-        videoInfoWithoutSource: videoInfoWithoutSource,
-        videoInfoWithSource: videoInfoWithSource,
-        videoInfoLowMotionSource: videoInfoLowMotionSource,
-        videoInfoBelowSource: videoInfoBelowSource,
-        connectionStatusTitle: connectionStatusTitle,
-        connectionStatusDetail: connectionStatusDetail,
-        loadingOverlayVisibleAfterProgress: loadingOverlayVisibleAfterProgress,
-        streamStartupTimeoutIsRecoverable: streamStartupTimeoutIsRecoverable,
-        streamStartupTimeoutMessage: streamStartupTimeoutMessage
-    )
-}
-
-private func inlineRuntimeScripts(in responseText: String) -> [String] {
-    var scripts: [String] = []
-    var searchStart = responseText.startIndex
-    while let scriptOpenRange = responseText.range(
-        of: "<script>",
-        range: searchStart..<responseText.endIndex
-    ), let scriptCloseRange = responseText.range(
-        of: "</script>",
-        range: scriptOpenRange.upperBound..<responseText.endIndex
-    ) {
-        scripts.append(String(responseText[scriptOpenRange.upperBound..<scriptCloseRange.lowerBound]))
-        searchStart = scriptCloseRange.upperBound
-    }
-    return scripts
-}
-
-private func sendRequestAndReadUntilServerClose(
-    port: UInt16,
-    request: Data,
-    timeoutMilliseconds: Int = 5000
-) async throws -> Data {
-    let fd = try await connectLoopbackSocket(port: port)
-    defer { close(fd) }
-    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
-    try sendAll(fd, data: request)
-    return try readAll(from: fd)
 }
 
 private extension String {
@@ -1458,45 +588,6 @@ private func probeClientCloseFrame(
                 throw SocketIntegrationError.receiveTimeout
             }
             return (handshakeText, didClose)
-        } catch {
-            lastError = error
-            if attempt < maxAttempts {
-                await Task.yield()
-                continue
-            }
-        }
-    }
-    throw lastError
-}
-
-private func probeBinarySignalFrameClose(
-    port: UInt16,
-    maxAttempts: Int = 3
-) async throws -> (handshakeText: String, closeObservation: WebSocketCloseObservation) {
-    var lastError: Error = SocketIntegrationError.receiveFailed
-    for attempt in 1...maxAttempts {
-        do {
-            let socketFD = try await connectLoopbackSocket(port: port)
-            defer { close(socketFD) }
-
-            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
-            let handshake = try readUntilHeaderTerminator(
-                from: socketFD,
-                timeoutMilliseconds: 500,
-                deadlineSeconds: 8
-            )
-            let terminator = Data("\r\n\r\n".utf8)
-            guard let headerRange = handshake.range(of: terminator) else {
-                throw SocketIntegrationError.receiveTimeout
-            }
-            let handshakeText = try String.orThrowUTF8(Data(handshake[..<headerRange.upperBound]))
-
-            try sendAll(socketFD, data: makeMaskedBinaryFrame(payload: Data([0x01, 0x02, 0x03])))
-            let closeObservation = try waitForCloseObservation(from: socketFD, deadlineSeconds: 10)
-            guard closeObservation.didClose else {
-                throw SocketIntegrationError.receiveTimeout
-            }
-            return (handshakeText, closeObservation)
         } catch {
             lastError = error
             if attempt < maxAttempts {

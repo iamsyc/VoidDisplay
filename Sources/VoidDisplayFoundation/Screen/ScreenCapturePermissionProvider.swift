@@ -20,17 +20,9 @@ package struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionPro
         switch scenario {
         case .baseline:
             return true
-        case .capturePreviewDiagnostics:
-            return true
         case .displayCatalogLoading:
             return true
-        case .settingsFeedback:
-            return true
-        case .virtualDisplayRebuilding:
-            return true
-        case .virtualDisplayRebuildFailed:
-            return true
-        case .virtualDisplayRebuildPending:
+        case .settingsFeedback, .previewRecovery, .previewWindowPayload:
             return true
         case .permissionDenied:
             return false

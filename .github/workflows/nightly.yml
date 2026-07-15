@@ -118,14 +118,16 @@ jobs:
         include:
           - case_name: baseline
             only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
-          - case_name: supportCenter
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testSupportCenterNavigationSmoke_baseline
-          - case_name: permissionDenied
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testPermissionDeniedSmoke_captureAndShare
-          - case_name: loading
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testLoadingSmoke_captureAndShareShowVisibleLoadingState
-          - case_name: rebuildFailed
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testVirtualDisplaySmoke_rebuildFailedRowShowsRetry
+          - case_name: diagnostics
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testDiagnosticsNavigationSmoke_baseline
+          - case_name: compactNarrow
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testCompactCardActionsRemainVisibleAtNarrowWindowSize
+          - case_name: focus
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testFirstTabFocusesAVisibleControl
+          - case_name: previewRecovery
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState
+          - case_name: previewWindowPayload
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
       only_testing: ${{ matrix.only_testing }}

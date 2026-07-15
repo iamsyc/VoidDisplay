@@ -13,7 +13,7 @@ package struct SupportExportCompletionSectionView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(String(localized: "Latest Support Package"))
                 .font(.headline)
-                .accessibilityIdentifier("support_center_completion_section")
+                .accessibilityIdentifier("support_bundle_completion_section")
 
             metadataRow(
                 title: String(localized: "Issue Type"),
@@ -27,7 +27,7 @@ package struct SupportExportCompletionSectionView: View {
             Text(String(localized: "Copy the submission summary and send it together with the support package."))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("support_center_completion_next_step")
+                .accessibilityIdentifier("support_bundle_completion_next_step")
 
             if record.draftPreview.isEmpty == false {
                 VStack(alignment: .leading, spacing: 6) {
@@ -38,22 +38,22 @@ package struct SupportExportCompletionSectionView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                        .accessibilityIdentifier("support_center_completion_summary")
+                        .accessibilityIdentifier("support_bundle_completion_summary")
                 }
             }
 
             HStack(spacing: 10) {
                 Button(String(localized: "Copy Submission Summary"), action: onCopySummary)
                     .appActionButtonStyle(variant: .default)
-                    .accessibilityIdentifier("support_center_copy_summary_button")
+                    .accessibilityIdentifier("support_bundle_copy_summary_button")
 
                 Button(String(localized: "Reveal Bundle"), action: onRevealBundle)
                     .appActionButtonStyle(variant: .default)
-                    .accessibilityIdentifier("support_center_reveal_bundle_button")
+                    .accessibilityIdentifier("support_bundle_reveal_button")
 
                 Button(String(localized: "New Feedback"), action: onStartNewFeedback)
                     .appActionButtonStyle(variant: .default)
-                    .accessibilityIdentifier("support_center_new_feedback_button")
+                    .accessibilityIdentifier("support_bundle_new_feedback_button")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -7,51 +7,35 @@ import Foundation
 
 import SwiftUI
 package struct CaptureDisplayWindowRoot: View {
-    @Environment(\.dismiss) private var dismiss
-    package let sessionId: UUID?
-    private let monitoringActions: CaptureMonitoringActions
+    package let previewID: CapturePreviewID?
+    private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
-    @State private var hasSeenSessionID = false
 
     package init(
-        sessionId: UUID?,
-        monitoringActions: CaptureMonitoringActions,
+        previewID: CapturePreviewID?,
+        previewActions: CapturePreviewActions,
         sharingStatusProvider: CaptureSharingStatusProvider
     ) {
-        self.sessionId = sessionId
-        self.monitoringActions = monitoringActions
+        self.previewID = previewID
+        self.previewActions = previewActions
         self.sharingStatusProvider = sharingStatusProvider
     }
 
     package var body: some View {
-        Group {
-            if let sessionId {
-                CaptureDisplayView(
-                    sessionId: sessionId,
-                    monitoringActions: monitoringActions,
-                    sharingStatusProvider: sharingStatusProvider
-                )
-                    .navigationTitle("Screen Monitoring")
-            } else {
-                Color.clear
-            }
-        }
-        .task(id: sessionId) {
-            if sessionId != nil {
-                hasSeenSessionID = true
-                return
-            }
-
-            // Value-based windows can briefly render before their payload is
-            // attached. Give SwiftUI one turn to supply the session ID.
-            if !hasSeenSessionID {
-                try? await Task.sleep(for: .milliseconds(150))
-                guard sessionId == nil, !hasSeenSessionID else { return }
-                dismiss()
-                return
-            }
-
-            dismiss()
+        switch CaptureDisplayWindowContentState(previewID: previewID) {
+        case let .preview(resolvedPreviewID):
+            CaptureDisplayView(
+                previewID: resolvedPreviewID,
+                previewActions: previewActions,
+                sharingStatusProvider: sharingStatusProvider
+            )
+                .navigationTitle("Preview")
+        case .waitingForPreviewID:
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel(Text("Preview"))
+                .accessibilityIdentifier("capture_preview_waiting_for_identity")
         }
     }
 }

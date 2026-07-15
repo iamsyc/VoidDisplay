@@ -31,12 +31,14 @@ package final class SharingController {
 
     @ObservationIgnored private let sharingService: any SharingServiceProtocol
     @ObservationIgnored private let portPreferences: any SharingPortPreferencesProtocol
+    private var preferredWebServicePortStorage: UInt16
     @ObservationIgnored private let startTracker = DisplayStartTracker()
     @ObservationIgnored private weak var observability: ObservabilityCenter?
     @ObservationIgnored private lazy var mutationRunner = SnapshotMutationRunner { [weak self] in
         self?.syncSharingState()
     }
     @ObservationIgnored private var sharingStateSubscription: SharingStateSubscription?
+    @ObservationIgnored private var runtimeStateDidChange: (@MainActor @Sendable () -> Void)?
 
     package init(
         sharingService: any SharingServiceProtocol,
@@ -46,6 +48,7 @@ package final class SharingController {
     ) {
         self.sharingService = sharingService
         self.portPreferences = portPreferences
+        self.preferredWebServicePortStorage = portPreferences.preferredPort
         self.catalogService = catalogService ?? ScreenCaptureCatalogService()
         self.observability = observability
         self.sharingService.onWebServiceLifecycleStateChanged = { [weak self] _ in
@@ -75,7 +78,7 @@ package final class SharingController {
         let result = await mutationRunner.run {
             let result = await sharingService.startWebService(requestedPort: requestedPort)
             if let binding = result.binding {
-                portPreferences.savePreferredPort(binding.requestedPort)
+                savePreferredWebServicePort(binding.requestedPort)
             }
             return result
         }
@@ -209,12 +212,24 @@ package final class SharingController {
         requestSnapshotRefresh()
     }
 
+    package func configureRuntimeStateDidChange(
+        _ handler: (@MainActor @Sendable () -> Void)?
+    ) {
+        runtimeStateDidChange = handler
+        handler?()
+    }
+
     package var webServicePortValue: UInt16 {
         sharingService.webServicePortValue
     }
 
     package var preferredWebServicePort: UInt16 {
-        portPreferences.preferredPort
+        preferredWebServicePortStorage
+    }
+
+    package func savePreferredWebServicePort(_ port: UInt16) {
+        portPreferences.savePreferredPort(port)
+        preferredWebServicePortStorage = port
     }
 
     package func isDisplaySharing(displayID: CGDirectDisplayID) -> Bool {
@@ -263,6 +278,7 @@ package final class SharingController {
     private func syncSharingState() {
         let previousLifecycle = runtimeState.webServiceLifecycleState
         runtimeState = makeRuntimeState()
+        runtimeStateDidChange?()
         requestSnapshotRefresh()
         if previousLifecycle != runtimeState.webServiceLifecycleState {
             Task {
@@ -342,15 +358,6 @@ package final class SharingController {
         )
     }
 
-#if DEBUG
-    package func installStartingDisplayIDsForTesting(_ displayIDs: Set<CGDirectDisplayID>) {
-        startTracker.clearAll()
-        for displayID in displayIDs {
-            _ = startTracker.begin(displayID: displayID)
-        }
-        syncSharingState()
-    }
-#endif
 }
 
 private struct SharingControllerRuntimeState {

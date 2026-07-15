@@ -88,10 +88,6 @@ package final class DisplayPreviewSubscription: Sendable {
         closure()
     }
 
-    package nonisolated func reportPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        session.reportPreviewPerformanceSample(sample)
-    }
-
     package nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
         session.captureMetricsSnapshot()
     }

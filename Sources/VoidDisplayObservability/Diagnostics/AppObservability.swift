@@ -11,6 +11,7 @@ package enum AppLog {
     package nonisolated static let web = Logger(subsystem: subsystem, category: "web")
     package nonisolated static let persistence = Logger(subsystem: subsystem, category: "persistence")
     package nonisolated static let screenCatalog = Logger(subsystem: subsystem, category: "screen_catalog")
+    package nonisolated static let displayRuntime = Logger(subsystem: subsystem, category: "display_runtime")
     package nonisolated static let observability = Logger(subsystem: subsystem, category: "observability")
     package nonisolated static let support = Logger(subsystem: subsystem, category: "support")
 
@@ -26,6 +27,8 @@ package enum AppLog {
             virtualDisplay
         case .screenCatalog:
             screenCatalog
+        case .displayRuntime:
+            displayRuntime
         case .persistence:
             persistence
         case .web:

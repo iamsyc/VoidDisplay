@@ -1,12 +1,13 @@
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayTestingSupport
 import Foundation
 import Testing
 
 @MainActor
 @Suite(.serialized)
 struct ObservabilityCenterTests {
-    @Test func exportBundleSanitizesSectionsAndIncludesSystemAndPersistenceSnapshots() async throws {
+    @Test func exportBundleSanitizesRuntimeSectionAndIncludesSystemAndPersistenceSnapshots() async throws {
         let isolationID = "observability-center-\(UUID().uuidString)"
         let environment = [
             PersistenceContext.persistenceModeEnvironmentKey: PersistenceContext.testIsolatedModeValue,
@@ -40,78 +41,7 @@ struct ObservabilityCenterTests {
         await observability.registerSnapshotProvider(
             AnyObservabilitySnapshotProvider(
                 StaticSnapshotProvider(
-                    key: "capture",
-                    snapshot: TestCaptureSnapshot(
-                        startingDisplayIDs: [77],
-                        sessions: [
-                            .init(
-                                id: UUID(),
-                                displayID: 77,
-                                displayName: "Studio Display",
-                                resolutionText: "2560 × 1440",
-                                isVirtualDisplay: false,
-                                capturesCursor: true,
-                                state: "active",
-                                metrics: .init(
-                                    currentProfile: "mixed",
-                                    currentFrameRateTier: "60fps",
-                                    receivedFrameCount: 42,
-                                    profileReconfigurationCount: 3,
-                                    cursorOverrideReconfigurationCount: 1
-                                )
-                            )
-                        ]
-                    )
-                )
-            )
-        )
-        await observability.registerSnapshotProvider(
-            AnyObservabilitySnapshotProvider(
-                StaticSnapshotProvider(
-                    key: "virtualDisplay",
-                    snapshot: TestVirtualDisplaySnapshot(
-                        rebuildRequestCount: 0,
-                        rebuildingConfigIDs: [],
-                        runningConfigIDs: [],
-                        recentlyAppliedConfigIDs: [],
-                        rebuildFailureMessages: [:],
-                        configStoreHasLoadFailure: true,
-                        configStoreLoadErrorMessage: "Open \(NSHomeDirectory())/Library/Application Support/VoidDisplay/log.txt",
-                        configStoreDiagnosticsSummary: "Restore from http://192.168.0.8:8080/debug",
-                        managedDisplays: [],
-                        configs: [
-                            .init(
-                                id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-                                displayName: "Editing Desk",
-                                serialNumber: 9001,
-                                desiredEnabled: true,
-                                physicalWidthMillimeters: 600,
-                                physicalHeightMillimeters: 340,
-                                modes: [
-                                    .init(
-                                        width: 1920,
-                                        height: 1080,
-                                        refreshRate: 60,
-                                        enableHiDPI: true
-                                    )
-                                ]
-                            )
-                        ],
-                        restoreFailures: [
-                            .init(
-                                configID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-                                displayName: "Editing Desk",
-                                message: "Restore failed at \(NSHomeDirectory())/Desktop via http://10.0.0.8:8080/rebuild"
-                            )
-                        ]
-                    )
-                )
-            )
-        )
-        await observability.registerSnapshotProvider(
-            AnyObservabilitySnapshotProvider(
-                StaticSnapshotProvider(
-                    key: "screenCatalog",
+                    key: "runtime",
                     snapshot: RedactionSnapshot(
                         path: "\(NSHomeDirectory())/Library/Application Support/VoidDisplay/current-state.json",
                         url: "http://192.168.1.11:8080/display",
@@ -147,19 +77,19 @@ struct ObservabilityCenterTests {
             archiveURL: bundleURL
         )
 
-        let captureSection = try #require(state.sections["capture"])
-        let capture = try captureSection.decode(TestCaptureSnapshot.self)
-        #expect(capture.sessions.count == 1)
-        #expect(capture.sessions.first?.displayName == "Display 1")
+        #expect(state.sections["capture"] == nil)
+        #expect(state.sections["sharing"] == nil)
+        #expect(state.sections["virtualDisplay"] == nil)
+        #expect(state.sections["screenCatalog"] == nil)
 
-        let virtualDisplaySection = try #require(state.sections["virtualDisplay"])
-        let virtualDisplay = try virtualDisplaySection.decode(TestVirtualDisplaySnapshot.self)
-        #expect(virtualDisplay.configs.count == 1)
-        #expect(virtualDisplay.configs.first?.displayName == "Virtual Display 1")
-        #expect(virtualDisplay.restoreFailures.first?.displayName == "Virtual Display 1")
-        #expect(virtualDisplay.configStoreLoadErrorMessage?.contains("~") == true)
-        #expect(virtualDisplay.configStoreDiagnosticsSummary?.contains("<redacted-ip>") == true)
-        #expect(virtualDisplay.restoreFailures.first?.message.contains("<redacted-ip>") == true)
+        let runtimeSection = try #require(state.sections["runtime"])
+        let runtime = try runtimeSection.decode(RedactionSnapshot.self)
+        #expect(runtime.path.hasPrefix("~"))
+        #expect(runtime.url == "http://<redacted-ip>:8080/display")
+        #expect(runtime.message.contains("~"))
+        #expect(runtime.message.contains("<redacted-ip>"))
+        #expect(runtime.message.contains(NSHomeDirectory()) == false)
+        #expect(runtime.message.contains("10.0.0.8") == false)
 
         let systemSection = try #require(state.sections["system"])
         let system = try systemSection.decode(SystemSnapshotProvider.Snapshot.self)
@@ -177,15 +107,6 @@ struct ObservabilityCenterTests {
         #expect(persistence.appSupportRootPath.hasPrefix("~"))
         #expect(persistence.currentStatePath.hasPrefix("~"))
         #expect(persistence.exportsDirectoryPath.hasPrefix("~"))
-
-        let redactionSection = try #require(state.sections["screenCatalog"])
-        let redaction = try redactionSection.decode(RedactionSnapshot.self)
-        #expect(redaction.path.hasPrefix("~"))
-        #expect(redaction.url == "http://<redacted-ip>:8080/display")
-        #expect(redaction.message.contains("~"))
-        #expect(redaction.message.contains("<redacted-ip>"))
-        #expect(redaction.message.contains(NSHomeDirectory()) == false)
-        #expect(redaction.message.contains("10.0.0.8") == false)
     }
 
     @Test func exportBundlePersistsRecentEventsFileAndExposesDataDirectory() async throws {
@@ -223,14 +144,14 @@ struct ObservabilityCenterTests {
             ObservabilityEvent(
                 severity: .error,
                 subsystem: .observability,
-                operation: "Load support center",
+                operation: "Load diagnostics",
                 message: "Recent events file should be available.",
                 metadata: ["directory": persistenceContext.observabilityDirectoryURL.path]
             )
         )
 
         _ = try await observability.exportBundle(
-            draft: FeedbackDraft(happened: "Support center failed to load"),
+            draft: FeedbackDraft(happened: "Diagnostics failed to load"),
             consent: FeedbackConsent()
         )
 
@@ -238,7 +159,7 @@ struct ObservabilityCenterTests {
             contentsOf: persistenceContext.observabilityRecentEventsURL,
             encoding: .utf8
         )
-        #expect(recentEventsContent.contains("Load support center"))
+        #expect(recentEventsContent.contains("Load diagnostics"))
 
         let issuesData = try Data(contentsOf: persistenceContext.observabilityIssuesURL)
         let issues = try ObservabilityCodec.decode([IssueRecord].self, from: issuesData)
@@ -325,74 +246,6 @@ private struct RedactionSnapshot: Codable, Equatable, Sendable {
     let path: String
     let url: String
     let message: String
-}
-
-private struct TestCaptureSnapshot: Codable, Equatable, Sendable {
-    struct Metrics: Codable, Equatable, Sendable {
-        let currentProfile: String?
-        let currentFrameRateTier: String?
-        let receivedFrameCount: UInt64
-        let profileReconfigurationCount: UInt64
-        let cursorOverrideReconfigurationCount: UInt64
-    }
-
-    struct Session: Codable, Equatable, Sendable {
-        let id: UUID
-        let displayID: UInt32
-        let displayName: String
-        let resolutionText: String
-        let isVirtualDisplay: Bool
-        let capturesCursor: Bool
-        let state: String
-        let metrics: Metrics
-    }
-
-    let startingDisplayIDs: [UInt32]
-    let sessions: [Session]
-}
-
-private struct TestVirtualDisplaySnapshot: Codable, Equatable, Sendable {
-    struct Config: Codable, Equatable, Sendable {
-        struct Mode: Codable, Equatable, Sendable {
-            let width: Int
-            let height: Int
-            let refreshRate: Double
-            let enableHiDPI: Bool
-        }
-
-        let id: UUID
-        let displayName: String
-        let serialNumber: UInt32
-        let desiredEnabled: Bool
-        let physicalWidthMillimeters: Int
-        let physicalHeightMillimeters: Int
-        let modes: [Mode]
-    }
-
-    struct ManagedDisplay: Codable, Equatable, Sendable {
-        let configID: UUID
-        let serialNumber: UInt32
-        let displayID: UInt32
-        let isLiveRuntime: Bool
-    }
-
-    struct RestoreFailure: Codable, Equatable, Sendable {
-        let configID: UUID
-        let displayName: String
-        let message: String
-    }
-
-    let rebuildRequestCount: Int
-    let rebuildingConfigIDs: [UUID]
-    let runningConfigIDs: [UUID]
-    let recentlyAppliedConfigIDs: [UUID]
-    let rebuildFailureMessages: [String: String]
-    let configStoreHasLoadFailure: Bool
-    let configStoreLoadErrorMessage: String?
-    let configStoreDiagnosticsSummary: String?
-    let managedDisplays: [ManagedDisplay]
-    let configs: [Config]
-    let restoreFailures: [RestoreFailure]
 }
 
 private func decodeArchiveEntry<T: Decodable>(

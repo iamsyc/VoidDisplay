@@ -14,74 +14,74 @@ import Observation
 @MainActor
 @Observable
 package final class CaptureController {
-    package var screenCaptureSessions: [ScreenMonitoringSession] = []
+    package var screenPreviewSessions: [ScreenPreviewSession] = []
     private(set) var startingDisplayIDs: Set<CGDirectDisplayID> = []
     @ObservationIgnored let catalogService: ScreenCaptureCatalogService
 
-    @ObservationIgnored private let captureMonitoringService: any CaptureMonitoringServiceProtocol
-    @ObservationIgnored private let captureMonitoringLifecycleService: any CaptureMonitoringLifecycleServiceProtocol
+    @ObservationIgnored private let capturePreviewService: any CapturePreviewServiceProtocol
+    @ObservationIgnored private let capturePreviewLifecycleService: any CapturePreviewLifecycleServiceProtocol
     @ObservationIgnored private let startTracker = DisplayStartTracker()
     @ObservationIgnored private weak var observability: ObservabilityCenter?
     @ObservationIgnored private lazy var mutationRunner = SnapshotMutationRunner { [weak self] in
-        self?.syncCaptureMonitoringState()
+        self?.syncCapturePreviewState()
     }
 
     package init(
-        captureMonitoringService: any CaptureMonitoringServiceProtocol,
-        captureMonitoringLifecycleService: (any CaptureMonitoringLifecycleServiceProtocol)? = nil,
+        capturePreviewService: any CapturePreviewServiceProtocol,
+        capturePreviewLifecycleService: (any CapturePreviewLifecycleServiceProtocol)? = nil,
         catalogService: ScreenCaptureCatalogService? = nil,
         observability: ObservabilityCenter? = nil
     ) {
-        self.captureMonitoringService = captureMonitoringService
-        self.captureMonitoringLifecycleService = captureMonitoringLifecycleService
-            ?? CaptureMonitoringLifecycleService(captureMonitoringService: captureMonitoringService)
+        self.capturePreviewService = capturePreviewService
+        self.capturePreviewLifecycleService = capturePreviewLifecycleService
+            ?? CapturePreviewLifecycleService(capturePreviewService: capturePreviewService)
         self.catalogService = catalogService ?? ScreenCaptureCatalogService()
         self.observability = observability
-        self.screenCaptureSessions = captureMonitoringService.currentSessions
+        self.screenPreviewSessions = capturePreviewService.currentSessions
     }
 
     package var displayCatalogState: ScreenCaptureDisplayCatalogState {
         catalogService.store
     }
 
-    package func monitoringSession(for id: UUID) -> ScreenMonitoringSession? {
-        captureMonitoringService.monitoringSession(for: id)
+    package func previewSession(for id: UUID) -> ScreenPreviewSession? {
+        capturePreviewService.previewSession(for: id)
     }
 
     package func isStarting(displayID: CGDirectDisplayID) -> Bool {
         startTracker.contains(displayID: displayID)
     }
 
-    package func startMonitoring(
+    package func startPreview(
         display: SCDisplay,
-        metadata: CaptureMonitoringDisplayMetadata
+        metadata: CapturePreviewDisplayMetadata
     ) async throws -> DisplayStartOutcome<UUID> {
         let displayID = display.displayID
         let startToken = startTracker.begin(displayID: displayID)
         let correlationID = UUID().uuidString
-        syncCaptureMonitoringState()
+        syncCapturePreviewState()
         defer {
             startTracker.end(displayID: displayID, token: startToken)
-            syncCaptureMonitoringState()
+            syncCapturePreviewState()
         }
 
         await recordEvent(
             severity: .info,
-            operation: "Start monitoring",
-            message: "Started monitoring request.",
+            operation: "Start preview",
+            message: "Started preview request.",
             metadata: ["displayID": "\(displayID)"],
             correlationID: correlationID
         )
 
         do {
-            let outcome = try await captureMonitoringLifecycleService.startMonitoring(
+            let outcome = try await capturePreviewLifecycleService.startPreview(
                 display: display,
                 metadata: metadata
             )
             await recordEvent(
                 severity: .notice,
-                operation: "Start monitoring",
-                message: "Monitoring request completed.",
+                operation: "Start preview",
+                message: "Preview request completed.",
                 metadata: ["displayID": "\(displayID)"],
                 correlationID: correlationID
             )
@@ -90,7 +90,7 @@ package final class CaptureController {
             await observability?.record(
                 error: error,
                 subsystem: .capture,
-                operation: "Start monitoring",
+                operation: "Start preview",
                 context: .init(
                     metadata: ["displayID": "\(displayID)"],
                     correlationID: correlationID,
@@ -101,59 +101,59 @@ package final class CaptureController {
         }
     }
 
-    package func activateMonitoringSession(id: UUID) {
+    package func activatePreviewSession(id: UUID) {
         mutationRunner.run {
-            captureMonitoringLifecycleService.activateMonitoringSession(id: id)
+            capturePreviewLifecycleService.activatePreviewSession(id: id)
         }
     }
 
     package func attachPreviewSink(_ sink: any DisplayPreviewSink, to id: UUID) {
         mutationRunner.run {
-            captureMonitoringLifecycleService.attachPreviewSink(sink, to: id)
+            capturePreviewLifecycleService.attachPreviewSink(sink, to: id)
         }
     }
 
-    package func setMonitoringSessionCapturesCursor(
+    package func setPreviewSessionCapturesCursor(
         id: UUID,
         capturesCursor: Bool
     ) async throws {
         try await mutationRunner.run {
-            try await captureMonitoringLifecycleService.setMonitoringSessionCapturesCursor(
+            try await capturePreviewLifecycleService.setPreviewSessionCapturesCursor(
                 id: id,
                 capturesCursor: capturesCursor
             )
         }
     }
 
-    package func closeMonitoringSession(id: UUID) {
-        if let session = monitoringSession(for: id) {
+    package func closePreviewSession(id: UUID) {
+        if let session = previewSession(for: id) {
             Task {
                 await recordEvent(
                     severity: .info,
-                    operation: "Close monitoring session",
-                    message: "Closed monitoring session.",
+                    operation: "Close preview session",
+                    message: "Closed preview session.",
                     metadata: ["displayID": "\(session.displayID)", "sessionID": session.id.uuidString]
                 )
             }
         }
         mutationRunner.run {
-            captureMonitoringLifecycleService.closeMonitoringSession(id: id)
+            capturePreviewLifecycleService.closePreviewSession(id: id)
         }
     }
 
-    package func removeMonitoringSessions(displayID: CGDirectDisplayID) {
+    package func removePreviewSessions(displayID: CGDirectDisplayID) {
         startTracker.clear(displayID: displayID)
         Task {
             await recordEvent(
                 severity: .notice,
-                operation: "Remove monitoring sessions",
-                message: "Removed monitoring sessions for display.",
+                operation: "Remove preview sessions",
+                message: "Removed preview sessions for display.",
                 metadata: ["displayID": "\(displayID)"],
                 deduplicationKey: "capture.remove.\(displayID)"
             )
         }
         mutationRunner.run {
-            captureMonitoringLifecycleService.removeMonitoringSessions(displayID: displayID)
+            capturePreviewLifecycleService.removePreviewSessions(displayID: displayID)
         }
     }
 
@@ -162,18 +162,8 @@ package final class CaptureController {
         requestSnapshotRefresh()
     }
 
-    package func stopDependentStreamsBeforeRebuild(
-        displayID: CGDirectDisplayID,
-        sharingController: SharingController
-    ) {
-        if sharingController.isSharing(displayID: displayID) {
-            sharingController.stopSharing(displayID: displayID)
-        }
-        removeMonitoringSessions(displayID: displayID)
-    }
-
-    private func syncCaptureMonitoringState() {
-        screenCaptureSessions = captureMonitoringService.currentSessions
+    private func syncCapturePreviewState() {
+        screenPreviewSessions = capturePreviewService.currentSessions
         startingDisplayIDs = startTracker.activeDisplayIDs
         requestSnapshotRefresh()
     }
@@ -206,13 +196,4 @@ package final class CaptureController {
         )
     }
 
-#if DEBUG
-    package func installStartingDisplayIDsForTesting(_ displayIDs: Set<CGDirectDisplayID>) {
-        startTracker.clearAll()
-        for displayID in displayIDs {
-            _ = startTracker.begin(displayID: displayID)
-        }
-        syncCaptureMonitoringState()
-    }
-#endif
 }

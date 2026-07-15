@@ -14,7 +14,6 @@ private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptu
         var attachedSinks: Set<ObjectIdentifier> = []
         var attachCallCount = 0
         var detachCallCount = 0
-        var reportedSamples: [DisplayPreviewPerformanceSample] = []
         var stopSharingCallCount = 0
         var stopCallCount = 0
     }
@@ -38,10 +37,6 @@ private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptu
         }
     }
 
-    nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        state.withLock { $0.reportedSamples.append(sample) }
-    }
-
     nonisolated func stopSharing() {
         state.withLock { $0.stopSharingCallCount += 1 }
     }
@@ -54,10 +49,6 @@ private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptu
 
     func snapshot() -> (attached: Int, attach: Int, detach: Int) {
         state.withLock { ($0.attachedSinks.count, $0.attachCallCount, $0.detachCallCount) }
-    }
-
-    func reportedSamples() -> [DisplayPreviewPerformanceSample] {
-        state.withLock { $0.reportedSamples }
     }
 }
 
@@ -142,24 +133,4 @@ struct DisplayPreviewSubscriptionTests {
         #expect(snap.detach == 1)
     }
 
-    @Test func performanceSampleForwardsToSession() {
-        let session = MockDisplayCaptureSession()
-        let subscription = DisplayPreviewSubscription(
-            displayID: 1,
-            resolutionText: "100 × 100",
-            session: session,
-            cancelClosure: {}
-        )
-        let sample = DisplayPreviewPerformanceSample(
-            renderedFrameCount: 120,
-            droppedFrameCount: 4,
-            latestRenderLatencyMilliseconds: 18,
-            pendingSlotOccupied: false,
-            capturedAt: 99
-        )
-
-        subscription.reportPerformanceSample(sample)
-
-        #expect(session.reportedSamples() == [sample])
-    }
 }

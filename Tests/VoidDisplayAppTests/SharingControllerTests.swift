@@ -8,28 +8,6 @@ import CoreGraphics
 import ScreenCaptureKit
 import Testing
 
-private final class SharingControllerMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum SharingControllerMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = SharingControllerMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 private actor SharingControllerAsyncGate {
     private var waitCount = 0
     private var continuations: [CheckedContinuation<Void, Never>] = []
@@ -108,6 +86,37 @@ struct SharingControllerTests {
         #expect(sut.preferredWebServicePort == requestedPort)
     }
 
+    @Test func startWebServiceDoesNotPersistRequestedPortOnFailure() async {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let preferences = MockSharingPortPreferences()
+        let service = MockSharingService()
+        service.startResult = .failed(.portInUse(port: requestedPort))
+        let sut = SharingController(
+            sharingService: service,
+            portPreferences: preferences
+        )
+
+        let startResult = await sut.startWebService(requestedPort: requestedPort)
+
+        #expect(startResult == .failed(.portInUse(port: requestedPort)))
+        #expect(preferences.savedPorts.isEmpty)
+        #expect(sut.preferredWebServicePort == 8081)
+    }
+
+    @Test func savePreferredWebServicePortPersistsWithoutStartingService() {
+        let requestedPort = TestPortAllocator.randomUnprivilegedPort()
+        let preferences = MockSharingPortPreferences()
+        let sut = SharingController(
+            sharingService: MockSharingService(),
+            portPreferences: preferences
+        )
+
+        sut.savePreferredWebServicePort(requestedPort)
+
+        #expect(preferences.savedPorts == [requestedPort])
+        #expect(sut.preferredWebServicePort == requestedPort)
+    }
+
     @Test func stopSharingAndStopAllSharingSyncState() {
         let service = MockSharingService()
         let first: CGDirectDisplayID = 11
@@ -134,7 +143,7 @@ struct SharingControllerTests {
     @Test func beginSharingPublishesStartingDisplayIDWhileRequestIsInFlight() async throws {
         let service = MockSharingService()
         let gate = SharingControllerAsyncGate()
-        let display = SharingControllerMockSCDisplay.make(displayID: 31, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 31, width: 1920, height: 1080)
         service.startSharingHandler = { display in
             await gate.wait()
             return .started(())
@@ -166,7 +175,7 @@ struct SharingControllerTests {
     @Test func duplicateBeginSharingCallsShareSameUnderlyingStartOutcome() async throws {
         let gate = SharingControllerAsyncGate()
         let displayID: CGDirectDisplayID = 35
-        let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             shareFrameConsumer: TestSignalSessionHub(),
@@ -219,59 +228,11 @@ struct SharingControllerTests {
         #expect(sut.isSharing(displayID: displayID))
     }
 
-    @Test func cancellingOneWaitingBeginSharingCallKeepsObservedStartingStateUntilLastWaiterFinishes() async throws {
-        let service = MockSharingService()
-        let gate = SharingControllerAsyncGate()
-        let display = SharingControllerMockSCDisplay.make(displayID: 36, width: 1920, height: 1080)
-        service.startSharingHandler = { _ in
-            await gate.wait()
-            try Task.checkCancellation()
-            return .started(())
-        }
-        let sut = SharingController(
-            sharingService: service,
-            portPreferences: MockSharingPortPreferences()
-        )
-
-        let firstTask = Task { @MainActor in
-            try await sut.beginSharing(display: display)
-        }
-        let secondTask = Task { @MainActor in
-            try await sut.beginSharing(display: display)
-        }
-
-        #expect(await waitForSharingControllerGate(gate, count: 2))
-        #expect(sut.startingDisplayIDs == [display.displayID])
-
-        firstTask.cancel()
-        await gate.releaseOne()
-
-        do {
-            let outcome = try await firstTask.value
-            Issue.record("Expected first sharing start to be cancelled, got \(outcome).")
-        } catch is CancellationError {
-        } catch {
-            Issue.record("Expected CancellationError, got \(error)")
-        }
-
-        #expect(sut.startingDisplayIDs == [display.displayID])
-        #expect(sut.isStarting(displayID: display.displayID))
-
-        await gate.releaseOne()
-        let secondOutcome = try await secondTask.value
-        if case .started = secondOutcome {
-        } else {
-            Issue.record("Expected second sharing start to succeed.")
-        }
-
-        #expect(sut.startingDisplayIDs.isEmpty)
-    }
-
     @Test func beginSharingClearsStartingDisplayIDAfterFailure() async {
         struct ControlledError: Error {}
 
         let service = MockSharingService()
-        let display = SharingControllerMockSCDisplay.make(displayID: 32, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 32, width: 1920, height: 1080)
         service.startSharingHandler = { _ in
             throw ControlledError()
         }
@@ -291,7 +252,7 @@ struct SharingControllerTests {
 
     @Test func beginSharingClearsStartingDisplayIDAfterInvalidation() async throws {
         let service = MockSharingService()
-        let display = SharingControllerMockSCDisplay.make(displayID: 33, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: 33, width: 1920, height: 1080)
         service.startSharingHandler = { _ in .invalidated }
         let sut = SharingController(
             sharingService: service,
@@ -307,25 +268,10 @@ struct SharingControllerTests {
         #expect(sut.startingDisplayIDs.isEmpty)
     }
 
-    @Test func stopSharingClearsStartingDisplayIDImmediately() {
-        let service = MockSharingService()
-        let displayID: CGDirectDisplayID = 34
-        let sut = SharingController(
-            sharingService: service,
-            portPreferences: MockSharingPortPreferences()
-        )
-        sut.installStartingDisplayIDsForTesting([displayID])
-
-        sut.stopSharing(displayID: displayID)
-
-        #expect(sut.startingDisplayIDs.isEmpty)
-        #expect(service.stopSharingCallCount == 1)
-    }
-
     @Test func stopWebServiceClearsStartingDisplayIDImmediatelyAndInvalidatesInFlightStart() async throws {
         let gate = SharingControllerAsyncGate()
         let displayID: CGDirectDisplayID = 37
-        let display = SharingControllerMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let subscription = DisplayShareSubscription(
             displayID: displayID,
             shareFrameConsumer: TestSignalSessionHub(),

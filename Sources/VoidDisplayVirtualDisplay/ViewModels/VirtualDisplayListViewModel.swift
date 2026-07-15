@@ -12,23 +12,25 @@ package final class VirtualDisplayListViewModel {
     package struct Dependencies {
         var restoreFailures: @MainActor () -> [VirtualDisplayRestoreFailure]
         var clearRestoreFailures: @MainActor () -> Void
-        var destroyDisplay: @MainActor (UUID) throws -> Void
+        var deleteVirtualDisplay: @MainActor (UUID) async throws -> Void
         var runtimeDisplayID: @MainActor (UUID) -> CGDirectDisplayID?
         var isRebuilding: @MainActor (UUID) -> Bool
-        var isVirtualDisplayRunning: @MainActor (UUID) -> Bool
-        var disableDisplayByConfig: @MainActor (UUID) throws -> Void
-        var enableDisplay: @MainActor (UUID) async throws -> Void
+        var setVirtualDisplayDesiredEnabled: @MainActor (UUID, Bool) async throws -> Void
 
         static func live(controller: VirtualDisplayController) -> Self {
             Self(
                 restoreFailures: { controller.restoreFailures },
                 clearRestoreFailures: { controller.clearRestoreFailures() },
-                destroyDisplay: { try controller.destroyDisplay($0) },
+                deleteVirtualDisplay: { try await controller.deleteVirtualDisplay(configId: $0) },
                 runtimeDisplayID: { controller.runtimeDisplayID(for: $0) },
                 isRebuilding: { controller.isRebuilding(configId: $0) },
-                isVirtualDisplayRunning: { controller.isVirtualDisplayRunning(configId: $0) },
-                disableDisplayByConfig: { try controller.disableDisplayByConfig($0) },
-                enableDisplay: { try await controller.enableDisplay($0) }
+                setVirtualDisplayDesiredEnabled: {
+                    try await controller.setVirtualDisplayDesiredEnabled(
+                        configId: $0,
+                        enabled: $1,
+                        source: .rowToggle
+                    )
+                }
             )
         }
     }
@@ -84,18 +86,22 @@ package final class VirtualDisplayListViewModel {
             deleteCandidate = nil
             return
         }
-        do {
-            try dependencies.destroyDisplay(candidate.id)
-        } catch {
-            AppErrorMapper.logFailure("Delete virtual display", error: error, logger: AppLog.virtualDisplay)
-            userFacingAlert = UserFacingAlertState(
-                title: String(localized: "Delete Failed"),
-                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
-            )
-            return
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await dependencies.deleteVirtualDisplay(candidate.id)
+            } catch {
+                AppErrorMapper.logFailure("Delete virtual display", error: error, logger: AppLog.virtualDisplay)
+                self.userFacingAlert = UserFacingAlertState(
+                    title: String(localized: "Delete Failed"),
+                    message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Delete failed."))
+                )
+                return
+            }
+            guard self.deleteCandidate?.id == candidate.id else { return }
+            self.deleteCandidate = nil
+            self.showDeleteConfirm = false
         }
-        deleteCandidate = nil
-        showDeleteConfirm = false
     }
 
     package func cancelDelete() {
@@ -123,9 +129,9 @@ package final class VirtualDisplayListViewModel {
             guard let self else { return }
             defer { self.togglingConfigIds.remove(config.id) }
 
-            if dependencies.isVirtualDisplayRunning(config.id) {
+            if config.desiredEnabled {
                 do {
-                    try dependencies.disableDisplayByConfig(config.id)
+                    try await dependencies.setVirtualDisplayDesiredEnabled(config.id, false)
                 } catch {
                     AppErrorMapper.logFailure("Disable virtual display", error: error, logger: AppLog.virtualDisplay)
                     self.userFacingAlert = UserFacingAlertState(
@@ -136,7 +142,7 @@ package final class VirtualDisplayListViewModel {
                 return
             }
             do {
-                try await dependencies.enableDisplay(config.id)
+                try await dependencies.setVirtualDisplayDesiredEnabled(config.id, true)
             } catch {
                 AppErrorMapper.logFailure("Enable virtual display", error: error, logger: AppLog.virtualDisplay)
                 self.userFacingAlert = UserFacingAlertState(

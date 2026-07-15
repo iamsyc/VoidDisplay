@@ -32,29 +32,19 @@ package struct ShareCatalogActions {
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
     }
 
-    package static let noop = ShareCatalogActions(
-        handleAppear: {},
-        handleDisappear: {},
-        handleTopologyChanged: {},
-        requestPermission: {},
-        refreshPermission: {},
-        forceRefresh: {},
-        handleSharingServiceStateChanged: { _ in },
-        openScreenCapturePrivacySettings: { _ in }
-    )
 }
 
 package struct ShareDisplayStatus: Equatable, Sendable {
-    package var isMonitoring: Bool
+    package var isPreviewing: Bool
     package var isManagedVirtualDisplay: Bool
 
-    package init(isMonitoring: Bool, isManagedVirtualDisplay: Bool) {
-        self.isMonitoring = isMonitoring
+    package init(isPreviewing: Bool, isManagedVirtualDisplay: Bool) {
+        self.isPreviewing = isPreviewing
         self.isManagedVirtualDisplay = isManagedVirtualDisplay
     }
 
     package static let inactive = ShareDisplayStatus(
-        isMonitoring: false,
+        isPreviewing: false,
         isManagedVirtualDisplay: false
     )
 }

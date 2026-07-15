@@ -112,6 +112,9 @@ url = "https://dl.google.com/go/go1.26.2.darwin-amd64.tar.gz"
 version = "0.61.1"
 backend = "github:nicklockwood/SwiftFormat"
 
+[tools.swiftformat.options]
+no_app = "true"
+
 [tools.swiftformat."platforms.macos-arm64"]
 checksum = "sha256:b990400779aceb7d7020796eb9ba814d4480543f671d38fc0ff48cb72f04c584"
 url = "https://github.com/nicklockwood/SwiftFormat/releases/download/0.61.1/swiftformat.zip"

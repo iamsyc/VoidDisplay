@@ -194,19 +194,80 @@ package final class VirtualDisplayOrchestrator {
 
     // MARK: - Load / Restore / Reset
 
-    package func loadPersistedConfigs() {
-        configManager.loadPersistedConfigs()
+    package func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult {
+        configManager.loadPersistedConfigsIfNeeded()
     }
 
-    package func restoreDesiredVirtualDisplays() {
+    package func loadPersistedConfigs() {
+        _ = configManager.loadPersistedConfigs()
+    }
+
+    package func restoreVirtualDisplayForStartupCommand(
+        _ request: VirtualDisplayStartupRestoreCommandRequest
+    ) -> VirtualDisplayStartupRestoreCommandResult {
         guard case .ready = configManager.configStoreState else {
             AppLog.virtualDisplay.error(
-                "Skip restoring desired virtual displays because config store is in load-failed state."
+                "Skip startup virtual display restore because config store is in load-failed state."
             )
-            configManager.clearRestoreFailures()
-            return
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "startup_config_store_unavailable"
+            )
         }
-        configManager.setRestoreFailures(collectRestoreFailures(from: configManager.allConfigs()))
+
+        guard let config = configManager.config(id: request.configID) else {
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "config_not_found"
+            )
+        }
+
+        guard config.desiredEnabled else {
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .notAttempted,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "config_not_desired_enabled"
+            )
+        }
+
+        let preDisplayID = runtimeTracker.runtimeDisplayID(for: request.configID)
+        do {
+            let record = try runtimeTracker.createRuntimeDisplay(from: config)
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: preDisplayID,
+                postDisplayID: record.displayID,
+                restoreOutcome: .succeeded,
+                didProduceVerifiableSideEffect: true,
+                failureReason: nil
+            )
+        } catch {
+            let nsError = error as NSError
+            AppLog.virtualDisplay.error(
+                "Startup virtual display restore failed (config: \(request.configID.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), errorDomain: \(nsError.domain, privacy: .public), errorCode: \(nsError.code, privacy: .public))."
+            )
+            return startupRestoreCommandResult(
+                request: request,
+                preDisplayID: preDisplayID,
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: request.configID),
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "startup_restore_lower_command_failed",
+                underlyingDomain: nsError.domain,
+                underlyingCode: nsError.code
+            )
+        }
     }
 
     package func clearRestoreFailures() {
@@ -247,13 +308,13 @@ package final class VirtualDisplayOrchestrator {
     // MARK: - Create
 
     @discardableResult
-    package func createDisplay(
+    package func createDisplayCommand(
         name: String,
         serialNum: UInt32,
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> UUID {
+    ) throws -> VirtualDisplayCreateCommandResult {
         if runtimeTracker.hasRuntimeDisplay(serialNum: serialNum) ||
             configManager.allConfigs().contains(where: { $0.serialNum == serialNum }) {
             throw VirtualDisplayOperationError.duplicateSerialNumber(serialNum)
@@ -279,11 +340,30 @@ package final class VirtualDisplayOrchestrator {
             desiredEnabled: true
         )
 
-        try configManager.appendConfig(config)
+        do {
+            try configManager.appendConfig(config)
+        } catch {
+            let result = VirtualDisplayCreateCommandResult(
+                createdConfigID: nil,
+                persistenceOutcome: .failed,
+                runtimeCreationOutcome: .notAttempted,
+                rollbackOutcome: .notAttempted
+            )
+            throw VirtualDisplayCreateCommandFailure(
+                reason: "config_append_failed",
+                result: result,
+                underlyingError: error
+            )
+        }
 
         do {
             _ = try runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
-            return config.id
+            return VirtualDisplayCreateCommandResult(
+                createdConfigID: config.id,
+                persistenceOutcome: .saved,
+                runtimeCreationOutcome: .succeeded,
+                rollbackOutcome: .notAttempted
+            )
         } catch {
             let creationError = error
             AppLog.virtualDisplay.error(
@@ -297,48 +377,100 @@ package final class VirtualDisplayOrchestrator {
                     error: rollbackError,
                     logger: AppLog.persistence
                 )
-                throw VirtualDisplayOperationError.persistenceRecoveryFailed(
+                let persistenceRecoveryError = VirtualDisplayOperationError.persistenceRecoveryFailed(
                     String(
                         localized: "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
                     )
                 )
+                let result = VirtualDisplayCreateCommandResult(
+                    createdConfigID: config.id,
+                    persistenceOutcome: .rollbackFailed,
+                    runtimeCreationOutcome: .failed,
+                    rollbackOutcome: .rollbackFailed
+                )
+                throw VirtualDisplayCreateCommandFailure(
+                    reason: "persistenceRecoveryFailed",
+                    result: result,
+                    underlyingError: persistenceRecoveryError
+                )
             }
-            throw creationError
+            let result = VirtualDisplayCreateCommandResult(
+                createdConfigID: config.id,
+                persistenceOutcome: .rolledBack,
+                runtimeCreationOutcome: .failed,
+                rollbackOutcome: .rolledBack
+            )
+            throw VirtualDisplayCreateCommandFailure(
+                reason: "runtime_creation_failed",
+                result: result,
+                underlyingError: creationError
+            )
         }
     }
 
     // MARK: - Disable
 
-    package func disableDisplayByConfig(_ configId: UUID) throws {
-        guard let config = configManager.config(id: configId) else { return }
+    package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
+        try configManager.setDesiredEnabled(configId, enabled: enabled, reason: .userToggledDesiredEnabled)
+    }
 
-        try configManager.setDesiredEnabled(configId, enabled: false, reason: .userToggledDesiredEnabled)
+    package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {
+        guard let config = configManager.config(id: configId) else {
+            throw VirtualDisplayOperationError.configNotFound
+        }
+
+        let preDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
 
         let runtimeSerialNum = runtimeTracker.runtimeSerialNum(
             for: configId,
             fallback: config.serialNum
         )
-        let runtimeDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
-        let disablingMain = runtimeDisplayID == CGMainDisplayID()
+        let disablingMain = preDisplayID == CGMainDisplayID()
         AppLog.virtualDisplay.notice(
-            "Disable-by-config requested (config: \(configId.uuidString, privacy: .public), serial: \(runtimeSerialNum, privacy: .public), runtimeDisplayID: \(String(describing: runtimeDisplayID), privacy: .public), disablingMain: \(disablingMain, privacy: .public))."
+            "Disable-by-config requested (config: \(configId.uuidString, privacy: .public), serial: \(runtimeSerialNum, privacy: .public), runtimeDisplayID: \(String(describing: preDisplayID), privacy: .public), disablingMain: \(disablingMain, privacy: .public))."
         )
-        logTopologySnapshot("disableDisplayByConfig:pre-clear", snapshot: currentTopologySnapshot())
+        logTopologySnapshot("disableRuntimeDisplayByConfig:pre-clear", snapshot: currentTopologySnapshot())
         if disablingMain {
             policyResolver.markAggressiveRecoveryPending(configId: configId)
         }
         runtimeTracker.clearRuntimeTracking(configId: configId, keepGeneration: true)
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: false,
+            preDisplayID: preDisplayID,
+            postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+            mayPerformFleetRebuild: disablingMain && runtimeTracker.runningConfigCount >= 1,
+            requiresFleetQuiesce: disablingMain && runtimeTracker.runningConfigCount >= 1
+        )
     }
 
     // MARK: - Enable
 
-    package func enableDisplay(_ configId: UUID) async throws {
-        guard var config = configManager.config(id: configId) else {
+    package func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight {
+        let recoveryMode: VirtualDisplayTopologyRecoveryMode = policyResolver.isAggressiveRecoveryPending(configId: configId)
+            ? .aggressive
+            : .fast
+        let configIsAlreadyDesired = configManager.config(id: configId)?.desiredEnabled == true
+        let desiredManagedEnabledCount = configManager.allConfigs().filter(\.desiredEnabled).count
+            + (configIsAlreadyDesired ? 0 : 1)
+        let mayPerformFleetRebuild = recoveryMode == .aggressive
+            && runtimeTracker.runningConfigCount >= 1
+            && desiredManagedEnabledCount >= 2
+        return VirtualDisplayEnablePreflight(
+            configID: configId,
+            targetPreDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+            mayPerformFleetRebuild: mayPerformFleetRebuild,
+            requiresFleetQuiesce: mayPerformFleetRebuild,
+            scopeEscalationReason: mayPerformFleetRebuild ? .enableMayPerformFleetRebuild : nil
+        )
+    }
+
+    package func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
+        guard let config = configManager.config(id: configId) else {
             throw VirtualDisplayOperationError.configNotFound
         }
-        config.desiredEnabled = true
-        try configManager.setDesiredEnabled(configId, enabled: true, reason: .userToggledDesiredEnabled)
 
+        let preflight = enableDisplayPreflight(configId)
         let enableStart = DispatchTime.now().uptimeNanoseconds
         let topologyBeforeEnable = currentTopologySnapshot()
         let mainPolicyResolution = policyResolver.resolveMainDisplayPolicy(
@@ -351,7 +483,7 @@ package final class VirtualDisplayOrchestrator {
         AppLog.virtualDisplay.notice(
             "Enable display requested (config: \(configId.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public), preferredMain: \(String(describing: preferredMainDisplayID), privacy: .public), pendingGeneration: \(String(describing: self.runtimeTracker.runtimeGeneration(for: configId)), privacy: .public), isRunning: \(self.runtimeTracker.isVirtualDisplayRunning(configId: configId), privacy: .public))."
         )
-        logTopologySnapshot("enableDisplay:pre-enable", snapshot: topologyBeforeEnable)
+        logTopologySnapshot("enableRuntimeDisplay:pre-enable", snapshot: topologyBeforeEnable)
 
         var terminationConfirmed = true
         var offlineVerified = false
@@ -419,7 +551,14 @@ package final class VirtualDisplayOrchestrator {
                     includePrioritizedConfigIfNotRunning: true
                 )
                 policyResolver.clearAggressiveRecoveryPending(configId: configId)
-                return
+                return VirtualDisplayLifecycleCommandResult(
+                    configID: configId,
+                    desiredEnabled: true,
+                    preDisplayID: preflight.targetPreDisplayID,
+                    postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+                    mayPerformFleetRebuild: true,
+                    requiresFleetQuiesce: true
+                )
             }
             if recoveryMode == .aggressive && !terminationConfirmed {
                 let cooldown = await waitForAdaptiveManagedDisplayCooldown(
@@ -429,7 +568,7 @@ package final class VirtualDisplayOrchestrator {
                 AppLog.virtualDisplay.notice(
                     "Aggressive enable teardown settle cooldown completed (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), maxCooldownSec: \(VirtualDisplayTimingPolicy.aggressiveEnableUnsettledTeardownCooldown, privacy: .public), waitedMs: \(UInt64(cooldown.waitedSeconds * 1000), privacy: .public), earlyExit: \(cooldown.completedEarly, privacy: .public))."
                 )
-                logTopologySnapshot("enableDisplay:pre-create-post-cooldown", snapshot: currentTopologySnapshot())
+                logTopologySnapshot("enableRuntimeDisplay:pre-create-post-cooldown", snapshot: currentTopologySnapshot())
             }
             let createdDisplayRecord = try await runtimeTracker.createRuntimeDisplayWithRetries(
                 from: config,
@@ -440,7 +579,7 @@ package final class VirtualDisplayOrchestrator {
             AppLog.virtualDisplay.notice(
                 "Enable created runtime display (config: \(config.id.uuidString, privacy: .public), serial: \(createdDisplaySerialNum, privacy: .public), displayID: \(createdDisplayID, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public))."
             )
-            logTopologySnapshot("enableDisplay:post-create-pre-recovery", snapshot: currentTopologySnapshot())
+            logTopologySnapshot("enableRuntimeDisplay:post-create-pre-recovery", snapshot: currentTopologySnapshot())
             do {
                 let postCreatePolicyResolution = resolveMainDisplayPolicy(
                     snapshot: currentTopologySnapshot()
@@ -485,21 +624,86 @@ package final class VirtualDisplayOrchestrator {
             )
             throw error
         }
+        let postDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
+        return VirtualDisplayLifecycleCommandResult(
+            configID: configId,
+            desiredEnabled: true,
+            preDisplayID: preflight.targetPreDisplayID,
+            postDisplayID: postDisplayID,
+            mayPerformFleetRebuild: preflight.mayPerformFleetRebuild,
+            requiresFleetQuiesce: preflight.requiresFleetQuiesce
+        )
     }
 
     // MARK: - Destroy
 
-    package func destroyDisplay(_ configId: UUID) throws {
-        guard configManager.config(id: configId) != nil else { return }
-        try configManager.removeConfig(configId)
+    package func deleteDisplayCommand(_ configId: UUID) throws -> VirtualDisplayDeleteCommandResult {
+        guard configManager.config(id: configId) != nil else {
+            let result = VirtualDisplayDeleteCommandResult(
+                configID: configId,
+                targetWasRunning: false,
+                preDisplayID: nil,
+                postDisplayID: nil,
+                persistenceOutcome: .notAttempted,
+                virtualDisplayCommandOutcome: .failed,
+                runtimeTrackingClearOutcome: .notAttempted
+            )
+            throw VirtualDisplayDeleteCommandFailure(
+                reason: "config_not_found",
+                result: result,
+                underlyingError: VirtualDisplayOperationError.configNotFound
+            )
+        }
+        let preDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
+        let targetWasRunning = runtimeTracker.isVirtualDisplayRunning(configId: configId)
+            || preDisplayID != nil
+        do {
+            try configManager.removeConfig(configId)
+        } catch {
+            let result = VirtualDisplayDeleteCommandResult(
+                configID: configId,
+                targetWasRunning: targetWasRunning,
+                preDisplayID: preDisplayID,
+                postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+                persistenceOutcome: .failed,
+                virtualDisplayCommandOutcome: .failed,
+                runtimeTrackingClearOutcome: .notAttempted
+            )
+            throw VirtualDisplayDeleteCommandFailure(
+                reason: "config_delete_failed",
+                result: result,
+                underlyingError: error
+            )
+        }
         policyResolver.clearAggressiveRecoveryPending(configId: configId)
         runtimeTracker.clearRuntimeTracking(configId: configId, keepGeneration: false)
+        return VirtualDisplayDeleteCommandResult(
+            configID: configId,
+            targetWasRunning: targetWasRunning,
+            preDisplayID: preDisplayID,
+            postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
+            persistenceOutcome: .saved,
+            virtualDisplayCommandOutcome: .succeeded,
+            runtimeTrackingClearOutcome: .cleared
+        )
     }
 
     // MARK: - Config operations (delegated)
 
     package func updateConfig(_ updated: VirtualDisplayConfig) throws {
         try configManager.updateConfig(updated)
+    }
+
+    package func configForEditRebuild(_ configId: UUID) -> VirtualDisplayConfig? {
+        configManager.config(id: configId)
+    }
+
+    package func saveConfigForRebuild(_ updated: VirtualDisplayConfig) throws {
+        try configManager.updateConfig(updated)
+    }
+
+    package func restoreConfigAfterFailedEdit(_ previous: VirtualDisplayConfig) throws {
+        try configManager.updateConfig(previous)
     }
 
     @discardableResult
@@ -588,31 +792,6 @@ package final class VirtualDisplayOrchestrator {
         )
     }
 
-    // MARK: - Restore helpers
-
-    private func collectRestoreFailures(from configs: [VirtualDisplayConfig]) -> [VirtualDisplayRestoreFailure] {
-        var failures: [VirtualDisplayRestoreFailure] = []
-        for config in configs where config.desiredEnabled {
-            do {
-                _ = try runtimeTracker.createRuntimeDisplay(from: config)
-            } catch {
-                let message = error.localizedDescription
-                AppLog.persistence.error(
-                    "Restore virtual display failed (serial: \(config.serialNum, privacy: .public), name: \(config.displayName, privacy: .public)): \(message, privacy: .public)"
-                )
-                failures.append(
-                    .init(
-                        id: config.id,
-                        name: config.displayName,
-                        serialNum: config.serialNum,
-                        message: message
-                    )
-                )
-            }
-        }
-        return failures
-    }
-
     // MARK: - Logging
 
     private func logTopologySnapshot(
@@ -650,6 +829,29 @@ package final class VirtualDisplayOrchestrator {
     private func elapsedMilliseconds(since startNanoseconds: UInt64) -> UInt64 {
         let now = DispatchTime.now().uptimeNanoseconds
         return now >= startNanoseconds ? (now - startNanoseconds) / 1_000_000 : 0
+    }
+
+    private func startupRestoreCommandResult(
+        request: VirtualDisplayStartupRestoreCommandRequest,
+        preDisplayID: CGDirectDisplayID?,
+        postDisplayID: CGDirectDisplayID?,
+        restoreOutcome: VirtualDisplayStartupRestoreCommandOutcome,
+        didProduceVerifiableSideEffect: Bool,
+        failureReason: String?,
+        underlyingDomain: String? = nil,
+        underlyingCode: Int? = nil
+    ) -> VirtualDisplayStartupRestoreCommandResult {
+        VirtualDisplayStartupRestoreCommandResult(
+            transactionID: request.transactionID,
+            configID: request.configID,
+            preDisplayID: preDisplayID,
+            postDisplayID: postDisplayID,
+            restoreOutcome: restoreOutcome,
+            didProduceVerifiableSideEffect: didProduceVerifiableSideEffect,
+            failureReason: failureReason,
+            underlyingDomain: underlyingDomain,
+            underlyingCode: underlyingCode
+        )
     }
 
     // MARK: - Lifecycle

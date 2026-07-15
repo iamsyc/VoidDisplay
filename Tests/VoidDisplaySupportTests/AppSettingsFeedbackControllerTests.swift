@@ -46,8 +46,7 @@ struct AppSettingsFeedbackControllerTests {
 
         let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
         let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
+            historyFileURL: tempURL.appendingPathComponent("support-history.json")
         )
         let expectedURL = exportsURL.appendingPathComponent("support-bundle-20260420-120000.zip")
         let controller = AppSettingsFeedbackController(
@@ -111,8 +110,7 @@ struct AppSettingsFeedbackControllerTests {
 
         let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
         let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
+            historyFileURL: tempURL.appendingPathComponent("support-history.json")
         )
         let bundleURL = exportsURL.appendingPathComponent("support-bundle-20260420-121500.zip")
         var copiedSummary: String?
@@ -153,8 +151,7 @@ struct AppSettingsFeedbackControllerTests {
 
         let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
         let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
+            historyFileURL: tempURL.appendingPathComponent("support-history.json")
         )
         let bundleURL = exportsURL.appendingPathComponent("support-bundle-20260420-123000.zip")
         let controller = AppSettingsFeedbackController(
@@ -235,8 +232,7 @@ struct AppSettingsFeedbackControllerTests {
         )
 
         let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
+            historyFileURL: tempURL.appendingPathComponent("support-history.json")
         )
         try historyStore.saveRecords([
             SupportExportRecord(
@@ -277,8 +273,7 @@ struct AppSettingsFeedbackControllerTests {
         let bundleURL = exportsURL.appendingPathComponent("support-bundle-history-write-failure.zip")
         let controller = AppSettingsFeedbackController(
             historyStore: SupportHistoryStore(
-                historyFileURL: historyFileURL,
-                exportsDirectoryURL: exportsURL
+                historyFileURL: historyFileURL
             ),
             exportAction: { _, _ in
                 try FileManager.default.createDirectory(
@@ -322,7 +317,7 @@ struct AppSettingsFeedbackControllerTests {
         let events = recorder.events
         #expect(events.count == 3)
         #expect(events[0].subsystem == .support)
-        #expect(events[0].metadata["source"] == "support_center")
+        #expect(events[0].metadata["source"] == "diagnostics")
         #expect(events[0].metadata["issueType"] == SupportIssueType.performanceIssue.rawValue)
         #expect(events[0].metadata["hasEnhancedDiagnostics"] == "true")
         #expect(events[0].metadata["filledFieldCount"] == "1")

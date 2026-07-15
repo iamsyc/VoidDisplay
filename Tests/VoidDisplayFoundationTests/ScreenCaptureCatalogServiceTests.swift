@@ -68,28 +68,6 @@ private final class CatalogServiceSignatureBox {
     }
 }
 
-private final class CatalogServiceMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum CatalogServiceMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = CatalogServiceMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
-}
-
 @MainActor
 @Suite(.serialized)
 struct ScreenCaptureCatalogServiceTests {
@@ -369,8 +347,8 @@ struct ScreenCaptureCatalogServiceTests {
 
     @Test func matchingCachedTopologyJoinsInFlightRefreshInsteadOfReusingStaleSnapshot() async {
         let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success])
-        let staleDisplay = CatalogServiceMockSCDisplay.make(displayID: 707, width: 1280, height: 720)
-        let refreshedDisplay = CatalogServiceMockSCDisplay.make(displayID: 808, width: 1920, height: 1080)
+        let staleDisplay = SharedMockSCDisplay.make(displayID: 707, width: 1280, height: 720)
+        let refreshedDisplay = SharedMockSCDisplay.make(displayID: 808, width: 1920, height: 1080)
         let sut = ScreenCaptureCatalogService(
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
             loadShareableDisplays: {
@@ -454,7 +432,7 @@ struct ScreenCaptureCatalogServiceTests {
                 pixelHeight: 1080
             )
         ])
-        let refreshedDisplay = CatalogServiceMockSCDisplay.make(
+        let refreshedDisplay = SharedMockSCDisplay.make(
             displayID: displayID,
             width: 2560,
             height: 1440
@@ -474,7 +452,7 @@ struct ScreenCaptureCatalogServiceTests {
         )
         sut.store.hasScreenCapturePermission = true
         sut.store.displays = [
-            CatalogServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+            SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         ]
         sut.store.lastLoadedActiveDisplayTopologySignature = signatureBox.value
 
@@ -500,8 +478,8 @@ struct ScreenCaptureCatalogServiceTests {
         let initialSignature = makeTestDisplayTopologySignature([1001])
         let retriedSignature = makeTestDisplayTopologySignature([1002])
         let signatureBox = CatalogServiceSignatureBox(initialSignature)
-        let firstDisplay = CatalogServiceMockSCDisplay.make(displayID: 1001, width: 1280, height: 720)
-        let retriedDisplay = CatalogServiceMockSCDisplay.make(displayID: 1002, width: 1920, height: 1080)
+        let firstDisplay = SharedMockSCDisplay.make(displayID: 1001, width: 1280, height: 720)
+        let retriedDisplay = SharedMockSCDisplay.make(displayID: 1002, width: 1920, height: 1080)
         var loadCallIndex = 0
         let sut = ScreenCaptureCatalogService(
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
@@ -541,9 +519,9 @@ struct ScreenCaptureCatalogServiceTests {
         let finalSignature = makeTestDisplayTopologySignature([1103])
         let signatureBox = CatalogServiceSignatureBox(signatureA)
         let displays = [
-            CatalogServiceMockSCDisplay.make(displayID: 1101, width: 1280, height: 720),
-            CatalogServiceMockSCDisplay.make(displayID: 1102, width: 1920, height: 1080),
-            CatalogServiceMockSCDisplay.make(displayID: 1103, width: 2560, height: 1440)
+            SharedMockSCDisplay.make(displayID: 1101, width: 1280, height: 720),
+            SharedMockSCDisplay.make(displayID: 1102, width: 1920, height: 1080),
+            SharedMockSCDisplay.make(displayID: 1103, width: 2560, height: 1440)
         ]
         var loadCallIndex = 0
         let sut = ScreenCaptureCatalogService(
@@ -585,7 +563,7 @@ struct ScreenCaptureCatalogServiceTests {
         let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success, .success, .success, .success])
         let stableSignature = makeTestDisplayTopologySignature([1200])
         let signatureBox = CatalogServiceSignatureBox(makeTestDisplayTopologySignature([1201]))
-        let stableDisplay = CatalogServiceMockSCDisplay.make(displayID: 1200, width: 1440, height: 900)
+        let stableDisplay = SharedMockSCDisplay.make(displayID: 1200, width: 1440, height: 900)
         var loadCallIndex = 0
         let retrySignatures = [
             makeTestDisplayTopologySignature([1202]),
@@ -594,10 +572,10 @@ struct ScreenCaptureCatalogServiceTests {
             makeTestDisplayTopologySignature([1205])
         ]
         let refreshedDisplays = [
-            CatalogServiceMockSCDisplay.make(displayID: 1201, width: 1280, height: 720),
-            CatalogServiceMockSCDisplay.make(displayID: 1202, width: 1600, height: 900),
-            CatalogServiceMockSCDisplay.make(displayID: 1203, width: 1920, height: 1080),
-            CatalogServiceMockSCDisplay.make(displayID: 1204, width: 2560, height: 1440)
+            SharedMockSCDisplay.make(displayID: 1201, width: 1280, height: 720),
+            SharedMockSCDisplay.make(displayID: 1202, width: 1600, height: 900),
+            SharedMockSCDisplay.make(displayID: 1203, width: 1920, height: 1080),
+            SharedMockSCDisplay.make(displayID: 1204, width: 2560, height: 1440)
         ]
         let sut = ScreenCaptureCatalogService(
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),

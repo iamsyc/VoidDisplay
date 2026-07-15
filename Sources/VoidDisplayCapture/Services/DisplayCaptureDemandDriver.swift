@@ -64,16 +64,6 @@ package final class DisplayCaptureDemandDriver: @unchecked Sendable {
         }
     }
 
-    nonisolated func recordPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        scheduleConfigurationDecision { state, nowNs, minimumDwellNanoseconds in
-            state.configurationCoordinator.recordPreviewPerformanceSample(
-                sample,
-                nowNs: nowNs,
-                minimumDwellNanoseconds: minimumDwellNanoseconds
-            )
-        }
-    }
-
     nonisolated func cancelAll() {
         state.withLock { state in
             _ = state.taskLifetime.invalidateAllTasks()

@@ -22,13 +22,13 @@ package struct SupportBundleDraftSectionView: View {
                 if controller.isExporting {
                     ProgressView()
                         .controlSize(.small)
-                        .accessibilityIdentifier("support_center_export_progress")
+                        .accessibilityIdentifier("support_bundle_export_progress")
                 }
 
                 Button(exportButtonTitle, action: onExport)
                     .appActionButtonStyle(variant: .primary)
                     .disabled(controller.isExporting)
-                    .accessibilityIdentifier("support_center_export_button")
+                    .accessibilityIdentifier("support_bundle_export_button")
             }
 
             if let validationMessage = controller.validationMessage {
@@ -88,11 +88,11 @@ package struct SupportBundleDraftSectionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(String(localized: "Issue Type"))
                         .font(.subheadline.weight(.medium))
-                        .accessibilityIdentifier("support_center_issue_type_title")
+                        .accessibilityIdentifier("support_bundle_issue_type_title")
                     Text(String(localized: "Choose the closest issue type."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("support_center_issue_type_description")
+                        .accessibilityIdentifier("support_bundle_issue_type_description")
                 }
 
                 Spacer(minLength: AppUI.Spacing.small)
@@ -127,7 +127,7 @@ package struct SupportBundleDraftSectionView: View {
             .controlSize(.small)
             .frame(width: 210, alignment: .leading)
             .disabled(controller.isExporting)
-            .accessibilityIdentifier("support_center_issue_type_picker")
+            .accessibilityIdentifier("support_bundle_issue_type_picker")
         }
     }
 
@@ -138,19 +138,19 @@ package struct SupportBundleDraftSectionView: View {
             Text(String(localized: presentation.recommendedDiagnosticsKey))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("support_center_issue_type_recommendation")
+                .accessibilityIdentifier("support_bundle_issue_type_recommendation")
 
             Text(String(localized: presentation.descriptionKey))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .accessibilityIdentifier("support_center_issue_type_selected_description")
+                .accessibilityIdentifier("support_bundle_issue_type_selected_description")
 
             Button(String(localized: "Apply Recommended Diagnostics")) {
                 controller.applyRecommendedDiagnostics()
             }
             .appActionButtonStyle(variant: .default)
             .disabled(controller.isExporting || controller.usesRecommendedDiagnostics)
-            .accessibilityIdentifier("support_center_apply_recommended_diagnostics_button")
+            .accessibilityIdentifier("support_bundle_apply_recommended_diagnostics_button")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -237,6 +237,6 @@ package struct SupportBundleDraftSectionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement()
             .accessibilityLabel(validationMessage)
-            .accessibilityIdentifier("support_center_validation_message")
+            .accessibilityIdentifier("support_bundle_validation_message")
     }
 }

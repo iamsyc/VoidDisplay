@@ -5,30 +5,30 @@ import VoidDisplayObservability
 import SwiftUI
 package struct SettingsSupportSectionView: View {
     @Bindable var controller: AppSettingsFeedbackController
-    package let onOpenSupportCenter: () -> Void
+    package let onOpenDiagnostics: () -> Void
 
     package init(
         controller: AppSettingsFeedbackController,
-        onOpenSupportCenter: @escaping () -> Void
+        onOpenDiagnostics: @escaping () -> Void
     ) {
         _controller = Bindable(controller)
-        self.onOpenSupportCenter = onOpenSupportCenter
+        self.onOpenDiagnostics = onOpenDiagnostics
     }
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(String(localized: "Support Center"))
+            Text(String(localized: "Diagnostics"))
                 .font(.headline)
-                .accessibilityIdentifier("settings_support_section")
+                .accessibilityIdentifier("settings_diagnostics_section")
 
-            Text(String(localized: "Describe the issue, add diagnostics if needed, then export a support package."))
+            Text(String(localized: "Review app health, add diagnostics if needed, then export a support bundle."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("settings_support_intro_text")
+                .accessibilityIdentifier("settings_diagnostics_intro_text")
 
-            Button(String(localized: "Open Support Center"), action: onOpenSupportCenter)
+            Button(String(localized: "Open Diagnostics"), action: onOpenDiagnostics)
                 .appActionButtonStyle(variant: .primary)
-                .accessibilityIdentifier("settings_open_support_center_button")
+                .accessibilityIdentifier("settings_open_diagnostics_button")
 
             if let latestRecord = controller.latestExportRecord {
                 latestSupportSummary(

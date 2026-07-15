@@ -86,28 +86,6 @@ package final class ShareViewModel {
             self.virtualDisplayQueries = virtualDisplayQueries
         }
 
-        package static let noop = Dependencies(
-            sharingQueries: .init(
-                isWebServiceRunning: { false },
-                activeSharingDisplayCount: { 0 },
-                sharingClientCount: { 0 },
-                isDisplaySharing: { _ in false },
-                isStartingDisplayID: { _ in false },
-                displayClientCount: { _ in 0 },
-                sharePageAddress: { _ in nil },
-                preferredWebServicePort: { 8089 }
-            ),
-            sharingActions: .init(
-                startWebService: { port in .failed(.timedOut(port: port)) },
-                stopWebService: {},
-                registerShareableDisplays: { _, _ in },
-                beginSharing: { _ in .invalidated },
-                stopSharing: { _ in }
-            ),
-            virtualDisplayQueries: .init(
-                virtualSerialForManagedDisplay: { _ in nil }
-            )
-        )
     }
 
     package let catalog: ScreenCaptureDisplayCatalogState

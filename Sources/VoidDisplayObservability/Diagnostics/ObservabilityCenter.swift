@@ -170,48 +170,6 @@ package actor ObservabilityCenter {
         )
     }
 
-    package func humanSummaryText() async -> String {
-        let snapshot = await diagnosticsSnapshot(issueLimit: 5, eventLimit: 5)
-        let system = decodeSection("system", from: snapshot.state, as: SystemSnapshotProvider.Snapshot.self)
-        let persistence = decodeSection("persistence", from: snapshot.state, as: PersistenceSnapshotProvider.Snapshot.self)
-
-        var lines: [String] = [
-            String(localized: "Support Center"),
-            "\(String(localized: "Highest Severity")): \(snapshot.health.highestSeverity?.rawValue ?? "none")",
-            "\(String(localized: "Recent Event Count")): \(snapshot.health.recentEventCount)",
-            "\(String(localized: "Recent Issue Count")): \(snapshot.health.recentIssueCount)"
-        ]
-
-        lines.append("\(String(localized: "Snapshot Sections")): \(snapshot.state.sections.keys.sorted().joined(separator: ", "))")
-
-        if let system {
-            lines.append("\(String(localized: "Locale")): \(system.localeIdentifier)")
-            lines.append("\(String(localized: "Time Zone")): \(system.timeZoneIdentifier)")
-        }
-
-        if let persistence {
-            lines.append("\(String(localized: "Mode")): \(persistence.mode)")
-            lines.append("\(String(localized: "Bundle ID")): \(persistence.bundleIdentifier)")
-        }
-
-        if !snapshot.issues.isEmpty {
-            lines.append(String(localized: "Recent issues:"))
-            lines.append(contentsOf: snapshot.issues.prefix(3).map { "\($0.subsystem.rawValue): \($0.message)" })
-        }
-
-        if let path = snapshot.lastExportedBundleDisplayPath {
-            lines.append(String(localized: "Latest support package:"))
-            lines.append(path)
-        }
-
-        if let path = dataDirectoryDisplayPath() {
-            lines.append(String(localized: "Data directory:"))
-            lines.append(path)
-        }
-
-        return lines.joined(separator: "\n")
-    }
-
     package func summaryText(
         for draft: FeedbackDraft,
         issueTypeLine: String? = nil

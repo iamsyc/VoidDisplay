@@ -1,12 +1,13 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayTestingSupport
 import Foundation
 import Testing
 
 struct DisplayShareIDStoreTests {
 
     @MainActor @Test func idsRemainStableAcrossStoreRecreation() throws {
-        let root = try uniqueTempDirectory()
+        let root = try makeTemporaryDirectory(prefix: "display-share-id-store-tests")
         defer { try? FileManager.default.removeItem(at: root) }
 
         let storeURL = root
@@ -27,12 +28,5 @@ struct DisplayShareIDStoreTests {
         #expect(newDisplayID != mainID)
         #expect(newDisplayID != virtualID)
         #expect(newDisplayID == max(mainID, virtualID) + 1)
-    }
-
-    private func uniqueTempDirectory() throws -> URL {
-        let base = FileManager.default.temporaryDirectory
-        let url = base.appendingPathComponent("display-share-id-store-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
     }
 }

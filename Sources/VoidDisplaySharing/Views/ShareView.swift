@@ -47,7 +47,7 @@ package struct ShareView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("detail_screen_sharing")
+        .accessibilityIdentifier("detail_lan_web_view")
         .toolbar {
             if runtimeState.isWebServiceRunning {
                 if lifecycle.showToolbarRefresh {
@@ -180,6 +180,13 @@ package struct ShareView: View {
                 .controlSize(.large)
                 .disabled(viewModel.isStartingService)
                 .accessibilityIdentifier("share_start_service_button")
+
+                if viewModel.isStartingService {
+                    ProgressView("Loading…")
+                        .controlSize(.small)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("share_starting_service")
+                }
             }
         }
     }
@@ -282,15 +289,4 @@ package struct ShareView: View {
         }
         return items
     }
-}
-
-#Preview {
-    ShareView(
-        catalogState: ScreenCaptureDisplayCatalogState(),
-        dependencies: .noop,
-        runtimeState: .inactive,
-        catalogActions: .noop,
-        displayStatusProvider: .none,
-        performanceMode: .automatic
-    )
 }

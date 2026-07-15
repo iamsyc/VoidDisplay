@@ -411,10 +411,6 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         try await demandDriver.setDemand(demand)
     }
 
-    package nonisolated func reportPreviewPerformanceSample(_ sample: DisplayPreviewPerformanceSample) {
-        demandDriver.recordPreviewPerformanceSample(sample)
-    }
-
     package nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
         metrics.value.withLock { $0.snapshot() }
     }
@@ -467,10 +463,6 @@ package extension DisplayCaptureSession {
         guard time.isValid, !time.isIndefinite, time.seconds.isFinite else { return 0 }
         let scaled = CMTimeConvertScale(time, timescale: 1_000_000, method: .default)
         return scaled.value > 0 ? UInt64(scaled.value) : 0
-    }
-
-    nonisolated static func clampedPreviewFramesPerSecond(for refreshRate: Double) -> Int {
-        sourceFramesPerSecond(for: refreshRate)
     }
 
     nonisolated static func sourceFramesPerSecond(for refreshRate: Double) -> Int {

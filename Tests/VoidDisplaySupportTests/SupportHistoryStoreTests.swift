@@ -14,8 +14,7 @@ struct SupportHistoryStoreTests {
         let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
         try FileManager.default.createDirectory(at: exportsURL, withIntermediateDirectories: true)
         let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
+            historyFileURL: tempURL.appendingPathComponent("support-history.json")
         )
 
         for index in 0..<11 {
@@ -41,27 +40,6 @@ struct SupportHistoryStoreTests {
         #expect(records.first?.bundleFileName == "support-bundle-9.zip")
     }
 
-    @Test func loadRecordsSynthesizesFallbackWhenHistoryFileIsMissing() throws {
-        let tempURL = try makeTemporaryDirectory(prefix: "support-history-fallback")
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-
-        let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
-        try FileManager.default.createDirectory(at: exportsURL, withIntermediateDirectories: true)
-        let bundleURL = exportsURL.appendingPathComponent("support-bundle-20260420-140000.zip")
-        try Data("bundle".utf8).write(to: bundleURL)
-
-        let historyStore = SupportHistoryStore(
-            historyFileURL: tempURL.appendingPathComponent("support-history.json"),
-            exportsDirectoryURL: exportsURL
-        )
-
-        let records = historyStore.loadRecords()
-        #expect(records.count == 1)
-        #expect(records.first?.issueType == .other)
-        #expect(records.first?.bundleFileName == bundleURL.lastPathComponent)
-        #expect(records.first?.draftPreview.isEmpty == true)
-    }
-
     @Test func appendRecordPropagatesHistoryWriteFailure() throws {
         let tempURL = try makeTemporaryDirectory(prefix: "support-history-write-failure")
         defer { try? FileManager.default.removeItem(at: tempURL) }
@@ -74,8 +52,7 @@ struct SupportHistoryStoreTests {
         let historyFileURL = tempURL.appendingPathComponent("support-history.json")
         try FileManager.default.createDirectory(at: historyFileURL, withIntermediateDirectories: false)
         let historyStore = SupportHistoryStore(
-            historyFileURL: historyFileURL,
-            exportsDirectoryURL: exportsURL
+            historyFileURL: historyFileURL
         )
 
         #expect(throws: Error.self) {

@@ -70,6 +70,9 @@ package enum VirtualDisplayOperationError: LocalizedError {
         }
     }
 }
+package enum VirtualDisplayEditRebuildPersistenceError: Error, Equatable {
+    case editRequestStale
+}
 package enum VirtualDisplayTimingPolicy {
     package static let rollbackOfflineWaitTimeout: TimeInterval = 1.2
     package static let rebuildTerminationTimeout: TimeInterval = 2.0
@@ -134,14 +137,6 @@ package struct VirtualDisplaySnapshot: Equatable {
 
     package func runtimeDisplayID(for configId: UUID) -> CGDirectDisplayID? {
         runtimeDisplayIDByConfigId[configId]
-    }
-
-    package func isManagedDisplay(_ displayID: CGDirectDisplayID) -> Bool {
-        managedDisplays.contains(where: { $0.displayID == displayID })
-    }
-
-    package func serialForManagedDisplay(_ displayID: CGDirectDisplayID) -> UInt32? {
-        managedDisplays.first(where: { $0.displayID == displayID })?.serialNum
     }
 }
 package struct RuntimeDisplayRecord: Equatable {

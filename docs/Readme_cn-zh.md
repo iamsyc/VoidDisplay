@@ -154,13 +154,13 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
 
-# 静态检查、SwiftPM 测试、Go 测试和 Xcode 构建
-scripts/ci/static.sh
-scripts/ci/unit.sh
-scripts/ci/xcode.sh --action build --configuration Debug
+# 静态检查、SwiftPM 测试、Go 测试、Xcode 构建和 UI smoke
+scripts/dev/validate.sh
 ```
 
-完整项目回归入口（打开或合并 PR 前推荐执行）：
+Xcode 里的 `VoidDisplay` scheme 是 app build/run 和 UI test 入口。Cmd-U 不会执行 `Tests/` 下的 SwiftPM 单元测试；需要单测覆盖时使用 `scripts/dev/validate.sh` 或 `scripts/ci/unit.sh`。
+
+完整项目回归入口（打开或合并 PR 前的较重 release 取向检查）：
 
 ```bash
 scripts/ci/full_regression.sh

@@ -16,7 +16,7 @@ The workflow set is:
 
 The repository uses GitHub Free compatible capabilities only: standard macOS hosted runners, Dependabot, Dependency Review, CodeQL, release artifacts, and artifact attestations. Larger runners, self-hosted runners, paid scanning services, Developer ID signing, notarization, and stapling are out of scope.
 
-Xcode selection requires Xcode `26.4` and Swift `6.x` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` only for an intentional temporary override.
+Xcode selection prefers the Xcode `26.5.0` installation and requires `xcodebuild` version prefix `26.5` with Swift `6.x` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` only for an intentional temporary override.
 
 ## Branch Protection Gate
 
@@ -46,6 +46,7 @@ scripts/dev/doctor.sh
 Common gates:
 
 ```sh
+scripts/dev/validate.sh
 scripts/ci/static.sh
 scripts/ci/unit.sh
 scripts/ci/xcode.sh --action build --configuration Debug
@@ -57,6 +58,10 @@ scripts/ci/release_smoke.sh --arch arm64 --label arm64
 scripts/ci/full_regression.sh --out-dir .ai-tmp/full-regression
 scripts/ci/coverage.sh --out-dir .ai-tmp/coverage
 ```
+
+`scripts/dev/validate.sh` is the local validation entrypoint for normal development. It runs static checks, SwiftPM unit tests, Go unit tests, Xcode Debug build, and the default UI smoke test through the same scripts CI uses. It defaults the Xcode destination from the host architecture; pass `--destination` to override it, or `--skip-ui-smoke` only when local macOS UI automation authorization is unavailable and report that as an environment limitation.
+
+The shared Xcode `VoidDisplay` scheme is the app build/run and UI test scheme. Cmd-U does not run SwiftPM tests from `Tests/`; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for unit coverage.
 
 `scripts/ci/xcode.sh --action test` requires `--only-testing` or `--test-plan`.
 

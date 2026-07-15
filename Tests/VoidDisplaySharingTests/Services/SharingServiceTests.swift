@@ -51,26 +51,22 @@ private actor SharingServiceOutcomeBox {
     }
 }
 
-private final class SharingServiceMockSCDisplayBox: NSObject {
-    @objc let displayID: CGDirectDisplayID
-    @objc let width: Int
-    @objc let height: Int
-    @objc let frame: CGRect
-
-    init(displayID: CGDirectDisplayID, width: Int, height: Int) {
-        self.displayID = displayID
-        self.width = width
-        self.height = height
-        self.frame = CGRect(x: 0, y: 0, width: width, height: height)
-        super.init()
-    }
-}
-
-private enum SharingServiceMockSCDisplay {
-    static func make(displayID: CGDirectDisplayID, width: Int, height: Int) -> SCDisplay {
-        let box = SharingServiceMockSCDisplayBox(displayID: displayID, width: width, height: height)
-        return unsafeBitCast(box, to: SCDisplay.self)
-    }
+private func sharingEvent(
+    target: ShareTarget,
+    clientID: String = "client-1",
+    sessionEpoch: UInt64 = 0,
+    sequence: UInt64 = 1,
+    phase: SharingPeerPhase,
+    source: SharingSessionEventSource
+) -> SharingSessionEvent {
+    SharingSessionEvent(
+        target: target,
+        clientID: clientID,
+        sessionEpoch: sessionEpoch,
+        sequence: sequence,
+        phase: phase,
+        source: source
+    )
 }
 
 struct SharingServiceTests {
@@ -125,7 +121,7 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let sut = makeService(webServiceController: mock)
         let displayID = CGDirectDisplayID(24)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
 
         sut.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
         let originalTarget = try #require(sut.shareTarget(for: displayID))
@@ -152,7 +148,7 @@ struct SharingServiceTests {
     @MainActor @Test func stopWebServiceStopsActiveSharingSessionsBeforeStoppingController() async throws {
         let mock = MockWebServiceController()
         let displayID = CGDirectDisplayID(21)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let cancelCounter = SharingServiceCounter()
         let sut = makeService(
             webServiceController: mock,
@@ -184,7 +180,7 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let aggregator = SharingStateAggregator()
         let displayID = CGDirectDisplayID(25)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let cancelCounter = SharingServiceCounter()
         let sut = makeService(
             webServiceController: mock,
@@ -199,10 +195,8 @@ struct SharingServiceTests {
         )
         sut.registerShareableDisplays([display], virtualSerialResolver: { _ -> UInt32? in nil })
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
@@ -240,7 +234,7 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let gate = SharingServiceAsyncGate()
         let displayID = CGDirectDisplayID(23)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let cancelCounter = SharingServiceCounter()
         let sut = makeService(
             webServiceController: mock,
@@ -278,47 +272,28 @@ struct SharingServiceTests {
         #expect(mock.stopCallCount == 1)
     }
 
-    @MainActor @Test func startSharingPropagatesDisplayNotRegisteredError() async {
-        let displayID = CGDirectDisplayID(22)
-        let display = SharingServiceMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
-        let sut = makeService(webServiceController: MockWebServiceController())
-
-        do {
-            let outcome = try await sut.startSharing(display: display)
-            Issue.record("Expected displayNotRegistered error, got \(outcome).")
-        } catch let error as SharingStartError {
-            #expect(error == .displayNotRegistered(displayID))
-        } catch {
-            Issue.record("Expected SharingStartError.displayNotRegistered, got \(error)")
-        }
-    }
-
     @MainActor @Test func activeStreamClientCountReflectsSharingSnapshot() {
         let mock = MockWebServiceController()
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
                 clientID: "client-2",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
         )
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .id(7),
                 clientID: "client-3",
-                sequence: 1,
                 phase: .signalingConnected,
                 source: .webSocket
             )
@@ -334,10 +309,8 @@ struct SharingServiceTests {
         let mock = MockWebServiceController()
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
@@ -354,133 +327,6 @@ struct SharingServiceTests {
         subscription.cancel()
     }
 
-    @MainActor @Test func closedClientIsRemovedFromCurrentSnapshot() {
-        let aggregator = SharingStateAggregator()
-        aggregator.record(
-            SharingSessionEvent(
-                target: .id(7),
-                clientID: "client-1",
-                sequence: 1,
-                phase: .peerConnected,
-                source: .peerConnection
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: .id(7),
-                clientID: "client-1",
-                sequence: 2,
-                phase: .closed,
-                source: .webSocket
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: .id(7),
-                clientID: "client-1",
-                sequence: 1,
-                phase: .peerDisconnected,
-                source: .peerConnection
-            )
-        )
-
-        let snapshot = aggregator.currentSnapshot
-        #expect(snapshot.signalingConnections == 0)
-        #expect(snapshot.streamingPeers == 0)
-        #expect(snapshot.clientsByTarget[.id(7)]?.isEmpty ?? true)
-        #expect(snapshot.lastUpdatedAt != nil)
-    }
-
-    @MainActor @Test func closedClientReconnectWithSameIDStartsFreshSession() {
-        let aggregator = SharingStateAggregator()
-        let target = ShareTarget.id(7)
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 1,
-                sequence: 1,
-                phase: .peerConnected,
-                source: .peerConnection
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 1,
-                sequence: 2,
-                phase: .closed,
-                source: .webSocket
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 2,
-                sequence: 1,
-                phase: .signalingConnected,
-                source: .webSocket
-            )
-        )
-
-        let snapshot = aggregator.currentSnapshot
-        #expect(snapshot.signalingConnections == 1)
-        #expect(snapshot.streamingPeers == 0)
-        #expect(snapshot.clientsByTarget[target]?["client-1"]?.phase == .signalingConnected)
-    }
-
-    @MainActor @Test func lateEventFromClosedSessionDoesNotOverrideReconnectedClient() {
-        let aggregator = SharingStateAggregator()
-        let target = ShareTarget.id(7)
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 1,
-                sequence: 1,
-                phase: .peerConnected,
-                source: .peerConnection
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 1,
-                sequence: 2,
-                phase: .closed,
-                source: .webSocket
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 2,
-                sequence: 1,
-                phase: .peerConnected,
-                source: .peerConnection
-            )
-        )
-        aggregator.record(
-            SharingSessionEvent(
-                target: target,
-                clientID: "client-1",
-                sessionEpoch: 1,
-                sequence: 3,
-                phase: .peerDisconnected,
-                source: .peerConnection
-            )
-        )
-
-        let snapshot = aggregator.currentSnapshot
-        #expect(snapshot.signalingConnections == 1)
-        #expect(snapshot.streamingPeers == 1)
-        #expect(snapshot.clientsByTarget[target]?["client-1"]?.phase == .peerConnected)
-    }
-
     @MainActor @Test func alreadyRunningStartPreservesCurrentSharingSnapshot() async {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let mock = MockWebServiceController()
@@ -491,10 +337,8 @@ struct SharingServiceTests {
         )
         let aggregator = SharingStateAggregator()
         aggregator.record(
-            SharingSessionEvent(
+            sharingEvent(
                 target: .main,
-                clientID: "client-1",
-                sequence: 1,
                 phase: .peerConnected,
                 source: .peerConnection
             )
@@ -528,36 +372,6 @@ struct SharingServiceTests {
             .running(binding),
             .stopped
         ])
-    }
-
-    @MainActor @Test func closedClientTombstonesStayBounded() {
-        let aggregator = SharingStateAggregator()
-        let target = ShareTarget.id(88)
-
-        for index in 0..<(SharingStateAggregator.closedClientTombstoneLimit + 5) {
-            let clientID = "client-\(index)"
-            aggregator.record(
-                SharingSessionEvent(
-                    target: target,
-                    clientID: clientID,
-                    sequence: 1,
-                    phase: .signalingConnected,
-                    source: .webSocket
-                )
-            )
-            aggregator.record(
-                SharingSessionEvent(
-                    target: target,
-                    clientID: clientID,
-                    sequence: 2,
-                    phase: .closed,
-                    source: .webSocket
-                )
-            )
-        }
-
-        #expect(aggregator.currentSnapshot.signalingConnections == 0)
-        #expect(aggregator.closedClientTombstoneCountForTesting == SharingStateAggregator.closedClientTombstoneLimit)
     }
 
     @MainActor

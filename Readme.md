@@ -154,13 +154,13 @@ Requirements: Xcode 26+, macOS 15.6 or later on an Intel or Apple Silicon Mac.
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
 
-# Static checks, SwiftPM tests, Go tests, and Xcode build
-scripts/ci/static.sh
-scripts/ci/unit.sh
-scripts/ci/xcode.sh --action build --configuration Debug
+# Static checks, SwiftPM tests, Go tests, Xcode build, and UI smoke
+scripts/dev/validate.sh
 ```
 
-Full project regression gate (recommended before opening/merging PR):
+`VoidDisplay` in Xcode is the app build/run and UI test scheme. Cmd-U does not run the SwiftPM unit tests under `Tests/`; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for unit coverage.
+
+Full project regression gate (heavier release-oriented check before opening/merging PR):
 
 ```bash
 scripts/ci/full_regression.sh

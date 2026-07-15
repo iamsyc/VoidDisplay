@@ -2,20 +2,17 @@ import Foundation
 import AppKit
 import Observation
 package enum AppSidebarItem: Hashable {
-    case screen
-    case virtualDisplay
-    case monitorScreen
-    case screenSharing
-    case supportCenter
+    case home
+    case diagnostics
 }
 
 @MainActor
 @Observable
 package final class AppNavigationController {
-    package var sidebarSelection: AppSidebarItem? = .screen
+    package var sidebarSelection: AppSidebarItem? = .home
 
-    package func showSupportCenter() {
-        sidebarSelection = .supportCenter
+    package func showDiagnostics() {
+        sidebarSelection = .diagnostics
         NSApp.activate(ignoringOtherApps: true)
     }
 }

@@ -260,57 +260,6 @@ struct DisplayCaptureDemandDriverTests {
         )
     }
 
-    @Test func previewPressureSamplesKeepAutomaticMixedAt60() async {
-        let timeSource = DemandDriverTimeSource(1)
-        let recorder = DemandDriverRecorder()
-        let driver = DisplayCaptureDemandDriver(
-            initialConfiguration: .init(profile: .mixed, frameRateTier: .fps60),
-            initialDemand: makeDriverDemand(
-                attachedPreviewSinkCount: 1,
-                shareTokenCount: 1
-            ),
-            minimumDwellNanoseconds: 0,
-            currentTimeNanoseconds: timeSource.now,
-            applyImmediateDemand: { demand in
-                recorder.recordImmediateDemand(demand)
-                return demand.showsCursor
-            },
-            applyConfiguration: { configuration in
-                recorder.recordConfiguration(configuration)
-                return true
-            },
-            onConfigurationApplied: { configuration in
-                recorder.recordAppliedConfiguration(configuration)
-            }
-        )
-
-        driver.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 90,
-                droppedFrameCount: 10,
-                latestRenderLatencyMilliseconds: 12,
-                pendingSlotOccupied: false,
-                capturedAt: 1
-            )
-        )
-        timeSource.set(2)
-        driver.recordPreviewPerformanceSample(
-            .init(
-                renderedFrameCount: 80,
-                droppedFrameCount: 20,
-                latestRenderLatencyMilliseconds: 15,
-                pendingSlotOccupied: false,
-                capturedAt: 2
-            )
-        )
-
-        #expect(
-            await staysTrue(timeoutNanoseconds: 10_000_000) {
-                recorder.configurations.isEmpty
-            }
-        )
-    }
-
     @Test func cursorDemandAppliesImmediatelyWithoutWaitingForProfileDwell() async throws {
         let timeSource = DemandDriverTimeSource(1)
         let recorder = DemandDriverRecorder()

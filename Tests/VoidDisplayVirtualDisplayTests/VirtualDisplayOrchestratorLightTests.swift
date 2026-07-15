@@ -70,12 +70,12 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func disableDisplayByConfigPersistsDesiredDisabled() throws {
+    func setDesiredEnabledPersistsDesiredDisabled() throws {
         let store = FakeVirtualDisplayStore()
         let config = makeConfig(serial: 25, displayName: "用户配置 25")
         let sut = makeOrchestrator(store: store, initialConfigs: [config])
 
-        try sut.disableDisplayByConfig(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: false)
 
         #expect(store.savedConfigs.count == 1)
         #expect(sut.snapshot.configs.first?.desiredEnabled == false)
@@ -128,12 +128,16 @@ struct VirtualDisplayOrchestratorLightTests {
             runtimeDriver: driver
         )
 
-        try await sut.enableDisplay(configMain.id)
-        try await sut.enableDisplay(configPeer.id)
+        try sut.setDesiredEnabled(configMain.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(configMain.id)
+        try sut.setDesiredEnabled(configPeer.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(configPeer.id)
         #expect(driver.createCallCount == 2)
 
-        try sut.disableDisplayByConfig(configMain.id)
-        try await sut.enableDisplay(configMain.id)
+        try sut.setDesiredEnabled(configMain.id, enabled: false)
+        _ = try sut.disableRuntimeDisplayByConfig(configMain.id)
+        try sut.setDesiredEnabled(configMain.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(configMain.id)
 
         #expect(driver.createCallCount == 4)
         #expect(Set(sut.snapshot.runningConfigIds) == Set([configMain.id, configPeer.id]))
@@ -142,24 +146,7 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func enableDisplaySetsDesiredEnabledEvenWhenRuntimeCreationFails() async {
-        let store = FakeVirtualDisplayStore()
-        var config = makeConfig(serial: 31, displayName: "Enable")
-        config.desiredEnabled = false
-        let sut = makeOrchestrator(store: store, initialConfigs: [config])
-
-        do {
-            try await sut.enableDisplay(config.id)
-        } catch {
-            // Best-effort test: in CI/without display privileges creation may fail.
-        }
-
-        #expect(sut.snapshot.configs.first?.desiredEnabled == true)
-        #expect(store.savedConfigs.isEmpty == false)
-    }
-
-    @Test
-    func enableDisplayRequiresTrueOfflineConfirmationBeforeRecreate() async throws {
+    func enableRuntimeDisplayRequiresTrueOfflineConfirmationBeforeRecreate() async throws {
         let store = FakeVirtualDisplayStore()
         let driver = FakeOrchestratorRuntimeDriver(
             scriptedResults: [.success(serialNum: 41, displayID: 941)]
@@ -190,14 +177,17 @@ struct VirtualDisplayOrchestratorLightTests {
             runtimeDriver: driver
         )
 
-        try await sut.enableDisplay(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: true)
+        _ = try await sut.enableRuntimeDisplay(config.id)
         #expect(driver.createCallCount == 1)
 
         displayOnline = true
-        try sut.disableDisplayByConfig(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: false)
+        _ = try sut.disableRuntimeDisplayByConfig(config.id)
+        try sut.setDesiredEnabled(config.id, enabled: true)
 
         do {
-            try await sut.enableDisplay(config.id)
+            _ = try await sut.enableRuntimeDisplay(config.id)
             Issue.record("Expected enable to fail when prior display remains online.")
         } catch let error as VirtualDisplayOperationError {
             guard case .teardownTimedOut = error else {
@@ -212,7 +202,30 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func createDisplayRuntimeFailureRollsBackConfigAndRethrowsCreateError() {
+    func createDisplayCommandSuccessReturnsCommandFacts() throws {
+        let store = FakeVirtualDisplayStore()
+        let driver = FakeOrchestratorRuntimeDriver(
+            scriptedResults: [.success(serialNum: 50, displayID: 950)]
+        )
+        let sut = makeOrchestrator(store: store, runtimeDriver: driver)
+
+        let result = try sut.createDisplayCommand(
+            name: "Created",
+            serialNum: 50,
+            physicalSize: CGSize(width: 300, height: 200),
+            maxPixels: (width: 1920, height: 1080),
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+        )
+
+        #expect(result.createdConfigID != nil)
+        #expect(result.persistenceOutcome == .saved)
+        #expect(result.runtimeCreationOutcome == .succeeded)
+        #expect(result.rollbackOutcome == .notAttempted)
+        #expect(sut.snapshot.runtimeDisplayIDByConfigId[result.createdConfigID!] == 950)
+    }
+
+    @Test
+    func createDisplayCommandRuntimeFailureRollsBackConfigAndReportsFacts() {
         let store = FakeVirtualDisplayStore()
         let driver = FakeOrchestratorRuntimeDriver(
             scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
@@ -220,7 +233,7 @@ struct VirtualDisplayOrchestratorLightTests {
         let sut = makeOrchestrator(store: store, runtimeDriver: driver)
 
         do {
-            _ = try sut.createDisplay(
+            _ = try sut.createDisplayCommand(
                 name: "Rollback OK",
                 serialNum: 51,
                 physicalSize: CGSize(width: 300, height: 200),
@@ -228,8 +241,15 @@ struct VirtualDisplayOrchestratorLightTests {
                 modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
             )
             Issue.record("Expected creationFailed error.")
-        } catch let error as VirtualDisplayOperationError {
-            guard case .creationFailed = error else {
+        } catch let error as VirtualDisplayCreateCommandFailure {
+            #expect(error.reason == "runtime_creation_failed")
+            #expect(error.result.createdConfigID != nil)
+            #expect(error.result.persistenceOutcome == .rolledBack)
+            #expect(error.result.runtimeCreationOutcome == .failed)
+            #expect(error.result.rollbackOutcome == .rolledBack)
+            guard let underlying = error.underlyingError as? VirtualDisplayOperationError,
+                  case .creationFailed = underlying
+            else {
                 Issue.record("Unexpected error: \(error)")
                 return
             }
@@ -243,88 +263,37 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func createDisplayRollbackFailureRaisesPersistenceRecoveryError() {
-        let store = FakeVirtualDisplayStore()
-        store.scriptedSaveErrors = [
-            nil,
-            VirtualDisplayConfigStoreError.ioFailed(
-                operation: "save",
-                underlying: NSError(domain: "test", code: 88)
-            )
-        ]
-        let driver = FakeOrchestratorRuntimeDriver(
-            scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
-        )
-        let sut = makeOrchestrator(store: store, runtimeDriver: driver)
+    func deleteDisplayCommandMissingConfigFailsConfigNotFound() {
+        let sut = makeOrchestrator(store: FakeVirtualDisplayStore())
+        let missingID = UUID()
 
         do {
-            _ = try sut.createDisplay(
-                name: "Rollback Broken",
-                serialNum: 52,
-                physicalSize: CGSize(width: 300, height: 200),
-                maxPixels: (width: 1920, height: 1080),
-                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
-            )
-            Issue.record("Expected persistence recovery failure.")
-        } catch let error as VirtualDisplayOperationError {
-            guard case .persistenceRecoveryFailed(let message) = error else {
-                Issue.record("Unexpected error: \(error)")
-                return
-            }
-            #expect(
-                message ==
-                    String(
-                        localized: "Create failed and the config rollback could not be saved. Check config file permissions or reset the config file."
-                    )
-            )
+            _ = try sut.deleteDisplayCommand(missingID)
+            Issue.record("Expected config_not_found failure.")
+        } catch let error as VirtualDisplayDeleteCommandFailure {
+            #expect(error.reason == "config_not_found")
+            #expect(error.result.configID == missingID)
+            #expect(error.result.persistenceOutcome == .notAttempted)
+            #expect(error.result.runtimeTrackingClearOutcome == .notAttempted)
         } catch {
             Issue.record("Unexpected error type: \(error)")
         }
-
-        #expect(store.savedConfigs.count == 1)
-        #expect(sut.snapshot.configs.count == 1)
-        #expect(sut.snapshot.runningConfigIds.isEmpty)
     }
 
     @Test
-    func destroyDisplayClearsConfigAndPersists() throws {
+    func deleteDisplayCommandClearsConfigAndPersists() throws {
         let store = FakeVirtualDisplayStore()
         let config = makeConfig(serial: 12, displayName: "Destroy")
         let sut = makeOrchestrator(store: store, initialConfigs: [config])
 
-        try sut.destroyDisplay(config.id)
+        let result = try sut.deleteDisplayCommand(config.id)
 
         #expect(store.savedConfigs.count == 1)
         #expect(sut.snapshot.configs.isEmpty)
         #expect(sut.snapshot.runtimeDisplayID(for: config.id) == nil)
-    }
-
-    @Test
-    func destroyDisplaySaveFailurePreservesConfigAndRuntimeState() throws {
-        let store = FakeVirtualDisplayStore()
-        let driver = FakeOrchestratorRuntimeDriver(
-            scriptedResults: [.success(serialNum: 53, displayID: 953)]
-        )
-        let sut = makeOrchestrator(store: store, runtimeDriver: driver)
-        let createdConfigID = try sut.createDisplay(
-            name: "Keep On Failure",
-            serialNum: 53,
-            physicalSize: CGSize(width: 300, height: 200),
-            maxPixels: (width: 1920, height: 1080),
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
-        )
-        let runtimeDisplayIDBeforeFailure = sut.snapshot.runtimeDisplayID(for: createdConfigID)
-        store.saveError = VirtualDisplayConfigStoreError.ioFailed(
-            operation: "save",
-            underlying: NSError(domain: "test", code: 89)
-        )
-
-        #expect(throws: Error.self) {
-            try sut.destroyDisplay(createdConfigID)
-        }
-        #expect(sut.snapshot.configs.map(\.id) == [createdConfigID])
-        #expect(sut.snapshot.runningConfigIds == [createdConfigID])
-        #expect(sut.snapshot.runtimeDisplayID(for: createdConfigID) == runtimeDisplayIDBeforeFailure)
+        #expect(result.configID == config.id)
+        #expect(result.persistenceOutcome == .saved)
+        #expect(result.runtimeTrackingClearOutcome == .cleared)
     }
 
     @Test
@@ -343,88 +312,28 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func resetAllVirtualDisplayDataResetFailurePreservesConfigAndRuntimeState() throws {
+    func startupRestoreCommandRestoresSingleDesiredConfig() {
         let store = FakeVirtualDisplayStore()
-        let restoreFailureConfig = makeConfig(serial: 54, displayName: "Restore Failure")
+        let config = makeConfig(serial: 64, displayName: "Desired")
         let driver = FakeOrchestratorRuntimeDriver(
-            scriptedResults: [
-                .failure(VirtualDisplayOperationError.creationFailed),
-                .success(serialNum: 55, displayID: 955)
-            ]
+            scriptedResults: [.success(serialNum: 64, displayID: 964)]
         )
         let sut = makeOrchestrator(
             store: store,
-            initialConfigs: [restoreFailureConfig],
-            runtimeDriver: driver
-        )
-        sut.restoreDesiredVirtualDisplays()
-        #expect(sut.snapshot.restoreFailures.count == 1)
-
-        let createdConfigID = try sut.createDisplay(
-            name: "Reset Failure",
-            serialNum: 55,
-            physicalSize: CGSize(width: 300, height: 200),
-            maxPixels: (width: 1920, height: 1080),
-            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
-        )
-        let runtimeDisplayIDBeforeFailure = sut.snapshot.runtimeDisplayID(for: createdConfigID)
-        store.resetError = VirtualDisplayConfigStoreError.ioFailed(
-            operation: "reset",
-            underlying: NSError(domain: "test", code: 90)
-        )
-
-        #expect(throws: Error.self) {
-            _ = try sut.resetAllVirtualDisplayData()
-        }
-        #expect(sut.snapshot.configs.map(\.id) == [restoreFailureConfig.id, createdConfigID])
-        #expect(sut.snapshot.runningConfigIds == [createdConfigID])
-        #expect(sut.snapshot.runtimeDisplayID(for: createdConfigID) == runtimeDisplayIDBeforeFailure)
-        #expect(sut.snapshot.restoreFailures.count == 1)
-        #expect(sut.snapshot.restoreFailures.first?.id == restoreFailureConfig.id)
-    }
-
-    @Test
-    func loadPersistedConfigsFailureSetsStoreStateAndBlocksRestore() {
-        let store = FakeVirtualDisplayStore()
-        store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
-        let sut = makeOrchestrator(store: store, loadOnInit: false)
-
-        sut.loadPersistedConfigs()
-        sut.restoreDesiredVirtualDisplays()
-
-        #expect(sut.snapshot.configs.isEmpty)
-        #expect(sut.snapshot.restoreFailures.isEmpty)
-        #expect(sut.snapshot.configStorePresentation.hasLoadFailure)
-        #expect(sut.snapshot.configStorePresentation.loadErrorMessage != nil)
-        #expect(
-            sut.snapshot.configStorePresentation.diagnosticsSummary ==
-                store.diagnosticsValue.summary
-        )
-    }
-
-    @Test
-    func restoreDesiredVirtualDisplaysClearsExistingFailuresWhenStoreFallsBackToLoadFailed() {
-        let store = FakeVirtualDisplayStore()
-        let restoreFailureConfig = makeConfig(serial: 64, displayName: "Restore Failure")
-        let driver = FakeOrchestratorRuntimeDriver(
-            scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
-        )
-        let sut = makeOrchestrator(
-            store: store,
-            initialConfigs: [restoreFailureConfig],
+            initialConfigs: [config],
             runtimeDriver: driver
         )
 
-        sut.restoreDesiredVirtualDisplays()
-        #expect(sut.snapshot.restoreFailures.count == 1)
+        let result = sut.restoreVirtualDisplayForStartupCommand(
+            startupRestoreRequest(config: config)
+        )
 
-        store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)
-        sut.loadPersistedConfigs()
-        sut.restoreDesiredVirtualDisplays()
-
+        #expect(result.configID == config.id)
+        #expect(result.restoreOutcome == .succeeded)
+        #expect(result.postDisplayID == 964)
+        #expect(sut.snapshot.runningConfigIds == [config.id])
+        #expect(driver.createCallCount == 1)
         #expect(sut.snapshot.restoreFailures.isEmpty)
-        #expect(sut.snapshot.configStorePresentation.hasLoadFailure)
-        #expect(sut.snapshot.configStorePresentation.loadErrorMessage != nil)
     }
 
     @Test
@@ -486,6 +395,14 @@ private extension VirtualDisplayOrchestratorLightTests {
                 .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
             ],
             desiredEnabled: true
+        )
+    }
+
+    func startupRestoreRequest(config: VirtualDisplayConfig) -> VirtualDisplayStartupRestoreCommandRequest {
+        return VirtualDisplayStartupRestoreCommandRequest(
+            transactionID: UUID(),
+            runID: UUID(),
+            configID: config.id
         )
     }
 

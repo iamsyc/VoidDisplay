@@ -1,5 +1,6 @@
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayTestingSupport
 import Foundation
 import Testing
 
@@ -9,11 +10,16 @@ struct FeedbackBundleExporterTests {
         let tempURL = try makeTemporaryDirectory(prefix: "support-bundle")
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
+        var commandInvocationCount = 0
         let exporter = FeedbackBundleExporter(
             exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
             virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
             displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
-            sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
+            sanitizer: ObservabilitySanitizer(homePath: "/Users/tester"),
+            commandRunner: { _, _, _ in
+                commandInvocationCount += 1
+                return "private log from /Users/tester at http://192.168.0.4:8080/display"
+            }
         )
 
         let result = try exporter.exportBundle(
@@ -32,6 +38,11 @@ struct FeedbackBundleExporterTests {
             relativePathSuffix: "/manifest.json",
             archiveURL: result.bundleURL
         )
+        let state = try decodeArchiveEntry(
+            ObservabilityStateSnapshot.self,
+            relativePathSuffix: "/state/current-state.json",
+            archiveURL: result.bundleURL
+        )
 
         #expect(entries.contains(where: { $0.hasSuffix("/manifest.json") }))
         #expect(entries.contains(where: { $0.hasSuffix("/feedback.json") }))
@@ -44,16 +55,47 @@ struct FeedbackBundleExporterTests {
         #expect(manifest.issueCount == 1)
         #expect(manifest.transportCapability == FeedbackTransportCapability.localExportOnly)
         #expect(manifest.attachments.isEmpty)
+        #expect(manifest.consent == FeedbackConsent())
+        #expect(manifest.consent.hasEnhancedCollection == false)
+        #expect(manifest.consent.includeUnifiedLogSummary == false)
+        #expect(manifest.consent.includeCrashReportExcerpt == false)
+        #expect(manifest.consent.includeRelatedConfigSnapshots == false)
+        #expect(state.sections["runtime"] != nil)
+        #expect(state.sections["runtime"]?.objectValue?["schemaVersion"]?.intValue == 3)
+        #expect(commandInvocationCount == 0)
     }
 
-    @Test func exportBundleIncludesWhitelistedConfigAttachmentsWhenEnabled() throws {
+    @Test func exportBundleSanitizesConfigAttachmentsWhenEnhancedDiagnosticsEnabled() throws {
         let tempURL = try makeTemporaryDirectory(prefix: "support-bundle-configs")
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let virtualDisplaysURL = tempURL.appendingPathComponent("virtual-displays.json")
         let shareMappingsURL = tempURL.appendingPathComponent("display-share-id-mappings.json")
-        try "{\"path\":\"/Users/tester/Desktop\"}".write(to: virtualDisplaysURL, atomically: true, encoding: .utf8)
-        try "{\"host\":\"192.168.0.4\"}".write(to: shareMappingsURL, atomically: true, encoding: .utf8)
+        let secretDisplayName = "Confidential Window Caption"
+        let secretPath = "/Users/tester/Desktop/private-display.json"
+        let secretIP = "192.168.0.4"
+        let secretURL = "http://192.168.0.4:8080/display/share-id-raw-fixture-55"
+        let secretShareID = "987654321"
+        try """
+        {
+          "configs": [
+            {
+              "displayName": "\(secretDisplayName)",
+              "diagnosticPath": "\(secretPath)",
+              "diagnosticURL": "\(secretURL)"
+            }
+          ]
+        }
+        """.write(to: virtualDisplaysURL, atomically: true, encoding: .utf8)
+        try """
+        {
+          "schemaVersion": 1,
+          "mappings": {
+            "display-identity-fixture": \(secretShareID)
+          },
+          "lastHost": "\(secretIP)"
+        }
+        """.write(to: shareMappingsURL, atomically: true, encoding: .utf8)
 
         let exporter = FeedbackBundleExporter(
             exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
@@ -73,9 +115,124 @@ struct FeedbackBundleExporterTests {
         )
 
         let entries = try archiveEntries(at: result.bundleURL)
+        let virtualDisplayConfig = try archiveEntryString(
+            relativePathSuffix: "/attachments/config/virtual-displays.json",
+            archiveURL: result.bundleURL
+        )
+        let shareMappings = try archiveEntryString(
+            relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
+            archiveURL: result.bundleURL
+        )
 
         #expect(entries.contains(where: { $0.hasSuffix("/attachments/config/virtual-displays.json") }))
         #expect(entries.contains(where: { $0.hasSuffix("/attachments/config/display-share-id-mappings.json") }))
+        #expect(virtualDisplayConfig.contains(secretDisplayName) == false)
+        #expect(virtualDisplayConfig.contains(secretPath) == false)
+        #expect(virtualDisplayConfig.contains(secretIP) == false)
+        #expect(virtualDisplayConfig.contains(secretURL) == false)
+        #expect(virtualDisplayConfig.contains("~") == true)
+        #expect(virtualDisplayConfig.contains("<redacted-ip>") == true)
+        #expect(shareMappings.contains(secretShareID) == false)
+        #expect(shareMappings.contains(secretIP) == false)
+        #expect(shareMappings.contains("<redacted>") == true)
+        #expect(shareMappings.contains("<redacted-ip>") == true)
+    }
+
+    @Test func exportBundleRedactsMalformedConfigAttachmentsWhenEnhancedDiagnosticsEnabled() throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "support-bundle-malformed-configs")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let virtualDisplaysURL = tempURL.appendingPathComponent("virtual-displays.json")
+        let shareMappingsURL = tempURL.appendingPathComponent("display-share-id-mappings.json")
+        let secretDisplayName = "Private Window Caption"
+        let secretPath = "/Users/tester/Desktop/private-display.json"
+        let secretIP = "192.168.0.4"
+        let secretURL = "http://192.168.0.4:8080/display/share-id-raw-fixture-66"
+        let secretUserText = "typed note body"
+        let secretDesktopContent = "Desktop frame shows roadmap"
+        let secretShareID = "123456789"
+        let malformedVirtualDisplayConfig = """
+        {
+          "displayName": "\(secretDisplayName)",
+          "diagnosticPath": "\(secretPath)",
+          "diagnosticURL": "\(secretURL)",
+          "lastHost": "\(secretIP)",
+          "userText": "\(secretUserText)",
+          "desktopContent": "\(secretDesktopContent)"
+        """
+        let malformedShareMappings = """
+        {
+          "mappings": {
+            "display-identity-fixture": \(secretShareID)
+          },
+          "lastHost": "\(secretIP)",
+        """
+        try malformedVirtualDisplayConfig.write(to: virtualDisplaysURL, atomically: true, encoding: .utf8)
+        try malformedShareMappings.write(to: shareMappingsURL, atomically: true, encoding: .utf8)
+
+        let exporter = FeedbackBundleExporter(
+            exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
+            virtualDisplayConfigsURL: virtualDisplaysURL,
+            displayShareMappingsURL: shareMappingsURL,
+            sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
+        )
+
+        let result = try exporter.exportBundle(
+            draft: FeedbackDraft(),
+            consent: FeedbackConsent(includeRelatedConfigSnapshots: true),
+            state: makeStateSnapshot(),
+            health: makeHealthSummary(),
+            events: [],
+            issues: [],
+            transportCapability: FeedbackTransportCapability.localExportOnly
+        )
+
+        let virtualDisplayConfig = try archiveEntryString(
+            relativePathSuffix: "/attachments/config/virtual-displays.json",
+            archiveURL: result.bundleURL
+        )
+        let shareMappings = try archiveEntryString(
+            relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
+            archiveURL: result.bundleURL
+        )
+        let virtualPlaceholder = try #require(try decodeArchiveEntry(
+            JSONValue.self,
+            relativePathSuffix: "/attachments/config/virtual-displays.json",
+            archiveURL: result.bundleURL
+        ).objectValue)
+        let sharePlaceholder = try #require(try decodeArchiveEntry(
+            JSONValue.self,
+            relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
+            archiveURL: result.bundleURL
+        ).objectValue)
+
+        #expect(virtualPlaceholder["redacted"] == .bool(true))
+        #expect(virtualPlaceholder["reason"] == .string("invalid_json"))
+        #expect(virtualPlaceholder["sourceKind"] == .string("virtual_display_configs"))
+        #expect(virtualPlaceholder["originalByteCount"]?.intValue == malformedVirtualDisplayConfig.utf8.count)
+        #expect(sharePlaceholder["redacted"] == .bool(true))
+        #expect(sharePlaceholder["reason"] == .string("invalid_json"))
+        #expect(sharePlaceholder["sourceKind"] == .string("display_share_mappings"))
+        #expect(sharePlaceholder["originalByteCount"]?.intValue == malformedShareMappings.utf8.count)
+
+        for sensitiveFixture in [
+            "displayName",
+            secretDisplayName,
+            secretPath,
+            secretIP,
+            secretURL,
+            secretUserText,
+            secretDesktopContent
+        ] {
+            #expect(virtualDisplayConfig.contains(sensitiveFixture) == false)
+        }
+        for sensitiveFixture in [
+            #""mappings""#,
+            secretShareID,
+            secretIP
+        ] {
+            #expect(shareMappings.contains(sensitiveFixture) == false)
+        }
     }
 
     @Test func exportBundleContinuesWhenUnifiedLogCommandTimesOut() throws {
@@ -158,7 +315,13 @@ private func makeStateSnapshot() -> ObservabilityStateSnapshot {
             build: "1",
             executablePath: "~/Applications/VoidDisplay.app"
         ),
-        sections: ["capture": .object(["sessions": .array([])])]
+        sections: [
+            "capture": .object(["sessions": .array([])]),
+            "runtime": .object([
+                "schemaVersion": .number(3),
+                "surfaces": .array([])
+            ])
+        ]
     )
 }
 
@@ -205,6 +368,21 @@ private func decodeArchiveEntry<T: Decodable>(
     relativePathSuffix: String,
     archiveURL: URL
 ) throws -> T {
+    let data = try archiveEntryData(relativePathSuffix: relativePathSuffix, archiveURL: archiveURL)
+    return try ObservabilityCodec.decode(type, from: data)
+}
+
+private func archiveEntryString(
+    relativePathSuffix: String,
+    archiveURL: URL
+) throws -> String {
+    String(decoding: try archiveEntryData(relativePathSuffix: relativePathSuffix, archiveURL: archiveURL), as: UTF8.self)
+}
+
+private func archiveEntryData(
+    relativePathSuffix: String,
+    archiveURL: URL
+) throws -> Data {
     let extractionURL = try makeTemporaryDirectory(prefix: "support-bundle-extract")
     defer { try? FileManager.default.removeItem(at: extractionURL) }
 
@@ -223,8 +401,7 @@ private func decodeArchiveEntry<T: Decodable>(
         options: [.skipsHiddenFiles]
     ).first
     let entryURL = bundleRoot?.appendingPathComponent(String(relativePathSuffix.dropFirst()))
-    let data = try Data(contentsOf: try #require(entryURL))
-    return try ObservabilityCodec.decode(type, from: data)
+    return try Data(contentsOf: try #require(entryURL))
 }
 
 private func archiveEntries(at url: URL) throws -> [String] {

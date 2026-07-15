@@ -1,6 +1,7 @@
 import Foundation
 import VoidDisplayVirtualDisplay
 import VoidDisplayCapture
+import VoidDisplayDesignSystem
 import VoidDisplaySupport
 import VoidDisplayObservability
 import VoidDisplayFoundation
@@ -10,6 +11,7 @@ package struct AppSettingsView: View {
     @Environment(AppNavigationController.self) private var navigation
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
+    @Environment(AppearancePreferences.self) private var appearancePreferences
     @State private var showResetConfirmation = false
     @State private var resetCompleted = false
 
@@ -33,7 +35,7 @@ package struct AppSettingsView: View {
                     Text("Capture Performance")
                         .font(.headline)
 
-                    Text("Choose how screen monitoring and sharing balance smoothness and resource usage.")
+                    Text("Choose how screen preview and sharing balance smoothness and resource usage.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -45,13 +47,30 @@ package struct AppSettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Appearance")
+                        .font(.headline)
+
+                    Text("Choose how the Home display surface is arranged.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Home Layout", selection: skinIDBinding) {
+                        ForEach(HomeSkinRegistry.allSkinIDs) { skinID in
+                            Text(skinTitle(for: skinID))
+                                .tag(skinID)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 SettingsSupportSectionView(
                     controller: feedbackController,
-                    onOpenSupportCenter: openSupportCenter
+                    onOpenDiagnostics: openDiagnostics
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Virtual Displays")
+                    Text("Virtual Display")
                         .font(.headline)
 
                     Text("Reset will remove all saved virtual display configurations and stop currently managed virtual displays.")
@@ -113,8 +132,19 @@ package struct AppSettingsView: View {
         )
     }
 
-    private func openSupportCenter() {
-        navigation.showSupportCenter()
+    private var skinIDBinding: Binding<AppSkinID> {
+        Binding(
+            get: { appearancePreferences.skinID },
+            set: { appearancePreferences.saveSkinID($0) }
+        )
+    }
+
+    private func skinTitle(for skinID: AppSkinID) -> LocalizedStringKey {
+        HomeSkinRegistry.title(for: skinID)
+    }
+
+    private func openDiagnostics() {
+        navigation.showDiagnostics()
         NSApp.keyWindow?.close()
     }
 }

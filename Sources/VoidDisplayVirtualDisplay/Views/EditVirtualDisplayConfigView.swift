@@ -28,6 +28,11 @@ package struct EditVirtualDisplayConfigView: View {
     @State private var customRefreshRate: Double = 60.0
 
     @State private var localAlert: UserFacingAlertState?
+    @State private var isSaveAndRebuildInFlight = false
+
+    package init(configId: UUID) {
+        self.configId = configId
+    }
 
     private var isRunning: Bool {
         virtualDisplay.isVirtualDisplayRunning(configId: configId)
@@ -106,6 +111,17 @@ package struct EditVirtualDisplayConfigView: View {
             Divider()
 
             HStack(spacing: 8) {
+                if UITestRuntime.isEnabled && isRunning {
+                    Button {
+                        handleUITestSaveAndRebuildTapped()
+                    } label: {
+                        Text(verbatim: "Test Save and Rebuild")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_test_button")
+                }
+
                 Spacer()
 
                 switch EditVirtualDisplayWorkflow.actionLayout(isRunning: isRunning) {
@@ -139,7 +155,7 @@ package struct EditVirtualDisplayConfigView: View {
                             handleSaveOnlyTapped()
                         }
                         .buttonStyle(.bordered)
-                        .disabled(isSaveBlockedByMissingRequiredFields)
+                        .disabled(isSaveBlockedByMissingRequiredFields || isSaveAndRebuildInFlight)
                         .accessibilityIdentifier("virtual_display_edit_save_only_button")
                     }
 
@@ -147,7 +163,7 @@ package struct EditVirtualDisplayConfigView: View {
                         handleSaveAndRebuildTapped()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isSaveBlockedByMissingRequiredFields)
+                    .disabled(isSaveBlockedByMissingRequiredFields || isSaveAndRebuildInFlight)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("virtual_display_edit_save_and_rebuild_button")
                 }
@@ -404,7 +420,16 @@ package struct EditVirtualDisplayConfigView: View {
     private func handleSaveAndRebuildTapped() {
         guard isRunning else { return }
         guard let analysis = analyzeSave(reportErrors: true) else { return }
-        performSaveAndRebuild(analysis)
+        guard analysis.requiresSaveAndRebuild else {
+            performSaveOnly(analysis)
+            return
+        }
+        guard !isSaveAndRebuildInFlight else { return }
+        isSaveAndRebuildInFlight = true
+        Task {
+            await performSaveAndRebuild(analysis)
+            isSaveAndRebuildInFlight = false
+        }
     }
 
     private func performSaveOnly(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
@@ -418,13 +443,28 @@ package struct EditVirtualDisplayConfigView: View {
         dismiss()
     }
 
-    private func performSaveAndRebuild(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) {
+    private func performSaveAndRebuild(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) async {
+        guard let loadedConfig else { return }
         do {
-            try virtualDisplay.updateConfig(analysis.updatedConfig)
-        } catch { return }
-        loadedConfig = analysis.updatedConfig
-        dismiss()
-        virtualDisplay.startRebuildFromSavedConfig(configId: configId)
+            let handle = try await virtualDisplay.saveConfigAndRebuild(
+                analysis.updatedConfig,
+                expectedConfigFingerprint: loadedConfig.editRebuildFingerprint,
+                source: .editSaveAndRebuild
+            )
+            _ = try await handle.waitForSaveGate()
+            self.loadedConfig = analysis.updatedConfig
+            dismiss()
+            virtualDisplay.startEditRebuildPresentation(configId: configId, handle: handle)
+        } catch {
+            localAlert = UserFacingAlertState(
+                title: String(localized: "Save Failed"),
+                message: AppErrorMapper.userMessage(
+                    for: error,
+                    fallback: String(localized: "Failed to save display settings.")
+                )
+            )
+            return
+        }
     }
 
     private func addPresetMode() {
@@ -465,6 +505,26 @@ package struct EditVirtualDisplayConfigView: View {
 
     private func removeMode(_ mode: ResolutionSelection) {
         selectedModes.removeAll { $0.id == mode.id }
+    }
+
+    private func handleUITestSaveAndRebuildTapped() {
+        guard isRunning else { return }
+        guard let analysis = analyzeSave(reportErrors: true) else { return }
+        guard !isSaveAndRebuildInFlight else { return }
+
+        var updatedConfig = analysis.updatedConfig
+        updatedConfig.physicalWidth += 1
+        let forcedAnalysis = VirtualDisplayEditSaveAnalyzer.SaveAnalysis(
+            updatedConfig: updatedConfig,
+            shouldApplyModesImmediately: false,
+            requiresSaveAndRebuild: true
+        )
+
+        isSaveAndRebuildInFlight = true
+        Task {
+            await performSaveAndRebuild(forcedAnalysis)
+            isSaveAndRebuildInFlight = false
+        }
     }
 
     private func validationErrorMessage(

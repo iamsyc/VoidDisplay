@@ -48,52 +48,78 @@ package enum AppUI {
     // MARK: - Surface helpers
     package enum Surface {
         // -- Panel (standalone container: empty-state, start-service panel)
-        package static func panelFill(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.06) : .white
+        package static func panelFill(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.panelFill
         }
 
-        package static func panelStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.16) : .black.opacity(0.08)
+        package static func panelStroke(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.panelStroke
         }
 
         // -- Interactive card (list row cards)
-        package static func cardFill(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark
-                ? .white.opacity(0.06)
-                : Color(nsColor: .controlBackgroundColor).opacity(0.90)
+        package static func cardFill(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.cardFill
         }
 
-        package static func cardStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.08)
+        package static func cardStroke(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.cardStroke
         }
 
-        package static func cardHoverStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark
-                ? Color.accentColor.opacity(0.55)
-                : Color.accentColor.opacity(0.40)
+        package static func cardHoverStroke(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.cardHoverStroke
         }
 
         // -- Tile (icon boxes inside cards)
-        package static func tileFill(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.08) : .black.opacity(0.03)
+        package static func tileFill(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.tileFill
         }
 
-        package static func tileStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.14) : .black.opacity(0.12)
+        package static func tileStroke(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.tileStroke
         }
 
         // -- Sidebar selection pill
-        package static func sidebarSelectionFill(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.10) : .white.opacity(0.28)
+        package static func sidebarSelectionFill(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.sidebarSelectionFill
         }
 
-        package static func sidebarSelectionStroke(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.18) : .black.opacity(0.08)
+        package static func sidebarSelectionStroke(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.sidebarSelectionStroke
         }
 
         // -- Reduce-transparency fallbacks
-        package static func fallbackBarFill(for colorScheme: ColorScheme) -> Color {
-            colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.90)
+        package static func fallbackBarFill(
+            for colorScheme: ColorScheme,
+            skinID: AppSkinID = .classic
+        ) -> Color {
+            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.fallbackBarFill
         }
 
     }
@@ -104,16 +130,17 @@ package enum AppUI {
 /// Standalone panel: solid fill + border + shadow.
 package struct AppPanel: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
 
     package func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .fill(AppUI.Surface.panelFill(for: colorScheme))
+                    .fill(AppUI.Surface.panelFill(for: colorScheme, skinID: skinID))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .stroke(AppUI.Surface.panelStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
+                    .stroke(AppUI.Surface.panelStroke(for: colorScheme, skinID: skinID), lineWidth: AppUI.Stroke.subtle)
             )
             .shadow(
                 color: colorScheme == .dark ? .clear : .black.opacity(0.08),
@@ -127,12 +154,13 @@ package struct AppPanel: ViewModifier {
 /// Tile: small icon container inside cards — subtle fill, no border.
 package struct AppTile: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
 
     package func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                    .fill(AppUI.Surface.tileFill(for: colorScheme))
+                    .fill(AppUI.Surface.tileFill(for: colorScheme, skinID: skinID))
             )
     }
 }
@@ -140,17 +168,18 @@ package struct AppTile: ViewModifier {
 /// Interactive card: solid fill with always-visible border + hover accent stroke.
 package struct AppInteractiveCard: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
     package let isHovered: Bool
 
     package func body(content: Content) -> some View {
         let strokeColor = isHovered
-            ? AppUI.Surface.cardHoverStroke(for: colorScheme)
-            : AppUI.Surface.cardStroke(for: colorScheme)
+            ? AppUI.Surface.cardHoverStroke(for: colorScheme, skinID: skinID)
+            : AppUI.Surface.cardStroke(for: colorScheme, skinID: skinID)
 
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .fill(AppUI.Surface.cardFill(for: colorScheme))
+                    .fill(AppUI.Surface.cardFill(for: colorScheme, skinID: skinID))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
@@ -162,42 +191,17 @@ package struct AppInteractiveCard: ViewModifier {
 /// Bottom action bar: native `.ultraThinMaterial` with reduce-transparency fallback.
 package struct AppMaterialBar: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appSkinID) private var skinID
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     package func body(content: Content) -> some View {
         if reduceTransparency {
             content
-                .background(AppUI.Surface.fallbackBarFill(for: colorScheme))
+                .background(AppUI.Surface.fallbackBarFill(for: colorScheme, skinID: skinID))
         } else {
             content
                 .background(.ultraThinMaterial)
         }
-    }
-}
-
-/// Sidebar selection pill: translucent highlight + fine border + soft shadow.
-package struct AppSidebarSelectionPill: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-    package let isSelected: Bool
-
-    package func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, AppUI.Spacing.small - 1)
-            .padding(.vertical, AppUI.Spacing.xSmall + 2)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                        .fill(AppUI.Surface.sidebarSelectionFill(for: colorScheme))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                                .stroke(
-                                    AppUI.Surface.sidebarSelectionStroke(for: colorScheme),
-                                    lineWidth: AppUI.Stroke.subtle
-                                )
-                        }
-                        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
-                }
-            }
     }
 }
 
@@ -254,24 +258,6 @@ package extension View {
         } else {
             self
         }
-    }
-
-    func appListRowStyle() -> some View {
-        self
-            .listRowInsets(
-                EdgeInsets(
-                    top: AppUI.List.listVerticalInset,
-                    leading: AppUI.List.contentInsetLeading,
-                    bottom: AppUI.List.listVerticalInset,
-                    trailing: AppUI.List.contentInsetTrailing
-                )
-            )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-    }
-
-    func appSidebarSelectionPill(isSelected: Bool) -> some View {
-        modifier(AppSidebarSelectionPill(isSelected: isSelected))
     }
 
     func appActionButtonStyle(variant: AppActionVariant = .default) -> some View {

@@ -22,6 +22,24 @@ struct VirtualDisplayConfigManagerTests {
     }
 
     @Test
+    func loadPersistedConfigsIfNeededReusesHydratedConfigs() {
+        let store = FakeVirtualDisplayStore()
+        let configA = makeConfig(serial: 1, name: "A")
+        let configB = makeConfig(serial: 2, name: "B")
+        store.nextLoadConfigs = [configA, configB]
+
+        let manager = makeManager(store: store)
+        let first = manager.loadPersistedConfigsIfNeeded()
+        store.nextLoadConfigs = []
+        let second = manager.loadPersistedConfigsIfNeeded()
+
+        #expect(first.configs.map(\.id) == [configA.id, configB.id])
+        #expect(second.configs.map(\.id) == [configA.id, configB.id])
+        #expect(manager.allConfigs().map(\.id) == [configA.id, configB.id])
+        #expect(store.loadCallCount == 1)
+    }
+
+    @Test
     func loadPersistedConfigsFailureClearsConfigsAndRestoreFailures() {
         let store = FakeVirtualDisplayStore()
         store.loadError = VirtualDisplayConfigStoreError.unsupportedSchemaVersion(expected: 3, actual: 2)

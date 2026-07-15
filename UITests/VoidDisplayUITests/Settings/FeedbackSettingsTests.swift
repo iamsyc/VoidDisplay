@@ -6,10 +6,10 @@ final class FeedbackSettingsTests: XCTestCase {
     }
 
     @MainActor
-    func testFeedbackSettingsShowsSupportCenterEntryOnly() throws {
+    func testFeedbackSettingsShowsDiagnosticsEntryOnly() throws {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
-        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = SmokeScenario.settingsFeedback.rawValue
+        app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = "settings_feedback"
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"] = "virtualDisplayFailure"
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_HAPPENED"] = "Virtual display does not restore."
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_REPRODUCTION"] = "1. Launch the app. 2. Restore displays."
@@ -21,9 +21,9 @@ final class FeedbackSettingsTests: XCTestCase {
         assertAllExist(
             app,
             identifiers: [
-                "settings_support_section",
-                "settings_support_intro_text",
-                "settings_open_support_center_button"
+                "settings_diagnostics_section",
+                "settings_diagnostics_intro_text",
+                "settings_open_diagnostics_button"
             ],
             timeout: 5
         )

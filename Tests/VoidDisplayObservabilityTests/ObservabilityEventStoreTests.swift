@@ -1,5 +1,6 @@
 @testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayTestingSupport
 import Foundation
 import Testing
 
@@ -105,13 +106,4 @@ struct ObservabilityEventStoreTests {
         let persisted = try await store.recentEvents(limit: 100)
         #expect(persisted.count == 40)
     }
-}
-
-func makeTemporaryDirectory(prefix: String) throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "\(prefix)-\(UUID().uuidString)",
-        isDirectory: true
-    )
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
 }

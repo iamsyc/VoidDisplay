@@ -10,14 +10,8 @@ import Testing
 struct ZeroCopyPreviewRendererTests {
     @Test func submitFrameRendersAndPublishesMetrics() async throws {
         let renderer = ZeroCopyPreviewRenderer()
-        let session = try UITestCapturePreviewSession(
-            configuration: .init(
-                sourcePixelSize: CGSize(width: 640, height: 360),
-                targetContentWidth: nil,
-                replayImageURL: nil,
-                recordDirectoryURL: nil,
-                initialScaleMode: nil
-            )
+        let session = try TestCapturePreviewSession(
+            sourcePixelSize: CGSize(width: 640, height: 360)
         )
 
         session.attachPreviewSink(renderer)
@@ -39,14 +33,8 @@ struct ZeroCopyPreviewRendererTests {
 
     @Test func latestFrameSlotDropsSupersededFrames() async throws {
         let renderer = ZeroCopyPreviewRenderer()
-        let session = try UITestCapturePreviewSession(
-            configuration: .init(
-                sourcePixelSize: CGSize(width: 800, height: 450),
-                targetContentWidth: nil,
-                replayImageURL: nil,
-                recordDirectoryURL: nil,
-                initialScaleMode: nil
-            )
+        let session = try TestCapturePreviewSession(
+            sourcePixelSize: CGSize(width: 800, height: 450)
         )
 
         session.attachPreviewSink(renderer)
@@ -70,14 +58,8 @@ struct ZeroCopyPreviewRendererTests {
             renderer.willEnqueueFrameForTesting = nil
             renderer.flush()
         }
-        let session = try UITestCapturePreviewSession(
-            configuration: .init(
-                sourcePixelSize: CGSize(width: 1024, height: 576),
-                targetContentWidth: nil,
-                replayImageURL: nil,
-                recordDirectoryURL: nil,
-                initialScaleMode: nil
-            )
+        let session = try TestCapturePreviewSession(
+            sourcePixelSize: CGSize(width: 1024, height: 576)
         )
 
         session.attachPreviewSink(renderer)

@@ -1,22 +1,15 @@
-import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 import VoidDisplayObservability
 import Foundation
 package nonisolated struct SupportHistoryStore {
     private let historyFileURL: URL
-    private let exportsDirectoryURL: URL
-    private let sanitizer: ObservabilitySanitizer
     private let fileManager: FileManager
 
     package init(
         historyFileURL: URL,
-        exportsDirectoryURL: URL,
-        sanitizer: ObservabilitySanitizer = ObservabilitySanitizer(),
         fileManager: FileManager = .default
     ) {
         self.historyFileURL = historyFileURL
-        self.exportsDirectoryURL = exportsDirectoryURL
-        self.sanitizer = sanitizer
         self.fileManager = fileManager
     }
 
@@ -36,11 +29,6 @@ package nonisolated struct SupportHistoryStore {
         }
         filteredRecords.sort { $0.exportedAt > $1.exportedAt }
         filteredRecords = Array(filteredRecords.prefix(10))
-
-        if filteredRecords.isEmpty,
-           let fallbackRecord = makeFallbackRecord() {
-            filteredRecords = [fallbackRecord]
-        }
 
         if fileExists == false || filteredRecords != decodedRecords {
             try? saveRecords(filteredRecords)
@@ -85,41 +73,4 @@ package nonisolated struct SupportHistoryStore {
         return records
     }
 
-    private func makeFallbackRecord() -> SupportExportRecord? {
-        guard let bundleURL = latestExportedBundleURL(),
-              let displayInfo = SupportBundleDisplayInfo(url: bundleURL, sanitizer: sanitizer) else {
-            return nil
-        }
-        let resourceValues = try? bundleURL.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
-        let exportedAt = resourceValues?.contentModificationDate ?? resourceValues?.creationDate ?? Date()
-        return SupportExportRecord(
-            exportedAt: exportedAt,
-            issueType: .other,
-            bundleFileName: displayInfo.displayName,
-            sanitizedBundlePath: displayInfo.sanitizedFullPath,
-            draftPreview: ""
-        )
-    }
-
-    private func latestExportedBundleURL() -> URL? {
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: exportsDirectoryURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-
-        return urls
-            .filter {
-                $0.pathExtension == "zip" &&
-                    $0.lastPathComponent.hasPrefix("support-bundle-")
-            }
-            .max { lhs, rhs in
-                let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                return lhsDate < rhsDate
-            }?
-            .resolvingSymlinksInPath()
-    }
 }

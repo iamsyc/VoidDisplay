@@ -25,7 +25,6 @@ package final class VirtualDisplayConfigRepository {
         case userReorderedConfigs
         case userDeletedConfig
         case userToggledDesiredEnabled
-        case restoreDesiredStateSync
         case runtimeDisableCleanup
         case runtimeRebuildRecovery
     }
@@ -145,7 +144,7 @@ package final class VirtualDisplayConfigRepository {
         case .userCreatedConfig, .userEditedConfig:
             true
         case .userReorderedConfigs, .userDeletedConfig, .userToggledDesiredEnabled,
-                .restoreDesiredStateSync, .runtimeDisableCleanup, .runtimeRebuildRecovery:
+                .runtimeDisableCleanup, .runtimeRebuildRecovery:
             false
         }
     }

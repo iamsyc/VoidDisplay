@@ -39,7 +39,7 @@ package struct ShareDisplayList: View {
                 .appListContentInsets(top: false)
             }
         }
-        .accessibilityIdentifier("share_displays_list")
+        .accessibilityIdentifier("lan_web_view_displays_list")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
                 Divider()
@@ -47,7 +47,7 @@ package struct ShareDisplayList: View {
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
-                Text("If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display.")
+                Text("If a display is set to mirror mode, only one mirrored display appears here.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -60,7 +60,7 @@ package struct ShareDisplayList: View {
 
     private func shareableDisplayRow(_ display: SCDisplay) -> some View {
         let displayName = NSScreen.screens.first(where: { $0.cgDirectDisplayID == display.displayID })?.localizedName
-            ?? String(localized: "Monitor")
+            ?? String(localized: "Display")
         let displayStatus = displayStatusProvider.status(display.displayID)
         let isVirtual = displayStatus.isManagedVirtualDisplay
         let isSharingDisplay = runtimeState.isDisplaySharing(displayID: display.displayID)
@@ -98,7 +98,7 @@ package struct ShareDisplayList: View {
                 : nil,
             iconSystemName: "display",
             iconScreenTint: DisplayIconTintResolver.resolve(
-                isMonitoring: displayStatus.isMonitoring,
+                isPreviewing: displayStatus.isPreviewing,
                 isSharing: isSharingDisplay
             ),
             isEmphasized: true,

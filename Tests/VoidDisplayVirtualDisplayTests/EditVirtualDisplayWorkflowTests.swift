@@ -1,4 +1,5 @@
 @testable import VoidDisplayVirtualDisplay
+@testable import VoidDisplayVirtualDisplayTestingSupport
 @testable import VoidDisplayFoundation
 import Foundation
 import Testing
@@ -53,8 +54,7 @@ struct EditVirtualDisplayWorkflowTests {
     ) -> VirtualDisplayController {
         VirtualDisplayController(
             virtualDisplayFacade: facade,
-            appliedBadgeDisplayDuration: .seconds(0.1),
-            stopDependentStreamsBeforeRebuild: { _ in }
+            appliedBadgeDisplayDuration: .seconds(0.1)
         )
     }
 }

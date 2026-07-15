@@ -76,7 +76,7 @@ Release workflow 在发布前用内联 GitHub API 逻辑验证目标 commit 的 
 
 `Brewfile` 只作为本地 fallback。CI 以 `mise.toml` 为准。
 
-Xcode 版本由 `.github/actions/xcode-select` 和 `scripts/lib/xcode.sh` 双重校验。默认期望 Xcode `26.4` 和 Swift `6.x`，临时切换必须显式设置 `EXPECTED_XCODE_VERSION_PREFIX`。
+Xcode 版本由 `.github/actions/xcode-select` 和 `scripts/lib/xcode.sh` 双重校验。默认期望安装路径优先使用 Xcode `26.5.0`，`xcodebuild` 版本前缀为 `26.5`，Swift 为 `6.x`，临时切换必须显式设置 `EXPECTED_XCODE_VERSION_PREFIX`。
 
 所有外部 GitHub Actions 必须固定到 40 位 commit SHA，并在同一行保留来源版本注释。
 
@@ -240,6 +240,7 @@ Branch protection 只要求 `ci-gate`。由于管理员可以绕过分支保护�
 ```bash
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
+scripts/dev/validate.sh
 scripts/ci/static.sh
 scripts/ci/unit.sh
 scripts/ci/xcode.sh --action build --configuration Debug
@@ -248,6 +249,8 @@ scripts/ci/release_smoke.sh --arch arm64 --label arm64
 scripts/release/build.sh --tag vX.Y.Z --arch arm64 --label arm64
 scripts/release/verify.sh --assets-dir .ai-tmp/release-arm64/release-assets --tag vX.Y.Z --label arm64 --arch arm64
 ```
+
+`scripts/dev/validate.sh` 是日常开发本地验证主入口，串联 static、SwiftPM/Go unit、Xcode Debug build 和默认 UI smoke。该入口默认按宿主机架构选择 Xcode destination，也允许用 `--destination` 覆盖。Xcode `VoidDisplay` scheme 仅覆盖 app build/run 和 UI test；Cmd-U 不代表 SwiftPM 单测通过。
 
 本地命令和 CI 命令必须保持等价。新增 CI 能力时，优先新增或扩展脚本，再改 workflow 调度。
 

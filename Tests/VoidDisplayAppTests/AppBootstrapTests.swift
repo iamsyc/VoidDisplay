@@ -2,64 +2,97 @@
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayCapture
 @testable import VoidDisplaySharing
+@testable import VoidDisplayRuntime
+@testable import VoidDisplayObservability
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
+@testable import VoidDisplayVirtualDisplayTestingSupport
+import Darwin
 import Foundation
 import Testing
 
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
-    @Test func initUsesDefaultCaptureMonitoringServiceWhenInjectionIsOmitted() async {
-        let sharing = MockSharingService()
-        let virtualDisplay = MockVirtualDisplayFacade()
+    @Test func singleInstanceGuardBuildsStableSanitizedLockFileName() {
+        #expect(
+            AppSingleInstanceGuard.lockFileName(bundleIdentifier: "com.developerchen.voiddisplay")
+                == "com.developerchen.voiddisplay.single-instance.lock"
+        )
+        #expect(
+            AppSingleInstanceGuard.lockFileName(bundleIdentifier: "com developerchen/voiddisplay")
+                == "com_developerchen_voiddisplay.single-instance.lock"
+        )
+        #expect(
+            AppSingleInstanceGuard.lockFileName(bundleIdentifier: nil)
+                == "voiddisplay.single-instance.lock"
+        )
+    }
 
+    @Test func singleInstanceGuardClassifiesAcquiredLock() {
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: 42,
+                flockResult: 0,
+                errorCode: 0
+            ) == .acquired
+        )
+    }
+
+    @Test func singleInstanceGuardClassifiesOpenFailureWithoutTreatingItAsContention() {
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: -1,
+                flockResult: nil,
+                errorCode: EACCES
+            ) == .failed(errorCode: EACCES)
+        )
+    }
+
+    @Test func singleInstanceGuardClassifiesHeldLockSeparatelyFromFlockFailure() {
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: 42,
+                flockResult: -1,
+                errorCode: EWOULDBLOCK
+            ) == .heldByOtherInstance
+        )
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: 42,
+                flockResult: -1,
+                errorCode: EPERM
+            ) == .failed(errorCode: EPERM)
+        )
+    }
+
+    @Test func initRegistersRuntimeSnapshotProvider() async throws {
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
+            capturePreviewService: MockCapturePreviewService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
             isRunningUnderXCTestOverride: true
         )
 
-        #expect(env.capture.screenCaptureSessions.isEmpty)
-        #expect(sharing.startWebServiceCallCount == 0)
-        #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
-    }
+        await env.waitForStartupTasks()
+        let diagnostics = await env.observability.diagnosticsSnapshot()
+        let runtimeSection = try #require(diagnostics.state.sections["runtime"])
+        let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
 
-    @Test func initCapturePreviewDiagnosticsScenarioBuildsMonitoringSessionFromRuntimeConfiguration() async throws {
-        let overrides = [
-            (UITestRuntime.modeEnvironmentKey, "1"),
-            (UITestRuntime.scenarioEnvironmentKey, UITestScenario.capturePreviewDiagnostics.rawValue),
-            (CapturePreviewDiagnosticsRuntime.sourceSizeEnvironmentKey, "3008x1692")
-        ]
-        let previousValues = overrides.map { ($0.0, ProcessInfo.processInfo.environment[$0.0]) }
-        for (key, value) in overrides {
-            setenv(key, value, 1)
-        }
-        defer {
-            for (key, previousValue) in previousValues {
-                if let previousValue {
-                    setenv(key, previousValue, 1)
-                } else {
-                    unsetenv(key)
-                }
-            }
-        }
-
-        let env = AppBootstrap.makeEnvironment()
-
-        let session = try #require(env.capture.screenCaptureSessions.first)
-        #expect(env.capture.screenCaptureSessions.count == 1)
-        #expect(session.displayName == "Preview Diagnostics")
-        #expect(session.resolutionText == "3008 × 1692")
-        #expect(session.capturesCursor == false)
-        #expect(env.virtualDisplay.displayConfigs.count == 2)
+        #expect(runtime.schemaVersion == 3)
+        #expect(diagnostics.state.sections["system"] != nil)
+        #expect(diagnostics.state.sections["persistence"] != nil)
+        #expect(diagnostics.state.sections["capture"] == nil)
+        #expect(diagnostics.state.sections["sharing"] == nil)
+        #expect(diagnostics.state.sections["virtualDisplay"] == nil)
+        #expect(diagnostics.state.sections["screenCatalog"] == nil)
     }
 
     @Test func previewEnvironmentDoesNotPersistPreferredPortToStandardDefaults() async {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
         sharing.startResult = .started(WebServiceBinding(requestedPort: requestedPort, boundPort: requestedPort))
 
@@ -76,7 +109,7 @@ struct AppBootstrapTests {
 
         let env = AppBootstrap.makeEnvironment(
             preview: true,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
@@ -96,37 +129,18 @@ struct AppBootstrapTests {
         #expect(valuesMatch)
     }
 
-    @Test func initPreviewModeSkipsStartupSequence() async {
-        let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
-        let virtualDisplay = MockVirtualDisplayFacade()
-
-        _ = AppBootstrap.makeEnvironment(
-            preview: true,
-            captureMonitoringService: capture,
-            sharingService: sharing,
-            virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: false
-        )
-
-        #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 0)
-        #expect(sharing.startWebServiceCallCount == 0)
-    }
-
     @Test func initUITestModeAppliesFixtureAndSkipsServiceBoot() async {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
-        let virtualDisplay = UITestVirtualDisplayFacade(scenario: .baseline)
+        let capture = MockCapturePreviewService()
+        let virtualDisplay = UITestVirtualDisplayFacade()
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             startupPlan: .init(
-                shouldRestoreVirtualDisplays: true,
-                postRestoreConfiguration: nil
+                shouldRestoreVirtualDisplays: true
             ),
             isRunningUnderXCTestOverride: false
         )
@@ -136,28 +150,52 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.runningConfigIds.count == 1)
     }
 
-    @Test func initRunningUnderXCTestSkipsStartupSequence() async {
+    @Test func initNormalModeHydratesVirtualDisplayConfigsBeforeStartupTaskCompletes() async {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
+        let fixtureConfig = VirtualDisplayConfig(
+            displayName: "Named Startup Display",
+            serialNum: 13,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        virtualDisplay.currentDisplayConfigs = [fixtureConfig]
+        virtualDisplay.runtimeDisplayIDByConfigId[fixtureConfig.id] = 10_013
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
-            isRunningUnderXCTestOverride: true
+            isRunningUnderXCTestOverride: false
         )
 
-        #expect(virtualDisplay.loadPersistedConfigsCallCount == 0)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 0)
-        #expect(sharing.startWebServiceCallCount == 0)
-        #expect(sut.virtualDisplay.displayConfigs.isEmpty)
+        #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
+        #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [fixtureConfig.id])
+        #expect(sut.virtualDisplay.displayConfigs.map(\.displayName) == ["Named Startup Display"])
+        await sut.waitForStartupTasks()
+        #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
     }
 
-    @Test func initNormalModeLoadsPersistedDataWithoutStartingWebService() async {
+    @Test func initNormalModeKeepsObservabilityInTestIsolationWhenRunningUnderXCTest() async {
+        let sut = AppBootstrap.makeEnvironment(
+            preview: false,
+            capturePreviewService: MockCapturePreviewService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: MockVirtualDisplayFacade(),
+            isRunningUnderXCTestOverride: false
+        )
+
+        let dataDirectoryURL = await sut.observability.dataDirectoryURL()
+        #expect(dataDirectoryURL?.path.contains(".tests") == true)
+    }
+
+    @Test func initNormalModeRestoresStartupVirtualDisplaysThroughRuntimeWithoutStartingWebService() async throws {
         let sharing = MockSharingService()
-        let capture = MockCaptureMonitoringService()
+        let capture = MockCapturePreviewService()
         let virtualDisplay = MockVirtualDisplayFacade()
 
         let fixtureConfig = VirtualDisplayConfig(
@@ -169,20 +207,29 @@ struct AppBootstrapTests {
             desiredEnabled: true
         )
         virtualDisplay.currentDisplayConfigs = [fixtureConfig]
+        virtualDisplay.runtimeDisplayIDByConfigId[fixtureConfig.id] = 10_001
 
         let sut = AppBootstrap.makeEnvironment(
             preview: false,
-            captureMonitoringService: capture,
+            capturePreviewService: capture,
             sharingService: sharing,
             virtualDisplayFacade: virtualDisplay,
             isRunningUnderXCTestOverride: false
         )
+        await sut.waitForStartupTasks()
+        let startupTrace = try #require(
+            sut.displayRuntime.makeSnapshot().transactions.recentTransactions.first {
+                $0.kind == .virtualDisplayStartupRestore
+            }
+        )
 
         #expect(sharing.startWebServiceCallCount == 0)
         #expect(virtualDisplay.loadPersistedConfigsCallCount == 1)
-        #expect(virtualDisplay.restoreDesiredVirtualDisplaysCallCount == 1)
+        #expect(virtualDisplay.startupRestoreCommandRequests.map(\.configID) == [fixtureConfig.id])
+        #expect(startupTrace.source == .startup)
         #expect(sut.virtualDisplay.displayConfigs.count == 1)
         #expect(sut.virtualDisplay.displayConfigs.first?.id == fixtureConfig.id)
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
+        #expect(sut.virtualDisplay.runningConfigIds == [fixtureConfig.id])
     }
 }

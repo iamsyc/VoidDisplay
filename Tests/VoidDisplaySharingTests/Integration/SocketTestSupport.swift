@@ -14,11 +14,6 @@ enum SocketIntegrationError: Error {
     case receiveTimeout
 }
 
-struct WebSocketCloseObservation: Equatable {
-    let didClose: Bool
-    let closeCode: UInt16?
-}
-
 func sendAll(_ fd: Int32, data: Data) throws {
     try data.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.baseAddress else { return }
@@ -114,50 +109,6 @@ func sendRequestAndReadUntilClose(
     return try readAll(from: fd)
 }
 
-func sendRequestAndReadPartialResponse(
-    port: UInt16,
-    request: Data,
-    timeoutMilliseconds: Int = 3000
-) async throws -> Data {
-    let fd = try await connectLoopbackSocket(port: port)
-    defer { close(fd) }
-    configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
-    try sendAll(fd, data: request)
-    _ = shutdown(fd, SHUT_WR)
-
-    var response = Data()
-    var buffer = [UInt8](repeating: 0, count: 4096)
-    let terminator = Data("\r\n\r\n".utf8)
-
-    while true {
-        let readBytes = recv(fd, &buffer, buffer.count, 0)
-        if readBytes > 0 {
-            response.append(buffer, count: readBytes)
-            if let range = response.range(of: terminator) {
-                return Data(response[..<range.upperBound])
-            }
-            continue
-        }
-
-        if readBytes == 0, !response.isEmpty {
-            return response
-        }
-
-        if errno == EWOULDBLOCK || errno == EAGAIN {
-            if !response.isEmpty {
-                return response
-            }
-            throw SocketIntegrationError.receiveTimeout
-        }
-
-        if response.isEmpty {
-            throw SocketIntegrationError.receiveTimeout
-        } else {
-            return response
-        }
-    }
-}
-
 func readUntilHeaderTerminator(
     from fd: Int32,
     timeoutMilliseconds: Int = 500,
@@ -198,18 +149,6 @@ func waitForCloseOrEOF(
     timeoutMilliseconds: Int = 500,
     deadlineSeconds: TimeInterval = 10
 ) throws -> Bool {
-    try waitForCloseObservation(
-        from: fd,
-        timeoutMilliseconds: timeoutMilliseconds,
-        deadlineSeconds: deadlineSeconds
-    ).didClose
-}
-
-func waitForCloseObservation(
-    from fd: Int32,
-    timeoutMilliseconds: Int = 500,
-    deadlineSeconds: TimeInterval = 10
-) throws -> WebSocketCloseObservation {
     configureReceiveTimeout(fd: fd, milliseconds: timeoutMilliseconds)
     let deadline = Date().addingTimeInterval(deadlineSeconds)
     var buffer = [UInt8](repeating: 0, count: 4096)
@@ -222,55 +161,26 @@ func waitForCloseObservation(
         if bytes > 0 {
             let output = decoder.ingest(Data(buffer.prefix(bytes)))
             for frame in output.frames {
-                if case .close(let payload) = frame {
-                    if payload.count >= 2 {
-                        let code = payload.withUnsafeBytes { raw -> UInt16 in
-                            let high = UInt16(raw[raw.startIndex])
-                            let low = UInt16(raw[raw.startIndex + 1])
-                            return (high << 8) | low
-                        }
-                        return WebSocketCloseObservation(didClose: true, closeCode: code)
-                    }
-                    return WebSocketCloseObservation(didClose: true, closeCode: nil)
+                if case .close = frame {
+                    return true
                 }
             }
             continue
         }
         if bytes == 0 {
-            return WebSocketCloseObservation(didClose: true, closeCode: nil)
+            return true
         }
         if errno == EWOULDBLOCK || errno == EAGAIN {
             if Date() >= deadline {
-                return WebSocketCloseObservation(didClose: false, closeCode: nil)
+                return false
             }
             continue
         }
         if errno == ECONNRESET || errno == ENOTCONN {
-            return WebSocketCloseObservation(didClose: true, closeCode: nil)
+            return true
         }
         throw SocketIntegrationError.receiveFailed
     }
-}
-
-func makeMaskedBinaryFrame(payload: Data) -> Data {
-    let mask: [UInt8] = [0x21, 0x43, 0x65, 0x87]
-    var frame = Data([0x82])
-    if payload.count <= 125 {
-        frame.append(0x80 | UInt8(payload.count))
-    } else if payload.count <= Int(UInt16.max) {
-        frame.append(0x80 | 126)
-        var length = UInt16(payload.count).bigEndian
-        withUnsafeBytes(of: &length) { frame.append(contentsOf: $0) }
-    } else {
-        frame.append(0x80 | 127)
-        var length = UInt64(payload.count).bigEndian
-        withUnsafeBytes(of: &length) { frame.append(contentsOf: $0) }
-    }
-    frame.append(contentsOf: mask)
-    for (index, byte) in payload.enumerated() {
-        frame.append(byte ^ mask[index % 4])
-    }
-    return frame
 }
 
 func makeMaskedTextFrame(_ text: String) -> Data {

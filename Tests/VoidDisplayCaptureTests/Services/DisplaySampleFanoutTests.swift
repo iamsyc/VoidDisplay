@@ -99,23 +99,6 @@ private final class FanoutCompletionFlag: @unchecked Sendable {
 @MainActor
 @Suite(.serialized)
 struct DisplaySampleFanoutTests {
-    @Test func detachPreventsQueuedFrameDelivery() async throws {
-        let sampleBuffer = try await makeSampleBuffer()
-        let fanout = DisplaySampleFanout()
-        let sink = CountingPreviewSink()
-        fanout.willStartDrainForTesting = {
-            fanout.detachPreviewSink(sink)
-        }
-        fanout.attachPreviewSink(sink)
-
-        fanout.publishPreviewFrame(sampleBuffer)
-
-        let noLateDelivery = await staysTrue(timeout: .milliseconds(100)) {
-            sink.snapshot() == 0
-        }
-        #expect(noLateDelivery)
-    }
-
     @Test func slowSinkDoesNotBlockPublishingNewFrame() async throws {
         let first = try await makeSampleBuffer()
         let second = try await makeSampleBuffer()
@@ -155,14 +138,8 @@ struct DisplaySampleFanoutTests {
     }
 
     private func makeSampleBuffer() async throws -> CMSampleBuffer {
-        let session = try UITestCapturePreviewSession(
-            configuration: .init(
-                sourcePixelSize: CGSize(width: 64, height: 64),
-                targetContentWidth: nil,
-                replayImageURL: nil,
-                recordDirectoryURL: nil,
-                initialScaleMode: nil
-            )
+        let session = try TestCapturePreviewSession(
+            sourcePixelSize: CGSize(width: 64, height: 64)
         )
         let sink = SampleBufferCaptureSink()
         session.attachPreviewSink(sink)

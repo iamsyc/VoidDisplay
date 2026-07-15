@@ -15,13 +15,13 @@ package struct IsCapturing: View {
     @State private var lifecycle: DisplayTopologyRefreshLifecycleController
     @Environment(\.openWindow) var openWindow
     @Environment(\.openURL) private var openURL
-    private let monitoringActions: CaptureMonitoringActions
+    private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
     private let catalogActions: CaptureCatalogActions
 
     package init(
         catalogState: ScreenCaptureDisplayCatalogState,
-        monitoringActions: CaptureMonitoringActions,
+        previewActions: CapturePreviewActions,
         sharingStatusProvider: CaptureSharingStatusProvider,
         virtualDisplayStatusProvider: CaptureVirtualDisplayStatusProvider,
         catalogActions: CaptureCatalogActions,
@@ -31,25 +31,15 @@ package struct IsCapturing: View {
             initialValue: CaptureChooseViewModel(
                 catalogState: catalogState,
                 dependencies: .init(
-                    captureActions: monitoringActions,
+                    captureActions: previewActions,
                     virtualDisplayStatusProvider: virtualDisplayStatusProvider
                 )
             )
         )
         _lifecycle = State(initialValue: lifecycle)
-        self.monitoringActions = monitoringActions
+        self.previewActions = previewActions
         self.sharingStatusProvider = sharingStatusProvider
         self.catalogActions = catalogActions
-    }
-
-    private var shouldShowActiveSessionFallback: Bool {
-        guard !monitoringActions.sessions().isEmpty else { return false }
-        if viewModel.catalog.hasScreenCapturePermission == true,
-           let displays = viewModel.catalog.displays,
-           !viewModel.visibleDisplays(from: displays).isEmpty {
-            return false
-        }
-        return true
     }
 
     package var body: some View {
@@ -57,14 +47,6 @@ package struct IsCapturing: View {
 
         VStack(spacing: 0) {
             catalogContent
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if shouldShowActiveSessionFallback {
-                    VStack(spacing: 0) {
-                        activeMonitoringSessionsFallback
-                        Divider()
-                    }
-                }
-            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 Task { await catalogActions.handleAppear() }
@@ -83,7 +65,7 @@ package struct IsCapturing: View {
             .accessibilityIdentifier("capture_choose_root")
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("detail_monitor_screen")
+        .accessibilityIdentifier("detail_screen_preview")
         .alert(item: $bindableViewModel.userFacingAlert) { alert in
             Alert(
                 title: Text(alert.title),
@@ -118,7 +100,7 @@ package struct IsCapturing: View {
             ContentUnavailableView(
                 "No watchable screen",
                 systemImage: "display.trianglebadge.exclamationmark",
-                description: Text("No available display can be monitored right now.")
+                description: Text("No available display can be previewed right now.")
             )
             .accessibilityIdentifier("capture_displays_empty_state")
         }
@@ -175,7 +157,7 @@ package struct IsCapturing: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: AppUI.Spacing.small + 2) {
                 Divider()
-                Text("If a monitor is set to 'mirror', only the mirrored monitor will be displayed here. The other mirrored monitor will not display.")
+                Text("If a display is set to mirror mode, only one mirrored display appears here.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -187,28 +169,13 @@ package struct IsCapturing: View {
         .accessibilityIdentifier("capture_displays_list")
     }
 
-    private var activeMonitoringSessionsFallback: some View {
-        VStack(spacing: AppUI.List.sectionSpacing) {
-            ForEach(monitoringActions.sessions()) { session in
-                MonitoringSessionRow(
-                    session: session,
-                    isSharing: sharingStatusProvider.isDisplaySharing(session.displayID)
-                ) {
-                    monitoringActions.closeMonitoringSession(session.id)
-                }
-            }
-        }
-        .appListContentInsets()
-        .frame(maxWidth: .infinity, alignment: .top)
-        .accessibilityIdentifier("capture_active_sessions_fallback")
-    }
-
     private func captureDisplayRowComponent(_ display: SCDisplay) -> some View {
         let isVirtualDisplay = viewModel.isVirtualDisplay(display)
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
-        let monitoringSession = monitoringActions.monitoringSessionForDisplayID(display.displayID)
-        let isMonitoring = monitoringSession?.state == .active
-        let isStarting = monitoringActions.isStartingDisplayID(display.displayID) || monitoringSession?.state == .starting
+        let previewID = previewActions.previewIDForDisplayID(display.displayID)
+        let previewSession = previewID.flatMap(previewActions.previewSession)
+        let isPreviewing = previewSession?.state == .active
+        let isStarting = previewActions.isStartingDisplayID(display.displayID) || previewSession?.state == .starting
 
         return CaptureDisplayRow(
             display: display,
@@ -216,16 +183,16 @@ package struct IsCapturing: View {
             resolutionText: viewModel.resolutionText(for: display),
             isVirtualDisplay: isVirtualDisplay,
             isPrimaryDisplay: isPrimaryDisplay,
-            isMonitoring: isMonitoring,
+            isPreviewing: isPreviewing,
             isStarting: isStarting,
             isSharing: sharingStatusProvider.isDisplaySharing(display.displayID)
         ) {
-            if isMonitoring, let session = monitoringSession {
-                monitoringActions.closeMonitoringSession(session.id)
+            if isPreviewing, let previewID {
+                Task { await previewActions.closePreview(previewID) }
             } else {
                 Task {
-                    await viewModel.startMonitoring(display: display) { sessionId in
-                        openWindow(value: sessionId)
+                    await viewModel.startPreview(display: display) { previewID in
+                        openWindow(value: previewID)
                     }
                 }
             }

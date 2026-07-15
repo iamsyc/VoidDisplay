@@ -206,10 +206,6 @@ package final class WebServer {
         }
     }
 
-    package func listeningPort() -> UInt16? {
-        listener?.port?.rawValue
-    }
-
     package func disconnectAllStreamClients() {
         for key in Array(activeConnections.keys) {
             disconnectActiveConnection(forKey: key, cancelConnection: true)
