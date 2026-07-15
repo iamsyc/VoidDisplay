@@ -31,7 +31,8 @@ package enum SharingUIComposition {
     package static func dependencies(
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
-        displayRuntime: DisplayRuntime
+        displayRuntime: DisplayRuntime,
+        capturePerformancePreferences: CapturePerformancePreferences
     ) -> ShareViewModel.Dependencies {
         ShareViewModel.Dependencies(
             sharingQueries: .init(
@@ -51,7 +52,10 @@ package enum SharingUIComposition {
                 stopWebService: {
                     sharing.stopWebService()
                     Task { @MainActor in
-                        await DisplayRuntimeSharingAdapter(controller: sharing)
+                        await DisplayRuntimeSharingAdapter(
+                            controller: sharing,
+                            capturePerformancePreferences: capturePerformancePreferences
+                        )
                             .stopAllLANWebViewSharing(runtime: displayRuntime)
                     }
                 },
@@ -59,12 +63,18 @@ package enum SharingUIComposition {
                     sharing.registerShareableDisplays(displays, virtualSerialResolver: resolver)
                 },
                 beginSharing: { display in
-                    try await DisplayRuntimeSharingAdapter(controller: sharing)
+                    try await DisplayRuntimeSharingAdapter(
+                        controller: sharing,
+                        capturePerformancePreferences: capturePerformancePreferences
+                    )
                         .beginLANWebViewSharing(display: display, runtime: displayRuntime)
                 },
                 stopSharing: { displayID in
                     Task { @MainActor in
-                        await DisplayRuntimeSharingAdapter(controller: sharing)
+                        await DisplayRuntimeSharingAdapter(
+                            controller: sharing,
+                            capturePerformancePreferences: capturePerformancePreferences
+                        )
                             .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
                     }
                 }

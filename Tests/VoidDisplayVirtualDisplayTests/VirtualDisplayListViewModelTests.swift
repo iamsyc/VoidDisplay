@@ -100,13 +100,12 @@ struct VirtualDisplayListViewModelTests {
         #expect(mockService.clearRestoreFailuresCallCount == 1)
     }
 
-    @Test func toggleDisplayStateEnablesWhenConfigIsStopped() async {
+    @Test func toggleDisplayStateEnablesWhenDesiredStateIsDisabled() async {
         let config = sampleConfig(serial: 201)
         let gate = AsyncGate()
         var requests: [(UUID, Bool)] = []
         let sut = VirtualDisplayListViewModel(
             dependencies: .test(
-                isRunning: false,
                 setVirtualDisplayDesiredEnabled: { configID, enabled in
                     requests.append((configID, enabled))
                     await gate.wait()
@@ -127,12 +126,33 @@ struct VirtualDisplayListViewModelTests {
         #expect(sut.userFacingAlert == nil)
     }
 
-    @Test func toggleDisplayStateShowsErrorWhenDisableFails() async {
-        let config = sampleConfig(serial: 301)
+    @Test func toggleDisplayStateDisablesWhenDesiredStateIsEnabledButDisplayIsStopped() async {
+        var config = sampleConfig(serial: 202)
+        config.desiredEnabled = true
         var requests: [(UUID, Bool)] = []
         let sut = VirtualDisplayListViewModel(
             dependencies: .test(
-                isRunning: true,
+                setVirtualDisplayDesiredEnabled: { configID, enabled in
+                    requests.append((configID, enabled))
+                }
+            )
+        )
+
+        sut.toggleDisplayState(config)
+        let finished = await waitUntil { sut.togglingConfigIds.isEmpty && !requests.isEmpty }
+
+        #expect(finished)
+        #expect(requests.map(\.0) == [config.id])
+        #expect(requests.map(\.1) == [false])
+        #expect(sut.userFacingAlert == nil)
+    }
+
+    @Test func toggleDisplayStateShowsErrorWhenDisableFails() async {
+        var config = sampleConfig(serial: 301)
+        config.desiredEnabled = true
+        var requests: [(UUID, Bool)] = []
+        let sut = VirtualDisplayListViewModel(
+            dependencies: .test(
                 setVirtualDisplayDesiredEnabled: { configID, enabled in
                     requests.append((configID, enabled))
                     throw NSError(domain: "VirtualDisplayListViewModelTests", code: 9)
@@ -155,7 +175,6 @@ struct VirtualDisplayListViewModelTests {
         let config = sampleConfig(serial: 302)
         let sut = VirtualDisplayListViewModel(
             dependencies: .test(
-                isRunning: false,
                 setVirtualDisplayDesiredEnabled: { _, _ in
                     throw NSError(domain: "VirtualDisplayListViewModelTests", code: 10)
                 }
@@ -219,7 +238,6 @@ struct VirtualDisplayListViewModelTests {
 
 private extension VirtualDisplayListViewModel.Dependencies {
     static func test(
-        isRunning: Bool = false,
         deleteVirtualDisplay: @escaping @MainActor (UUID) async throws -> Void = { _ in },
         setVirtualDisplayDesiredEnabled: @escaping @MainActor (UUID, Bool) async throws -> Void = { _, _ in }
     ) -> Self {
@@ -229,7 +247,6 @@ private extension VirtualDisplayListViewModel.Dependencies {
             deleteVirtualDisplay: deleteVirtualDisplay,
             runtimeDisplayID: { _ in nil },
             isRebuilding: { _ in false },
-            isVirtualDisplayRunning: { _ in isRunning },
             setVirtualDisplayDesiredEnabled: setVirtualDisplayDesiredEnabled
         )
     }

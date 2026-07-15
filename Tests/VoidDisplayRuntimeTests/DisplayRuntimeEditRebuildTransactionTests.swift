@@ -78,7 +78,6 @@ struct DisplayRuntimeEditRebuildTransactionTests {
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 93)),
             catalogCommander: FakeCatalogCommander(recorder: recorder),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
@@ -111,7 +110,6 @@ struct DisplayRuntimeEditRebuildTransactionTests {
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 94)),
             catalogCommander: FakeCatalogCommander(recorder: recorder),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
@@ -131,6 +129,73 @@ struct DisplayRuntimeEditRebuildTransactionTests {
         #expect(trace.virtualDisplayCommandOutcome == .notAttempted)
         #expect(commander.rebuildCallCount == 0)
         #expect(recorder.events.allSatisfy { !$0.hasPrefix("stopSharing") && !$0.hasPrefix("removePreview") })
+    }
+    @Test func editRebuildQuiesceFailureRollsBackConfigAndSkipsRebuild() async throws {
+        let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000014")!
+        let previous = editConfigDTO(id: configID, displayName: "Previous", serial: 9114)
+        let edited = editConfigDTO(id: configID, displayName: "Edited", serial: 9115)
+        let catalog = catalogSnapshot(displayID: 114, isMain: false)
+        let captureIntentCommander = FakeCaptureIntentCommander { intent in
+            if intent.reason == .transactionQuiesce {
+                return .failed(
+                    revision: intent.revision,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
+                )
+            }
+            return .applied(revision: intent.revision)
+        }
+        let virtualDisplayCommander = FakeVirtualDisplayCommander()
+        virtualDisplayCommander.saveConfigForRebuildResult = editRebuildSaveCommandResult(
+            previousConfigForCompensation: previous,
+            savedConfig: edited
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 114)
+            ),
+            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            captureIntentCommander: captureIntentCommander,
+            virtualDisplayCommander: virtualDisplayCommander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+
+        let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+            request: .init(
+                editedConfig: edited,
+                expectedConfigFingerprint: previous.fingerprint,
+                source: .editSaveAndRebuild
+            ),
+            source: .editSaveAndRebuild
+        )
+        _ = try await handle.waitForSaveGate()
+        let result = try await handle.waitForTerminalResult()
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(result.virtualDisplayCommandSucceeded == false)
+        #expect(trace.failure?.phase == .quiescingSessions)
+        #expect(trace.failure?.reason == "consumer_session_quiesce_failed")
+        #expect(trace.compensation.status == .completed)
+        #expect(trace.compensation.persistenceOutcome == .rolledBack)
+        #expect(trace.compensation.virtualDisplayCommandOutcome == .notAttempted)
+        #expect(virtualDisplayCommander.restoreConfigAfterFailedEditCallCount == 1)
+        #expect(virtualDisplayCommander.rebuildCallCount == 0)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attached)
+        #expect(runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity) == false)
+        #expect(captureIntentCommander.intents.map(\.reason) == [
+            .attach,
+            .transactionQuiesce,
+            .epochChanged
+        ])
     }
     @Test func editRebuildMissingOldConfigFailsBeforeSaveAndRebuild() async throws {
         let configID = UUID(uuidString: "3B020000-0000-0000-0000-000000000005")!

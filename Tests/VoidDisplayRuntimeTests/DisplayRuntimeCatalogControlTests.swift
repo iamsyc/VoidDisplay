@@ -23,11 +23,28 @@ struct DisplayRuntimeCatalogControlTests {
                 configs: [(UUID(uuidString: "11111111-1111-1111-1111-111111111111")!, 9002, keptDisplayID)]
             )
         )
+        let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = makeRuntime(
             catalog: catalog,
             capture: capture,
             sharing: sharing,
-            virtualDisplay: virtualDisplay
+            virtualDisplay: virtualDisplay,
+            captureIntentCommander: captureIntentCommander
+        )
+        let removedSurface = DisplaySurfaceIdentity.physicalDisplay(displayID: removedDisplayID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: removedSurface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: removedSurface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
         )
 
         await runtime.handleCatalogAppear(source: .capturePage)
@@ -36,8 +53,8 @@ struct DisplayRuntimeCatalogControlTests {
         #expect(sharing.registeredDisplays == [[
             .init(displayID: keptDisplayID, virtualSerialNumber: 9002)
         ]])
-        #expect(sharing.stoppedDisplayIDs == [removedDisplayID])
-        #expect(capture.removedDisplayIDs == [removedDisplayID])
+        #expect(captureIntentCommander.intents.suffix(2).allSatisfy { $0.kind == .drain })
+        #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .failed })
     }
 
     @Test func sharingAppearWithStoppedServiceCancelsRefreshWithoutClearingSnapshot() async {
@@ -89,19 +106,36 @@ struct DisplayRuntimeCatalogControlTests {
             snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [removedDisplayID])
         )
         let observability = FakeObservabilityRecorder()
+        let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = makeRuntime(
             catalog: catalog,
             capture: capture,
             sharing: sharing,
-            observability: observability
+            observability: observability,
+            captureIntentCommander: captureIntentCommander
+        )
+        let removedSurface = DisplaySurfaceIdentity.physicalDisplay(displayID: removedDisplayID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: removedSurface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: removedSurface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
         )
 
         await runtime.refreshCatalogPermission(source: .capturePage)
 
         #expect(catalog.clearLoadErrorMessages == [nil])
         #expect(sharing.registeredDisplays == [[]])
-        #expect(sharing.stoppedDisplayIDs == [removedDisplayID])
-        #expect(capture.removedDisplayIDs == [removedDisplayID])
+        #expect(captureIntentCommander.intents.suffix(2).allSatisfy { $0.kind == .drain })
+        #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .failed })
         #expect(observability.events.map(\.deduplicationKey).contains("screenCatalog.permission.denied"))
         #expect(observability.refreshReasons == [.screenCatalogStateChanged])
     }
@@ -162,14 +196,35 @@ struct DisplayRuntimeCatalogControlTests {
         let sharing = FakeSharingCommander(
             snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [6002])
         )
-        let runtime = makeRuntime(catalog: catalog, capture: capture, sharing: sharing)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = makeRuntime(
+            catalog: catalog,
+            capture: capture,
+            sharing: sharing,
+            captureIntentCommander: captureIntentCommander
+        )
+        let staleSurface = DisplaySurfaceIdentity.physicalDisplay(displayID: 6002)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: staleSurface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: staleSurface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
 
         await runtime.forceRefreshCatalog(source: .capturePage)
 
         #expect(catalog.submitCalls == [.init(intent: .userForcedRefresh, ownerScope: .capture)])
         #expect(sharing.registeredDisplays.isEmpty)
-        #expect(sharing.stoppedDisplayIDs.isEmpty)
-        #expect(capture.removedDisplayIDs.isEmpty)
+        #expect(captureIntentCommander.intents.count == 2)
+        #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .attached })
     }
 
     @Test func clearedRefreshResultConvergesWithEmptyVisibleDisplays() async {
@@ -182,13 +237,34 @@ struct DisplayRuntimeCatalogControlTests {
         let sharing = FakeSharingCommander(
             snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [staleDisplayID])
         )
-        let runtime = makeRuntime(catalog: catalog, capture: capture, sharing: sharing)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = makeRuntime(
+            catalog: catalog,
+            capture: capture,
+            sharing: sharing,
+            captureIntentCommander: captureIntentCommander
+        )
+        let staleSurface = DisplaySurfaceIdentity.physicalDisplay(displayID: staleDisplayID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: staleSurface,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: staleSurface,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
 
         await runtime.forceRefreshCatalog(source: .capturePage)
 
         #expect(sharing.registeredDisplays == [[]])
-        #expect(sharing.stoppedDisplayIDs == [staleDisplayID])
-        #expect(capture.removedDisplayIDs == [staleDisplayID])
+        #expect(captureIntentCommander.intents.suffix(2).allSatisfy { $0.kind == .drain })
+        #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .failed })
     }
 
     @Test func sharingServiceStateChangeReadsCurrentSharingSnapshot() async {
@@ -215,7 +291,8 @@ private func makeRuntime(
     capture: FakeCaptureCommander = FakeCaptureCommander(),
     sharing: FakeSharingCommander = FakeSharingCommander(),
     virtualDisplay: FakeVirtualDisplayProvider = FakeVirtualDisplayProvider(snapshot: .empty),
-    observability: FakeObservabilityRecorder = FakeObservabilityRecorder()
+    observability: FakeObservabilityRecorder = FakeObservabilityRecorder(),
+    captureIntentCommander: FakeCaptureIntentCommander? = nil
 ) -> DisplayRuntime {
     DisplayRuntime(
         catalogProvider: catalog,
@@ -224,7 +301,7 @@ private func makeRuntime(
         virtualDisplayProvider: virtualDisplay,
         catalogCommander: catalog,
         sharingCommander: sharing,
-        captureCommander: capture,
+        captureIntentCommander: captureIntentCommander,
         observabilityRecorder: observability
     )
 }

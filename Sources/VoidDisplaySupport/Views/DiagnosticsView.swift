@@ -42,50 +42,57 @@ package struct DiagnosticsView: View {
 
     @ViewBuilder
     private func content(feedbackController: AppSettingsFeedbackController?) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppUI.Spacing.medium + 2) {
-                Text(String(localized: "Review app health, add diagnostics if needed, then export a support bundle."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("diagnostics_intro_text")
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppUI.Spacing.medium + 2) {
+                    Text(String(localized: "Review app health, add diagnostics if needed, then export a support bundle."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("diagnostics_intro_text")
 
-                if let feedbackController {
-                    if let alert = feedbackController.alert {
-                        errorBanner(alert)
-                    }
+                    if let feedbackController {
+                        if let alert = feedbackController.alert {
+                            errorBanner(alert)
+                        }
 
-                    SupportBundleDraftSectionView(
-                        controller: feedbackController,
-                        onExport: { Task { await exportSupportBundle() } }
-                    )
-
-                    if let completionRecord = feedbackController.completionRecord {
-                        SupportExportCompletionSectionView(
-                            record: completionRecord,
-                            onCopySummary: { Task { await copySummary() } },
-                            onRevealBundle: { Task { await revealLatestBundle() } },
-                            onStartNewFeedback: { Task { await startNewFeedback() } }
+                        SupportBundleDraftSectionView(
+                            controller: feedbackController,
+                            onExport: { Task { await exportSupportBundle() } }
                         )
+
+                        if let completionRecord = feedbackController.completionRecord {
+                            SupportExportCompletionSectionView(
+                                record: completionRecord,
+                                onCopySummary: { Task { await copySummary() } },
+                                onRevealBundle: { Task { await revealLatestBundle() } },
+                                onStartNewFeedback: { Task { await startNewFeedback() } }
+                            )
+                        }
+
+                        if historicalRecords(for: feedbackController).isEmpty == false {
+                            SupportHistorySectionView(
+                                records: historicalRecords(for: feedbackController),
+                                onCopySummary: { recordID in
+                                    Task { await copyHistorySummary(recordID: recordID) }
+                                },
+                                onRevealBundle: { recordID in
+                                    Task { await revealHistoryBundle(recordID: recordID) }
+                                }
+                            )
+                        }
                     }
 
-                    if historicalRecords(for: feedbackController).isEmpty == false {
-                        SupportHistorySectionView(
-                            records: historicalRecords(for: feedbackController),
-                            onCopySummary: { recordID in
-                                Task { await copyHistorySummary(recordID: recordID) }
-                            },
-                            onRevealBundle: { recordID in
-                                Task { await revealHistoryBundle(recordID: recordID) }
-                            }
-                        )
+                    technicalInformationSection {
+                        withAnimation {
+                            proxy.scrollTo("diagnostics_technical_section", anchor: .top)
+                        }
                     }
+                    .id("diagnostics_technical_section")
                 }
-
-                technicalInformationSection
+                .appListContentInsets()
+                .frame(maxWidth: contentMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .appListContentInsets()
-            .frame(maxWidth: contentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -126,10 +133,31 @@ package struct DiagnosticsView: View {
         .accessibilityIdentifier("support_bundle_error_banner")
     }
 
-    private var technicalInformationSection: some View {
-        DisclosureGroup(
-            isExpanded: $isTechnicalInformationExpanded,
-            content: {
+    private func technicalInformationSection(
+        onExpand: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                let shouldExpand = !isTechnicalInformationExpanded
+                isTechnicalInformationExpanded = shouldExpand
+                if shouldExpand {
+                    onExpand()
+                }
+            } label: {
+                HStack(spacing: AppUI.Spacing.small) {
+                    Label(String(localized: "Technical Information"), systemImage: "stethoscope")
+                        .font(.headline)
+                    Spacer(minLength: AppUI.Spacing.small)
+                    Image(systemName: isTechnicalInformationExpanded ? "chevron.down" : "chevron.right")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("diagnostics_technical_disclosure")
+
+            if isTechnicalInformationExpanded {
                 VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
                     diagnosticsSnapshotPanel
                     displaySystemPanel
@@ -138,52 +166,25 @@ package struct DiagnosticsView: View {
                     eventsPanel
                 }
                 .padding(.top, AppUI.Spacing.medium)
-            },
-            label: {
-                VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-                    Label(String(localized: "Technical Information"), systemImage: "stethoscope")
-                        .font(.headline)
-                }
             }
-        )
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("diagnostics_technical_disclosure")
     }
 
     private var diagnosticsSnapshotPanel: some View {
         let runtimeSummary = RuntimeDiagnosticsSummary(state: snapshot?.state)
         return VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HStack(alignment: .top, spacing: AppUI.Spacing.medium) {
-                VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-                    Label(String(localized: "Status"), systemImage: "folder.badge.gearshape")
-                        .font(.headline)
-                        .accessibilityIdentifier("diagnostics_technical_details")
-                    Text(statusRecommendation())
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: AppUI.Spacing.medium) {
+                    diagnosticsStatusHeading
+                    Spacer(minLength: AppUI.Spacing.medium)
+                    diagnosticsHeaderActions
                 }
-                Spacer(minLength: AppUI.Spacing.medium)
-                HStack(spacing: AppUI.Spacing.small) {
-                    Button {
-                        Task { await reload(refresh: true) }
-                    } label: {
-                        Label(String(localized: "Refresh"), systemImage: "arrow.clockwise")
-                    }
-                    .appActionButtonStyle(variant: .default)
-                    .disabled(isRefreshing)
-                    .accessibilityIdentifier("diagnostics_refresh_button")
 
-                    Button {
-                        Task { await openDataDirectory() }
-                    } label: {
-                        Label(String(localized: "Open Data Directory"), systemImage: "folder")
-                    }
-                    .appActionButtonStyle(variant: .default)
-                    .disabled(dataDirectoryDisplayPath == nil)
-                    .accessibilityIdentifier("diagnostics_open_data_directory_button")
+                VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+                    diagnosticsStatusHeading
+                    diagnosticsHeaderActions
                 }
-                .labelStyle(.titleAndIcon)
-                .fixedSize()
             }
 
             DiagnosticsStatusCallout(
@@ -220,6 +221,7 @@ package struct DiagnosticsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .appPanelStyle()
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("diagnostics_overview_panel")
     }
 
@@ -545,6 +547,40 @@ package struct DiagnosticsView: View {
         case .error, .critical:
             .red
         }
+    }
+
+    private var diagnosticsStatusHeading: some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
+            Label(String(localized: "Status"), systemImage: "folder.badge.gearshape")
+                .font(.headline)
+                .accessibilityIdentifier("diagnostics_technical_details")
+            Text(statusRecommendation())
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var diagnosticsHeaderActions: some View {
+        HStack(spacing: AppUI.Spacing.small) {
+            Button {
+                Task { await reload(refresh: true) }
+            } label: {
+                Label(String(localized: "Refresh"), systemImage: "arrow.clockwise")
+            }
+            .appActionButtonStyle(variant: .default)
+            .disabled(isRefreshing)
+            .accessibilityIdentifier("diagnostics_refresh_button")
+
+            Button {
+                Task { await openDataDirectory() }
+            } label: {
+                Label(String(localized: "Open Data Directory"), systemImage: "folder")
+            }
+            .appActionButtonStyle(variant: .default)
+            .disabled(dataDirectoryDisplayPath == nil)
+            .accessibilityIdentifier("diagnostics_open_data_directory_button")
+        }
+        .labelStyle(.titleAndIcon)
     }
 
     private func reload(refresh: Bool) async {

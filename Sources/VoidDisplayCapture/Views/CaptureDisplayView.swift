@@ -5,7 +5,7 @@ import SwiftUI
 
 // MARK: - Capture Display View
 package struct CaptureDisplayView: View {
-    package let sessionId: UUID
+    package let previewID: CapturePreviewID
     private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
 
@@ -18,19 +18,22 @@ package struct CaptureDisplayView: View {
     @State private var scaleMode: CapturePreviewScaleMode = .fit
     @State private var capturesCursor = false
     @State private var isUpdatingCursorCapture = false
+    @State private var previewState: CapturePreviewState
+    @State private var isRetrying = false
 
     package init(
-        sessionId: UUID,
+        previewID: CapturePreviewID,
         previewActions: CapturePreviewActions,
         sharingStatusProvider: CaptureSharingStatusProvider
     ) {
-        self.sessionId = sessionId
+        self.previewID = previewID
         self.previewActions = previewActions
         self.sharingStatusProvider = sharingStatusProvider
+        _previewState = State(initialValue: previewActions.previewState(previewID))
     }
 
     private var session: ScreenPreviewSession? {
-        previewActions.previewSession(sessionId)
+        previewActions.previewSession(previewID)
     }
 
     private var isSharingDisplay: Bool {
@@ -54,56 +57,74 @@ package struct CaptureDisplayView: View {
         )
     }
 
-    @ViewBuilder
-    private var previewContent: some View {
-        CapturePreviewSurface(
-            hasSession: session != nil,
-            renderer: renderer,
-            scaleMode: scaleMode,
-            nativeFrameSizeInPoints: nativeFrameSizeInPoints
-        )
-    }
-
     package var body: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
-            previewContent
+            switch previewState {
+            case .active:
+                CapturePreviewSurface(
+                    hasSession: session != nil,
+                    renderer: renderer,
+                    scaleMode: scaleMode,
+                    nativeFrameSizeInPoints: nativeFrameSizeInPoints
+                )
+            case .restarting, .failed:
+                CapturePreviewRecoveryView(
+                    state: previewState,
+                    isRetrying: isRetrying,
+                    retry: retryPreview,
+                    close: closePreview
+                )
+            case .released:
+                Color.clear
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture_preview_content")
         .toolbar {
-            CapturePreviewToolbar(
-                scaleMode: $scaleMode,
-                cursorCapture: cursorCaptureBinding,
-                isUpdatingCursorCapture: isUpdatingCursorCapture,
-                isSharingDisplay: isSharingDisplay
-            )
+            if previewState == .active {
+                CapturePreviewToolbar(
+                    scaleMode: $scaleMode,
+                    cursorCapture: cursorCaptureBinding,
+                    isUpdatingCursorCapture: isUpdatingCursorCapture,
+                    isSharingDisplay: isSharingDisplay
+                )
+            }
         }
         .toolbarTitleDisplayMode(.inline)
         .onAppear {
             capturesCursor = session?.capturesCursor ?? false
         }
-        .onChange(of: previewActions.sessions().map(\.id)) { _, ids in
-            if !ids.contains(sessionId) {
-                dismiss()
-            }
+        .onChange(of: previewActions.sessions().map(\.id)) { _, _ in
+            previewState = previewActions.previewState(previewID)
+        }
+        .onChange(of: previewActions.previewState(previewID)) { _, newState in
+            previewState = newState
         }
         .onChange(of: session?.capturesCursor ?? false) { _, newValue in
             if !isUpdatingCursorCapture {
                 capturesCursor = newValue
             }
         }
-        .onAppear {
-            if session != nil {
-                previewActions.attachPreviewSink(renderer, sessionId)
-                previewActions.activatePreviewSession(sessionId)
-            } else {
+        .task(id: session?.id) {
+            guard session != nil else { return }
+            renderer.flush()
+            previewActions.attachPreviewSink(renderer, previewID)
+            previewActions.activatePreviewSession(previewID)
+        }
+        .task(id: previewState) {
+            switch previewState {
+            case .restarting:
+                previewState = await previewActions.waitForPreviewResolution(previewID)
+            case .released:
                 dismiss()
+            case .active, .failed:
+                break
             }
         }
         .onDisappear {
-            Task { await previewActions.closePreviewSession(sessionId) }
+            Task { await previewActions.closePreview(previewID) }
             windowCoordinator.tearDown()
             renderer.flush()
         }
@@ -137,20 +158,16 @@ package extension CaptureDisplayView {
                 isUpdatingCursorCapture = true
                 Task {
                     do {
-                        try await previewActions.setPreviewSessionCapturesCursor(sessionId, newValue)
-                        await MainActor.run {
-                            isUpdatingCursorCapture = false
-                        }
+                        try await previewActions.setPreviewCapturesCursor(previewID, newValue)
+                        isUpdatingCursorCapture = false
                     } catch {
                         AppErrorMapper.logFailure(
                             "Update cursor capture",
                             error: error,
                             logger: AppLog.capture
                         )
-                        await MainActor.run {
-                            capturesCursor = previousValue
-                            isUpdatingCursorCapture = false
-                        }
+                        capturesCursor = previousValue
+                        isUpdatingCursorCapture = false
                     }
                 }
             }
@@ -165,5 +182,23 @@ package extension CaptureDisplayView {
             resolutionText: session?.resolutionText,
             framePixelSize: renderer.framePixelSize
         )
+    }
+
+    private func retryPreview() {
+        guard !isRetrying else { return }
+        isRetrying = true
+        previewState = .restarting
+        Task {
+            let state = await previewActions.retryPreview(previewID)
+            previewState = state
+            isRetrying = false
+        }
+    }
+
+    private func closePreview() {
+        Task {
+            await previewActions.closePreview(previewID)
+            previewState = .released
+        }
     }
 }

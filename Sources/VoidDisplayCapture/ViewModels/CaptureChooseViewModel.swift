@@ -66,10 +66,10 @@ package final class CaptureChooseViewModel {
 
     package func startPreview(
         display: SCDisplay,
-        openWindow: @escaping (UUID) -> Void
+        openWindow: @escaping (CapturePreviewID) -> Void
     ) async {
-        if let existingSession = dependencies.captureActions.previewSessionForDisplayID(display.displayID) {
-            openWindow(existingSession.id)
+        if let previewID = dependencies.captureActions.previewIDForDisplayID(display.displayID) {
+            openWindow(previewID)
             return
         }
         guard !isStarting(displayID: display.displayID) else { return }
@@ -82,8 +82,8 @@ package final class CaptureChooseViewModel {
             )
             let outcome = try await dependencies.captureActions.startPreview(display, metadata)
             switch outcome {
-            case .started(let sessionID):
-                openWindow(sessionID)
+            case .started(let previewID):
+                openWindow(previewID)
             case .invalidated:
                 break
             }

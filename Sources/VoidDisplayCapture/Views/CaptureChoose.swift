@@ -172,7 +172,8 @@ package struct IsCapturing: View {
     private func captureDisplayRowComponent(_ display: SCDisplay) -> some View {
         let isVirtualDisplay = viewModel.isVirtualDisplay(display)
         let isPrimaryDisplay = CGDisplayIsMain(display.displayID) != 0
-        let previewSession = previewActions.previewSessionForDisplayID(display.displayID)
+        let previewID = previewActions.previewIDForDisplayID(display.displayID)
+        let previewSession = previewID.flatMap(previewActions.previewSession)
         let isPreviewing = previewSession?.state == .active
         let isStarting = previewActions.isStartingDisplayID(display.displayID) || previewSession?.state == .starting
 
@@ -186,12 +187,12 @@ package struct IsCapturing: View {
             isStarting: isStarting,
             isSharing: sharingStatusProvider.isDisplaySharing(display.displayID)
         ) {
-            if isPreviewing, let session = previewSession {
-                Task { await previewActions.closePreviewSession(session.id) }
+            if isPreviewing, let previewID {
+                Task { await previewActions.closePreview(previewID) }
             } else {
                 Task {
-                    await viewModel.startPreview(display: display) { sessionId in
-                        openWindow(value: sessionId)
+                    await viewModel.startPreview(display: display) { previewID in
+                        openWindow(value: previewID)
                     }
                 }
             }

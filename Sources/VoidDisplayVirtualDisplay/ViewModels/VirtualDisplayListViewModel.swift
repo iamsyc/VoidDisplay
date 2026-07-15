@@ -15,7 +15,6 @@ package final class VirtualDisplayListViewModel {
         var deleteVirtualDisplay: @MainActor (UUID) async throws -> Void
         var runtimeDisplayID: @MainActor (UUID) -> CGDirectDisplayID?
         var isRebuilding: @MainActor (UUID) -> Bool
-        var isVirtualDisplayRunning: @MainActor (UUID) -> Bool
         var setVirtualDisplayDesiredEnabled: @MainActor (UUID, Bool) async throws -> Void
 
         static func live(controller: VirtualDisplayController) -> Self {
@@ -25,7 +24,6 @@ package final class VirtualDisplayListViewModel {
                 deleteVirtualDisplay: { try await controller.deleteVirtualDisplay(configId: $0) },
                 runtimeDisplayID: { controller.runtimeDisplayID(for: $0) },
                 isRebuilding: { controller.isRebuilding(configId: $0) },
-                isVirtualDisplayRunning: { controller.isVirtualDisplayRunning(configId: $0) },
                 setVirtualDisplayDesiredEnabled: {
                     try await controller.setVirtualDisplayDesiredEnabled(
                         configId: $0,
@@ -131,7 +129,7 @@ package final class VirtualDisplayListViewModel {
             guard let self else { return }
             defer { self.togglingConfigIds.remove(config.id) }
 
-            if dependencies.isVirtualDisplayRunning(config.id) {
+            if config.desiredEnabled {
                 do {
                     try await dependencies.setVirtualDisplayDesiredEnabled(config.id, false)
                 } catch {

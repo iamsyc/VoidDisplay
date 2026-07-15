@@ -16,9 +16,9 @@ struct ObservabilitySnapshotProviderTests {
             "typed user search text",
             "visible desktop pixels"
         ]
-        let runtime = DisplayRuntime()
+        let runtime = DisplayRuntime(captureIntentCommander: ApplyingCaptureIntentCommander())
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 888)
-        let lease = await runtime.attachLANWebViewConsumer(
+        let outcome = await runtime.attachLANWebViewConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: .init(source: .sharingService, redactedLabel: sensitiveInputs.joined(separator: " ")),
             demand: DisplayRuntimeConsumerDemand(
@@ -31,7 +31,11 @@ struct ObservabilitySnapshotProviderTests {
                 latencyPreference: .realtime,
                 activeViewerCount: 2
             )
-        ).lease
+        )
+        guard case let .attached(lease, _) = outcome else {
+            Issue.record("Expected consumer lease attach")
+            return
+        }
         let provider = AnyObservabilitySnapshotProvider(DisplayRuntimeSnapshotProvider(runtime: runtime))
 
         let section = try await provider.makeSnapshot()
@@ -55,5 +59,20 @@ struct ObservabilitySnapshotProviderTests {
         for sensitiveInput in sensitiveInputs {
             #expect(sectionJSON.contains(sensitiveInput) == false)
         }
+    }
+}
+
+@MainActor
+private final class ApplyingCaptureIntentCommander: DisplayRuntimeCaptureIntentCommanding {
+    func applyPreviewCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        .applied(revision: intent.revision)
+    }
+
+    func applyLANWebViewCaptureIntent(
+        _ intent: DisplayRuntimeCaptureIntent
+    ) async -> DisplayRuntimeCaptureIntentApplyResult {
+        .applied(revision: intent.revision)
     }
 }

@@ -95,6 +95,25 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testCompactCardActionsRemainVisibleAtNarrowWindowSize() throws {
+        let app = launchAppForSmoke(skinID: "compact", windowSize: (760, 640))
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+
+        for identifier in [
+            "virtual_display_toggle_button",
+            "home_virtual_display_preview_button",
+            "home_virtual_display_web_view_button",
+            "virtual_display_edit_button",
+            "home_virtual_display_more_button"
+        ] {
+            let element = assertExists(app, identifier: identifier, timeout: 6)
+            XCTAssertTrue(element.isHittable, "Element is not hittable: \(identifier)")
+            XCTAssertTrue(window.frame.contains(element.frame), "Element is outside window: \(identifier)")
+        }
+    }
+
+    @MainActor
     func testVirtualDisplayCardSurfaceSmoke_dashboardSkin() throws {
         let app = launchAppForSmoke(skinID: "dashboard")
 
@@ -137,5 +156,64 @@ final class HomeSmokeTests: XCTestCase {
 
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_copy_summary_button"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reveal_button"].exists)
+    }
+
+    @MainActor
+    func testDiagnosticsActionsRemainVisibleAtNarrowWindowSize() throws {
+        let app = launchAppForSmoke(windowSize: (760, 640))
+        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
+        let disclosure = assertExists(
+            app,
+            identifier: "diagnostics_technical_disclosure",
+            timeout: 3
+        )
+        disclosure.tap()
+
+        let window = app.windows.firstMatch
+        for identifier in ["diagnostics_refresh_button", "diagnostics_open_data_directory_button"] {
+            let element = assertExists(app, identifier: identifier, timeout: 5)
+            XCTAssertTrue(window.frame.contains(element.frame), "Element is outside window: \(identifier)")
+        }
+    }
+
+    @MainActor
+    func testFirstTabFocusesAVisibleControl() throws {
+        let app = launchAppForSmoke(windowSize: (760, 640), advanceFocus: true)
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+
+        let focused = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
+            .firstMatch
+        XCTAssertTrue(focused.waitForExistence(timeout: 2))
+        XCTAssertTrue(window.frame.intersects(focused.frame))
+        XCTAssertGreaterThan(focused.frame.width, 1)
+        XCTAssertGreaterThan(focused.frame.height, 1)
+    }
+
+    @MainActor
+    func testPreviewRecoveryRetryShowsRestartingState() throws {
+        let app = launchAppForSmoke(scenario: "preview_recovery")
+        assertAllExist(
+            app,
+            identifiers: [
+                "capture_preview_failed_state",
+                "capture_preview_retry_button",
+                "capture_preview_close_button"
+            ],
+            timeout: 6
+        )
+
+        tapIdentifier(app, identifier: "capture_preview_retry_button")
+
+        assertExists(app, identifier: "capture_preview_restarting_state", timeout: 2)
+    }
+
+    @MainActor
+    func testPreviewRecoveryCloseReleasesWindowState() throws {
+        let app = launchAppForSmoke(scenario: "preview_recovery")
+        tapIdentifier(app, identifier: "capture_preview_close_button", timeout: 6)
+
+        assertExists(app, identifier: "capture_preview_closed_state", timeout: 2)
     }
 }

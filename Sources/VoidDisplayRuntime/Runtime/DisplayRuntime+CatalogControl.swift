@@ -80,8 +80,8 @@ extension DisplayRuntime {
         }
     }
 
-    func convergeToVisibleDisplaysFromCurrentCatalog() {
-        convergeToVisibleDisplays(catalogCommander?.currentVisibleDisplays() ?? [])
+    func convergeToVisibleDisplaysFromCurrentCatalog() async {
+        await convergeToVisibleDisplays(catalogCommander?.currentVisibleDisplays() ?? [])
     }
 
     private func refreshAfterPermissionGranted(source: DisplayRuntimeCatalogSource) async {
@@ -126,7 +126,7 @@ extension DisplayRuntime {
         source: DisplayRuntimeCatalogSource
     ) async {
         await catalogCommander?.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
-        convergeToVisibleDisplays([])
+        await convergeToVisibleDisplays([])
         await observabilityRecorder?.record(
             DisplayRuntimeObservabilityEvent(
                 severity: .warning,
@@ -155,7 +155,7 @@ extension DisplayRuntime {
 
         let result = await catalogCommander.submitRefresh(intent: .topologyChanged, ownerScope: nil)
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        handleRefreshResultForConvergence(result)
+        await handleRefreshResultForConvergence(result)
     }
 
     private func refreshAndConverge(
@@ -165,23 +165,21 @@ extension DisplayRuntime {
         guard let catalogCommander else { return }
         let result = await catalogCommander.submitRefresh(intent: intent, ownerScope: ownerScope)
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        handleRefreshResultForConvergence(result)
+        await handleRefreshResultForConvergence(result)
     }
 
-    private func handleRefreshResultForConvergence(_ result: DisplayRuntimeCatalogRefreshResult) {
+    private func handleRefreshResultForConvergence(_ result: DisplayRuntimeCatalogRefreshResult) async {
         switch result {
         case .reloadedSnapshot, .reusedSnapshot:
-            convergeToVisibleDisplaysFromCurrentCatalog()
+            await convergeToVisibleDisplaysFromCurrentCatalog()
         case .clearedSnapshot:
-            convergeToVisibleDisplays([])
+            await convergeToVisibleDisplays([])
         case .failed:
             return
         }
     }
 
-    private func convergeToVisibleDisplays(_ visibleDisplays: [DisplayRuntimeVisibleDisplay]) {
-        let visibleDisplayIDs = Set(visibleDisplays.map(\.displayID))
-
+    private func convergeToVisibleDisplays(_ visibleDisplays: [DisplayRuntimeVisibleDisplay]) async {
         if currentSharingSnapshot().isWebServiceRunning {
             let virtualDisplays = currentVirtualDisplaySnapshot().managedDisplays
             var virtualSerialsByDisplayID: [DisplayRuntimeDisplayID: UInt32] = [:]
@@ -198,16 +196,45 @@ extension DisplayRuntime {
                 }
             )
         }
+        await reconcileConsumerLeasesAfterCatalogConvergence(visibleDisplays: visibleDisplays)
+    }
 
-        let sharing = currentSharingSnapshot()
-        for displayID in sharing.activeSharingDisplayIDs where !visibleDisplayIDs.contains(displayID) {
-            sharingCommander?.stopSharing(displayID: displayID)
+    private func reconcileConsumerLeasesAfterCatalogConvergence(
+        visibleDisplays: [DisplayRuntimeVisibleDisplay]
+    ) async {
+        let visibleDisplayIDs = Set(visibleDisplays.map(\.displayID))
+        let snapshot = makeSnapshot()
+        let candidateLeases = consumerLeasesByID.values.filter {
+            $0.state == .attached && !consumerTransitionBusySurfaces.contains($0.surfaceIdentity)
         }
+        let affectedSurfaceIdentities: Set<DisplaySurfaceIdentity> = Set(candidateLeases.compactMap { lease in
+            let resolvedDisplayID = snapshot.surfaces.first {
+                $0.identity == lease.surfaceIdentity
+            }?.currentDisplayID
+            guard lease.resolvedDisplayID != resolvedDisplayID
+                    || lease.resolvedDisplayID.map({ !visibleDisplayIDs.contains($0) }) == true
+            else {
+                return nil
+            }
+            return lease.surfaceIdentity
+        })
+        guard !affectedSurfaceIdentities.isEmpty else { return }
 
-        let previewedDisplayIDs = Set(currentCaptureSnapshot().sessions.map(\.displayID))
-        for displayID in previewedDisplayIDs where !visibleDisplayIDs.contains(displayID) {
-            captureCommander?.removePreviewSessions(displayID: displayID)
+        var previousDisplayIDs: [DisplaySurfaceIdentity: DisplayRuntimeDisplayID?] = [:]
+        for surfaceIdentity in affectedSurfaceIdentities {
+            previousDisplayIDs[surfaceIdentity] = candidateLeases.first {
+                $0.surfaceIdentity == surfaceIdentity
+            }?.resolvedDisplayID
         }
+        let transition = await beginConsumerTransition(
+            surfaceIdentities: Array(affectedSurfaceIdentities),
+            previousDisplayIDs: previousDisplayIDs
+        )
+        _ = await completeConsumerTransition(
+            transition,
+            snapshot: makeSnapshot(),
+            topologyResult: nil
+        )
     }
 
     private func recordPermissionEvent(

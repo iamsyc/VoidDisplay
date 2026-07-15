@@ -94,11 +94,13 @@ public struct VoidDisplayApplication: App {
     public var body: some Scene {
         WindowGroup {
             Group {
-                if UITestRuntime.scenario == .settingsFeedback {
+                if UITestRuntime.isEnabled && UITestRuntime.scenario == .settingsFeedback {
                     AppSettingsView(
                         observability: observability,
                         feedbackController: feedbackController
                     )
+                } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewRecovery {
+                    PreviewRecoveryUITestHost()
                 } else {
                     HomeView(
                         observability: observability,
@@ -114,16 +116,28 @@ public struct VoidDisplayApplication: App {
             .environment(capturePerformancePreferences)
             .environment(appearancePreferences)
             .environment(navigation)
+            .overlay {
+                if UITestRuntime.shouldAdvanceFocus {
+                    UITestFocusTraversalHost()
+                        .frame(width: 0, height: 0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
         }
         .windowToolbarStyle(.unified(showsTitle: true))
-        .defaultSize(width: 1180, height: 720)
+        .defaultSize(
+            width: UITestRuntime.windowSize?.width ?? 1180,
+            height: UITestRuntime.windowSize?.height ?? 720
+        )
 
-        WindowGroup(for: UUID.self) { $sessionId in
+        WindowGroup(for: CapturePreviewID.self) { $previewID in
             CaptureDisplayWindowRoot(
-                sessionId: sessionId,
+                previewID: previewID,
                 previewActions: CaptureUIComposition.previewActions(
                     capture: capture,
-                    displayRuntime: displayRuntime
+                    displayRuntime: displayRuntime,
+                    capturePerformancePreferences: capturePerformancePreferences
                 ),
                 sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing)
             )
@@ -150,6 +164,44 @@ public struct VoidDisplayApplication: App {
     }
 }
 
+private struct UITestFocusTraversalHost: NSViewRepresentable {
+    func makeNSView(context _: Context) -> NSView {
+        UITestFocusTraversalView()
+    }
+
+    func updateNSView(_: NSView, context _: Context) {}
+}
+
+private final class UITestFocusTraversalView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.selectNextKeyView(nil)
+        }
+    }
+}
+
+private struct PreviewRecoveryUITestHost: View {
+    @State private var state = CapturePreviewState.failed(
+        failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+    )
+
+    var body: some View {
+        if state == .released {
+            Text(verbatim: "Preview Closed")
+                .accessibilityIdentifier("capture_preview_closed_state")
+        } else {
+            CapturePreviewRecoveryView(
+                state: state,
+                isRetrying: state == .restarting,
+                retry: { state = .restarting },
+                close: { state = .released }
+            )
+        }
+    }
+}
+
 @MainActor
 private enum AppTerminationCleanup {
     private static var handler: (() -> Void)?
@@ -167,10 +219,6 @@ private enum AppTerminationCleanup {
 
 @MainActor
 private final class VoidDisplayApplicationDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_: Notification) {
-        AppSingleInstanceGuard.terminateDuplicateRunningApplications()
-    }
-
     func applicationWillTerminate(_: Notification) {
         AppTerminationCleanup.run()
     }
@@ -178,79 +226,33 @@ private final class VoidDisplayApplicationDelegate: NSObject, NSApplicationDeleg
 
 @MainActor
 package enum AppSingleInstanceGuard {
+    package enum LockAcquisitionResult: Equatable, Sendable {
+        case acquired
+        case heldByOtherInstance
+        case failed(errorCode: Int32)
+    }
+
     private static var lockFileDescriptor: Int32 = -1
 
-    package struct RunningInstance: Equatable {
-        package let processIdentifier: pid_t
-        package let bundleIdentifier: String?
-
-        package init(processIdentifier: pid_t, bundleIdentifier: String?) {
-            self.processIdentifier = processIdentifier
-            self.bundleIdentifier = bundleIdentifier
-        }
-    }
-
-    package static func duplicateProcessIdentifiers(
-        currentProcessIdentifier: pid_t,
-        bundleIdentifier: String?,
-        runningInstances: [RunningInstance]
-    ) -> [pid_t] {
-        guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
-            return []
-        }
-
-        return runningInstances
-            .filter {
-                $0.processIdentifier != currentProcessIdentifier
-                    && $0.bundleIdentifier == bundleIdentifier
-            }
-            .map(\.processIdentifier)
-            .sorted()
-    }
-
     static func acquireSingleInstanceLockOrExit() {
-        guard acquireSingleInstanceLock(bundleIdentifier: Bundle.main.bundleIdentifier) else {
+        switch acquireSingleInstanceLock(bundleIdentifier: Bundle.main.bundleIdentifier) {
+        case .acquired:
+            return
+        case .heldByOtherInstance:
             activateExistingApplication(
                 currentProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
                 bundleIdentifier: Bundle.main.bundleIdentifier
             )
             exit(EXIT_SUCCESS)
-        }
-    }
-
-    @discardableResult
-    static func terminateDuplicateRunningApplications() -> Int {
-        let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
-        let bundleIdentifier = Bundle.main.bundleIdentifier
-        let duplicateProcessIdentifiers = Set(
-            duplicateProcessIdentifiers(
-                currentProcessIdentifier: currentProcessIdentifier,
-                bundleIdentifier: bundleIdentifier,
-                runningInstances: NSWorkspace.shared.runningApplications.map {
-                    RunningInstance(
-                        processIdentifier: $0.processIdentifier,
-                        bundleIdentifier: $0.bundleIdentifier
-                    )
-                }
-            )
-        )
-        guard !duplicateProcessIdentifiers.isEmpty else {
-            return 0
-        }
-
-        terminateApplications(processIdentifiers: duplicateProcessIdentifiers, bundleIdentifier: bundleIdentifier)
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(700))
-            forceKillRemainingApplications(
-                processIdentifiers: duplicateProcessIdentifiers,
-                bundleIdentifier: bundleIdentifier
+        case let .failed(errorCode):
+            AppLog.general.error(
+                "Single-instance lock failed with errno \(errorCode, privacy: .public); continuing startup."
             )
         }
-        return duplicateProcessIdentifiers.count
     }
 
     package static func lockFileName(bundleIdentifier: String?) -> String {
-        let rawName = bundleIdentifier?.isEmpty == false ? bundleIdentifier! : "voiddisplay"
+        let rawName = bundleIdentifier.flatMap { $0.isEmpty ? nil : $0 } ?? "voiddisplay"
         let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
         let sanitizedName = String(rawName.unicodeScalars.map { scalar in
             allowedCharacters.contains(scalar) ? Character(scalar) : "_"
@@ -258,28 +260,62 @@ package enum AppSingleInstanceGuard {
         return "\(sanitizedName).single-instance.lock"
     }
 
-    private static func acquireSingleInstanceLock(bundleIdentifier: String?) -> Bool {
+    private static func acquireSingleInstanceLock(bundleIdentifier: String?) -> LockAcquisitionResult {
         if lockFileDescriptor >= 0 {
-            return true
+            return .acquired
         }
 
         guard let lockFileURL = lockFileURL(bundleIdentifier: bundleIdentifier) else {
-            return false
+            return .failed(errorCode: EIO)
         }
         let descriptor = open(lockFileURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else {
-            return false
+            return classifyLockAttempt(
+                openedDescriptor: descriptor,
+                flockResult: nil,
+                errorCode: errno
+            )
         }
         _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
 
-        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+        let flockResult = flock(descriptor, LOCK_EX | LOCK_NB)
+        guard flockResult == 0 else {
+            let errorCode = errno
             close(descriptor)
-            return false
+            return classifyLockAttempt(
+                openedDescriptor: descriptor,
+                flockResult: flockResult,
+                errorCode: errorCode
+            )
         }
 
         lockFileDescriptor = descriptor
         writeCurrentProcessIdentifier(to: descriptor)
-        return true
+        return .acquired
+    }
+
+    package static func classifyLockAttempt(
+        openedDescriptor: Int32,
+        flockResult: Int32?,
+        errorCode: Int32
+    ) -> LockAcquisitionResult {
+        guard openedDescriptor >= 0 else {
+            return .failed(errorCode: errorCode)
+        }
+        guard let flockResult else {
+            return .failed(errorCode: EINVAL)
+        }
+        guard flockResult != 0 else {
+            return .acquired
+        }
+        return classifyFlockFailure(errorCode: errorCode)
+    }
+
+    private static func classifyFlockFailure(errorCode: Int32) -> LockAcquisitionResult {
+        if errorCode == EWOULDBLOCK {
+            return .heldByOtherInstance
+        }
+        return .failed(errorCode: errorCode)
     }
 
     private static func lockFileURL(bundleIdentifier: String?) -> URL? {
@@ -328,31 +364,6 @@ package enum AppSingleInstanceGuard {
             .activate(options: [.activateAllWindows])
     }
 
-    private static func terminateApplications(processIdentifiers: Set<pid_t>, bundleIdentifier: String?) {
-        NSWorkspace.shared.runningApplications
-            .filter {
-                processIdentifiers.contains($0.processIdentifier)
-                    && $0.bundleIdentifier == bundleIdentifier
-            }
-            .forEach {
-                if !$0.terminate() {
-                    $0.forceTerminate()
-                }
-            }
-    }
-
-    private static func forceKillRemainingApplications(processIdentifiers: Set<pid_t>, bundleIdentifier: String?) {
-        let remainingApplications = NSWorkspace.shared.runningApplications.filter {
-            processIdentifiers.contains($0.processIdentifier)
-                && $0.bundleIdentifier == bundleIdentifier
-        }
-        remainingApplications.forEach {
-            if !$0.isTerminated {
-                $0.forceTerminate()
-                kill($0.processIdentifier, SIGKILL)
-            }
-        }
-    }
 }
 
 @MainActor
@@ -480,12 +491,6 @@ package enum AppBootstrap {
                 RelaySessionHub(relayProcessController: relayProcessController)
             }
         )
-        capturePerformancePreferences.onModeChanged = { mode in
-            Task {
-                await captureRegistry.updatePerformanceMode(mode)
-            }
-        }
-
         let resolvedSharingService: any SharingServiceProtocol
         if let sharingService {
             resolvedSharingService = sharingService
@@ -565,7 +570,10 @@ package enum AppBootstrap {
                 }
             }
         )
-        let displayRuntimeSharingAdapter = DisplayRuntimeSharingAdapter(controller: sharing)
+        let displayRuntimeSharingAdapter = DisplayRuntimeSharingAdapter(
+            controller: sharing,
+            capturePerformancePreferences: capturePerformancePreferences
+        )
         let displayRuntimeVirtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(
             controller: virtualDisplay,
             commandFacade: resolvedVirtualDisplayFacade
@@ -578,12 +586,21 @@ package enum AppBootstrap {
             virtualDisplayProvider: displayRuntimeVirtualDisplayAdapter,
             catalogCommander: displayRuntimeCatalogAdapter,
             sharingCommander: displayRuntimeSharingAdapter,
-            captureCommander: displayRuntimeCaptureAdapter,
             captureIntentCommander: displayRuntimeCaptureAdapter,
             virtualDisplayCommander: displayRuntimeVirtualDisplayAdapter,
             startupRestoreCommander: displayRuntimeVirtualDisplayAdapter,
             observabilityRecorder: displayRuntimeObservabilityAdapter
         )
+        capturePerformancePreferences.onModeChanged = {
+            [weak displayRuntime, weak capturePerformancePreferences] mode in
+            Task { @MainActor in
+                await captureRegistry.updatePerformanceMode(mode)
+                guard capturePerformancePreferences?.mode == mode else { return }
+                await displayRuntime?.updateConsumerPowerProfile(
+                    mode.runtimeCapturePowerProfile
+                )
+            }
+        }
         displayRuntimeSharingAdapter.configureLANWebViewDemandSync(runtime: displayRuntime)
         virtualDisplay.configureRebuildExecutor { configID, source in
             let result = try await displayRuntime.rebuildVirtualDisplay(

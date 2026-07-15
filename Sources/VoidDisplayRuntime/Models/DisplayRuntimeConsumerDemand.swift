@@ -72,6 +72,24 @@ package nonisolated struct DisplayRuntimeConsumerDemand: Codable, Equatable, Sen
         self.latencyPreference = latencyPreference
         self.activeViewerCount = max(0, activeViewerCount)
     }
+
+    package func replacing(
+        capturesCursor: Bool? = nil,
+        powerProfile: DisplayRuntimeCapturePowerProfile? = nil,
+        activeViewerCount: Int? = nil
+    ) -> Self {
+        Self(
+            sourcePixelSize: sourcePixelSize,
+            preferredPixelSize: preferredPixelSize,
+            maximumPixelSize: maximumPixelSize,
+            sourceFramesPerSecond: sourceFramesPerSecond,
+            preferredFramesPerSecond: preferredFramesPerSecond,
+            capturesCursor: capturesCursor ?? self.capturesCursor,
+            powerProfile: powerProfile ?? self.powerProfile,
+            latencyPreference: latencyPreference,
+            activeViewerCount: activeViewerCount ?? self.activeViewerCount
+        )
+    }
 }
 
 package nonisolated enum DisplayRuntimeAggregateQualityProfile: String, Codable, Equatable, Sendable {

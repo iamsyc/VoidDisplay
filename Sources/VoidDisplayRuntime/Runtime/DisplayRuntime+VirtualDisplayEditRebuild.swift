@@ -202,7 +202,44 @@ extension DisplayRuntime {
         }
 
         await appendPhase(.quiescingSessions, transactionID: request.transactionID)
-        quiesceSessions(pauseIntents)
+        let consumerTransition = await beginConsumerTransition(
+            affectedSurfaces: affectedSurfaces
+        )
+        guard !consumerTransition.hasQuiesceFailure else {
+            let persistenceCompensation = await compensateFailedEditRebuild(
+                transactionID: request.transactionID,
+                previousConfigForCompensation: saveResult.previousConfigForCompensation,
+                virtualDisplayCommander: virtualDisplayCommander,
+                shouldRebuild: false
+            )
+            let restoreResults = await compensateConsumerQuiesceFailure(
+                consumerTransition,
+                transactionID: request.transactionID
+            )
+            let compensation = mergingCompensation(
+                persistenceCompensation,
+                with: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                )
+            )
+            return finalizeTransaction(
+                transactionID: request.transactionID,
+                kind: .virtualDisplayEditRebuild,
+                status: .failed,
+                phase: .failed,
+                failure: .init(
+                    phase: .quiescingSessions,
+                    reason: "consumer_session_quiesce_failed",
+                    recoverability: .retryable
+                ),
+                virtualDisplayCommandSucceeded: false,
+                postSnapshot: makeSnapshot(),
+                compensation: compensation,
+                persistenceOutcome: saveResult.persistenceOutcome,
+                virtualDisplayCommandOutcome: .notAttempted
+            )
+        }
 
         await appendPhase(.executingVirtualDisplayCommand, transactionID: request.transactionID)
         do {
@@ -211,10 +248,21 @@ extension DisplayRuntime {
                 trace.replacing(virtualDisplayCommandOutcome: .succeeded)
             }
         } catch {
-            let compensation = await compensateFailedEditRebuild(
+            let persistenceCompensation = await compensateFailedEditRebuild(
                 transactionID: request.transactionID,
                 previousConfigForCompensation: saveResult.previousConfigForCompensation,
                 virtualDisplayCommander: virtualDisplayCommander
+            )
+            let restoreResults = await compensateConsumerTransition(consumerTransition)
+            updateTrace(request.transactionID) { trace in
+                trace.replacing(restoreResults: restoreResults)
+            }
+            let compensation = mergingCompensation(
+                persistenceCompensation,
+                with: consumerCompensationResult(
+                    restoreResults: restoreResults,
+                    restoreIntentCount: consumerTransition.restoreIntentCount
+                )
             )
             return finalizeTransaction(
                 transactionID: request.transactionID,
@@ -241,7 +289,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedSurfaces
         )
         if topologyResult.status == .stable {
-            convergeToVisibleDisplaysFromCurrentCatalog()
+            await convergeToVisibleDisplaysFromCurrentCatalog()
             await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
         }
         let postConvergenceSnapshot = makeSnapshot()
@@ -257,18 +305,12 @@ extension DisplayRuntime {
         if !restoreIntents.isEmpty {
             await appendPhase(.restoringSessions, transactionID: request.transactionID)
         }
-        let sharingRestoreResults = await restoreSharingSessions(
-            restoreIntents,
+        let restoreResults = await completeConsumerTransition(
+            consumerTransition,
+            snapshot: postConvergenceSnapshot,
             topologyResult: topologyResult,
-            postSnapshot: postConvergenceSnapshot,
-            disabledTargetIdentity: nil
+            releasedSurfaceReasons: [:]
         )
-        let previewRestoreResults = makeDeferredPreviewRestoreResults(
-            restoreIntents,
-            topologyResult: topologyResult,
-            disabledTargetIdentity: nil
-        )
-        let restoreResults = sharingRestoreResults + previewRestoreResults
         updateTrace(request.transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
@@ -289,7 +331,7 @@ extension DisplayRuntime {
             compensation: compensationResult(
                 after: topologyResult,
                 restoreResults: restoreResults,
-                restoreIntentCount: restoreIntents.count
+                restoreIntentCount: consumerTransition.restoreIntentCount
             ),
             persistenceOutcome: saveResult.persistenceOutcome,
             virtualDisplayCommandOutcome: .succeeded
@@ -299,7 +341,8 @@ extension DisplayRuntime {
     private func compensateFailedEditRebuild(
         transactionID: DisplayRuntimeTransactionID,
         previousConfigForCompensation: DisplayRuntimeVirtualDisplayConfigEditDTO,
-        virtualDisplayCommander: any DisplayRuntimeVirtualDisplayCommanding
+        virtualDisplayCommander: any DisplayRuntimeVirtualDisplayCommanding,
+        shouldRebuild: Bool = true
     ) async -> DisplayRuntimeCompensationResult {
         await appendPhase(
             .compensatingPersistence,
@@ -323,6 +366,18 @@ extension DisplayRuntime {
                     persistenceOutcome: restoreResult.persistenceOutcome,
                     virtualDisplayCommandOutcome: .notAttempted,
                     failureReason: "persistence_compensation_failed"
+                )
+            }
+
+            guard shouldRebuild else {
+                return .init(
+                    status: .completed,
+                    restoredSharingCount: 0,
+                    restoredPreviewCount: 0,
+                    failedRestoreCount: 0,
+                    persistenceOutcome: restoreResult.persistenceOutcome,
+                    virtualDisplayCommandOutcome: .notAttempted,
+                    failureReason: nil
                 )
             }
 

@@ -23,6 +23,7 @@ package nonisolated enum DisplayRuntimeCaptureIntentReason: String, Codable, Equ
     case epochChanged
     case transactionQuiesce
     case performanceModeChanged
+    case retry
 }
 
 package nonisolated enum DisplayRuntimeCaptureIntentFailureCode {
@@ -32,6 +33,9 @@ package nonisolated enum DisplayRuntimeCaptureIntentFailureCode {
     package static let permissionUnavailable = "capture_intent_permission_unavailable"
     package static let applyFailed = "capture_intent_apply_failed"
     package static let applyInvalidated = "capture_intent_apply_invalidated"
+    package static let consumerLeaseRestarting = "consumer_lease_restarting"
+    package static let consumerLeaseUnavailable = "consumer_lease_unavailable"
+    package static let consumerLeaseAlreadyExists = "consumer_lease_already_exists"
 }
 
 package nonisolated struct DisplayRuntimeCaptureIntent: Codable, Equatable, Sendable {
@@ -98,7 +102,7 @@ package nonisolated struct DisplayRuntimeCaptureIntentApplyResult: Codable, Equa
     }
 
     package func ignored() -> Self {
-        Self(revision: revision, outcome: .ignored)
+        Self(revision: revision, outcome: .ignored, failureCode: failureCode)
     }
 }
 
@@ -118,17 +122,12 @@ package nonisolated struct DisplayRuntimeEffectiveCaptureIntent: Codable, Equata
     }
 }
 
-package nonisolated struct DisplayRuntimePreviewConsumerAttachResult: Equatable, Sendable {
-    package let lease: DisplayRuntimeConsumerLease
-    package let applyResult: DisplayRuntimeCaptureIntentApplyResult
-
-    package init(
+package nonisolated enum DisplayRuntimeConsumerAttachOutcome: Equatable, Sendable {
+    case attached(
         lease: DisplayRuntimeConsumerLease,
         applyResult: DisplayRuntimeCaptureIntentApplyResult
-    ) {
-        self.lease = lease
-        self.applyResult = applyResult
-    }
+    )
+    case rejected(failureCode: String)
 }
 
 package nonisolated struct DisplayRuntimePreviewConsumerDetachResult: Equatable, Sendable {
@@ -140,19 +139,6 @@ package nonisolated struct DisplayRuntimePreviewConsumerDetachResult: Equatable,
         applyResult: DisplayRuntimeCaptureIntentApplyResult?
     ) {
         self.releasedLease = releasedLease
-        self.applyResult = applyResult
-    }
-}
-
-package nonisolated struct DisplayRuntimeLANWebViewConsumerAttachResult: Equatable, Sendable {
-    package let lease: DisplayRuntimeConsumerLease
-    package let applyResult: DisplayRuntimeCaptureIntentApplyResult?
-
-    package init(
-        lease: DisplayRuntimeConsumerLease,
-        applyResult: DisplayRuntimeCaptureIntentApplyResult?
-    ) {
-        self.lease = lease
         self.applyResult = applyResult
     }
 }

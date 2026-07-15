@@ -139,6 +139,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
             virtualDisplayProvider.setSnapshot(.empty)
             catalogProvider.setSnapshot(catalogSnapshot(displayIDs: [], mainDisplayID: nil))
         }
+        let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let runtime = DisplayRuntime(
             catalogProvider: catalogProvider,
             captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: displayID, capturesCursor: true)),
@@ -146,10 +147,26 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(recorder: recorder),
             sharingCommander: FakeSharingCommander(recorder: recorder),
-            captureCommander: FakeCaptureCommander(recorder: recorder),
+            captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
+        let surfaceIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand(capturesCursor: true)
+        )
+        _ = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .lanWebView,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        recorder.events.removeAll()
 
         let result = try await runtime.deleteVirtualDisplay(
             configID: configID,
@@ -164,8 +181,11 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         #expect(trace.source == .deleteVirtualDisplayConfirmation)
         #expect(trace.targetConfigID == configID)
         #expect(trace.restoreResults.allSatisfy { $0.failureReason == "target_deleted" })
-        #expect(recorder.events.firstIndex(of: "stopSharing:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
-        #expect(recorder.events.firstIndex(of: "removePreview:\(displayID)")! < recorder.events.firstIndex(of: "delete:\(configID.uuidString)")!)
+        let deleteIndex = try #require(recorder.events.firstIndex(of: "delete:\(configID.uuidString)"))
+        let lanDrainIndex = try #require(recorder.events.firstIndex(of: "applyLAN:drain"))
+        let previewDrainIndex = try #require(recorder.events.firstIndex(of: "applyPreview:drain"))
+        #expect(lanDrainIndex < deleteIndex)
+        #expect(previewDrainIndex < deleteIndex)
     }
     @Test func deleteMissingConfigRecordsFailedTraceWithoutCommand() async throws {
         let missingID = UUID()

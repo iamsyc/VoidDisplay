@@ -70,13 +70,13 @@ package struct HomeVirtualDisplayCardToggleButton: View {
                     .controlSize(.small)
             } else {
                 Label(
-                    card.isRunning ? String(localized: "Disable") : String(localized: "Enable"),
-                    systemImage: card.isRunning ? "pause.fill" : "play.fill"
+                    card.desiredEnabled ? String(localized: "Disable") : String(localized: "Enable"),
+                    systemImage: card.desiredEnabled ? "pause.fill" : "play.fill"
                 )
             }
         }
         .buttonStyle(.borderedProminent)
-        .tint(card.isRunning ? .orange : .green)
+        .tint(card.desiredEnabled ? .orange : .green)
         .disabled(state.isBusy)
         .controlSize(.regular)
         .frame(minWidth: 86)

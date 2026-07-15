@@ -7,40 +7,13 @@
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplayTestingSupport
+import Darwin
 import Foundation
 import Testing
 
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
-    @Test func singleInstanceGuardSelectsOnlyOtherProcessesWithSameBundleIdentifier() {
-        let duplicates = AppSingleInstanceGuard.duplicateProcessIdentifiers(
-            currentProcessIdentifier: 10,
-            bundleIdentifier: "com.developerchen.voiddisplay",
-            runningInstances: [
-                .init(processIdentifier: 10, bundleIdentifier: "com.developerchen.voiddisplay"),
-                .init(processIdentifier: 11, bundleIdentifier: "com.developerchen.voiddisplay"),
-                .init(processIdentifier: 12, bundleIdentifier: "com.example.other"),
-                .init(processIdentifier: 13, bundleIdentifier: nil),
-                .init(processIdentifier: 14, bundleIdentifier: "com.developerchen.voiddisplay")
-            ]
-        )
-
-        #expect(duplicates == [11, 14])
-    }
-
-    @Test func singleInstanceGuardDoesNothingWithoutBundleIdentifier() {
-        let duplicates = AppSingleInstanceGuard.duplicateProcessIdentifiers(
-            currentProcessIdentifier: 10,
-            bundleIdentifier: nil,
-            runningInstances: [
-                .init(processIdentifier: 11, bundleIdentifier: "com.developerchen.voiddisplay")
-            ]
-        )
-
-        #expect(duplicates.isEmpty)
-    }
-
     @Test func singleInstanceGuardBuildsStableSanitizedLockFileName() {
         #expect(
             AppSingleInstanceGuard.lockFileName(bundleIdentifier: "com.developerchen.voiddisplay")
@@ -53,6 +26,43 @@ struct AppBootstrapTests {
         #expect(
             AppSingleInstanceGuard.lockFileName(bundleIdentifier: nil)
                 == "voiddisplay.single-instance.lock"
+        )
+    }
+
+    @Test func singleInstanceGuardClassifiesAcquiredLock() {
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: 42,
+                flockResult: 0,
+                errorCode: 0
+            ) == .acquired
+        )
+    }
+
+    @Test func singleInstanceGuardClassifiesOpenFailureWithoutTreatingItAsContention() {
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: -1,
+                flockResult: nil,
+                errorCode: EACCES
+            ) == .failed(errorCode: EACCES)
+        )
+    }
+
+    @Test func singleInstanceGuardClassifiesHeldLockSeparatelyFromFlockFailure() {
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: 42,
+                flockResult: -1,
+                errorCode: EWOULDBLOCK
+            ) == .heldByOtherInstance
+        )
+        #expect(
+            AppSingleInstanceGuard.classifyLockAttempt(
+                openedDescriptor: 42,
+                flockResult: -1,
+                errorCode: EPERM
+            ) == .failed(errorCode: EPERM)
         )
     }
 
