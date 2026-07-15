@@ -99,6 +99,28 @@ validate_xcode_shell_build_phase() {
 	fail_on_output "Build Relay input paths must stay under allowed prefixes." "$invalid_inputs"
 }
 
+validate_xcode_runner_disables_signing() {
+	local runner="$TOOL_ROOT/scripts/ci/xcode.sh"
+	local base_command
+	local match_count
+	local setting
+
+	base_command="$(
+		awk '
+			/^[[:space:]]*xcode_cmd=\([[:space:]]*$/ { inside = 1 }
+			inside { print }
+			inside && /^[[:space:]]*\)[[:space:]]*$/ { exit }
+		' "$runner"
+	)"
+	[[ -n "$base_command" ]] || die "Xcode runner base command could not be resolved."
+
+	for setting in CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO; do
+		match_count="$(rg -c "^[[:space:]]*\"$setting\"[[:space:]]*$" <<<"$base_command" || true)"
+		[[ "$match_count" == "1" ]] ||
+			die "Xcode runner base command must contain exactly one setting for every action: $setting"
+	done
+}
+
 validate_log_scanner() {
 	local scanner="$1"
 	local label="$2"
@@ -151,6 +173,7 @@ validate_ui_tests_do_not_synthesize_keyboard_input() {
 }
 
 validate_xcode_shell_build_phase
+validate_xcode_runner_disables_signing
 validate_xcode_log_scanner
 validate_swiftpm_log_scanner
 validate_bootstrap_profile_fixtures

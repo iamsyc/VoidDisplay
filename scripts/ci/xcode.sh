@@ -110,14 +110,9 @@ xcode_cmd=(
 	"-destination" "$DESTINATION"
 	"ROOT_DIR=$ROOT_DIR"
 	"TOOL_ROOT=$TOOL_ROOT"
+	"CODE_SIGNING_ALLOWED=NO"
+	"CODE_SIGNING_REQUIRED=NO"
 )
-
-if [[ "$ACTION" == "build" ]]; then
-	xcode_cmd+=(
-		"CODE_SIGNING_ALLOWED=NO"
-		"CODE_SIGNING_REQUIRED=NO"
-	)
-fi
 
 if [[ "$ACTION" == "test" ]]; then
 	xcode_cmd+=("-resultBundlePath" "$RESULT_BUNDLE_PATH")
