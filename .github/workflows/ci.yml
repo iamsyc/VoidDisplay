@@ -218,10 +218,10 @@ jobs:
         include:
           - case_name: baseline
             only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
-          - case_name: permissionDenied
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testPermissionDeniedSmoke_captureAndShare
-          - case_name: rebuildFailed
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testVirtualDisplaySmoke_rebuildFailedRowShowsRetry
+          - case_name: compactNarrow
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testCompactCardActionsRemainVisibleAtNarrowWindowSize
+          - case_name: previewRecovery
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
       only_testing: ${{ matrix.only_testing }}
@@ -489,7 +489,7 @@ jobs:
             ].join('<br>');
             const uiDetails = [
               'Failure classification is written by ui-smoke-summary.json in each artifact.',
-              'Artifacts: ui-smoke-baseline, ui-smoke-permissionDenied, ui-smoke-rebuildFailed',
+              'Artifacts: ui-smoke-baseline, ui-smoke-compactNarrow, ui-smoke-previewRecovery',
             ].join('<br>');
             const releaseStatus = context.eventName === 'pull_request'
               ? value('RELEASE_ARM64_RESULT', 'unknown')
