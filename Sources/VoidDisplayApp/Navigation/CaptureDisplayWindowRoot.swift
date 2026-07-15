@@ -7,11 +7,9 @@ import Foundation
 
 import SwiftUI
 package struct CaptureDisplayWindowRoot: View {
-    @Environment(\.dismiss) private var dismiss
     package let previewID: CapturePreviewID?
     private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
-    @State private var hasSeenPreviewID = false
 
     package init(
         previewID: CapturePreviewID?,
@@ -24,34 +22,20 @@ package struct CaptureDisplayWindowRoot: View {
     }
 
     package var body: some View {
-        Group {
-            if let previewID {
-                CaptureDisplayView(
-                    previewID: previewID,
-                    previewActions: previewActions,
-                    sharingStatusProvider: sharingStatusProvider
-                )
-                    .navigationTitle("Preview")
-            } else {
-                Color.clear
-            }
-        }
-        .task(id: previewID) {
-            if previewID != nil {
-                hasSeenPreviewID = true
-                return
-            }
-
-            // Value-based windows can briefly render before their payload is
-            // attached. Give SwiftUI one turn to supply the stable preview ID.
-            if !hasSeenPreviewID {
-                try? await Task.sleep(for: .milliseconds(150))
-                guard previewID == nil, !hasSeenPreviewID else { return }
-                dismiss()
-                return
-            }
-
-            dismiss()
+        switch CaptureDisplayWindowContentState(previewID: previewID) {
+        case let .preview(resolvedPreviewID):
+            CaptureDisplayView(
+                previewID: resolvedPreviewID,
+                previewActions: previewActions,
+                sharingStatusProvider: sharingStatusProvider
+            )
+                .navigationTitle("Preview")
+        case .waitingForPreviewID:
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel(Text("Preview"))
+                .accessibilityIdentifier("capture_preview_waiting_for_identity")
         }
     }
 }

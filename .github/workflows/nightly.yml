@@ -126,6 +126,8 @@ jobs:
             only_testing: VoidDisplayUITests/HomeSmokeTests/testFirstTabFocusesAVisibleControl
           - case_name: previewRecovery
             only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState
+          - case_name: previewWindowPayload
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
       only_testing: ${{ matrix.only_testing }}

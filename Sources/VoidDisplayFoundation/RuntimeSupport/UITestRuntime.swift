@@ -5,6 +5,7 @@ package enum UITestScenario: String {
     case permissionDenied = "permission_denied"
     case settingsFeedback = "settings_feedback"
     case previewRecovery = "preview_recovery"
+    case previewWindowPayload = "preview_window_payload"
 }
 package enum UITestRuntime {
     package nonisolated static let modeEnvironmentKey = "VOIDDISPLAY_UI_TEST_MODE"

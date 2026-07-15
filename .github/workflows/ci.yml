@@ -222,6 +222,8 @@ jobs:
             only_testing: VoidDisplayUITests/HomeSmokeTests/testCompactCardActionsRemainVisibleAtNarrowWindowSize
           - case_name: previewRecovery
             only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState
+          - case_name: previewWindowPayload
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
       only_testing: ${{ matrix.only_testing }}
@@ -489,7 +491,7 @@ jobs:
             ].join('<br>');
             const uiDetails = [
               'Failure classification is written by ui-smoke-summary.json in each artifact.',
-              'Artifacts: ui-smoke-baseline, ui-smoke-compactNarrow, ui-smoke-previewRecovery',
+              'Artifacts: ui-smoke-baseline, ui-smoke-compactNarrow, ui-smoke-previewRecovery, ui-smoke-previewWindowPayload',
             ].join('<br>');
             const releaseStatus = context.eventName === 'pull_request'
               ? value('RELEASE_ARM64_RESULT', 'unknown')

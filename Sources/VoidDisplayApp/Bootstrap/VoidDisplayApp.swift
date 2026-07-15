@@ -101,6 +101,16 @@ public struct VoidDisplayApplication: App {
                     )
                 } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewRecovery {
                     PreviewRecoveryUITestHost()
+                } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewWindowPayload {
+                    CaptureDisplayWindowRoot(
+                        previewID: nil,
+                        previewActions: CaptureUIComposition.previewActions(
+                            capture: capture,
+                            displayRuntime: displayRuntime,
+                            capturePerformancePreferences: capturePerformancePreferences
+                        ),
+                        sharingStatusProvider: CaptureUIComposition.sharingStatusProvider(sharing: sharing)
+                    )
                 } else {
                     HomeView(
                         observability: observability,

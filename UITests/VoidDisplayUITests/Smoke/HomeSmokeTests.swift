@@ -216,4 +216,16 @@ final class HomeSmokeTests: XCTestCase {
 
         assertExists(app, identifier: "capture_preview_closed_state", timeout: 2)
     }
+
+    @MainActor
+    func testPreviewWindowWaitsForIdentityWithoutClosing() throws {
+        let app = launchAppForSmoke(scenario: "preview_window_payload")
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+
+        XCTAssertTrue(window.exists)
+        assertExists(app, identifier: "capture_preview_waiting_for_identity", timeout: 2)
+    }
 }
