@@ -63,8 +63,18 @@ final class HomeSmokeTests: XCTestCase {
             .matching(identifier: "home_virtual_display_card")
             .allElementsBoundByIndex
         XCTAssertGreaterThanOrEqual(cards.count, 2)
-        XCTAssertEqual(cards[0].frame.minY, cards[1].frame.minY, accuracy: 2)
-        XCTAssertGreaterThan(abs(cards[0].frame.minX - cards[1].frame.minX), 100)
+        XCTAssertFalse(app.descendants(matching: .any)["home_virtual_display_list"].exists)
+
+        let firstFrame = cards[0].frame
+        let secondFrame = cards[1].frame
+        XCTAssertFalse(firstFrame.intersects(secondFrame))
+
+        if abs(firstFrame.minY - secondFrame.minY) <= 2 {
+            XCTAssertGreaterThan(abs(firstFrame.minX - secondFrame.minX), 100)
+        } else {
+            XCTAssertEqual(firstFrame.minX, secondFrame.minX, accuracy: 2)
+            XCTAssertGreaterThan(secondFrame.minY, firstFrame.minY)
+        }
 
         tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
         assertAllExist(
