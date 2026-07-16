@@ -28,6 +28,10 @@ final class FeedbackSettingsTests: XCTestCase {
             timeout: 5
         )
 
+        XCTAssertFalse(app.staticTexts["Appearance"].exists)
+        XCTAssertFalse(app.staticTexts["外观"].exists)
+        XCTAssertFalse(app.segmentedControls["Home Layout"].exists)
+        XCTAssertFalse(app.segmentedControls["主页布局"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["settings_export_support_bundle_button"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_happened_field"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reproduction_field"].exists)

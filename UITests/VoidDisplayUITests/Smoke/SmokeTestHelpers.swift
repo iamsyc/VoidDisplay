@@ -32,7 +32,6 @@ extension XCTestCase {
     @MainActor
     func launchAppForSmoke(
         preferredPort: UInt16? = nil,
-        homeLayoutID: String? = nil,
         windowSize: (width: Int, height: Int)? = nil,
         advanceFocus: Bool = false,
         scenario: String = "baseline"
@@ -44,12 +43,6 @@ extension XCTestCase {
             app.launchArguments.append(contentsOf: [
                 "-sharing.preferredPort",
                 String(preferredPort)
-            ])
-        }
-        if let homeLayoutID {
-            app.launchArguments.append(contentsOf: [
-                "-appearance.homeLayoutID",
-                homeLayoutID
             ])
         }
         if let windowSize {

@@ -13,7 +13,6 @@ import VoidDisplayVirtualDisplay
 
 @MainActor
 package struct HomeVirtualDisplaySurfaceView: View {
-    @Environment(\.homeLayoutID) private var homeLayoutID
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
 
@@ -64,7 +63,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
             sharePageAddresses: SharingUIComposition.runtimeState(sharing: sharing).sharePageAddresses
         )
 
-        let layout = HomeLayoutConfiguration(id: homeLayoutID)
+        let layout = HomeLayoutConfiguration.list
         let itemStates = itemRenderStates(for: presentation.items)
         let context = layoutContext(
             layout: layout,
@@ -173,7 +172,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func surfaceContent(context: HomeLayoutContext) -> some View {
         HomeLayoutShell(context: context) {
             layoutContent(isEmpty: context.itemStates.isEmpty) {
-                HomeLayoutRegistry.makeContent(context: context)
+                HomeListRows(context: context)
             }
         }
     }
@@ -221,8 +220,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
                         openURL(url)
                     }
                 },
-                performItemAction: { action, card in
-                    perform(action, for: card)
+                performItemAction: { action, item in
+                    perform(action, for: item)
                 },
                 setCapturePerformanceMode: { mode in
                     capturePerformancePreferences.saveMode(mode)

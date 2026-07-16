@@ -101,21 +101,3 @@ package struct HomeVirtualDisplayItemPrimaryStatusBadge: View {
         }
     }
 }
-
-package struct HomeVirtualDisplayItemStatusGrid: View {
-    package let item: HomeVirtualDisplayItemPresentation
-
-    package init(item: HomeVirtualDisplayItemPresentation) {
-        self.item = item
-    }
-
-    package var body: some View {
-        HStack(spacing: AppUI.Spacing.medium) {
-            ForEach(item.operationalStatusItems) { statusItem in
-                HomeInlineStatusText(item: statusItem)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityIdentifier("home_card_status_grid")
-    }
-}

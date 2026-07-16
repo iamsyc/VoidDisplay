@@ -15,9 +15,7 @@ package struct HomeSharingSettingsPopoverButton: View {
             isPresented.toggle()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "network")
-
-                Text("Sharing Settings")
+                Label("Sharing Settings", systemImage: "gearshape")
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
 
@@ -62,22 +60,54 @@ package struct HomeSharingSettingsPanel: View {
     }
 
     package var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: AppUI.Spacing.large) {
-                title
-                    .fixedSize(horizontal: true, vertical: false)
+        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: AppUI.Spacing.large) {
+                    title
+                        .fixedSize(horizontal: true, vertical: false)
 
-                controlsInline
+                    controlsInline
+                }
+
+                VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                    title
+                    controlsResponsive
+                }
             }
 
-            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
-                title
-                controlsResponsive
-            }
+            Divider()
+
+            permissionStatus
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home_sharing_settings_panel")
+    }
+
+    private var permissionStatus: some View {
+        HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+            HomeSummaryStatusItem(
+                title: String(localized: "Screen Recording"),
+                value: context.permissionStatus.label,
+                systemImage: context.permissionStatus.systemImage,
+                tint: context.permissionStatus.tint,
+                isActive: context.permissionStatus.isActive
+            )
+
+            Spacer(minLength: AppUI.Spacing.small)
+
+            if context.permissionStatus.canOpenSettings {
+                Button {
+                    context.actions.openScreenCapturePrivacySettings()
+                } label: {
+                    Label("Open Privacy Settings", systemImage: "lock.shield")
+                }
+                .appActionButtonStyle(variant: .default)
+                .accessibilityIdentifier("home_sharing_open_privacy_settings_button")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home_sharing_screen_recording_permission_status")
     }
 
     private var controlsResponsive: some View {

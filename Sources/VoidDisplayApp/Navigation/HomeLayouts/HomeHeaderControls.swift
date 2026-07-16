@@ -14,35 +14,20 @@ package struct HomeHeaderControls: View {
 
     private var summaryHeader: some View {
         ViewThatFits(in: .horizontal) {
-            VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-                HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                    titleBlock
-                    Spacer(minLength: AppUI.Spacing.large)
-                    summaryActionButtons
-                }
-
+            HStack(alignment: .center, spacing: AppUI.Spacing.large) {
                 HomeSummaryStatusStrip(context: context)
+                summaryActionButtons
             }
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-                HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                    titleBlock
-                    Spacer(minLength: AppUI.Spacing.medium)
-                    createVirtualDisplayButton
-                }
                 HomeSummaryStatusStrip(context: context)
                 HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+                    createVirtualDisplayButton
                     sharingSettingsButton
                     refreshIconButton
                 }
             }
         }
-    }
-
-    private var titleBlock: some View {
-        Label("Virtual Displays", systemImage: "display.2")
-            .font(.title2.weight(.semibold))
-            .accessibilityIdentifier("home_virtual_display_title")
     }
 
     private var summaryActionButtons: some View {

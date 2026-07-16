@@ -37,8 +37,6 @@ package struct HomeVirtualDisplayItemActionCluster: View {
 
     package var body: some View {
         HStack(spacing: AppUI.Spacing.xSmall + 2) {
-            HomeVirtualDisplayItemPreviewButton(state: state, actions: actions)
-            HomeVirtualDisplayItemWebViewButton(state: state, actions: actions)
             HomeVirtualDisplayItemCopyShareAddressButton(state: state, actions: actions)
             HomeVirtualDisplayItemEditButton(state: state, actions: actions)
             HomeVirtualDisplayItemMoreMenu(state: state, actions: actions)
@@ -81,76 +79,6 @@ package struct HomeVirtualDisplayItemToggleButton: View {
         .controlSize(.regular)
         .frame(minWidth: 86)
         .accessibilityIdentifier("virtual_display_toggle_button")
-    }
-}
-
-package struct HomeVirtualDisplayItemPreviewButton: View {
-    package let state: HomeVirtualDisplayItemRenderState
-    package let actions: HomeLayoutActions
-
-    package init(
-        state: HomeVirtualDisplayItemRenderState,
-        actions: HomeLayoutActions
-    ) {
-        self.state = state
-        self.actions = actions
-    }
-
-    private var item: HomeVirtualDisplayItemPresentation { state.item }
-
-    package var body: some View {
-        Button {
-            actions.perform(.preview, for: state)
-        } label: {
-            if state.isPreviewStarting {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Image(systemName: item.isPreviewing ? "stop.fill" : "dot.scope.display")
-            }
-        }
-        .appActionButtonStyle(variant: .default)
-        .disabled(state.isPreviewActionDisabled)
-        .controlSize(.small)
-        .frame(minWidth: 32)
-        .help(Text(item.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
-        .accessibilityLabel(Text(item.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
-        .accessibilityIdentifier("home_virtual_display_preview_button")
-    }
-}
-
-package struct HomeVirtualDisplayItemWebViewButton: View {
-    package let state: HomeVirtualDisplayItemRenderState
-    package let actions: HomeLayoutActions
-
-    package init(
-        state: HomeVirtualDisplayItemRenderState,
-        actions: HomeLayoutActions
-    ) {
-        self.state = state
-        self.actions = actions
-    }
-
-    private var item: HomeVirtualDisplayItemPresentation { state.item }
-
-    package var body: some View {
-        Button {
-            actions.perform(.webView, for: state)
-        } label: {
-            if state.isWebViewStarting {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Image(systemName: item.isSharing ? "stop.fill" : "network")
-            }
-        }
-        .appActionButtonStyle(variant: .default)
-        .disabled(state.isWebViewActionDisabled)
-        .controlSize(.small)
-        .frame(minWidth: 32)
-        .help(Text(item.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
-        .accessibilityLabel(Text(item.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
-        .accessibilityIdentifier("home_virtual_display_web_view_button")
     }
 }
 

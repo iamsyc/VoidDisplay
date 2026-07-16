@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct HomeVirtualDisplayPresentationTests {
-    @Test func mapsSummaryAndCardsInConfigOrder() throws {
+    @Test func mapsSummaryAndItemsInConfigOrder() throws {
         let firstID = try #require(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
         let secondID = try #require(UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
         let firstIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: firstID)
@@ -101,7 +101,7 @@ struct HomeVirtualDisplayPresentationTests {
         #expect(presentation.summary.activeViewerCount == 2)
     }
 
-    @Test func marksCardWhenVirtualDisplayNeedsAttention() throws {
+    @Test func marksItemWhenVirtualDisplayNeedsAttention() throws {
         let configID = try #require(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc"))
         let snapshot = DisplayRuntimeSnapshot(
             surfaces: [
@@ -123,9 +123,9 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [config(id: configID, name: "Broken Display", desiredEnabled: true)]
         )
 
-        let card = try #require(presentation.items.first)
-        #expect(card.hasIssue)
-        #expect(card.statusLabel == "Enabled · Startup Failed")
+        let item = try #require(presentation.items.first)
+        #expect(item.hasIssue)
+        #expect(item.statusLabel == "Enabled · Startup Failed")
     }
 
     @Test func enabledButStoppedVirtualDisplayDoesNotReadAsRunning() throws {
@@ -151,9 +151,9 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [config(id: configID, name: "Stopped Display", desiredEnabled: true)]
         )
 
-        let card = try #require(presentation.items.first)
-        #expect(card.statusLabel == "Enabled · Not Running")
-        #expect(!card.isRunning)
+        let item = try #require(presentation.items.first)
+        #expect(item.statusLabel == "Enabled · Not Running")
+        #expect(!item.isRunning)
         #expect(presentation.summary.runningVirtualDisplayCount == 0)
     }
 
@@ -207,14 +207,14 @@ struct HomeVirtualDisplayPresentationTests {
             ]
         )
 
-        let card = try #require(presentation.items.first)
-        #expect(card.shareAddress == "http://127.0.0.1:18090/display/7404")
-        #expect(card.isSharing == false)
-        #expect(card.operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
-        #expect(card.operationalStatusItems.map(\.value) == ["Off", "Off", "0"])
+        let item = try #require(presentation.items.first)
+        #expect(item.shareAddress == "http://127.0.0.1:18090/display/7404")
+        #expect(item.isSharing == false)
+        #expect(item.operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
+        #expect(item.operationalStatusItems.map(\.value) == ["Off", "Off", "0"])
     }
 
-    @Test func summaryUsesCurrentConfigCardsOnly() throws {
+    @Test func summaryUsesCurrentConfigItemsOnly() throws {
         let currentID = try #require(UUID(uuidString: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"))
         let staleID = try #require(UUID(uuidString: "ffffffff-ffff-ffff-ffff-ffffffffffff"))
         let snapshot = DisplayRuntimeSnapshot(
@@ -247,7 +247,7 @@ struct HomeVirtualDisplayPresentationTests {
         #expect(presentation.summary.runningVirtualDisplayCount == 0)
     }
 
-    @Test func marksCardWhenSharingLifecycleFails() throws {
+    @Test func marksItemWhenSharingLifecycleFails() throws {
         let configID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
         let snapshot = DisplayRuntimeSnapshot(
             surfaces: [
@@ -293,8 +293,8 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [config(id: configID, name: "Web Display", desiredEnabled: true)]
         )
 
-        let card = try #require(presentation.items.first)
-        #expect(card.hasIssue)
+        let item = try #require(presentation.items.first)
+        #expect(item.hasIssue)
     }
 
     private func config(
