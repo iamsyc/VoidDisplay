@@ -62,6 +62,6 @@ mkdir -p "$OUTPUT_DIR"
 cd "$RELAY_DIR"
 
 env GOPROXY="$GOPROXY_VALUE" "$GO_BIN" test ./...
-env GOPROXY="$GOPROXY_VALUE" GOOS=darwin GOARCH="$GOARCH_VALUE" "$GO_BIN" build -trimpath -o "$OUTPUT_PATH" ./cmd/voiddisplay-relay
+env GOPROXY="$GOPROXY_VALUE" GOOS=darwin GOARCH="$GOARCH_VALUE" "$GO_BIN" build -buildvcs=false -trimpath -o "$OUTPUT_PATH" ./cmd/voiddisplay-relay
 chmod +x "$OUTPUT_PATH"
 require_binary_arch "Relay" "$OUTPUT_PATH" "$TARGET_ARCH"

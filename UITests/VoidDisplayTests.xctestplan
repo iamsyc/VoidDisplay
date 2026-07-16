@@ -10,7 +10,7 @@
   ],
   "defaultOptions" : {
     "targetForVariableExpansion" : {
-      "containerPath" : "container:../Apps/VoidDisplay/VoidDisplay.xcodeproj",
+      "containerPath" : "container:../VoidDisplay.xcodeproj",
       "identifier" : "BA0465CF2E90E53C00012958",
       "name" : "VoidDisplay"
     }
@@ -18,7 +18,7 @@
   "testTargets" : [
     {
       "target" : {
-        "containerPath" : "container:../Apps/VoidDisplay/VoidDisplay.xcodeproj",
+        "containerPath" : "container:../VoidDisplay.xcodeproj",
         "identifier" : "BA0465E62E90E53D00012958",
         "name" : "VoidDisplayUITests"
       }

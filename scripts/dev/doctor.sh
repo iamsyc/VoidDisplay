@@ -62,7 +62,7 @@ fi
 package_resolved_ok="true"
 for resolved_path in \
 	Package.resolved \
-	Apps/VoidDisplay/VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
+	VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved \
 	VoidDisplay.xcworkspace/xcshareddata/swiftpm/Package.resolved; do
 	if [[ ! -f "$resolved_path" ]]; then
 		package_resolved_ok="false"

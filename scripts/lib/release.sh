@@ -9,7 +9,7 @@ if [[ -z "${VOIDDISPLAY_RELEASE_SH_SOURCED:-}" ]]; then
 	source "$TOOL_ROOT/scripts/lib/architecture.sh"
 
 	release_project_file() {
-		printf '%s\n' "$ROOT_DIR/Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
+		printf '%s\n' "$ROOT_DIR/VoidDisplay.xcodeproj/project.pbxproj"
 	}
 
 	release_read_project_value_stream() {
@@ -31,13 +31,39 @@ if [[ -z "${VOIDDISPLAY_RELEASE_SH_SOURCED:-}" ]]; then
 		release_read_project_value_stream "$key" <"$source"
 	}
 
+	release_resolve_project_path_at_git_commit() {
+		local commit="$1"
+		local current_path="${2:-VoidDisplay.xcodeproj/project.pbxproj}"
+		local comparison_commit="${3:-HEAD}"
+		local renamed_paths
+		local renamed_path_count
+
+		if git cat-file -e "${commit}:${current_path}" 2>/dev/null; then
+			printf '%s\n' "$current_path"
+			return
+		fi
+
+		renamed_paths="$(
+			git diff --find-renames --name-status "$commit" "$comparison_commit" -- |
+				awk -F '\t' -v current_path="$current_path" \
+					'$1 ~ /^R[0-9]+$/ && $3 == current_path { print $2 }'
+		)"
+		renamed_path_count="$(printf '%s\n' "$renamed_paths" | sed '/^$/d' | wc -l | tr -d ' ')"
+		[[ "$renamed_path_count" == "1" ]] ||
+			die "Unable to resolve the previous path for $current_path at $commit."
+		git cat-file -e "${commit}:${renamed_paths}" 2>/dev/null ||
+			die "Unable to read renamed project path $renamed_paths at $commit."
+		printf '%s\n' "$renamed_paths"
+	}
+
 	release_read_project_value_from_git() {
 		local key="$1"
 		local commit="$2"
-		local path="${3:-Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj}"
+		local path="${3:-VoidDisplay.xcodeproj/project.pbxproj}"
+		local resolved_path
 
-		git cat-file -e "${commit}:${path}" 2>/dev/null || die "Unable to read $path at $commit."
-		git show "${commit}:${path}" | release_read_project_value_stream "$key" "at $commit"
+		resolved_path="$(release_resolve_project_path_at_git_commit "$commit" "$path")"
+		git show "${commit}:${resolved_path}" | release_read_project_value_stream "$key" "at $commit"
 	}
 
 	release_require_semver() {

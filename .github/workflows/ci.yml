@@ -9,6 +9,7 @@ on:
       - 'Tests/**'
       - 'UITests/**'
       - 'Apps/VoidDisplay/**'
+      - 'VoidDisplay.xcodeproj/**'
       - 'Tools/VoidDisplayRelay/**'
       - 'Package.swift'
       - 'Package.resolved'
