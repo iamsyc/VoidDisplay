@@ -27,6 +27,8 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["sidebar_virtual_display"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["sidebar_screen_preview"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["sidebar_screen_sharing"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["home_virtual_display_title"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["home_header_screen_recording_permission_status"].exists)
 
         tapIdentifier(app, identifier: "sidebar_diagnostics")
         assertAllExist(app, identifiers: ["detail_diagnostics"], timeout: 1.5)
@@ -50,8 +52,8 @@ final class HomeSmokeTests: XCTestCase {
                 "home_virtual_display_card",
                 "home_card_status_grid",
                 "virtual_display_toggle_button",
-                "home_virtual_display_preview_button",
-                "home_virtual_display_web_view_button",
+                "home_virtual_display_preview_toggle",
+                "home_virtual_display_web_view_toggle",
                 "virtual_display_edit_button",
                 "home_virtual_display_more_button",
                 "home_add_virtual_display_button"
@@ -64,6 +66,10 @@ final class HomeSmokeTests: XCTestCase {
             .allElementsBoundByIndex
         XCTAssertGreaterThanOrEqual(cards.count, 2)
         XCTAssertFalse(app.descendants(matching: .any)["home_virtual_display_list"].exists)
+        XCTAssertTrue(app.switches.matching(identifier: "home_virtual_display_preview_toggle").firstMatch.exists)
+        XCTAssertTrue(app.switches.matching(identifier: "home_virtual_display_web_view_toggle").firstMatch.exists)
+        XCTAssertFalse(app.buttons["home_virtual_display_preview_button"].exists)
+        XCTAssertFalse(app.buttons["home_virtual_display_web_view_button"].exists)
 
         let firstFrame = cards[0].frame
         let secondFrame = cards[1].frame
@@ -82,9 +88,24 @@ final class HomeSmokeTests: XCTestCase {
             identifiers: [
                 "home_sharing_settings_panel",
                 "home_sharing_performance_picker",
-                "home_sharing_port_input"
+                "home_sharing_port_input",
+                "home_sharing_screen_recording_permission_status"
             ],
             timeout: 2
+        )
+    }
+
+    @MainActor
+    func testScreenRecordingPermissionAppearsInHeaderOnlyWhenActionIsRequired() throws {
+        let app = launchAppForSmoke(scenario: "permission_denied")
+
+        assertAllExist(
+            app,
+            identifiers: [
+                "home_header_screen_recording_permission_status",
+                "home_open_privacy_settings_button"
+            ],
+            timeout: 6
         )
     }
 
@@ -103,8 +124,8 @@ final class HomeSmokeTests: XCTestCase {
                 "home_virtual_display_list_row",
                 "home_card_status_grid",
                 "virtual_display_toggle_button",
-                "home_virtual_display_preview_button",
-                "home_virtual_display_web_view_button",
+                "home_virtual_display_preview_toggle",
+                "home_virtual_display_web_view_toggle",
                 "virtual_display_edit_button",
                 "home_virtual_display_more_button"
             ],
@@ -126,9 +147,12 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 6))
 
         for identifier in [
+            "home_add_virtual_display_button",
+            "home_sharing_settings_popover_button",
+            "home_refresh_button",
             "virtual_display_toggle_button",
-            "home_virtual_display_preview_button",
-            "home_virtual_display_web_view_button",
+            "home_virtual_display_preview_toggle",
+            "home_virtual_display_web_view_toggle",
             "virtual_display_edit_button",
             "home_virtual_display_more_button"
         ] {

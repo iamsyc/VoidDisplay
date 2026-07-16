@@ -163,7 +163,7 @@ package struct HomeVirtualDisplayItem: View {
     }
 
     private var statusGrid: some View {
-        HomeVirtualDisplayItemStatusGrid(item: item)
+        HomeVirtualDisplayItemStatusGrid(state: state, actions: actions)
     }
 
     private var actionStack: some View {

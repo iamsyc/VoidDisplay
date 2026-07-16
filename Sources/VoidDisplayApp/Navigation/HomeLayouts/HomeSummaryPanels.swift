@@ -15,9 +15,11 @@ package struct HomeSummaryStatusStrip: View {
                 runningMetric
                 Spacer(minLength: AppUI.Spacing.small)
                 HomeSummaryLiveActivityCluster(summary: context.presentation.summary)
-                statusDivider
-                permissionStatus
-                permissionAction
+                if context.permissionStatus.canOpenSettings {
+                    statusDivider
+                    permissionStatus
+                    permissionAction
+                }
             }
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
@@ -27,6 +29,7 @@ package struct HomeSummaryStatusStrip: View {
         }
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home_summary_status_strip")
     }
 
@@ -43,6 +46,7 @@ package struct HomeSummaryStatusStrip: View {
             isActive: true,
             usesProminentValue: true
         )
+        .padding(.leading, context.layout.metrics.itemHorizontalPadding)
     }
 
     private var runningMetric: some View {
@@ -63,8 +67,10 @@ package struct HomeSummaryStatusStrip: View {
                 statusDivider
                 runningMetric
                 Spacer(minLength: AppUI.Spacing.small)
-                permissionStatus
-                permissionAction
+                if context.permissionStatus.canOpenSettings {
+                    permissionStatus
+                    permissionAction
+                }
             }
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
@@ -73,9 +79,11 @@ package struct HomeSummaryStatusStrip: View {
                     statusDivider
                     runningMetric
                 }
-                HStack(alignment: .center, spacing: AppUI.Spacing.small) {
-                    permissionStatus
-                    permissionAction
+                if context.permissionStatus.canOpenSettings {
+                    HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+                        permissionStatus
+                        permissionAction
+                    }
                 }
             }
         }
@@ -102,6 +110,7 @@ package struct HomeSummaryStatusStrip: View {
             tint: context.permissionStatus.tint,
             isActive: context.permissionStatus.isActive
         )
+        .accessibilityIdentifier("home_header_screen_recording_permission_status")
     }
 
     private var statusDivider: some View {
