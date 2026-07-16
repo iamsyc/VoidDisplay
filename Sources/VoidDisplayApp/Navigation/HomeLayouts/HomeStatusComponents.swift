@@ -4,7 +4,6 @@ import VoidDisplayDesignSystem
 package struct HomeStatusBadge: View {
     package let title: String
     package let tone: DisplaySurfaceStatusTone
-    @Environment(\.appSkinID) private var skinID
 
     package init(title: String, tone: DisplaySurfaceStatusTone) {
         self.title = title
@@ -12,7 +11,7 @@ package struct HomeStatusBadge: View {
     }
 
     package var body: some View {
-        let tint = tone.tint(skinID: skinID)
+        let tint = tone.tintColor
         Text(title)
             .font(.caption.weight(.medium))
             .lineLimit(1)
@@ -25,7 +24,6 @@ package struct HomeStatusBadge: View {
 
 package struct HomeInlineStatusText: View {
     package let item: DisplaySurfaceStatusItemPresentation
-    @Environment(\.appSkinID) private var skinID
 
     package init(item: DisplaySurfaceStatusItemPresentation) {
         self.item = item
@@ -75,19 +73,20 @@ package struct HomeInlineStatusText: View {
         case .neutral:
             Color.secondary
         default:
-            item.tone.tint(skinID: skinID)
+            item.tone.tintColor
         }
     }
 
     private var valueForegroundColor: Color {
         if item.id == "viewerCount" {
-            return .primary
-        }
-        return switch item.tone {
-        case .neutral:
-            Color.secondary.opacity(0.72)
-        default:
-            item.tone.tint(skinID: skinID)
+            .primary
+        } else {
+            switch item.tone {
+            case .neutral:
+                Color.secondary.opacity(0.72)
+            default:
+                item.tone.tintColor
+            }
         }
     }
 
@@ -97,19 +96,18 @@ package struct HomeInlineStatusText: View {
 }
 
 package extension DisplaySurfaceStatusTone {
-    func tint(skinID: AppSkinID) -> Color {
-        let palette = AppThemeStatusPalette.resolve(skinID: skinID)
-        return switch self {
+    var tintColor: Color {
+        switch self {
         case .neutral:
-            palette.neutral
+            AppThemeStatusPalette.standard.neutral
         case .info:
-            palette.info
+            AppThemeStatusPalette.standard.info
         case .success:
-            palette.success
+            AppThemeStatusPalette.standard.success
         case .warning:
-            palette.warning
+            AppThemeStatusPalette.standard.warning
         case .danger:
-            palette.danger
+            AppThemeStatusPalette.standard.danger
         }
     }
 }

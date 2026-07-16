@@ -154,7 +154,6 @@ public struct VoidDisplayApplication: App {
                 .environment(capture)
                 .environment(sharing)
                 .environment(virtualDisplay)
-                .appSkin(appearancePreferences.skinID)
         }
         .windowToolbarStyle(.unifiedCompact(showsTitle: true))
 
@@ -169,7 +168,6 @@ public struct VoidDisplayApplication: App {
                 .environment(capturePerformancePreferences)
                 .environment(appearancePreferences)
                 .environment(navigation)
-                .appSkin(appearancePreferences.skinID)
         }
     }
 }

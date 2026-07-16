@@ -120,8 +120,8 @@ jobs:
             only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
           - case_name: diagnostics
             only_testing: VoidDisplayUITests/HomeSmokeTests/testDiagnosticsNavigationSmoke_baseline
-          - case_name: compactNarrow
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testCompactCardActionsRemainVisibleAtNarrowWindowSize
+          - case_name: listNarrow
+            only_testing: VoidDisplayUITests/HomeSmokeTests/testListActionsRemainVisibleAtNarrowWindowSize
           - case_name: focus
             only_testing: VoidDisplayUITests/HomeSmokeTests/testFirstTabFocusesAVisibleControl
           - case_name: previewRecovery

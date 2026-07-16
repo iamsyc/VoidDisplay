@@ -2,13 +2,13 @@ import Foundation
 import SwiftUI
 import VoidDisplayDesignSystem
 
-package struct HomeVirtualDisplayCardActionStack: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemActionStack: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
@@ -16,20 +16,20 @@ package struct HomeVirtualDisplayCardActionStack: View {
 
     package var body: some View {
         HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-            HomeVirtualDisplayCardActionCluster(state: state, actions: actions)
-            HomeVirtualDisplayCardToggleButton(state: state, actions: actions)
+            HomeVirtualDisplayItemActionCluster(state: state, actions: actions)
+            HomeVirtualDisplayItemToggleButton(state: state, actions: actions)
         }
         .fixedSize(horizontal: true, vertical: true)
     }
 }
 
-package struct HomeVirtualDisplayCardActionCluster: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemActionCluster: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
@@ -37,29 +37,29 @@ package struct HomeVirtualDisplayCardActionCluster: View {
 
     package var body: some View {
         HStack(spacing: AppUI.Spacing.xSmall + 2) {
-            HomeVirtualDisplayCardPreviewButton(state: state, actions: actions)
-            HomeVirtualDisplayCardWebViewButton(state: state, actions: actions)
-            HomeVirtualDisplayCardCopyShareAddressButton(state: state, actions: actions)
-            HomeVirtualDisplayCardEditButton(state: state, actions: actions)
-            HomeVirtualDisplayCardMoreMenu(state: state, actions: actions)
+            HomeVirtualDisplayItemPreviewButton(state: state, actions: actions)
+            HomeVirtualDisplayItemWebViewButton(state: state, actions: actions)
+            HomeVirtualDisplayItemCopyShareAddressButton(state: state, actions: actions)
+            HomeVirtualDisplayItemEditButton(state: state, actions: actions)
+            HomeVirtualDisplayItemMoreMenu(state: state, actions: actions)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 }
 
-package struct HomeVirtualDisplayCardToggleButton: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemToggleButton: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
     }
 
-    private var card: HomeVirtualDisplayCardPresentation { state.card }
+    private var item: HomeVirtualDisplayItemPresentation { state.item }
 
     package var body: some View {
         Button {
@@ -70,13 +70,13 @@ package struct HomeVirtualDisplayCardToggleButton: View {
                     .controlSize(.small)
             } else {
                 Label(
-                    card.desiredEnabled ? String(localized: "Disable") : String(localized: "Enable"),
-                    systemImage: card.desiredEnabled ? "pause.fill" : "play.fill"
+                    item.desiredEnabled ? String(localized: "Disable") : String(localized: "Enable"),
+                    systemImage: item.desiredEnabled ? "pause.fill" : "play.fill"
                 )
             }
         }
         .buttonStyle(.borderedProminent)
-        .tint(card.desiredEnabled ? .orange : .green)
+        .tint(item.desiredEnabled ? .orange : .green)
         .disabled(state.isBusy)
         .controlSize(.regular)
         .frame(minWidth: 86)
@@ -84,19 +84,19 @@ package struct HomeVirtualDisplayCardToggleButton: View {
     }
 }
 
-package struct HomeVirtualDisplayCardPreviewButton: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemPreviewButton: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
     }
 
-    private var card: HomeVirtualDisplayCardPresentation { state.card }
+    private var item: HomeVirtualDisplayItemPresentation { state.item }
 
     package var body: some View {
         Button {
@@ -106,32 +106,32 @@ package struct HomeVirtualDisplayCardPreviewButton: View {
                 ProgressView()
                     .controlSize(.small)
             } else {
-                Image(systemName: card.isPreviewing ? "stop.fill" : "dot.scope.display")
+                Image(systemName: item.isPreviewing ? "stop.fill" : "dot.scope.display")
             }
         }
         .appActionButtonStyle(variant: .default)
         .disabled(state.isPreviewActionDisabled)
         .controlSize(.small)
         .frame(minWidth: 32)
-        .help(Text(card.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
-        .accessibilityLabel(Text(card.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
+        .help(Text(item.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
+        .accessibilityLabel(Text(item.isPreviewing ? String(localized: "Stop Preview") : String(localized: "Preview")))
         .accessibilityIdentifier("home_virtual_display_preview_button")
     }
 }
 
-package struct HomeVirtualDisplayCardWebViewButton: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemWebViewButton: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
     }
 
-    private var card: HomeVirtualDisplayCardPresentation { state.card }
+    private var item: HomeVirtualDisplayItemPresentation { state.item }
 
     package var body: some View {
         Button {
@@ -141,33 +141,33 @@ package struct HomeVirtualDisplayCardWebViewButton: View {
                 ProgressView()
                     .controlSize(.small)
             } else {
-                Image(systemName: card.isSharing ? "stop.fill" : "network")
+                Image(systemName: item.isSharing ? "stop.fill" : "network")
             }
         }
         .appActionButtonStyle(variant: .default)
         .disabled(state.isWebViewActionDisabled)
         .controlSize(.small)
         .frame(minWidth: 32)
-        .help(Text(card.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
-        .accessibilityLabel(Text(card.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
+        .help(Text(item.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
+        .accessibilityLabel(Text(item.isSharing ? String(localized: "Stop Sharing") : String(localized: "Sharing")))
         .accessibilityIdentifier("home_virtual_display_web_view_button")
     }
 }
 
-package struct HomeVirtualDisplayCardCopyShareAddressButton: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemCopyShareAddressButton: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
     }
 
     private var shareAddress: String? {
-        state.card.shareAddress
+        state.item.shareAddress
     }
 
     package var body: some View {
@@ -188,13 +188,13 @@ package struct HomeVirtualDisplayCardCopyShareAddressButton: View {
     }
 }
 
-package struct HomeVirtualDisplayCardEditButton: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemEditButton: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
@@ -216,22 +216,22 @@ package struct HomeVirtualDisplayCardEditButton: View {
     }
 }
 
-package struct HomeVirtualDisplayCardMoreMenu: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItemMoreMenu: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let actions: HomeLayoutActions
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        actions: HomeLayoutActions
     ) {
         self.state = state
         self.actions = actions
     }
 
-    private var card: HomeVirtualDisplayCardPresentation { state.card }
+    private var item: HomeVirtualDisplayItemPresentation { state.item }
 
     private var shareAddress: String? {
-        card.shareAddress
+        item.shareAddress
     }
 
     private var shareURL: URL? {
@@ -244,7 +244,7 @@ package struct HomeVirtualDisplayCardMoreMenu: View {
                 Button("Open Share Page", systemImage: "link") {
                     actions.perform(.openSharePage, for: state)
                 }
-                .disabled(!card.isSharing || shareURL == nil)
+                .disabled(!item.isSharing || shareURL == nil)
 
                 Button("Copy display address", systemImage: "doc.on.doc") {
                     actions.perform(.copyShareAddress, for: state)
@@ -297,7 +297,7 @@ package struct HomeVirtualDisplayCardMoreMenu: View {
     }
 }
 
-private extension HomeVirtualDisplayCardRenderState {
+private extension HomeVirtualDisplayItemRenderState {
     var isBusy: Bool {
         isToggling || isRebuilding
     }

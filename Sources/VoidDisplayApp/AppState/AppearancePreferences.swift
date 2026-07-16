@@ -1,16 +1,15 @@
 import Foundation
 import Observation
-import VoidDisplayDesignSystem
 
 package enum AppearancePreferenceKeys {
-    package static let skinID = "appearance.skinID"
+    package static let homeLayoutID = "appearance.homeLayoutID"
 }
 
 @MainActor
 @Observable
 package final class AppearancePreferences {
     @ObservationIgnored private let defaults: UserDefaults
-    package var skinID: AppSkinID
+    package var homeLayoutID: HomeLayoutID
 
     package init(
         defaults: UserDefaults,
@@ -18,16 +17,16 @@ package final class AppearancePreferences {
     ) {
         self.defaults = defaults
         let rawValue = Self.argumentValue(
-            forKey: AppearancePreferenceKeys.skinID,
+            forKey: AppearancePreferenceKeys.homeLayoutID,
             arguments: arguments
-        ) ?? defaults.string(forKey: AppearancePreferenceKeys.skinID)
-        self.skinID = rawValue.flatMap(AppSkinID.init(rawValue:)) ?? .classic
+        ) ?? defaults.string(forKey: AppearancePreferenceKeys.homeLayoutID)
+        self.homeLayoutID = rawValue.flatMap(HomeLayoutID.init(rawValue:)) ?? .card
     }
 
-    package func saveSkinID(_ skinID: AppSkinID) {
-        guard self.skinID != skinID else { return }
-        self.skinID = skinID
-        defaults.set(skinID.rawValue, forKey: AppearancePreferenceKeys.skinID)
+    package func saveHomeLayoutID(_ homeLayoutID: HomeLayoutID) {
+        guard self.homeLayoutID != homeLayoutID else { return }
+        self.homeLayoutID = homeLayoutID
+        defaults.set(homeLayoutID.rawValue, forKey: AppearancePreferenceKeys.homeLayoutID)
     }
 
     package static func argumentValue(

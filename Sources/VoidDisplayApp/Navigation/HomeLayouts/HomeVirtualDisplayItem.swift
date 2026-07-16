@@ -2,53 +2,42 @@ import Foundation
 import SwiftUI
 import VoidDisplayDesignSystem
 
-private enum HomeLayout {
+private enum HomeItemLayoutConstants {
     static let cardIdentityMinWidth: CGFloat = 250
     static let cardStatusMinWidth: CGFloat = 220
 }
 
-package enum HomeVirtualDisplayCardStyle {
-    case classic
-    case compact
-    case dashboard
-}
-
-package struct HomeVirtualDisplayCard: View {
-    package let state: HomeVirtualDisplayCardRenderState
-    package let style: HomeVirtualDisplayCardStyle
-    package let actions: HomeSkinActions
+package struct HomeVirtualDisplayItem: View {
+    package let state: HomeVirtualDisplayItemRenderState
+    package let layout: HomeLayoutConfiguration
+    package let actions: HomeLayoutActions
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appSkinID) private var skinID
     @State private var isHovered = false
 
     package init(
-        state: HomeVirtualDisplayCardRenderState,
-        style: HomeVirtualDisplayCardStyle,
-        actions: HomeSkinActions
+        state: HomeVirtualDisplayItemRenderState,
+        layout: HomeLayoutConfiguration,
+        actions: HomeLayoutActions
     ) {
         self.state = state
-        self.style = style
+        self.layout = layout
         self.actions = actions
     }
 
-    private var card: HomeVirtualDisplayCardPresentation { state.card }
+    private var item: HomeVirtualDisplayItemPresentation { state.item }
     private var rebuildFailureMessage: String? { state.rebuildFailureMessage }
 
-    private var theme: AppTheme {
-        AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
-    }
-
     package var body: some View {
-        cardBody
-        .padding(.horizontal, theme.density.cardHorizontalPadding)
-        .padding(.vertical, theme.density.cardVerticalPadding)
+        itemBody
+        .padding(.horizontal, layout.metrics.itemHorizontalPadding)
+        .padding(.vertical, layout.metrics.itemVerticalPadding)
         .background(
-            RoundedRectangle(cornerRadius: theme.density.cardCornerRadius, style: .continuous)
-                .fill(AppUI.Surface.cardFill(for: colorScheme, skinID: skinID))
+            RoundedRectangle(cornerRadius: layout.metrics.itemCornerRadius, style: .continuous)
+                .fill(AppUI.Surface.cardFill(for: colorScheme))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: theme.density.cardCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: layout.metrics.itemCornerRadius, style: .continuous)
                 .stroke(cardStroke, lineWidth: AppUI.Stroke.subtle)
         )
         .overlay(alignment: .leading) {
@@ -64,25 +53,20 @@ package struct HomeVirtualDisplayCard: View {
             isHovered = hovered
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(card.accessibilitySummary))
+        .accessibilityLabel(Text(item.accessibilitySummary))
     }
 
     @ViewBuilder
-    private var cardBody: some View {
-        switch style {
-        case .classic:
+    private var itemBody: some View {
+        switch layout.id {
+        case .list:
             ViewThatFits(in: .horizontal) {
                 wideLayout
                 compactLayout
                 narrowLayout
             }
-        case .compact:
-            ViewThatFits(in: .horizontal) {
-                compactRowLayout
-                compactColumnLayout
-            }
-        case .dashboard:
-            dashboardLayout
+        case .card:
+            cardLayout
         }
     }
 
@@ -90,12 +74,12 @@ package struct HomeVirtualDisplayCard: View {
         HStack(alignment: .center, spacing: AppUI.Spacing.large) {
             identityBlock
                 .layoutPriority(2)
-                .frame(minWidth: HomeLayout.cardIdentityMinWidth, alignment: .leading)
+                .frame(minWidth: HomeItemLayoutConstants.cardIdentityMinWidth, alignment: .leading)
 
             if hasOperationalStatusItems {
                 statusGrid
                     .layoutPriority(1)
-                    .frame(minWidth: HomeLayout.cardStatusMinWidth, alignment: .leading)
+                    .frame(minWidth: HomeItemLayoutConstants.cardStatusMinWidth, alignment: .leading)
             } else {
                 Spacer(minLength: AppUI.Spacing.medium)
             }
@@ -125,7 +109,7 @@ package struct HomeVirtualDisplayCard: View {
 
                 Spacer(minLength: AppUI.Spacing.medium)
 
-                compactActionCluster
+                actionCluster
             }
         }
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
@@ -146,48 +130,12 @@ package struct HomeVirtualDisplayCard: View {
                 statusGrid
             }
 
-            compactActionCluster
+            actionCluster
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var compactRowLayout: some View {
-        HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-            compactIdentityBlock
-                .layoutPriority(2)
-
-            if hasOperationalStatusItems {
-                statusGrid
-                    .layoutPriority(1)
-            }
-
-            Spacer(minLength: AppUI.Spacing.small)
-
-            compactActionCluster
-            toggleButton
-        }
-        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-    }
-
-    private var compactColumnLayout: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                compactIdentityBlock
-                    .layoutPriority(1)
-                Spacer(minLength: AppUI.Spacing.small)
-                toggleButton
-            }
-
-            if hasOperationalStatusItems {
-                statusGrid
-            }
-
-            compactActionCluster
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    private var dashboardLayout: some View {
+    private var cardLayout: some View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                 identityBlock
@@ -203,7 +151,7 @@ package struct HomeVirtualDisplayCard: View {
             }
 
             HStack(alignment: .center, spacing: AppUI.Spacing.small) {
-                compactActionCluster
+                actionCluster
                 Spacer(minLength: AppUI.Spacing.small)
             }
         }
@@ -211,52 +159,48 @@ package struct HomeVirtualDisplayCard: View {
     }
 
     private var identityBlock: some View {
-        HomeVirtualDisplayCardIdentityBlock(state: state, style: .regular)
-    }
-
-    private var compactIdentityBlock: some View {
-        HomeVirtualDisplayCardIdentityBlock(state: state, style: .compact)
+        HomeVirtualDisplayItemIdentityBlock(state: state)
     }
 
     private var statusGrid: some View {
-        HomeVirtualDisplayCardStatusGrid(card: card)
+        HomeVirtualDisplayItemStatusGrid(item: item)
     }
 
     private var actionStack: some View {
-        HomeVirtualDisplayCardActionStack(state: state, actions: actions)
+        HomeVirtualDisplayItemActionStack(state: state, actions: actions)
     }
 
-    private var compactActionCluster: some View {
-        HomeVirtualDisplayCardActionCluster(state: state, actions: actions)
+    private var actionCluster: some View {
+        HomeVirtualDisplayItemActionCluster(state: state, actions: actions)
     }
 
     private var hasOperationalStatusItems: Bool {
-        !card.operationalStatusItems.isEmpty
+        !item.operationalStatusItems.isEmpty
     }
 
     private var toggleButton: some View {
-        HomeVirtualDisplayCardToggleButton(state: state, actions: actions)
+        HomeVirtualDisplayItemToggleButton(state: state, actions: actions)
     }
 
     private var cardStroke: Color {
-        if card.hasIssue || rebuildFailureMessage != nil {
-            return AppThemeStatusPalette.resolve(skinID: skinID).warning
+        if item.hasIssue || rebuildFailureMessage != nil {
+            return AppThemeStatusPalette.standard.warning
                 .opacity(colorScheme == .dark ? 0.52 : 0.36)
         }
         if isHovered {
-            return AppUI.Surface.cardHoverStroke(for: colorScheme, skinID: skinID)
+            return AppUI.Surface.cardHoverStroke(for: colorScheme)
         }
-        return AppUI.Surface.cardStroke(for: colorScheme, skinID: skinID)
+        return AppUI.Surface.cardStroke(for: colorScheme)
     }
 
     private var showsStatusAccent: Bool {
-        card.isRunning || card.hasIssue || rebuildFailureMessage != nil
+        item.isRunning || item.hasIssue || rebuildFailureMessage != nil
     }
 
     private var statusAccent: Color {
-        if card.hasIssue || rebuildFailureMessage != nil {
-            return AppThemeStatusPalette.resolve(skinID: skinID).warning
+        if item.hasIssue || rebuildFailureMessage != nil {
+            return AppThemeStatusPalette.standard.warning
         }
-        return card.isRunning ? AppThemeStatusPalette.resolve(skinID: skinID).success : .secondary
+        return item.isRunning ? AppThemeStatusPalette.standard.success : .secondary
     }
 }

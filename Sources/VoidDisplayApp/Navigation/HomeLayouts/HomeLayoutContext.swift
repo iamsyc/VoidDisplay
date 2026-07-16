@@ -1,9 +1,8 @@
 import Foundation
 import SwiftUI
-import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 
-package enum HomeVirtualDisplayCardAction {
+package enum HomeVirtualDisplayItemAction {
     case toggle
     case preview
     case webView
@@ -17,8 +16,8 @@ package enum HomeVirtualDisplayCardAction {
     case delete
 }
 
-package struct HomeVirtualDisplayCardRenderState: Identifiable {
-    package let card: HomeVirtualDisplayCardPresentation
+package struct HomeVirtualDisplayItemRenderState: Identifiable {
+    package let item: HomeVirtualDisplayItemPresentation
     package let isFirst: Bool
     package let isLast: Bool
     package let isToggling: Bool
@@ -32,10 +31,10 @@ package struct HomeVirtualDisplayCardRenderState: Identifiable {
     package let isWebViewActionDisabled: Bool
     package let isWebViewStarting: Bool
 
-    package var id: UUID { card.id }
+    package var id: UUID { item.id }
 
     package init(
-        card: HomeVirtualDisplayCardPresentation,
+        item: HomeVirtualDisplayItemPresentation,
         isFirst: Bool,
         isLast: Bool,
         isToggling: Bool,
@@ -49,7 +48,7 @@ package struct HomeVirtualDisplayCardRenderState: Identifiable {
         isWebViewActionDisabled: Bool,
         isWebViewStarting: Bool
     ) {
-        self.card = card
+        self.item = item
         self.isFirst = isFirst
         self.isLast = isLast
         self.isToggling = isToggling
@@ -112,13 +111,13 @@ package struct HomeSharingSettingsRenderState {
     }
 }
 
-package struct HomeSkinActions {
+package struct HomeLayoutActions {
     package let createVirtualDisplay: @MainActor () -> Void
     package let refresh: @MainActor () -> Void
     package let openScreenCapturePrivacySettings: @MainActor () -> Void
-    package let performCardAction: @MainActor (
-        HomeVirtualDisplayCardAction,
-        HomeVirtualDisplayCardPresentation
+    package let performItemAction: @MainActor (
+        HomeVirtualDisplayItemAction,
+        HomeVirtualDisplayItemPresentation
     ) -> Void
     package let setCapturePerformanceMode: @MainActor (CapturePerformanceMode) -> Void
     package let updateSharingPortDraft: @MainActor (String) -> Void
@@ -128,9 +127,9 @@ package struct HomeSkinActions {
         createVirtualDisplay: @escaping @MainActor () -> Void,
         refresh: @escaping @MainActor () -> Void,
         openScreenCapturePrivacySettings: @escaping @MainActor () -> Void,
-        performCardAction: @escaping @MainActor (
-            HomeVirtualDisplayCardAction,
-            HomeVirtualDisplayCardPresentation
+        performItemAction: @escaping @MainActor (
+            HomeVirtualDisplayItemAction,
+            HomeVirtualDisplayItemPresentation
         ) -> Void,
         setCapturePerformanceMode: @escaping @MainActor (CapturePerformanceMode) -> Void,
         updateSharingPortDraft: @escaping @MainActor (String) -> Void,
@@ -139,7 +138,7 @@ package struct HomeSkinActions {
         self.createVirtualDisplay = createVirtualDisplay
         self.refresh = refresh
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
-        self.performCardAction = performCardAction
+        self.performItemAction = performItemAction
         self.setCapturePerformanceMode = setCapturePerformanceMode
         self.updateSharingPortDraft = updateSharingPortDraft
         self.applySharingPortDraft = applySharingPortDraft
@@ -147,42 +146,42 @@ package struct HomeSkinActions {
 
     @MainActor
     package func perform(
-        _ action: HomeVirtualDisplayCardAction,
-        for state: HomeVirtualDisplayCardRenderState
+        _ action: HomeVirtualDisplayItemAction,
+        for state: HomeVirtualDisplayItemRenderState
     ) {
-        performCardAction(action, state.card)
+        performItemAction(action, state.item)
     }
 }
 
-package struct HomeSkinContext {
+package struct HomeLayoutContext {
+    package let layout: HomeLayoutConfiguration
     package let presentation: HomeVirtualDisplaySurfacePresentation
-    package let cardStates: [HomeVirtualDisplayCardRenderState]
-    package let theme: AppTheme
+    package let itemStates: [HomeVirtualDisplayItemRenderState]
     package let isCreateVirtualDisplayDisabled: Bool
     package let permissionStatus: HomePermissionStatusRenderState
     package let sharingSettings: HomeSharingSettingsRenderState
-    package let actions: HomeSkinActions
+    package let actions: HomeLayoutActions
 
     package var summary: HomeRuntimeSummaryPresentation {
         presentation.summary
     }
 
-    package var cards: [HomeVirtualDisplayCardPresentation] {
-        presentation.cards
+    package var items: [HomeVirtualDisplayItemPresentation] {
+        presentation.items
     }
 
     package init(
+        layout: HomeLayoutConfiguration,
         presentation: HomeVirtualDisplaySurfacePresentation,
-        cardStates: [HomeVirtualDisplayCardRenderState],
-        theme: AppTheme,
+        itemStates: [HomeVirtualDisplayItemRenderState],
         isCreateVirtualDisplayDisabled: Bool,
         permissionStatus: HomePermissionStatusRenderState,
         sharingSettings: HomeSharingSettingsRenderState,
-        actions: HomeSkinActions
+        actions: HomeLayoutActions
     ) {
+        self.layout = layout
         self.presentation = presentation
-        self.cardStates = cardStates
-        self.theme = theme
+        self.itemStates = itemStates
         self.isCreateVirtualDisplayDisabled = isCreateVirtualDisplayDisabled
         self.permissionStatus = permissionStatus
         self.sharingSettings = sharingSettings
