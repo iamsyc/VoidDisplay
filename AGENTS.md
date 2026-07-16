@@ -15,44 +15,47 @@
 ## Exceptions
 - If user says stay on current branch / work on `main` / skip PR / skip waiting CI, follow that instruction for this task.
 
-## Waza Skill Priority
-- Waza from `github.com/tw93/Waza` is the preferred skill set for development, design, debugging, review, research, reading, writing, and agent-health workflows.
-- When a request matches a Waza trigger, read and follow the installed Waza skill before using a generic workflow. Installed Waza skills: `think`, `design`, `check`, `hunt`, `write`, `learn`, `read`, and `health`.
-- Route feature planning, architecture decisions, "怎么设计", "有没有必要", and "值不值得" to `think`.
-- Route UI, page, component, frontend, typography, and screenshot aesthetic work to `design`.
-- Route code review, pre-merge checks, "继续优化", release, push, issue, and PR follow-through to `check`.
-- Route errors, crashes, regressions, failing tests, broken behavior, and "以前是好的" cases to `hunt`.
-- Route URLs and PDFs to `read`; route multi-source deep research and article synthesis to `learn`.
-- Route prose writing, rewriting, proofreading, release notes prose, social copy, and "去 AI 味" to `write`.
-- Route Codex or agent instruction drift, config audits, verifier problems, and maintainability health checks to `health`.
-- If multiple Waza skills match, read the relevant `SKILL.md` files and use their "Not for" boundaries to disambiguate. If still ambiguous, ask the user.
-- Project rules in this file remain binding. Apply project safety, branch, build, test, localization, and Xcode policies together with Waza.
+## Skill Routing
+- Use the matching installed Waza skill when available. Repository rules remain binding as the project-specific source of truth.
 
 ## Swift & SDK Baseline
 - Use Swift 6 for all Swift targets and new code.
 - Keep deployment target at `15.6` unless user requests otherwise.
 - Prefer modern APIs compatible with target `15.6`; avoid deprecated APIs.
 
-## Compatibility Scope
+## Compatibility and Complexity Guardrail
 - Default to the current supported interfaces and behavior.
-- Do not preserve legacy interfaces, legacy behavior, compatibility layers, fallback branches, or duplicate paths unless user requirements, external callers, migration windows, or release plans explicitly require them.
-- If legacy compatibility is retained, document the reason, removal condition, and validation impact in the handoff.
+- Prefer a clean root-cause change that does not increase code complexity or size.
+- Do not add temporary fixes, glue code, transitional adapters, one-off shims, workaround layers, fallback branches, or duplicate paths unless a user requirement, external caller, migration window, or release plan requires them.
+- Preserve legacy interfaces or behavior only when required. Document the caller, reason, removal condition, and validation impact in the handoff.
+- Consolidate equivalent validation at one convergence layer and remove duplicate branches or checks within the affected scope after verifying callers.
 
-## Build Verification Gate
-- After every code change, run local build verification.
-- Handoff requires: zero compile errors and zero compile warnings.
+## Verification Policy
+- Local verification and remote CI are separate evidence surfaces. Report their results independently and never infer one from the other.
+- Use repository-owned scripts as the shared gate implementation. Local commands choose host-specific scope and destination; workflows own remote runners, change classification, matrices, artifacts, and required checks.
 
-## Test Execution Policy
-- After every code change, explicitly check whether related tests need to be updated or added, and complete required test updates before handoff.
-- Default: run targeted tests related to changed module/feature.
+### Local Verification
+- After every code change, run a local build and determine whether related tests must be updated or added. Complete required test changes before handoff.
+- Handoff requires zero compile errors and zero compile warnings from every required local gate.
+- For a small, bounded change, run the related targeted tests and a host-architecture Debug build:
+  - SwiftPM tests: `scripts/ci/unit.sh --filter '<test-filter>'`.
+  - Xcode build: `scripts/ci/xcode.sh --action build --configuration Debug --destination "platform=macOS,arch=$(uname -m)"`.
+  - Targeted UI test when needed: `scripts/ci/ui_smoke.sh --only-testing '<test-identifier>' --destination "platform=macOS,arch=$(uname -m)"`.
+- For broad or high-risk non-UI changes, run `scripts/dev/validate.sh --skip-ui-smoke`.
+- For UI changes that require smoke coverage, run `scripts/dev/validate.sh --ui-selector '<test-identifier>'` or the unfiltered `scripts/dev/validate.sh` when its baseline selector covers the change.
+- Run `scripts/ci/full_regression.sh --destination "platform=macOS,arch=$(uname -m)"` only when the local machine supports its release targets and the change is broad, release-sensitive, or explicitly requires the full suite.
 - If related verification has already completed after the latest code change, and no repo-tracked file has changed since that verification, a later commit-only instruction must reuse the existing fresh verification result instead of rerunning the same tests.
 - For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.
-- Run full suite when changes are broad/high-risk or impact cannot be bounded:
-- shared/common code changes
-- dependency/build settings/script/test infra changes
-- large refactors (batch rename/signature/file moves)
-- high-risk runtime behavior (concurrency/persistence/network/security)
-- user explicitly requests full suite
+- Full-suite candidates include shared code, dependency or build settings, scripts or test infrastructure, large refactors, concurrency, persistence, network, security, release behavior, and user-requested full verification.
+- If the local environment cannot execute a required gate because of architecture, OS, Xcode, signing, or privacy-automation setup, record the missing evidence explicitly. Do not report that gate as passed.
+
+### Remote CI Verification
+- `.github/workflows/ci.yml` and the reusable workflows it invokes are the source of truth for workflow-side change classification, runner images, job matrices, artifacts, and CI gate coverage.
+- Repository rulesets and the live PR check suite determine which checks are externally required.
+- CI should call the same repository scripts where practical while supplying remote-only environment setup and orchestration in workflows.
+- Do not copy CI-only runner assumptions into local commands or weaken CI to match one developer machine.
+- For full PR delivery, follow every required remote check to a terminal result and report failures, skips, cancellations, and environment failures separately.
+- Nightly, CodeQL, release, and manually dispatched workflows are additional remote evidence only when the task or delivery policy requires them.
 
 ## Test Permission Prompt Isolation
 - Automated tests must not introduce product or app code paths that trigger avoidable macOS privacy prompts such as screen recording, microphone, camera, keyboard input, input method, or similar authorization dialogs.
@@ -74,39 +77,17 @@
 
 ## AI Agent Plan Framing
 - When the user asks for a plan, treat it as an execution plan for the AI agent unless the user explicitly assigns a human executor.
-- Write plan steps from the agent's perspective.
-- Do not frame the plan around human task management, personal schedules, or manual execution expectations unless the user explicitly asks for that format.
-- If timing is needed, describe agent-relevant sequencing or wait states, such as build time, network latency, review gates, or external blocking conditions.
-- If the user goal or instruction is ambiguous, do not guess. Ask for clarification promptly before continuing.
-- Clarification questions must include all reasonable current interpretations from the agent, so the user can confirm or correct them directly.
+- Write plan steps from the agent's perspective and express timing through execution order, wait states, verification gates, and external blockers.
+- Resolve ambiguity from repository context when safe. Ask only when different interpretations materially change scope, risk, external writes, or resulting behavior, and state the decisive ambiguity concisely.
 
 ## Execution Mode Recommendation
-- Execution mode recommendation is a handoff hint at the end of a response, used only when the current turn stops at analysis, diagnosis, review, explanation, or planning, and the likely next turn would be an implementation or modification task.
-- Do not emit an execution mode recommendation as a preface to work that will be performed in the same turn.
-- Do not emit an execution mode recommendation after the user has already asked for direct execution in the current turn.
-- Do not emit an execution mode recommendation in completion handoff, commit summaries, verification summaries, or meta discussions about process, prompts, or repository policy.
-- For code review requests with actionable findings, append exactly one execution mode recommendation after the findings summary, so the user can choose the next turn's execution mode.
-- Treat an explicit mode choice as a direct statement about the mode itself, for example `直接执行`, `现在改`, `先实现`, `开启计划模式`, `先给计划`, or another equally explicit instruction about execution style.
-- Do not treat short confirmations such as `要`, `继续`, `看看`, `查一下`, `修吧`, or agreement with a diagnosis as an explicit mode choice. These confirm the task and may require an end-of-response recommendation if the current turn still stops before implementation.
-- Starting implementation means making code or config edits, creating a branch for the task, running modification-oriented commands, or presenting a concrete change plan that will be executed in the same turn.
-- Use `建议：直接执行` only at the end of a non-implementation response when the next implementation scope is clear, affected area is bounded, validation path is clear, and there is no material decision gate.
-- Use `建议：开启计划模式` only at the end of a non-implementation response when the next implementation is ambiguous, cross-module, high-risk, multi-stage, blocked by unknowns, or depends on user choice between materially different options.
-- Keep the recommendation to one sentence and state the concrete reason.
+- Add one concise execution-mode recommendation only after a non-implementation response when it gives the user a useful choice for the next turn.
+- Omit it during implementation, completion handoff, verification, commits, and discussions about process, prompts, or repository policy.
 
 ## Code Review Output Policy
-- When review finds an issue, identify the root cause and provide a root-cause fix plan by default.
-- Always include a structural refactor assessment: whether it is needed, expected benefits, risks, and validation impact.
-- Provide a minimal fix option only when the user explicitly asks for it.
-
-## Complexity and Size Guardrail
-- Default goal: solve problems without increasing code complexity and code size.
-- If that is not feasible, lower complexity first.
-- Reject temporary fixes, glue code, and patch-style handling. Solve the root problem with a clean structural change.
-- Do not add transitional adapters, one-off shims, or workaround layers unless the user explicitly requires them for a defined migration window.
-- Do not preserve backward compatibility by default. Only keep it when explicitly required, and document the caller, removal condition, and validation impact in the handoff.
-- Prefer deleting duplicate branches and duplicate checks.
-- Keep equivalent validation at one convergence layer. Avoid multi-layer duplicate defense.
-- When adding defensive branches, prioritize deleting equivalent legacy branches in the same module.
+- When review finds an issue, identify the root cause and recommend a clean, bounded root-cause fix.
+- Include a structural refactor assessment only when it materially affects fix scope, benefits, risks, or validation.
+- Include a minimal alternative when the user requests it or when its tradeoff is necessary for a decision.
 
 ## Multilingual Content
 - Multilingual support requirement applies only to product software code and app-facing content in this repository.
@@ -116,9 +97,9 @@
 - If `Localizable.xcstrings` is modified by Xcode as a side effect of your code changes, treat it as required change output from the same task and include it in the same commit, even when you did not edit it manually.
 
 ## Xcode Tooling Policy (Token + Reliability First)
-- Token is money: default build/test gate is shell `xcodebuild`.
+- Default to the repository scripts that wrap `xcodebuild`; use raw `xcodebuild` only for targeted diagnostics or capabilities the wrappers do not expose.
 - Write verbose logs to `.ai-tmp/` and report concise summaries only.
-- Use Xcode MCP only for high-value IDE-context tasks:
+- When available, use Xcode MCP only for high-value IDE-context tasks:
 - workspace/tab context resolution
 - project graph file operations
 - targeted diagnostics/tests
@@ -126,4 +107,4 @@
 - Avoid high-output calls unless necessary (full glob/full test list/full logs).
 - Scope early by path/pattern/target/test identifier.
 - If MCP shows instability (`Transport closed`, XPC/timeout), switch to shell fallback instead of repeated MCP retries.
-- Do not block delivery on MCP instability if equivalent `xcodebuild` verification is possible.
+- Do not block delivery on MCP instability if equivalent repository-script verification is possible.
