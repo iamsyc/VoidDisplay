@@ -4658,53 +4658,36 @@
         }
       }
     },
-    "Classic" : {
+    "Card" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Classic"
+            "value" : "Card"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "经典"
+            "value" : "卡片式"
           }
         }
       }
     },
-    "Compact" : {
+    "List" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Compact"
+            "value" : "List"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "紧凑"
-          }
-        }
-      }
-    },
-    "Dashboard" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dashboard"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "看板"
+            "value" : "列表式"
           }
         }
       }

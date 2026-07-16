@@ -13,8 +13,7 @@ import VoidDisplayVirtualDisplay
 
 @MainActor
 package struct HomeVirtualDisplaySurfaceView: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appSkinID) private var skinID
+    @Environment(\.homeLayoutID) private var homeLayoutID
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
 
@@ -65,19 +64,19 @@ package struct HomeVirtualDisplaySurfaceView: View {
             sharePageAddresses: SharingUIComposition.runtimeState(sharing: sharing).sharePageAddresses
         )
 
-        let cardStates = cardRenderStates(for: presentation.cards)
-        let theme = AppTheme.resolve(skinID: skinID, colorScheme: colorScheme)
-        let context = skinContext(
+        let layout = HomeLayoutConfiguration(id: homeLayoutID)
+        let itemStates = itemRenderStates(for: presentation.items)
+        let context = layoutContext(
+            layout: layout,
             presentation: presentation,
-            cardStates: cardStates,
-            theme: theme
+            itemStates: itemStates
         )
 
         ScrollView {
             surfaceContent(context: context)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("home_virtual_display_surface")
-                .frame(maxWidth: theme.density.contentMaxWidth, alignment: .topLeading)
+                .frame(maxWidth: layout.metrics.contentMaxWidth, alignment: .topLeading)
                 .appListContentInsets()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -168,20 +167,19 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 await displayRuntime.handleCatalogTopologyChanged()
             }
         }
-        .appSkin(skinID)
     }
 
     @ViewBuilder
-    private func surfaceContent(context: HomeSkinContext) -> some View {
-        HomeSkinRegistry.makeSkin(for: skinID, context: context) {
-            cardContent(isEmpty: context.cardStates.isEmpty) {
-                HomeSkinRegistry.makeCardContent(for: skinID, context: context)
+    private func surfaceContent(context: HomeLayoutContext) -> some View {
+        HomeLayoutShell(context: context) {
+            layoutContent(isEmpty: context.itemStates.isEmpty) {
+                HomeLayoutRegistry.makeContent(context: context)
             }
         }
     }
 
     @ViewBuilder
-    private func cardContent<Content: View>(
+    private func layoutContent<Content: View>(
         isEmpty: Bool,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -199,19 +197,19 @@ package struct HomeVirtualDisplaySurfaceView: View {
             .environment(virtualDisplay)
     }
 
-    private func skinContext(
+    private func layoutContext(
+        layout: HomeLayoutConfiguration,
         presentation: HomeVirtualDisplaySurfacePresentation,
-        cardStates: [HomeVirtualDisplayCardRenderState],
-        theme: AppTheme
-    ) -> HomeSkinContext {
-        HomeSkinContext(
+        itemStates: [HomeVirtualDisplayItemRenderState]
+    ) -> HomeLayoutContext {
+        HomeLayoutContext(
+            layout: layout,
             presentation: presentation,
-            cardStates: cardStates,
-            theme: theme,
+            itemStates: itemStates,
             isCreateVirtualDisplayDisabled: virtualDisplay.configStorePresentation.hasLoadFailure,
             permissionStatus: permissionStatus,
             sharingSettings: sharingSettings,
-            actions: HomeSkinActions(
+            actions: HomeLayoutActions(
                 createVirtualDisplay: {
                     createView = true
                 },
@@ -223,7 +221,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
                         openURL(url)
                     }
                 },
-                performCardAction: { action, card in
+                performItemAction: { action, card in
                     perform(action, for: card)
                 },
                 setCapturePerformanceMode: { mode in
@@ -261,24 +259,24 @@ package struct HomeVirtualDisplaySurfaceView: View {
         )
     }
 
-    private func cardRenderStates(
-        for cards: [HomeVirtualDisplayCardPresentation]
-    ) -> [HomeVirtualDisplayCardRenderState] {
-        cards.map { card in
-            HomeVirtualDisplayCardRenderState(
-                card: card,
-                isFirst: cards.first?.id == card.id,
-                isLast: cards.last?.id == card.id,
-                isToggling: viewModel.isToggling(configId: card.id),
-                isRebuilding: virtualDisplay.isRebuilding(configId: card.id),
-                hasRecentApplySuccess: virtualDisplay.hasRecentApplySuccess(configId: card.id),
-                rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: card.id),
-                isPrimary: viewModel.isPrimaryDisplay(configID: card.id),
-                canSetAsPrimary: canSetAsPrimary(card),
-                isPreviewActionDisabled: isPreviewActionDisabled(card),
-                isPreviewStarting: card.displayID.map(capture.isStarting(displayID:)) ?? false,
-                isWebViewActionDisabled: isWebViewActionDisabled(card),
-                isWebViewStarting: card.displayID.map(sharing.isStarting(displayID:)) ?? false
+    private func itemRenderStates(
+        for items: [HomeVirtualDisplayItemPresentation]
+    ) -> [HomeVirtualDisplayItemRenderState] {
+        items.map { item in
+            HomeVirtualDisplayItemRenderState(
+                item: item,
+                isFirst: items.first?.id == item.id,
+                isLast: items.last?.id == item.id,
+                isToggling: viewModel.isToggling(configId: item.id),
+                isRebuilding: virtualDisplay.isRebuilding(configId: item.id),
+                hasRecentApplySuccess: virtualDisplay.hasRecentApplySuccess(configId: item.id),
+                rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: item.id),
+                isPrimary: viewModel.isPrimaryDisplay(configID: item.id),
+                canSetAsPrimary: canSetAsPrimary(item),
+                isPreviewActionDisabled: isPreviewActionDisabled(item),
+                isPreviewStarting: item.displayID.map(capture.isStarting(displayID:)) ?? false,
+                isWebViewActionDisabled: isWebViewActionDisabled(item),
+                isWebViewStarting: item.displayID.map(sharing.isStarting(displayID:)) ?? false
             )
         }
     }
@@ -342,53 +340,53 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private func perform(
-        _ action: HomeVirtualDisplayCardAction,
-        for card: HomeVirtualDisplayCardPresentation
+        _ action: HomeVirtualDisplayItemAction,
+        for item: HomeVirtualDisplayItemPresentation
     ) {
         switch action {
         case .toggle:
-            guard let config = virtualDisplay.getConfig(card.id) else { return }
+            guard let config = virtualDisplay.getConfig(item.id) else { return }
             viewModel.toggleDisplayState(config)
         case .preview:
-            if card.isPreviewing {
-                stopPreview(card)
+            if item.isPreviewing {
+                stopPreview(item)
             } else {
-                startPreview(card)
+                startPreview(item)
             }
         case .webView:
-            if card.isSharing {
-                stopWebView(card)
+            if item.isSharing {
+                stopWebView(item)
             } else {
-                startWebView(card)
+                startWebView(item)
             }
         case .openSharePage:
-            openSharePage(card)
+            openSharePage(item)
         case .copyShareAddress:
-            copyShareAddress(card)
+            copyShareAddress(item)
         case .edit:
-            editingConfig = EditingConfig(id: card.id)
+            editingConfig = EditingConfig(id: item.id)
         case .moveUp:
             performPersistenceAction {
-                _ = try virtualDisplay.moveDisplayConfig(card.id, direction: .up)
+                _ = try virtualDisplay.moveDisplayConfig(item.id, direction: .up)
             }
         case .moveDown:
             performPersistenceAction {
-                _ = try virtualDisplay.moveDisplayConfig(card.id, direction: .down)
+                _ = try virtualDisplay.moveDisplayConfig(item.id, direction: .down)
             }
         case .setPrimary:
             performPersistenceAction {
-                _ = try virtualDisplay.setPrimaryVirtualDisplayByReordering(card.id)
+                _ = try virtualDisplay.setPrimaryVirtualDisplayByReordering(item.id)
             }
         case .retryRebuild:
-            virtualDisplay.retryRebuild(configId: card.id)
+            virtualDisplay.retryRebuild(configId: item.id)
         case .delete:
-            guard let config = virtualDisplay.getConfig(card.id) else { return }
+            guard let config = virtualDisplay.getConfig(item.id) else { return }
             viewModel.requestDelete(config)
         }
     }
 
-    private func startPreview(_ card: HomeVirtualDisplayCardPresentation) {
-        guard let displayID = card.displayID else { return }
+    private func startPreview(_ item: HomeVirtualDisplayItemPresentation) {
+        guard let displayID = item.displayID else { return }
         Task {
             if let existingSession = CaptureUIComposition
                 .previewActions(
@@ -438,8 +436,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private func stopPreview(_ card: HomeVirtualDisplayCardPresentation) {
-        guard let displayID = card.displayID else { return }
+    private func stopPreview(_ item: HomeVirtualDisplayItemPresentation) {
+        guard let displayID = item.displayID else { return }
         Task {
             let actions = CaptureUIComposition.previewActions(
                 capture: capture,
@@ -453,8 +451,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private func startWebView(_ card: HomeVirtualDisplayCardPresentation) {
-        guard let displayID = card.displayID else { return }
+    private func startWebView(_ item: HomeVirtualDisplayItemPresentation) {
+        guard let displayID = item.displayID else { return }
         Task {
             guard await prepareWebViewSharing() else { return }
             guard let display = await resolveDisplay(displayID: displayID) else {
@@ -489,8 +487,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private func stopWebView(_ card: HomeVirtualDisplayCardPresentation) {
-        guard let displayID = card.displayID else { return }
+    private func stopWebView(_ item: HomeVirtualDisplayItemPresentation) {
+        guard let displayID = item.displayID else { return }
         Task {
             await DisplayRuntimeSharingAdapter(
                 controller: sharing,
@@ -500,9 +498,9 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private func openSharePage(_ card: HomeVirtualDisplayCardPresentation) {
-        guard card.isSharing,
-              let shareAddress = card.shareAddress,
+    private func openSharePage(_ item: HomeVirtualDisplayItemPresentation) {
+        guard item.isSharing,
+              let shareAddress = item.shareAddress,
               let shareURL = URL(string: shareAddress)
         else {
             return
@@ -510,8 +508,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
         openURL(shareURL)
     }
 
-    private func copyShareAddress(_ card: HomeVirtualDisplayCardPresentation) {
-        guard let shareAddress = card.shareAddress else { return }
+    private func copyShareAddress(_ item: HomeVirtualDisplayItemPresentation) {
+        guard let shareAddress = item.shareAddress else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(shareAddress, forType: .string)
     }
@@ -589,38 +587,38 @@ package struct HomeVirtualDisplaySurfaceView: View {
         "\(display.width) × \(display.height)"
     }
 
-    private func canSetAsPrimary(_ card: HomeVirtualDisplayCardPresentation) -> Bool {
-        guard card.desiredEnabled,
-              !viewModel.isToggling(configId: card.id),
-              !virtualDisplay.isRebuilding(configId: card.id)
+    private func canSetAsPrimary(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
+        guard item.desiredEnabled,
+              !viewModel.isToggling(configId: item.id),
+              !virtualDisplay.isRebuilding(configId: item.id)
         else {
             return false
         }
         let firstEnabledID = virtualDisplay.displayConfigs.first(where: \.desiredEnabled)?.id
-        return firstEnabledID != card.id
+        return firstEnabledID != item.id
     }
 
-    private func isPreviewActionDisabled(_ card: HomeVirtualDisplayCardPresentation) -> Bool {
+    private func isPreviewActionDisabled(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
         if displayRuntime.isConsumerTransitionBusy(
-            surfaceIdentity: .managedVirtualDisplay(configID: card.id)
+            surfaceIdentity: .managedVirtualDisplay(configID: item.id)
         ) {
             return true
         }
-        guard let displayID = card.displayID else { return true }
+        guard let displayID = item.displayID else { return true }
         if capture.isStarting(displayID: displayID) { return true }
-        if card.isPreviewing { return false }
+        if item.isPreviewing { return false }
         return display(for: displayID) == nil || capture.displayCatalogState.hasScreenCapturePermission == false
     }
 
-    private func isWebViewActionDisabled(_ card: HomeVirtualDisplayCardPresentation) -> Bool {
+    private func isWebViewActionDisabled(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
         if displayRuntime.isConsumerTransitionBusy(
-            surfaceIdentity: .managedVirtualDisplay(configID: card.id)
+            surfaceIdentity: .managedVirtualDisplay(configID: item.id)
         ) {
             return true
         }
-        guard let displayID = card.displayID else { return true }
+        guard let displayID = item.displayID else { return true }
         if sharing.isStarting(displayID: displayID) { return true }
-        if card.isSharing { return false }
+        if item.isSharing { return false }
         return display(for: displayID) == nil || capture.displayCatalogState.hasScreenCapturePermission == false
     }
 

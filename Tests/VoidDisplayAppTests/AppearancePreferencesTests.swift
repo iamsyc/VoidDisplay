@@ -1,11 +1,10 @@
 @testable import VoidDisplayApp
-@testable import VoidDisplayDesignSystem
 import Foundation
 import Testing
 
 @MainActor
 struct AppearancePreferencesTests {
-    @Test func defaultsToClassicWhenNoPreferenceExists() {
+    @Test func defaultsToCardWhenNoPreferenceExists() {
         let suiteName = "AppearancePreferencesTests.defaults.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
@@ -16,10 +15,10 @@ struct AppearancePreferencesTests {
             arguments: ["VoidDisplay"]
         )
 
-        #expect(sut.skinID == .classic)
+        #expect(sut.homeLayoutID == .card)
     }
 
-    @Test func saveSkinIDPersistsAcrossNewInstance() {
+    @Test func saveHomeLayoutIDPersistsAcrossNewInstance() {
         let suiteName = "AppearancePreferencesTests.persist.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
@@ -29,29 +28,29 @@ struct AppearancePreferencesTests {
             defaults: defaults,
             arguments: ["VoidDisplay"]
         )
-        sut.saveSkinID(.dashboard)
+        sut.saveHomeLayoutID(.list)
 
         let reloaded = AppearancePreferences(
             defaults: defaults,
             arguments: ["VoidDisplay"]
         )
 
-        #expect(reloaded.skinID == .dashboard)
+        #expect(reloaded.homeLayoutID == .list)
     }
 
-    @Test func invalidStoredValueFallsBackToClassic() {
+    @Test func invalidStoredValueFallsBackToCard() {
         let suiteName = "AppearancePreferencesTests.invalid.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set("unknown", forKey: AppearancePreferenceKeys.skinID)
+        defaults.set("unknown", forKey: AppearancePreferenceKeys.homeLayoutID)
 
         let sut = AppearancePreferences(
             defaults: defaults,
             arguments: ["VoidDisplay"]
         )
 
-        #expect(sut.skinID == .classic)
+        #expect(sut.homeLayoutID == .card)
     }
 
     @Test func launchArgumentOverridesStoredValue() {
@@ -59,13 +58,13 @@ struct AppearancePreferencesTests {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(AppSkinID.classic.rawValue, forKey: AppearancePreferenceKeys.skinID)
+        defaults.set(HomeLayoutID.card.rawValue, forKey: AppearancePreferenceKeys.homeLayoutID)
 
         let sut = AppearancePreferences(
             defaults: defaults,
-            arguments: ["VoidDisplay", "-appearance.skinID", "compact"]
+            arguments: ["VoidDisplay", "-appearance.homeLayoutID", "list"]
         )
 
-        #expect(sut.skinID == .compact)
+        #expect(sut.homeLayoutID == .list)
     }
 }

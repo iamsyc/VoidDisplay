@@ -80,20 +80,20 @@ struct HomeVirtualDisplayPresentationTests {
             ]
         )
 
-        #expect(presentation.cards.map(\.id) == [firstID, secondID])
-        #expect(presentation.cards[0].title == "Desk Display")
-        #expect(presentation.cards[0].displayID == 7101)
-        #expect(presentation.cards[0].shareAddress == "http://127.0.0.1:18090/display/7101")
-        #expect(presentation.cards[0].isRunning)
-        #expect(presentation.cards[0].isPreviewing)
-        #expect(presentation.cards[0].isSharing)
-        #expect(presentation.cards[0].viewerCount == 2)
-        #expect(presentation.cards[0].operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
-        #expect(presentation.cards[0].statusLabel == "Enabled · Running")
-        #expect(presentation.cards[1].title == "Spare Display")
-        #expect(presentation.cards[1].displayID == nil)
-        #expect(presentation.cards[1].shareAddress == nil)
-        #expect(presentation.cards[1].statusLabel == "Disabled")
+        #expect(presentation.items.map(\.id) == [firstID, secondID])
+        #expect(presentation.items[0].title == "Desk Display")
+        #expect(presentation.items[0].displayID == 7101)
+        #expect(presentation.items[0].shareAddress == "http://127.0.0.1:18090/display/7101")
+        #expect(presentation.items[0].isRunning)
+        #expect(presentation.items[0].isPreviewing)
+        #expect(presentation.items[0].isSharing)
+        #expect(presentation.items[0].viewerCount == 2)
+        #expect(presentation.items[0].operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
+        #expect(presentation.items[0].statusLabel == "Enabled · Running")
+        #expect(presentation.items[1].title == "Spare Display")
+        #expect(presentation.items[1].displayID == nil)
+        #expect(presentation.items[1].shareAddress == nil)
+        #expect(presentation.items[1].statusLabel == "Disabled")
         #expect(presentation.summary.virtualDisplayCount == 2)
         #expect(presentation.summary.runningVirtualDisplayCount == 1)
         #expect(presentation.summary.previewingCount == 1)
@@ -123,7 +123,7 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [config(id: configID, name: "Broken Display", desiredEnabled: true)]
         )
 
-        let card = try #require(presentation.cards.first)
+        let card = try #require(presentation.items.first)
         #expect(card.hasIssue)
         #expect(card.statusLabel == "Enabled · Startup Failed")
     }
@@ -151,7 +151,7 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [config(id: configID, name: "Stopped Display", desiredEnabled: true)]
         )
 
-        let card = try #require(presentation.cards.first)
+        let card = try #require(presentation.items.first)
         #expect(card.statusLabel == "Enabled · Not Running")
         #expect(!card.isRunning)
         #expect(presentation.summary.runningVirtualDisplayCount == 0)
@@ -207,7 +207,7 @@ struct HomeVirtualDisplayPresentationTests {
             ]
         )
 
-        let card = try #require(presentation.cards.first)
+        let card = try #require(presentation.items.first)
         #expect(card.shareAddress == "http://127.0.0.1:18090/display/7404")
         #expect(card.isSharing == false)
         #expect(card.operationalStatusItems.map(\.id) == ["preview", "webView", "viewerCount"])
@@ -293,7 +293,7 @@ struct HomeVirtualDisplayPresentationTests {
             displayConfigs: [config(id: configID, name: "Web Display", desiredEnabled: true)]
         )
 
-        let card = try #require(presentation.cards.first)
+        let card = try #require(presentation.items.first)
         #expect(card.hasIssue)
     }
 

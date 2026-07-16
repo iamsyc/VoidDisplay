@@ -5,14 +5,14 @@ import VoidDisplayVirtualDisplay
 
 package struct HomeVirtualDisplaySurfacePresentation: Equatable {
     package let summary: HomeRuntimeSummaryPresentation
-    package let cards: [HomeVirtualDisplayCardPresentation]
+    package let items: [HomeVirtualDisplayItemPresentation]
 
     package init(
         summary: HomeRuntimeSummaryPresentation,
-        cards: [HomeVirtualDisplayCardPresentation]
+        items: [HomeVirtualDisplayItemPresentation]
     ) {
         self.summary = summary
-        self.cards = cards
+        self.items = items
     }
 }
 
@@ -38,7 +38,7 @@ package struct HomeRuntimeSummaryPresentation: Equatable {
     }
 }
 
-package struct HomeVirtualDisplayCardPresentation: Identifiable, Equatable {
+package struct HomeVirtualDisplayItemPresentation: Identifiable, Equatable {
     package let id: UUID
     package let displayID: CGDirectDisplayID?
     package let shareAddress: String?
@@ -118,8 +118,8 @@ package enum HomeVirtualDisplayPresentationMapper {
             },
             uniquingKeysWith: { first, _ in first }
         )
-        let cards = displayConfigs.map { config in
-            makeCard(
+        let items = displayConfigs.map { config in
+            makeItem(
                 config: config,
                 surface: surfacesByConfigID[config.id],
                 runtimeSurface: runtimeSurfacesByConfigID[config.id],
@@ -127,17 +127,17 @@ package enum HomeVirtualDisplayPresentationMapper {
             )
         }
         return HomeVirtualDisplaySurfacePresentation(
-            summary: makeSummary(cards: cards),
-            cards: cards
+            summary: makeSummary(items: items),
+            items: items
         )
     }
 
-    private static func makeCard(
+    private static func makeItem(
         config: VirtualDisplayConfig,
         surface: DisplaySurfacePresentation?,
         runtimeSurface: DisplaySurface?,
         sharePageAddresses: [CGDirectDisplayID: String]
-    ) -> HomeVirtualDisplayCardPresentation {
+    ) -> HomeVirtualDisplayItemPresentation {
         let virtualDisplayStatus = surface?.compactStatusItems.first { $0.id == "virtualDisplay" }
         let hasIssue = surface?.compactStatusItems.contains { $0.id == "issue" } ?? false
         let compactStatusItems = surface?.compactStatusItems ?? fallbackStatusItems(for: config)
@@ -158,7 +158,7 @@ package enum HomeVirtualDisplayPresentationMapper {
             hasIssue: hasIssue
         )
 
-        return HomeVirtualDisplayCardPresentation(
+        return HomeVirtualDisplayItemPresentation(
             id: config.id,
             displayID: displayID,
             shareAddress: displayID.flatMap { sharePageAddresses[$0] },
@@ -178,13 +178,13 @@ package enum HomeVirtualDisplayPresentationMapper {
         )
     }
 
-    private static func makeSummary(cards: [HomeVirtualDisplayCardPresentation]) -> HomeRuntimeSummaryPresentation {
+    private static func makeSummary(items: [HomeVirtualDisplayItemPresentation]) -> HomeRuntimeSummaryPresentation {
         HomeRuntimeSummaryPresentation(
-            virtualDisplayCount: cards.count,
-            runningVirtualDisplayCount: cards.count { $0.isRunning },
-            previewingCount: cards.count { $0.isPreviewing },
-            sharingCount: cards.count { $0.isSharing },
-            activeViewerCount: cards.reduce(0) { $0 + $1.viewerCount }
+            virtualDisplayCount: items.count,
+            runningVirtualDisplayCount: items.count { $0.isRunning },
+            previewingCount: items.count { $0.isPreviewing },
+            sharingCount: items.count { $0.isSharing },
+            activeViewerCount: items.reduce(0) { $0 + $1.viewerCount }
         )
     }
 

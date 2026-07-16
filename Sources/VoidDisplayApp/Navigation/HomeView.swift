@@ -73,7 +73,7 @@ package struct HomeView: View {
                             displayRuntime: displayRuntime,
                             openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                         )
-                        .appSkin(appearancePreferences.skinID)
+                        .homeLayout(appearancePreferences.homeLayoutID)
                         .navigationTitle(String(localized: "Displays"))
                         .accessibilityIdentifier("detail_home")
                     case .diagnostics:

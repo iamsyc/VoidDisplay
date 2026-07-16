@@ -49,77 +49,67 @@ package enum AppUI {
     package enum Surface {
         // -- Panel (standalone container: empty-state, start-service panel)
         package static func panelFill(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.panelFill
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).panelFill
         }
 
         package static func panelStroke(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.panelStroke
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).panelStroke
         }
 
         // -- Interactive card (list row cards)
         package static func cardFill(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.cardFill
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).cardFill
         }
 
         package static func cardStroke(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.cardStroke
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).cardStroke
         }
 
         package static func cardHoverStroke(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.cardHoverStroke
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).cardHoverStroke
         }
 
         // -- Tile (icon boxes inside cards)
         package static func tileFill(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.tileFill
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).tileFill
         }
 
         package static func tileStroke(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.tileStroke
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).tileStroke
         }
 
         // -- Sidebar selection pill
         package static func sidebarSelectionFill(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.sidebarSelectionFill
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).sidebarSelectionFill
         }
 
         package static func sidebarSelectionStroke(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.sidebarSelectionStroke
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).sidebarSelectionStroke
         }
 
         // -- Reduce-transparency fallbacks
         package static func fallbackBarFill(
-            for colorScheme: ColorScheme,
-            skinID: AppSkinID = .classic
+            for colorScheme: ColorScheme
         ) -> Color {
-            AppTheme.resolve(skinID: skinID, colorScheme: colorScheme).surface.fallbackBarFill
+            AppThemeSurfacePalette.resolve(colorScheme: colorScheme).fallbackBarFill
         }
 
     }
@@ -130,17 +120,16 @@ package enum AppUI {
 /// Standalone panel: solid fill + border + shadow.
 package struct AppPanel: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appSkinID) private var skinID
 
     package func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .fill(AppUI.Surface.panelFill(for: colorScheme, skinID: skinID))
+                    .fill(AppUI.Surface.panelFill(for: colorScheme))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .stroke(AppUI.Surface.panelStroke(for: colorScheme, skinID: skinID), lineWidth: AppUI.Stroke.subtle)
+                    .stroke(AppUI.Surface.panelStroke(for: colorScheme), lineWidth: AppUI.Stroke.subtle)
             )
             .shadow(
                 color: colorScheme == .dark ? .clear : .black.opacity(0.08),
@@ -154,13 +143,12 @@ package struct AppPanel: ViewModifier {
 /// Tile: small icon container inside cards — subtle fill, no border.
 package struct AppTile: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appSkinID) private var skinID
 
     package func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
-                    .fill(AppUI.Surface.tileFill(for: colorScheme, skinID: skinID))
+                    .fill(AppUI.Surface.tileFill(for: colorScheme))
             )
     }
 }
@@ -168,18 +156,17 @@ package struct AppTile: ViewModifier {
 /// Interactive card: solid fill with always-visible border + hover accent stroke.
 package struct AppInteractiveCard: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appSkinID) private var skinID
     package let isHovered: Bool
 
     package func body(content: Content) -> some View {
         let strokeColor = isHovered
-            ? AppUI.Surface.cardHoverStroke(for: colorScheme, skinID: skinID)
-            : AppUI.Surface.cardStroke(for: colorScheme, skinID: skinID)
+            ? AppUI.Surface.cardHoverStroke(for: colorScheme)
+            : AppUI.Surface.cardStroke(for: colorScheme)
 
         content
             .background(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
-                    .fill(AppUI.Surface.cardFill(for: colorScheme, skinID: skinID))
+                    .fill(AppUI.Surface.cardFill(for: colorScheme))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: AppUI.Corner.medium, style: .continuous)
@@ -191,13 +178,12 @@ package struct AppInteractiveCard: ViewModifier {
 /// Bottom action bar: native `.ultraThinMaterial` with reduce-transparency fallback.
 package struct AppMaterialBar: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appSkinID) private var skinID
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     package func body(content: Content) -> some View {
         if reduceTransparency {
             content
-                .background(AppUI.Surface.fallbackBarFill(for: colorScheme, skinID: skinID))
+                .background(AppUI.Surface.fallbackBarFill(for: colorScheme))
         } else {
             content
                 .background(.ultraThinMaterial)

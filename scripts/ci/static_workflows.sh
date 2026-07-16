@@ -8,7 +8,7 @@ source "$TOOL_ROOT/scripts/lib/common.sh"
 
 cd "$ROOT_DIR"
 
-require_command actionlint rg awk
+require_command actionlint rg awk sort
 
 fail_on_output() {
 	local message="$1"
@@ -122,9 +122,34 @@ validate_workflow_script_contract() {
 	fail_on_output "PR CI checkouts must disable persisted credentials." "$invalid"
 }
 
+validate_ui_smoke_artifact_summary() {
+	local actual
+	local expected
+
+	expected="$(
+		awk '
+			/^  ui_smoke_tests:/ { in_job = 1; next }
+			in_job && /^  [[:alnum:]_]+:/ { exit }
+			in_job && /-[[:space:]]+case_name:/ { print "ui-smoke-" $3 }
+		' .github/workflows/ci.yml | sort
+	)"
+	actual="$(
+		rg 'Artifacts: ui-smoke-' .github/workflows/ci.yml |
+			rg -o 'ui-smoke-[[:alnum:]_-]+' |
+			sort
+	)"
+
+	if [[ "$actual" != "$expected" ]]; then
+		printf 'Expected UI smoke artifacts:\n%s\n' "$expected" >&2
+		printf 'Declared UI smoke artifacts:\n%s\n' "$actual" >&2
+		die "PR UI smoke matrix and artifact summary must stay synchronized."
+	fi
+}
+
 actionlint
 validate_runner_labels
 validate_action_pinning
 validate_workflow_script_contract
+validate_ui_smoke_artifact_summary
 
 info "Static workflow gate passed."

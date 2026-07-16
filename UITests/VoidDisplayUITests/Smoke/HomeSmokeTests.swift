@@ -59,6 +59,13 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 6
         )
 
+        let cards = app.descendants(matching: .any)
+            .matching(identifier: "home_virtual_display_card")
+            .allElementsBoundByIndex
+        XCTAssertGreaterThanOrEqual(cards.count, 2)
+        XCTAssertEqual(cards[0].frame.minY, cards[1].frame.minY, accuracy: 2)
+        XCTAssertGreaterThan(abs(cards[0].frame.minX - cards[1].frame.minX), 100)
+
         tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
         assertAllExist(
             app,
@@ -72,17 +79,18 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testVirtualDisplayCardSurfaceSmoke_compactSkin() throws {
-        let app = launchAppForSmoke(skinID: "compact")
+    func testVirtualDisplayListSurfaceSmoke() throws {
+        let app = launchAppForSmoke(homeLayoutID: "list")
 
         assertAllExist(
             app,
             identifiers: [
                 "detail_home",
                 "home_virtual_display_surface",
-                "home_summary_panel",
-                "home_virtual_display_card_grid",
-                "home_virtual_display_card",
+                "home_summary_status_strip",
+                "home_sharing_settings_popover_button",
+                "home_virtual_display_list",
+                "home_virtual_display_list_row",
                 "home_card_status_grid",
                 "virtual_display_toggle_button",
                 "home_virtual_display_preview_button",
@@ -92,11 +100,18 @@ final class HomeSmokeTests: XCTestCase {
             ],
             timeout: 6
         )
+
+        let rows = app.descendants(matching: .any)
+            .matching(identifier: "home_virtual_display_list_row")
+            .allElementsBoundByIndex
+        XCTAssertGreaterThanOrEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].frame.minX, rows[1].frame.minX, accuracy: 2)
+        XCTAssertGreaterThan(rows[1].frame.minY, rows[0].frame.minY)
     }
 
     @MainActor
-    func testCompactCardActionsRemainVisibleAtNarrowWindowSize() throws {
-        let app = launchAppForSmoke(skinID: "compact", windowSize: (760, 640))
+    func testListActionsRemainVisibleAtNarrowWindowSize() throws {
+        let app = launchAppForSmoke(homeLayoutID: "list", windowSize: (760, 640))
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 6))
 
@@ -111,29 +126,6 @@ final class HomeSmokeTests: XCTestCase {
             XCTAssertTrue(element.isHittable, "Element is not hittable: \(identifier)")
             XCTAssertTrue(window.frame.contains(element.frame), "Element is outside window: \(identifier)")
         }
-    }
-
-    @MainActor
-    func testVirtualDisplayCardSurfaceSmoke_dashboardSkin() throws {
-        let app = launchAppForSmoke(skinID: "dashboard")
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_home",
-                "home_virtual_display_surface",
-                "home_dashboard_status_board",
-                "home_virtual_display_card_grid",
-                "home_virtual_display_card",
-                "home_card_status_grid",
-                "virtual_display_toggle_button",
-                "home_virtual_display_preview_button",
-                "home_virtual_display_web_view_button",
-                "virtual_display_edit_button",
-                "home_virtual_display_more_button"
-            ],
-            timeout: 6
-        )
     }
 
     @MainActor

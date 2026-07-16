@@ -2,41 +2,14 @@ import SwiftUI
 import VoidDisplayDesignSystem
 
 package struct HomeHeaderControls: View {
-    package let context: HomeSkinContext
-    private let showsSummaryStatus: Bool
-    private let showsSharingSettingsPopover: Bool
+    package let context: HomeLayoutContext
 
-    package init(
-        context: HomeSkinContext,
-        showsSummaryStatus: Bool = false,
-        showsSharingSettingsPopover: Bool = false
-    ) {
+    package init(context: HomeLayoutContext) {
         self.context = context
-        self.showsSummaryStatus = showsSummaryStatus
-        self.showsSharingSettingsPopover = showsSharingSettingsPopover
     }
 
     package var body: some View {
-        if showsSummaryStatus {
-            summaryHeader
-        } else {
-            plainHeader
-        }
-    }
-
-    private var plainHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                titleBlock
-                Spacer(minLength: AppUI.Spacing.large)
-                actionButtons
-            }
-
-            VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
-                titleBlock
-                actionButtons
-            }
-        }
+        summaryHeader
     }
 
     private var summaryHeader: some View {
@@ -45,7 +18,7 @@ package struct HomeHeaderControls: View {
                 HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                     titleBlock
                     Spacer(minLength: AppUI.Spacing.large)
-                    classicActionButtons
+                    summaryActionButtons
                 }
 
                 HomeSummaryStatusStrip(context: context)
@@ -72,15 +45,7 @@ package struct HomeHeaderControls: View {
             .accessibilityIdentifier("home_virtual_display_title")
     }
 
-    private var actionButtons: some View {
-        HStack(spacing: AppUI.Spacing.small) {
-            createVirtualDisplayButton
-            refreshTextButton
-        }
-        .labelStyle(.titleAndIcon)
-    }
-
-    private var classicActionButtons: some View {
+    private var summaryActionButtons: some View {
         HStack(spacing: AppUI.Spacing.small) {
             createVirtualDisplayButton
             sharingSettingsButton
@@ -90,11 +55,7 @@ package struct HomeHeaderControls: View {
     }
 
     private var sharingSettingsButton: some View {
-        Group {
-            if showsSharingSettingsPopover {
-                HomeSharingSettingsPopoverButton(context: context)
-            }
-        }
+        HomeSharingSettingsPopoverButton(context: context)
     }
 
     private var createVirtualDisplayButton: some View {
@@ -106,16 +67,6 @@ package struct HomeHeaderControls: View {
         .appActionButtonStyle(variant: .primary)
         .disabled(context.isCreateVirtualDisplayDisabled)
         .accessibilityIdentifier("home_add_virtual_display_button")
-    }
-
-    private var refreshTextButton: some View {
-        Button {
-            context.actions.refresh()
-        } label: {
-            Label("Refresh", systemImage: "arrow.clockwise")
-        }
-        .appActionButtonStyle(variant: .default)
-        .accessibilityIdentifier("home_refresh_button")
     }
 
     private var refreshIconButton: some View {

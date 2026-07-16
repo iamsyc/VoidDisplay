@@ -55,10 +55,10 @@ package struct AppSettingsView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
-                    Picker("Home Layout", selection: skinIDBinding) {
-                        ForEach(HomeSkinRegistry.allSkinIDs) { skinID in
-                            Text(skinTitle(for: skinID))
-                                .tag(skinID)
+                    Picker("Home Layout", selection: homeLayoutIDBinding) {
+                        ForEach(HomeLayoutRegistry.allLayoutIDs) { layoutID in
+                            Text(layoutTitle(for: layoutID))
+                                .tag(layoutID)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -132,15 +132,15 @@ package struct AppSettingsView: View {
         )
     }
 
-    private var skinIDBinding: Binding<AppSkinID> {
+    private var homeLayoutIDBinding: Binding<HomeLayoutID> {
         Binding(
-            get: { appearancePreferences.skinID },
-            set: { appearancePreferences.saveSkinID($0) }
+            get: { appearancePreferences.homeLayoutID },
+            set: { appearancePreferences.saveHomeLayoutID($0) }
         )
     }
 
-    private func skinTitle(for skinID: AppSkinID) -> LocalizedStringKey {
-        HomeSkinRegistry.title(for: skinID)
+    private func layoutTitle(for layoutID: HomeLayoutID) -> LocalizedStringKey {
+        HomeLayoutRegistry.title(for: layoutID)
     }
 
     private func openDiagnostics() {

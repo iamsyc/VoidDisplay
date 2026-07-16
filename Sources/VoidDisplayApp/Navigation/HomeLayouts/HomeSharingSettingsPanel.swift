@@ -3,10 +3,10 @@ import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 
 package struct HomeSharingSettingsPopoverButton: View {
-    package let context: HomeSkinContext
+    private let context: HomeLayoutContext
     @State private var isPresented = false
 
-    package init(context: HomeSkinContext) {
+    package init(context: HomeLayoutContext) {
         self.context = context
     }
 
@@ -55,9 +55,9 @@ package struct HomeSharingSettingsPopoverButton: View {
 }
 
 package struct HomeSharingSettingsPanel: View {
-    package let context: HomeSkinContext
+    private let context: HomeLayoutContext
 
-    package init(context: HomeSkinContext) {
+    package init(context: HomeLayoutContext) {
         self.context = context
     }
 
