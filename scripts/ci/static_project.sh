@@ -65,8 +65,18 @@ validate_xcode_project_layout() {
 
 validate_xcode_shell_build_phase() {
 	local project_file="$XCODE_PROJECT_FILE"
+	local -a expected_inputs=(
+		'$(TOOL_ROOT)/mise.toml'
+		'$(TOOL_ROOT)/mise.lock'
+		'$(TOOL_ROOT)/scripts/build-relay.sh'
+		'$(TOOL_ROOT)/scripts/lib/contract.sh'
+		'$(TOOL_ROOT)/scripts/lib/common.sh'
+		'$(TOOL_ROOT)/scripts/lib/architecture.sh'
+		'$(TOOL_ROOT)/scripts/lib/release_binaries.sh'
+	)
+	local relay_file
+	local relay_file_count=0
 	local shell_phase_count
-	local invalid_inputs
 	local root_setting_count
 	local tool_setting_count
 
@@ -102,12 +112,11 @@ validate_xcode_shell_build_phase() {
 		'shellPath = /bin/bash;' \
 		'"cd \"$SRCROOT\"",'
 
-	assert_file_contains_all "$project_file" "Build Relay phase is missing required tool input or build setting" \
-		'"$(TOOL_ROOT)/scripts/build-relay.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/contract.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/common.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/architecture.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",'
+	while IFS= read -r relay_file; do
+		expected_inputs+=('$(ROOT_DIR)/'"$relay_file")
+		relay_file_count=$((relay_file_count + 1))
+	done < <(git ls-files -- Tools/VoidDisplayRelay)
+	((relay_file_count > 0)) || die "Relay module has no tracked files to declare as Xcode build inputs."
 
 	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)";' "$project_file" | wc -l | tr -d '[:space:]')"
 	tool_setting_count="$(rg -F 'TOOL_ROOT = "$(ROOT_DIR)";' "$project_file" | wc -l | tr -d '[:space:]')"
@@ -124,11 +133,7 @@ validate_xcode_shell_build_phase() {
 	assert_pbx_array_exact outputPaths "Build Relay outputPaths" \
 		'$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay'
 
-	invalid_inputs="$(
-		extract_pbx_array_values inputPaths |
-			rg -v '^\$\(TOOL_ROOT\)/scripts/(build-relay\.sh|lib/(contract|common|architecture|release_binaries)\.sh)$|^\$\(ROOT_DIR\)/Tools/VoidDisplayRelay/' || true
-	)"
-	fail_on_output "Build Relay input paths must stay under allowed prefixes." "$invalid_inputs"
+	assert_pbx_array_exact inputPaths "Build Relay inputPaths" "${expected_inputs[@]}"
 }
 
 validate_relay_build_is_script_sandbox_compatible() {
