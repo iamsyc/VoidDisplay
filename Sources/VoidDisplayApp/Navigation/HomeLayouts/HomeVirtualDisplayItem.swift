@@ -3,8 +3,8 @@ import SwiftUI
 import VoidDisplayDesignSystem
 
 private enum HomeItemLayoutConstants {
-    static let cardIdentityMinWidth: CGFloat = 250
-    static let cardStatusMinWidth: CGFloat = 220
+    static let wideIdentityMinWidth: CGFloat = 250
+    static let wideStatusMinWidth: CGFloat = 220
 }
 
 package struct HomeVirtualDisplayItem: View {
@@ -38,7 +38,7 @@ package struct HomeVirtualDisplayItem: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: layout.metrics.itemCornerRadius, style: .continuous)
-                .stroke(cardStroke, lineWidth: AppUI.Stroke.subtle)
+                .stroke(itemStroke, lineWidth: AppUI.Stroke.subtle)
         )
         .overlay(alignment: .leading) {
             if showsStatusAccent {
@@ -56,17 +56,11 @@ package struct HomeVirtualDisplayItem: View {
         .accessibilityLabel(Text(item.accessibilitySummary))
     }
 
-    @ViewBuilder
     private var itemBody: some View {
-        switch layout.id {
-        case .list:
-            ViewThatFits(in: .horizontal) {
-                wideLayout
-                compactLayout
-                narrowLayout
-            }
-        case .card:
-            cardLayout
+        ViewThatFits(in: .horizontal) {
+            wideLayout
+            compactLayout
+            narrowLayout
         }
     }
 
@@ -74,12 +68,12 @@ package struct HomeVirtualDisplayItem: View {
         HStack(alignment: .center, spacing: AppUI.Spacing.large) {
             identityBlock
                 .layoutPriority(2)
-                .frame(minWidth: HomeItemLayoutConstants.cardIdentityMinWidth, alignment: .leading)
+                .frame(minWidth: HomeItemLayoutConstants.wideIdentityMinWidth, alignment: .leading)
 
             if hasOperationalStatusItems {
                 statusGrid
                     .layoutPriority(1)
-                    .frame(minWidth: HomeItemLayoutConstants.cardStatusMinWidth, alignment: .leading)
+                    .frame(minWidth: HomeItemLayoutConstants.wideStatusMinWidth, alignment: .leading)
             } else {
                 Spacer(minLength: AppUI.Spacing.medium)
             }
@@ -135,29 +129,6 @@ package struct HomeVirtualDisplayItem: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var cardLayout: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                identityBlock
-                    .layoutPriority(1)
-
-                Spacer(minLength: AppUI.Spacing.medium)
-
-                toggleButton
-            }
-
-            if hasOperationalStatusItems {
-                statusGrid
-            }
-
-            HStack(alignment: .center, spacing: AppUI.Spacing.small) {
-                actionCluster
-                Spacer(minLength: AppUI.Spacing.small)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
     private var identityBlock: some View {
         HomeVirtualDisplayItemIdentityBlock(state: state)
     }
@@ -182,7 +153,7 @@ package struct HomeVirtualDisplayItem: View {
         HomeVirtualDisplayItemToggleButton(state: state, actions: actions)
     }
 
-    private var cardStroke: Color {
+    private var itemStroke: Color {
         if item.hasIssue || rebuildFailureMessage != nil {
             return AppThemeStatusPalette.standard.warning
                 .opacity(colorScheme == .dark ? 0.52 : 0.36)

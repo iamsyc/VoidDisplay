@@ -18,7 +18,7 @@ final class HomeSmokeTests: XCTestCase {
                 "home_virtual_display_surface",
                 "home_summary_status_strip",
                 "home_sharing_settings_popover_button",
-                "home_virtual_display_card"
+                "home_virtual_display_list_row"
             ],
             timeout: 6
         )
@@ -34,65 +34,7 @@ final class HomeSmokeTests: XCTestCase {
         assertAllExist(app, identifiers: ["detail_diagnostics"], timeout: 1.5)
 
         tapIdentifier(app, identifier: "sidebar_home")
-        assertAllExist(app, identifiers: ["detail_home", "home_virtual_display_card"], timeout: 1.5)
-    }
-
-    @MainActor
-    func testVirtualDisplayCardSurfaceSmoke_baseline() throws {
-        let app = launchAppForSmoke()
-
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_home",
-                "home_virtual_display_surface",
-                "home_summary_status_strip",
-                "home_sharing_settings_popover_button",
-                "home_virtual_display_card_grid",
-                "home_virtual_display_card",
-                "home_card_status_grid",
-                "virtual_display_toggle_button",
-                "home_virtual_display_preview_toggle",
-                "home_virtual_display_web_view_toggle",
-                "virtual_display_edit_button",
-                "home_virtual_display_more_button",
-                "home_add_virtual_display_button"
-            ],
-            timeout: 6
-        )
-
-        let cards = app.descendants(matching: .any)
-            .matching(identifier: "home_virtual_display_card")
-            .allElementsBoundByIndex
-        XCTAssertGreaterThanOrEqual(cards.count, 2)
-        XCTAssertFalse(app.descendants(matching: .any)["home_virtual_display_list"].exists)
-        XCTAssertTrue(app.switches.matching(identifier: "home_virtual_display_preview_toggle").firstMatch.exists)
-        XCTAssertTrue(app.switches.matching(identifier: "home_virtual_display_web_view_toggle").firstMatch.exists)
-        XCTAssertFalse(app.buttons["home_virtual_display_preview_button"].exists)
-        XCTAssertFalse(app.buttons["home_virtual_display_web_view_button"].exists)
-
-        let firstFrame = cards[0].frame
-        let secondFrame = cards[1].frame
-        XCTAssertFalse(firstFrame.intersects(secondFrame))
-
-        if abs(firstFrame.minY - secondFrame.minY) <= 2 {
-            XCTAssertGreaterThan(abs(firstFrame.minX - secondFrame.minX), 100)
-        } else {
-            XCTAssertEqual(firstFrame.minX, secondFrame.minX, accuracy: 2)
-            XCTAssertGreaterThan(secondFrame.minY, firstFrame.minY)
-        }
-
-        tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
-        assertAllExist(
-            app,
-            identifiers: [
-                "home_sharing_settings_panel",
-                "home_sharing_performance_picker",
-                "home_sharing_port_input",
-                "home_sharing_screen_recording_permission_status"
-            ],
-            timeout: 2
-        )
+        assertAllExist(app, identifiers: ["detail_home", "home_virtual_display_list_row"], timeout: 1.5)
     }
 
     @MainActor
@@ -110,8 +52,8 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testVirtualDisplayListSurfaceSmoke() throws {
-        let app = launchAppForSmoke(homeLayoutID: "list")
+    func testVirtualDisplayListSurfaceSmoke_baseline() throws {
+        let app = launchAppForSmoke()
 
         assertAllExist(
             app,
@@ -122,12 +64,13 @@ final class HomeSmokeTests: XCTestCase {
                 "home_sharing_settings_popover_button",
                 "home_virtual_display_list",
                 "home_virtual_display_list_row",
-                "home_card_status_grid",
+                "home_item_status_grid",
                 "virtual_display_toggle_button",
                 "home_virtual_display_preview_toggle",
                 "home_virtual_display_web_view_toggle",
                 "virtual_display_edit_button",
-                "home_virtual_display_more_button"
+                "home_virtual_display_more_button",
+                "home_add_virtual_display_button"
             ],
             timeout: 6
         )
@@ -138,11 +81,29 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(rows.count, 2)
         XCTAssertEqual(rows[0].frame.minX, rows[1].frame.minX, accuracy: 2)
         XCTAssertGreaterThan(rows[1].frame.minY, rows[0].frame.minY)
+        XCTAssertFalse(app.descendants(matching: .any)["home_virtual_display_card_grid"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["home_virtual_display_card"].exists)
+        XCTAssertTrue(app.switches.matching(identifier: "home_virtual_display_preview_toggle").firstMatch.exists)
+        XCTAssertTrue(app.switches.matching(identifier: "home_virtual_display_web_view_toggle").firstMatch.exists)
+        XCTAssertFalse(app.buttons["home_virtual_display_preview_button"].exists)
+        XCTAssertFalse(app.buttons["home_virtual_display_web_view_button"].exists)
+
+        tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
+        assertAllExist(
+            app,
+            identifiers: [
+                "home_sharing_settings_panel",
+                "home_sharing_performance_picker",
+                "home_sharing_port_input",
+                "home_sharing_screen_recording_permission_status"
+            ],
+            timeout: 2
+        )
     }
 
     @MainActor
     func testListActionsRemainVisibleAtNarrowWindowSize() throws {
-        let app = launchAppForSmoke(homeLayoutID: "list", windowSize: (760, 640))
+        let app = launchAppForSmoke(windowSize: (760, 640))
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 6))
 

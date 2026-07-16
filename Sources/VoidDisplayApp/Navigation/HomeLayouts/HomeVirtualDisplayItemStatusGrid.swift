@@ -50,6 +50,6 @@ package struct HomeVirtualDisplayItemStatusGrid: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("home_card_status_grid")
+        .accessibilityIdentifier("home_item_status_grid")
     }
 }

@@ -11,7 +11,6 @@ package struct AppSettingsView: View {
     @Environment(AppNavigationController.self) private var navigation
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
-    @Environment(AppearancePreferences.self) private var appearancePreferences
     @State private var showResetConfirmation = false
     @State private var resetCompleted = false
 
@@ -47,23 +46,6 @@ package struct AppSettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Appearance")
-                        .font(.headline)
-
-                    Text("Choose how the Home display surface is arranged.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Picker("Home Layout", selection: homeLayoutIDBinding) {
-                        ForEach(HomeLayoutRegistry.allLayoutIDs) { layoutID in
-                            Text(layoutTitle(for: layoutID))
-                                .tag(layoutID)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-
                 SettingsSupportSectionView(
                     controller: feedbackController,
                     onOpenDiagnostics: openDiagnostics
@@ -93,7 +75,7 @@ package struct AppSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(16)
         }
-        .frame(width: 520, height: 620, alignment: .topLeading)
+        .frame(width: 520, height: 420, alignment: .topLeading)
         .task {
             await feedbackController.prepare(observability: observability)
             if let fixture = UITestRuntime.feedbackFixture {
@@ -130,17 +112,6 @@ package struct AppSettingsView: View {
             get: { capturePerformancePreferences.mode },
             set: { capturePerformancePreferences.saveMode($0) }
         )
-    }
-
-    private var homeLayoutIDBinding: Binding<HomeLayoutID> {
-        Binding(
-            get: { appearancePreferences.homeLayoutID },
-            set: { appearancePreferences.saveHomeLayoutID($0) }
-        )
-    }
-
-    private func layoutTitle(for layoutID: HomeLayoutID) -> LocalizedStringKey {
-        HomeLayoutRegistry.title(for: layoutID)
     }
 
     private func openDiagnostics() {

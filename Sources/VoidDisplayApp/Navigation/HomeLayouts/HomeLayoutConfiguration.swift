@@ -24,28 +24,19 @@ package struct HomeLayoutConfiguration: Equatable {
         }
     }
 
-    package let id: HomeLayoutID
+    package static let list = HomeLayoutConfiguration(
+        metrics: Metrics(
+            itemHorizontalPadding: AppUI.Spacing.large,
+            itemVerticalPadding: AppUI.Spacing.medium,
+            itemCornerRadius: 8,
+            itemSpacing: AppUI.List.sectionSpacing,
+            contentMaxWidth: 1240
+        )
+    )
+
     package let metrics: Metrics
 
-    package init(id: HomeLayoutID) {
-        self.id = id
-        self.metrics = switch id {
-        case .card:
-            Metrics(
-                itemHorizontalPadding: AppUI.Spacing.large,
-                itemVerticalPadding: AppUI.Spacing.large,
-                itemCornerRadius: AppUI.Corner.small,
-                itemSpacing: AppUI.Spacing.medium,
-                contentMaxWidth: 1280
-            )
-        case .list:
-            Metrics(
-                itemHorizontalPadding: AppUI.Spacing.large,
-                itemVerticalPadding: AppUI.Spacing.medium,
-                itemCornerRadius: 8,
-                itemSpacing: AppUI.List.sectionSpacing,
-                contentMaxWidth: 1240
-            )
-        }
+    private init(metrics: Metrics) {
+        self.metrics = metrics
     }
 }

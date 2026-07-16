@@ -15,7 +15,6 @@ package struct HomeView: View {
     @Environment(SharingController.self) private var sharing
     @Environment(VirtualDisplayController.self) private var virtualDisplay
     @Environment(CapturePerformancePreferences.self) private var capturePerformancePreferences
-    @Environment(AppearancePreferences.self) private var appearancePreferences
 
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController
@@ -73,7 +72,6 @@ package struct HomeView: View {
                             displayRuntime: displayRuntime,
                             openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                         )
-                        .homeLayout(appearancePreferences.homeLayoutID)
                         .navigationTitle(String(localized: "Displays"))
                         .accessibilityIdentifier("detail_home")
                     case .diagnostics:
