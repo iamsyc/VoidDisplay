@@ -115,7 +115,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
 	set +e
 	xcodebuild \
 		-scheme VoidDisplay \
-		-project Apps/VoidDisplay/VoidDisplay.xcodeproj \
+		-project VoidDisplay.xcodeproj \
 		-destination "$DESTINATION" \
 		-derivedDataPath "$DERIVED_DATA_PATH" \
 		-resultBundlePath "$result_bundle" \

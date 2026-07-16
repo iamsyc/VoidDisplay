@@ -10,6 +10,9 @@ cd "$ROOT_DIR"
 
 require_command git jq swiftformat swiftlint xcrun rg awk diff wc tr
 
+XCODE_PROJECT_DIR="VoidDisplay.xcodeproj"
+XCODE_PROJECT_FILE="$XCODE_PROJECT_DIR/project.pbxproj"
+
 fail_on_output() {
 	local message="$1"
 	local output="$2"
@@ -31,10 +34,49 @@ assert_file_contains_all() {
 	done
 }
 
+validate_xcode_project_layout() {
+	local legacy_project_dir="Apps/VoidDisplay/""VoidDisplay.xcodeproj"
+	local legacy_references
+	local invalid_self_references
+
+	[[ -d "$XCODE_PROJECT_DIR" ]] || die "Canonical Xcode project is missing: $XCODE_PROJECT_DIR"
+	[[ -f "$XCODE_PROJECT_FILE" ]] || die "Canonical Xcode project file is missing: $XCODE_PROJECT_FILE"
+	[[ ! -e "$legacy_project_dir" ]] || die "Xcode project must stay outside the synchronized app content directory."
+
+	assert_file_contains_all "$XCODE_PROJECT_FILE" "Xcode synchronized roots do not match the repository layout" \
+		'path = Apps/VoidDisplay;' \
+		'path = UITests/VoidDisplayUITests;' \
+		'path = Sources;' \
+		'path = Tests;' \
+		'relativePath = .;'
+
+	invalid_self_references="$(
+		rg -n '^[[:space:]]*(path = \.;|path = "?VoidDisplay\.xcodeproj"?;)' "$XCODE_PROJECT_FILE" || true
+	)"
+	fail_on_output \
+		"Xcode project must not synchronize or reference its own project bundle." \
+		"$invalid_self_references"
+
+	legacy_references="$(git grep -n -F "$legacy_project_dir" -- . || true)"
+	fail_on_output \
+		"Repository still contains references to the former nested Xcode project path." \
+		"$legacy_references"
+}
+
 validate_xcode_shell_build_phase() {
-	local project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
+	local project_file="$XCODE_PROJECT_FILE"
+	local -a expected_inputs=(
+		'$(TOOL_ROOT)/mise.toml'
+		'$(TOOL_ROOT)/mise.lock'
+		'$(TOOL_ROOT)/scripts/build-relay.sh'
+		'$(TOOL_ROOT)/scripts/lib/contract.sh'
+		'$(TOOL_ROOT)/scripts/lib/common.sh'
+		'$(TOOL_ROOT)/scripts/lib/architecture.sh'
+		'$(TOOL_ROOT)/scripts/lib/release_binaries.sh'
+	)
+	local relay_file
+	local relay_file_count=0
 	local shell_phase_count
-	local invalid_inputs
 	local root_setting_count
 	local tool_setting_count
 
@@ -68,22 +110,21 @@ validate_xcode_shell_build_phase() {
 	assert_file_contains_all "$project_file" "Build Relay phase is missing required line" \
 		'name = "Build Relay";' \
 		'shellPath = /bin/bash;' \
-		'"cd \"$SRCROOT/../..\"",'
+		'"cd \"$SRCROOT\"",'
 
-	assert_file_contains_all "$project_file" "Build Relay phase is missing required tool input or build setting" \
-		'"$(TOOL_ROOT)/scripts/build-relay.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/contract.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/common.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/architecture.sh",' \
-		'"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",'
+	while IFS= read -r relay_file; do
+		expected_inputs+=('$(ROOT_DIR)/'"$relay_file")
+		relay_file_count=$((relay_file_count + 1))
+	done < <(git ls-files -- Tools/VoidDisplayRelay)
+	((relay_file_count > 0)) || die "Relay module has no tracked files to declare as Xcode build inputs."
 
-	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)/../..";' "$project_file" | wc -l | tr -d '[:space:]')"
+	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)";' "$project_file" | wc -l | tr -d '[:space:]')"
 	tool_setting_count="$(rg -F 'TOOL_ROOT = "$(ROOT_DIR)";' "$project_file" | wc -l | tr -d '[:space:]')"
 	[[ "$root_setting_count" == "2" ]] || die "ROOT_DIR build setting must be present in Debug and Release."
 	[[ "$tool_setting_count" == "2" ]] || die "TOOL_ROOT build setting must be present in Debug and Release."
 
 	assert_pbx_array_exact shellScript "Build Relay shellScript" \
-		'cd \"$SRCROOT/../..\"' \
+		'cd \"$SRCROOT\"' \
 		'export ROOT_DIR=\"${ROOT_DIR:-$PWD}\"' \
 		'export TOOL_ROOT=\"${TOOL_ROOT:-$ROOT_DIR}\"' \
 		'\"$TOOL_ROOT/scripts/build-relay.sh\"' \
@@ -92,11 +133,14 @@ validate_xcode_shell_build_phase() {
 	assert_pbx_array_exact outputPaths "Build Relay outputPaths" \
 		'$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay'
 
-	invalid_inputs="$(
-		extract_pbx_array_values inputPaths |
-			rg -v '^\$\(TOOL_ROOT\)/scripts/(build-relay\.sh|lib/(contract|common|architecture|release_binaries)\.sh)$|^\$\(ROOT_DIR\)/Tools/VoidDisplayRelay/' || true
-	)"
-	fail_on_output "Build Relay input paths must stay under allowed prefixes." "$invalid_inputs"
+	assert_pbx_array_exact inputPaths "Build Relay inputPaths" "${expected_inputs[@]}"
+}
+
+validate_relay_build_is_script_sandbox_compatible() {
+	assert_file_contains_all \
+		"$TOOL_ROOT/scripts/build-relay.sh" \
+		"Relay build must not inspect undeclared Git metadata inside the Xcode user script sandbox" \
+		'build -buildvcs=false -trimpath'
 }
 
 validate_xcode_runner_disables_signing() {
@@ -152,6 +196,10 @@ validate_classify_fixtures() {
 	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/test_classify.sh"
 }
 
+validate_release_project_path_fixtures() {
+	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/test_release_project_paths.sh"
+}
+
 validate_swift_style() {
 	swiftformat --lint --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift scripts/release/render_dmg_background.swift
 	swiftlint lint --config "$ROOT_DIR/.swiftlint.yml" --quiet
@@ -172,12 +220,15 @@ validate_ui_tests_do_not_synthesize_keyboard_input() {
 		"$violations"
 }
 
+validate_xcode_project_layout
 validate_xcode_shell_build_phase
+validate_relay_build_is_script_sandbox_compatible
 validate_xcode_runner_disables_signing
 validate_xcode_log_scanner
 validate_swiftpm_log_scanner
 validate_bootstrap_profile_fixtures
 validate_classify_fixtures
+validate_release_project_path_fixtures
 validate_swift_style
 validate_swift_scripts
 validate_ui_tests_do_not_synthesize_keyboard_input

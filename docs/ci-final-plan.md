@@ -138,7 +138,7 @@ Nightly 失败不应直接阻断普通 PR，但必须在仓库首页、issue 或
 
 Release workflow 支持两种入口。workflow 先不 checkout 目标代码，只用 GitHub API 解析目标 SHA，并用内联 GitHub API 逻辑验证目标 SHA 的 `ci-gate`。验证成功后，workflow 才 checkout 目标 commit 并执行 release 脚本。版本判断、tag 判断、build number 规则都由 `scripts/release/prepare.sh` 执行。`prepare` 输出 `should_release=true` 后才允许 build 和 publish。
 
-第一种是 push 到 `main`。当 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj` 中的版本字段变化时触发 release 判断。
+第一种是 push 到 `main`。当 `VoidDisplay.xcodeproj/project.pbxproj` 中的版本字段变化时触发 release 判断。
 
 第二种是 `workflow_dispatch`。人工输入 tag 和 target ref 后，workflow 校验输入 tag 是否等于 `v${MARKETING_VERSION}`。
 

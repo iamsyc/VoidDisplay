@@ -67,7 +67,7 @@ sudo killall syspolicyd
 
 ```bash
 xcodebuild test \
-  -project Apps/VoidDisplay/VoidDisplay.xcodeproj \
+  -project VoidDisplay.xcodeproj \
   -scheme VoidDisplay \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .ai-tmp/syspolicy-playbook/DerivedData \

@@ -20,7 +20,7 @@ require_command go jq rg xcodebuild xcrun awk tr tail
 
 ACTION="build"
 CONFIGURATION="Debug"
-PROJECT_PATH="Apps/VoidDisplay/VoidDisplay.xcodeproj"
+PROJECT_PATH="VoidDisplay.xcodeproj"
 SCHEME="VoidDisplay"
 DESTINATION="$(xcode_destination_for_arch arm64)"
 OUT_DIR="$(make_artifact_dir ci-xcode)"

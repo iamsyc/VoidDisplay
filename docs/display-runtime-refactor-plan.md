@@ -162,7 +162,7 @@ LAN Web View 路由规则：
 
 执行项：
 
-- 先处理当前未提交的 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj` 变更，避免和新增 target、Xcode 工程修改混在一起。
+- 先处理当前未提交的 `VoidDisplay.xcodeproj/project.pbxproj` 变更，避免和新增 target、Xcode 工程修改混在一起。
 - 记录当前基线验证结果：SwiftPM targeted tests 和 Xcode Debug build。
 - 为 LAN Web View 记录基线表现，输出到 `.ai-tmp/display-runtime-baseline/`。
 - 基线记录包含目标分辨率、帧率、viewer 数、CPU、内存、明显延迟体感、测试设备和网络条件。

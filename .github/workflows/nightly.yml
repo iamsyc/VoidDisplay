@@ -167,7 +167,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj | sort -u)"
+          version="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' VoidDisplay.xcodeproj/project.pbxproj | sort -u)"
           test -n "$version"
           tool_root="$GITHUB_WORKSPACE"
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \

@@ -36,13 +36,13 @@ Phase 1 只建立模型、端口、只读快照和对照验证，不迁移命令
 - 保留现有 `CaptureSnapshotProvider`、`SharingSnapshotProvider`、`VirtualDisplaySnapshotProvider`、`ScreenCatalogSnapshotProvider` 作为 Phase 1 parity 对照。
 - 不处理 LAN Web View token、访问密码、账号体系或鉴权层。
 - 不修改 `ObservabilitySnapshotProvider` 协议形状；Phase 1 runtime provider 必须适配现有 `@MainActor` 同步 `makeSnapshot()`。
-- 不主动修改 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj`；现有 app scheme 已通过 SwiftPM product `VoidDisplayApp` 消费 package。
+- 不主动修改 `VoidDisplay.xcodeproj/project.pbxproj`；现有 app scheme 已通过 SwiftPM product `VoidDisplayApp` 消费 package。
 
 ## Implementation Plan
 
 ### 1. Preflight
 
-- 先处理当前未提交的 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj` 变更，避免和新增 target 修改混在一起。
+- 先处理当前未提交的 `VoidDisplay.xcodeproj/project.pbxproj` 变更，避免和新增 target 修改混在一起。
 - 确认 `docs/product-positioning.md` 和 `docs/display-runtime-refactor-plan.md` 已作为 Phase 1 依据提交或单独保留。
 - 记录 Phase 1 开工前基线验证结果。
 - 若 Phase 1 实现时 `project.pbxproj` 仍有未处理改动，停止实现并先处理该工作区状态。
@@ -53,7 +53,7 @@ Phase 1 只建立模型、端口、只读快照和对照验证，不迁移命令
 - 修改 `VoidDisplayApp` dependencies，加入 `VoidDisplayRuntime`。
 - 新增 `VoidDisplayRuntimeTests`，依赖 `VoidDisplayRuntime`、`VoidDisplayFoundation`、`VoidDisplayObservability`、`VoidDisplayTestingSupport`。
 - `VoidDisplayRuntime` 不新增 public product，所有跨 target API 使用 `package` 访问级别。
-- 不修改 `Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj`，除非 Xcode build 证明现有 local Swift package product 无法自动解析更新后的 `VoidDisplayApp` dependency graph。
+- 不修改 `VoidDisplay.xcodeproj/project.pbxproj`，除非 Xcode build 证明现有 local Swift package product 无法自动解析更新后的 `VoidDisplayApp` dependency graph。
 - 不修改 app-facing localization。
 
 ### 3. Runtime Model

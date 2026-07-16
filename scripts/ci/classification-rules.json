@@ -2,12 +2,12 @@
   "categories": {
     "code": {
       "exact": ["Package.swift", "Package.resolved", "mise.toml", "mise.lock", "Brewfile", ".swiftformat", ".swiftlint.yml", ".github/dependabot.yml"],
-      "prefixes": ["Sources/", "Tests/", "UITests/", "Apps/VoidDisplay/", "Tools/VoidDisplayRelay/", "scripts/", ".github/workflows/", ".github/actions/"],
+      "prefixes": ["Sources/", "Tests/", "UITests/", "Apps/VoidDisplay/", "VoidDisplay.xcodeproj/", "Tools/VoidDisplayRelay/", "scripts/", ".github/workflows/", ".github/actions/"],
       "globs": ["*/Package.resolved"]
     },
     "ui": {
       "exact": [],
-      "prefixes": ["UITests/", "Apps/VoidDisplay/", "Sources/VoidDisplayApp/", "Sources/VoidDisplayDesignSystem/", "Sources/VoidDisplayCapture/", "Sources/VoidDisplaySharing/", "Sources/VoidDisplaySupport/", "Sources/VoidDisplayVirtualDisplay/"],
+      "prefixes": ["UITests/", "Apps/VoidDisplay/", "VoidDisplay.xcodeproj/", "Sources/VoidDisplayApp/", "Sources/VoidDisplayDesignSystem/", "Sources/VoidDisplayCapture/", "Sources/VoidDisplaySharing/", "Sources/VoidDisplaySupport/", "Sources/VoidDisplayVirtualDisplay/"],
       "globs": []
     },
     "script": {
@@ -17,7 +17,7 @@
     },
     "product_code": {
       "exact": ["Package.swift", "Package.resolved"],
-      "prefixes": ["Sources/", "Apps/VoidDisplay/", "Tools/VoidDisplayRelay/"],
+      "prefixes": ["Sources/", "Apps/VoidDisplay/", "VoidDisplay.xcodeproj/", "Tools/VoidDisplayRelay/"],
       "globs": ["*/Package.resolved"]
     },
     "test_code": {
@@ -32,7 +32,7 @@
     },
     "release": {
       "exact": [".github/workflows/release.yml", "scripts/lib/architecture.sh", "scripts/lib/release_binaries.sh"],
-      "prefixes": ["Apps/VoidDisplay/", "Tools/VoidDisplayRelay/", "scripts/release/"],
+      "prefixes": ["Apps/VoidDisplay/", "VoidDisplay.xcodeproj/", "Tools/VoidDisplayRelay/", "scripts/release/"],
       "globs": ["scripts/ci/release_*.sh"]
     },
     "dependency_manifest": {

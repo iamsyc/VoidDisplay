@@ -79,7 +79,7 @@ jobs:
           path: |
             .ai-tmp/ci-ui-smoke/DerivedData/SourcePackages
             .ai-tmp/ci-ui-smoke/DerivedData/ModuleCache.noindex
-          key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('Apps/VoidDisplay/VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
+          key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
           restore-keys: |
             xcode-meta-ui-${{ runner.os }}-
 

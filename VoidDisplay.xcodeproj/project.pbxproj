@@ -29,25 +29,25 @@
 		BA0465D22E90E53C00012958 /* VoidDisplay */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			name = VoidDisplay;
-			path = .;
+			path = Apps/VoidDisplay;
 			sourceTree = "<group>";
 		};
 		BA0465EA2E90E53D00012958 /* VoidDisplayUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			name = VoidDisplayUITests;
-			path = ../../UITests/VoidDisplayUITests;
+			path = UITests/VoidDisplayUITests;
 			sourceTree = "<group>";
 		};
 		CDAA10012F01A00100000001 /* Sources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			name = Sources;
-			path = ../../Sources;
+			path = Sources;
 			sourceTree = "<group>";
 		};
 		CDAA10022F01A00100000001 /* Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			name = Tests;
-			path = ../../Tests;
+			path = Tests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -163,7 +163,7 @@
 			mainGroup = BA0465C72E90E53C00012958;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "../.." */,
+				837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "." */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = BA0465D12E90E53C00012958 /* Products */;
@@ -194,15 +194,17 @@
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			inputPaths = (
+				"$(TOOL_ROOT)/mise.toml",
+				"$(TOOL_ROOT)/mise.lock",
 				"$(TOOL_ROOT)/scripts/build-relay.sh",
 				"$(TOOL_ROOT)/scripts/lib/contract.sh",
 				"$(TOOL_ROOT)/scripts/lib/common.sh",
 				"$(TOOL_ROOT)/scripts/lib/architecture.sh",
 				"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.mod",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.sum",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main_test.go",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.mod",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.sum",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server_test.go",
 			);
@@ -212,7 +214,7 @@
 			);
 			shellPath = /bin/bash;
 			shellScript = (
-				"cd \"$SRCROOT/../..\"",
+				"cd \"$SRCROOT\"",
 				"export ROOT_DIR=\"${ROOT_DIR:-$PWD}\"",
 				"export TOOL_ROOT=\"${TOOL_ROOT:-$ROOT_DIR}\"",
 				"\"$TOOL_ROOT/scripts/build-relay.sh\"",
@@ -425,7 +427,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.developerchen.voiddisplay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				ROOT_DIR = "$(SRCROOT)/../..";
+				ROOT_DIR = "$(SRCROOT)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
@@ -494,7 +496,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.developerchen.voiddisplay;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				ROOT_DIR = "$(SRCROOT)/../..";
+				ROOT_DIR = "$(SRCROOT)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
@@ -609,16 +611,16 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "../.." */ = {
+		837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../..;
+			relativePath = .;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		9FED0F7AAD6710D42320E832 /* VoidDisplayApp */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "../.." */;
+			package = 837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "." */;
 			productName = VoidDisplayApp;
 		};
 /* End XCSwiftPackageProductDependency section */

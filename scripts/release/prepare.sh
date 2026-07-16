@@ -94,7 +94,7 @@ SUMMARY_PATH="$(normalize_target_path "$SUMMARY_PATH")"
 
 cd "$TARGET_REPO_DIR"
 
-project_file="Apps/VoidDisplay/VoidDisplay.xcodeproj/project.pbxproj"
+project_file="VoidDisplay.xcodeproj/project.pbxproj"
 
 find_existing_tag_sha() {
 	local release_tag="$1"

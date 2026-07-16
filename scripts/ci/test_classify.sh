@@ -132,9 +132,12 @@ run_file_case mise_lock pull_request main \
 run_file_case package_manifest pull_request main \
 	"product_code_relevant=true dependency_manifest_relevant=true requires_dependency_review=true requires_unit=true requires_xcode_build=true" \
 	Package.swift
+run_file_case xcode_project pull_request main \
+	"code_relevant=true product_code_relevant=true ui_relevant=true release_relevant=true requires_release_smoke=true requires_ui_smoke=true requires_unit=true requires_xcode_build=true unknown_relevant=false" \
+	VoidDisplay.xcodeproj/project.pbxproj
 run_file_case nested_package_resolved pull_request main \
 	"code_relevant=true product_code_relevant=true dependency_manifest_relevant=true requires_dependency_review=true requires_unit=true requires_xcode_build=true unknown_relevant=false" \
-	Apps/VoidDisplay/VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+	VoidDisplay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 run_file_case go_manifest pull_request main \
 	"product_code_relevant=true dependency_manifest_relevant=true release_relevant=true requires_release_smoke=true requires_unit=true requires_xcode_build=true" \
 	Tools/VoidDisplayRelay/go.mod

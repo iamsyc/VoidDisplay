@@ -73,7 +73,7 @@ go_mod_download_with_retry "$ROOT_DIR/Tools/VoidDisplayRelay"
 set +e
 xcodebuild \
 	-scheme VoidDisplay \
-	-project Apps/VoidDisplay/VoidDisplay.xcodeproj \
+	-project VoidDisplay.xcodeproj \
 	-configuration Release \
 	-destination "$(xcode_destination_for_arch "$ARCH")" \
 	-derivedDataPath "$DERIVED_DATA_PATH" \
