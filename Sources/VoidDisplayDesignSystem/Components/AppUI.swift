@@ -1,5 +1,4 @@
 import Foundation
-import VoidDisplayFoundation
 import SwiftUI
 
 // MARK: - Action button variant

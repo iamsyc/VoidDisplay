@@ -1,5 +1,4 @@
 import Foundation
-import VoidDisplayFoundation
 import SwiftUI
 package struct ScreenCapturePermissionGuideView: View {
     package let loadErrorMessage: String?

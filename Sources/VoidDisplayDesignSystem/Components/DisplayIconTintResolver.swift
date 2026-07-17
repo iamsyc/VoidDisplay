@@ -1,5 +1,4 @@
 import Foundation
-import VoidDisplayFoundation
 import SwiftUI
 
 /// Computes the icon screen tint color based on the display's functional state.

@@ -1,4 +1,3 @@
-import VoidDisplayFoundation
 import Foundation
 package struct UserFacingAlertState: Identifiable, Equatable, Sendable {
     package let id: UUID

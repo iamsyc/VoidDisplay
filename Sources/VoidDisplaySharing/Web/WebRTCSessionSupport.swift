@@ -209,7 +209,7 @@ package struct WebRTCStreamingProfile: Sendable, Equatable {
     }
 }
 
-package final class WebRTCFrameMailbox<Frame: Sendable>: @unchecked Sendable {
+package final class WebRTCFrameMailbox<Frame: Sendable>: Sendable {
     package typealias Scheduler = @Sendable (@escaping @Sendable () -> Void) -> Void
     package typealias Consumer = @Sendable (Frame) -> Void
 
@@ -544,7 +544,43 @@ package enum WebRTCCodecPreference {
     }
 }
 
-package final class WebRTCMediaPipeline: @unchecked Sendable {
+package nonisolated final class WebRTCMediaPipeline: Sendable {
+    private let core: WebRTCMediaPipelineCore
+
+    package var av1VideoTrack: RTCVideoTrack {
+        core.av1VideoTrack
+    }
+
+    package init() {
+        core = WebRTCMediaPipelineCore()
+    }
+
+    package func makePeerConnection() -> RTCPeerConnection? {
+        core.makePeerConnection()
+    }
+
+    package func requiredCodecs(for codec: WebRTCVideoCodec) -> [RTCRtpCodecCapability]? {
+        core.requiredCodecs(for: codec)
+    }
+
+    package func senderVideoCodecCapabilitySummary() -> String {
+        core.senderVideoCodecCapabilitySummary()
+    }
+
+    package func updateActiveCodecs(_ codecs: Set<WebRTCVideoCodec>) {
+        core.updateActiveCodecs(codecs)
+    }
+
+    package func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
+        core.updateEncodingProfile(profile)
+    }
+
+    package func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
+        core.submitFrame(pixelBuffer: pixelBuffer, ptsUs: ptsUs)
+    }
+}
+
+private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
     private nonisolated struct PendingFrame: @unchecked Sendable {
         nonisolated(unsafe) let pixelBuffer: CVPixelBuffer
         let ptsUs: UInt64
@@ -574,7 +610,7 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
 
     private let factory: RTCPeerConnectionFactory
     nonisolated(unsafe) private let av1VideoSource: RTCVideoSource
-    nonisolated(unsafe) package let av1VideoTrack: RTCVideoTrack
+    nonisolated(unsafe) fileprivate let av1VideoTrack: RTCVideoTrack
     nonisolated(unsafe) private let av1Capturer: RTCVideoCapturer
     private let queue = DispatchQueue(
         label: "com.developerchen.voiddisplay.webrtc.media",
@@ -587,7 +623,7 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
     nonisolated(unsafe) private var av1OutputState: CodecOutputState?
     nonisolated(unsafe) private var av1TimestampSequencer = WebRTCFrameTimestampSequencer()
 
-    nonisolated package init() {
+    fileprivate init() {
         _ = Self.sslInitialized
         self.factory = RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
@@ -606,7 +642,7 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
         )
     }
 
-    nonisolated package func makePeerConnection() -> RTCPeerConnection? {
+    fileprivate func makePeerConnection() -> RTCPeerConnection? {
         let configuration = RTCConfiguration()
         configuration.iceServers = WebRTCIceServerProvider.configuredServers()
         configuration.sdpSemantics = .unifiedPlan
@@ -618,17 +654,17 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
         return factory.peerConnection(with: configuration, constraints: constraints, delegate: nil)
     }
 
-    nonisolated package func requiredCodecs(for codec: WebRTCVideoCodec) -> [RTCRtpCodecCapability]? {
+    fileprivate func requiredCodecs(for codec: WebRTCVideoCodec) -> [RTCRtpCodecCapability]? {
         let capabilities = factory.rtpSenderCapabilities(forKind: kRTCMediaStreamTrackKindVideo)
         return WebRTCCodecPreference.requiredCodecs(for: codec, from: capabilities.codecs)
     }
 
-    nonisolated package func senderVideoCodecCapabilitySummary() -> String {
+    fileprivate func senderVideoCodecCapabilitySummary() -> String {
         let capabilities = factory.rtpSenderCapabilities(forKind: kRTCMediaStreamTrackKindVideo)
         return WebRTCCodecPreference.capabilitySummary(from: capabilities.codecs)
     }
 
-    nonisolated package func updateActiveCodecs(_ codecs: Set<WebRTCVideoCodec>) {
+    fileprivate func updateActiveCodecs(_ codecs: Set<WebRTCVideoCodec>) {
         activeCodecs.withLock { $0 = codecs }
         queue.async { [weak self] in
             guard let self,
@@ -644,7 +680,7 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
         }
     }
 
-    nonisolated package func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
+    fileprivate func updateEncodingProfile(_ profile: WebRTCStreamingProfile) {
         self.profile.withLock { $0 = profile }
         queue.async { [weak self] in
             guard let self,
@@ -660,7 +696,7 @@ package final class WebRTCMediaPipeline: @unchecked Sendable {
         }
     }
 
-    nonisolated package func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
+    fileprivate func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64) {
         let shouldLogFirstFrame = runtimeDiagnostics.withLock { diagnostics -> Bool in
             diagnostics.submittedFrameCount += 1
             return diagnostics.submittedFrameCount == 1

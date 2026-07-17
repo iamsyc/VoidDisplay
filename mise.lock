@@ -108,6 +108,18 @@ url = "https://dl.google.com/go/go1.26.2.darwin-arm64.tar.gz"
 checksum = "sha256:bc3f1500d9968c36d705442d90ba91addf9271665033748b82532682e90a7966"
 url = "https://dl.google.com/go/go1.26.2.darwin-amd64.tar.gz"
 
+[[tools.node]]
+version = "24.16.0"
+backend = "core:node"
+
+[tools.node."platforms.macos-arm64"]
+checksum = "sha256:39189dab4eeb15706c424af0ac08a3044c9e48f7db12a7d77f6b7aafc7dd5df6"
+url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-arm64.tar.gz"
+
+[tools.node."platforms.macos-x64"]
+checksum = "sha256:298b4c7b3cb80765c8703e42b90324a4ece3b6634947b89e769c3c980ab55185"
+url = "https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-x64.tar.gz"
+
 [[tools.swiftformat]]
 version = "0.61.1"
 backend = "github:nicklockwood/SwiftFormat"

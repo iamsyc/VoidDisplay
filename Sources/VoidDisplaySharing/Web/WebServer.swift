@@ -79,6 +79,15 @@ package final class WebServer {
         let runtimeScript: String
     }
 
+    private static let displayPageRuntimeResourceNames = [
+        "displayPageUI",
+        "displayPageCodec",
+        "displayPageStats",
+        "displayPagePeer",
+        "displayPageConnection",
+        "displayPageRuntime"
+    ]
+
     private static func loadResource(named name: String, ofType type: String) throws -> String {
         if let path = Bundle.module.path(forResource: name, ofType: type) {
             return try String(contentsOfFile: path, encoding: .utf8)
@@ -87,11 +96,14 @@ package final class WebServer {
     }
 
     private static func loadDisplayPageResources() throws -> DisplayPageResources {
-        try DisplayPageResources(
+        let runtimeScript = try displayPageRuntimeResourceNames
+            .map { try loadResource(named: $0, ofType: "js") }
+            .joined(separator: "\n\n")
+        return try DisplayPageResources(
             template: loadResource(named: "displayPage", ofType: "html"),
             styles: loadResource(named: "displayPage", ofType: "css"),
             messagesScript: loadResource(named: "displayPageMessages", ofType: "js"),
-            runtimeScript: loadResource(named: "displayPageRuntime", ofType: "js")
+            runtimeScript: runtimeScript
         )
     }
 

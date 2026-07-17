@@ -1,5 +1,4 @@
 import Foundation
-import VoidDisplayFoundation
 import SwiftUI
 package struct ResolutionModeActionButton: View {
     package let title: LocalizedStringKey

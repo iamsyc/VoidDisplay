@@ -134,6 +134,34 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
     }
 }
 
+private final class BlockingStopCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
+    private let gate: SharingStateGate
+    private let stopCallCountValue = Mutex(0)
+
+    init(gate: SharingStateGate) {
+        self.gate = gate
+    }
+
+    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
+
+    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
+
+    nonisolated func stopSharing() {}
+
+    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
+
+    nonisolated func stop() async {
+        stopCallCountValue.withLock { $0 += 1 }
+        await gate.markFalseEntered()
+        await gate.waitUntilOpen()
+    }
+
+    var stopCallCount: Int {
+        stopCallCountValue.withLock { $0 }
+    }
+}
+
 struct DisplayCaptureRegistryTests {
     @Test func releasingShareKeepsPreviewSessionAliveUntilLastToken() async throws {
         let registry = DisplayCaptureRegistry()
@@ -276,6 +304,54 @@ struct DisplayCaptureRegistryTests {
         #expect(session.stopCalls == 1)
     }
 
+    @Test func acquireDuringLastTokenDrainWaitsForReplacementSession() async throws {
+        let displayID = CGDirectDisplayID(10011)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let sendableDisplay = SendableDisplay(display)
+        let stopGate = SharingStateGate()
+        let drainingSession = BlockingStopCaptureSession(gate: stopGate)
+        let replacementSession = FakeCaptureSession()
+        let factoryCallCount = Mutex(0)
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _, _ in
+            factoryCallCount.withLock { $0 += 1 }
+            return replacementSession
+        })
+
+        await registry.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1920 × 1080",
+            session: drainingSession
+        )
+        let originalToken = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
+
+        await registry.release(originalToken)
+        await stopGate.waitForFalseEntry()
+        #expect(await registry.sessionState(for: displayID) == .draining)
+
+        let replacementAcquire = Task {
+            try await registry.acquirePreview(display: sendableDisplay)
+        }
+        #expect(
+            await staysTrue(timeoutNanoseconds: 50_000_000) {
+                factoryCallCount.withLock { $0 } == 0
+            }
+        )
+
+        await stopGate.open()
+        let replacementSubscription = try await replacementAcquire.value
+
+        #expect(drainingSession.stopCallCount == 1)
+        #expect(factoryCallCount.withLock { $0 } == 1)
+        #expect(await registry.sessionState(for: displayID) == .active)
+
+        replacementSubscription.cancel()
+        let drained = await waitUntil {
+            await registry.sessionState(for: displayID) == .stopped
+        }
+        #expect(drained)
+        #expect(replacementSession.stopCalls == 1)
+    }
+
     @Test func updatingPerformanceModePropagatesToExistingSessionsAndNewSessions() async throws {
         let displayID = CGDirectDisplayID(11011)
         let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
@@ -331,40 +407,6 @@ struct DisplayCaptureRegistryTests {
     }
 }
 
-private actor SessionStoreStopGate {
-    private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func waitUntilOpen() async {
-        guard isOpen == false else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-
-    func open() {
-        guard isOpen == false else { return }
-        isOpen = true
-        let pendingWaiters = waiters
-        waiters.removeAll()
-        for waiter in pendingWaiters {
-            waiter.resume()
-        }
-    }
-}
-
-private actor SessionStoreDrainFinisher {
-    private let store: DisplayCaptureSessionStore
-
-    init(store: DisplayCaptureSessionStore) {
-        self.store = store
-    }
-
-    func finish(displayID: CGDirectDisplayID, hasActiveTokens: Bool) {
-        store.finishDraining(displayID: displayID, hasActiveTokens: hasActiveTokens)
-    }
-}
-
 private final class SessionStoreFakeSession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
     private let stopCallCountValue = Mutex(0)
@@ -386,36 +428,9 @@ private final class SessionStoreFakeSession: DisplayCaptureSessioning, @unchecke
     }
 }
 
-private final class SessionStoreControlledStopSession: DisplayCaptureSessioning, @unchecked Sendable {
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
-    private let stopGate: SessionStoreStopGate
-    private let stopCallCountValue = Mutex(0)
-
-    init(stopGate: SessionStoreStopGate) {
-        self.stopGate = stopGate
-    }
-
-    nonisolated func attachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func detachPreviewSink(_ _: any DisplayPreviewSink) {}
-
-    nonisolated func stopSharing() {}
-
-    nonisolated func setDemand(_ _: DisplayCaptureDemandSnapshot) async throws {}
-
-    nonisolated func stop() async {
-        stopCallCountValue.withLock { $0 += 1 }
-        await stopGate.waitUntilOpen()
-    }
-
-    var stopCallCount: Int {
-        stopCallCountValue.withLock { $0 }
-    }
-}
-
 struct DisplayCaptureLeaseBookTests {
     @Test func initialProfileUsesPendingCreationDemand() {
-        let book = DisplayCaptureLeaseBook()
+        var book = DisplayCaptureLeaseBook()
         let displayID = CGDirectDisplayID(21001)
 
         book.recordPendingCreationDemand(for: displayID, kind: .preview, delta: 1)
@@ -429,7 +444,7 @@ struct DisplayCaptureLeaseBookTests {
     }
 
     @Test func demandSnapshotCombinesPreviewShareAndCursorState() {
-        let book = DisplayCaptureLeaseBook()
+        var book = DisplayCaptureLeaseBook()
         let displayID = CGDirectDisplayID(21002)
 
         let previewToken = book.registerToken(displayID: displayID, kind: .preview)
@@ -452,7 +467,7 @@ struct DisplayCaptureLeaseBookTests {
     }
 
     @Test func preparedShareRollbackAndCancelClearCursorOverrideDemand() {
-        let book = DisplayCaptureLeaseBook()
+        var book = DisplayCaptureLeaseBook()
         let displayID = CGDirectDisplayID(21003)
         let shareToken = book.registerToken(displayID: displayID, kind: .share)
 
@@ -474,7 +489,7 @@ struct DisplayCaptureLeaseBookTests {
     }
 
     @Test func releasingShareTokenWithPreviewRemainingStopsSharingWithoutDraining() {
-        let book = DisplayCaptureLeaseBook()
+        var book = DisplayCaptureLeaseBook()
         let displayID = CGDirectDisplayID(21004)
         _ = book.registerToken(displayID: displayID, kind: .preview)
         let shareToken = book.registerToken(displayID: displayID, kind: .share)
@@ -488,7 +503,7 @@ struct DisplayCaptureLeaseBookTests {
     }
 
     @Test func releasingLastTokenRequestsDrain() {
-        let book = DisplayCaptureLeaseBook()
+        var book = DisplayCaptureLeaseBook()
         let displayID = CGDirectDisplayID(21005)
         let previewToken = book.registerToken(displayID: displayID, kind: .preview)
 
@@ -503,13 +518,10 @@ struct DisplayCaptureLeaseBookTests {
 }
 
 struct DisplayCaptureSessionStoreTests {
-    @Test func ensureSessionExistsReusesExistingActiveSession() async throws {
-        let store = DisplayCaptureSessionStore()
+    @Test func installedSessionIsImmediatelyActive() {
+        var store = DisplayCaptureSessionStore()
         let displayID = CGDirectDisplayID(22001)
-        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
-        let sendableDisplay = SendableDisplay(display)
         let existingSession = SessionStoreFakeSession()
-        let factoryCallCount = Mutex(0)
 
         store.installSessionForTesting(
             displayID: displayID,
@@ -517,17 +529,6 @@ struct DisplayCaptureSessionStoreTests {
             session: existingSession
         )
 
-        try await store.ensureSessionExists(
-            for: sendableDisplay,
-            initialProfileProvider: { _ in .shareOnly },
-            performanceMode: .automatic,
-            captureSessionFactory: { _, _, _, _ in
-                factoryCallCount.withLock { $0 += 1 }
-                return SessionStoreFakeSession()
-            }
-        )
-
-        #expect(factoryCallCount.withLock { $0 } == 0)
         #expect(
             ObjectIdentifier(store.record(for: displayID)?.session as AnyObject)
                 == ObjectIdentifier(existingSession)
@@ -535,116 +536,48 @@ struct DisplayCaptureSessionStoreTests {
         #expect(store.sessionState(for: displayID) == .active)
     }
 
-    @Test func ensureSessionExistsWaitsForDrainingSessionToFinishBeforeRecreating() async throws {
-        let store = DisplayCaptureSessionStore()
+    @Test func initializingStateCanBeCancelled() {
+        var store = DisplayCaptureSessionStore()
         let displayID = CGDirectDisplayID(22002)
-        let display = SharedMockSCDisplay.make(displayID: displayID, width: 2560, height: 1440)
-        let sendableDisplay = SendableDisplay(display)
-        let stopGate = SessionStoreStopGate()
-        let drainingSession = SessionStoreControlledStopSession(stopGate: stopGate)
-        let replacementSession = SessionStoreFakeSession()
-        let factoryCallCount = Mutex(0)
-        let finisher = SessionStoreDrainFinisher(store: store)
 
-        store.installSessionForTesting(
-            displayID: displayID,
-            resolutionText: "2560 × 1440",
-            session: drainingSession
-        )
-        store.beginDraining(displayID: displayID) { displayID in
-            await finisher.finish(displayID: displayID, hasActiveTokens: false)
-        }
-
-        let acquireTask = Task {
-            try await store.ensureSessionExists(
-                for: sendableDisplay,
-                initialProfileProvider: { _ in .previewOnly },
-                performanceMode: .automatic,
-                captureSessionFactory: { _, _, _, _ in
-                    factoryCallCount.withLock { $0 += 1 }
-                    return replacementSession
-                }
-            )
-        }
-
-        #expect(
-            await staysTrue(timeoutNanoseconds: 50_000_000) {
-                factoryCallCount.withLock { $0 } == 0
-            }
-        )
-
-        await stopGate.open()
-        try await acquireTask.value
-
-        #expect(factoryCallCount.withLock { $0 } == 1)
-        #expect(
-            ObjectIdentifier(store.record(for: displayID)?.session as AnyObject)
-                == ObjectIdentifier(replacementSession)
-        )
-        #expect(store.sessionState(for: displayID) == .active)
+        store.markInitializing(displayID: displayID)
+        #expect(store.sessionState(for: displayID) == .initializing)
+        store.cancelInitializing(displayID: displayID)
+        #expect(store.sessionState(for: displayID) == .stopped)
     }
 
-    @Test func finishDrainingRemovesSessionWhenNoTokensRemain() async {
-        let store = DisplayCaptureSessionStore()
+    @Test func finishDrainingRemovesSessionWhenNoTokensRemain() {
+        var store = DisplayCaptureSessionStore()
         let displayID = CGDirectDisplayID(22003)
         let session = SessionStoreFakeSession()
-        let finisher = SessionStoreDrainFinisher(store: store)
 
         store.installSessionForTesting(
             displayID: displayID,
             resolutionText: "1280 × 720",
             session: session
         )
-        store.beginDraining(displayID: displayID) { displayID in
-            await finisher.finish(displayID: displayID, hasActiveTokens: false)
-        }
+        store.beginDraining(displayID: displayID) { _ in }
+        store.finishDraining(displayID: displayID, hasActiveTokens: false)
 
-        let settled = await waitUntil {
-            store.sessionState(for: displayID) == .stopped
-        }
-
-        #expect(settled)
         #expect(store.record(for: displayID) == nil)
-        #expect(session.stopCallCount == 1)
+        #expect(store.sessionState(for: displayID) == .stopped)
     }
 
-    @Test func finishDrainingRestoresActiveStateWhenTokensReappear() async {
-        let store = DisplayCaptureSessionStore()
+    @Test func finishDrainingRestoresActiveStateWhenTokensReappear() {
+        var store = DisplayCaptureSessionStore()
         let displayID = CGDirectDisplayID(22004)
         let session = SessionStoreFakeSession()
-        let finisher = SessionStoreDrainFinisher(store: store)
 
         store.installSessionForTesting(
             displayID: displayID,
             resolutionText: "1600 × 900",
             session: session
         )
-        store.beginDraining(displayID: displayID) { displayID in
-            await finisher.finish(displayID: displayID, hasActiveTokens: true)
-        }
+        store.beginDraining(displayID: displayID) { _ in }
+        store.finishDraining(displayID: displayID, hasActiveTokens: true)
 
-        let settled = await waitUntil {
-            store.sessionState(for: displayID) == .active
-        }
-
-        #expect(settled)
         #expect(store.record(for: displayID) != nil)
-        #expect(session.stopCallCount == 1)
-    }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        condition: @escaping () async -> Bool
-    ) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now + timeout
-        while clock.now < deadline {
-            if await condition() {
-                return true
-            }
-            await Task.yield()
-        }
-        return await condition()
+        #expect(store.sessionState(for: displayID) == .active)
     }
 }
 

@@ -50,6 +50,30 @@ package final class VirtualDisplayOrchestrator {
             }
         )
     )
+    private lazy var enableCoordinator = VirtualDisplayEnableCoordinator(
+        dependencies: .init(
+            configManager: configManager,
+            runtimeTracker: runtimeTracker,
+            policyResolver: policyResolver,
+            teardownCoordinator: teardownCoordinator,
+            rebuildCoordinator: rebuildCoordinator,
+            currentTopologySnapshot: { [weak self] in
+                self?.currentTopologySnapshot()
+            },
+            waitForAdaptiveManagedDisplayCooldown: { [weak self] serialNumbers, maxCooldown in
+                guard let self else {
+                    return VirtualDisplayAdaptiveCooldownResult(waitedSeconds: 0, completedEarly: true)
+                }
+                return await self.waitForAdaptiveManagedDisplayCooldown(
+                    serialNumbers: serialNumbers,
+                    maxCooldown: maxCooldown
+                )
+            },
+            logTopologySnapshot: { [weak self] label, snapshot in
+                self?.logTopologySnapshot(label, snapshot: snapshot)
+            }
+        )
+    )
 
     package convenience init(
         configRepository: VirtualDisplayConfigRepository,
@@ -466,173 +490,8 @@ package final class VirtualDisplayOrchestrator {
     }
 
     package func enableRuntimeDisplay(_ configId: UUID) async throws -> VirtualDisplayLifecycleCommandResult {
-        guard let config = configManager.config(id: configId) else {
-            throw VirtualDisplayOperationError.configNotFound
-        }
-
         let preflight = enableDisplayPreflight(configId)
-        let enableStart = DispatchTime.now().uptimeNanoseconds
-        let topologyBeforeEnable = currentTopologySnapshot()
-        let mainPolicyResolution = policyResolver.resolveMainDisplayPolicy(
-            snapshot: topologyBeforeEnable
-        )
-        let preferredMainDisplayID = mainPolicyResolution.preferredMainDisplayID
-        let recoveryMode: VirtualDisplayTopologyRecoveryMode = policyResolver.isAggressiveRecoveryPending(configId: configId)
-            ? .aggressive
-            : .fast
-        AppLog.virtualDisplay.notice(
-            "Enable display requested (config: \(configId.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public), preferredMain: \(String(describing: preferredMainDisplayID), privacy: .public), pendingGeneration: \(String(describing: self.runtimeTracker.runtimeGeneration(for: configId)), privacy: .public), isRunning: \(self.runtimeTracker.isVirtualDisplayRunning(configId: configId), privacy: .public))."
-        )
-        logTopologySnapshot("enableRuntimeDisplay:pre-enable", snapshot: topologyBeforeEnable)
-
-        var terminationConfirmed = true
-        var offlineVerified = false
-        if !runtimeTracker.hasActiveRuntimeDisplay(configId: configId),
-           let pendingGeneration = runtimeTracker.runtimeGeneration(for: configId) {
-            let displayStillOnline = runtimeTracker.isManagedDisplayOnline(serialNum: config.serialNum)
-            let shouldForceSettlement = recoveryMode == .aggressive
-            if displayStillOnline || shouldForceSettlement {
-                let settlement = await teardownCoordinator.waitForTeardownSettlement(
-                    configId: configId,
-                    expectedGeneration: pendingGeneration,
-                    serialNum: config.serialNum,
-                    terminationTimeout: 0.3,
-                    offlineTimeout: 2.5
-                )
-
-                if shouldForceSettlement && !displayStillOnline {
-                    AppLog.virtualDisplay.debug(
-                        "Aggressive enable forced teardown settlement despite offline precheck (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), generation: \(pendingGeneration, privacy: .public))."
-                    )
-                }
-                if !settlement.terminationObserved {
-                    AppLog.virtualDisplay.debug(
-                        "Enable did not observe termination callback before settling on offline confirmation (config: \(config.id.uuidString, privacy: .public))."
-                    )
-                }
-                AppLog.virtualDisplay.debug(
-                    "Enable teardown settlement (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), terminationObserved: \(settlement.terminationObserved, privacy: .public), offlineConfirmed: \(settlement.offlineConfirmed, privacy: .public))."
-                )
-                if !settlement.offlineConfirmed {
-                    AppLog.virtualDisplay.error(
-                        "Enable aborted because previous display with same serial is still online after teardown settlement (serial: \(config.serialNum, privacy: .public), config: \(config.id.uuidString, privacy: .public), generation: \(pendingGeneration, privacy: .public))."
-                    )
-                    throw VirtualDisplayOperationError.teardownTimedOut
-                }
-                terminationConfirmed = settlement.terminationObserved
-                offlineVerified = settlement.offlineConfirmed
-            }
-        }
-        if !runtimeTracker.hasActiveRuntimeDisplay(configId: configId), !offlineVerified {
-            let offlineConfirmed = await runtimeTracker.waitForManagedDisplayOffline(serialNum: config.serialNum)
-            if !offlineConfirmed {
-                AppLog.virtualDisplay.error(
-                    "Enable aborted because previous display with same serial is still online (serial: \(config.serialNum, privacy: .public), config: \(config.id.uuidString, privacy: .public))."
-                )
-                throw VirtualDisplayOperationError.teardownTimedOut
-            }
-            offlineVerified = true
-        }
-
-        do {
-            let desiredManagedEnabledCount = configManager.allConfigs().filter(\.desiredEnabled).count
-            let shouldPreemptivelyUseFleetRebuild = recoveryMode == .aggressive &&
-                !terminationConfirmed &&
-                runtimeTracker.runningConfigCount >= 1 &&
-                desiredManagedEnabledCount >= 2
-            if shouldPreemptivelyUseFleetRebuild {
-                AppLog.virtualDisplay.notice(
-                    "Aggressive enable preemptively using coordinated fleet rebuild before creating target (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), runningManagedCount: \(self.runtimeTracker.runningConfigCount, privacy: .public), desiredManagedEnabledCount: \(desiredManagedEnabledCount, privacy: .public))."
-                )
-                try await rebuildCoordinator.rebuildManagedDisplayFleet(
-                    prioritizing: configId,
-                    fallbackPreferredMainDisplayID: preferredMainDisplayID,
-                    teardownStrategy: .fleetOfflineOnly,
-                    includePrioritizedConfigIfNotRunning: true
-                )
-                policyResolver.clearAggressiveRecoveryPending(configId: configId)
-                return VirtualDisplayLifecycleCommandResult(
-                    configID: configId,
-                    desiredEnabled: true,
-                    preDisplayID: preflight.targetPreDisplayID,
-                    postDisplayID: runtimeTracker.runtimeDisplayID(for: configId),
-                    mayPerformFleetRebuild: true,
-                    requiresFleetQuiesce: true
-                )
-            }
-            if recoveryMode == .aggressive && !terminationConfirmed {
-                let cooldown = await waitForAdaptiveManagedDisplayCooldown(
-                    serialNumbers: [config.serialNum],
-                    maxCooldown: VirtualDisplayTimingPolicy.aggressiveEnableUnsettledTeardownCooldown
-                )
-                AppLog.virtualDisplay.notice(
-                    "Aggressive enable teardown settle cooldown completed (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), maxCooldownSec: \(VirtualDisplayTimingPolicy.aggressiveEnableUnsettledTeardownCooldown, privacy: .public), waitedMs: \(UInt64(cooldown.waitedSeconds * 1000), privacy: .public), earlyExit: \(cooldown.completedEarly, privacy: .public))."
-                )
-                logTopologySnapshot("enableRuntimeDisplay:pre-create-post-cooldown", snapshot: currentTopologySnapshot())
-            }
-            let createdDisplayRecord = try await runtimeTracker.createRuntimeDisplayWithRetries(
-                from: config,
-                terminationConfirmed: terminationConfirmed
-            )
-            let createdDisplaySerialNum = createdDisplayRecord.serialNum
-            let createdDisplayID = createdDisplayRecord.displayID
-            AppLog.virtualDisplay.notice(
-                "Enable created runtime display (config: \(config.id.uuidString, privacy: .public), serial: \(createdDisplaySerialNum, privacy: .public), displayID: \(createdDisplayID, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public))."
-            )
-            logTopologySnapshot("enableRuntimeDisplay:post-create-pre-recovery", snapshot: currentTopologySnapshot())
-            do {
-                let postCreatePolicyResolution = resolveMainDisplayPolicy(
-                    snapshot: currentTopologySnapshot()
-                )
-                let preferredMainAfterCreate = postCreatePolicyResolution.preferredMainDisplayID ??
-                    preferredMainDisplayID
-                let shouldEscalateToFleetRebuild = recoveryMode == .aggressive &&
-                    !terminationConfirmed &&
-                    runtimeTracker.runningConfigCount >= 2
-                if shouldEscalateToFleetRebuild {
-                    AppLog.virtualDisplay.notice(
-                        "Aggressive enable escalating to coordinated fleet rebuild because prior termination callback was not observed (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), runningManagedCount: \(self.runtimeTracker.runningConfigCount, privacy: .public))."
-                    )
-                    try await rebuildCoordinator.rebuildManagedDisplayFleet(
-                        prioritizing: configId,
-                        fallbackPreferredMainDisplayID: preferredMainAfterCreate,
-                        teardownStrategy: .fleetOfflineOnly
-                    )
-                } else {
-                    try await rebuildCoordinator.ensureHealthyTopologyAfterEnable(
-                        preferredMainDisplayID: preferredMainAfterCreate,
-                        recoveryMode: recoveryMode
-                    )
-                }
-                policyResolver.clearAggressiveRecoveryPending(configId: configId)
-            } catch {
-                runtimeTracker.rollbackEnableRuntimeState(configId: configId)
-                let offlineConfirmed = await runtimeTracker.waitForManagedDisplayOffline(
-                    serialNum: config.serialNum,
-                    timeout: VirtualDisplayTimingPolicy.rollbackOfflineWaitTimeout
-                )
-                if !offlineConfirmed {
-                    AppLog.virtualDisplay.warning(
-                        "Enable rollback did not observe offline state before timeout (serial: \(config.serialNum, privacy: .public), config: \(config.id.uuidString, privacy: .public), timeoutSec: \(VirtualDisplayTimingPolicy.rollbackOfflineWaitTimeout, privacy: .public))."
-                    )
-                }
-                throw error
-            }
-        } catch {
-            AppLog.virtualDisplay.error(
-                "Enable display failed (displayName: \(config.displayName, privacy: .public), serial: \(config.serialNum, privacy: .public), totalElapsedMs: \(self.elapsedMilliseconds(since: enableStart), privacy: .public)): \(String(describing: error), privacy: .public)"
-            )
-            throw error
-        }
-        let postDisplayID = runtimeTracker.runtimeDisplayID(for: configId)
-        return VirtualDisplayLifecycleCommandResult(
-            configID: configId,
-            desiredEnabled: true,
-            preDisplayID: preflight.targetPreDisplayID,
-            postDisplayID: postDisplayID,
-            mayPerformFleetRebuild: preflight.mayPerformFleetRebuild,
-            requiresFleetQuiesce: preflight.requiresFleetQuiesce
-        )
+        return try await enableCoordinator.enableRuntimeDisplay(configId, preflight: preflight)
     }
 
     // MARK: - Destroy

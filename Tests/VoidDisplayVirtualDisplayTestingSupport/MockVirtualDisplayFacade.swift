@@ -402,7 +402,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         rebuildVirtualDisplayCallCount += 1
         rebuildVirtualDisplayConfigIds.append(configId)
         if rebuildDelayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: rebuildDelayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(rebuildDelayNanoseconds))
         }
         if let rebuildVirtualDisplayError {
             throw rebuildVirtualDisplayError
