@@ -146,10 +146,95 @@ validate_ui_smoke_artifact_summary() {
 	fi
 }
 
+validate_release_ci_gate_timeout() {
+	local classify_timeout_minutes
+	local dependency_review_timeout_minutes
+	local downstream_timeout_minutes=0
+	local ci_gate_timeout_minutes
+	local gate_job_timeout_minutes
+	local gate_timeout_minutes
+	local gate_timeout_seconds
+	local job_timeout_minutes
+	local post_classify_timeout_minutes
+	local required_gate_timeout_minutes
+	local script_static_timeout_minutes
+
+	workflow_job_timeout_minutes() {
+		local workflow_file="$1"
+		local job_name="$2"
+
+		awk -v job_name="$job_name" '
+			$0 == "  " job_name ":" { inside = 1; next }
+			inside && /^  [[:alnum:]_]+:/ { exit }
+			inside && /timeout-minutes:/ { print $2; exit }
+		' "$workflow_file"
+	}
+
+	classify_timeout_minutes="$(workflow_job_timeout_minutes .github/workflows/ci.yml classify_changes)"
+	dependency_review_timeout_minutes="$(workflow_job_timeout_minutes .github/workflows/ci.yml dependency_review)"
+	script_static_timeout_minutes="$(workflow_job_timeout_minutes .github/workflows/ci.yml script_static_checks)"
+	ci_gate_timeout_minutes="$(workflow_job_timeout_minutes .github/workflows/ci.yml ci_gate)"
+	for job_timeout_minutes in \
+		"$(workflow_job_timeout_minutes .github/workflows/_reusable-unit-tests.yml unit_tests)" \
+		"$(workflow_job_timeout_minutes .github/workflows/ci.yml xcode_build)" \
+		"$(workflow_job_timeout_minutes .github/workflows/_reusable-ui-smoke-tests.yml ui_smoke_tests)" \
+		"$(workflow_job_timeout_minutes .github/workflows/ci.yml release_build_check_arm64)" \
+		"$(workflow_job_timeout_minutes .github/workflows/ci.yml release_build_check_intel64)"; do
+		[[ "$job_timeout_minutes" =~ ^[0-9]+$ ]] || die "Every CI job on the ci-gate critical path must declare a positive integer timeout."
+		((job_timeout_minutes > downstream_timeout_minutes)) && downstream_timeout_minutes="$job_timeout_minutes"
+	done
+
+	gate_job_timeout_minutes="$(
+		awk '
+			/^  require_ci_gate:/ { inside = 1; next }
+			inside && /^  [[:alnum:]_]+:/ { exit }
+			inside && /timeout-minutes:/ { print $2; exit }
+		' .github/workflows/release.yml
+	)"
+	gate_timeout_seconds="$(
+		awk '
+			/^  require_ci_gate:/ { inside = 1; next }
+			inside && /^  [[:alnum:]_]+:/ { exit }
+			inside && /TIMEOUT_SECONDS:/ {
+				value = $2
+				gsub(/'\''/, "", value)
+				print value
+				exit
+			}
+		' .github/workflows/release.yml
+	)"
+
+	[[ "$classify_timeout_minutes" =~ ^[0-9]+$ ]] || die "CI classify job timeout must be a positive integer."
+	[[ "$dependency_review_timeout_minutes" =~ ^[0-9]+$ ]] || die "CI dependency review timeout must be a positive integer."
+	[[ "$script_static_timeout_minutes" =~ ^[0-9]+$ ]] || die "CI static job timeout must be a positive integer."
+	[[ "$ci_gate_timeout_minutes" =~ ^[0-9]+$ ]] || die "CI gate timeout must be a positive integer."
+	[[ "$gate_job_timeout_minutes" =~ ^[0-9]+$ ]] || die "Release ci-gate job timeout must be a positive integer."
+	[[ "$gate_timeout_seconds" =~ ^[0-9]+$ ]] || die "Release ci-gate polling timeout must be a positive integer."
+	((classify_timeout_minutes > 0)) || die "CI classify job timeout must be positive."
+	((dependency_review_timeout_minutes > 0)) || die "CI dependency review timeout must be positive."
+	((script_static_timeout_minutes > 0)) || die "CI static job timeout must be positive."
+	((ci_gate_timeout_minutes > 0)) || die "CI gate timeout must be positive."
+	((gate_job_timeout_minutes > 0)) || die "Release ci-gate job timeout must be positive."
+	((gate_timeout_seconds > 0)) || die "Release ci-gate polling timeout must be positive."
+	((gate_timeout_seconds % 60 == 0)) || die "Release ci-gate polling timeout must use whole minutes."
+
+	gate_timeout_minutes=$((gate_timeout_seconds / 60))
+	post_classify_timeout_minutes=$((script_static_timeout_minutes + downstream_timeout_minutes))
+	if ((dependency_review_timeout_minutes > post_classify_timeout_minutes)); then
+		post_classify_timeout_minutes="$dependency_review_timeout_minutes"
+	fi
+	required_gate_timeout_minutes=$((classify_timeout_minutes + post_classify_timeout_minutes + ci_gate_timeout_minutes + 15))
+	((gate_timeout_minutes >= required_gate_timeout_minutes)) ||
+		die "Release ci-gate polling timeout must cover the full CI critical path plus a 15-minute queue margin."
+	((gate_job_timeout_minutes >= gate_timeout_minutes + 5)) ||
+		die "Release ci-gate job timeout must leave at least 5 minutes for setup and summary upload."
+}
+
 actionlint
 validate_runner_labels
 validate_action_pinning
 validate_workflow_script_contract
 validate_ui_smoke_artifact_summary
+validate_release_ci_gate_timeout
 
 info "Static workflow gate passed."
