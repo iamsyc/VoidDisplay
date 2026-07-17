@@ -150,6 +150,6 @@ device=""
 
 rm -f "${output_dmg}"
 stage="hdiutil_convert"
-if ! hdiutil convert "${rw_dmg}" -format UDZO -imagekey zlib-level=9 -ov -o "${output_dmg}"; then
+if ! run_with_retry 3 hdiutil convert "${rw_dmg}" -format UDZO -imagekey zlib-level=9 -ov -o "${output_dmg}"; then
 	fail_dmg "Failed to convert writable DMG to compressed DMG."
 fi

@@ -371,7 +371,7 @@ jobs:
       - resolve_release_target
     if: ${{ needs.resolve_release_target.outputs.target_sha != '' }}
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 75
     permissions:
       contents: read
       checks: read
@@ -382,7 +382,7 @@ jobs:
         env:
           TARGET_SHA: ${{ needs.resolve_release_target.outputs.target_sha }}
           CHECK_NAME: ci-gate
-          TIMEOUT_SECONDS: '900'
+          TIMEOUT_SECONDS: '4200'
           POLL_INTERVAL_SECONDS: '20'
           SUMMARY_PATH: .ai-tmp/release-ci-gate/require-ci-gate-summary.json
         with:
