@@ -115,7 +115,7 @@ validate_xcode_shell_build_phase() {
 	while IFS= read -r relay_file; do
 		expected_inputs+=('$(ROOT_DIR)/'"$relay_file")
 		relay_file_count=$((relay_file_count + 1))
-	done < <(rg --files Tools/VoidDisplayRelay | sort)
+	done < <(rg --files Tools/VoidDisplayRelay | LC_ALL=C sort)
 	((relay_file_count > 0)) || die "Relay module has no tracked files to declare as Xcode build inputs."
 
 	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)";' "$project_file" | wc -l | tr -d '[:space:]')"
