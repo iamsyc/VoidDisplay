@@ -120,7 +120,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout release target
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           ref: ${{ needs.resolve_release_target.outputs.target_sha }}
           fetch-depth: 0
@@ -190,7 +190,7 @@ jobs:
             runs_on: macos-26-intel
     steps:
       - name: Checkout release target
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
           fetch-depth: 0
@@ -286,7 +286,7 @@ jobs:
       attestations: read
     steps:
       - name: Checkout release target
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
           fetch-depth: 0
