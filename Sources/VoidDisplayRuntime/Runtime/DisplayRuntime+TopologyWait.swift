@@ -20,7 +20,7 @@ extension DisplayRuntime {
 
         for index in 0..<topologyWaitPolicy.maximumSampleCount {
             if index > 0 && topologyWaitPolicy.sampleIntervalNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: topologyWaitPolicy.sampleIntervalNanoseconds)
+                try? await Task.sleep(for: .nanoseconds(topologyWaitPolicy.sampleIntervalNanoseconds))
             }
 
             let refreshResult = await refreshCatalogTopologyForTransaction()

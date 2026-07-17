@@ -1,5 +1,4 @@
 import Foundation
-import VoidDisplayFoundation
 import SwiftUI
 package struct AppListRowCard<Trailing: View>: View {
     package let model: AppListRowModel

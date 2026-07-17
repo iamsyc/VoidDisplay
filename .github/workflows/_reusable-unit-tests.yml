@@ -18,6 +18,9 @@ on:
       swift_test_count:
         description: SwiftPM test count parsed from the unit log.
         value: ${{ jobs.unit_tests.outputs.swift_test_count }}
+      javascript_test_count:
+        description: JavaScript test count parsed from the unit log.
+        value: ${{ jobs.unit_tests.outputs.javascript_test_count }}
       go_package_count:
         description: Go package count parsed from the unit log.
         value: ${{ jobs.unit_tests.outputs.go_package_count }}
@@ -36,6 +39,7 @@ jobs:
       unit_status: ${{ steps.finalize.outputs.unit_status }}
       artifact_name: ${{ steps.finalize.outputs.artifact_name }}
       swift_test_count: ${{ steps.finalize.outputs.swift_test_count }}
+      javascript_test_count: ${{ steps.finalize.outputs.javascript_test_count }}
       go_package_count: ${{ steps.finalize.outputs.go_package_count }}
       unit_reason: ${{ steps.finalize.outputs.unit_reason }}
 
@@ -62,7 +66,7 @@ jobs:
           restore-keys: |
             swiftpm-unit-${{ runner.os }}-
 
-      - name: Run SwiftPM and Go unit gate
+      - name: Run SwiftPM, JavaScript, and Go unit gate
         shell: bash
         run: |
           set -euo pipefail
@@ -86,11 +90,13 @@ jobs:
         run: |
           summary_file=".ai-tmp/unit-gate/unit-summary.json"
           swift_test_count="0"
+          javascript_test_count="0"
           go_package_count="0"
           unit_reason="not_run"
 
           if [ -f "$summary_file" ] && jq -e . "$summary_file" >/dev/null 2>&1; then
             swift_test_count="$(jq -r '.swift_test_count // 0' "$summary_file")"
+            javascript_test_count="$(jq -r '.javascript_test_count // 0' "$summary_file")"
             go_package_count="$(jq -r '.go_package_count // 0' "$summary_file")"
             unit_reason="$(jq -r '.reason // "unit_failed"' "$summary_file")"
           fi
@@ -99,6 +105,7 @@ jobs:
             echo "unit_status=${{ job.status }}"
             echo "artifact_name=unit-gate"
             echo "swift_test_count=${swift_test_count}"
+            echo "javascript_test_count=${javascript_test_count}"
             echo "go_package_count=${go_package_count}"
             echo "unit_reason=${unit_reason}"
           } >> "$GITHUB_OUTPUT"

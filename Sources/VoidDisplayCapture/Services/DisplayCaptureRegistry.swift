@@ -116,29 +116,28 @@ private final class NoopDisplayShareFrameConsumer: DisplayShareFrameConsumer {
         _ = ptsUs
     }
 }
-package nonisolated final class DisplayCaptureSessionStore: @unchecked Sendable {
-    package nonisolated struct Record {
+package struct DisplayCaptureSessionStore {
+    package struct Record: Sendable {
         let session: any DisplayCaptureSessioning
         let resolutionText: String
         var state: DisplayCaptureRegistry.SessionResourceState
     }
 
     private var recordsByDisplayID: [CGDirectDisplayID: Record] = [:]
-    private var sessionCreationTasks: [CGDirectDisplayID: Task<Record, Error>] = [:]
     private var sessionDrainTasksByDisplayID: [CGDirectDisplayID: Task<Void, Never>] = [:]
     private var initializingDisplayIDs: Set<CGDirectDisplayID> = []
 
-    nonisolated var activeDisplayIDs: [CGDirectDisplayID] {
+    package var activeDisplayIDs: [CGDirectDisplayID] {
         recordsByDisplayID.compactMap { displayID, record in
             record.state == .draining ? nil : displayID
         }
     }
 
-    nonisolated func record(for displayID: CGDirectDisplayID) -> Record? {
+    package func record(for displayID: CGDirectDisplayID) -> Record? {
         recordsByDisplayID[displayID]
     }
 
-    nonisolated func sessionState(
+    package func sessionState(
         for displayID: CGDirectDisplayID
     ) -> DisplayCaptureRegistry.SessionResourceState {
         if initializingDisplayIDs.contains(displayID) {
@@ -147,7 +146,7 @@ package nonisolated final class DisplayCaptureSessionStore: @unchecked Sendable 
         return recordsByDisplayID[displayID]?.state ?? .stopped
     }
 
-    nonisolated func installSessionForTesting(
+    package mutating func installSessionForTesting(
         displayID: CGDirectDisplayID,
         resolutionText: String,
         session: any DisplayCaptureSessioning
@@ -162,62 +161,34 @@ package nonisolated final class DisplayCaptureSessionStore: @unchecked Sendable 
         )
     }
 
-    nonisolated func markActive(displayID: CGDirectDisplayID) {
+    package mutating func markActive(displayID: CGDirectDisplayID) {
         guard var record = recordsByDisplayID[displayID] else { return }
         record.state = .active
         recordsByDisplayID[displayID] = record
     }
 
-    nonisolated func ensureSessionExists(
-        for display: SendableDisplay,
-        initialProfileProvider: @escaping @Sendable (CGDirectDisplayID) async -> DisplayCaptureProfile,
-        performanceMode: CapturePerformanceMode,
-        captureSessionFactory: @escaping DisplayCaptureRegistry.CaptureSessionFactory,
-        makeShareFrameConsumer: @escaping @Sendable () -> any DisplayShareFrameConsumer = {
-            NoopDisplayShareFrameConsumer()
-        }
-    ) async throws {
-        let displayID = display.displayID
-        if let existing = recordsByDisplayID[displayID] {
-            if existing.state != .draining {
-                return
-            }
-            await waitForDrainCompletion(for: displayID)
-            if let afterDrain = recordsByDisplayID[displayID], afterDrain.state != .draining {
-                return
-            }
-        }
-
-        if let existingTask = sessionCreationTasks[displayID] {
-            let record = try await existingTask.value
-            storeInitializedSessionIfAbsent(record, for: displayID)
-            return
-        }
-
-        let task = Task<Record, Error> { [captureSessionFactory, makeShareFrameConsumer] in
-            await Task.yield()
-            let initialProfile = await initialProfileProvider(displayID)
-            let session = try await captureSessionFactory(display, initialProfile, performanceMode, makeShareFrameConsumer)
-            return Record(
-                session: session,
-                resolutionText: "\(display.width) × \(display.height)",
-                state: .active
-            )
-        }
+    package mutating func markInitializing(displayID: CGDirectDisplayID) {
         initializingDisplayIDs.insert(displayID)
-        sessionCreationTasks[displayID] = task
-        defer { sessionCreationTasks[displayID] = nil }
-
-        do {
-            let record = try await task.value
-            storeInitializedSessionIfAbsent(record, for: displayID)
-        } catch {
-            initializingDisplayIDs.remove(displayID)
-            throw error
-        }
     }
 
-    nonisolated func beginDraining(
+    package mutating func cancelInitializing(displayID: CGDirectDisplayID) {
+        initializingDisplayIDs.remove(displayID)
+    }
+
+    package mutating func storeInitializedSessionIfAbsent(
+        _ record: Record,
+        for displayID: CGDirectDisplayID
+    ) {
+        initializingDisplayIDs.remove(displayID)
+        guard recordsByDisplayID[displayID] == nil else { return }
+        recordsByDisplayID[displayID] = record
+    }
+
+    package func drainTask(for displayID: CGDirectDisplayID) -> Task<Void, Never>? {
+        sessionDrainTasksByDisplayID[displayID]
+    }
+
+    package mutating func beginDraining(
         displayID: CGDirectDisplayID,
         onStopCompleted: @escaping @Sendable (CGDirectDisplayID) async -> Void
     ) {
@@ -233,7 +204,7 @@ package nonisolated final class DisplayCaptureSessionStore: @unchecked Sendable 
         }
     }
 
-    nonisolated func finishDraining(displayID: CGDirectDisplayID, hasActiveTokens: Bool) {
+    package mutating func finishDraining(displayID: CGDirectDisplayID, hasActiveTokens: Bool) {
         sessionDrainTasksByDisplayID[displayID] = nil
         guard let record = recordsByDisplayID[displayID] else { return }
         guard record.state == .draining else { return }
@@ -247,47 +218,33 @@ package nonisolated final class DisplayCaptureSessionStore: @unchecked Sendable 
 
         recordsByDisplayID.removeValue(forKey: displayID)
     }
-
-    private nonisolated func waitForDrainCompletion(for displayID: CGDirectDisplayID) async {
-        guard let drainTask = sessionDrainTasksByDisplayID[displayID] else { return }
-        await drainTask.value
-    }
-
-    private nonisolated func storeInitializedSessionIfAbsent(
-        _ record: Record,
-        for displayID: CGDirectDisplayID
-    ) {
-        initializingDisplayIDs.remove(displayID)
-        guard recordsByDisplayID[displayID] == nil else { return }
-        recordsByDisplayID[displayID] = record
-    }
 }
-package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
-    package nonisolated enum TokenKind: Sendable {
+package struct DisplayCaptureLeaseBook {
+    package enum TokenKind: Sendable {
         case preview
         case share
     }
-    package nonisolated struct PreviewLeaseState: Sendable, Equatable {
+    package struct PreviewLeaseState: Sendable, Equatable {
         var attachedSinkCount = 0
         var showsCursor = false
     }
-    package nonisolated struct ReleaseResult: Sendable, Equatable {
+    package struct ReleaseResult: Sendable, Equatable {
         let displayID: CGDirectDisplayID
         let shouldStopSharing: Bool
         let shouldApplyDemand: Bool
         let shouldDrainSession: Bool
     }
-    package nonisolated struct PreviewCursorMutation: Sendable, Equatable {
+    package struct PreviewCursorMutation: Sendable, Equatable {
         let displayID: CGDirectDisplayID
         let previousValue: Bool
     }
 
-    private nonisolated struct TokenRecord: Sendable {
+    private struct TokenRecord: Sendable {
         let kind: TokenKind
         let displayID: CGDirectDisplayID
     }
 
-    private nonisolated struct PendingCreationDemand: Sendable {
+    private struct PendingCreationDemand: Sendable {
         var previewCount = 0
         var shareCount = 0
 
@@ -313,7 +270,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         }
     }
 
-    private nonisolated struct DisplayState {
+    private struct DisplayState {
         var previewTokens: [UUID: PreviewLeaseState] = [:]
         var shareTokens: Set<UUID> = []
         var shareCursorOverrideTokens: Set<UUID> = []
@@ -327,7 +284,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
     private var tokenOwnership: [UUID: TokenRecord] = [:]
     private var pendingCreationDemandByDisplayID: [CGDirectDisplayID: PendingCreationDemand] = [:]
 
-    nonisolated func recordPendingCreationDemand(
+    mutating func recordPendingCreationDemand(
         for displayID: CGDirectDisplayID,
         kind: TokenKind,
         delta: Int
@@ -341,7 +298,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         }
     }
 
-    nonisolated func initialProfile(
+    func initialProfile(
         for displayID: CGDirectDisplayID,
         fallbackKind: TokenKind
     ) -> DisplayCaptureProfile {
@@ -357,7 +314,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         }
     }
 
-    nonisolated func registerToken(displayID: CGDirectDisplayID, kind: TokenKind) -> UUID {
+    mutating func registerToken(displayID: CGDirectDisplayID, kind: TokenKind) -> UUID {
         let tokenID = UUID()
         var state = statesByDisplayID[displayID] ?? DisplayState()
         switch kind {
@@ -371,7 +328,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         return tokenID
     }
 
-    nonisolated func releaseToken(_ tokenID: UUID, expectedKind: TokenKind) -> ReleaseResult? {
+    mutating func releaseToken(_ tokenID: UUID, expectedKind: TokenKind) -> ReleaseResult? {
         guard let ownership = tokenOwnership.removeValue(forKey: tokenID),
               ownership.kind == expectedKind else {
             return nil
@@ -404,7 +361,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         )
     }
 
-    nonisolated func recordAttachedPreviewSinkDelta(_ delta: Int, for tokenID: UUID) -> CGDirectDisplayID? {
+    mutating func recordAttachedPreviewSinkDelta(_ delta: Int, for tokenID: UUID) -> CGDirectDisplayID? {
         guard let ownership = tokenOwnership[tokenID],
               ownership.kind == .preview,
               var state = statesByDisplayID[ownership.displayID],
@@ -417,7 +374,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         return ownership.displayID
     }
 
-    nonisolated func setPreviewShowsCursor(
+    mutating func setPreviewShowsCursor(
         _ showsCursor: Bool,
         for tokenID: UUID
     ) -> PreviewCursorMutation? {
@@ -436,7 +393,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         return PreviewCursorMutation(displayID: ownership.displayID, previousValue: previousValue)
     }
 
-    nonisolated func revertPreviewShowsCursor(for tokenID: UUID, previousValue: Bool) {
+    mutating func revertPreviewShowsCursor(for tokenID: UUID, previousValue: Bool) {
         guard let ownership = tokenOwnership[tokenID],
               ownership.kind == .preview,
               var state = statesByDisplayID[ownership.displayID],
@@ -448,7 +405,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         statesByDisplayID[ownership.displayID] = state
     }
 
-    nonisolated func prepareShareForSharing(_ tokenID: UUID) -> CGDirectDisplayID? {
+    mutating func prepareShareForSharing(_ tokenID: UUID) -> CGDirectDisplayID? {
         guard let ownership = tokenOwnership[tokenID],
               ownership.kind == .share,
               var state = statesByDisplayID[ownership.displayID] else {
@@ -461,7 +418,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         return ownership.displayID
     }
 
-    nonisolated func revertPreparedShare(_ tokenID: UUID) {
+    mutating func revertPreparedShare(_ tokenID: UUID) {
         guard let ownership = tokenOwnership[tokenID],
               ownership.kind == .share,
               var state = statesByDisplayID[ownership.displayID] else {
@@ -471,7 +428,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         statesByDisplayID[ownership.displayID] = state
     }
 
-    nonisolated func releasePreparedShare(_ tokenID: UUID) -> CGDirectDisplayID? {
+    mutating func releasePreparedShare(_ tokenID: UUID) -> CGDirectDisplayID? {
         guard let ownership = tokenOwnership[tokenID],
               ownership.kind == .share,
               var state = statesByDisplayID[ownership.displayID] else {
@@ -482,7 +439,7 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         return ownership.displayID
     }
 
-    nonisolated func demandSnapshot(
+    func demandSnapshot(
         for displayID: CGDirectDisplayID,
         performanceMode: CapturePerformanceMode
     ) -> DisplayCaptureDemandSnapshot {
@@ -498,12 +455,12 @@ package nonisolated final class DisplayCaptureLeaseBook: @unchecked Sendable {
         )
     }
 
-    nonisolated func hasActiveTokens(for displayID: CGDirectDisplayID) -> Bool {
+    func hasActiveTokens(for displayID: CGDirectDisplayID) -> Bool {
         statesByDisplayID[displayID]?.hasActiveTokens == true
     }
 }
 package actor DisplayCaptureRegistry {
-    package enum SessionResourceState: Equatable {
+    package enum SessionResourceState: Equatable, Sendable {
         case initializing
         case active
         case draining
@@ -532,9 +489,11 @@ package actor DisplayCaptureRegistry {
     private let captureSessionFactory: CaptureSessionFactory
     private let makeShareFrameConsumer: @Sendable () -> any DisplayShareFrameConsumer
     private var performanceMode: CapturePerformanceMode
-    private let sessionStore = DisplayCaptureSessionStore()
-    private let leaseBook = DisplayCaptureLeaseBook()
-    private var sessionEnsureTasksByDisplayID: [CGDirectDisplayID: Task<Void, Error>] = [:]
+    private var sessionStore = DisplayCaptureSessionStore()
+    private var leaseBook = DisplayCaptureLeaseBook()
+    private var sessionEnsureTasksByDisplayID: [
+        CGDirectDisplayID: Task<DisplayCaptureSessionStore.Record, Error>
+    ] = [:]
 
     package static let shared = DisplayCaptureRegistry()
 
@@ -713,25 +672,51 @@ package actor DisplayCaptureRegistry {
         for display: SendableDisplay,
         fallbackKind: DisplayCaptureLeaseBook.TokenKind
     ) async throws {
+        let displayID = display.displayID
+        if let existing = sessionStore.record(for: displayID) {
+            if existing.state != .draining {
+                return
+            }
+            if let drainTask = sessionStore.drainTask(for: displayID) {
+                await drainTask.value
+            }
+            if let afterDrain = sessionStore.record(for: displayID), afterDrain.state != .draining {
+                return
+            }
+        }
+
         if let existingTask = sessionEnsureTasksByDisplayID[display.displayID] {
-            try await existingTask.value
+            let record = try await existingTask.value
+            sessionStore.storeInitializedSessionIfAbsent(record, for: displayID)
             return
         }
 
-        let task = Task { [self, sessionStore, captureSessionFactory, makeShareFrameConsumer, performanceMode] in
-            try await sessionStore.ensureSessionExists(
-                for: display,
-                initialProfileProvider: { displayID in
-                    return await self.initialProfile(for: displayID, fallbackKind: fallbackKind)
-                },
-                performanceMode: performanceMode,
-                captureSessionFactory: captureSessionFactory,
-                makeShareFrameConsumer: makeShareFrameConsumer
+        let task = Task<DisplayCaptureSessionStore.Record, Error> {
+            [self, captureSessionFactory, makeShareFrameConsumer, performanceMode] in
+            await Task.yield()
+            let initialProfile = await initialProfile(for: displayID, fallbackKind: fallbackKind)
+            let session = try await captureSessionFactory(
+                display,
+                initialProfile,
+                performanceMode,
+                makeShareFrameConsumer
+            )
+            return DisplayCaptureSessionStore.Record(
+                session: session,
+                resolutionText: "\(display.width) × \(display.height)",
+                state: .active
             )
         }
-        sessionEnsureTasksByDisplayID[display.displayID] = task
-        defer { sessionEnsureTasksByDisplayID[display.displayID] = nil }
-        try await task.value
+        sessionStore.markInitializing(displayID: displayID)
+        sessionEnsureTasksByDisplayID[displayID] = task
+        defer { sessionEnsureTasksByDisplayID[displayID] = nil }
+        do {
+            let record = try await task.value
+            sessionStore.storeInitializedSessionIfAbsent(record, for: displayID)
+        } catch {
+            sessionStore.cancelInitializing(displayID: displayID)
+            throw error
+        }
     }
 
     private func releaseToken(

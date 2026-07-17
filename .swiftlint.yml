@@ -13,3 +13,5 @@ excluded:
 
 only_rules:
   - duplicate_imports
+  - force_cast
+  - force_try

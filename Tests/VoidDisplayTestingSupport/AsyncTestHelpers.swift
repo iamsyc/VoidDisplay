@@ -16,7 +16,7 @@ package func waitUntil(
         if condition() {
             return true
         }
-        try? await Task.sleep(nanoseconds: pollNanoseconds)
+        try? await Task.sleep(for: .nanoseconds(pollNanoseconds))
     }
     return condition()
 }
@@ -32,7 +32,7 @@ package func staysTrue(
         if !condition() {
             return false
         }
-        try? await Task.sleep(nanoseconds: pollNanoseconds)
+        try? await Task.sleep(for: .nanoseconds(pollNanoseconds))
     }
     return condition()
 }
@@ -47,7 +47,7 @@ package func staysTrue(
         if !(await condition()) {
             return false
         }
-        try? await Task.sleep(nanoseconds: pollNanoseconds)
+        try? await Task.sleep(for: .nanoseconds(pollNanoseconds))
     }
     return await condition()
 }

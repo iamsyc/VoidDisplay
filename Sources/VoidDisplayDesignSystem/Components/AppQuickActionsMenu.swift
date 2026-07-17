@@ -1,5 +1,4 @@
 import Foundation
-import VoidDisplayFoundation
 import SwiftUI
 package struct AppQuickActionsMenu<MenuContent: View>: View {
     package let label: String

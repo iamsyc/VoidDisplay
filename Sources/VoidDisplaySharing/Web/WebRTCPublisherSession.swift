@@ -342,7 +342,7 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     private nonisolated func runDiagnosticsLoop() async {
         while !Task.isCancelled, !isClosed {
             await logSenderDiagnostics()
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(for: .seconds(5))
         }
     }
 

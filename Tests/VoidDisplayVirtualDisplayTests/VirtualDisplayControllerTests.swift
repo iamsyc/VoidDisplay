@@ -505,7 +505,7 @@ private func editRebuildHandle(
         },
         terminalResultTask: Task {
             if terminalDelayNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: terminalDelayNanoseconds)
+                try? await Task.sleep(for: .nanoseconds(terminalDelayNanoseconds))
             }
             return VirtualDisplayEditRebuildTransactionResult(
                 transactionID: transactionID,

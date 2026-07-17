@@ -91,7 +91,6 @@ let package = Package(
         .target(
             name: "VoidDisplayRuntime",
             dependencies: [
-                "VoidDisplayFoundation",
                 "VoidDisplayObservability"
             ],
             swiftSettings: sharedSwiftSettings
@@ -108,9 +107,7 @@ let package = Package(
         ),
         .target(
             name: "VoidDisplayDesignSystem",
-            dependencies: [
-                "VoidDisplayFoundation"
-            ],
+            dependencies: [],
             swiftSettings: sharedSwiftSettings
         ),
         .target(

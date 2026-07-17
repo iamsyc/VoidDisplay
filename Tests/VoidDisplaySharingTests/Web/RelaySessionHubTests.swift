@@ -321,7 +321,7 @@ struct RelaySessionHubTests {
         #expect(await waitUntil { startGate.waitCallCount() == 1 })
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await Task.sleep(for: .milliseconds(50))
         #expect(client.viewerOffers().isEmpty)
 
         startGate.open()

@@ -8,7 +8,7 @@ source "$TOOL_ROOT/scripts/lib/common.sh"
 
 cd "$ROOT_DIR"
 
-require_command git jq swiftformat swiftlint xcrun rg awk diff wc tr
+require_command git jq node swiftformat swiftlint xcrun rg awk diff wc tr
 
 XCODE_PROJECT_DIR="VoidDisplay.xcodeproj"
 XCODE_PROJECT_FILE="$XCODE_PROJECT_DIR/project.pbxproj"
@@ -115,7 +115,7 @@ validate_xcode_shell_build_phase() {
 	while IFS= read -r relay_file; do
 		expected_inputs+=('$(ROOT_DIR)/'"$relay_file")
 		relay_file_count=$((relay_file_count + 1))
-	done < <(git ls-files -- Tools/VoidDisplayRelay)
+	done < <(rg --files Tools/VoidDisplayRelay | sort)
 	((relay_file_count > 0)) || die "Relay module has no tracked files to declare as Xcode build inputs."
 
 	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)";' "$project_file" | wc -l | tr -d '[:space:]')"
@@ -201,12 +201,50 @@ validate_release_project_path_fixtures() {
 }
 
 validate_swift_style() {
-	swiftformat --lint --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift scripts/release/render_dmg_background.swift
-	swiftlint lint --config "$ROOT_DIR/.swiftlint.yml" --quiet
+	mkdir -p "$AI_TMP_DIR"
+	swiftformat --lint --cache "$AI_TMP_DIR/swiftformat.cache" --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift scripts/release/render_dmg_background.swift
+	swiftlint lint --config "$ROOT_DIR/.swiftlint.yml" --quiet --cache-path "$AI_TMP_DIR/swiftlint-cache"
 }
 
 validate_swift_scripts() {
-	xcrun swiftc -typecheck "$ROOT_DIR/scripts/release/render_dmg_background.swift"
+	mkdir -p "$AI_TMP_DIR/swift-module-cache"
+	xcrun swiftc \
+		-module-cache-path "$AI_TMP_DIR/swift-module-cache" \
+		-typecheck "$ROOT_DIR/scripts/release/render_dmg_background.swift"
+}
+
+validate_display_page_javascript() {
+	local javascript_file
+	local javascript_file_count=0
+
+	while IFS= read -r javascript_file; do
+		node --check "$ROOT_DIR/$javascript_file"
+		javascript_file_count=$((javascript_file_count + 1))
+	done < <(rg --files Sources/VoidDisplaySharing/Resources Tests/BrowserRuntimeTests -g '*.js' | sort)
+
+	((javascript_file_count > 0)) || die "Display page JavaScript sources and tests are missing."
+}
+
+validate_product_source_file_sizes() {
+	local maximum_lines=900
+	local source_file
+	local line_count
+	local violations=""
+
+	while IFS= read -r source_file; do
+		[[ "$source_file" != *_test.go ]] || continue
+		line_count="$(wc -l <"$ROOT_DIR/$source_file" | tr -d '[:space:]')"
+		if ((line_count > maximum_lines)); then
+			violations+="$source_file:$line_count lines (limit: $maximum_lines)"$'\n'
+		fi
+	done < <(
+		rg --files Sources Tools/VoidDisplayRelay/internal/relay \
+			-g '*.swift' -g '*.go' -g '*.js' | sort
+	)
+
+	fail_on_output \
+		"Product source files must be split before they exceed the structural size limit." \
+		"${violations%$'\n'}"
 }
 
 validate_ui_tests_do_not_synthesize_keyboard_input() {
@@ -231,6 +269,8 @@ validate_classify_fixtures
 validate_release_project_path_fixtures
 validate_swift_style
 validate_swift_scripts
+validate_display_page_javascript
+validate_product_source_file_sizes
 validate_ui_tests_do_not_synthesize_keyboard_input
 
 info "Static project gate passed."

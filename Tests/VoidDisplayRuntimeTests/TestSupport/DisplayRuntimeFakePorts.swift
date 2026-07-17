@@ -414,7 +414,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         rebuildConfigIDs.append(configID)
         recorder?.append("rebuild:\(configID.uuidString)")
         if delayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
         }
         if !scriptedRebuildErrors.isEmpty {
             if let scriptedError = scriptedRebuildErrors.removeFirst() {
@@ -496,7 +496,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         enableConfigIDs.append(request.configID)
         recorder?.append("enable:\(request.configID.uuidString)")
         if delayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
         }
         if let enableError {
             throw enableError
@@ -519,7 +519,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         disableConfigIDs.append(request.configID)
         recorder?.append("disable:\(request.configID.uuidString)")
         if delayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
         }
         if let disableError {
             throw disableError
@@ -540,7 +540,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         createRequests.append(request)
         recorder?.append("create:\(request.serialNumber)")
         if delayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
         }
         if let createError {
             throw createError
@@ -569,7 +569,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         deleteRequests.append(request)
         recorder?.append("delete:\(request.configID.uuidString)")
         if delayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
         }
         if let deleteError {
             throw deleteError
@@ -599,7 +599,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         startupRestoreRequests.append(request)
         recorder?.append("startupRestore:\(request.configID.uuidString)")
         if delayNanoseconds > 0 {
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
         }
         if let startupRestoreError {
             throw startupRestoreError

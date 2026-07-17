@@ -120,7 +120,7 @@ package final class DisplayCaptureDemandDriver: @unchecked Sendable {
             }
         case .applyAfter(_, let delayNanoseconds):
             let task = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: delayNanoseconds)
+                try? await Task.sleep(for: .nanoseconds(delayNanoseconds))
                 self?.resumeDemandDrivenConfigurationEvaluation(schedulingNonce: schedulingNonce)
             }
             state.withLock { state in
