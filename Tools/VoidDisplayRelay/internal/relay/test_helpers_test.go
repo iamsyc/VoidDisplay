@@ -62,15 +62,19 @@ func (s *blockingSink) release() {
 }
 
 type fakePeerConnection struct {
-	mu     sync.Mutex
-	rtcp   []rtcp.Packet
-	closed bool
-	added  []webrtc.ICECandidateInit
+	mu                sync.Mutex
+	rtcp              []rtcp.Packet
+	closed            bool
+	added             []webrtc.ICECandidateInit
+	addCandidateError error
 }
 
 func (p *fakePeerConnection) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.addCandidateError != nil {
+		return p.addCandidateError
+	}
 	p.added = append(p.added, candidate)
 	return nil
 }

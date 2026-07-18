@@ -14,6 +14,10 @@ enum SocketIntegrationError: Error {
     case receiveTimeout
 }
 
+let socketTestAccessCapability = ShareAccessCapability(
+    pathComponent: String(repeating: "a", count: ShareAccessCapability.pathComponentLength)
+)!
+
 func sendAll(_ fd: Int32, data: Data) throws {
     try data.withUnsafeBytes { rawBuffer in
         guard let baseAddress = rawBuffer.baseAddress else { return }
@@ -205,10 +209,19 @@ func makeMaskedTextFrame(_ text: String) -> Data {
     return frame
 }
 
-func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
+func websocketUpgradeRequest(
+    path: String,
+    port: UInt16,
+    includeOrigin: Bool = true,
+    origin: String? = nil
+) -> Data {
+    let originHeader = includeOrigin
+        ? "Origin: \(origin ?? "http://127.0.0.1:\(port)")\r\n"
+        : ""
     let request =
         "GET \(path) HTTP/1.1\r\n" +
         "Host: 127.0.0.1:\(port)\r\n" +
+        originHeader +
         "Upgrade: websocket\r\n" +
         "Connection: Upgrade\r\n" +
         "Sec-WebSocket-Version: 13\r\n" +
@@ -220,6 +233,9 @@ func websocketUpgradeRequest(path: String, port: UInt16) -> Data {
 @MainActor
 func startServerOnRandomPort(
     targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+    accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool = { _, capability in
+        capability == socketTestAccessCapability
+    },
     concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { target in
         guard case .id(let id) = target else { return nil }
         return .id(id)
@@ -235,6 +251,7 @@ func startServerOnRandomPort(
             let server = try WebServer(
                 using: endpointPort,
                 targetStateProvider: targetStateProvider,
+                accessValidator: accessValidator,
                 concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: sharingEventSink

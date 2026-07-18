@@ -52,22 +52,26 @@ package enum AppBootstrap {
             persistenceContext: persistence.context,
             startupPlan: configuration.startupPlan
         )
-        let controllers = makeControllerBundle(
+        let baseControllers = makeBaseControllerBundle(
             captureSharing: captureSharing,
-            virtualDisplay: virtualDisplay,
-            persistence: persistence,
-            appliedBadgeDisplayDuration: appliedBadgeDisplayDuration
+            persistence: persistence
         )
         installObservabilityFailureBridge(observability: persistence.observability)
         let runtime = makeRuntimeBundle(
-            controllers: controllers,
+            controllers: baseControllers,
             captureSharing: captureSharing,
             virtualDisplay: virtualDisplay,
             persistence: persistence
         )
+        let controllers = makeControllerBundle(
+            base: baseControllers,
+            virtualDisplay: virtualDisplay,
+            persistence: persistence,
+            runtime: runtime,
+            appliedBadgeDisplayDuration: appliedBadgeDisplayDuration
+        )
         wireRuntime(
             runtime: runtime,
-            controllers: controllers,
             captureSharing: captureSharing,
             capturePerformancePreferences: persistence.capturePerformancePreferences
         )
@@ -84,6 +88,7 @@ package enum AppBootstrap {
             sharing: controllers.sharing,
             virtualDisplay: controllers.virtualDisplay,
             displayRuntime: runtime.displayRuntime,
+            sharingAdapter: runtime.sharingAdapter,
             capturePerformancePreferences: persistence.capturePerformancePreferences,
             feedbackController: persistence.feedbackController,
             openScreenCapturePrivacySettings: { openURL in

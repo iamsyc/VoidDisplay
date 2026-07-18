@@ -67,7 +67,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.last?.revision.rawValue == 2)
     }
 
-    @Test func lanWebViewDemandUpdatesReuseLeaseAndAdvanceIntentRevision() async throws {
+    @Test func lanWebViewMetadataUpdatesReuseLeaseWithoutAdvancingIntentRevision() async throws {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 78)
         let captureIntentCommander = FakeCaptureIntentCommander()
         let runtime = DisplayRuntime(
@@ -103,10 +103,49 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(updateResult?.outcome == .applied)
         #expect(detachResult.releasedLease?.id == attachedLease.id)
         #expect(detachResult.applyResult?.outcome == .applied)
-        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .attach, .attach, .detach])
-        #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 2, 3, 4])
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
+        #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 2])
         #expect(runtime.currentConsumerLeaseSnapshot().first?.state == .released)
         #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 4)
+    }
+
+    @Test func lanWebViewMetadataUpdateDoesNotMaskInFlightCaptureFailure() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 79)
+        let failureCode = DisplayRuntimeCaptureIntentFailureCode.applyFailed
+        let captureIntentCommander = FakeCaptureIntentCommander { intent in
+            intent.reason == .performanceModeChanged
+                ? .failed(revision: intent.revision, failureCode: failureCode)
+                : .applied(revision: intent.revision)
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 79, isMain: true)),
+            captureIntentCommander: captureIntentCommander
+        )
+        _ = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: surfaceIdentity,
+            owner: .init(source: .sharingService, redactedLabel: "lan"),
+            demand: sourceDemand(powerProfile: .automatic, activeViewerCount: 0)
+        )
+        captureIntentCommander.shouldGateApply = true
+        let captureUpdate = Task { @MainActor in
+            await runtime.updateConsumerPowerProfile(.powerEfficient)
+        }
+        await captureIntentCommander.waitForApplyCalls(2)
+
+        let metadataResult = await runtime.updateLANWebViewConsumerDemand(
+            surfaceIdentity: surfaceIdentity,
+            demand: sourceDemand(powerProfile: .powerEfficient, activeViewerCount: 3)
+        )
+        captureIntentCommander.releaseApply(call: 2)
+        await captureUpdate.value
+
+        let effectiveIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
+        #expect(metadataResult?.outcome == .applied)
+        #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .performanceModeChanged])
+        #expect(effectiveIntent?.intent.revision.rawValue == 2)
+        #expect(effectiveIntent?.lastApplyResult?.outcome == .failed)
+        #expect(effectiveIntent?.lastFailureCode == failureCode)
+        #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 3)
     }
 
     @Test func surfaceEpochChangeStopsOldLeaseFromDrivingPreviousDisplayID() async {

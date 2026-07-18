@@ -14,18 +14,23 @@ package nonisolated struct SupportDraftStore {
     }
 
     private let defaults: UserDefaults
+    private let sanitizer: ObservabilitySanitizer
 
-    package init(defaults: UserDefaults) {
+    package init(
+        defaults: UserDefaults,
+        sanitizer: ObservabilitySanitizer = ObservabilitySanitizer()
+    ) {
         self.defaults = defaults
+        self.sanitizer = sanitizer
     }
 
     package func load() -> SupportDraftSnapshot {
         let rawIssueType = defaults.string(forKey: Keys.issueType)
         return SupportDraftSnapshot(
             issueType: rawIssueType.flatMap(SupportIssueType.init(rawValue:)) ?? .other,
-            happened: defaults.string(forKey: Keys.happened) ?? "",
-            reproductionSteps: defaults.string(forKey: Keys.reproductionSteps) ?? "",
-            expectedResult: defaults.string(forKey: Keys.expectedResult) ?? "",
+            happened: loadSanitizedValue(forKey: Keys.happened),
+            reproductionSteps: loadSanitizedValue(forKey: Keys.reproductionSteps),
+            expectedResult: loadSanitizedValue(forKey: Keys.expectedResult),
             includeUnifiedLogSummary: defaults.bool(forKey: Keys.includeUnifiedLogSummary),
             includeCrashReportExcerpt: defaults.bool(forKey: Keys.includeCrashReportExcerpt),
             includeRelatedConfigSnapshots: defaults.bool(forKey: Keys.includeRelatedConfigSnapshots)
@@ -34,9 +39,9 @@ package nonisolated struct SupportDraftStore {
 
     package func save(_ snapshot: SupportDraftSnapshot) {
         defaults.set(snapshot.issueType.rawValue, forKey: Keys.issueType)
-        defaults.set(snapshot.happened, forKey: Keys.happened)
-        defaults.set(snapshot.reproductionSteps, forKey: Keys.reproductionSteps)
-        defaults.set(snapshot.expectedResult, forKey: Keys.expectedResult)
+        defaults.set(sanitized(snapshot.happened), forKey: Keys.happened)
+        defaults.set(sanitized(snapshot.reproductionSteps), forKey: Keys.reproductionSteps)
+        defaults.set(sanitized(snapshot.expectedResult), forKey: Keys.expectedResult)
         defaults.set(snapshot.includeUnifiedLogSummary, forKey: Keys.includeUnifiedLogSummary)
         defaults.set(snapshot.includeCrashReportExcerpt, forKey: Keys.includeCrashReportExcerpt)
         defaults.set(snapshot.includeRelatedConfigSnapshots, forKey: Keys.includeRelatedConfigSnapshots)
@@ -52,5 +57,18 @@ package nonisolated struct SupportDraftStore {
             Keys.includeCrashReportExcerpt,
             Keys.includeRelatedConfigSnapshots
         ].forEach(defaults.removeObject(forKey:))
+    }
+
+    private func sanitized(_ value: String?) -> String {
+        sanitizer.sanitize(text: value) ?? ""
+    }
+
+    private func loadSanitizedValue(forKey key: String) -> String {
+        let storedValue = defaults.string(forKey: key) ?? ""
+        let safeValue = sanitized(storedValue)
+        if safeValue != storedValue {
+            defaults.set(safeValue, forKey: key)
+        }
+        return safeValue
     }
 }

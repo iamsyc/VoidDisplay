@@ -11,31 +11,6 @@ import CoreGraphics
 import Observation
 import OSLog
 
-package typealias VirtualDisplayRebuildExecutor = @MainActor (
-    UUID,
-    VirtualDisplayRebuildRequestSource
-) async throws -> Void
-
-package typealias VirtualDisplayDesiredEnabledExecutor = @MainActor (
-    UUID,
-    Bool,
-    VirtualDisplayDesiredEnabledRequestSource
-) async throws -> Void
-
-package typealias VirtualDisplayEditRebuildExecutor = @MainActor (
-    VirtualDisplayConfig,
-    String,
-    VirtualDisplayRebuildRequestSource
-) async throws -> VirtualDisplayEditRebuildTransactionHandle
-
-package typealias VirtualDisplayCreateExecutor = @MainActor (
-    VirtualDisplayCreateRequest
-) async throws -> VirtualDisplayCreateTransactionResult
-
-package typealias VirtualDisplayDeleteExecutor = @MainActor (
-    UUID
-) async throws -> VirtualDisplayDeleteTransactionResult
-
 package nonisolated enum VirtualDisplayRebuildRequestSource: Sendable {
     case rowRetry
     case editSaveAndRebuild
@@ -46,20 +21,6 @@ package nonisolated enum VirtualDisplayDesiredEnabledRequestSource: Sendable {
     case rowToggle
     case unknown
 }
-
-private struct VirtualDisplayRebuildExecutorUnavailableError: LocalizedError {
-    var errorDescription: String? {
-        String(localized: "Failed to rebuild virtual display.")
-    }
-}
-
-private struct VirtualDisplayDesiredEnabledExecutorUnavailableError: Error {}
-
-private struct VirtualDisplayEditRebuildExecutorUnavailableError: Error {}
-
-private struct VirtualDisplayCreateExecutorUnavailableError: Error {}
-
-private struct VirtualDisplayDeleteExecutorUnavailableError: Error {}
 
 private struct VirtualDisplayEditRebuildPresentationError: LocalizedError {
     var errorDescription: String? { nil }
@@ -88,11 +49,7 @@ package final class VirtualDisplayController {
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: [UUID: Task<Void, Never>]] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var rebuildPresentationWaiterCountByConfigId: [UUID: Int] = [:]
-    @ObservationIgnored private var rebuildExecutor: VirtualDisplayRebuildExecutor?
-    @ObservationIgnored private var desiredEnabledExecutor: VirtualDisplayDesiredEnabledExecutor?
-    @ObservationIgnored private var editRebuildExecutor: VirtualDisplayEditRebuildExecutor?
-    @ObservationIgnored private var createExecutor: VirtualDisplayCreateExecutor?
-    @ObservationIgnored private var deleteExecutor: VirtualDisplayDeleteExecutor?
+    @ObservationIgnored private let runtimeExecutors: VirtualDisplayRuntimeExecutors
     private var virtualDisplaySnapshot: VirtualDisplaySnapshot
     private var rebuildPresentationState = RebuildPresentationState()
     @ObservationIgnored private let appliedBadgeDisplayDuration: Duration
@@ -100,10 +57,12 @@ package final class VirtualDisplayController {
 
     package init(
         virtualDisplayFacade: any VirtualDisplayFacade,
+        runtimeExecutors: VirtualDisplayRuntimeExecutors,
         appliedBadgeDisplayDuration: Duration,
         observability: ObservabilityCenter? = nil
     ) {
         self.virtualDisplayFacade = virtualDisplayFacade
+        self.runtimeExecutors = runtimeExecutors
         self.virtualDisplaySnapshot = virtualDisplayFacade.snapshot
         self.appliedBadgeDisplayDuration = appliedBadgeDisplayDuration
         self.observability = observability
@@ -139,26 +98,6 @@ package final class VirtualDisplayController {
     package func configureObservability(_ observability: ObservabilityCenter?) {
         self.observability = observability
         requestSnapshotRefresh()
-    }
-
-    package func configureRebuildExecutor(_ executor: VirtualDisplayRebuildExecutor?) {
-        rebuildExecutor = executor
-    }
-
-    package func configureDesiredEnabledExecutor(_ executor: VirtualDisplayDesiredEnabledExecutor?) {
-        desiredEnabledExecutor = executor
-    }
-
-    package func configureEditRebuildExecutor(_ executor: VirtualDisplayEditRebuildExecutor?) {
-        editRebuildExecutor = executor
-    }
-
-    package func configureCreateExecutor(_ executor: VirtualDisplayCreateExecutor?) {
-        createExecutor = executor
-    }
-
-    package func configureDeleteExecutor(_ executor: VirtualDisplayDeleteExecutor?) {
-        deleteExecutor = executor
     }
 
     package func refreshVirtualDisplayState() {
@@ -197,10 +136,7 @@ package final class VirtualDisplayController {
 
             do {
                 defer { self.syncVirtualDisplayState() }
-                guard let rebuildExecutor = self.rebuildExecutor else {
-                    throw VirtualDisplayRebuildExecutorUnavailableError()
-                }
-                try await rebuildExecutor(configId, source)
+                try await self.runtimeExecutors.rebuild(configId, source)
                 self.rebuildPresentationState.markRebuildSuccess(configId: configId)
                 self.syncRebuildPresentationState()
                 self.scheduleAppliedBadgeClear(configId: configId)
@@ -242,11 +178,8 @@ package final class VirtualDisplayController {
         enabled: Bool,
         source: VirtualDisplayDesiredEnabledRequestSource = .unknown
     ) async throws {
-        guard let desiredEnabledExecutor else {
-            throw VirtualDisplayDesiredEnabledExecutorUnavailableError()
-        }
         defer { syncVirtualDisplayState() }
-        try await desiredEnabledExecutor(configId, enabled, source)
+        try await runtimeExecutors.setDesiredEnabled(configId, enabled, source)
     }
 
     package func saveConfigAndRebuild(
@@ -254,11 +187,24 @@ package final class VirtualDisplayController {
         expectedConfigFingerprint: String,
         source: VirtualDisplayRebuildRequestSource = .unknown
     ) async throws -> VirtualDisplayEditRebuildTransactionHandle {
-        guard let editRebuildExecutor else {
-            throw VirtualDisplayEditRebuildExecutorUnavailableError()
-        }
-        defer { syncVirtualDisplayState() }
-        return try await editRebuildExecutor(updated, expectedConfigFingerprint, source)
+        let runtimeHandle = try await runtimeExecutors.editAndRebuild(
+            updated,
+            expectedConfigFingerprint,
+            source
+        )
+        return VirtualDisplayEditRebuildTransactionHandle(
+            transactionID: runtimeHandle.transactionID,
+            saveGateTask: Task { @MainActor [weak self] in
+                let result = try await runtimeHandle.waitForSaveGate()
+                self?.syncVirtualDisplayState()
+                return result
+            },
+            terminalResultTask: Task { @MainActor [weak self] in
+                let result = try await runtimeHandle.waitForTerminalResult()
+                self?.syncVirtualDisplayState()
+                return result
+            }
+        )
     }
 
     package func startEditRebuildPresentation(
@@ -359,10 +305,7 @@ package final class VirtualDisplayController {
     package func createVirtualDisplay(_ request: VirtualDisplayCreateRequest) async throws -> UUID? {
         dismissPersistenceAlert()
         do {
-            guard let createExecutor else {
-                throw VirtualDisplayCreateExecutorUnavailableError()
-            }
-            let result = try await createExecutor(request)
+            let result = try await runtimeExecutors.create(request)
             guard result.status != .failed,
                   result.status != .cancelled,
                   result.virtualDisplayCommandSucceeded
@@ -395,10 +338,7 @@ package final class VirtualDisplayController {
     }
 
     package func deleteVirtualDisplay(configId: UUID) async throws {
-        guard let deleteExecutor else {
-            throw VirtualDisplayDeleteExecutorUnavailableError()
-        }
-        let result = try await deleteExecutor(configId)
+        let result = try await runtimeExecutors.delete(configId)
         guard result.status != .failed,
               result.status != .cancelled,
               result.virtualDisplayCommandSucceeded

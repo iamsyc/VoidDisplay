@@ -245,8 +245,7 @@ package final class SharingController {
     }
 
     package func sharePagePath(for displayID: CGDirectDisplayID) -> String? {
-        guard let shareID = sharingService.shareID(for: displayID) else { return nil }
-        return ShareTarget.id(shareID).displayPath
+        sharingService.sharePagePath(for: displayID)
     }
 
     package func sharePageURLResolution(for displayID: CGDirectDisplayID?) -> Result<URL, SharePageURLFailure> {

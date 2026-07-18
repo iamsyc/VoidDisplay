@@ -19,6 +19,7 @@ func NewRoom(id string, logger *slog.Logger, newPeerConnection peerConnectionFac
 		logger:              logger,
 		newPeerConnection:   newPeerConnection,
 		viewers:             make(map[string]*viewerSession),
+		viewerAdmissions:    make(map[string]*viewerAdmission),
 		subscribers:         make(map[string]*viewerRTPWriter),
 		pendingViewerICE:    make(map[string][]webrtc.ICECandidateInit),
 		publisherCodecs:     make(map[videoCodec]struct{}),
@@ -35,6 +36,7 @@ func newRoomForTest(id string, logger *slog.Logger) *Room {
 		id:                  id,
 		logger:              logger,
 		viewers:             make(map[string]*viewerSession),
+		viewerAdmissions:    make(map[string]*viewerAdmission),
 		subscribers:         make(map[string]*viewerRTPWriter),
 		pendingViewerICE:    make(map[string][]webrtc.ICECandidateInit),
 		publisherCodecs:     make(map[videoCodec]struct{}),
@@ -87,6 +89,25 @@ func (r *Room) Snapshot() RoomSnapshot {
 }
 
 func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return publisherOfferResult{}, errors.New("room_closed")
+	}
+	r.publisherOffersInFlight++
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.publisherOffersInFlight--
+		r.mu.Unlock()
+	}()
+
+	r.publisherOfferMu.Lock()
+	defer r.publisherOfferMu.Unlock()
+
+	if len(sdp) == 0 {
+		return publisherOfferResult{}, errors.New("offer_required")
+	}
 	if r.newPeerConnection == nil {
 		return publisherOfferResult{}, errors.New("room_peer_connection_factory_missing")
 	}
@@ -97,26 +118,16 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 	if err != nil {
 		return publisherOfferResult{}, err
 	}
-	publisherID := r.nextPublisherIdentifier()
 	r.mu.Lock()
-	previous := r.publisher
-	previousCodecs := r.publisherCodecs
-	previousSSRCs := r.publisherSSRCs
-	previousExtensions := r.publisherExtensions
-	r.publisher = &publisherSession{id: publisherID, pc: pc}
-	r.publisherCodecs = make(map[videoCodec]struct{})
-	r.publisherSSRCs = make(map[videoCodec]uint32)
-	r.publisherExtensions = make(map[videoCodec]map[string]uint8)
-	r.mu.Unlock()
-	rollbackPublisher := func() {
-		r.mu.Lock()
-		if r.publisher != nil && r.publisher.id == publisherID {
-			r.publisher = previous
-			r.publisherCodecs = previousCodecs
-			r.publisherSSRCs = previousSSRCs
-			r.publisherExtensions = previousExtensions
-		}
+	if r.closed {
 		r.mu.Unlock()
+		_ = pc.Close()
+		return publisherOfferResult{}, errors.New("room_closed")
+	}
+	r.nextPublisherID++
+	publisherID := fmt.Sprintf("%d", r.nextPublisherID)
+	r.mu.Unlock()
+	closePendingPublisher := func() {
 		_ = pc.Close()
 	}
 	pc.OnTrack(func(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
@@ -131,35 +142,42 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 	})
 	offer := webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: sdp}
 	if err := pc.SetRemoteDescription(offer); err != nil {
-		rollbackPublisher()
+		closePendingPublisher()
 		return publisherOfferResult{}, err
 	}
 	answer, err := pc.CreateAnswer(nil)
 	if err != nil {
-		rollbackPublisher()
+		closePendingPublisher()
 		return publisherOfferResult{}, err
 	}
 	gatherComplete := webrtc.GatheringCompletePromise(pc)
 	if err := pc.SetLocalDescription(answer); err != nil {
-		rollbackPublisher()
+		closePendingPublisher()
 		return publisherOfferResult{}, err
 	}
 	<-gatherComplete
 	localDescription := pc.LocalDescription()
 	if localDescription == nil {
-		rollbackPublisher()
+		closePendingPublisher()
 		return publisherOfferResult{}, errors.New("publisher_local_description_missing")
 	}
 	negotiatedCodecs, err := publisherVideoCodecs(localDescription.SDP)
 	if err != nil {
-		rollbackPublisher()
+		closePendingPublisher()
 		return publisherOfferResult{}, err
 	}
 	negotiatedCodecSet := codecSetFromList(negotiatedCodecs)
 	r.mu.Lock()
-	if r.publisher != nil && r.publisher.id == publisherID {
-		r.publisherCodecs = negotiatedCodecSet
+	if r.closed {
+		r.mu.Unlock()
+		closePendingPublisher()
+		return publisherOfferResult{}, errors.New("publisher_offer_cancelled")
 	}
+	previous := r.publisher
+	r.publisher = &publisherSession{id: publisherID, pc: pc}
+	r.publisherCodecs = negotiatedCodecSet
+	r.publisherSSRCs = make(map[videoCodec]uint32)
+	r.publisherExtensions = make(map[videoCodec]map[string]uint8)
 	r.mu.Unlock()
 
 	if previous != nil {
@@ -169,15 +187,12 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 	return publisherOfferResult{SDP: localDescription.SDP, PublisherID: publisherID}, nil
 }
 
-func (r *Room) nextPublisherIdentifier() string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.nextPublisherID++
-	return fmt.Sprintf("%d", r.nextPublisherID)
-}
-
 func (r *Room) AddPublisherCandidate(publisherID string, candidate webrtc.ICECandidateInit) error {
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return errors.New("room_closed")
+	}
 	publisher := r.publisher
 	if publisher == nil || publisher.id != publisherID {
 		r.mu.Unlock()
@@ -189,15 +204,47 @@ func (r *Room) AddPublisherCandidate(publisherID string, candidate webrtc.ICECan
 }
 
 func (r *Room) SetViewerOffer(clientID string, sdp string) (viewerOfferResult, error) {
+	if len(sdp) == 0 {
+		return viewerOfferResult{}, errors.New("offer_required")
+	}
 	if r.newPeerConnection == nil {
 		return viewerOfferResult{}, errors.New("room_peer_connection_factory_missing")
 	}
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return viewerOfferResult{}, errors.New("room_closed")
+	}
+	if r.viewers[clientID] != nil {
+		r.mu.Unlock()
+		return viewerOfferResult{}, errors.New("viewer_already_exists")
+	}
+	admission := r.viewerAdmissions[clientID]
+	if admission == nil {
+		if len(r.viewerAdmissions) >= maxViewersPerRoom {
+			r.mu.Unlock()
+			return viewerOfferResult{}, errors.New("viewer_limit_reached")
+		}
+		admission = &viewerAdmission{}
+		r.viewerAdmissions[clientID] = admission
+	}
+	if admission.offerInFlight {
+		r.mu.Unlock()
+		return viewerOfferResult{}, errors.New("viewer_offer_in_progress")
+	}
+	admission.offerInFlight = true
 	publisherCodecs := make(map[videoCodec]struct{}, len(r.publisherCodecs))
 	for codec := range r.publisherCodecs {
 		publisherCodecs[codec] = struct{}{}
 	}
 	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		if r.viewerAdmissions[clientID] == admission {
+			admission.offerInFlight = false
+		}
+		r.mu.Unlock()
+	}()
 	selectedCodec, err := selectViewerCodec(sdp, publisherCodecs)
 	if err != nil {
 		return viewerOfferResult{}, err
@@ -274,7 +321,12 @@ func (r *Room) SetViewerOffer(clientID string, sdp string) (viewerOfferResult, e
 	viewerExtensions := headerExtensionIDs(sender.GetParameters().HeaderExtensions)
 	writer.setViewerExtensions(viewerExtensions)
 	r.mu.Lock()
-	previous := r.viewers[clientID]
+	if r.closed || r.viewerAdmissions[clientID] != admission || r.viewers[clientID] != nil {
+		r.mu.Unlock()
+		writer.close()
+		_ = pc.Close()
+		return viewerOfferResult{}, errors.New("viewer_offer_cancelled")
+	}
 	if publisherExtensions := r.publisherExtensions[selectedCodec]; len(publisherExtensions) > 0 {
 		writer.setExtensionRewrites(headerExtensionRewrites(publisherExtensions, viewerExtensions))
 	}
@@ -284,9 +336,6 @@ func (r *Room) SetViewerOffer(clientID string, sdp string) (viewerOfferResult, e
 	delete(r.pendingViewerICE, clientID)
 	subscriberCount := len(r.subscribers)
 	r.mu.Unlock()
-	if previous != nil {
-		previous.close()
-	}
 	r.applyICECandidates(clientID, pc, pending)
 
 	r.logger.Info("viewer ready", "room", r.id, "clientID", clientID, "codec", selectedCodec, "subscribers", subscriberCount)
@@ -296,6 +345,19 @@ func (r *Room) SetViewerOffer(clientID string, sdp string) (viewerOfferResult, e
 
 func (r *Room) AddViewerCandidate(clientID string, candidate webrtc.ICECandidateInit) error {
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return errors.New("room_closed")
+	}
+	admission := r.viewerAdmissions[clientID]
+	if admission == nil {
+		if len(r.viewerAdmissions) >= maxViewersPerRoom {
+			r.mu.Unlock()
+			return errors.New("viewer_limit_reached")
+		}
+		admission = &viewerAdmission{}
+		r.viewerAdmissions[clientID] = admission
+	}
 	viewer := r.viewers[clientID]
 	if viewer == nil {
 		r.pendingViewerICE[clientID] = append(r.pendingViewerICE[clientID], candidate)
@@ -311,6 +373,7 @@ func (r *Room) RemoveViewer(clientID string) {
 	r.mu.Lock()
 	viewer := r.viewers[clientID]
 	delete(r.viewers, clientID)
+	delete(r.viewerAdmissions, clientID)
 	delete(r.subscribers, clientID)
 	delete(r.pendingViewerICE, clientID)
 	subscriberCount := len(r.subscribers)
@@ -322,7 +385,55 @@ func (r *Room) RemoveViewer(clientID string) {
 }
 
 func (r *Room) Close() {
+	publisher, viewers, onClosed, didClose := r.takeResourcesForClose("", false, false)
+	if !didClose {
+		return
+	}
+	r.closeResources(publisher, viewers)
+	if onClosed != nil {
+		onClosed(r)
+	}
+}
+
+func (r *Room) StopPublisher(publisherID string) bool {
+	publisher, viewers, onClosed, didClose := r.takeResourcesForClose(publisherID, true, false)
+	if !didClose {
+		r.logger.Debug("ignored stale publisher stop", "room", r.id, "publisherID", publisherID)
+		return false
+	}
+	r.closeResources(publisher, viewers)
+	if onClosed != nil {
+		onClosed(r)
+	}
+	r.logger.Info("publisher stopped", "room", r.id, "publisherID", publisherID)
+	return true
+}
+
+func (r *Room) CloseIfNoPublisher() bool {
+	publisher, viewers, onClosed, didClose := r.takeResourcesForClose("", false, true)
+	if !didClose {
+		return false
+	}
+	r.closeResources(publisher, viewers)
+	if onClosed != nil {
+		onClosed(r)
+	}
+	return true
+}
+
+func (r *Room) takeResourcesForClose(
+	publisherID string,
+	requirePublisherMatch bool,
+	requireNoPublisher bool,
+) (*publisherSession, []*viewerSession, func(*Room), bool) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed ||
+		(requirePublisherMatch && (r.publisher == nil || r.publisher.id != publisherID)) ||
+		(requireNoPublisher && (r.publisher != nil || r.publisherOffersInFlight > 0)) {
+		return nil, nil, nil, false
+	}
+	r.closed = true
 	publisher := r.publisher
 	viewers := make([]*viewerSession, 0, len(r.viewers))
 	for _, viewer := range r.viewers {
@@ -330,12 +441,16 @@ func (r *Room) Close() {
 	}
 	r.publisher = nil
 	r.viewers = make(map[string]*viewerSession)
+	r.viewerAdmissions = make(map[string]*viewerAdmission)
 	r.subscribers = make(map[string]*viewerRTPWriter)
 	r.pendingViewerICE = make(map[string][]webrtc.ICECandidateInit)
 	r.publisherCodecs = make(map[videoCodec]struct{})
 	r.publisherSSRCs = make(map[videoCodec]uint32)
 	r.publisherExtensions = make(map[videoCodec]map[string]uint8)
-	r.mu.Unlock()
+	return publisher, viewers, r.onClosed, true
+}
+
+func (r *Room) closeResources(publisher *publisherSession, viewers []*viewerSession) {
 	if publisher != nil {
 		_ = publisher.pc.Close()
 	}
@@ -344,23 +459,10 @@ func (r *Room) Close() {
 	}
 }
 
-func (r *Room) StopPublisher(publisherID string) {
-	var publisher *publisherSession
+func (r *Room) isClosed() bool {
 	r.mu.Lock()
-	if r.publisher != nil && r.publisher.id == publisherID {
-		publisher = r.publisher
-		r.publisher = nil
-		r.publisherCodecs = make(map[videoCodec]struct{})
-		r.publisherSSRCs = make(map[videoCodec]uint32)
-		r.publisherExtensions = make(map[videoCodec]map[string]uint8)
-	}
-	r.mu.Unlock()
-	if publisher == nil {
-		r.logger.Debug("ignored stale publisher stop", "room", r.id, "publisherID", publisherID)
-		return
-	}
-	_ = publisher.pc.Close()
-	r.logger.Info("publisher stopped", "room", r.id, "publisherID", publisherID)
+	defer r.mu.Unlock()
+	return r.closed
 }
 
 func (v *viewerSession) close() {

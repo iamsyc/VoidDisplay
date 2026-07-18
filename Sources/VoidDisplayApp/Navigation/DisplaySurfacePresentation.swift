@@ -455,22 +455,35 @@ package enum DisplaySurfacePresentationMapper {
         state: DisplayRuntimeManagedVirtualDisplaySurfaceState,
         snapshot: DisplayRuntimeSnapshot
     ) -> (value: String, tone: DisplaySurfaceStatusTone) {
-        if state.hasRebuildFailure || state.hasRestoreFailure {
-            return (String(localized: "Startup Failed"), .danger)
-        }
-        if recentStartupRestoreFailureReason(configID: state.configID, snapshot: snapshot) != nil {
-            return (String(localized: "Startup Failed"), .danger)
+        if hasActiveVirtualDisplayAttempt(configID: state.configID, snapshot: snapshot) {
+            return (String(localized: "Starting"), .warning)
         }
         if surface.currentDisplayID != nil && (state.isRunning || state.isLiveRuntime) {
             return (String(localized: "Running"), .success)
         }
-        if state.isRebuilding || hasActiveStartupAttempt(configID: state.configID, snapshot: snapshot) {
-            return (String(localized: "Starting"), .warning)
+        if virtualDisplayFailureReason(state: state, snapshot: snapshot) != nil {
+            return (String(localized: "Startup Failed"), .danger)
         }
         return (String(localized: "Not Running"), .warning)
     }
 
-    private static func hasActiveStartupAttempt(
+    private static func virtualDisplayFailureReason(
+        state: DisplayRuntimeManagedVirtualDisplaySurfaceState,
+        snapshot: DisplayRuntimeSnapshot
+    ) -> String? {
+        if state.isRunning || state.isLiveRuntime {
+            return nil
+        }
+        if let trace = latestVirtualDisplayLifecycleTrace(configID: state.configID, snapshot: snapshot) {
+            guard trace.status == .failed else { return nil }
+            return trace.failure?.reason
+                ?? trace.startupRestoreCommandResult?.failureReason
+                ?? "virtual_display_transaction_failed"
+        }
+        return state.hasRestoreFailure ? "virtual_display_restore_failed" : nil
+    }
+
+    private static func hasActiveVirtualDisplayAttempt(
         configID: UUID,
         snapshot: DisplayRuntimeSnapshot
     ) -> Bool {
@@ -484,38 +497,35 @@ package enum DisplaySurfacePresentationMapper {
             case .virtualDisplayRebuild, .virtualDisplayEnable:
                 return trace.targetConfigID == configID
                     || trace.affectedSurfaces.contains { $0.identity == .managedVirtualDisplay(configID: configID) }
-            case .virtualDisplayDisable, .virtualDisplayEditRebuild, .virtualDisplayCreate, .virtualDisplayDelete:
+            case .virtualDisplayEditRebuild:
+                return trace.targetConfigID == configID
+                    || trace.affectedSurfaces.contains { $0.identity == .managedVirtualDisplay(configID: configID) }
+            case .virtualDisplayDisable, .virtualDisplayCreate, .virtualDisplayDelete:
                 return false
             }
         }
     }
 
-    private static func recentStartupRestoreFailureReason(
-        configID: UUID,
-        snapshot: DisplayRuntimeSnapshot
-    ) -> String? {
-        guard let trace = latestStartupRestoreTrace(configID: configID, snapshot: snapshot),
-              trace.status == .failed else {
-            return nil
-        }
-        return trace.failure?.reason
-            ?? trace.startupRestoreCommandResult?.failureReason
-            ?? "startup_restore_lower_command_failed"
-    }
-
-    private static func latestStartupRestoreTrace(
+    private static func latestVirtualDisplayLifecycleTrace(
         configID: UUID,
         snapshot: DisplayRuntimeSnapshot
     ) -> DisplayRuntimeTransactionTrace? {
         snapshot.transactions.recentTransactions.first { trace in
-            guard trace.kind == .virtualDisplayStartupRestore else { return false }
-            if trace.startupRestoreCommandResult?.configID == configID {
-                return true
+            switch trace.kind {
+            case .virtualDisplayStartupRestore:
+                return trace.startupRestoreCommandResult?.configID == configID
+                    || trace.startupRestoreIntent?.configID == configID
+                    || trace.affectedSurfaces.contains {
+                        $0.identity == .managedVirtualDisplay(configID: configID)
+                    }
+            case .virtualDisplayRebuild, .virtualDisplayEnable, .virtualDisplayEditRebuild:
+                return trace.targetConfigID == configID
+                    || trace.affectedSurfaces.contains {
+                        $0.identity == .managedVirtualDisplay(configID: configID)
+                    }
+            case .virtualDisplayDisable, .virtualDisplayCreate, .virtualDisplayDelete:
+                return false
             }
-            if trace.startupRestoreIntent?.configID == configID {
-                return true
-            }
-            return trace.affectedSurfaces.contains { $0.identity == .managedVirtualDisplay(configID: configID) }
         }
     }
 
@@ -671,14 +681,9 @@ package enum DisplaySurfacePresentationMapper {
         if let code = effectiveIntent?.lastApplyResult?.failureCode {
             return code
         }
-        if surface.managedVirtualDisplay?.hasRebuildFailure == true {
-            return "virtual_display_rebuild_failed"
-        }
-        if surface.managedVirtualDisplay?.hasRestoreFailure == true {
-            return "virtual_display_restore_failed"
-        }
-        if let configID = surface.managedVirtualDisplay?.configID,
-           let reason = recentStartupRestoreFailureReason(configID: configID, snapshot: snapshot) {
+        if let state = surface.managedVirtualDisplay,
+           !hasActiveVirtualDisplayAttempt(configID: state.configID, snapshot: snapshot),
+           let reason = virtualDisplayFailureReason(state: state, snapshot: snapshot) {
             return reason
         }
         if sharing.lifecycle.phase == .failed,

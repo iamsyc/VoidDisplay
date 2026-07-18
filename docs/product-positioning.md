@@ -380,20 +380,24 @@ Demand aggregation 由统一规则决定：
 局域网 Web View 即使只读，也会暴露桌面内容。短期安全要求：
 
 - 默认只面向局域网。
-- 当前阶段不引入随机 token、访问密码、账号体系或鉴权层。
+- 每次开始分享生成独立的 256 bit 临时 capability URL，停止分享立即撤销，再次分享自动轮换。
+- 页面与 WebSocket 信令统一校验 capability，错误凭证不暴露目标状态。
+- 信令客户端、offer 和 ICE candidate 具有明确资源预算。
 - UI 明确显示正在分享的 DisplaySurface。
 - UI 显示当前 viewer 数量。
 - 支持按 DisplaySurface 一键停止分享。
 - 支持关闭整个 Web 服务。
+- 当前 HTTP/WebSocket 链路只适用于可信局域网，不承诺抵御被动监听或中间人攻击。
 
 后续可评估：
 
-- 随机 token 或等价访问凭证。
 - 访问密码。
 - 仅本机访问模式。
 - 指定网段允许列表。
-- HTTPS 或自签证书。
+- 浏览器可验证身份的 HTTPS/WSS 部署方案。
 - 临时 URL 过期。
+
+当前详细契约见 [LAN Web View 安全契约](./lan-sharing-security.md)。
 
 ## 开源定位
 

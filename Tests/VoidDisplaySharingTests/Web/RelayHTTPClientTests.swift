@@ -5,6 +5,49 @@ import Testing
 
 @Suite(.serialized)
 struct RelayHTTPClientTests {
+    @Test func relayProcessArgumentsUseStandardInputForControlToken() {
+        let arguments = RelayProcessController.processArguments(parentPID: 42)
+
+        #expect(arguments == [
+            "--control-token-stdin",
+            "--listen-udp", ":0",
+            "--loopback-http", "127.0.0.1:0",
+            "--parent-pid", "42",
+        ])
+        #expect(arguments.contains("--control-token") == false)
+    }
+
+    @Test func relayReadyAddressMustStayOnLoopbackHTTP() throws {
+        #expect(try RelayProcessController.validatedRelayBaseURL("http://127.0.0.1:49152").host == "127.0.0.1")
+        #expect(throws: RelayProcessError.self) {
+            try RelayProcessController.validatedRelayBaseURL("http://192.168.1.20:49152")
+        }
+        #expect(throws: RelayProcessError.self) {
+            try RelayProcessController.validatedRelayBaseURL("https://127.0.0.1:49152")
+        }
+        #expect(throws: RelayProcessError.self) {
+            try RelayProcessController.validatedRelayBaseURL("http://token@127.0.0.1:49152")
+        }
+    }
+
+    @Test func relayClientPromotionRequiresCurrentGenerationAndRunningProcess() {
+        #expect(RelayProcessController.canPromoteRelayClient(
+            startGeneration: 7,
+            currentGeneration: 7,
+            processIsRunning: true
+        ))
+        #expect(!RelayProcessController.canPromoteRelayClient(
+            startGeneration: 7,
+            currentGeneration: 8,
+            processIsRunning: true
+        ))
+        #expect(!RelayProcessController.canPromoteRelayClient(
+            startGeneration: 7,
+            currentGeneration: 7,
+            processIsRunning: false
+        ))
+    }
+
     @Test func publisherOfferDecodesPublisherID() async throws {
         let transport = RelayHTTPClientMockTransport(
             responses: [

@@ -7,29 +7,27 @@ import Foundation
 @MainActor
 package final class CGVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDriving {
     package func createRuntimeDisplay(
-        from config: VirtualDisplayConfig,
-        maxPixels: (width: UInt32, height: UInt32)?,
+        descriptor runtimeDescriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
-        let descriptor = CGVirtualDisplayDescriptor()
-        descriptor.setDispatchQueue(DispatchQueue.main)
-        descriptor.terminationHandler = { _, _ in
+        let cgDescriptor = CGVirtualDisplayDescriptor()
+        cgDescriptor.setDispatchQueue(DispatchQueue.main)
+        cgDescriptor.terminationHandler = { _, _ in
             Task { @MainActor in
                 onTermination()
             }
         }
-        descriptor.name = config.displayName
-        let resolvedMaxPixels = maxPixels ?? config.maxPixelDimensions
-        descriptor.maxPixelsWide = resolvedMaxPixels.width
-        descriptor.maxPixelsHigh = resolvedMaxPixels.height
-        descriptor.sizeInMillimeters = config.physicalSize
-        descriptor.productID = ManagedVirtualDisplayIdentity.productID
-        descriptor.vendorID = ManagedVirtualDisplayIdentity.vendorID
-        descriptor.serialNum = config.serialNum
+        cgDescriptor.name = runtimeDescriptor.name
+        cgDescriptor.maxPixelsWide = runtimeDescriptor.maximumPixelDimensions.width
+        cgDescriptor.maxPixelsHigh = runtimeDescriptor.maximumPixelDimensions.height
+        cgDescriptor.sizeInMillimeters = runtimeDescriptor.physicalSize
+        cgDescriptor.productID = ManagedVirtualDisplayIdentity.productID
+        cgDescriptor.vendorID = ManagedVirtualDisplayIdentity.vendorID
+        cgDescriptor.serialNum = runtimeDescriptor.serialNumber
 
-        let display = CGVirtualDisplay(descriptor: descriptor)
+        let display = CGVirtualDisplay(descriptor: cgDescriptor)
         let runtimeHandle = CGVirtualDisplayRuntimeHandle(display: display)
-        let applied = runtimeHandle.applyModes(config.resolutionModes)
+        let applied = runtimeHandle.applyModes(runtimeDescriptor.modes)
         guard applied else {
             throw VirtualDisplayOperationError.creationFailed
         }
@@ -58,17 +56,17 @@ private final class CGVirtualDisplayRuntimeHandle: VirtualDisplayRuntimeHandling
         display.displayID
     }
 
-    package func applyModes(_ modes: [ResolutionSelection]) -> Bool {
+    package func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool {
         let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = modes.contains(where: { $0.enableHiDPI }) ? 1 : 0
+        settings.hiDPI = modes.contains(where: { $0.isHiDPI }) ? 1 : 0
         settings.modes = buildDisplayModes(from: modes)
         return display.apply(settings)
     }
 
-    private func buildDisplayModes(from modes: [ResolutionSelection]) -> [CGVirtualDisplayMode] {
+    private func buildDisplayModes(from modes: [VirtualDisplayRuntimeMode]) -> [CGVirtualDisplayMode] {
         var displayModes: [CGVirtualDisplayMode] = []
         for mode in modes {
-            if mode.enableHiDPI {
+            if mode.isHiDPI {
                 displayModes.append(
                     CGVirtualDisplayMode(
                         width: UInt(mode.width * 2),

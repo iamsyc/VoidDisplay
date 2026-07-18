@@ -449,6 +449,101 @@ struct RelaySessionHubTests {
         #expect(factory.records().first?.profile == WebRTCStreamingProfile(performanceMode: .automatic))
     }
 
+    @MainActor @Test func clientAdmissionRejectsDuplicatesAndConnectionsBeyondLimit() async {
+        let client = FakeRelayClient()
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        var sockets: [RelayTestSocketConnection] = []
+        for index in 0..<RelaySessionHub.maxClients {
+            let socket = RelayTestSocketConnection()
+            sockets.append(socket)
+            #expect(hub.addClient(
+                socket,
+                target: .id(2),
+                makeClientID: { "viewer-\(index)" },
+                eventSink: { _ in }
+            ) == .accepted(clientID: "viewer-\(index)"))
+        }
+
+        guard let duplicate = sockets.first else {
+            Issue.record("Expected at least one admitted socket.")
+            return
+        }
+        #expect(hub.addClient(
+            duplicate,
+            target: .id(2),
+            makeClientID: { "duplicate" },
+            eventSink: { _ in }
+        ) == .rejected(reason: "duplicate_signal_client"))
+
+        let overflow = RelayTestSocketConnection()
+        #expect(hub.addClient(
+            overflow,
+            target: .id(2),
+            makeClientID: { "overflow" },
+            eventSink: { _ in }
+        ) == .rejected(reason: "signal_client_limit_reached"))
+        #expect(hub.activeClientCount == RelaySessionHub.maxClients)
+
+        hub.disconnectAllClients()
+        #expect(await waitUntil { sockets.allSatisfy { $0.cancelCallCount == 1 } })
+    }
+
+    @MainActor @Test func oversizedOfferIsRejectedBeforeRelayAllocation() async {
+        let client = FakeRelayClient()
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+        let oversizedSDP = String(repeating: "s", count: RelaySessionHub.maxOfferSDPBytes + 1)
+
+        hub.receiveSignalText(
+            #"{"type":"offer","sdp":"\#(oversizedSDP)"}"#,
+            from: socket
+        )
+
+        #expect(await waitUntil { socket.cancelCallCount == 1 })
+        #expect(client.viewerOffers().isEmpty)
+        #expect(socket.decodedTextPayloads().contains { payload in
+            payload.contains(#""reason":"offer_size_limit_exceeded""#)
+        })
+    }
+
+    @MainActor @Test func codecPendingRetryBudgetRejectsFourthOffer() async {
+        let client = FakeRelayClient(onViewerOffer: {
+            throw RelayHTTPError.httpStatus(400, "publisher_codec_pending")
+        })
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+
+        for index in 1...RelaySessionHub.maxOffersPerClient {
+            hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer-\#(index)"}"#, from: socket)
+            #expect(await waitUntil { client.viewerOffers().count == index })
+            #expect(await waitUntil {
+                socket.decodedTextPayloads().filter { $0.contains(#""type":"codec_pending""#) }.count == index
+            })
+        }
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer-overflow"}"#, from: socket)
+
+        #expect(await waitUntil { socket.cancelCallCount == 1 })
+        #expect(client.viewerOffers().count == RelaySessionHub.maxOffersPerClient)
+        #expect(socket.decodedTextPayloads().contains { payload in
+            payload.contains(#""reason":"offer_limit_exceeded""#)
+        })
+    }
+
     @MainActor @Test func performanceModeChangeUpdatesOnlyPublisherProfile() async {
         let client = FakeRelayClient()
         let factory = PublisherFactoryRecorder()
@@ -568,6 +663,9 @@ struct RelaySessionHubTests {
         let socket = RelayTestSocketConnection()
         #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
 
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+        #expect(await waitUntil { socket.decodedTextPayloads().contains { $0.contains(#""type":"answer""#) } })
+
         hub.receiveSignalText(#"{"type":"ice_candidate","candidate":"candidate:1","sdpMid":"0","sdpMLineIndex":0}"#, from: socket)
 
         #expect(await waitUntil { client.viewerCandidates().count == 1 })
@@ -589,12 +687,129 @@ struct RelaySessionHubTests {
         let socket = RelayTestSocketConnection()
         #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
 
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+        #expect(await waitUntil { socket.decodedTextPayloads().contains { $0.contains(#""type":"answer""#) } })
+
         hub.receiveSignalText(#"{"type":"ice_candidate","candidate":"candidate:1","sdpMid":"0","sdpMLineIndex":0}"#, from: socket)
         #expect(await waitUntil { client.viewerCandidates().count == 1 })
         hub.removeClient(socket)
         candidateGate.open()
 
         #expect(await waitUntil { client.removedViewers().count >= 2 })
+    }
+
+    @MainActor @Test func preOfferCandidateIsBoundedAndDrainedAfterOfferEstablishes() async {
+        let client = FakeRelayClient()
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+
+        hub.receiveSignalText(#"{"type":"ice_candidate","candidate":"candidate:queued","sdpMid":"0","sdpMLineIndex":0}"#, from: socket)
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(client.viewerCandidates().isEmpty)
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+
+        #expect(await waitUntil { client.viewerCandidates().count == 1 })
+        #expect(client.viewerCandidates().first?.candidate == "candidate:queued")
+    }
+
+    @MainActor @Test func candidateCountBudgetRejectsUnboundedPreOfferQueue() async {
+        let client = FakeRelayClient()
+        let factory = PublisherFactoryRecorder()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+
+        for index in 0...RelaySessionHub.maxCandidatesPerClient {
+            hub.receiveSignalText(
+                #"{"type":"ice_candidate","candidate":"candidate:\#(index)","sdpMid":"0","sdpMLineIndex":0}"#,
+                from: socket
+            )
+        }
+
+        #expect(await waitUntil { socket.cancelCallCount == 1 })
+        #expect(client.viewerCandidates().isEmpty)
+        #expect(socket.decodedTextPayloads().contains { payload in
+            payload.contains(#""reason":"candidate_budget_exceeded""#)
+        })
+    }
+
+    @MainActor @Test func candidateValueAndIndexAreValidatedBeforeQueueing() async {
+        let invalidCandidate = String(repeating: "c", count: RelaySessionHub.maxCandidateValueBytes + 1)
+        let payloads = [
+            #"{"type":"ice_candidate","candidate":"\#(invalidCandidate)","sdpMid":"0","sdpMLineIndex":0}"#,
+            #"{"type":"ice_candidate","candidate":"candidate:1","sdpMid":"0","sdpMLineIndex":2147483648}"#
+        ]
+
+        for (index, payload) in payloads.enumerated() {
+            let client = FakeRelayClient()
+            let factory = PublisherFactoryRecorder()
+            let hub = RelaySessionHub(
+                relayClientProvider: { client },
+                publisherFactory: factory.make
+            )
+            let socket = RelayTestSocketConnection()
+            #expect(isRelayAccepted(hub.addClient(
+                socket,
+                target: .id(2),
+                makeClientID: { "viewer-\(index)" },
+                eventSink: { _ in }
+            )))
+
+            hub.receiveSignalText(payload, from: socket)
+
+            #expect(await waitUntil { socket.cancelCallCount == 1 })
+            #expect(client.viewerCandidates().isEmpty)
+            #expect(socket.decodedTextPayloads().contains { message in
+                message.contains(#""reason":"candidate_value_limit_exceeded""#)
+            })
+        }
+    }
+
+    @MainActor @Test func stabilityRepeatedClientChurnReleasesDemandAndPublishers() async {
+        let client = FakeRelayClient()
+        let factory = PublisherFactoryRecorder()
+        let demandEvents = Mutex<[Bool]>([])
+        let hub = RelaySessionHub(
+            onDemandChanged: { value in demandEvents.withLock { $0.append(value) } },
+            relayClientProvider: { client },
+            publisherFactory: factory.make
+        )
+
+        for index in 0..<100 {
+            let socket = RelayTestSocketConnection()
+            #expect(isRelayAccepted(hub.addClient(
+                socket,
+                target: .id(2),
+                makeClientID: { "stability-viewer-\(index)" },
+                eventSink: { _ in }
+            )))
+            #expect(await waitUntil {
+                let records = factory.records()
+                guard records.count == index + 1 else { return false }
+                return records[index].publisher.profiles().isEmpty == false
+            })
+
+            hub.removeClient(socket)
+
+            #expect(await waitUntil {
+                factory.records()[index].publisher.closeCallCount() == 1
+            })
+            #expect(hub.activeClientCount == 0)
+        }
+
+        let expectedDemandEvents = (0..<100).flatMap { _ in [true, false] }
+        #expect(demandEvents.withLock { $0 } == expectedDemandEvents)
+        #expect(hub.hasDemand == false)
+        #expect(factory.records().allSatisfy { $0.publisher.closeCallCount() == 1 })
     }
 }
 

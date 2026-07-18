@@ -30,7 +30,7 @@ struct RuntimeDiagnosticsSummaryTests {
 
         #expect(summary.availability == .available)
         #expect(summary.isAvailable)
-        #expect(summary.schemaVersion == 3)
+        #expect(summary.schemaVersion == 4)
         #expect(summary.surfaceCount == 1)
         #expect(summary.virtualDisplayCount == 0)
         #expect(summary.runningVirtualDisplayCount == 0)
@@ -105,9 +105,6 @@ struct RuntimeDiagnosticsSummaryTests {
                             desiredEnabled: true,
                             isRunning: true,
                             isLiveRuntime: true,
-                            isRebuilding: false,
-                            hasRecentApplySuccess: false,
-                            hasRebuildFailure: false,
                             hasRestoreFailure: false,
                             modeCount: 1,
                             maximumPixelWidth: 1920,

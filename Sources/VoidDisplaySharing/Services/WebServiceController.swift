@@ -35,6 +35,7 @@ package protocol WebServiceControllerProtocol: AnyObject {
     func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
@@ -73,6 +74,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
     package typealias WebServiceServerFactory = @MainActor @Sendable (
         _ port: NWEndpoint.Port,
         _ targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        _ accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
         _ concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         _ sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         _ sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
@@ -100,6 +102,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
         webServiceServerFactory: @escaping WebServiceServerFactory = {
             port,
             targetStateProvider,
+            accessValidator,
             concreteTargetResolver,
             sessionHubProvider,
             sharingEventSink,
@@ -107,6 +110,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
             try WebServer(
                 using: port,
                 targetStateProvider: targetStateProvider,
+                accessValidator: accessValidator,
                 concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: sharingEventSink,
@@ -154,6 +158,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
     package func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
@@ -185,6 +190,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
                 requestedPort: requestedPort,
                 operationNonce: nonce,
                 targetStateProvider: targetStateProvider,
+                accessValidator: accessValidator,
                 concreteTargetResolver: concreteTargetResolver,
                 sessionHubProvider: sessionHubProvider,
                 sharingEventSink: sharingEventSink
@@ -236,6 +242,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
         requestedPort: UInt16,
         operationNonce: UInt64,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
@@ -275,6 +282,7 @@ package final class WebServiceController: WebServiceControllerProtocol {
                 let server = try webServiceServerFactory(
                     port,
                     targetStateProvider,
+                    accessValidator,
                     concreteTargetResolver,
                     sessionHubProvider,
                     sharingEventSink,

@@ -154,7 +154,7 @@ package struct HomeLayoutActions {
 }
 
 package struct HomeLayoutContext {
-    package let layout: HomeLayoutConfiguration
+    package let metrics: HomeLayoutMetrics
     package let presentation: HomeVirtualDisplaySurfacePresentation
     package let itemStates: [HomeVirtualDisplayItemRenderState]
     package let isCreateVirtualDisplayDisabled: Bool
@@ -171,7 +171,7 @@ package struct HomeLayoutContext {
     }
 
     package init(
-        layout: HomeLayoutConfiguration,
+        metrics: HomeLayoutMetrics,
         presentation: HomeVirtualDisplaySurfacePresentation,
         itemStates: [HomeVirtualDisplayItemRenderState],
         isCreateVirtualDisplayDisabled: Bool,
@@ -179,7 +179,7 @@ package struct HomeLayoutContext {
         sharingSettings: HomeSharingSettingsRenderState,
         actions: HomeLayoutActions
     ) {
-        self.layout = layout
+        self.metrics = metrics
         self.presentation = presentation
         self.itemStates = itemStates
         self.isCreateVirtualDisplayDisabled = isCreateVirtualDisplayDisabled

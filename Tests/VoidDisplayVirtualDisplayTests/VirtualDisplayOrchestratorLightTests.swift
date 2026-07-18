@@ -472,8 +472,7 @@ private final class FakeOrchestratorRuntimeDriver: VirtualDisplayRuntimeDriving 
     }
 
     func createRuntimeDisplay(
-        from config: VirtualDisplayConfig,
-        maxPixels _: (width: UInt32, height: UInt32)?,
+        descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination _: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
         createCallCount += 1
@@ -482,7 +481,7 @@ private final class FakeOrchestratorRuntimeDriver: VirtualDisplayRuntimeDriving 
             result = scriptedResults[nextIndex]
         } else {
             result = .success(
-                serialNum: config.serialNum,
+                serialNum: descriptor.serialNumber,
                 displayID: CGDirectDisplayID(12_000 + createCallCount)
             )
         }
@@ -507,7 +506,7 @@ private final class FakeOrchestratorRuntimeHandle: VirtualDisplayRuntimeHandling
         self.displayID = displayID
     }
 
-    func applyModes(_ modes: [ResolutionSelection]) -> Bool {
+    func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool {
         !modes.isEmpty
     }
 }

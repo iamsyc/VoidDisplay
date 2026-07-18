@@ -25,13 +25,13 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         _ profile: WebRTCStreamingProfile
     ) -> (any RelayPublisherSessioning)?
 
-    private nonisolated struct QueuedSignal: Sendable {
+    nonisolated struct QueuedSignal: Sendable {
         let text: String
         let disconnectAfterSend: Bool
         let coalescingKey: CoalescingKey?
     }
 
-    private nonisolated enum CoalescingKey: Sendable, Equatable {
+    nonisolated enum CoalescingKey: Sendable, Equatable {
         case answer
         case stopped
     }
@@ -43,13 +43,37 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         case dropped
     }
 
-    private nonisolated enum PublisherStartupWaitResult {
+    nonisolated enum PublisherStartupWaitResult {
         case ready
         case timedOut
         case failed
     }
 
-    private nonisolated struct ClientState {
+    nonisolated enum NegotiationPhase: Equatable {
+        case awaitingOffer
+        case offerInFlight
+        case established
+    }
+
+    nonisolated struct PendingViewerCandidate: Sendable {
+        let candidate: String
+        let sdpMid: String?
+        let sdpMLineIndex: Int32
+    }
+
+    private nonisolated enum InboundOfferDecision {
+        case start(roomID: String, clientID: String, sessionEpoch: UInt64)
+        case reject(reason: String)
+        case dropped
+    }
+
+    private nonisolated enum InboundCandidateDecision {
+        case queued(roomID: String, clientID: String, sessionEpoch: UInt64, shouldStartDrain: Bool)
+        case reject(reason: String)
+        case dropped
+    }
+
+    nonisolated struct ClientState {
         nonisolated(unsafe) let connection: any SignalSocketConnection
         let clientID: String
         let sessionEpoch: UInt64
@@ -59,9 +83,17 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         var nextEventSequence: UInt64 = 0
         var isSending = false
         var pendingSignals: [QueuedSignal] = []
+        var negotiationPhase: NegotiationPhase = .awaitingOffer
+        var offerCount = 0
+        var offerTask: Task<Void, Never>?
+        var pendingViewerCandidates: [PendingViewerCandidate] = []
+        var acceptedCandidateCount = 0
+        var acceptedCandidateBytes = 0
+        var isCandidateDrainRunning = false
+        var candidateDrainTask: Task<Void, Never>?
     }
 
-    private nonisolated struct State: ~Copyable {
+    nonisolated struct State: ~Copyable {
         var clients: [ObjectIdentifier: ClientState] = [:]
         var nextSessionEpoch: UInt64 = 0
         var onDemandChanged: @Sendable (Bool) -> Void
@@ -74,10 +106,17 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         var roomID: String?
     }
 
-    private let state: Mutex<State>
-    private let relayClientProvider: RelayClientProvider
+    let state: Mutex<State>
+    let relayClientProvider: RelayClientProvider
     private let publisherFactory: PublisherFactory
     private let publisherStartupWaitTimeout: Duration
+    nonisolated package static let maxClients = 16
+    nonisolated package static let maxOffersPerClient = 3
+    nonisolated package static let maxOfferSDPBytes = 128 * 1024
+    nonisolated package static let maxCandidatesPerClient = 64
+    nonisolated package static let maxCandidateBytesPerClient = 128 * 1024
+    nonisolated package static let maxCandidateValueBytes = 4 * 1024
+    nonisolated private static let maxSDPMidBytes = 256
     nonisolated private static let maxPendingSignalsPerClient = 256
 
 #if canImport(WebRTC)
@@ -163,6 +202,12 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         let key = ObjectIdentifier(connection as AnyObject)
         let (result, acceptedClientID, shouldSignalDemand, callback) = state.withLock {
             state -> (SignalSessionClientAddResult, String?, Bool, @Sendable (Bool) -> Void) in
+            guard state.clients[key] == nil else {
+                return (.rejected(reason: "duplicate_signal_client"), nil, false, state.onDemandChanged)
+            }
+            guard state.clients.count < Self.maxClients else {
+                return (.rejected(reason: "signal_client_limit_reached"), nil, false, state.onDemandChanged)
+            }
             let wasEmpty = state.clients.isEmpty
             let clientID = makeClientID()
             state.nextSessionEpoch &+= 1
@@ -265,80 +310,107 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
                 send(message: SignalingOutboundMessage(type: .error, reason: "missing_offer_sdp"), to: key)
                 return
             }
-            guard let payload = state.withLock({ state -> (roomID: String, clientID: String, sessionEpoch: UInt64)? in
-                guard let client = state.clients[key] else { return nil }
-                return (Self.roomID(for: client.target), client.clientID, client.sessionEpoch)
-            }) else {
+            guard !sdp.isEmpty, sdp.utf8.count <= Self.maxOfferSDPBytes else {
+                rejectInboundSignal(reason: "offer_size_limit_exceeded", to: key)
                 return
             }
-            emitEvent(phase: .offerReceived, source: .peerConnection, for: key)
-            ensurePublisher(roomID: payload.roomID)
-            Task { [weak self] in
-                await self?.forwardViewerOffer(
-                    sdp: sdp,
-                    roomID: payload.roomID,
-                    clientID: payload.clientID,
-                    sessionEpoch: payload.sessionEpoch,
-                    key: key
+            let decision = state.withLock { state -> InboundOfferDecision in
+                guard var client = state.clients[key] else { return .dropped }
+                guard client.negotiationPhase == .awaitingOffer else {
+                    return .reject(reason: "offer_already_in_progress")
+                }
+                guard client.offerCount < Self.maxOffersPerClient else {
+                    return .reject(reason: "offer_limit_exceeded")
+                }
+                client.negotiationPhase = .offerInFlight
+                client.offerCount += 1
+                state.clients[key] = client
+                return .start(
+                    roomID: Self.roomID(for: client.target),
+                    clientID: client.clientID,
+                    sessionEpoch: client.sessionEpoch
                 )
+            }
+            switch decision {
+            case .start(let roomID, let clientID, let sessionEpoch):
+                emitEvent(phase: .offerReceived, source: .peerConnection, for: key)
+                ensurePublisher(roomID: roomID)
+                let task = Task { [weak self] in
+                    guard let self else { return }
+                    await self.forwardViewerOffer(
+                        sdp: sdp,
+                        roomID: roomID,
+                        clientID: clientID,
+                        sessionEpoch: sessionEpoch,
+                        key: key
+                    )
+                }
+                storeOfferTask(
+                    task,
+                    key: key,
+                    clientID: clientID,
+                    sessionEpoch: sessionEpoch
+                )
+            case .reject(let reason):
+                rejectInboundSignal(reason: reason, to: key)
+            case .dropped:
+                return
             }
         case .iceCandidate:
             guard let candidate = message.candidate else {
                 send(message: SignalingOutboundMessage(type: .error, reason: "missing_ice_candidate"), to: key)
                 return
             }
-            guard let payload = state.withLock({ state -> (roomID: String, clientID: String, sessionEpoch: UInt64)? in
-                guard let client = state.clients[key] else { return nil }
-                return (Self.roomID(for: client.target), client.clientID, client.sessionEpoch)
-            }) else {
+            guard !candidate.isEmpty,
+                  candidate.utf8.count <= Self.maxCandidateValueBytes,
+                  (message.sdpMid?.utf8.count ?? 0) <= Self.maxSDPMidBytes,
+                  let sdpMLineIndex = Int32(exactly: message.sdpMLineIndex ?? 0),
+                  sdpMLineIndex >= 0 else {
+                rejectInboundSignal(reason: "candidate_value_limit_exceeded", to: key)
                 return
             }
-            Task { [weak self, relayClientProvider] in
-                do {
-                    guard let self,
-                          self.isCurrentViewer(
-                              key: key,
-                              roomID: payload.roomID,
-                              clientID: payload.clientID,
-                              sessionEpoch: payload.sessionEpoch
-                          ) else {
-                        return
-                    }
-                    let client = try await relayClientProvider()
-                    guard self.isCurrentViewer(
-                        key: key,
-                        roomID: payload.roomID,
-                        clientID: payload.clientID,
-                        sessionEpoch: payload.sessionEpoch
-                    ) else {
-                        await client.removeViewer(roomID: payload.roomID, clientID: payload.clientID)
-                        return
-                    }
-                    try await client.viewerCandidate(
-                        roomID: payload.roomID,
-                        clientID: payload.clientID,
-                        candidate: candidate,
-                        sdpMid: message.sdpMid,
-                        sdpMLineIndex: Int32(message.sdpMLineIndex ?? 0)
-                    )
-                    if !self.isCurrentViewer(
-                        key: key,
-                        roomID: payload.roomID,
-                        clientID: payload.clientID,
-                        sessionEpoch: payload.sessionEpoch
-                    ) {
-                        await client.removeViewer(roomID: payload.roomID, clientID: payload.clientID)
-                    }
-                } catch {
-                    if self?.isCurrentViewer(
-                        key: key,
-                        roomID: payload.roomID,
-                        clientID: payload.clientID,
-                        sessionEpoch: payload.sessionEpoch
-                    ) == true {
-                        AppLog.web.warning("Relay viewer ICE candidate failed: \(String(describing: error), privacy: .public)")
-                    }
+            let pendingCandidate = PendingViewerCandidate(
+                candidate: candidate,
+                sdpMid: message.sdpMid,
+                sdpMLineIndex: sdpMLineIndex
+            )
+            let candidateBytes = candidate.utf8.count + (message.sdpMid?.utf8.count ?? 0)
+            let decision = state.withLock { state -> InboundCandidateDecision in
+                guard var client = state.clients[key] else { return .dropped }
+                guard client.acceptedCandidateCount < Self.maxCandidatesPerClient,
+                      client.acceptedCandidateBytes + candidateBytes <= Self.maxCandidateBytesPerClient else {
+                    return .reject(reason: "candidate_budget_exceeded")
                 }
+                client.acceptedCandidateCount += 1
+                client.acceptedCandidateBytes += candidateBytes
+                client.pendingViewerCandidates.append(pendingCandidate)
+                let shouldStartDrain = client.negotiationPhase == .established
+                    && !client.isCandidateDrainRunning
+                if shouldStartDrain {
+                    client.isCandidateDrainRunning = true
+                }
+                state.clients[key] = client
+                return .queued(
+                    roomID: Self.roomID(for: client.target),
+                    clientID: client.clientID,
+                    sessionEpoch: client.sessionEpoch,
+                    shouldStartDrain: shouldStartDrain
+                )
+            }
+            switch decision {
+            case .queued(let roomID, let clientID, let sessionEpoch, let shouldStartDrain):
+                if shouldStartDrain {
+                    launchCandidateDrain(
+                        key: key,
+                        roomID: roomID,
+                        clientID: clientID,
+                        sessionEpoch: sessionEpoch
+                    )
+                }
+            case .reject(let reason):
+                rejectInboundSignal(reason: reason, to: key)
+            case .dropped:
+                return
             }
         case .iceComplete:
             return
@@ -347,7 +419,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         }
     }
 
-    private nonisolated func ensurePublisher(roomID: String) {
+    nonisolated func ensurePublisher(roomID: String) {
         let shouldStart = state.withLock { state -> Bool in
             if state.publisher != nil || state.publisherTask != nil {
                 return false
@@ -371,7 +443,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
             return true
         }
         if shouldStart {
-            AppLog.web.info("Starting relay publisher for room \(roomID, privacy: .public).")
+            AppLog.web.info("Starting relay publisher for room \(roomID, privacy: .private(mask: .hash)).")
         }
     }
 
@@ -402,7 +474,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
             publisher.updateEncodingProfile(profile)
             publisher.updateActiveCodecs(decision.activeCodecs)
         }
-        AppLog.web.info("Relay publisher started for room \(roomID, privacy: .public).")
+        AppLog.web.info("Relay publisher started for room \(roomID, privacy: .private(mask: .hash)).")
     }
 
     private nonisolated func handlePublisherStartupFailure(_ error: any Error, generation: UInt64) {
@@ -421,109 +493,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         }
     }
 
-    private nonisolated func forwardViewerOffer(
-        sdp: String,
-        roomID: String,
-        clientID: String,
-        sessionEpoch: UInt64,
-        key: ObjectIdentifier
-    ) async {
-        do {
-            guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                return
-            }
-            ensurePublisher(roomID: roomID)
-            switch await waitForPublisherStartup(roomID: roomID) {
-            case .ready:
-                break
-            case .timedOut:
-                guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                    return
-                }
-                enqueue(
-                    message: SignalingOutboundMessage(type: .codecPending, reason: "publisher_codec_pending"),
-                    to: key,
-                    disconnectAfterSend: false,
-                    replacePending: true
-                )
-                return
-            case .failed:
-                guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                    return
-                }
-                enqueue(
-                    message: SignalingOutboundMessage(type: .error, reason: "relay_publisher_unavailable"),
-                    to: key,
-                    disconnectAfterSend: true,
-                    replacePending: true
-                )
-                return
-            }
-            guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                return
-            }
-            let relayClient = try await relayClientProvider()
-            guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                await relayClient.removeViewer(roomID: roomID, clientID: clientID)
-                return
-            }
-            let answer = try await relayClient.viewerOffer(roomID: roomID, clientID: clientID, sdp: sdp)
-            guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                await relayClient.removeViewer(roomID: roomID, clientID: clientID)
-                return
-            }
-            let update = state.withLock {
-                state -> (
-                    publisher: (any RelayPublisherSessioning)?,
-                    activeCodecs: Set<WebRTCVideoCodec>,
-                    sourceVideoSpec: SourceVideoSpec
-                ) in
-                guard var client = state.clients[key],
-                      client.clientID == clientID,
-                      client.sessionEpoch == sessionEpoch,
-                      Self.roomID(for: client.target) == roomID else {
-                    return (nil, [], state.sourceVideoSpec)
-                }
-                client.selectedCodec = answer.codec
-                state.clients[key] = client
-                return (state.publisher, Self.activeCodecs(from: state.clients), state.sourceVideoSpec)
-            }
-            update.publisher?.updateActiveCodecs(update.activeCodecs)
-            send(
-                message: SignalingOutboundMessage(
-                    type: .answer,
-                    sdp: answer.sdp,
-                    sourceVideoSpec: SourceVideoSpecSignalPayload(spec: update.sourceVideoSpec)
-                ),
-                to: key
-            )
-            emitEvent(phase: .peerConnected, source: .peerConnection, for: key)
-        } catch {
-            guard isCurrentViewer(key: key, roomID: roomID, clientID: clientID, sessionEpoch: sessionEpoch) else {
-                return
-            }
-            AppLog.web.warning("Relay viewer offer failed: \(String(describing: error), privacy: .public)")
-            let relayReason = (error as? RelayHTTPError)?.relayReason
-            if relayReason == "publisher_codec_pending" {
-                enqueue(
-                    message: SignalingOutboundMessage(type: .codecPending, reason: "publisher_codec_pending"),
-                    to: key,
-                    disconnectAfterSend: false,
-                    replacePending: true
-                )
-                return
-            }
-            let message: SignalingOutboundMessage
-            if relayReason == "unsupported_video_codec_offered" || relayReason == "supported_video_codec_missing" {
-                message = SignalingOutboundMessage(type: .error, reason: relayReason)
-            } else {
-                message = SignalingOutboundMessage(type: .error, reason: "relay_viewer_offer_failed")
-            }
-            enqueue(message: message, to: key, disconnectAfterSend: true, replacePending: true)
-        }
-    }
-
-    private nonisolated func waitForPublisherStartup(roomID: String) async -> PublisherStartupWaitResult {
+    nonisolated func waitForPublisherStartup(roomID: String) async -> PublisherStartupWaitResult {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: publisherStartupWaitTimeout)
         while true {
@@ -543,11 +513,18 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
             if clock.now >= deadline {
                 return .timedOut
             }
-            try? await Task.sleep(for: .milliseconds(25))
+            if Task.isCancelled {
+                return .failed
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(25))
+            } catch {
+                return .failed
+            }
         }
     }
 
-    private nonisolated func isCurrentViewer(
+    nonisolated func isCurrentViewer(
         key: ObjectIdentifier,
         roomID: String,
         clientID: String,
@@ -598,11 +575,11 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         }
     }
 
-    private nonisolated func send(message: SignalingOutboundMessage, to key: ObjectIdentifier) {
+    nonisolated func send(message: SignalingOutboundMessage, to key: ObjectIdentifier) {
         enqueue(message: message, to: key, disconnectAfterSend: false, replacePending: false)
     }
 
-    private nonisolated func enqueue(
+    nonisolated func enqueue(
         message: SignalingOutboundMessage,
         to key: ObjectIdentifier,
         disconnectAfterSend: Bool,
@@ -745,6 +722,8 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         }
 
         guard let removed else { return }
+        removed.offerTask?.cancel()
+        removed.candidateDrainTask?.cancel()
         publisher?.updateActiveCodecs(activeCodecs)
         removed.eventSink(
             SharingSessionEvent(
@@ -777,7 +756,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         sink?(event)
     }
 
-    private nonisolated func emitEvent(
+    nonisolated func emitEvent(
         phase: SharingPeerPhase,
         source: SharingSessionEventSource,
         for key: ObjectIdentifier
@@ -813,11 +792,11 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         }
     }
 
-    private nonisolated static func activeCodecs(from clients: [ObjectIdentifier: ClientState]) -> Set<WebRTCVideoCodec> {
+    nonisolated static func activeCodecs(from clients: [ObjectIdentifier: ClientState]) -> Set<WebRTCVideoCodec> {
         Set(clients.values.compactMap(\.selectedCodec))
     }
 
-    private nonisolated static func roomID(for target: ShareTarget) -> String {
+    nonisolated static func roomID(for target: ShareTarget) -> String {
         switch target {
         case .main:
             return "main"

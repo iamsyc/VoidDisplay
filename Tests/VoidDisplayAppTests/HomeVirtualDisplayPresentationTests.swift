@@ -109,7 +109,7 @@ struct HomeVirtualDisplayPresentationTests {
                     configID: configID,
                     displayID: nil,
                     desiredEnabled: true,
-                    hasRebuildFailure: true
+                    hasRestoreFailure: true
                 )
             ],
             catalog: .empty,
@@ -320,7 +320,7 @@ struct HomeVirtualDisplayPresentationTests {
         isRunning: Bool = false,
         isLiveRuntime: Bool = false,
         sharing: DisplayRuntimeSharingSurfaceState? = nil,
-        hasRebuildFailure: Bool = false
+        hasRestoreFailure: Bool = false
     ) -> DisplaySurface {
         DisplaySurface(
             identity: .managedVirtualDisplay(configID: configID),
@@ -336,10 +336,7 @@ struct HomeVirtualDisplayPresentationTests {
                 desiredEnabled: desiredEnabled,
                 isRunning: isRunning,
                 isLiveRuntime: isLiveRuntime,
-                isRebuilding: false,
-                hasRecentApplySuccess: false,
-                hasRebuildFailure: hasRebuildFailure,
-                hasRestoreFailure: false,
+                hasRestoreFailure: hasRestoreFailure,
                 modeCount: 1,
                 maximumPixelWidth: 1920,
                 maximumPixelHeight: 1080

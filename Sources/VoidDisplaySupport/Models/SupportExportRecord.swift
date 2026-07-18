@@ -52,4 +52,19 @@ package nonisolated struct SupportExportRecord: Codable, Equatable, Identifiable
     package var resolvedBundleURL: URL {
         URL(fileURLWithPath: NSString(string: sanitizedBundlePath).expandingTildeInPath)
     }
+
+    package func sanitizingPreview(with sanitizer: ObservabilitySanitizer) -> Self {
+        let sanitizedPreview = sanitizer.sanitize(text: draftPreview) ?? ""
+        guard sanitizedPreview != draftPreview else { return self }
+        return Self(
+            id: id,
+            exportedAt: exportedAt,
+            issueType: issueType,
+            bundleFileName: bundleFileName,
+            sanitizedBundlePath: sanitizedBundlePath,
+            draftPreview: sanitizedPreview,
+            summaryCopiedAt: summaryCopiedAt,
+            revealedAt: revealedAt
+        )
+    }
 }

@@ -49,6 +49,7 @@ package enum AppErrorMapper {
     ) -> Void
 
     nonisolated(unsafe) private static var failureBridge: FailureBridge?
+    private nonisolated static let sanitizer = ObservabilitySanitizer()
 
     package static func userMessage(for error: Error, fallback: String) -> String {
         if let localized = (error as? LocalizedError)?.errorDescription?
@@ -67,7 +68,10 @@ package enum AppErrorMapper {
         metadata: [String: String] = [:],
         deduplicationKey: String? = nil
     ) {
-        logger.error("\(operation, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+        let safeOperation = sanitizer.sanitize(text: operation) ?? operation
+        let rawError = String(describing: error)
+        let safeError = sanitizer.sanitize(text: rawError) ?? rawError
+        logger.error("\(safeOperation, privacy: .public) failed: \(safeError, privacy: .public)")
         failureBridge?(
             error,
             subsystem,

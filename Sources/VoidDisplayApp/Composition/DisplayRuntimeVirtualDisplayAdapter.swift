@@ -5,20 +5,14 @@ import VoidDisplayVirtualDisplay
 
 @MainActor
 package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDisplayProviding, DisplayRuntimeVirtualDisplayCommanding, DisplayRuntimeStartupRestoreCommanding {
-    private weak var controller: VirtualDisplayController?
     private let commandFacade: any VirtualDisplayFacade
 
-    package init(
-        controller: VirtualDisplayController,
-        commandFacade: any VirtualDisplayFacade
-    ) {
-        self.controller = controller
+    package init(commandFacade: any VirtualDisplayFacade) {
         self.commandFacade = commandFacade
     }
 
     package func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
         DisplayRuntimeVirtualDisplaySnapshot(
-            adapterController: controller,
             commandSnapshot: commandFacade.snapshot
         )
     }

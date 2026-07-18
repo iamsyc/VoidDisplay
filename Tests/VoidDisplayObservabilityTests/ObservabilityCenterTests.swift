@@ -230,6 +230,55 @@ struct ObservabilityCenterTests {
         )
         #expect(summary.contains(persistenceContext.observabilityExportsDirectoryURL.path) == false)
     }
+
+    @Test func exportBundleRecoversFromPersistedEventReadAndAgentSnapshotWriteFailures() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "observability-export-recovery")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let eventsURL = tempURL.appendingPathComponent("events", isDirectory: true)
+        try FileManager.default.createDirectory(at: eventsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: eventsURL.appendingPathComponent("events-20260718.ndjson", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let blockedSnapshotParent = tempURL.appendingPathComponent("blocked-snapshot-parent")
+        try Data("file-blocks-directory".utf8).write(to: blockedSnapshotParent)
+        let sanitizer = ObservabilitySanitizer(homePath: tempURL.deletingLastPathComponent().path)
+        let exportsURL = tempURL.appendingPathComponent("exports", isDirectory: true)
+        let observability = ObservabilityCenter(
+            eventStore: EventStore(directoryURL: eventsURL),
+            issueStore: IssueStore(fileURL: tempURL.appendingPathComponent("issues.json")),
+            snapshotWriter: AgentSnapshotWriter(
+                currentStateURL: blockedSnapshotParent.appendingPathComponent("current-state.json"),
+                healthSummaryURL: blockedSnapshotParent.appendingPathComponent("health-summary.json"),
+                recentEventsURL: blockedSnapshotParent.appendingPathComponent("recent-events.ndjson"),
+                debounceDuration: .zero
+            ),
+            exporter: FeedbackBundleExporter(
+                exportsDirectoryURL: exportsURL,
+                virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
+                displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
+                sanitizer: sanitizer
+            ),
+            transport: LocalExportTransport(),
+            observabilityDirectoryURL: tempURL,
+            sanitizer: sanitizer
+        )
+
+        let bundleURL = try await observability.exportBundle(
+            draft: FeedbackDraft(happened: "Export should continue"),
+            consent: FeedbackConsent()
+        )
+
+        #expect(FileManager.default.fileExists(atPath: bundleURL.path))
+        #expect(await observability.exportedBundleURL() == bundleURL)
+        let manifest = try decodeArchiveEntry(
+            SupportBundleManifest.self,
+            relativePathSuffix: "/manifest.json",
+            archiveURL: bundleURL
+        )
+        #expect(manifest.eventCount == 0)
+    }
 }
 
 private struct StaticSnapshotProvider<Snapshot: Codable & Sendable>: ObservabilitySnapshotProvider, Sendable {

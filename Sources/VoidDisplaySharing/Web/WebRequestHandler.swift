@@ -4,9 +4,8 @@ import VoidDisplayObservability
 import Foundation
 package enum WebRequestDecision: Equatable {
     case badRequest
-    case showRootPage
-    case showDisplayPage(ShareTarget)
-    case openSignalSocket(ShareTarget)
+    case showDisplayPage(ShareTarget, ShareAccessCapability)
+    case openSignalSocket(ShareTarget, ShareAccessCapability)
     case sharingUnavailable
     case methodNotAllowed
     case notFound
@@ -36,27 +35,32 @@ package struct WebRequestHandler {
     package func decision(
         forMethod method: String,
         path: String,
-        targetStateProvider: (ShareTarget) -> ShareTargetState
+        targetStateProvider: (ShareTarget) -> ShareTargetState,
+        accessValidator: (ShareTarget, ShareAccessCapability) -> Bool
     ) -> WebRequestDecision {
         guard method.uppercased() == "GET" else {
             return .methodNotAllowed
         }
         switch router.route(for: path) {
-        case .root:
-            return .showRootPage
-        case .display(let target):
+        case .display(let target, let capability):
+            guard accessValidator(target, capability) else {
+                return .notFound
+            }
             let targetState = targetStateProvider(target)
             switch targetState {
             case .active, .knownInactive:
-                return .showDisplayPage(target)
+                return .showDisplayPage(target, capability)
             case .unknown:
                 return .notFound
             }
-        case .signal(let target):
+        case .signal(let target, let capability):
+            guard accessValidator(target, capability) else {
+                return .notFound
+            }
             let targetState = targetStateProvider(target)
             switch targetState {
             case .active:
-                return .openSignalSocket(target)
+                return .openSignalSocket(target, capability)
             case .knownInactive:
                 return .sharingUnavailable
             case .unknown:
@@ -67,7 +71,11 @@ package struct WebRequestHandler {
         }
     }
 
-    package func responseData(for decision: WebRequestDecision, htmlBody: String = "") -> Data {
+    package func responseData(
+        for decision: WebRequestDecision,
+        htmlBody: String = "",
+        contentSecurityPolicy: String? = nil
+    ) -> Data {
         switch decision {
         case .badRequest:
             let body = "Bad Request"
@@ -80,13 +88,19 @@ package struct WebRequestHandler {
                 ],
                 body: body
             )
-        case .showRootPage, .showDisplayPage:
+        case .showDisplayPage:
+            let resolvedContentSecurityPolicy = contentSecurityPolicy
+                ?? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
             return buildResponse(
                 statusLine: "HTTP/1.1 200 OK",
                 headers: [
                     ("Content-Type", "text/html; charset=utf-8"),
                     ("Content-Length", "\(htmlBody.utf8.count)"),
-                    ("Cache-Control", "no-cache")
+                    ("Cache-Control", "no-store"),
+                    ("Referrer-Policy", "no-referrer"),
+                    ("X-Content-Type-Options", "nosniff"),
+                    ("X-Frame-Options", "DENY"),
+                    ("Content-Security-Policy", resolvedContentSecurityPolicy)
                 ],
                 body: htmlBody
             )

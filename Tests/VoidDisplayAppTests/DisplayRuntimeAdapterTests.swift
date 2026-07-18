@@ -172,12 +172,8 @@ struct DisplayRuntimeAdapterTests {
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: harness.sharingController,
-            virtualDisplay: VirtualDisplayController(
-                virtualDisplayFacade: MockVirtualDisplayFacade(),
-                appliedBadgeDisplayDuration: .nanoseconds(1)
-            ),
             displayRuntime: harness.runtime,
-            capturePerformancePreferences: capturePerformancePreferences
+            sharingAdapter: harness.sharingAdapter
         )
 
         let outcome = try await dependencies.sharingActions.beginSharing(display)
@@ -215,12 +211,8 @@ struct DisplayRuntimeAdapterTests {
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: harness.sharingController,
-            virtualDisplay: VirtualDisplayController(
-                virtualDisplayFacade: MockVirtualDisplayFacade(),
-                appliedBadgeDisplayDuration: .nanoseconds(1)
-            ),
             displayRuntime: harness.runtime,
-            capturePerformancePreferences: capturePerformancePreferences
+            sharingAdapter: harness.sharingAdapter
         )
 
         let outcome = try await dependencies.sharingActions.beginSharing(display)
@@ -277,11 +269,7 @@ struct DisplayRuntimeAdapterTests {
         facade.currentDisplayConfigs = [config]
         facade.currentRunningConfigIds = [config.id]
         facade.runtimeDisplayIDByConfigId[config.id] = 8300
-        let controller = VirtualDisplayController(
-            virtualDisplayFacade: facade,
-            appliedBadgeDisplayDuration: .nanoseconds(1)
-        )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade)
 
         let snapshot = sut.makeVirtualDisplaySnapshot()
         let dto = try #require(snapshot.configs.first)
@@ -331,11 +319,7 @@ struct DisplayRuntimeAdapterTests {
             underlyingDomain: "CGVirtualDisplay",
             underlyingCode: -7
         )
-        let controller = VirtualDisplayController(
-            virtualDisplayFacade: facade,
-            appliedBadgeDisplayDuration: .nanoseconds(1)
-        )
-        let sut = DisplayRuntimeVirtualDisplayAdapter(controller: controller, commandFacade: facade)
+        let sut = DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade)
 
         let result = try await sut.restoreVirtualDisplayForStartup(
             request: DisplayRuntimeStartupRestoreCommandRequest(
@@ -453,6 +437,7 @@ private func lanWebViewHarness(
     catalogService: ScreenCaptureCatalogService,
     sharingService: MockSharingService,
     sharingController: SharingController,
+    sharingAdapter: DisplayRuntimeSharingAdapter,
     captureController: CaptureController,
     captureAdapter: DisplayRuntimeCaptureAdapter,
     runtime: DisplayRuntime
@@ -510,6 +495,7 @@ private func lanWebViewHarness(
         catalogService: catalogService,
         sharingService: sharingService,
         sharingController: sharingController,
+        sharingAdapter: sharingAdapter,
         captureController: captureController,
         captureAdapter: captureAdapter,
         runtime: runtime
@@ -532,11 +518,7 @@ private func managedVirtualDisplaySnapshot(
     displayID: DisplayRuntimeDisplayID
 ) -> DisplayRuntimeVirtualDisplaySnapshot {
     .init(
-        rebuildRequestCount: 0,
-        rebuildingConfigIDs: [],
         runningConfigIDs: [configID],
-        recentlyAppliedConfigIDs: [],
-        rebuildFailureConfigIDs: [],
         configStoreHasLoadFailure: false,
         configStoreHasDiagnostics: false,
         managedDisplays: [

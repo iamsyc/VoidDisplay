@@ -438,11 +438,7 @@ struct DisplayRuntimeRebuildTransactionTests {
         let runtime = DisplayRuntime(
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: .init(
-                    rebuildRequestCount: 0,
-                    rebuildingConfigIDs: [],
                     runningConfigIDs: [],
-                    recentlyAppliedConfigIDs: [],
-                    rebuildFailureConfigIDs: [],
                     configStoreHasLoadFailure: false,
                     configStoreHasDiagnostics: false,
                     managedDisplays: [],

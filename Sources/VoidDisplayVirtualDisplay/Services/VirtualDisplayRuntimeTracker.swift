@@ -120,8 +120,10 @@ package final class VirtualDisplayRuntimeTracker {
             "Create runtime display begin (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), generation: \(generation, privacy: .public), pendingGenerationBeforeCreate: \(String(describing: self.runtimeGenerationByConfigId[config.id]), privacy: .public))."
         )
         let runtimeHandle = try runtimeDriver.createRuntimeDisplay(
-            from: config,
-            maxPixels: maxPixels,
+            descriptor: runtimeDescriptor(
+                from: config,
+                maximumPixelDimensions: maxPixels
+            ),
             onTermination: { [weak self] in
                 self?.handleVirtualDisplayTermination(
                     configId: config.id,
@@ -191,7 +193,7 @@ package final class VirtualDisplayRuntimeTracker {
 
     package func applyModes(configId: UUID, modes: [ResolutionSelection]) {
         guard let runtimeHandle = activeRuntimeHandlesByConfigId[configId] else { return }
-        let applied = runtimeHandle.applyModes(modes)
+        let applied = runtimeHandle.applyModes(modes.map { runtimeMode($0) })
         if !applied {
             AppLog.virtualDisplay.error("Apply virtual display modes failed (serial: \(runtimeHandle.serialNum, privacy: .public)).")
         }
@@ -274,6 +276,32 @@ package final class VirtualDisplayRuntimeTracker {
     private func allocateRuntimeGeneration() -> UInt64 {
         defer { nextRuntimeGeneration &+= 1 }
         return nextRuntimeGeneration
+    }
+
+    private func runtimeDescriptor(
+        from config: VirtualDisplayConfig,
+        maximumPixelDimensions: (width: UInt32, height: UInt32)?
+    ) -> VirtualDisplayRuntimeDescriptor {
+        let dimensions = maximumPixelDimensions ?? config.maxPixelDimensions
+        return VirtualDisplayRuntimeDescriptor(
+            name: config.displayName,
+            serialNumber: config.serialNum,
+            physicalSize: config.physicalSize,
+            maximumPixelDimensions: VirtualDisplayRuntimePixelDimensions(
+                width: dimensions.width,
+                height: dimensions.height
+            ),
+            modes: config.resolutionModes.map { runtimeMode($0) }
+        )
+    }
+
+    private func runtimeMode(_ mode: ResolutionSelection) -> VirtualDisplayRuntimeMode {
+        VirtualDisplayRuntimeMode(
+            width: mode.width,
+            height: mode.height,
+            refreshRate: mode.refreshRate,
+            isHiDPI: mode.enableHiDPI
+        )
     }
 
     // MARK: - Runtime bookkeeping

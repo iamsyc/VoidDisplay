@@ -28,6 +28,7 @@ public struct VoidDisplayApplication: App {
     @State private var feedbackController: AppSettingsFeedbackController
     private let observability: ObservabilityCenter
     private let displayRuntime: DisplayRuntime
+    private let sharingAdapter: DisplayRuntimeSharingAdapter
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     public init() {
@@ -41,6 +42,7 @@ public struct VoidDisplayApplication: App {
         _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
         displayRuntime = env.displayRuntime
+        sharingAdapter = env.sharingAdapter
         openScreenCapturePrivacySettings = env.openScreenCapturePrivacySettings
         AppTerminationCleanup.install {
             env.sharing.stopWebService()
@@ -72,6 +74,7 @@ public struct VoidDisplayApplication: App {
                         observability: observability,
                         feedbackController: feedbackController,
                         displayRuntime: displayRuntime,
+                        sharingAdapter: sharingAdapter,
                         openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                     )
                 }

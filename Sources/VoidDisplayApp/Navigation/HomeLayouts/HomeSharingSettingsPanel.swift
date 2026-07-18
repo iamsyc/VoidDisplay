@@ -54,9 +54,11 @@ package struct HomeSharingSettingsPopoverButton: View {
 
 package struct HomeSharingSettingsPanel: View {
     private let context: HomeLayoutContext
+    @State private var performanceMode: CapturePerformanceMode
 
     package init(context: HomeLayoutContext) {
         self.context = context
+        _performanceMode = State(initialValue: context.sharingSettings.performanceMode)
     }
 
     package var body: some View {
@@ -82,6 +84,10 @@ package struct HomeSharingSettingsPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home_sharing_settings_panel")
+        .onChange(of: context.sharingSettings.performanceMode) { _, newValue in
+            guard performanceMode != newValue else { return }
+            performanceMode = newValue
+        }
     }
 
     private var permissionStatus: some View {
@@ -180,7 +186,7 @@ package struct HomeSharingSettingsPanel: View {
     }
 
     private var performancePicker: some View {
-        Picker("Capture Performance", selection: performanceModeBinding) {
+        Picker("Capture Performance", selection: $performanceMode) {
             Text("Automatic").tag(CapturePerformanceMode.automatic)
             Text("Smooth").tag(CapturePerformanceMode.smooth)
             Text("Power Efficient").tag(CapturePerformanceMode.powerEfficient)
@@ -191,11 +197,15 @@ package struct HomeSharingSettingsPanel: View {
         .tint(.gray)
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityIdentifier("home_sharing_performance_picker")
+        .onChange(of: performanceMode) { _, newValue in
+            guard newValue != context.sharingSettings.performanceMode else { return }
+            context.actions.setCapturePerformanceMode(newValue)
+        }
     }
 
     private var portValueControls: some View {
         HStack(alignment: .center, spacing: AppUI.Spacing.small) {
-            TextField("8089", text: portInputBinding)
+            TextField("Port", text: portInputBinding, prompt: Text("8089"))
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 60)
@@ -225,6 +235,13 @@ package struct HomeSharingSettingsPanel: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
+    private var portInputBinding: Binding<String> {
+        Binding(
+            get: { context.sharingSettings.portInput },
+            set: { context.actions.updateSharingPortDraft($0) }
+        )
+    }
+
     @ViewBuilder
     private var portErrorText: some View {
         if let portErrorMessage = context.sharingSettings.portErrorMessage {
@@ -238,19 +255,6 @@ package struct HomeSharingSettingsPanel: View {
         }
     }
 
-    private var performanceModeBinding: Binding<CapturePerformanceMode> {
-        Binding(
-            get: { context.sharingSettings.performanceMode },
-            set: { context.actions.setCapturePerformanceMode($0) }
-        )
-    }
-
-    private var portInputBinding: Binding<String> {
-        Binding(
-            get: { context.sharingSettings.portInput },
-            set: { context.actions.updateSharingPortDraft($0) }
-        )
-    }
 }
 
 package struct HomeSharingPortStatusBadge: View {

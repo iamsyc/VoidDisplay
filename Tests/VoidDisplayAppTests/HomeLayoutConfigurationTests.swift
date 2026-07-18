@@ -2,14 +2,14 @@
 import Testing
 import VoidDisplayDesignSystem
 
-struct HomeLayoutConfigurationTests {
-    @Test func listConfigurationOwnsCurrentHomeSurfaceMetrics() {
-        let list = HomeLayoutConfiguration.list
+struct HomeLayoutMetricsTests {
+    @Test func currentMetricsOwnHomeSurfaceSpacing() {
+        let metrics = HomeLayoutMetrics.current
 
-        #expect(list.metrics.itemHorizontalPadding == AppUI.Spacing.large)
-        #expect(list.metrics.itemVerticalPadding == AppUI.Spacing.medium)
-        #expect(list.metrics.itemCornerRadius == 8)
-        #expect(list.metrics.itemSpacing == AppUI.List.sectionSpacing)
-        #expect(list.metrics.contentMaxWidth == 1240)
+        #expect(metrics.itemHorizontalPadding == AppUI.Spacing.large)
+        #expect(metrics.itemVerticalPadding == AppUI.Spacing.medium)
+        #expect(metrics.itemCornerRadius == 8)
+        #expect(metrics.itemSpacing == AppUI.List.sectionSpacing)
+        #expect(metrics.contentMaxWidth == 1240)
     }
 }

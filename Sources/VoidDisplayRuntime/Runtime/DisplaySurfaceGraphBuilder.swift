@@ -40,9 +40,6 @@ nonisolated enum DisplaySurfaceGraphBuilder {
             key: \.id
         )
         let runningConfigIDs = Set(virtualDisplay.runningConfigIDs)
-        let rebuildingConfigIDs = Set(virtualDisplay.rebuildingConfigIDs)
-        let recentlyAppliedConfigIDs = Set(virtualDisplay.recentlyAppliedConfigIDs)
-        let rebuildFailureConfigIDs = Set(virtualDisplay.rebuildFailureConfigIDs)
         let restoreFailureConfigIDs = Set(virtualDisplay.restoreFailureConfigIDs)
 
         var surfaces: [DisplaySurfaceIdentity: MutableSurface] = [:]
@@ -65,9 +62,6 @@ nonisolated enum DisplaySurfaceGraphBuilder {
                     desiredEnabled: config?.desiredEnabled,
                     isRunning: runningConfigIDs.contains(configID),
                     isLiveRuntime: managed?.isLiveRuntime ?? false,
-                    isRebuilding: rebuildingConfigIDs.contains(configID),
-                    hasRecentApplySuccess: recentlyAppliedConfigIDs.contains(configID),
-                    hasRebuildFailure: rebuildFailureConfigIDs.contains(configID),
                     hasRestoreFailure: restoreFailureConfigIDs.contains(configID),
                     modeCount: config?.modes.count,
                     maximumPixelWidth: maximumPixelDimensions?.width,

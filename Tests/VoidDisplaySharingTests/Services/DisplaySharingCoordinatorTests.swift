@@ -5,6 +5,7 @@
 import CoreGraphics
 import Foundation
 import ScreenCaptureKit
+import Security
 import Testing
 
 private final class DisplaySharingCoordinatorDummyShare: @unchecked Sendable {
@@ -470,6 +471,101 @@ struct DisplaySharingCoordinatorTests {
         #expect(initialInvalidatedTargets.isEmpty)
         #expect(remappedTargets == Set([originalTarget]))
         #expect(coordinator.target(for: displayID) == .id(77))
+    }
+
+    @MainActor
+    @Test func shareAccessCapabilityRotatesOnRestartAndStopsAuthorizingImmediately() async throws {
+        let displayID: CGDirectDisplayID = 302
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let firstSubscription = makeSubscription(displayID: displayID)
+        let secondSubscription = makeSubscription(displayID: displayID)
+        let firstCapability = try #require(ShareAccessCapability(
+            pathComponent: String(repeating: "b", count: ShareAccessCapability.pathComponentLength)
+        ))
+        let secondCapability = try #require(ShareAccessCapability(
+            pathComponent: String(repeating: "c", count: ShareAccessCapability.pathComponentLength)
+        ))
+        var acquireCount = 0
+        var capabilityCount = 0
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in
+                defer { acquireCount += 1 }
+                return .started(acquireCount == 0 ? firstSubscription.subscription : secondSubscription.subscription)
+            },
+            accessCapabilityGenerator: {
+                defer { capabilityCount += 1 }
+                return capabilityCount == 0 ? firstCapability : secondCapability
+            }
+        )
+        coordinator.registerShareableDisplays([
+            .init(displayID: displayID, isMain: true, virtualSerial: 9)
+        ])
+
+        #expect(coordinator.sharePagePath(for: displayID) == nil)
+        #expect(coordinator.validatesAccess(to: .main, capability: firstCapability) == false)
+
+        guard case .started = try await coordinator.startSharing(display: display) else {
+            Issue.record("Expected first sharing start to succeed.")
+            return
+        }
+        #expect(
+            coordinator.sharePagePath(for: displayID)
+                == ShareTarget.id(9).displayPath(accessCapability: firstCapability)
+        )
+        #expect(coordinator.validatesAccess(to: .main, capability: firstCapability))
+        #expect(coordinator.validatesAccess(to: .id(9), capability: firstCapability))
+        #expect(coordinator.validatesAccess(to: .id(9), capability: secondCapability) == false)
+
+        coordinator.stopSharing(displayID: displayID)
+        #expect(coordinator.sharePagePath(for: displayID) == nil)
+        #expect(coordinator.validatesAccess(to: .id(9), capability: firstCapability) == false)
+
+        guard case .started = try await coordinator.startSharing(display: display) else {
+            Issue.record("Expected restarted sharing session to succeed.")
+            return
+        }
+        #expect(
+            coordinator.sharePagePath(for: displayID)
+                == ShareTarget.id(9).displayPath(accessCapability: secondCapability)
+        )
+        #expect(coordinator.validatesAccess(to: .id(9), capability: firstCapability) == false)
+        #expect(coordinator.validatesAccess(to: .id(9), capability: secondCapability))
+
+        coordinator.stopAllSharing()
+        #expect(await waitUntil {
+            firstSubscription.cancelCounter.value == 1
+                && secondSubscription.cancelCounter.value == 1
+        })
+    }
+
+    @MainActor
+    @Test func capabilityGenerationFailureCancelsPreparedSubscription() async throws {
+        let displayID: CGDirectDisplayID = 303
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let subscription = makeSubscription(displayID: displayID)
+        let expectedError = ShareAccessCapabilityGenerationError.entropyUnavailable(errSecNotAvailable)
+        let coordinator = DisplaySharingCoordinator(
+            idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
+            acquireShare: { _, _ in .started(subscription.subscription) },
+            accessCapabilityGenerator: { throw expectedError }
+        )
+        coordinator.registerShareableDisplays([
+            .init(displayID: displayID, isMain: true, virtualSerial: 10)
+        ])
+
+        do {
+            _ = try await coordinator.startSharing(display: display)
+            Issue.record("Expected capability generation failure.")
+        } catch let error as ShareAccessCapabilityGenerationError {
+            #expect(error == expectedError)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(await waitUntil { subscription.cancelCounter.value == 1 })
+        #expect(coordinator.isSharing(displayID: displayID) == false)
+        #expect(coordinator.sharePagePath(for: displayID) == nil)
     }
 
     private func temporaryStoreURL() -> URL {

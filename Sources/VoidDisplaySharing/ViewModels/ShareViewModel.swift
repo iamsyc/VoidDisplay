@@ -44,46 +44,31 @@ package final class ShareViewModel {
     package struct SharingActions {
         package var startWebService: @MainActor (UInt16) async -> WebServiceStartResult
         package var stopWebService: @MainActor () -> Void
-        package var registerShareableDisplays: @MainActor ([SCDisplay], @escaping (CGDirectDisplayID) -> UInt32?) -> Void
         package var beginSharing: @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>
         package var stopSharing: @MainActor (CGDirectDisplayID) -> Void
 
         package init(
             startWebService: @escaping @MainActor (UInt16) async -> WebServiceStartResult,
             stopWebService: @escaping @MainActor () -> Void,
-            registerShareableDisplays: @escaping @MainActor ([SCDisplay], @escaping (CGDirectDisplayID) -> UInt32?) -> Void,
             beginSharing: @escaping @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void>,
             stopSharing: @escaping @MainActor (CGDirectDisplayID) -> Void
         ) {
             self.startWebService = startWebService
             self.stopWebService = stopWebService
-            self.registerShareableDisplays = registerShareableDisplays
             self.beginSharing = beginSharing
             self.stopSharing = stopSharing
-        }
-    }
-    package struct VirtualDisplayQueries {
-        package var virtualSerialForManagedDisplay: @MainActor (CGDirectDisplayID) -> UInt32?
-
-        package init(
-            virtualSerialForManagedDisplay: @escaping @MainActor (CGDirectDisplayID) -> UInt32?
-        ) {
-            self.virtualSerialForManagedDisplay = virtualSerialForManagedDisplay
         }
     }
     package struct Dependencies {
         package var sharingQueries: SharingQueries
         package var sharingActions: SharingActions
-        package var virtualDisplayQueries: VirtualDisplayQueries
 
         package init(
             sharingQueries: SharingQueries,
-            sharingActions: SharingActions,
-            virtualDisplayQueries: VirtualDisplayQueries
+            sharingActions: SharingActions
         ) {
             self.sharingQueries = sharingQueries
             self.sharingActions = sharingActions
-            self.virtualDisplayQueries = virtualDisplayQueries
         }
 
     }

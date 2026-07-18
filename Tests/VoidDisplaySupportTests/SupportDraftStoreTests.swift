@@ -30,4 +30,34 @@ struct SupportDraftStoreTests {
         store.clear()
         #expect(store.load() == SupportDraftSnapshot())
     }
+
+    @Test func saveAndLoadRemoveAccessSecretsFromPersistedDraft() {
+        let suiteName = "support-draft-store-redaction.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Failed to create isolated defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let accessToken = String(repeating: "d", count: 64)
+        let sanitizer = ObservabilitySanitizer(homePath: "/Users/tester")
+        let store = SupportDraftStore(defaults: defaults, sanitizer: sanitizer)
+        defaults.set(
+            "Open http://192.168.1.3/display/\(accessToken)",
+            forKey: "supportCenter.happened"
+        )
+
+        let loaded = store.load()
+
+        #expect(loaded.happened.contains(accessToken) == false)
+        #expect(loaded.happened.contains("192.168.1.3") == false)
+        #expect(defaults.string(forKey: "supportCenter.happened") == loaded.happened)
+
+        store.save(
+            SupportDraftSnapshot(
+                happened: "Bearer private-token-123"
+            )
+        )
+        #expect(defaults.string(forKey: "supportCenter.happened")?.contains("private-token-123") == false)
+    }
 }

@@ -6,6 +6,8 @@ DisplayRuntime refactor is formally closed.
 
 Post-refactor cleanup is formally closed.
 
+The no-token LAN boundary recorded by this historical closeout has since been superseded by the current [LAN Web View security contract](./lan-sharing-security.md).
+
 This closeout is based on final verification evidence from the Stage 5 final closeout verification. It is not based on preference, narrative confidence, or an assumed implementation state.
 
 No Phase 7 in this refactor line. Any later capability, behavior change, product expansion, or architecture change must start from a separate plan with its own scope, risks, validation, and closeout evidence.
@@ -37,6 +39,8 @@ Diagnostics uses the runtime section as the primary structured state. Support bu
 
 Screen Preview, LAN Web View, and diagnostics recorder use consumer leases. Runtime aggregates demand and records effective capture intent, while the app layer resolves concrete display and service objects.
 
+LAN Web View route lifetime and frame demand are separate. An active route keeps its signal hub available, while `SCStream` starts only when a preview sink or at least one LAN viewer contributes frame demand. The first viewer activates capture and the last viewer leaving suspends it without invalidating the route. Viewer-count-only updates advance Runtime snapshot evidence without redispatching an unchanged capture command.
+
 Virtual display transactions also reconcile active Preview and LAN Web View leases. A transaction drains the old display through CaptureIntent, advances one surface epoch, and rebinds the same lease ID to the resolved display after topology convergence. Failure exits run the same compensation path and leave an unresolved lease in a diagnosable failed state.
 
 Consumer quiesce must apply before the lower virtual display command can run. CaptureIntent application is serialized per surface and consumer kind; a superseded queued revision is invalidated before adapter dispatch. Restore keeps a lease nonterminal until the adapter applies the current revision, preserves performance-profile changes made during restart, and never resurrects a lease released while restoration is in flight.
@@ -47,7 +51,9 @@ Runtime catalog convergence, transaction quiesce, restoration, cursor changes, a
 
 Capture, WebRTC, WebSocket, HTTP, streaming transport, relay process handling, frame fanout, pixel buffers, sample buffers, and encoder pipeline remain outside DisplayRuntime.
 
-LAN Web View remains local-network observation only. This refactor line does not add auth, accounts, passwords, public relay expansion, remote control, input injection, clipboard control, browser agent control, or external control endpoints.
+The private CG virtual display driver receives a `VirtualDisplayRuntimeDescriptor` containing only descriptor fields and runtime modes. Persisted config identity, desired-enabled state, and transaction data stop at `VirtualDisplayRuntimeTracker`.
+
+LAN Web View remains local-network observation only and uses a per-share rotating capability URL. It does not add accounts, passwords, public relay expansion, remote control, input injection, clipboard control, browser agent control, or external control endpoints.
 
 ## Final Verification Evidence
 

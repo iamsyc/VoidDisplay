@@ -8,7 +8,7 @@ struct AppBootstrapRuntimeBundle {
 
 extension AppBootstrap {
     static func makeRuntimeBundle(
-        controllers: AppBootstrapControllerBundle,
+        controllers: AppBootstrapBaseControllerBundle,
         captureSharing: AppBootstrapCaptureSharingBundle,
         virtualDisplay: AppBootstrapVirtualDisplayBundle,
         persistence: AppBootstrapPersistenceBundle
@@ -18,7 +18,7 @@ extension AppBootstrap {
             controller: controllers.capture,
             sharingController: controllers.sharing,
             isManagedVirtualDisplay: { displayID in
-                controllers.virtualDisplay.managedDisplays.contains {
+                virtualDisplay.facade.snapshot.managedDisplays.contains {
                     $0.displayID == displayID && $0.isLiveRuntime
                 }
             }
@@ -27,10 +27,7 @@ extension AppBootstrap {
             controller: controllers.sharing,
             capturePerformancePreferences: persistence.capturePerformancePreferences
         )
-        let virtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(
-            controller: controllers.virtualDisplay,
-            commandFacade: virtualDisplay.facade
-        )
+        let virtualDisplayAdapter = DisplayRuntimeVirtualDisplayAdapter(commandFacade: virtualDisplay.facade)
         let observabilityAdapter = DisplayRuntimeObservabilityAdapter(
             observability: persistence.observability
         )

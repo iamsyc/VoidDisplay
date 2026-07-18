@@ -11,6 +11,18 @@ import Testing
 struct WebServerSocketIntegrationTests {
     private static let mainAliasShareID: UInt32 = 5
     private static let replacementMainAliasShareID: UInt32 = 6
+    private static let mainDisplayPath = ShareTarget.main.displayPath(
+        accessCapability: socketTestAccessCapability
+    )
+    private static let mainSignalPath = ShareTarget.main.signalPath(
+        accessCapability: socketTestAccessCapability
+    )
+    private static let secondaryDisplayPath = ShareTarget.id(7).displayPath(
+        accessCapability: socketTestAccessCapability
+    )
+    private static let secondarySignalPath = ShareTarget.id(7).signalPath(
+        accessCapability: socketTestAccessCapability
+    )
 
     @Test func stoppedListenerAllowsImmediateSamePortRestartAfterActiveWebSocketTraffic() async throws {
         let sessionHub = TestSignalSessionHub()
@@ -18,7 +30,7 @@ struct WebServerSocketIntegrationTests {
         let firstServer = setup.server
         let portValue = setup.port
 
-        let socket = try await openWebSocket(path: "/signal", port: portValue)
+        let socket = try await openWebSocket(path: Self.mainSignalPath, port: portValue)
         defer { close(socket) }
         let connected = await waitUntilAsync(timeout: .seconds(2)) {
             firstServer.activeStreamClientCount == 1 && sessionHub.activeClientCount == 1
@@ -43,7 +55,7 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let request = Data("GET /display HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+        let request = Data("GET \(Self.mainDisplayPath) HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
         let responseData = try await Task.detached {
             try await sendRequestAndReadUntilClose(port: portValue, request: request)
         }.value
@@ -53,7 +65,15 @@ struct WebServerSocketIntegrationTests {
         #expect(responseText.contains("<title>Screen Share</title>"))
         #expect(responseText.contains(#"id="voiddisplay-bootstrap""#))
         #expect(responseText.contains(#""iceServers":[{"urls":["stun:127.0.0.1:3478","turn:127.0.0.1:3479"]}]"#))
-        #expect(responseText.contains("/signal/\(Self.mainAliasShareID)"))
+        #expect(responseText.contains("/signal/\(Self.mainAliasShareID)/\(socketTestAccessCapability.rawValue)"))
+        #expect(responseText.contains("Content-Security-Policy: default-src 'none'; script-src 'nonce-"))
+        let nonceMarker = "nonce=\""
+        let nonceStart = try #require(responseText.range(of: nonceMarker)?.upperBound)
+        let nonceEnd = try #require(responseText[nonceStart...].firstIndex(of: "\""))
+        let nonce = String(responseText[nonceStart..<nonceEnd])
+        #expect(nonce.isEmpty == false)
+        #expect(responseText.contains("script-src 'nonce-\(nonce)'"))
+        #expect(responseText.contains("__SCRIPT_NONCE__") == false)
         #expect(responseText.contains("__SIGNAL_PATH__") == false)
         #expect(responseText.contains("__DISPLAY_PAGE_RUNTIME_SCRIPT__") == false)
         #expect(responseText.contains("function registerDisplayPageUI"))
@@ -85,7 +105,7 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let request = Data("GET /display/7 HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+        let request = Data("GET \(Self.secondaryDisplayPath) HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
         let responseData = try await Task.detached {
             try await sendRequestAndReadUntilClose(port: portValue, request: request)
         }.value
@@ -93,8 +113,66 @@ struct WebServerSocketIntegrationTests {
         let responseText = try #require(String(data: responseData, encoding: .utf8))
         #expect(responseText.contains("HTTP/1.1 200 OK"))
         #expect(responseText.contains("<title>Screen Share</title>"))
-        #expect(responseText.contains("/signal/7"))
+        #expect(responseText.contains(Self.secondarySignalPath))
         #expect(responseText.contains("Display 7") == false)
+    }
+
+    @Test func legacyAndInvalidCapabilityRoutesAreRejectedWithoutLeakingTargetState() async throws {
+        let setup = try await startMainSignalServer(sessionHub: TestSignalSessionHub())
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+        let invalidCapability = String(
+            repeating: "d",
+            count: ShareAccessCapability.pathComponentLength
+        )
+        let paths = [
+            "/display",
+            "/display/\(Self.mainAliasShareID)",
+            "/display/\(Self.mainAliasShareID)/\(invalidCapability)",
+            "/signal",
+            "/signal/\(Self.mainAliasShareID)",
+            "/signal/\(Self.mainAliasShareID)/\(invalidCapability)"
+        ]
+
+        for path in paths {
+            let request = Data("GET \(path) HTTP/1.1\r\nHost: 127.0.0.1:\(portValue)\r\n\r\n".utf8)
+            let responseData = try await Task.detached {
+                try await sendRequestAndReadUntilClose(port: portValue, request: request)
+            }.value
+            let responseText = try #require(String(data: responseData, encoding: .utf8))
+            #expect(responseText.contains("HTTP/1.1 404 Not Found"), "Unexpected response for \(path)")
+        }
+    }
+
+    @Test func websocketUpgradeRequiresSameOriginAfterCapabilityValidation() async throws {
+        let sessionHub = TestSignalSessionHub()
+        let setup = try await startMainSignalServer(sessionHub: sessionHub)
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+        let requests = [
+            websocketUpgradeRequest(
+                path: Self.mainSignalPath,
+                port: portValue,
+                includeOrigin: false
+            ),
+            websocketUpgradeRequest(
+                path: Self.mainSignalPath,
+                port: portValue,
+                origin: "http://attacker.invalid"
+            )
+        ]
+
+        for request in requests {
+            let responseData = try await Task.detached {
+                try await sendRequestAndReadUntilClose(port: portValue, request: request)
+            }.value
+            let responseText = try #require(String(data: responseData, encoding: .utf8))
+            #expect(responseText.contains("HTTP/1.1 400 Bad Request"))
+        }
+        #expect(server.activeStreamClientCount == 0)
+        #expect(sessionHub.activeClientCount == 0)
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
@@ -153,8 +231,8 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let firstSocket = try await openWebSocket(path: "/signal", port: portValue)
-        let secondSocket = try await openWebSocket(path: "/signal", port: portValue)
+        let firstSocket = try await openWebSocket(path: Self.mainSignalPath, port: portValue)
+        let secondSocket = try await openWebSocket(path: Self.mainSignalPath, port: portValue)
         defer {
             close(firstSocket)
             close(secondSocket)
@@ -227,7 +305,7 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let socket = try await openWebSocket(path: "/signal", port: portValue)
+        let socket = try await openWebSocket(path: Self.mainSignalPath, port: portValue)
         defer { close(socket) }
 
         let connected = await waitUntilAsync(timeout: .seconds(2)) {
@@ -276,8 +354,8 @@ struct WebServerSocketIntegrationTests {
         let portValue = setup.port
         defer { server.stopListener() }
 
-        let mainSocket = try await openWebSocket(path: "/signal", port: portValue)
-        let secondarySocket = try await openWebSocket(path: "/signal/7", port: portValue)
+        let mainSocket = try await openWebSocket(path: Self.mainSignalPath, port: portValue)
+        let secondarySocket = try await openWebSocket(path: Self.secondarySignalPath, port: portValue)
         defer {
             close(mainSocket)
             close(secondarySocket)
@@ -408,6 +486,7 @@ struct WebServerSocketIntegrationTests {
                 server = try WebServer(
                     using: endpointPort,
                     targetStateProvider: { _ in .unknown },
+                    accessValidator: { _, capability in capability == socketTestAccessCapability },
                     concreteTargetResolver: { _ in nil },
                     sessionHubProvider: { _ in nil },
                     sharingEventSink: { _ in }
@@ -531,7 +610,13 @@ private func probeOversizedFrameClose(
             let socketFD = try await connectLoopbackSocket(port: port)
             defer { close(socketFD) }
 
-            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
+            try sendAll(
+                socketFD,
+                data: websocketUpgradeRequest(
+                    path: ShareTarget.main.signalPath(accessCapability: socketTestAccessCapability),
+                    port: port
+                )
+            )
             let handshake = try readUntilHeaderTerminator(
                 from: socketFD,
                 timeoutMilliseconds: 500,
@@ -587,7 +672,13 @@ private func probeClientCloseFrame(
             let socketFD = try await connectLoopbackSocket(port: port)
             defer { close(socketFD) }
 
-            try sendAll(socketFD, data: websocketUpgradeRequest(path: "/signal", port: port))
+            try sendAll(
+                socketFD,
+                data: websocketUpgradeRequest(
+                    path: ShareTarget.main.signalPath(accessCapability: socketTestAccessCapability),
+                    port: port
+                )
+            )
             let handshake = try readUntilHeaderTerminator(
                 from: socketFD,
                 timeoutMilliseconds: 500,

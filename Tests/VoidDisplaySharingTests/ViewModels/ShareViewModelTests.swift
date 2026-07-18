@@ -286,8 +286,7 @@ private func makeShareDependencies(
     },
     stopWebService: @escaping @MainActor () -> Void = {},
     beginSharing: @escaping @MainActor (SCDisplay) async throws -> DisplayStartOutcome<Void> = { _ in .started(()) },
-    stopSharing: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in },
-    virtualSerialForManagedDisplay: @escaping @MainActor (CGDirectDisplayID) -> UInt32? = { _ in nil }
+    stopSharing: @escaping @MainActor (CGDirectDisplayID) -> Void = { _ in }
 ) -> ShareViewModel.Dependencies {
     ShareViewModel.Dependencies(
         sharingQueries: .init(
@@ -303,12 +302,8 @@ private func makeShareDependencies(
         sharingActions: .init(
             startWebService: startWebService,
             stopWebService: stopWebService,
-            registerShareableDisplays: { _, _ in },
             beginSharing: beginSharing,
             stopSharing: stopSharing
-        ),
-        virtualDisplayQueries: .init(
-            virtualSerialForManagedDisplay: virtualSerialForManagedDisplay
         )
     )
 }

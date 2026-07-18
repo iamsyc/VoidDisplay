@@ -148,6 +148,14 @@ struct DisplayCaptureProfileStateMachineTests {
         #expect(demand.isEmpty == false)
     }
 
+    @Test func cursorPreferenceAloneDoesNotActivateCapture() {
+        let demand = makeDemand(shareCursorOverrideCount: 1)
+
+        #expect(demand.showsCursor)
+        #expect(demand.desiredProfile == nil)
+        #expect(demand.isEmpty)
+    }
+
     @Test func captureProfileFrameRatesMatchCurrentDefaults() {
         #expect(
             DisplayCaptureSession.captureFramesPerSecond(

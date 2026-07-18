@@ -292,11 +292,9 @@ struct VirtualDisplayControllerTests {
         let createError = NSError(domain: "VirtualDisplayControllerTests", code: 72)
 
         let sut = makeControllerEnvironment(
-            virtualDisplayFacade: virtualDisplay
+            virtualDisplayFacade: virtualDisplay,
+            create: { _ in throw createError }
         )
-        sut.virtualDisplay.configureCreateExecutor { _ in
-            throw createError
-        }
 
         await #expect(throws: Error.self) {
             _ = try await sut.virtualDisplay.createVirtualDisplay(
@@ -318,18 +316,18 @@ struct VirtualDisplayControllerTests {
 
     @Test func createVirtualDisplayRecoveryFailureIsPresentedAsSuccess() async throws {
         let virtualDisplay = MockVirtualDisplayFacade()
-        let sut = makeControllerEnvironment(
-            virtualDisplayFacade: virtualDisplay
-        )
         let createdID = UUID()
-        sut.virtualDisplay.configureCreateExecutor { _ in
-            VirtualDisplayCreateTransactionResult(
-                transactionID: UUID(),
-                status: .completedWithRecoveryFailures,
-                createdConfigID: createdID,
-                virtualDisplayCommandSucceeded: true
-            )
-        }
+        let sut = makeControllerEnvironment(
+            virtualDisplayFacade: virtualDisplay,
+            create: { _ in
+                VirtualDisplayCreateTransactionResult(
+                    transactionID: UUID(),
+                    status: .completedWithRecoveryFailures,
+                    createdConfigID: createdID,
+                    virtualDisplayCommandSucceeded: true
+                )
+            }
+        )
 
         let result = try await sut.virtualDisplay.createVirtualDisplay(
             VirtualDisplayCreateRequest(
@@ -358,21 +356,21 @@ struct VirtualDisplayControllerTests {
             desiredEnabled: true
         )
         virtualDisplay.currentDisplayConfigs = [config]
-        let sut = makeControllerEnvironment(
-            virtualDisplayFacade: virtualDisplay
-        ).virtualDisplay
         var requestCount = 0
-        sut.configureEditRebuildExecutor { updatedConfig, expectedFingerprint, source in
-            requestCount += 1
-            #expect(updatedConfig.id == config.id)
-            #expect(expectedFingerprint == config.editRebuildFingerprint)
-            #expect(source == .editSaveAndRebuild)
-            return editRebuildHandle(
-                configID: config.id,
-                status: .completed,
-                virtualDisplayCommandSucceeded: true
-            )
-        }
+        let sut = makeControllerEnvironment(
+            virtualDisplayFacade: virtualDisplay,
+            editAndRebuild: { updatedConfig, expectedFingerprint, source in
+                requestCount += 1
+                #expect(updatedConfig.id == config.id)
+                #expect(expectedFingerprint == config.editRebuildFingerprint)
+                #expect(source == .editSaveAndRebuild)
+                return editRebuildHandle(
+                    configID: config.id,
+                    status: .completed,
+                    virtualDisplayCommandSucceeded: true
+                )
+            }
+        ).virtualDisplay
 
         let handle = try await sut.saveConfigAndRebuild(
             config,
@@ -384,6 +382,57 @@ struct VirtualDisplayControllerTests {
         #expect(requestCount == 1)
         #expect(virtualDisplay.updateConfigCallCount == 0)
         #expect(virtualDisplay.rebuildVirtualDisplayCallCount == 0)
+    }
+
+    @Test func saveConfigAndRebuildRefreshesControllerAtSaveGate() async throws {
+        let virtualDisplay = MockVirtualDisplayFacade()
+        let original = VirtualDisplayConfig(
+            displayName: "Before Save Gate",
+            serialNum: 134,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        var updated = original
+        updated.displayName = "After Save Gate"
+        virtualDisplay.currentDisplayConfigs = [original]
+        let transactionID = UUID()
+        let controller = makeControllerEnvironment(
+            virtualDisplayFacade: virtualDisplay,
+            editAndRebuild: { _, _, _ in
+                VirtualDisplayEditRebuildTransactionHandle(
+                    transactionID: transactionID,
+                    saveGateTask: Task { @MainActor in
+                        try await Task.sleep(for: .milliseconds(25))
+                        virtualDisplay.currentDisplayConfigs = [updated]
+                        return VirtualDisplayEditRebuildSaveGateResult(
+                            transactionID: transactionID,
+                            configID: updated.id
+                        )
+                    },
+                    terminalResultTask: Task { @MainActor in
+                        try await Task.sleep(for: .seconds(1))
+                        return VirtualDisplayEditRebuildTransactionResult(
+                            transactionID: transactionID,
+                            status: .completed,
+                            virtualDisplayCommandSucceeded: true
+                        )
+                    }
+                )
+            }
+        ).virtualDisplay
+
+        let handle = try await controller.saveConfigAndRebuild(
+            updated,
+            expectedConfigFingerprint: original.editRebuildFingerprint,
+            source: .editSaveAndRebuild
+        )
+        #expect(controller.getConfig(original.id)?.displayName == "Before Save Gate")
+
+        _ = try await handle.waitForSaveGate()
+
+        #expect(controller.getConfig(original.id)?.displayName == "After Save Gate")
     }
 
     @Test func editRebuildPresentationWaitsForTerminalResultBeforeSuccess() async throws {
@@ -476,21 +525,25 @@ private struct ControllerTestEnvironment {
 @MainActor
 private func makeControllerEnvironment(
     virtualDisplayFacade: any VirtualDisplayFacade,
-    appliedBadgeDisplayDuration: Duration = .seconds(2.5)
+    appliedBadgeDisplayDuration: Duration = .seconds(2.5),
+    editAndRebuild: VirtualDisplayEditRebuildExecutor? = nil,
+    create: VirtualDisplayCreateExecutor? = nil
 ) -> ControllerTestEnvironment {
     let controller = VirtualDisplayController(
         virtualDisplayFacade: virtualDisplayFacade,
+        runtimeExecutors: testVirtualDisplayRuntimeExecutors(
+            facade: virtualDisplayFacade,
+            editAndRebuild: editAndRebuild,
+            create: create
+        ),
         appliedBadgeDisplayDuration: appliedBadgeDisplayDuration
     )
-    controller.configureRebuildExecutor { configID, _ in
-        try await virtualDisplayFacade.rebuildVirtualDisplay(configId: configID)
-    }
     return ControllerTestEnvironment(virtualDisplay: controller)
 }
 
 private func editRebuildHandle(
     configID: UUID,
-    status: VirtualDisplayEditRebuildTransactionStatus,
+    status: VirtualDisplayTransactionStatus,
     virtualDisplayCommandSucceeded: Bool,
     terminalDelayNanoseconds: UInt64 = 0
 ) -> VirtualDisplayEditRebuildTransactionHandle {

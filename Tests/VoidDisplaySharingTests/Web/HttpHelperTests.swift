@@ -111,65 +111,131 @@ struct HttpHelperTests {
         #expect(request.headers["host"] == "localhost")
     }
 
-    @MainActor @Test func httpRouterRouteDecision() {
+    @MainActor @Test func httpRouterRouteDecision() throws {
         let router = HttpRouter()
-        #expect(router.route(for: "/") == .root)
-        #expect(router.route(for: "/display") == .display(.main))
-        #expect(router.route(for: "/display/7") == .display(.id(7)))
+        let capability = try #require(
+            ShareAccessCapability(pathComponent: String(repeating: "a", count: 64))
+        )
+        #expect(router.route(for: "/") == .notFound)
+        #expect(router.route(for: "/display") == .notFound)
+        #expect(router.route(for: "/display/7") == .notFound)
+        #expect(router.route(for: "/display/\(capability.rawValue)") == .display(.main, capability))
+        #expect(router.route(for: "/display/7/\(capability.rawValue)") == .display(.id(7), capability))
         #expect(router.route(for: "/stream") == .notFound)
         #expect(router.route(for: "/stream/7") == .notFound)
         #expect(router.route(for: "/stream/") == .notFound)
-        #expect(router.route(for: "/signal/7") == .signal(.id(7)))
+        #expect(router.route(for: "/signal/7") == .notFound)
+        #expect(router.route(for: "/signal/7/\(capability.rawValue)") == .signal(.id(7), capability))
         #expect(router.route(for: "/stream/frame") == .notFound)
         #expect(router.route(for: "/display/frame") == .notFound)
         #expect(router.route(for: "/unknown") == .notFound)
         #expect(router.route(for: "%%%") == .notFound)
     }
 
-    @MainActor @Test func webRequestHandlerDecision() {
+    @MainActor @Test func webRequestHandlerDecision() throws {
         let handler = WebRequestHandler()
+        let capability = try #require(
+            ShareAccessCapability(pathComponent: String(repeating: "b", count: 64))
+        )
+        let mainDisplayPath = ShareTarget.main.displayPath(accessCapability: capability)
+        let displayPath = ShareTarget.id(4).displayPath(accessCapability: capability)
+        let mainSignalPath = ShareTarget.main.signalPath(accessCapability: capability)
+        let acceptsCapability: (ShareTarget, ShareAccessCapability) -> Bool = { _, candidate in
+            candidate == capability
+        }
         #expect(
-            handler.decision(forMethod: "GET", path: "/", targetStateProvider: { _ in .knownInactive }) == .showRootPage
+            handler.decision(
+                forMethod: "GET",
+                path: "/",
+                targetStateProvider: { _ in .knownInactive },
+                accessValidator: acceptsCapability
+            ) == .notFound
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/display", targetStateProvider: { _ in .knownInactive }) == .showDisplayPage(.main)
+            handler.decision(
+                forMethod: "GET",
+                path: mainDisplayPath,
+                targetStateProvider: { _ in .knownInactive },
+                accessValidator: acceptsCapability
+            ) == .showDisplayPage(.main, capability)
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/display/4", targetStateProvider: { _ in .active }) == .showDisplayPage(.id(4))
+            handler.decision(
+                forMethod: "GET",
+                path: displayPath,
+                targetStateProvider: { _ in .active },
+                accessValidator: acceptsCapability
+            ) == .showDisplayPage(.id(4), capability)
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/signal", targetStateProvider: { _ in .active }) == .openSignalSocket(.main)
+            handler.decision(
+                forMethod: "GET",
+                path: mainSignalPath,
+                targetStateProvider: { _ in .active },
+                accessValidator: acceptsCapability
+            ) == .openSignalSocket(.main, capability)
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/stream/4", targetStateProvider: { _ in .knownInactive }) == .notFound
+            handler.decision(
+                forMethod: "GET",
+                path: displayPath,
+                targetStateProvider: { _ in .active },
+                accessValidator: { _, _ in false }
+            ) == .notFound
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/stream", targetStateProvider: { _ in .active }) == .notFound
+            handler.decision(
+                forMethod: "GET",
+                path: "/stream",
+                targetStateProvider: { _ in .active },
+                accessValidator: acceptsCapability
+            ) == .notFound
         )
         #expect(
-            handler.decision(forMethod: "POST", path: "/signal", targetStateProvider: { _ in .active }) == .methodNotAllowed
+            handler.decision(
+                forMethod: "POST",
+                path: mainSignalPath,
+                targetStateProvider: { _ in .active },
+                accessValidator: acceptsCapability
+            ) == .methodNotAllowed
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/404", targetStateProvider: { _ in .active }) == .notFound
+            handler.decision(
+                forMethod: "GET",
+                path: "/404",
+                targetStateProvider: { _ in .active },
+                accessValidator: acceptsCapability
+            ) == .notFound
         )
         #expect(
-            handler.decision(forMethod: "GET", path: "/display/9", targetStateProvider: { _ in .unknown }) == .notFound
+            handler.decision(
+                forMethod: "GET",
+                path: ShareTarget.id(9).displayPath(accessCapability: capability),
+                targetStateProvider: { _ in .unknown },
+                accessValidator: acceptsCapability
+            ) == .notFound
         )
     }
 
     @Test func webRequestHandlerResponsePayloads() throws {
         let handler = WebRequestHandler()
         let page = "<html>ok</html>"
+        let capability = try #require(
+            ShareAccessCapability(pathComponent: String(repeating: "c", count: 64))
+        )
 
-        let rootResponse = handler.responseData(for: .showRootPage, htmlBody: page)
-        let rootText = try #require(String(data: rootResponse, encoding: .utf8))
-        #expect(rootText.contains("HTTP/1.1 200 OK"))
-        #expect(rootText.contains(page))
-
-        let displayResponse = handler.responseData(for: .showDisplayPage(.id(7)), htmlBody: page)
+        let displayResponse = handler.responseData(
+            for: .showDisplayPage(.id(7), capability),
+            htmlBody: page,
+            contentSecurityPolicy: "default-src 'none'; script-src 'nonce-testnonce'"
+        )
         let displayText = try #require(String(data: displayResponse, encoding: .utf8))
         #expect(displayText.contains("HTTP/1.1 200 OK"))
         #expect(displayText.contains(page))
+        #expect(displayText.contains("Cache-Control: no-store"))
+        #expect(displayText.contains("Referrer-Policy: no-referrer"))
+        #expect(displayText.contains("X-Frame-Options: DENY"))
+        #expect(displayText.contains("Content-Security-Policy: default-src 'none'; script-src 'nonce-testnonce'"))
 
         let badRequestResponse = handler.responseData(for: .badRequest, htmlBody: page)
         let badRequestText = try #require(String(data: badRequestResponse, encoding: .utf8))
@@ -209,12 +275,19 @@ struct HttpHelperTests {
         #expect(text.contains("404 Not Found"))
     }
 
-    @MainActor @Test func httpRouterTreatsQueryRoutesConsistently() {
+    @MainActor @Test func httpRouterTreatsQueryRoutesConsistently() throws {
         let router = HttpRouter()
+        let capability = try #require(
+            ShareAccessCapability(pathComponent: String(repeating: "d", count: 64))
+        )
         #expect(router.route(for: "/stream?t=123") == .notFound)
         #expect(router.route(for: "/stream/?t=123") == .notFound)
-        #expect(router.route(for: "/signal/9?t=1") == .signal(.id(9)))
-        #expect(router.route(for: "/display/9?t=1") == .display(.id(9)))
-        #expect(router.route(for: "/?v=1") == .root)
+        #expect(
+            router.route(for: "/signal/9/\(capability.rawValue)?t=1") == .signal(.id(9), capability)
+        )
+        #expect(
+            router.route(for: "/display/9/\(capability.rawValue)?t=1") == .display(.id(9), capability)
+        )
+        #expect(router.route(for: "/?v=1") == .notFound)
     }
 }

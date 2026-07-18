@@ -22,6 +22,7 @@ package final class MockWebServiceController: WebServiceControllerProtocol {
     package var disconnectTargetCallCount = 0
     package var disconnectedTargetsHistory: [Set<ShareTarget>] = []
     package var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
+    package var capturedAccessValidator: (@MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool)?
     package var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
     package var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?)?
     package var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
@@ -31,6 +32,7 @@ package final class MockWebServiceController: WebServiceControllerProtocol {
     package func start(
         requestedPort: UInt16,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
@@ -38,6 +40,7 @@ package final class MockWebServiceController: WebServiceControllerProtocol {
         startCallCount += 1
         lastRequestedPort = requestedPort
         capturedTargetStateProvider = targetStateProvider
+        capturedAccessValidator = accessValidator
         capturedConcreteTargetResolver = concreteTargetResolver
         capturedSessionHubProvider = sessionHubProvider
         capturedSharingEventSink = sharingEventSink

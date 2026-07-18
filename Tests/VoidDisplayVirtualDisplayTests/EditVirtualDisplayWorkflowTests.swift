@@ -54,6 +54,7 @@ struct EditVirtualDisplayWorkflowTests {
     ) -> VirtualDisplayController {
         VirtualDisplayController(
             virtualDisplayFacade: facade,
+            runtimeExecutors: testVirtualDisplayRuntimeExecutors(facade: facade),
             appliedBadgeDisplayDuration: .seconds(0.1)
         )
     }

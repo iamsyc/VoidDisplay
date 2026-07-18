@@ -125,3 +125,5 @@ scripts/release/verify.sh \
 ## Nightly
 
 `nightly.yml` calls `scripts/ci/full_regression.sh`, `scripts/ci/coverage.sh`, expanded UI smoke, and dual-architecture release dry run. It writes workflow summary output and retains artifacts for 7 days.
+
+`scripts/ci/full_regression.sh` also calls `scripts/ci/stability.sh`. The stability gate repeats the Swift capture-demand and relay-client churn tests, then runs every relay Go package with the race detector and the same bounded iteration count. Use `--iterations 1...100` or `STABILITY_ITERATIONS` to select the run length; the default is 20.

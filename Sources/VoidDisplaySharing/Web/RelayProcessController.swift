@@ -103,7 +103,11 @@ package final class RelayProcessController: @unchecked Sendable {
             do {
                 let client = try await task.value
                 let isCurrentStart = state.withLock {
-                    if $0.startGeneration == generation {
+                    if Self.canPromoteRelayClient(
+                        startGeneration: generation,
+                        currentGeneration: $0.startGeneration,
+                        processIsRunning: $0.process?.isRunning == true
+                    ) {
                         $0.client = client
                         $0.startTask = nil
                         return true
@@ -147,17 +151,16 @@ package final class RelayProcessController: @unchecked Sendable {
     private nonisolated func startProcess(generation: UInt64) async throws -> RelayHTTPClient {
         try Task.checkCancellation()
         let binaryURL = try Self.resolveRelayBinaryURL()
-        let controlToken = UUID().uuidString
+        let controlToken = try ShareAccessCapability.generate().rawValue
         let process = Process()
+        let stdin = Pipe()
         let stdout = Pipe()
         let stderr = Pipe()
         process.executableURL = binaryURL
-        process.arguments = [
-            "--control-token", controlToken,
-            "--listen-udp", ":0",
-            "--loopback-http", "127.0.0.1:0",
-            "--parent-pid", "\(ProcessInfo.processInfo.processIdentifier)",
-        ]
+        process.arguments = Self.processArguments(
+            parentPID: ProcessInfo.processInfo.processIdentifier
+        )
+        process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr
         process.terminationHandler = { [weak self] process in
@@ -175,14 +178,15 @@ package final class RelayProcessController: @unchecked Sendable {
                 state.controlToken = controlToken
                 try process.run()
             }
+            try stdin.fileHandleForWriting.write(contentsOf: Data("\(controlToken)\n".utf8))
+            try stdin.fileHandleForWriting.close()
             captureRelayStderr(stderr.fileHandleForReading)
             let ready = try await waitForReadyLine(stdout.fileHandleForReading)
-            guard let baseURL = URL(string: ready.loopback) else {
-                throw RelayProcessError.invalidReadyLoopback(ready.loopback)
-            }
+            let baseURL = try Self.validatedRelayBaseURL(ready.loopback)
             AppLog.web.info("VoidDisplay relay ready at \(ready.loopback, privacy: .public).")
             return RelayHTTPClient(baseURL: baseURL, controlToken: controlToken)
         } catch {
+            try? stdin.fileHandleForWriting.close()
             state.withLock { state in
                 if state.startGeneration == generation {
                     state.expectedStop = true
@@ -196,6 +200,39 @@ package final class RelayProcessController: @unchecked Sendable {
             }
             throw error
         }
+    }
+
+    package nonisolated static func processArguments(parentPID: Int32) -> [String] {
+        [
+            "--control-token-stdin",
+            "--listen-udp", ":0",
+            "--loopback-http", "127.0.0.1:0",
+            "--parent-pid", "\(parentPID)",
+        ]
+    }
+
+    package nonisolated static func canPromoteRelayClient(
+        startGeneration: UInt64,
+        currentGeneration: UInt64,
+        processIsRunning: Bool
+    ) -> Bool {
+        startGeneration == currentGeneration && processIsRunning
+    }
+
+    package nonisolated static func validatedRelayBaseURL(_ value: String) throws -> URL {
+        guard let url = URL(string: value),
+              url.scheme?.lowercased() == "http",
+              let rawHost = url.host?.lowercased(),
+              ["127.0.0.1", "::1", "localhost"].contains(rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))),
+              url.port != nil,
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.isEmpty || url.path == "/" else {
+            throw RelayProcessError.invalidReadyLoopback(value)
+        }
+        return url
     }
 
     private nonisolated func waitForReadyLine(_ handle: FileHandle) async throws -> RelayReadyEvent {
@@ -226,7 +263,7 @@ package final class RelayProcessController: @unchecked Sendable {
                 readableHandle.readabilityHandler = nil
                 return
             }
-            AppLog.web.debug("VoidDisplay relay stderr: \(line, privacy: .public)")
+            AppLog.web.debug("VoidDisplay relay stderr: \(line, privacy: .private(mask: .hash))")
         }
     }
 
@@ -236,6 +273,7 @@ package final class RelayProcessController: @unchecked Sendable {
                 return nil
             }
             let expectedStop = state.expectedStop
+            state.startGeneration &+= 1
             state.process = nil
             state.client = nil
             state.controlToken = nil

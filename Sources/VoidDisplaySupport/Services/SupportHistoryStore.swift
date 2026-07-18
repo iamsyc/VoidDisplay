@@ -4,24 +4,30 @@ import Foundation
 package nonisolated struct SupportHistoryStore {
     private let historyFileURL: URL
     private let fileManager: FileManager
+    private let sanitizer: ObservabilitySanitizer
 
     package init(
         historyFileURL: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sanitizer: ObservabilitySanitizer = ObservabilitySanitizer()
     ) {
         self.historyFileURL = historyFileURL
         self.fileManager = fileManager
+        self.sanitizer = sanitizer
     }
 
     package func loadRecords() -> [SupportExportRecord] {
         let fileExists = fileManager.fileExists(atPath: historyFileURL.path)
         let decodedRecords: [SupportExportRecord]
+        let didSanitizeRecords: Bool
         if fileExists,
            let data = try? Data(contentsOf: historyFileURL),
            let records = try? ObservabilityCodec.decode([SupportExportRecord].self, from: data) {
-            decodedRecords = records
+            decodedRecords = records.map { $0.sanitizingPreview(with: sanitizer) }
+            didSanitizeRecords = decodedRecords != records
         } else {
             decodedRecords = []
+            didSanitizeRecords = false
         }
 
         var filteredRecords = decodedRecords.filter { record in
@@ -30,7 +36,7 @@ package nonisolated struct SupportHistoryStore {
         filteredRecords.sort { $0.exportedAt > $1.exportedAt }
         filteredRecords = Array(filteredRecords.prefix(10))
 
-        if fileExists == false || filteredRecords != decodedRecords {
+        if fileExists == false || didSanitizeRecords || filteredRecords != decodedRecords {
             try? saveRecords(filteredRecords)
         }
         return filteredRecords
@@ -38,14 +44,16 @@ package nonisolated struct SupportHistoryStore {
 
     package func saveRecords(_ records: [SupportExportRecord]) throws {
         try fileManager.createDirectory(at: historyFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try ObservabilityCodec.encode(records)
+        let safeRecords = records.map { $0.sanitizingPreview(with: sanitizer) }
+        let data = try ObservabilityCodec.encode(safeRecords)
         try data.write(to: historyFileURL, options: [.atomic])
     }
 
     package func appendRecord(_ record: SupportExportRecord) throws -> [SupportExportRecord] {
         var records = loadRecords()
-        records.removeAll { $0.bundleFileName == record.bundleFileName }
-        records.insert(record, at: 0)
+        let safeRecord = record.sanitizingPreview(with: sanitizer)
+        records.removeAll { $0.bundleFileName == safeRecord.bundleFileName }
+        records.insert(safeRecord, at: 0)
         records.sort { $0.exportedAt > $1.exportedAt }
         let trimmed = Array(records.prefix(10))
         try saveRecords(trimmed)

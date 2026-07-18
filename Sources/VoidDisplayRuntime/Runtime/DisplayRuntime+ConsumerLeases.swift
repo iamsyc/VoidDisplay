@@ -50,6 +50,16 @@ extension DisplayRuntime {
                         : DisplayRuntimeCaptureIntentFailureCode.consumerLeaseAlreadyExists
                 )
             }
+            if existingLease.demand.hasSameCaptureRequirements(as: demand),
+               let applyResult = metadataOnlyCaptureIntentApplyResult(for: surfaceIdentity) {
+                let updatedLease = replaceLease(
+                    existingLease,
+                    state: .attached,
+                    demand: demand,
+                    lastFailureCode: nil
+                )
+                return .attached(lease: updatedLease, applyResult: applyResult)
+            }
             lease = replaceLease(
                 existingLease,
                 state: .attaching,
@@ -149,6 +159,11 @@ extension DisplayRuntime {
               !consumerTransitionBusySurfaces.contains(surfaceIdentity)
         else {
             return nil
+        }
+        if lease.demand.hasSameCaptureRequirements(as: demand),
+           let applyResult = metadataOnlyCaptureIntentApplyResult(for: surfaceIdentity) {
+            _ = replaceLease(lease, state: .attached, demand: demand, lastFailureCode: nil)
+            return applyResult
         }
         _ = replaceLease(lease, state: .attached, demand: demand, lastFailureCode: nil)
         let intent = submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
