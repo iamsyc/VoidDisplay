@@ -60,6 +60,7 @@ package final class AppSettingsFeedbackController {
     @ObservationIgnored private let draftStore: SupportDraftStore
     @ObservationIgnored private let historyStore: SupportHistoryStore?
     @ObservationIgnored private let dateProvider: () -> Date
+    @ObservationIgnored private let sanitizer: ObservabilitySanitizer
 
     package init(
         defaults: UserDefaults = .standard,
@@ -70,9 +71,10 @@ package final class AppSettingsFeedbackController {
         copyAction: ((String) -> Void)? = nil,
         summaryAction: ((FeedbackDraft) async -> String)? = nil,
         errorMessageProvider: ((any Error) -> String)? = nil,
-        dateProvider: @escaping () -> Date = Date.init
+        dateProvider: @escaping () -> Date = Date.init,
+        sanitizer: ObservabilitySanitizer = ObservabilitySanitizer()
     ) {
-        draftStore = SupportDraftStore(defaults: defaults)
+        draftStore = SupportDraftStore(defaults: defaults, sanitizer: sanitizer)
         self.historyStore = historyStore
         self.eventRecorder = eventRecorder
         self.exportAction = exportAction
@@ -81,6 +83,7 @@ package final class AppSettingsFeedbackController {
         self.summaryAction = summaryAction
         self.errorMessageProvider = errorMessageProvider
         self.dateProvider = dateProvider
+        self.sanitizer = sanitizer
     }
 
     package var canRevealLastBundle: Bool {
@@ -205,7 +208,7 @@ package final class AppSettingsFeedbackController {
     }
 
     package func exportSupportBundle() async {
-        guard let exportAction else { return }
+        guard isExporting == false, let exportAction else { return }
 
         let trimmedDraft = currentDraft.trimmedPayload()
         guard trimmedDraft.isEmpty == false else {
@@ -226,7 +229,7 @@ package final class AppSettingsFeedbackController {
             let url = try await exportAction(trimmedDraft, currentConsent)
             let record = makeExportRecord(url: url, draft: trimmedDraft, exportedAt: exportedAt)
             updateLastExportedBundle(url)
-            latestExportDraft = trimmedDraft
+            latestExportDraft = sanitizer.sanitize(trimmedDraft)
             exportHistory = appendExportRecord(record)
             completionRecord = record
             exportCompleted = true
@@ -488,7 +491,7 @@ package final class AppSettingsFeedbackController {
         let displayInfo = SupportBundleDisplayInfo(url: url) ?? SupportBundleDisplayInfo(
             displayName: url.lastPathComponent,
             displayTimestamp: exportedAt.formatted(date: .abbreviated, time: .shortened),
-            sanitizedFullPath: ObservabilitySanitizer().sanitize(fileURL: url)
+            sanitizedFullPath: sanitizer.sanitize(fileURL: url)
         )
 
         return SupportExportRecord(
@@ -501,7 +504,7 @@ package final class AppSettingsFeedbackController {
     }
 
     private func makeDraftPreview(from draft: FeedbackDraft) -> String {
-        let trimmedDraft = draft.trimmedPayload()
+        let trimmedDraft = sanitizer.sanitize(draft.trimmedPayload())
         var lines: [String] = []
         if trimmedDraft.happened.isEmpty == false {
             lines.append(String(localized: "What happened:"))

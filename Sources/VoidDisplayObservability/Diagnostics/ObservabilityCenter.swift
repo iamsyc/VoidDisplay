@@ -39,7 +39,7 @@ package actor ObservabilityCenter {
     }
 
     package func record(_ event: ObservabilityEvent) async {
-        let sanitizedEvent = sanitize(event)
+        let sanitizedEvent = sanitizer.sanitize(event)
         writeOSLog(for: sanitizedEvent)
         try? await eventStore.append(sanitizedEvent)
         await issueStore.record(event: sanitizedEvent)
@@ -62,7 +62,7 @@ package actor ObservabilityCenter {
             correlationID: context.correlationID,
             deduplicationKey: context.deduplicationKey
         )
-        let sanitizedEvent = sanitize(event)
+        let sanitizedEvent = sanitizer.sanitize(event)
         writeOSLog(for: sanitizedEvent)
         try? await eventStore.append(sanitizedEvent)
         await issueStore.record(event: sanitizedEvent)
@@ -105,8 +105,18 @@ package actor ObservabilityCenter {
         await refreshSnapshot(reason: .exportRequested)
         let state = latestStateSnapshot ?? makeFallbackState(reason: .exportRequested)
         let health = latestHealthSummary ?? makeFallbackHealth()
-        let events = try await eventStore.recentEvents(limit: 2_000)
-        try await snapshotWriter.flush(state: state, health: health, events: events)
+        let events: [ObservabilityEvent]
+        do {
+            events = try await eventStore.recentEvents(limit: 2_000)
+        } catch {
+            events = await eventStore.recentInMemoryEvents(limit: 2_000)
+            AppLog.observability.warning("Persisted events were unavailable during support export; using in-memory events.")
+        }
+        do {
+            try await snapshotWriter.flush(state: state, health: health, events: events)
+        } catch {
+            AppLog.observability.warning("Agent snapshot flush failed during support export; continuing with the in-memory snapshot.")
+        }
         let issues = await issueStore.recentIssues(limit: 100)
         let transportCapability = transport.capability
         let result = try exporter.exportBundle(
@@ -237,20 +247,6 @@ package actor ObservabilityCenter {
                 }
                 return lhs.count > rhs.count
             }
-    }
-
-    private func sanitize(_ event: ObservabilityEvent) -> ObservabilityEvent {
-        ObservabilityEvent(
-            id: event.id,
-            timestamp: event.timestamp,
-            severity: event.severity,
-            subsystem: event.subsystem,
-            operation: sanitizer.sanitize(text: event.operation) ?? event.operation,
-            message: sanitizer.sanitize(text: event.message) ?? event.message,
-            metadata: sanitizer.sanitize(metadata: event.metadata),
-            correlationID: sanitizer.sanitize(text: event.correlationID),
-            deduplicationKey: sanitizer.sanitize(text: event.deduplicationKey)
-        )
     }
 
     private func writeOSLog(for event: ObservabilityEvent) {

@@ -25,6 +25,15 @@ struct VirtualDisplayRuntimeTrackerTests {
         #expect(tracker.runtimeGeneration(for: config.id) == 1)
         #expect(tracker.runtimeDisplayID(for: config.id) == 920)
         #expect(tracker.activeSerialNumbers == [22])
+        #expect(driver.createdDescriptors == [
+            VirtualDisplayRuntimeDescriptor(
+                name: "Managed 22",
+                serialNumber: 22,
+                physicalSize: CGSize(width: 300, height: 200),
+                maximumPixelDimensions: .init(width: 1920, height: 1080),
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, isHiDPI: false)]
+            )
+        ])
     }
 
     @Test
@@ -229,26 +238,30 @@ private final class FakeVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
 
     private let scriptedResults: [CreateResult]
     private var nextIndex = 0
-    private var terminationHandlersByConfigId: [UUID: @MainActor () -> Void] = [:]
+    private var latestTerminationHandler: (@MainActor () -> Void)?
 
     private(set) var createCallCount = 0
+    private(set) var createdDescriptors: [VirtualDisplayRuntimeDescriptor] = []
 
     init(scriptedResults: [CreateResult]) {
         self.scriptedResults = scriptedResults
     }
 
     func createRuntimeDisplay(
-        from config: VirtualDisplayConfig,
-        maxPixels _: (width: UInt32, height: UInt32)?,
+        descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
     ) throws -> any VirtualDisplayRuntimeHandling {
         createCallCount += 1
-        terminationHandlersByConfigId[config.id] = onTermination
+        createdDescriptors.append(descriptor)
+        latestTerminationHandler = onTermination
         let result: CreateResult
         if scriptedResults.indices.contains(nextIndex) {
             result = scriptedResults[nextIndex]
         } else {
-            result = .success(serialNum: config.serialNum, displayID: CGDirectDisplayID(10_000 + createCallCount))
+            result = .success(
+                serialNum: descriptor.serialNumber,
+                displayID: CGDirectDisplayID(10_000 + createCallCount)
+            )
         }
         nextIndex += 1
         switch result {
@@ -259,8 +272,8 @@ private final class FakeVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
         }
     }
 
-    func triggerTermination(for configId: UUID) {
-        terminationHandlersByConfigId[configId]?()
+    func triggerTermination(for _: UUID) {
+        latestTerminationHandler?()
     }
 }
 
@@ -274,7 +287,7 @@ private final class FakeVirtualDisplayRuntimeHandle: VirtualDisplayRuntimeHandli
         self.displayID = displayID
     }
 
-    func applyModes(_ modes: [ResolutionSelection]) -> Bool {
+    func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool {
         !modes.isEmpty
     }
 }

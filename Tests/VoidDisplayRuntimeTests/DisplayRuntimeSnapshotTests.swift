@@ -12,11 +12,7 @@ struct DisplayRuntimeSnapshotTests {
         let runtime = DisplayRuntime(
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: .init(
-                    rebuildRequestCount: 1,
-                    rebuildingConfigIDs: [configID],
                     runningConfigIDs: [configID],
-                    recentlyAppliedConfigIDs: [],
-                    rebuildFailureConfigIDs: [],
                     configStoreHasLoadFailure: false,
                     configStoreHasDiagnostics: false,
                     managedDisplays: [
@@ -45,7 +41,6 @@ struct DisplayRuntimeSnapshotTests {
         #expect(surface?.currentDisplayID == 77)
         #expect(surface?.isAuxiliary == false)
         #expect(surface?.managedVirtualDisplay?.isRunning == true)
-        #expect(surface?.managedVirtualDisplay?.isRebuilding == true)
         #expect(surface?.managedVirtualDisplay?.maximumPixelWidth == 3840)
         #expect(surface?.managedVirtualDisplay?.maximumPixelHeight == 2160)
     }
@@ -190,11 +185,7 @@ struct DisplayRuntimeSnapshotTests {
             ),
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: .init(
-                    rebuildRequestCount: 0,
-                    rebuildingConfigIDs: [],
                     runningConfigIDs: [configID],
-                    recentlyAppliedConfigIDs: [configID],
-                    rebuildFailureConfigIDs: [],
                     configStoreHasLoadFailure: false,
                     configStoreHasDiagnostics: false,
                     managedDisplays: [
@@ -247,11 +238,7 @@ struct DisplayRuntimeSnapshotTests {
             ),
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: .init(
-                    rebuildRequestCount: 0,
-                    rebuildingConfigIDs: [],
                     runningConfigIDs: [],
-                    recentlyAppliedConfigIDs: [],
-                    rebuildFailureConfigIDs: [],
                     configStoreHasLoadFailure: false,
                     configStoreHasDiagnostics: false,
                     managedDisplays: [],
@@ -288,7 +275,7 @@ struct DisplayRuntimeSnapshotTests {
     @Test func unavailableProvidersProduceEmptySnapshot() async {
         let snapshot = DisplayRuntime().makeSnapshot()
 
-        #expect(snapshot.schemaVersion == 3)
+        #expect(snapshot.schemaVersion == 4)
         #expect(snapshot.surfaces.isEmpty)
         #expect(snapshot.catalog == .empty)
         #expect(snapshot.capture == .empty)
@@ -325,26 +312,20 @@ struct DisplayRuntimeSnapshotTests {
 
         let snapshot = runtime.makeSnapshot()
         let runtimeJSON = String(decoding: try ObservabilityCodec.encode(snapshot), as: UTF8.self)
-        let runtimeSection = try await AnyObservabilitySnapshotProvider(
-            DisplayRuntimeSnapshotProvider(runtime: runtime)
-        ).makeSnapshot()
-        let runtimeSectionJSON = String(decoding: try ObservabilityCodec.encode(runtimeSection), as: UTF8.self)
         let decoded = try ObservabilityCodec.decode(
             DisplayRuntimeSnapshot.self,
             from: ObservabilityCodec.encode(snapshot)
         )
 
-        #expect(snapshot.schemaVersion == 3)
-        #expect(decoded.schemaVersion == 3)
+        #expect(snapshot.schemaVersion == 4)
+        #expect(decoded.schemaVersion == 4)
         #expect(snapshot.sharing.routes.first?.hasConcreteRoute == true)
         #expect(snapshot.sharing.sharingClientCount == 1)
         #expect(snapshot.consumerLeases.first?.ownerSource == .sharingService)
         #expect(snapshot.aggregatedDemands.first?.activeViewerCount == 2)
         #expect(runtimeJSON.contains("redactedLabel") == false)
-        #expect(runtimeSectionJSON.contains("redactedLabel") == false)
         for sensitiveFixture in sensitiveFixtures {
             #expect(runtimeJSON.contains(sensitiveFixture) == false)
-            #expect(runtimeSectionJSON.contains(sensitiveFixture) == false)
         }
     }
 
@@ -407,11 +388,7 @@ struct DisplayRuntimeSnapshotTests {
             ),
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: .init(
-                    rebuildRequestCount: 0,
-                    rebuildingConfigIDs: [],
                     runningConfigIDs: [configID],
-                    recentlyAppliedConfigIDs: [],
-                    rebuildFailureConfigIDs: [],
                     configStoreHasLoadFailure: false,
                     configStoreHasDiagnostics: false,
                     managedDisplays: [
@@ -495,7 +472,7 @@ struct DisplayRuntimeSnapshotTests {
         )
 
         #expect(applyResult.outcome == .applied)
-        #expect(snapshot.schemaVersion == 3)
+        #expect(snapshot.schemaVersion == 4)
         #expect(Set(snapshot.consumerLeases.map(\.id)) == Set([previewLease.id, lanLease.id]))
         #expect(Set(snapshot.consumerLeases.map(\.ownerSource)) == Set([.localUI, .sharingService]))
         #expect(snapshot.consumerLeases.map(\.state) == [.attached, .attached])

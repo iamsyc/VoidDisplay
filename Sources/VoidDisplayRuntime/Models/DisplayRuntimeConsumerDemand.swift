@@ -90,6 +90,17 @@ package nonisolated struct DisplayRuntimeConsumerDemand: Codable, Equatable, Sen
             activeViewerCount: activeViewerCount ?? self.activeViewerCount
         )
     }
+
+    package func hasSameCaptureRequirements(as other: Self) -> Bool {
+        sourcePixelSize == other.sourcePixelSize
+            && preferredPixelSize == other.preferredPixelSize
+            && maximumPixelSize == other.maximumPixelSize
+            && sourceFramesPerSecond == other.sourceFramesPerSecond
+            && preferredFramesPerSecond == other.preferredFramesPerSecond
+            && capturesCursor == other.capturesCursor
+            && powerProfile == other.powerProfile
+            && latencyPreference == other.latencyPreference
+    }
 }
 
 package nonisolated enum DisplayRuntimeAggregateQualityProfile: String, Codable, Equatable, Sendable {

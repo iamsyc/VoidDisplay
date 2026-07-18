@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,17 +17,26 @@ import (
 )
 
 func main() {
-	var controlToken string
+	var controlTokenStdin bool
 	var loopbackHTTP string
 	var listenUDP string
 	var parentPID int
-	flag.StringVar(&controlToken, "control-token", "", "shared control token for loopback requests")
+	flag.BoolVar(&controlTokenStdin, "control-token-stdin", false, "read the shared control token from standard input")
 	flag.StringVar(&loopbackHTTP, "loopback-http", "127.0.0.1:0", "loopback HTTP listen address")
 	flag.StringVar(&listenUDP, "listen-udp", ":0", "UDP4 listen address for WebRTC traffic")
 	flag.IntVar(&parentPID, "parent-pid", 0, "parent process identifier to monitor")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if !controlTokenStdin {
+		logger.Error("control token input is required")
+		os.Exit(2)
+	}
+	controlToken, err := readControlToken(os.Stdin)
+	if err != nil {
+		logger.Error("failed to read control token", "error", err)
+		os.Exit(2)
+	}
 	server := relay.NewServer(relay.Config{
 		ControlToken: controlToken,
 		ListenUDP:    listenUDP,
@@ -37,13 +49,34 @@ func main() {
 		go monitorParentProcess(ctx, stop, parentPID, logger)
 	}
 
-	err := server.ListenAndServe(ctx, loopbackHTTP, func(loopback string) {
+	err = server.ListenAndServe(ctx, loopbackHTTP, func(loopback string) {
 		fmt.Fprintln(os.Stdout, relay.ReadyJSON(loopback))
 	})
 	if err != nil {
 		logger.Error("relay stopped with error", "error", err)
 		os.Exit(1)
 	}
+}
+
+const maxControlTokenBytes = 256
+
+func readControlToken(reader io.Reader) (string, error) {
+	buffered := bufio.NewReaderSize(io.LimitReader(reader, maxControlTokenBytes+2), maxControlTokenBytes+2)
+	line, err := buffered.ReadString('\n')
+	if err != nil {
+		return "", errors.New("control_token_line_missing")
+	}
+	token := line[:len(line)-1]
+	if len(token) > 0 && token[len(token)-1] == '\r' {
+		token = token[:len(token)-1]
+	}
+	if token == "" {
+		return "", errors.New("control_token_empty")
+	}
+	if len(token) > maxControlTokenBytes {
+		return "", errors.New("control_token_too_large")
+	}
+	return token, nil
 }
 
 func monitorParentProcess(ctx context.Context, cancel context.CancelFunc, parentPID int, logger *slog.Logger) {

@@ -6,9 +6,10 @@
 ## 阅读顺序
 
 1. [产品定位与架构重构前置结论](./product-positioning.md)：先确认 VoidDisplay 的产品边界、`DisplaySurface` 对象、`DisplayRuntime` 控制平面定位、LAN Web View 安全边界和远程控制边界。
-2. [DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)：再阅读主路线图。该路线已经完成，现作为 Phase 1 到 Phase 6 的历史总览和架构索引入口。
-3. Phase 1 到 Phase 6 历史文档：按阶段阅读当时的目标、边界、验证门禁和实现记录。这些文件是历史计划或执行记录，不再作为当前待办清单。
-4. [DisplayRuntime Post-Refactor Cleanup Plan](./display-runtime-post-refactor-cleanup-plan.md)：最后阅读主路线完成后的收尾计划。收尾计划不使用新的阶段编号。
+2. [LAN Web View 安全契约](./lan-sharing-security.md)：确认当前 capability 路由、撤销规则、信令预算和可信局域网威胁模型。
+3. [DisplayRuntime 重构执行计划](./display-runtime-refactor-plan.md)：再阅读主路线图。该路线已经完成，现作为 Phase 1 到 Phase 6 的历史总览和架构索引入口。
+4. Phase 1 到 Phase 6 历史文档：按阶段阅读当时的目标、边界、验证门禁和实现记录。这些文件是历史计划或执行记录，不再作为当前待办清单。
+5. [DisplayRuntime Post-Refactor Cleanup Plan](./display-runtime-post-refactor-cleanup-plan.md)：最后阅读主路线完成后的收尾计划。收尾计划不使用新的阶段编号。
 
 ## 当前架构状态
 
@@ -16,8 +17,11 @@
 - `DisplayRuntime` 是控制平面，负责状态、事件、事务、使用方租约、快照和意图分发。
 - `DisplaySurface` 是产品聚合对象，表达虚拟显示器、物理显示器、捕获状态、观看者、分享 URL、诊断状态和最近事务。
 - Capture、WebRTC、WebSocket、HTTP 和编码帧路径属于数据平面，不进入 runtime。
+- LAN 分享路由与真实帧需求分离；零观看者时保持 capability 路由和信令会话，停止 `SCStream` 采集。
+- CG 虚拟显示 driver 只接收纯运行时 descriptor，不读取持久化配置身份、启用意图或事务对象。
 - 主导航已经收敛为 `Displays` 和 `Diagnostics`。
-- LAN Web View 仍是局域网观察能力，不引入 token、密码、账号体系或 auth。
+- LAN Web View 使用按分享轮换的临时 capability URL，不提供密码、账号体系或互联网访问。
+- 历史 Phase 文档中的无 token 边界记录只描述当时已关闭的重构范围，当前行为以 [LAN Web View 安全契约](./lan-sharing-security.md) 为准。
 - VoidDisplay 不做远程控制、输入注入、剪贴板或浏览器 agent 控制。
 
 ## Phase 文档

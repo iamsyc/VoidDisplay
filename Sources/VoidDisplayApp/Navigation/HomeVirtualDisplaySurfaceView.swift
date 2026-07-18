@@ -21,6 +21,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private let virtualDisplay: VirtualDisplayController
     private let capturePerformancePreferences: CapturePerformancePreferences
     private let displayRuntime: DisplayRuntime
+    private let sharingAdapter: DisplayRuntimeSharingAdapter
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     @State private var viewModel: VirtualDisplayListViewModel
@@ -41,6 +42,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         virtualDisplay: VirtualDisplayController,
         capturePerformancePreferences: CapturePerformancePreferences,
         displayRuntime: DisplayRuntime,
+        sharingAdapter: DisplayRuntimeSharingAdapter,
         openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
     ) {
         self.capture = capture
@@ -48,6 +50,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         self.virtualDisplay = virtualDisplay
         self.capturePerformancePreferences = capturePerformancePreferences
         self.displayRuntime = displayRuntime
+        self.sharingAdapter = sharingAdapter
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
         _viewModel = State(initialValue: VirtualDisplayListViewModel(controller: virtualDisplay))
         _sharingPortInput = State(initialValue: String(sharing.preferredWebServicePort))
@@ -63,19 +66,24 @@ package struct HomeVirtualDisplaySurfaceView: View {
             sharePageAddresses: SharingUIComposition.runtimeState(sharing: sharing).sharePageAddresses
         )
 
-        let layout = HomeLayoutConfiguration.list
+        let metrics = HomeLayoutMetrics.current
         let itemStates = itemRenderStates(for: presentation.items)
         let context = layoutContext(
-            layout: layout,
+            metrics: metrics,
             presentation: presentation,
             itemStates: itemStates
         )
 
         ScrollView {
-            surfaceContent(context: context)
+            HomeVirtualDisplaySurfaceContent(
+                context: context,
+                configStorePresentation: virtualDisplay.configStorePresentation,
+                isConfigStoreDetailsExpanded: $isConfigStoreDetailsExpanded,
+                resetConfigStore: resetConfigStore
+            )
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("home_virtual_display_surface")
-                .frame(maxWidth: layout.metrics.contentMaxWidth, alignment: .topLeading)
+                .frame(maxWidth: metrics.contentMaxWidth, alignment: .topLeading)
                 .appListContentInsets()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -168,41 +176,18 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    @ViewBuilder
-    private func surfaceContent(context: HomeLayoutContext) -> some View {
-        HomeLayoutShell(context: context) {
-            layoutContent(isEmpty: context.itemStates.isEmpty) {
-                HomeListRows(context: context)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func layoutContent<Content: View>(
-        isEmpty: Bool,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        if virtualDisplay.configStorePresentation.hasLoadFailure {
-            configStoreErrorPanel
-        } else if isEmpty {
-            emptyState
-        } else {
-            content()
-        }
-    }
-
     private func editSheet(for item: EditingConfig) -> some View {
         EditVirtualDisplayConfigView(configId: item.id)
             .environment(virtualDisplay)
     }
 
     private func layoutContext(
-        layout: HomeLayoutConfiguration,
+        metrics: HomeLayoutMetrics,
         presentation: HomeVirtualDisplaySurfacePresentation,
         itemStates: [HomeVirtualDisplayItemRenderState]
     ) -> HomeLayoutContext {
         HomeLayoutContext(
-            layout: layout,
+            metrics: metrics,
             presentation: presentation,
             itemStates: itemStates,
             isCreateVirtualDisplayDisabled: virtualDisplay.configStorePresentation.hasLoadFailure,
@@ -280,62 +265,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private var configStoreErrorPanel: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            Label("Virtual Display Config File Unavailable", systemImage: "exclamationmark.triangle.fill")
-                .font(.headline)
-                .foregroundStyle(.orange)
-
-            Text(
-                virtualDisplay.configStorePresentation.loadErrorMessage ??
-                    String(localized: "The virtual display config file is incompatible or corrupted. Reset the config file to continue.")
-            )
-            .font(.body)
-
-            if let diagnostics = virtualDisplay.configStorePresentation.diagnosticsSummary {
-                DisclosureGroup(
-                    isExpanded: $isConfigStoreDetailsExpanded,
-                    content: {
-                        Text(diagnostics)
-                            .font(.footnote.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    },
-                    label: {
-                        Text("Details")
-                    }
-                )
-            }
-
-            Button("Reset Config File", role: .destructive) {
-                do {
-                    _ = try virtualDisplay.resetVirtualDisplayData()
-                } catch {}
-            }
-            .appActionButtonStyle(variant: .danger)
-            .accessibilityIdentifier("virtual_display_reset_config_file_button")
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.orange.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.orange.opacity(0.18), lineWidth: AppUI.Stroke.subtle)
-        )
-        .accessibilityIdentifier("virtual_display_config_store_error_panel")
-    }
-
-    private var emptyState: some View {
-        ContentUnavailableView(
-            "No Virtual Display",
-            systemImage: "display.trianglebadge.exclamationmark",
-            description: Text("Add a virtual display to start previewing or sharing it from Home.")
-        )
-        .frame(maxWidth: .infinity, minHeight: 220)
-        .accessibilityIdentifier("virtual_displays_empty_state")
+    private func resetConfigStore() {
+        do {
+            _ = try virtualDisplay.resetVirtualDisplayData()
+        } catch {}
     }
 
     private func perform(
@@ -387,13 +320,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func startPreview(_ item: HomeVirtualDisplayItemPresentation) {
         guard let displayID = item.displayID else { return }
         Task {
-            if let existingSession = CaptureUIComposition
-                .previewActions(
-                    capture: capture,
-                    displayRuntime: displayRuntime,
-                    capturePerformancePreferences: capturePerformancePreferences
-                )
-                .previewIDForDisplayID(displayID) {
+            if let existingSession = previewActions.previewIDForDisplayID(displayID) {
                 openWindow(value: existingSession)
                 return
             }
@@ -404,13 +331,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 )
                 return
             }
-            let actions = CaptureUIComposition.previewActions(
-                capture: capture,
-                displayRuntime: displayRuntime,
-                capturePerformancePreferences: capturePerformancePreferences
-            )
             do {
-                let outcome = try await actions.startPreview(
+                let outcome = try await previewActions.startPreview(
                     display,
                     CapturePreviewDisplayMetadata(
                         displayName: displayName(for: display),
@@ -438,15 +360,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func stopPreview(_ item: HomeVirtualDisplayItemPresentation) {
         guard let displayID = item.displayID else { return }
         Task {
-            let actions = CaptureUIComposition.previewActions(
-                capture: capture,
-                displayRuntime: displayRuntime,
-                capturePerformancePreferences: capturePerformancePreferences
-            )
-            guard let previewID = actions.previewIDForDisplayID(displayID) else {
+            guard let previewID = previewActions.previewIDForDisplayID(displayID) else {
                 return
             }
-            await actions.closePreview(previewID)
+            await previewActions.closePreview(previewID)
         }
     }
 
@@ -462,18 +379,16 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 return
             }
             do {
-                _ = try await DisplayRuntimeSharingAdapter(
-                    controller: sharing,
-                    capturePerformancePreferences: capturePerformancePreferences
+                _ = try await sharingAdapter.beginLANWebViewSharing(
+                    display: display,
+                    runtime: displayRuntime
                 )
-                    .beginLANWebViewSharing(display: display, runtime: displayRuntime)
             } catch is CancellationError {
             } catch {
-                await DisplayRuntimeSharingAdapter(
-                    controller: sharing,
-                    capturePerformancePreferences: capturePerformancePreferences
+                await sharingAdapter.stopLANWebViewSharing(
+                    displayID: displayID,
+                    runtime: displayRuntime
                 )
-                    .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
                 AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
                 presentActionError(
                     title: String(localized: "Share Failed"),
@@ -489,11 +404,10 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func stopWebView(_ item: HomeVirtualDisplayItemPresentation) {
         guard let displayID = item.displayID else { return }
         Task {
-            await DisplayRuntimeSharingAdapter(
-                controller: sharing,
-                capturePerformancePreferences: capturePerformancePreferences
+            await sharingAdapter.stopLANWebViewSharing(
+                displayID: displayID,
+                runtime: displayRuntime
             )
-                .stopLANWebViewSharing(displayID: displayID, runtime: displayRuntime)
         }
     }
 
@@ -629,6 +543,14 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private func presentActionError(title: String, message: String) {
         actionAlert = UserFacingAlertState(title: title, message: message)
+    }
+
+    private var previewActions: CapturePreviewActions {
+        CaptureUIComposition.previewActions(
+            capture: capture,
+            displayRuntime: displayRuntime,
+            capturePerformancePreferences: capturePerformancePreferences
+        )
     }
 
     private var permissionLabel: String {

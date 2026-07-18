@@ -3,6 +3,7 @@ import Dispatch
 import Foundation
 package nonisolated struct FeedbackBundleExporter {
     package typealias CommandRunner = (_ launchPath: String, _ arguments: [String], _ timeout: TimeInterval) -> String?
+    package typealias ArchiveWriter = (_ sourceURL: URL, _ destinationURL: URL) throws -> Void
 
     private let exportsDirectoryURL: URL
     private let virtualDisplayConfigsURL: URL
@@ -10,7 +11,9 @@ package nonisolated struct FeedbackBundleExporter {
     private let sanitizer: ObservabilitySanitizer
     private let fileManager: FileManager
     private let dateProvider: () -> Date
+    private let reportIDProvider: () -> UUID
     private let commandRunner: CommandRunner
+    private let archiveWriter: ArchiveWriter
 
     package init(
         exportsDirectoryURL: URL,
@@ -19,7 +22,9 @@ package nonisolated struct FeedbackBundleExporter {
         sanitizer: ObservabilitySanitizer,
         fileManager: FileManager = .default,
         dateProvider: @escaping () -> Date = Date.init,
-        commandRunner: CommandRunner? = nil
+        reportIDProvider: @escaping () -> UUID = UUID.init,
+        commandRunner: CommandRunner? = nil,
+        archiveWriter: ArchiveWriter? = nil
     ) {
         self.exportsDirectoryURL = exportsDirectoryURL
         self.virtualDisplayConfigsURL = virtualDisplayConfigsURL
@@ -27,7 +32,9 @@ package nonisolated struct FeedbackBundleExporter {
         self.sanitizer = sanitizer
         self.fileManager = fileManager
         self.dateProvider = dateProvider
+        self.reportIDProvider = reportIDProvider
         self.commandRunner = commandRunner ?? Self.runCommand
+        self.archiveWriter = archiveWriter ?? Self.zipDirectory
     }
 
     package func exportBundle(
@@ -39,61 +46,87 @@ package nonisolated struct FeedbackBundleExporter {
         issues: [IssueRecord],
         transportCapability: FeedbackTransportCapability
     ) throws -> FeedbackBundleExportResult {
-        try fileManager.createDirectory(at: exportsDirectoryURL, withIntermediateDirectories: true)
+        try createPrivateDirectory(at: exportsDirectoryURL)
 
-        let timestamp = Self.timestampFormatter.string(from: dateProvider())
-        let bundleName = "support-bundle-\(timestamp)"
+        let generatedAt = dateProvider()
+        let timestamp = Self.timestampFormatter.string(from: generatedAt)
+        let reportID = reportIDProvider()
+        let bundleName = "support-bundle-\(timestamp)-\(reportID.uuidString.lowercased())"
         let stagingURL = exportsDirectoryURL.appendingPathComponent(bundleName, isDirectory: true)
         let bundleURL = exportsDirectoryURL.appendingPathComponent("\(bundleName).zip", isDirectory: false)
 
-        try? fileManager.removeItem(at: stagingURL)
-        try? fileManager.removeItem(at: bundleURL)
-        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+        guard fileManager.fileExists(atPath: stagingURL.path) == false,
+              fileManager.fileExists(atPath: bundleURL.path) == false else {
+            throw CocoaError(.fileWriteFileExists)
+        }
 
-        try writeJSON(draft.trimmedPayload(), to: stagingURL.appendingPathComponent("feedback.json"))
+        var completed = false
+        defer {
+            try? fileManager.removeItem(at: stagingURL)
+            if completed == false {
+                try? fileManager.removeItem(at: bundleURL)
+            }
+        }
+
+        try createPrivateDirectory(at: stagingURL)
+
+        let safeDraft = sanitizer.sanitize(draft.trimmedPayload())
+        let safeState = sanitizer.sanitize(state)
+        let safeHealth = sanitizer.sanitize(health)
+        let safeEvents = events.map(sanitizer.sanitize)
+        let safeIssues = issues.map(sanitizer.sanitize)
+
+        try writeJSON(safeDraft, to: stagingURL.appendingPathComponent("feedback.json"))
         try writeJSON(
-            state,
+            safeState,
             to: stagingURL.appendingPathComponent("state", isDirectory: true).appendingPathComponent("current-state.json")
         )
         try writeJSON(
-            health,
+            safeHealth,
             to: stagingURL.appendingPathComponent("state", isDirectory: true).appendingPathComponent("health-summary.json")
         )
         try writeRecentEvents(
-            events,
+            safeEvents,
             to: stagingURL.appendingPathComponent("events", isDirectory: true).appendingPathComponent("recent-events.ndjson")
         )
         try writeJSON(
-            issues,
+            safeIssues,
             to: stagingURL.appendingPathComponent("issues", isDirectory: true).appendingPathComponent("recent-issues.json")
         )
 
         let attachments = try writeAttachments(consent: consent, into: stagingURL)
         let manifest = SupportBundleManifest(
-            reportID: UUID(),
-            generatedAt: dateProvider(),
+            reportID: reportID,
+            generatedAt: generatedAt,
             transportCapability: transportCapability,
             app: .init(
                 bundleIdentifier: state.app.bundleIdentifier,
                 version: state.app.version,
                 build: state.app.build
             ),
-            eventCount: events.count,
-            issueCount: issues.count,
+            eventCount: safeEvents.count,
+            issueCount: safeIssues.count,
             attachments: attachments.sorted(),
             consent: consent
         )
         try writeJSON(manifest, to: stagingURL.appendingPathComponent("manifest.json"))
 
-        try zipDirectory(stagingURL, destinationURL: bundleURL)
-        try? fileManager.removeItem(at: stagingURL)
+        try archiveWriter(stagingURL, bundleURL)
+        try validateArchive(at: bundleURL)
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: bundleURL.path)
+        completed = true
         return FeedbackBundleExportResult(bundleURL: bundleURL, manifest: manifest)
     }
 
     package func latestExportedBundleURL() -> URL? {
         guard let urls = try? fileManager.contentsOfDirectory(
             at: exportsDirectoryURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [
+                .contentModificationDateKey,
+                .fileSizeKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey
+            ],
             options: [.skipsHiddenFiles]
         ) else {
             return nil
@@ -101,15 +134,25 @@ package nonisolated struct FeedbackBundleExporter {
 
         return urls
             .filter {
-                $0.pathExtension == "zip" &&
-                    $0.lastPathComponent.hasPrefix("support-bundle-")
+                guard $0.pathExtension == "zip",
+                      $0.lastPathComponent.hasPrefix("support-bundle-"),
+                      let values = try? $0.resourceValues(forKeys: [
+                          .fileSizeKey,
+                          .isRegularFileKey,
+                          .isSymbolicLinkKey
+                      ]) else {
+                    return false
+                }
+                return values.isRegularFile == true &&
+                    values.isSymbolicLink != true &&
+                    (values.fileSize ?? 0) > 0
             }
             .max { lhs, rhs in
                 let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return lhsDate < rhsDate
             }?
-            .resolvingSymlinksInPath()
+            .standardizedFileURL
     }
 
     private func writeAttachments(
@@ -154,6 +197,19 @@ package nonisolated struct FeedbackBundleExporter {
         for sourceURL in [virtualDisplayConfigsURL, displayShareMappingsURL] where fileManager.fileExists(atPath: sourceURL.path) {
             let sanitizedName = sourceURL.lastPathComponent
             let destinationURL = directoryURL.appendingPathComponent(sanitizedName)
+            let fileSize = try sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard fileSize <= Self.maximumConfigSnapshotByteCount else {
+                try writeText(
+                    redactedConfigPlaceholder(
+                        sourceURL: sourceURL,
+                        originalByteCount: fileSize,
+                        reason: "size_limit_exceeded"
+                    ),
+                    to: destinationURL
+                )
+                writtenFiles.append(sanitizedName)
+                continue
+            }
             let data = try Data(contentsOf: sourceURL)
             try writeText(sanitizedConfigSnapshot(data, sourceURL: sourceURL), to: destinationURL)
             writtenFiles.append(sanitizedName)
@@ -164,21 +220,29 @@ package nonisolated struct FeedbackBundleExporter {
     private func sanitizedConfigSnapshot(_ data: Data, sourceURL: URL) -> String {
         guard let value = try? ObservabilityCodec.decode(JSONValue.self, from: data),
               let encoded = try? ObservabilityCodec.encode(redactedConfigSnapshot(value, sourceURL: sourceURL)) else {
-            return redactedConfigPlaceholder(sourceURL: sourceURL, originalByteCount: data.count)
+            return redactedConfigPlaceholder(
+                sourceURL: sourceURL,
+                originalByteCount: data.count,
+                reason: "invalid_json"
+            )
         }
         return String(decoding: encoded, as: UTF8.self)
     }
 
-    private func redactedConfigPlaceholder(sourceURL: URL, originalByteCount: Int) -> String {
+    private func redactedConfigPlaceholder(
+        sourceURL: URL,
+        originalByteCount: Int,
+        reason: String
+    ) -> String {
         let placeholder: JSONValue = .object([
             "originalByteCount": .number(Double(originalByteCount)),
-            "reason": .string("invalid_json"),
+            "reason": .string(reason),
             "redacted": .bool(true),
             "sourceKind": .string(configSnapshotSourceKind(sourceURL))
         ])
         let encoded = try? ObservabilityCodec.encode(placeholder)
         return encoded.map { String(decoding: $0, as: UTF8.self) } ??
-            "{\"originalByteCount\":\(originalByteCount),\"reason\":\"invalid_json\",\"redacted\":true,\"sourceKind\":\"\(configSnapshotSourceKind(sourceURL))\"}"
+            "{\"originalByteCount\":\(originalByteCount),\"reason\":\"\(reason)\",\"redacted\":true,\"sourceKind\":\"\(configSnapshotSourceKind(sourceURL))\"}"
     }
 
     private func configSnapshotSourceKind(_ sourceURL: URL) -> String {
@@ -208,10 +272,11 @@ package nonisolated struct FeedbackBundleExporter {
         switch value {
         case .object(let object):
             return .object(object.reduce(into: [String: JSONValue]()) { result, entry in
-                if entry.key == "displayName" {
-                    result[entry.key] = .string("<redacted>")
+                let key = sanitizer.sanitize(text: entry.key) ?? entry.key
+                if sanitizer.shouldRedactValue(forKey: entry.key) {
+                    result[key] = .string("<redacted>")
                 } else {
-                    result[entry.key] = recursivelySanitizeConfigSnapshot(entry.value)
+                    result[key] = recursivelySanitizeConfigSnapshot(entry.value)
                 }
             })
         case .array(let array):
@@ -271,11 +336,21 @@ package nonisolated struct FeedbackBundleExporter {
             }
 
         guard let candidate,
-              let content = try? String(contentsOf: candidate, encoding: .utf8) else {
+              let data = try? readPrefix(
+                  from: candidate,
+                  maximumByteCount: Self.maximumCrashReportExcerptByteCount
+              ) else {
             return nil
         }
+        let content = String(decoding: data, as: UTF8.self)
         let excerpt = content.split(whereSeparator: \.isNewline).prefix(220).joined(separator: "\n")
         return sanitizer.sanitize(text: excerpt)
+    }
+
+    private func readPrefix(from url: URL, maximumByteCount: Int) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: maximumByteCount) ?? Data()
     }
 
     private static func runCommand(
@@ -312,7 +387,25 @@ package nonisolated struct FeedbackBundleExporter {
         }
     }
 
-    private func zipDirectory(_ sourceURL: URL, destinationURL: URL) throws {
+    private func createPrivateDirectory(at url: URL) throws {
+        try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+
+    private func validateArchive(at url: URL) throws {
+        let values = try url.resourceValues(forKeys: [
+            .fileSizeKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey
+        ])
+        guard values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              (values.fileSize ?? 0) > 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
+    private static func zipDirectory(_ sourceURL: URL, _ destinationURL: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         process.arguments = [
@@ -358,4 +451,7 @@ package nonisolated struct FeedbackBundleExporter {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter
     }()
+
+    private static let maximumConfigSnapshotByteCount = 2 * 1_024 * 1_024
+    private static let maximumCrashReportExcerptByteCount = 512 * 1_024
 }

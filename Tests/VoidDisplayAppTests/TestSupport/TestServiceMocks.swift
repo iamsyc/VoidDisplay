@@ -120,6 +120,7 @@ final class MockSharingService: SharingServiceProtocol {
     var startedSharingDisplayIDs: [CGDirectDisplayID] = []
     var streamClientCountsByTarget: [ShareTarget: Int] = [:]
     var shareIDByDisplayID: [CGDirectDisplayID: UInt32] = [:]
+    var sharePagePathByDisplayID: [CGDirectDisplayID: String] = [:]
     var shareTargetByDisplayID: [CGDirectDisplayID: ShareTarget] = [:]
     var startSharingHandler: StartSharingHandler?
     private var sharingStateObservers: [UUID: @MainActor @Sendable (SharingStateSnapshot) -> Void] = [:]
@@ -208,6 +209,10 @@ final class MockSharingService: SharingServiceProtocol {
 
     func shareID(for displayID: CGDirectDisplayID) -> UInt32? {
         shareIDByDisplayID[displayID]
+    }
+
+    func sharePagePath(for displayID: CGDirectDisplayID) -> String? {
+        sharePagePathByDisplayID[displayID]
     }
 
     func shareTarget(for displayID: CGDirectDisplayID) -> ShareTarget? {

@@ -3,6 +3,7 @@ import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 import VoidDisplayObservability
 import SwiftUI
+
 package struct EditVirtualDisplayConfigView: View {
     package let configId: UUID
 
@@ -29,6 +30,7 @@ package struct EditVirtualDisplayConfigView: View {
 
     @State private var localAlert: UserFacingAlertState?
     @State private var isSaveAndRebuildInFlight = false
+    @FocusState private var focusedField: VirtualDisplayConfigurationFocusField?
 
     package init(configId: UUID) {
         self.configId = configId
@@ -44,11 +46,6 @@ package struct EditVirtualDisplayConfigView: View {
 
     private var isSaveBlockedByMissingRequiredFields: Bool {
         trimmedName.isEmpty || selectedModes.isEmpty
-    }
-
-    private var aspectPreviewRatio: CGFloat {
-        let components = selectedAspectRatio.components
-        return CGFloat(components.width / components.height)
     }
 
     private var displayedPhysicalSizeText: String {
@@ -76,11 +73,27 @@ package struct EditVirtualDisplayConfigView: View {
 
         Form {
             basicInfoSection
-            physicalDisplaySection
-            resolutionModesSection
+            VirtualDisplayPhysicalConfigurationSection(
+                screenDiagonal: $screenDiagonal,
+                selectedAspectRatio: $selectedAspectRatio,
+                physicalSizeText: displayedPhysicalSizeText,
+                focusedField: $focusedField
+            )
+            VirtualDisplayResolutionModesSection(
+                selectedModes: $selectedModes,
+                usePresetMode: $usePresetMode,
+                presetResolution: $presetResolution,
+                customWidth: $customWidth,
+                customHeight: $customHeight,
+                customRefreshRate: $customRefreshRate,
+                alert: $localAlert,
+                focusedField: $focusedField,
+                hiDPIAccessibilityIdentifier: "virtual_display_edit_mode_hidpi_toggle"
+            )
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
+        .interactiveDismissDisabled(isSaveAndRebuildInFlight)
         .accessibilityIdentifier("edit_virtual_display_form")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             editActionBar
@@ -131,6 +144,7 @@ package struct EditVirtualDisplayConfigView: View {
                             dismiss()
                         }
                         .buttonStyle(.bordered)
+                        .disabled(isSaveAndRebuildInFlight)
                         .keyboardShortcut(.cancelAction)
                         .accessibilityIdentifier("virtual_display_edit_cancel_button")
 
@@ -148,6 +162,7 @@ package struct EditVirtualDisplayConfigView: View {
                             dismiss()
                         }
                         .buttonStyle(.bordered)
+                        .disabled(isSaveAndRebuildInFlight)
                         .keyboardShortcut(.cancelAction)
                         .accessibilityIdentifier("virtual_display_edit_cancel_button")
 
@@ -179,14 +194,16 @@ package struct EditVirtualDisplayConfigView: View {
     private var basicInfoSection: some View {
         Section {
             TextField("Name", text: $name)
+                .focused($focusedField, equals: .name)
                 .accessibilityIdentifier("virtual_display_edit_name_field")
 
             HStack {
                 Text("Serial Number")
                 Spacer()
-                TextField("", value: $serialNum, format: .number)
+                TextField("Serial Number", value: $serialNum, format: .number)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 90)
+                    .focused($focusedField, equals: .serialNumber)
                     .accessibilityIdentifier("virtual_display_edit_serial_field")
             }
 
@@ -197,166 +214,6 @@ package struct EditVirtualDisplayConfigView: View {
             }
         } header: {
             Text("Basic Info")
-        }
-    }
-
-    @ViewBuilder
-    private var physicalDisplaySection: some View {
-        Section {
-            HStack {
-                Text("Screen Size")
-                Spacer()
-                TextField("", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 80)
-                Text("inches")
-            }
-
-            Picker("Aspect Ratio", selection: $selectedAspectRatio) {
-                ForEach(AspectRatio.allCases) { ratio in
-                    Text(ratio.rawValue).tag(ratio)
-                }
-            }
-
-            HStack {
-                Text("Physical Size")
-                Spacer()
-                Text(verbatim: displayedPhysicalSizeText)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Spacer()
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.accentColor, lineWidth: 2)
-                    .aspectRatio(aspectPreviewRatio, contentMode: .fit)
-                    .frame(height: 60)
-                    .overlay {
-                        Text(selectedAspectRatio.rawValue)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                Spacer()
-            }
-            .padding(.vertical, 4)
-        } header: {
-            Text("Physical Display")
-        }
-    }
-
-    @ViewBuilder
-    private var resolutionModesSection: some View {
-        Section {
-            if selectedModes.isEmpty {
-                Text("No resolution modes added")
-                    .foregroundStyle(.secondary)
-                    .italic()
-            } else {
-                ForEach($selectedModes) { $mode in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: "\(mode.width) × \(mode.height) @ \(Int(mode.refreshRate))Hz")
-                        }
-                        Spacer()
-                        HStack(spacing: 6) {
-                            Text("HiDPI")
-                                .font(.caption)
-                                .foregroundStyle($mode.enableHiDPI.wrappedValue ? .green : .secondary)
-                            Toggle("", isOn: $mode.enableHiDPI)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                                .controlSize(.small)
-                                .accessibilityIdentifier("virtual_display_edit_mode_hidpi_toggle")
-                        }
-                        ResolutionModeActionButton(
-                            "Delete Resolution Mode",
-                            systemImage: "minus.circle.fill",
-                            tint: .red
-                        ) {
-                            removeMode(mode)
-                        }
-                    }
-                }
-            }
-
-            Divider()
-
-            Picker("Add Method", selection: $usePresetMode) {
-                Text("Preset").tag(true)
-                Text("Custom").tag(false)
-            }
-            .pickerStyle(.segmented)
-
-            if usePresetMode {
-                LabeledContent(String(localized: "Preset")) {
-                    HStack(spacing: 8) {
-                        Picker("Preset Resolution", selection: $presetResolution) {
-                            ForEach(DisplayResolutionPreset.allCases) { res in
-                                Text(verbatim: "\(res.displayText) @ 60Hz")
-                                    .tag(res)
-                            }
-                        }
-                        .labelsHidden()
-
-                        ResolutionModeActionButton(
-                            "Add Preset Resolution",
-                            systemImage: "plus.circle.fill",
-                            tint: .green,
-                            action: addPresetMode
-                        )
-                    }
-                }
-            } else {
-                LabeledContent(String(localized: "Custom")) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        TextField("Width", value: $customWidth, format: .number)
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 70)
-                            .multilineTextAlignment(.trailing)
-                            .monospacedDigit()
-                            .controlSize(.small)
-
-                        Text("×")
-                            .foregroundStyle(.secondary)
-
-                        TextField("Height", value: $customHeight, format: .number)
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 70)
-                            .multilineTextAlignment(.trailing)
-                            .monospacedDigit()
-                            .controlSize(.small)
-
-                        Text("@")
-                            .foregroundStyle(.secondary)
-
-                        TextField("Hz", value: $customRefreshRate, format: .number)
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 44)
-                            .multilineTextAlignment(.trailing)
-                            .monospacedDigit()
-                            .controlSize(.small)
-
-                        Text("Hz")
-                            .foregroundStyle(.secondary)
-
-                        ResolutionModeActionButton(
-                            "Add Custom Resolution",
-                            systemImage: "plus.circle.fill",
-                            tint: .green,
-                            action: addCustomMode
-                        )
-                    }
-                }
-            }
-        } header: {
-            Text("Resolution Modes")
-        } footer: {
-            Text("Each resolution can enable HiDPI; when enabled, a 2× physical-pixel mode is generated automatically.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -465,46 +322,6 @@ package struct EditVirtualDisplayConfigView: View {
             )
             return
         }
-    }
-
-    private func addPresetMode() {
-        switch CreateVirtualDisplayInputValidator.addPresetMode(preset: presetResolution, to: selectedModes) {
-        case .appended(let updated):
-            selectedModes = updated
-        case .duplicate:
-            localAlert = UserFacingAlertState(
-                title: String(localized: "Tip"),
-                message: String(localized: "This resolution mode already exists.")
-            )
-        case .invalidValues:
-            break
-        }
-    }
-
-    private func addCustomMode() {
-        switch CreateVirtualDisplayInputValidator.addCustomMode(
-            width: customWidth,
-            height: customHeight,
-            refreshRate: customRefreshRate,
-            to: selectedModes
-        ) {
-        case .appended(let updated):
-            selectedModes = updated
-        case .duplicate:
-            localAlert = UserFacingAlertState(
-                title: String(localized: "Tip"),
-                message: String(localized: "This resolution mode already exists.")
-            )
-        case .invalidValues:
-            localAlert = UserFacingAlertState(
-                title: String(localized: "Error"),
-                message: String(localized: "Please enter valid resolution values.")
-            )
-        }
-    }
-
-    private func removeMode(_ mode: ResolutionSelection) {
-        selectedModes.removeAll { $0.id == mode.id }
     }
 
     private func handleUITestSaveAndRebuildTapped() {

@@ -1,14 +1,7 @@
 import Foundation
 import VoidDisplayFoundation
 
-package enum VirtualDisplayEditRebuildTransactionStatus: Equatable, Sendable {
-    case completed
-    case completedWithRecoveryFailures
-    case failed
-    case cancelled
-}
-
-package enum VirtualDisplayCommandTransactionStatus: Equatable, Sendable {
+package enum VirtualDisplayTransactionStatus: Equatable, Sendable {
     case completed
     case completedWithRecoveryFailures
     case failed
@@ -45,13 +38,13 @@ package struct VirtualDisplayCreateRequest: Equatable, Sendable {
 
 package struct VirtualDisplayCreateTransactionResult: Equatable, Sendable {
     package let transactionID: UUID
-    package let status: VirtualDisplayCommandTransactionStatus
+    package let status: VirtualDisplayTransactionStatus
     package let createdConfigID: UUID?
     package let virtualDisplayCommandSucceeded: Bool
 
     package init(
         transactionID: UUID,
-        status: VirtualDisplayCommandTransactionStatus,
+        status: VirtualDisplayTransactionStatus,
         createdConfigID: UUID?,
         virtualDisplayCommandSucceeded: Bool
     ) {
@@ -64,13 +57,13 @@ package struct VirtualDisplayCreateTransactionResult: Equatable, Sendable {
 
 package struct VirtualDisplayDeleteTransactionResult: Equatable, Sendable {
     package let transactionID: UUID
-    package let status: VirtualDisplayCommandTransactionStatus
+    package let status: VirtualDisplayTransactionStatus
     package let configID: UUID
     package let virtualDisplayCommandSucceeded: Bool
 
     package init(
         transactionID: UUID,
-        status: VirtualDisplayCommandTransactionStatus,
+        status: VirtualDisplayTransactionStatus,
         configID: UUID,
         virtualDisplayCommandSucceeded: Bool
     ) {
@@ -93,12 +86,12 @@ package struct VirtualDisplayEditRebuildSaveGateResult: Equatable, Sendable {
 
 package struct VirtualDisplayEditRebuildTransactionResult: Equatable, Sendable {
     package let transactionID: UUID
-    package let status: VirtualDisplayEditRebuildTransactionStatus
+    package let status: VirtualDisplayTransactionStatus
     package let virtualDisplayCommandSucceeded: Bool
 
     package init(
         transactionID: UUID,
-        status: VirtualDisplayEditRebuildTransactionStatus,
+        status: VirtualDisplayTransactionStatus,
         virtualDisplayCommandSucceeded: Bool
     ) {
         self.transactionID = transactionID

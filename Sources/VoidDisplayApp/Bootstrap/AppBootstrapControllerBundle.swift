@@ -3,6 +3,12 @@ import VoidDisplaySharing
 import VoidDisplayVirtualDisplay
 
 @MainActor
+struct AppBootstrapBaseControllerBundle {
+    let capture: CaptureController
+    let sharing: SharingController
+}
+
+@MainActor
 struct AppBootstrapControllerBundle {
     let capture: CaptureController
     let sharing: SharingController
@@ -10,12 +16,10 @@ struct AppBootstrapControllerBundle {
 }
 
 extension AppBootstrap {
-    static func makeControllerBundle(
+    static func makeBaseControllerBundle(
         captureSharing: AppBootstrapCaptureSharingBundle,
-        virtualDisplay: AppBootstrapVirtualDisplayBundle,
-        persistence: AppBootstrapPersistenceBundle,
-        appliedBadgeDisplayDuration: Duration
-    ) -> AppBootstrapControllerBundle {
+        persistence: AppBootstrapPersistenceBundle
+    ) -> AppBootstrapBaseControllerBundle {
         let capture = CaptureController(
             capturePreviewService: captureSharing.capturePreviewService,
             capturePreviewLifecycleService: CapturePreviewLifecycleService(
@@ -31,14 +35,25 @@ extension AppBootstrap {
             catalogService: captureSharing.catalogService,
             observability: persistence.observability
         )
+        return AppBootstrapBaseControllerBundle(capture: capture, sharing: sharing)
+    }
+
+    static func makeControllerBundle(
+        base: AppBootstrapBaseControllerBundle,
+        virtualDisplay: AppBootstrapVirtualDisplayBundle,
+        persistence: AppBootstrapPersistenceBundle,
+        runtime: AppBootstrapRuntimeBundle,
+        appliedBadgeDisplayDuration: Duration
+    ) -> AppBootstrapControllerBundle {
         let virtualDisplayController = VirtualDisplayController(
             virtualDisplayFacade: virtualDisplay.facade,
+            runtimeExecutors: makeVirtualDisplayRuntimeExecutors(runtime: runtime.displayRuntime),
             appliedBadgeDisplayDuration: appliedBadgeDisplayDuration,
             observability: persistence.observability
         )
         return AppBootstrapControllerBundle(
-            capture: capture,
-            sharing: sharing,
+            capture: base.capture,
+            sharing: base.sharing,
             virtualDisplay: virtualDisplayController
         )
     }

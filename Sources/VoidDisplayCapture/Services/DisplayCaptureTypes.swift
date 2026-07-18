@@ -102,7 +102,7 @@ package nonisolated struct DisplayCaptureDemandSnapshot: Sendable, Equatable {
     }
 
     nonisolated var isEmpty: Bool {
-        attachedPreviewSinkCount == 0 && shareTokenCount == 0 && !showsCursor
+        desiredProfile == nil
     }
 }
 package nonisolated enum DisplayCaptureProfileStateMachine {

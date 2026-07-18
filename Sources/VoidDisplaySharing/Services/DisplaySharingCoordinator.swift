@@ -32,6 +32,7 @@ package final class DisplaySharingCoordinator {
     private struct SharingSession {
         let display: SCDisplay
         let subscription: DisplayShareSubscription
+        let accessCapability: ShareAccessCapability
     }
 
     private var registrationsByDisplayID: [CGDirectDisplayID: DisplayRegistration] = [:]
@@ -41,15 +42,18 @@ package final class DisplaySharingCoordinator {
     private let idStore: DisplayShareIDStore
     private let startCoordinator: DisplayStreamStartCoordinator
     private let acquireShare: AcquireShare
+    private let accessCapabilityGenerator: @MainActor () throws -> ShareAccessCapability
 
     package init(
         idStore: DisplayShareIDStore,
         startCoordinator: DisplayStreamStartCoordinator = DisplayStreamStartCoordinator(),
-        acquireShare: @escaping AcquireShare = { _, _ in throw CancellationError() }
+        acquireShare: @escaping AcquireShare = { _, _ in throw CancellationError() },
+        accessCapabilityGenerator: @escaping @MainActor () throws -> ShareAccessCapability = ShareAccessCapability.generate
     ) {
         self.idStore = idStore
         self.startCoordinator = startCoordinator
         self.acquireShare = acquireShare
+        self.accessCapabilityGenerator = accessCapabilityGenerator
     }
 
     package var hasAnyActiveSharing: Bool {
@@ -190,7 +194,18 @@ package final class DisplaySharingCoordinator {
                 subscription.cancel()
                 return .invalidated
             }
-            self.sessionsByDisplayID[displayID] = SharingSession(display: display, subscription: subscription)
+            let accessCapability: ShareAccessCapability
+            do {
+                accessCapability = try self.accessCapabilityGenerator()
+            } catch {
+                subscription.cancel()
+                throw error
+            }
+            self.sessionsByDisplayID[displayID] = SharingSession(
+                display: display,
+                subscription: subscription,
+                accessCapability: accessCapability
+            )
             if CGDisplayIsMain(displayID) != 0 {
                 self.mainDisplayID = displayID
             }
@@ -262,6 +277,27 @@ package final class DisplaySharingCoordinator {
     package func target(for displayID: CGDirectDisplayID) -> ShareTarget? {
         guard let id = registrationsByDisplayID[displayID]?.shareID else { return nil }
         return .id(id)
+    }
+
+    package func sharePagePath(for displayID: CGDirectDisplayID) -> String? {
+        guard let target = target(for: displayID),
+              let capability = sessionsByDisplayID[displayID]?.accessCapability else {
+            return nil
+        }
+        return target.displayPath(accessCapability: capability)
+    }
+
+    package func validatesAccess(
+        to target: ShareTarget,
+        capability: ShareAccessCapability
+    ) -> Bool {
+        guard let concreteTarget = resolveConcreteTarget(for: target),
+              case .id(let shareID) = concreteTarget,
+              let displayID = displayIDsByShareID[shareID],
+              let session = sessionsByDisplayID[displayID] else {
+            return false
+        }
+        return session.accessCapability.securelyMatches(capability)
     }
 
     package func isSharing(displayID: CGDirectDisplayID) -> Bool {

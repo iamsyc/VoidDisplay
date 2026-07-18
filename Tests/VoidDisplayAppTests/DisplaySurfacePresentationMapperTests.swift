@@ -44,9 +44,6 @@ struct DisplaySurfacePresentationMapperTests {
                         desiredEnabled: true,
                         isRunning: true,
                         isLiveRuntime: true,
-                        isRebuilding: false,
-                        hasRecentApplySuccess: false,
-                        hasRebuildFailure: false,
                         hasRestoreFailure: false,
                         modeCount: 1,
                         maximumPixelWidth: 1920,
@@ -179,9 +176,6 @@ struct DisplaySurfacePresentationMapperTests {
                         desiredEnabled: true,
                         isRunning: true,
                         isLiveRuntime: false,
-                        isRebuilding: false,
-                        hasRecentApplySuccess: false,
-                        hasRebuildFailure: false,
                         hasRestoreFailure: false,
                         modeCount: 1,
                         maximumPixelWidth: 3840,
@@ -294,6 +288,161 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Starting")
     }
 
+    @Test func managedVirtualDisplayStatusShowsStartingForActiveEditRebuild() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000121"))
+        let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
+        let trace = transactionTrace(
+            kind: .virtualDisplayEditRebuild,
+            status: .active,
+            targetConfigID: configID
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(surface: surface, activeTransactions: [trace])
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Starting")
+    }
+
+    @Test func managedVirtualDisplayStatusDerivesRebuildFailureFromTransaction() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000122"))
+        let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
+        let trace = transactionTrace(
+            kind: .virtualDisplayRebuild,
+            status: .failed,
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "virtual_display_rebuild_failed",
+                underlyingDomain: "VirtualDisplay",
+                underlyingCode: 1,
+                recoverability: .retryable
+            ),
+            targetConfigID: configID
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(surface: surface, recentTransactions: [trace])
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Startup Failed")
+        #expect(compactValue("displays_issue_status", in: item) == "Startup Failed")
+    }
+
+    @Test func managedVirtualDisplayStatusIgnoresOlderRebuildFailureAfterNewerSuccess() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000123"))
+        let surface = managedVirtualSurface(
+            configID: configID,
+            displayID: 123,
+            desiredEnabled: true,
+            isRunning: true,
+            isLiveRuntime: true
+        )
+        let olderFailure = transactionTrace(
+            kind: .virtualDisplayRebuild,
+            status: .failed,
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "virtual_display_rebuild_failed",
+                underlyingDomain: "VirtualDisplay",
+                underlyingCode: 1,
+                recoverability: .retryable
+            ),
+            targetConfigID: configID
+        )
+        let newerSuccess = transactionTrace(
+            kind: .virtualDisplayRebuild,
+            status: .completed,
+            targetConfigID: configID
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(
+                surface: surface,
+                recentTransactions: [newerSuccess, olderFailure]
+            )
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
+        #expect(compactValue("displays_issue_status", in: item).isEmpty)
+    }
+
+    @Test func managedVirtualDisplayStatusIgnoresFailedDisableTransaction() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000125"))
+        let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
+        let failedDisable = transactionTrace(
+            kind: .virtualDisplayDisable,
+            status: .failed,
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "virtual_display_disable_failed",
+                underlyingDomain: "VirtualDisplay",
+                underlyingCode: 1,
+                recoverability: .retryable
+            ),
+            targetConfigID: configID
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(surface: surface, recentTransactions: [failedDisable])
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Not Running")
+        #expect(compactValue("displays_issue_status", in: item).isEmpty)
+    }
+
+    @Test func managedVirtualDisplayRunningStateOverridesStaleRestoreFailure() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000126"))
+        let surface = managedVirtualSurface(
+            configID: configID,
+            displayID: 126,
+            desiredEnabled: true,
+            isRunning: true,
+            isLiveRuntime: true,
+            hasRestoreFailure: true
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(surface: surface)
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
+        #expect(compactValue("displays_issue_status", in: item).isEmpty)
+    }
+
+    @Test func managedVirtualDisplayStatusShowsRetryingOverOlderRebuildFailure() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000124"))
+        let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
+        let activeRetry = transactionTrace(
+            kind: .virtualDisplayRebuild,
+            status: .active,
+            targetConfigID: configID
+        )
+        let olderFailure = transactionTrace(
+            kind: .virtualDisplayRebuild,
+            status: .failed,
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "virtual_display_rebuild_failed",
+                underlyingDomain: "VirtualDisplay",
+                underlyingCode: 1,
+                recoverability: .retryable
+            ),
+            targetConfigID: configID
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(
+                surface: surface,
+                activeTransactions: [activeRetry],
+                recentTransactions: [olderFailure]
+            )
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Starting")
+        #expect(compactValue("displays_issue_status", in: item).isEmpty)
+        #expect(technicalValue("displays_last_failure_code", in: item) == "None")
+    }
+
     @Test func managedVirtualDisplayStatusShowsStartupFailureForRecentStartupFailure() throws {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000116"))
         let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
@@ -383,6 +532,49 @@ struct DisplaySurfacePresentationMapperTests {
 
         let item = try #require(presentation.surfaces.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
+        #expect(compactValue("displays_issue_status", in: item).isEmpty)
+    }
+
+    @Test func managedVirtualDisplayStatusIgnoresOlderStartupFailureAfterManualEnableSuccess() throws {
+        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000127"))
+        let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
+        let olderFailure = transactionTrace(
+            kind: .virtualDisplayStartupRestore,
+            status: .failed,
+            failure: .init(
+                phase: .executingVirtualDisplayCommand,
+                reason: "startup_restore_lower_command_failed",
+                underlyingDomain: "CGVirtualDisplay",
+                underlyingCode: -1,
+                recoverability: .retryable
+            ),
+            startupRestoreCommandResult: .init(
+                configID: configID,
+                preDisplayID: nil,
+                postDisplayID: nil,
+                restoreOutcome: .failed,
+                didProduceVerifiableSideEffect: false,
+                failureReason: "startup_restore_lower_command_failed",
+                underlyingDomain: "CGVirtualDisplay",
+                underlyingCode: -1,
+                compensationOutcome: .notAttempted,
+                compensationFailureReason: nil
+            )
+        )
+        let newerSuccess = transactionTrace(
+            kind: .virtualDisplayEnable,
+            status: .completed,
+            targetConfigID: configID
+        )
+        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+            snapshot: managedVirtualSnapshot(
+                surface: surface,
+                recentTransactions: [newerSuccess, olderFailure]
+            )
+        )
+
+        let item = try #require(presentation.surfaces.first)
+        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Not Running")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
 
@@ -738,8 +930,6 @@ struct DisplaySurfacePresentationMapperTests {
         desiredEnabled: Bool?,
         isRunning: Bool = false,
         isLiveRuntime: Bool = false,
-        isRebuilding: Bool = false,
-        hasRebuildFailure: Bool = false,
         hasRestoreFailure: Bool = false
     ) -> DisplaySurface {
         DisplaySurface(
@@ -756,9 +946,6 @@ struct DisplaySurfacePresentationMapperTests {
                 desiredEnabled: desiredEnabled,
                 isRunning: isRunning,
                 isLiveRuntime: isLiveRuntime,
-                isRebuilding: isRebuilding,
-                hasRecentApplySuccess: false,
-                hasRebuildFailure: hasRebuildFailure,
                 hasRestoreFailure: hasRestoreFailure,
                 modeCount: 1,
                 maximumPixelWidth: 1920,
@@ -772,7 +959,8 @@ struct DisplaySurfacePresentationMapperTests {
         status: DisplayRuntimeTransactionStatus,
         failure: DisplayRuntimeTransactionFailure? = nil,
         startupRestoreIntent: DisplayRuntimeStartupRestoreIntent? = nil,
-        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil
+        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil,
+        targetConfigID: UUID? = nil
     ) -> DisplayRuntimeTransactionTrace {
         DisplayRuntimeTransactionTrace(
             id: .init(),
@@ -789,6 +977,7 @@ struct DisplaySurfacePresentationMapperTests {
             failure: failure,
             compensation: .notRequired,
             coalescedRequestCount: 1,
+            targetConfigID: targetConfigID,
             startupRestoreIntent: startupRestoreIntent,
             startupRestoreCommandResult: startupRestoreCommandResult
         )

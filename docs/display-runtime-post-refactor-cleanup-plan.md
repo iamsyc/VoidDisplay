@@ -5,6 +5,7 @@
 范围：DisplayRuntime Phase 1 到 Phase 6 完成后的文档、复杂度、测试、文案、本地架构边界收尾。
 说明：本文明确排除 `DisplayRuntime Phase 7` 定位，不使用新的 DisplayRuntime phase 编号，也不包含继续开发新能力。它是主路线关闭后的仓库整理计划，用于把项目从完成重构整理成长期可维护、文档清晰、复杂度可控的状态。
 Stage 1 状态：已完成。文档状态收口和阅读导航见 [DisplayRuntime 文档索引](./display-runtime-index.md)。Stage 2 到 Stage 5 仍按本文分别进入独立执行窗口确认后推进。
+后续覆盖说明：本文记录 cleanup 执行时的安全边界。当前 LAN Web View 已采用临时 capability URL，现行行为以 [LAN Web View 安全契约](./lan-sharing-security.md) 为准。
 
 ## Baseline
 
@@ -17,7 +18,7 @@ DisplayRuntime refactor 主路线已经关闭：
 - Virtual Display、Screen Preview、LAN Web View、Diagnostics 已按 `DisplaySurface` / Runtime 结构收敛。
 - 主导航已收敛为 `Displays` 和 `Diagnostics`。
 - 旧 `Support Center`、旧 `Virtual Displays` / `Screen Preview` / `Screen Sharing` 主入口已删除。
-- LAN Web View 的安全立场不变：它是局域网观察能力，不加 token、密码、账号或 auth。
+- LAN Web View 仍是局域网观察能力。当前使用按分享轮换的临时 capability URL，不提供密码、账号或互联网访问。
 - VoidDisplay 不做远程控制、输入注入、剪贴板或 browser agent control。
 
 收尾工作必须保护已经形成的结构。删除重复和迁移残留是目标，回滚架构边界、夹带新功能、为了行数好看而合并语义清晰的模块都不合格。
@@ -27,7 +28,7 @@ DisplayRuntime refactor 主路线已经关闭：
 - 本计划只指导后续收尾，不新增功能。
 - 不重写 `DisplayRuntime`。
 - 不修改 Capture / WebRTC frame pipeline。
-- 不修改 LAN Web View auth / security stance。
+- LAN Web View 安全行为以独立的当前安全契约为准。
 - 不做远程控制、输入注入、剪贴板或 browser agent control。
 - 不做大规模 UI 美化。
 - 不追求机械减少行数。
@@ -359,7 +360,7 @@ static gate 阶段：
 - docs 入口顺序清楚，公开读者能先看到产品定位，再看到架构路线和最终状态。
 - README 和用户文案与当前 `Displays` / `Diagnostics` IA 一致。
 - Runtime / Data Plane 边界没有回退。
-- LAN Web View 仍是局域网观察能力，没有 token、密码、账号、auth 或远程控制漂移。
+- LAN Web View 仍是局域网观察能力，临时 capability、密码、账号和远程控制边界与当前安全契约一致。
 - 重复 helper、临时路径、迁移残留得到清理。
 - 测试 suite 更清楚，关键 contract coverage 没有缩水。
 - static gate 只加入低噪音、可维护的边界检查。

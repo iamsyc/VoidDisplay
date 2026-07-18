@@ -30,16 +30,39 @@ enum SharedMockSCDisplay {
 }
 
 final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
-    private let performanceModes = Mutex<[CapturePerformanceMode]>([])
+    private struct State {
+        var hasDemand = false
+        var demandHandler: @Sendable (Bool) -> Void = { _ in }
+        var performanceModes: [CapturePerformanceMode] = []
+    }
+
+    private let state = Mutex(State())
 
     nonisolated init() {}
 
-    nonisolated var hasDemand: Bool { false }
+    nonisolated var hasDemand: Bool {
+        state.withLock { $0.hasDemand }
+    }
+
+    nonisolated func updateDemandHandler(
+        _ onDemandChanged: @escaping @Sendable (Bool) -> Void
+    ) {
+        state.withLock { $0.demandHandler = onDemandChanged }
+    }
+
+    nonisolated func setHasDemand(_ hasDemand: Bool) {
+        let callback = state.withLock { state -> (@Sendable (Bool) -> Void)? in
+            guard state.hasDemand != hasDemand else { return nil }
+            state.hasDemand = hasDemand
+            return state.demandHandler
+        }
+        callback?(hasDemand)
+    }
 
     nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
 
     nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode) {
-        performanceModes.withLock { $0.append(mode) }
+        state.withLock { $0.performanceModes.append(mode) }
     }
 
     nonisolated func stopSharing() {}
@@ -47,7 +70,7 @@ final class TestDisplayShareFrameConsumer: DisplayShareFrameConsumer {
     nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
 
     var recordedPerformanceModes: [CapturePerformanceMode] {
-        performanceModes.withLock { $0 }
+        state.withLock { $0.performanceModes }
     }
 }
 

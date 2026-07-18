@@ -72,6 +72,10 @@ classify_failure() {
 		printf 'runner_bootstrap_failure\n'
 		return
 	fi
+	if grep -Eq "Failed to activate application .*\(current state: Running Background\)" "$log_file"; then
+		printf 'environment_automation_failure\n'
+		return
+	fi
 	if grep -Eq "Assertion Failure|XCTAssert|Test Case '.*' failed" "$log_file"; then
 		printf 'assertion_failure\n'
 		return

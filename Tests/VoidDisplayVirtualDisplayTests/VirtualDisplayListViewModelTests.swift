@@ -15,15 +15,6 @@ struct VirtualDisplayListViewModelTests {
         let mockService = MockVirtualDisplayFacade()
         mockService.currentDisplayConfigs = [config]
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.configureDeleteExecutor { configID in
-            let result = try mockService.deleteDisplayCommand(configID)
-            return VirtualDisplayDeleteTransactionResult(
-                transactionID: UUID(),
-                status: .completed,
-                configID: result.configID,
-                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
-            )
-        }
 
         let sut = VirtualDisplayListViewModel(controller: controller)
 
@@ -45,15 +36,6 @@ struct VirtualDisplayListViewModelTests {
         mockService.currentDisplayConfigs = [config]
         mockService.destroyDisplayError = NSError(domain: "VirtualDisplayListViewModelTests", code: 12)
         let controller = makeController(virtualDisplayFacade: mockService)
-        controller.configureDeleteExecutor { configID in
-            let result = try mockService.deleteDisplayCommand(configID)
-            return VirtualDisplayDeleteTransactionResult(
-                transactionID: UUID(),
-                status: .completed,
-                configID: result.configID,
-                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
-            )
-        }
 
         let sut = VirtualDisplayListViewModel(controller: controller)
 
@@ -218,6 +200,7 @@ struct VirtualDisplayListViewModelTests {
     private func makeController(virtualDisplayFacade: MockVirtualDisplayFacade) -> VirtualDisplayController {
         VirtualDisplayController(
             virtualDisplayFacade: virtualDisplayFacade,
+            runtimeExecutors: testVirtualDisplayRuntimeExecutors(facade: virtualDisplayFacade),
             appliedBadgeDisplayDuration: .seconds(0.1)
         )
     }

@@ -13,6 +13,7 @@ package struct AppEnvironment {
     package let sharing: SharingController
     package let virtualDisplay: VirtualDisplayController
     package let displayRuntime: DisplayRuntime
+    package let sharingAdapter: DisplayRuntimeSharingAdapter
     package let capturePerformancePreferences: CapturePerformancePreferences
     package let feedbackController: AppSettingsFeedbackController
     package let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
@@ -24,6 +25,7 @@ package struct AppEnvironment {
         sharing: SharingController,
         virtualDisplay: VirtualDisplayController,
         displayRuntime: DisplayRuntime,
+        sharingAdapter: DisplayRuntimeSharingAdapter,
         capturePerformancePreferences: CapturePerformancePreferences,
         feedbackController: AppSettingsFeedbackController,
         openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void,
@@ -34,6 +36,7 @@ package struct AppEnvironment {
         self.sharing = sharing
         self.virtualDisplay = virtualDisplay
         self.displayRuntime = displayRuntime
+        self.sharingAdapter = sharingAdapter
         self.capturePerformancePreferences = capturePerformancePreferences
         self.feedbackController = feedbackController
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings

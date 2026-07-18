@@ -9,7 +9,7 @@ private enum HomeItemLayoutConstants {
 
 package struct HomeVirtualDisplayItem: View {
     package let state: HomeVirtualDisplayItemRenderState
-    package let layout: HomeLayoutConfiguration
+    package let metrics: HomeLayoutMetrics
     package let actions: HomeLayoutActions
 
     @Environment(\.colorScheme) private var colorScheme
@@ -17,11 +17,11 @@ package struct HomeVirtualDisplayItem: View {
 
     package init(
         state: HomeVirtualDisplayItemRenderState,
-        layout: HomeLayoutConfiguration,
+        metrics: HomeLayoutMetrics,
         actions: HomeLayoutActions
     ) {
         self.state = state
-        self.layout = layout
+        self.metrics = metrics
         self.actions = actions
     }
 
@@ -30,14 +30,14 @@ package struct HomeVirtualDisplayItem: View {
 
     package var body: some View {
         itemBody
-        .padding(.horizontal, layout.metrics.itemHorizontalPadding)
-        .padding(.vertical, layout.metrics.itemVerticalPadding)
+        .padding(.horizontal, metrics.itemHorizontalPadding)
+        .padding(.vertical, metrics.itemVerticalPadding)
         .background(
-            RoundedRectangle(cornerRadius: layout.metrics.itemCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: metrics.itemCornerRadius, style: .continuous)
                 .fill(AppUI.Surface.cardFill(for: colorScheme))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: layout.metrics.itemCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: metrics.itemCornerRadius, style: .continuous)
                 .stroke(itemStroke, lineWidth: AppUI.Stroke.subtle)
         )
         .overlay(alignment: .leading) {

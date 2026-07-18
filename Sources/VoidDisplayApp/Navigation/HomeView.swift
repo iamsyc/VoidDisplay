@@ -19,6 +19,7 @@ package struct HomeView: View {
     private let observability: ObservabilityCenter
     private let feedbackController: AppSettingsFeedbackController
     private let displayRuntime: DisplayRuntime
+    private let sharingAdapter: DisplayRuntimeSharingAdapter
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -27,11 +28,13 @@ package struct HomeView: View {
         observability: ObservabilityCenter,
         feedbackController: AppSettingsFeedbackController,
         displayRuntime: DisplayRuntime,
+        sharingAdapter: DisplayRuntimeSharingAdapter,
         openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
     ) {
         self.observability = observability
         self.feedbackController = feedbackController
         self.displayRuntime = displayRuntime
+        self.sharingAdapter = sharingAdapter
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
     }
 
@@ -70,6 +73,7 @@ package struct HomeView: View {
                             virtualDisplay: virtualDisplay,
                             capturePerformancePreferences: capturePerformancePreferences,
                             displayRuntime: displayRuntime,
+                            sharingAdapter: sharingAdapter,
                             openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                         )
                         .navigationTitle(String(localized: "Displays"))

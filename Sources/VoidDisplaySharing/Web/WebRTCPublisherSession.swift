@@ -194,7 +194,9 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
         let answer = RTCSessionDescription(type: .answer, sdp: response.sdp)
         try await setRemoteDescription(answer)
         startDiagnosticsLoop()
-        AppLog.web.info("WebRTC publisher connected to relay room \(self.roomID, privacy: .public).")
+        AppLog.web.info(
+            "WebRTC publisher connected to relay room \(self.roomID, privacy: .private(mask: .hash))."
+        )
     }
 
     private nonisolated func addVideoTransceiver(

@@ -51,6 +51,9 @@ env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/xcode.sh"
 	--destination "$DESTINATION" \
 	--only-testing "$UI_SELECTOR" \
 	--out-dir "$OUT_DIR/xcode-test"
+env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/stability.sh" \
+	--iterations "${STABILITY_ITERATIONS:-20}" \
+	--out-dir "$OUT_DIR/stability"
 env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/release_smoke.sh" \
 	--arch arm64 \
 	--label arm64 \

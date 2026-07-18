@@ -3,7 +3,6 @@ import VoidDisplayFoundation
 
 package protocol SignalSessionHub: AnyObject, Sendable, DisplayShareFrameConsumer {
     nonisolated var activeClientCount: Int { get }
-    nonisolated func updateDemandHandler(_ onDemandChanged: @escaping @Sendable (Bool) -> Void)
     nonisolated func addClient(
         _ connection: any SignalSocketConnection,
         target: ShareTarget,

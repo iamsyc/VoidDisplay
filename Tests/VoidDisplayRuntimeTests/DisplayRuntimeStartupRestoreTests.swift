@@ -76,11 +76,7 @@ struct DisplayRuntimeStartupRestoreTests {
         let catalog = catalogSnapshot(displayIDs: [307, 308], mainDisplayID: nil)
         let provider = FakeVirtualDisplayProvider(
             snapshot: DisplayRuntimeVirtualDisplaySnapshot(
-                rebuildRequestCount: 0,
-                rebuildingConfigIDs: [],
                 runningConfigIDs: [],
-                recentlyAppliedConfigIDs: [],
-                rebuildFailureConfigIDs: [],
                 configStoreHasLoadFailure: false,
                 configStoreHasDiagnostics: false,
                 managedDisplays: [],
@@ -130,11 +126,7 @@ struct DisplayRuntimeStartupRestoreTests {
             }
             provider.setSnapshot(
                 DisplayRuntimeVirtualDisplaySnapshot(
-                    rebuildRequestCount: 0,
-                    rebuildingConfigIDs: [],
                     runningConfigIDs: restoredRequests,
-                    recentlyAppliedConfigIDs: [],
-                    rebuildFailureConfigIDs: [],
                     configStoreHasLoadFailure: false,
                     configStoreHasDiagnostics: false,
                     managedDisplays: managedDisplays,

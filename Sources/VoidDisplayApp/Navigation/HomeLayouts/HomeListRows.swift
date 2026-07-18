@@ -8,11 +8,11 @@ package struct HomeListRows: View {
     }
 
     package var body: some View {
-        LazyVStack(alignment: .leading, spacing: context.layout.metrics.itemSpacing) {
+        LazyVStack(alignment: .leading, spacing: context.metrics.itemSpacing) {
             ForEach(context.itemStates) { state in
                 HomeVirtualDisplayItem(
                     state: state,
-                    layout: context.layout,
+                    metrics: context.metrics,
                     actions: context.actions
                 )
                 .accessibilityIdentifier("home_virtual_display_list_row")

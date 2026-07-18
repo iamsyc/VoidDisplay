@@ -25,24 +25,7 @@ extension DisplayRuntimeTransactionSource {
     }
 }
 
-extension VirtualDisplayEditRebuildTransactionStatus {
-    init(_ status: DisplayRuntimeTransactionStatus) {
-        switch status {
-        case .completed:
-            self = .completed
-        case .completedWithRecoveryFailures:
-            self = .completedWithRecoveryFailures
-        case .failed:
-            self = .failed
-        case .cancelled:
-            self = .cancelled
-        case .active:
-            self = .failed
-        }
-    }
-}
-
-extension VirtualDisplayCommandTransactionStatus {
+extension VirtualDisplayTransactionStatus {
     init(_ status: DisplayRuntimeTransactionStatus) {
         switch status {
         case .completed:
@@ -71,19 +54,9 @@ extension DisplayRuntimeScopeEscalationReason {
 
 extension DisplayRuntimeVirtualDisplaySnapshot {
     @MainActor
-    init(
-        adapterController controller: VirtualDisplayController?,
-        commandSnapshot: VirtualDisplaySnapshot
-    ) {
-        let rebuildingConfigIDs = controller.map { Array($0.rebuildingConfigIds) } ?? []
-        let recentlyAppliedConfigIDs = controller.map { Array($0.recentlyAppliedConfigIds) } ?? []
-        let rebuildFailureConfigIDs = controller.map { Array($0.rebuildFailureMessageByConfigId.keys) } ?? []
+    init(commandSnapshot: VirtualDisplaySnapshot) {
         self.init(
-            rebuildRequestCount: controller?.rebuildRequestCount ?? 0,
-            rebuildingConfigIDs: rebuildingConfigIDs,
             runningConfigIDs: Array(commandSnapshot.runningConfigIds),
-            recentlyAppliedConfigIDs: recentlyAppliedConfigIDs,
-            rebuildFailureConfigIDs: rebuildFailureConfigIDs,
             configStoreHasLoadFailure: commandSnapshot.configStorePresentation.hasLoadFailure,
             configStoreHasDiagnostics: commandSnapshot.configStorePresentation.loadErrorMessage != nil
                 || commandSnapshot.configStorePresentation.diagnosticsSummary != nil,

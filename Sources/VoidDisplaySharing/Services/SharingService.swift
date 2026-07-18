@@ -43,6 +43,7 @@ package protocol SharingServiceProtocol: AnyObject {
     func stopAllSharing()
     func isSharing(displayID: CGDirectDisplayID) -> Bool
     func shareID(for displayID: CGDirectDisplayID) -> UInt32?
+    func sharePagePath(for displayID: CGDirectDisplayID) -> String?
     func shareTarget(for displayID: CGDirectDisplayID) -> ShareTarget?
     func streamClientCount(for target: ShareTarget) -> Int
 }
@@ -125,6 +126,9 @@ package final class SharingService: SharingServiceProtocol {
             targetStateProvider: { [weak self] target in
                 self?.sharingCoordinator.state(for: target) ?? .unknown
             },
+            accessValidator: { [weak self] target, capability in
+                self?.sharingCoordinator.validatesAccess(to: target, capability: capability) == true
+            },
             concreteTargetResolver: { [weak self] target in
                 self?.sharingCoordinator.resolveConcreteTarget(for: target)
             },
@@ -170,7 +174,11 @@ package final class SharingService: SharingServiceProtocol {
     }
 
     package func stopSharing(displayID: CGDirectDisplayID) {
+        let target = sharingCoordinator.target(for: displayID)
         sharingCoordinator.stopSharing(displayID: displayID)
+        if let target {
+            webServiceController.disconnectStreamClients(for: [target])
+        }
     }
 
     package func stopAllSharing() {
@@ -184,6 +192,10 @@ package final class SharingService: SharingServiceProtocol {
 
     package func shareID(for displayID: CGDirectDisplayID) -> UInt32? {
         sharingCoordinator.shareID(for: displayID)
+    }
+
+    package func sharePagePath(for displayID: CGDirectDisplayID) -> String? {
+        sharingCoordinator.sharePagePath(for: displayID)
     }
 
     package func shareTarget(for displayID: CGDirectDisplayID) -> ShareTarget? {

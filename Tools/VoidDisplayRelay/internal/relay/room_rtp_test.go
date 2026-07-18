@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/pion/rtcp"
@@ -119,6 +120,19 @@ func TestRoomBuffersViewerCandidateBeforeViewerExists(t *testing.T) {
 
 	if got := len(room.pendingViewerICE["viewer-1"]); got != 1 {
 		t.Fatalf("pending viewer ICE count = %d, want 1", got)
+	}
+}
+
+func TestRoomViewerAdmissionIsBounded(t *testing.T) {
+	room := newRoomForTest("2", nil)
+	for index := 0; index < maxViewersPerRoom; index++ {
+		clientID := fmt.Sprintf("viewer-%d", index)
+		if err := room.AddViewerCandidate(clientID, webrtc.ICECandidateInit{Candidate: "candidate:1"}); err != nil {
+			t.Fatalf("AddViewerCandidate %d returned error: %v", index, err)
+		}
+	}
+	if err := room.AddViewerCandidate("overflow", webrtc.ICECandidateInit{Candidate: "candidate:1"}); err == nil || err.Error() != "viewer_limit_reached" {
+		t.Fatalf("overflow candidate error = %v, want viewer_limit_reached", err)
 	}
 }
 

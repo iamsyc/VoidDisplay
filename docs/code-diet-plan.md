@@ -1,5 +1,7 @@
 # Code Diet 总审计与批量删减计划
 
+后续覆盖说明：本文原始边界禁止在 Code Diet 中夹带安全能力扩张。当前 LAN Web View 已采用临时 capability URL，后续删减必须保护 [LAN Web View 安全契约](./lan-sharing-security.md)，不得移除或绕过准入和资源预算。
+
 ## 1. Summary
 
 目标是在 DisplayRuntime 重构关闭后，执行一次边界保护型 Code Diet，删除旧路径、迁移残留、重复中间层、重复 mapper、重复 fake、重复 helper 和过度防御分支。删减目标是减少系统复杂度和净代码量，不能靠新增抽象、兼容层或临时胶水制造表面整洁。
@@ -369,7 +371,7 @@ Sources/VoidDisplayVirtualDisplay importing VoidDisplayRuntime
 New compatibility aliases
 New legacy fallback paths
 Remote control, input injection, clipboard, browser agent control
-LAN auth/account/password/token gate/public relay expansion
+Bypassing the current LAN capability gate, or adding account/password/public relay expansion
 ```
 
 Batch-specific forbidden scope:
@@ -447,7 +449,7 @@ Stop the current batch and re-plan if any of these occurs:
 - Runtime needs to import or own data-plane types.
 - A legacy branch has an active caller that cannot be removed in the same batch.
 - Deleting a test removes the only coverage for a runtime transaction, lease, demand, privacy, diagnostics, or UI IA contract.
-- A cleanup requires changing LAN Web View security posture.
+- A cleanup requires deviating from the current LAN Web View security contract.
 - A cleanup requires product behavior changes outside deletion/simplification.
 - Targeted tests reveal behavior drift rather than stale test assumptions.
 - Build produces compile warnings after code changes.

@@ -42,36 +42,6 @@ package final class WebServer {
         AppErrorMapper.logFailure(operation, error: error, logger: AppLog.web)
     }
 
-    private static func makeRootPage() -> String {
-        """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-          <title>VoidDisplay Share</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; line-height: 1.6; }
-            code { background: #f3f3f3; padding: 2px 6px; border-radius: 4px; }
-          </style>
-        </head>
-        <body>
-          <h1>VoidDisplay Share</h1>
-          <p>Page routes:</p>
-          <ul>
-            <li><code>/display</code> main display page</li>
-            <li><code>/display/{id}</code> display page for target id</li>
-          </ul>
-          <p>Signal routes:</p>
-          <ul>
-            <li><code>/signal</code> main display websocket</li>
-            <li><code>/signal/{id}</code> websocket for target id</li>
-          </ul>
-        </body>
-        </html>
-        """
-    }
-
     private struct DisplayPageResources {
         let template: String
         let styles: String
@@ -120,6 +90,7 @@ package final class WebServer {
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
     private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
+    private let accessValidator: @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool
     private let concreteTargetResolver: @MainActor @Sendable (ShareTarget) -> ShareTarget?
     private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?
     private let sharingEventSink: @Sendable (SharingSessionEvent) -> Void
@@ -135,12 +106,14 @@ package final class WebServer {
     package init(
         using port: NWEndpoint.Port = .http,
         targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
+        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
         concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
         sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
         self.targetStateProvider = targetStateProvider
+        self.accessValidator = accessValidator
         self.concreteTargetResolver = concreteTargetResolver
         self.sessionHubProvider = sessionHubProvider
         self.sharingEventSink = sharingEventSink
@@ -299,12 +272,11 @@ package final class WebServer {
     private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
         switch state {
         case .failed(let error):
-            let endpoint = Self.endpointDescription(for: connection)
-            Self.logConnectionIssue("Connection failed [\(endpoint)]", error: error)
+            Self.logConnectionIssue("Connection failed", error: error)
             removeSignalClient(connection, cancelConnection: true)
         case .cancelled:
             let endpoint = Self.endpointDescription(for: connection)
-            AppLog.web.debug("Connection cancelled [\(endpoint, privacy: .public)].")
+            AppLog.web.debug("Connection cancelled [\(endpoint, privacy: .private(mask: .hash))].")
             removeSignalClient(connection, cancelConnection: false)
         default:
             break
@@ -339,10 +311,18 @@ package final class WebServer {
         concreteTargetResolver(target)
     }
 
-    private func displayPage(for target: ShareTarget) -> String {
-        _ = target
+    private struct DisplayPageResponse {
+        let html: String
+        let contentSecurityPolicy: String
+    }
+
+    private func displayPage(
+        for target: ShareTarget,
+        accessCapability: ShareAccessCapability
+    ) -> DisplayPageResponse {
         let title = "Screen Share"
-        return displayPageResources.template
+        let scriptNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let html = displayPageResources.template
             .replacingOccurrences(of: "__PAGE_TITLE__", with: title)
             .replacingOccurrences(of: "__DISPLAY_PAGE_STYLES__", with: displayPageResources.styles)
             .replacingOccurrences(
@@ -353,18 +333,31 @@ package final class WebServer {
                 of: "__DISPLAY_PAGE_RUNTIME_SCRIPT__",
                 with: displayPageResources.runtimeScript
             )
-            .replacingOccurrences(of: "__SIGNAL_PATH__", with: target.signalPath)
+            .replacingOccurrences(
+                of: "__SIGNAL_PATH__",
+                with: target.signalPath(accessCapability: accessCapability)
+            )
             .replacingOccurrences(of: "__BOOTSTRAP_JSON__", with: makeDisplayPageBootstrapJSON())
+            .replacingOccurrences(of: "__SCRIPT_NONCE__", with: scriptNonce)
+        return DisplayPageResponse(
+            html: html,
+            contentSecurityPolicy: "default-src 'none'; script-src 'nonce-\(scriptNonce)'; style-src 'unsafe-inline'; connect-src 'self' ws:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+        )
     }
 
     private func makeDisplayPageBootstrapJSON() -> String {
         WebRTCIceServerProvider.browserBootstrapJSON()
+            .replacingOccurrences(of: "&", with: "\\u0026")
+            .replacingOccurrences(of: "<", with: "\\u003C")
+            .replacingOccurrences(of: ">", with: "\\u003E")
     }
 
     private func processRequest(_ content: Data?, on connection: NWConnection) {
         let endpoint = Self.endpointDescription(for: connection)
         guard let content else {
-            AppLog.web.debug("Received empty request content from \(endpoint, privacy: .public); closing connection.")
+            AppLog.web.debug(
+                "Received empty request content from \(endpoint, privacy: .private(mask: .hash)); closing connection."
+            )
             connection.cancel()
             return
         }
@@ -382,20 +375,14 @@ package final class WebServer {
             path: request.path,
             targetStateProvider: { [weak self] target in
                 self?.targetStateProvider(target) ?? .unknown
+            },
+            accessValidator: { [weak self] target, capability in
+                self?.accessValidator(target, capability) == true
             }
         )
 
         switch decision {
-        case .showRootPage:
-            sendResponseAndClose(
-                requestHandler.responseData(
-                    for: .showRootPage,
-                    htmlBody: Self.makeRootPage()
-                ),
-                on: connection,
-                failureContext: "Send root page response"
-            )
-        case .showDisplayPage(let target):
+        case .showDisplayPage(let target, let capability):
             guard let concreteTarget = concreteTarget(for: target) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .notFound),
@@ -404,15 +391,20 @@ package final class WebServer {
                 )
                 return
             }
+            let page = displayPage(
+                for: concreteTarget,
+                accessCapability: capability
+            )
             sendResponseAndClose(
                 requestHandler.responseData(
-                    for: .showDisplayPage(concreteTarget),
-                    htmlBody: displayPage(for: concreteTarget)
+                    for: .showDisplayPage(concreteTarget, capability),
+                    htmlBody: page.html,
+                    contentSecurityPolicy: page.contentSecurityPolicy
                 ),
                 on: connection,
                 failureContext: "Send display page response"
             )
-        case .openSignalSocket(let target):
+        case .openSignalSocket(let target, _):
             guard let concreteTarget = concreteTarget(for: target) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .notFound),
@@ -456,7 +448,9 @@ package final class WebServer {
 
     private func openSignalSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
         let endpoint = Self.endpointDescription(for: connection)
-        AppLog.web.info("WebServer: [\(endpoint)] Initiating signaling WebSocket upgrade for target: \(String(describing: target)).")
+        AppLog.web.info(
+            "WebServer: [\(endpoint, privacy: .private(mask: .hash))] initiating signaling WebSocket upgrade for target: \(String(describing: target))."
+        )
         guard let hub = sessionHub(for: target),
               let acceptValue = makeWebSocketAcceptValue(headers: headers) else {
             sendResponseAndClose(
@@ -469,7 +463,7 @@ package final class WebServer {
 
         let wsKeyLength = headers["sec-websocket-key"]?.count ?? 0
         AppLog.web.debug(
-            "WebServer: [\(endpoint)] WebSocket headers validated (keyLength=\(wsKeyLength), acceptLength=\(acceptValue.count))."
+            "WebServer: [\(endpoint, privacy: .private(mask: .hash))] WebSocket headers validated (keyLength=\(wsKeyLength), acceptLength=\(acceptValue.count))."
         )
 
         let responseString = "HTTP/1.1 101 Switching Protocols\r\n" +
@@ -477,21 +471,24 @@ package final class WebServer {
                              "Connection: Upgrade\r\n" +
                              "Sec-WebSocket-Accept: \(acceptValue)\r\n" +
                              "\r\n"
-        let debugStr = responseString
-            .replacingOccurrences(of: "\r", with: "<CR>")
-            .replacingOccurrences(of: "\n", with: "<LF>\n")
-        AppLog.web.debug("WebServer: [\(endpoint)] Sending websocket upgrade response:\n\(debugStr, privacy: .public)")
+        AppLog.web.debug(
+            "WebServer: [\(endpoint, privacy: .private(mask: .hash))] sending WebSocket upgrade response."
+        )
         let response = Data(responseString.utf8)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let error {
-                    AppLog.web.error("WebServer: [\(endpoint)] WebSocket upgrade response failed: \(String(describing: error)).")
+                    AppLog.web.error(
+                        "WebServer: [\(endpoint, privacy: .private(mask: .hash))] WebSocket upgrade response failed: \(String(describing: error))."
+                    )
                     AppErrorMapper.logFailure("Send websocket upgrade response", error: error, logger: AppLog.web)
                     connection.cancel()
                     return
                 }
-                AppLog.web.info("WebServer: [\(endpoint)] WebSocket upgrade succeeded.")
+                AppLog.web.info(
+                    "WebServer: [\(endpoint, privacy: .private(mask: .hash))] WebSocket upgrade succeeded."
+                )
                 let sharingEventSink = self.sharingEventSink
                 let addResult = hub.addClient(
                     connection,
@@ -649,7 +646,10 @@ package final class WebServer {
               connection.contains("upgrade"),
               headers["upgrade"]?.lowercased() == "websocket",
               headers["sec-websocket-version"] == "13",
-              headers["sec-websocket-key"] != nil else {
+              headers["sec-websocket-key"] != nil,
+              let host = headers["host"],
+              let origin = headers["origin"],
+              origin.caseInsensitiveCompare("http://\(host)") == .orderedSame else {
             return false
         }
         return true

@@ -20,7 +20,7 @@
 ### 📡 局域网屏幕共享
 
 通过内置低延迟实时页面将任意显示器共享到局域网。  
-在同一网络的设备上，用现代浏览器打开 `/display` 链接即可观看。播放链路使用 WebRTC 媒体流，并通过 WebSocket 传输信令。
+在可信局域网的设备上，用现代浏览器打开应用生成的 capability 保护 `/display` 链接即可观看。播放链路使用 WebRTC 媒体流，并通过 WebSocket 传输信令。
 
 ## 📸 界面截图
 
@@ -117,12 +117,14 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 1. 进入 **屏幕共享** 标签页。
 2. 启动 Web 服务，并选择共享流畅度模式。
 3. 点击想要共享的显示器旁边的 **共享** 按钮。
-4. 复制生成的局域网地址，例如 `http://192.168.x.x:18090/display/1`。
+4. 复制生成的局域网地址，例如 `http://192.168.x.x:18090/display/1/{capability}`。
 5. 在同一网络的现代浏览器中打开该地址即可实时观看屏幕。
 
 说明：
-- 正式页面路由是 `/display` 和 `/display/{id}`。
-- 底层 WebSocket 信令路由是 `/signal` 和 `/signal/{id}`。
+- 受保护页面路由是 `/display/{capability}` 和 `/display/{id}/{capability}`。
+- 受保护 WebSocket 信令路由是 `/signal/{capability}` 和 `/signal/{id}/{capability}`。
+- 每次重新开始分享都会轮换 capability，旧链接和无凭证链接会被拒绝。
+- HTTP 与 WebSocket 流量没有加密。局域网分享只应在可信网络内使用，不要通过公网端口映射或隧道暴露。详见 [LAN Web View 安全契约](./lan-sharing-security.md)。
 
 ## ❓ 常见问题
 

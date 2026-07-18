@@ -106,16 +106,29 @@ struct SharingServiceTests {
         #expect(sut.isWebServiceRunning == false)
     }
 
-    @MainActor @Test func stopSingleSharingKeepsConnectionManagementInTargetHub() {
+    @MainActor @Test func stopSingleSharingDisconnectsOnlyTheResolvedTarget() throws {
         let mock = MockWebServiceController()
         let sut = makeService(webServiceController: mock)
+		let displayID = CGDirectDisplayID(11)
+		let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+		sut.registerShareableDisplays([display], virtualSerialResolver: { _ in 77 })
 
-        sut.stopSharing(displayID: CGDirectDisplayID(11))
-        sut.stopSharing(displayID: CGDirectDisplayID(11))
+		let target = try #require(sut.shareTarget(for: displayID))
+		sut.stopSharing(displayID: displayID)
 
-        #expect(mock.disconnectCallCount == 0)
+		#expect(mock.disconnectTargetCallCount == 1)
+		#expect(mock.disconnectedTargetsHistory == [Set([target])])
         #expect(sut.hasAnyActiveSharing == false)
     }
+
+	@MainActor @Test func stopUnknownSharingDoesNotDisconnectUnrelatedTargets() {
+		let mock = MockWebServiceController()
+		let sut = makeService(webServiceController: mock)
+
+		sut.stopSharing(displayID: CGDirectDisplayID(11))
+
+		#expect(mock.disconnectTargetCallCount == 0)
+	}
 
     @MainActor @Test func registerShareableDisplaysDisconnectsConnectionsForRemappedTargets() throws {
         let mock = MockWebServiceController()

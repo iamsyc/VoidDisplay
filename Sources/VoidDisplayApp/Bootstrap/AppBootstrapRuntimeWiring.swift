@@ -5,7 +5,6 @@ import VoidDisplayVirtualDisplay
 extension AppBootstrap {
     static func wireRuntime(
         runtime: AppBootstrapRuntimeBundle,
-        controllers: AppBootstrapControllerBundle,
         captureSharing: AppBootstrapCaptureSharingBundle,
         capturePerformancePreferences: CapturePerformancePreferences
     ) {
@@ -15,10 +14,6 @@ extension AppBootstrap {
             preferences: capturePerformancePreferences
         )
         runtime.sharingAdapter.configureLANWebViewDemandSync(runtime: runtime.displayRuntime)
-        configureVirtualDisplayExecutors(
-            controller: controllers.virtualDisplay,
-            runtime: runtime.displayRuntime
-        )
     }
 
     private static func configureCapturePerformanceSync(
@@ -35,11 +30,11 @@ extension AppBootstrap {
         }
     }
 
-    private static func configureVirtualDisplayExecutors(
-        controller: VirtualDisplayController,
+    static func makeVirtualDisplayRuntimeExecutors(
         runtime: DisplayRuntime
-    ) {
-        controller.configureRebuildExecutor { configID, source in
+    ) -> VirtualDisplayRuntimeExecutors {
+        VirtualDisplayRuntimeExecutors(
+            rebuild: { configID, source in
             let result = try await runtime.rebuildVirtualDisplay(
                 configID: configID,
                 source: DisplayRuntimeTransactionSource(source)
@@ -47,8 +42,8 @@ extension AppBootstrap {
             guard result.status != .failed && result.status != .cancelled else {
                 throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
             }
-        }
-        controller.configureDesiredEnabledExecutor { configID, enabled, source in
+            },
+            setDesiredEnabled: { configID, enabled, source in
             let result = try await runtime.setVirtualDisplayDesiredEnabled(
                 configID: configID,
                 enabled: enabled,
@@ -57,8 +52,8 @@ extension AppBootstrap {
             guard result.status != .failed && result.status != .cancelled else {
                 throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
             }
-        }
-        controller.configureEditRebuildExecutor { updatedConfig, expectedConfigFingerprint, source in
+            },
+            editAndRebuild: { updatedConfig, expectedConfigFingerprint, source in
             let runtimeSource = DisplayRuntimeTransactionSource(source)
             let runtimeHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
                 request: DisplayRuntimeVirtualDisplayEditRebuildRequest(
@@ -71,7 +66,6 @@ extension AppBootstrap {
             return VirtualDisplayEditRebuildTransactionHandle(
                 transactionID: runtimeHandle.transactionID.rawValue,
                 saveGateTask: Task { @MainActor in
-                    defer { controller.refreshVirtualDisplayState() }
                     let saveGate = try await runtimeHandle.waitForSaveGate()
                     return VirtualDisplayEditRebuildSaveGateResult(
                         transactionID: saveGate.transactionID.rawValue,
@@ -79,17 +73,16 @@ extension AppBootstrap {
                     )
                 },
                 terminalResultTask: Task { @MainActor in
-                    defer { controller.refreshVirtualDisplayState() }
                     let result = try await runtimeHandle.waitForTerminalResult()
                     return VirtualDisplayEditRebuildTransactionResult(
                         transactionID: result.transactionID.rawValue,
-                        status: VirtualDisplayEditRebuildTransactionStatus(result.status),
+                        status: VirtualDisplayTransactionStatus(result.status),
                         virtualDisplayCommandSucceeded: result.virtualDisplayCommandSucceeded
                     )
                 }
             )
-        }
-        controller.configureCreateExecutor { request in
+            },
+            create: { request in
             let source = DisplayRuntimeTransactionSource.createVirtualDisplaySheet
             let result = try await runtime.createVirtualDisplay(
                 request: DisplayRuntimeVirtualDisplayCreateRequest(request: request, source: source),
@@ -97,22 +90,23 @@ extension AppBootstrap {
             )
             return VirtualDisplayCreateTransactionResult(
                 transactionID: result.transactionID.rawValue,
-                status: VirtualDisplayCommandTransactionStatus(result.status),
+                status: VirtualDisplayTransactionStatus(result.status),
                 createdConfigID: result.createdConfigID,
                 virtualDisplayCommandSucceeded: result.runtimeCreationOutcome == .succeeded
             )
-        }
-        controller.configureDeleteExecutor { configID in
+            },
+            delete: { configID in
             let result = try await runtime.deleteVirtualDisplay(
                 configID: configID,
                 source: .deleteVirtualDisplayConfirmation
             )
             return VirtualDisplayDeleteTransactionResult(
                 transactionID: result.transactionID.rawValue,
-                status: VirtualDisplayCommandTransactionStatus(result.status),
+                status: VirtualDisplayTransactionStatus(result.status),
                 configID: result.configID,
                 virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
             )
-        }
+            }
+        )
     }
 }

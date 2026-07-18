@@ -56,19 +56,19 @@ struct SharingUICompositionTests {
                 defaults: UserDefaults(suiteName: "SharingUICompositionTestsLive")!
             )
         )
-        let virtualDisplayController = VirtualDisplayController(
-            virtualDisplayFacade: MockVirtualDisplayFacade(),
-            appliedBadgeDisplayDuration: .nanoseconds(1)
+        let preferences = CapturePerformancePreferences(
+            defaults: UserDefaults(
+                suiteName: "SharingUICompositionTests.dependencies.\(UUID().uuidString)"
+            )!
+        )
+        let sharingAdapter = DisplayRuntimeSharingAdapter(
+            controller: sharingController,
+            capturePerformancePreferences: preferences
         )
         let dependencies = SharingUIComposition.dependencies(
             sharing: sharingController,
-            virtualDisplay: virtualDisplayController,
             displayRuntime: DisplayRuntime(),
-            capturePerformancePreferences: CapturePerformancePreferences(
-                defaults: UserDefaults(
-                    suiteName: "SharingUICompositionTests.dependencies.\(UUID().uuidString)"
-                )!
-            )
+            sharingAdapter: sharingAdapter
         )
 
         #expect(

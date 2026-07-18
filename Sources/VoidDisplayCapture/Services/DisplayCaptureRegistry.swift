@@ -274,6 +274,7 @@ package struct DisplayCaptureLeaseBook {
         var previewTokens: [UUID: PreviewLeaseState] = [:]
         var shareTokens: Set<UUID> = []
         var shareCursorOverrideTokens: Set<UUID> = []
+        var hasShareFrameDemand = false
 
         var hasActiveTokens: Bool {
             previewTokens.isEmpty == false || shareTokens.isEmpty == false
@@ -340,6 +341,9 @@ package struct DisplayCaptureLeaseBook {
             state.previewTokens.removeValue(forKey: tokenID)
         case .share:
             state.shareTokens.remove(tokenID)
+            if state.shareTokens.isEmpty {
+                state.hasShareFrameDemand = false
+            }
         }
         state.shareCursorOverrideTokens.remove(tokenID)
 
@@ -372,6 +376,18 @@ package struct DisplayCaptureLeaseBook {
         state.previewTokens[tokenID] = lease
         statesByDisplayID[ownership.displayID] = state
         return ownership.displayID
+    }
+
+    mutating func setShareFrameDemand(
+        _ hasDemand: Bool,
+        for displayID: CGDirectDisplayID
+    ) -> Bool {
+        guard var state = statesByDisplayID[displayID] else { return false }
+        let effectiveDemand = hasDemand && !state.shareTokens.isEmpty
+        guard state.hasShareFrameDemand != effectiveDemand else { return false }
+        state.hasShareFrameDemand = effectiveDemand
+        statesByDisplayID[displayID] = state
+        return true
     }
 
     mutating func setPreviewShowsCursor(
@@ -448,7 +464,7 @@ package struct DisplayCaptureLeaseBook {
             attachedPreviewSinkCount: state.previewTokens.values.reduce(0) { partialResult, lease in
                 partialResult + lease.attachedSinkCount
             },
-            shareTokenCount: state.shareTokens.count,
+            shareTokenCount: state.hasShareFrameDemand ? state.shareTokens.count : 0,
             previewShowsCursor: state.previewTokens.values.contains { $0.showsCursor },
             shareCursorOverrideCount: state.shareCursorOverrideTokens.count,
             performanceMode: performanceMode
@@ -625,6 +641,7 @@ package actor DisplayCaptureRegistry {
             resolutionText: resolutionText,
             session: session
         )
+        configureShareFrameDemand(for: displayID, consumer: session.shareFrameConsumer)
     }
 
     package func acquirePreviewTokenForTesting(displayID: CGDirectDisplayID) throws -> PreviewToken {
@@ -650,6 +667,12 @@ package actor DisplayCaptureRegistry {
         }
         sessionStore.markActive(displayID: displayID)
         let tokenID = leaseBook.registerToken(displayID: displayID, kind: kind)
+        if kind == .share {
+            _ = leaseBook.setShareFrameDemand(
+                record.session.shareFrameConsumer.hasDemand,
+                for: displayID
+            )
+        }
         try? await applyDemand(for: displayID)
         return tokenID
     }
@@ -713,6 +736,7 @@ package actor DisplayCaptureRegistry {
         do {
             let record = try await task.value
             sessionStore.storeInitializedSessionIfAbsent(record, for: displayID)
+            configureShareFrameDemand(for: displayID, consumer: record.session.shareFrameConsumer)
         } catch {
             sessionStore.cancelInitializing(displayID: displayID)
             throw error
@@ -747,6 +771,49 @@ package actor DisplayCaptureRegistry {
             return
         }
         try? await applyDemand(for: displayID)
+    }
+
+    private func configureShareFrameDemand(
+        for displayID: CGDirectDisplayID,
+        consumer: any DisplayShareFrameConsumer
+    ) {
+        let consumerID = ObjectIdentifier(consumer)
+        consumer.updateDemandHandler { [weak self] hasDemand in
+            guard let self else { return }
+            Task {
+                await self.recordShareFrameDemand(
+                    hasDemand,
+                    for: displayID,
+                    consumerID: consumerID
+                )
+            }
+        }
+    }
+
+    private func recordShareFrameDemand(
+        _ hasDemand: Bool,
+        for displayID: CGDirectDisplayID,
+        consumerID: ObjectIdentifier
+    ) async {
+        guard let record = sessionStore.record(for: displayID),
+              ObjectIdentifier(record.session.shareFrameConsumer) == consumerID,
+              record.session.shareFrameConsumer.hasDemand == hasDemand else {
+            return
+        }
+        guard leaseBook.setShareFrameDemand(hasDemand, for: displayID) else { return }
+        try? await applyDemand(for: displayID)
+    }
+
+    package func recordShareFrameDemandForTesting(
+        _ hasDemand: Bool,
+        for displayID: CGDirectDisplayID,
+        consumer: any DisplayShareFrameConsumer
+    ) async {
+        await recordShareFrameDemand(
+            hasDemand,
+            for: displayID,
+            consumerID: ObjectIdentifier(consumer)
+        )
     }
 
     private func setPreviewShowsCursor(_ showsCursor: Bool, for tokenID: UUID) async throws {
@@ -784,9 +851,22 @@ package actor DisplayCaptureRegistry {
         guard let record = sessionStore.record(for: displayID), record.state != .draining else {
             return
         }
-        try await record.session.setDemand(
-            leaseBook.demandSnapshot(for: displayID, performanceMode: performanceMode)
-        )
+        var demand = leaseBook.demandSnapshot(for: displayID, performanceMode: performanceMode)
+        while true {
+            try await record.session.setDemand(demand)
+            guard let currentRecord = sessionStore.record(for: displayID),
+                  currentRecord.state != .draining,
+                  ObjectIdentifier(currentRecord.session) == ObjectIdentifier(record.session)
+            else {
+                return
+            }
+            let latestDemand = leaseBook.demandSnapshot(
+                for: displayID,
+                performanceMode: performanceMode
+            )
+            guard latestDemand != demand else { return }
+            demand = latestDemand
+        }
     }
 
     private func finishDrainingSession(displayID: CGDirectDisplayID) {

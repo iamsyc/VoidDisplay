@@ -5,10 +5,15 @@ import Synchronization
 
 package protocol DisplayShareFrameConsumer: AnyObject, Sendable {
     nonisolated var hasDemand: Bool { get }
+    nonisolated func updateDemandHandler(_ onDemandChanged: @escaping @Sendable (Bool) -> Void)
     nonisolated func updateSourceVideoSpec(_ spec: SourceVideoSpec)
     nonisolated func updatePerformanceMode(_ mode: CapturePerformanceMode)
     nonisolated func stopSharing()
     nonisolated func submitFrame(pixelBuffer: CVPixelBuffer, ptsUs: UInt64)
+}
+
+package extension DisplayShareFrameConsumer {
+    nonisolated func updateDemandHandler(_: @escaping @Sendable (Bool) -> Void) {}
 }
 
 package final class DisplayShareSubscription: Sendable {

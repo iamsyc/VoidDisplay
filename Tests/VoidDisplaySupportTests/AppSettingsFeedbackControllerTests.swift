@@ -104,6 +104,25 @@ struct AppSettingsFeedbackControllerTests {
         #expect(controller.alert?.message == "Injected export failure")
     }
 
+    @Test func concurrentExportRequestsCollapseIntoSingleExport() async {
+        var invocationCount = 0
+        let controller = AppSettingsFeedbackController(
+            exportAction: { _, _ in
+                invocationCount += 1
+                try await Task.sleep(for: .milliseconds(50))
+                return URL(fileURLWithPath: "/tmp/support-bundle-single-flight.zip")
+            }
+        )
+        controller.happened = "Sharing failed"
+
+        async let first: Void = controller.exportSupportBundle()
+        async let second: Void = controller.exportSupportBundle()
+        _ = await (first, second)
+
+        #expect(invocationCount == 1)
+        #expect(controller.isExporting == false)
+    }
+
     @Test func copyAndRevealUpdateHistoryTimestamps() async throws {
         let tempURL = try makeTemporaryDirectory(prefix: "feedback-controller-history-actions")
         defer { try? FileManager.default.removeItem(at: tempURL) }

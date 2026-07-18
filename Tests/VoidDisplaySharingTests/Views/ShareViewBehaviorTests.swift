@@ -151,12 +151,8 @@ struct ShareViewBehaviorTests {
                 sharingActions: .init(
                     startWebService: { _ in .started(WebServiceBinding(requestedPort: 8081, boundPort: 8081)) },
                     stopWebService: {},
-                    registerShareableDisplays: { _, _ in },
                     beginSharing: { _ in .started(()) },
                     stopSharing: { _ in }
-                ),
-                virtualDisplayQueries: .init(
-                    virtualSerialForManagedDisplay: { _ in nil }
                 )
             )
         )

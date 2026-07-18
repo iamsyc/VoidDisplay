@@ -20,7 +20,7 @@ Great for keeping an eye on a secondary screen without switching desktops.
 ### 📡 LAN Screen Sharing
 
 Share any display over your local network through the built-in low-latency live page.  
-Open the provided `/display` URL in a modern browser on any device on the same LAN. Playback uses WebRTC media streaming with WebSocket signaling.
+Open the generated capability-protected `/display` URL in a modern browser on a trusted LAN. Playback uses WebRTC media streaming with WebSocket signaling.
 
 ## 📸 Screenshots
 
@@ -117,12 +117,14 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 1. Go to the **Screen Sharing** tab.
 2. Start the web service and choose the sharing smoothness mode.
 3. Click **Share** next to the display you want to broadcast.
-4. Copy the generated LAN URL, such as `http://192.168.x.x:18090/display/1`.
+4. Copy the generated LAN URL, such as `http://192.168.x.x:18090/display/1/{capability}`.
 5. Open that URL in a modern browser on the same network to watch the screen in real time.
 
 Notes:
-- `/display` and `/display/{id}` are the supported page routes.
-- `/signal` and `/signal/{id}` are the underlying WebSocket signaling routes.
+- `/display/{capability}` and `/display/{id}/{capability}` are the protected page routes.
+- `/signal/{capability}` and `/signal/{id}/{capability}` are the protected WebSocket signaling routes.
+- The capability rotates whenever sharing restarts. Old and credentialless links are rejected.
+- HTTP and WebSocket traffic is not encrypted. Use LAN sharing only on a trusted network and do not expose it through public port forwarding or tunnels. See [LAN Web View security](./docs/lan-sharing-security.md).
 
 ## ❓ Troubleshooting
 

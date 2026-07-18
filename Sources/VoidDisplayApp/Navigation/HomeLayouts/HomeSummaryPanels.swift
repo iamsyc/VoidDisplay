@@ -46,7 +46,7 @@ package struct HomeSummaryStatusStrip: View {
             isActive: true,
             usesProminentValue: true
         )
-        .padding(.leading, context.layout.metrics.itemHorizontalPadding)
+        .padding(.leading, context.metrics.itemHorizontalPadding)
     }
 
     private var runningMetric: some View {

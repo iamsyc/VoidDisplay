@@ -1,11 +1,7 @@
 import Foundation
 
 package nonisolated struct DisplayRuntimeVirtualDisplaySnapshot: Codable, Equatable, Sendable {
-    package let rebuildRequestCount: Int
-    package let rebuildingConfigIDs: [UUID]
     package let runningConfigIDs: [UUID]
-    package let recentlyAppliedConfigIDs: [UUID]
-    package let rebuildFailureConfigIDs: [UUID]
     package let configStoreHasLoadFailure: Bool
     package let configStoreHasDiagnostics: Bool
     package let managedDisplays: [DisplayRuntimeManagedVirtualDisplay]
@@ -13,22 +9,14 @@ package nonisolated struct DisplayRuntimeVirtualDisplaySnapshot: Codable, Equata
     package let restoreFailureConfigIDs: [UUID]
 
     package init(
-        rebuildRequestCount: Int,
-        rebuildingConfigIDs: [UUID],
         runningConfigIDs: [UUID],
-        recentlyAppliedConfigIDs: [UUID],
-        rebuildFailureConfigIDs: [UUID],
         configStoreHasLoadFailure: Bool,
         configStoreHasDiagnostics: Bool,
         managedDisplays: [DisplayRuntimeManagedVirtualDisplay],
         configs: [DisplayRuntimeVirtualDisplayConfig],
         restoreFailureConfigIDs: [UUID]
     ) {
-        self.rebuildRequestCount = rebuildRequestCount
-        self.rebuildingConfigIDs = rebuildingConfigIDs.sortedByUUIDString()
         self.runningConfigIDs = runningConfigIDs.sortedByUUIDString()
-        self.recentlyAppliedConfigIDs = recentlyAppliedConfigIDs.sortedByUUIDString()
-        self.rebuildFailureConfigIDs = rebuildFailureConfigIDs.sortedByUUIDString()
         self.configStoreHasLoadFailure = configStoreHasLoadFailure
         self.configStoreHasDiagnostics = configStoreHasDiagnostics
         self.managedDisplays = managedDisplays.sorted { $0.configID.uuidString < $1.configID.uuidString }
@@ -37,11 +25,7 @@ package nonisolated struct DisplayRuntimeVirtualDisplaySnapshot: Codable, Equata
     }
 
     package static let empty = Self(
-        rebuildRequestCount: 0,
-        rebuildingConfigIDs: [],
         runningConfigIDs: [],
-        recentlyAppliedConfigIDs: [],
-        rebuildFailureConfigIDs: [],
         configStoreHasLoadFailure: false,
         configStoreHasDiagnostics: false,
         managedDisplays: [],

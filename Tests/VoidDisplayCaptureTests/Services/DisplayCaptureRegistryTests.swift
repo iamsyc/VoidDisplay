@@ -92,6 +92,7 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
         var stopSharingCalls = 0
         var stopCalls = 0
         var setDemandCalls: [DisplayCaptureDemandSnapshot] = []
+        var hasObservedActiveShareDemand = false
     }
 
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
@@ -111,8 +112,15 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
     }
 
     nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
-        counters.withLock { $0.setDemandCalls.append(demand) }
-        guard demand.shareTokenCount == 0 else { return }
+        let shouldBlock = counters.withLock { counters -> Bool in
+            counters.setDemandCalls.append(demand)
+            if demand.shareTokenCount > 0 {
+                counters.hasObservedActiveShareDemand = true
+                return false
+            }
+            return counters.hasObservedActiveShareDemand
+        }
+        guard shouldBlock else { return }
         await gate.markFalseEntered()
         await gate.waitUntilOpen()
     }
@@ -277,6 +285,11 @@ struct DisplayCaptureRegistryTests {
 
         let previewToken = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
         let firstToken = try await registry.acquireShareToken(display: sendableDisplay)
+        (session.shareFrameConsumer as? TestDisplayShareFrameConsumer)?.setHasDemand(true)
+        let activeDemandApplied = await waitUntil {
+            session.setDemandCalls.last?.shareTokenCount == 1
+        }
+        #expect(activeDemandApplied)
         let releaseTask = Task {
             await registry.release(firstToken)
         }
@@ -292,6 +305,7 @@ struct DisplayCaptureRegistryTests {
         #expect(await registry.sessionState(for: displayID) == .active)
         #expect(session.stopCalls == 0)
         #expect(session.stopSharingCalls == 1)
+        #expect(session.setDemandCalls.last?.shareTokenCount == 1)
 
         await registry.release(secondToken)
         #expect(await registry.sessionState(for: displayID) == .active)
@@ -380,7 +394,20 @@ struct DisplayCaptureRegistryTests {
         let subscription = try await registry.acquireShare(display: sendableDisplay)
 
         #expect(createdModes.withLock { $0.first } == nil)
-        #expect(installedSession.setDemandCalls.last?.shareTokenCount == 1)
+        #expect(installedSession.setDemandCalls.last?.shareTokenCount == 0)
+
+        installedSession.testShareFrameConsumer.setHasDemand(true)
+        let viewerDemandApplied = await waitUntil {
+            installedSession.setDemandCalls.last?.shareTokenCount == 1
+        }
+        #expect(viewerDemandApplied)
+
+        installedSession.testShareFrameConsumer.setHasDemand(false)
+        let idleDemandApplied = await waitUntil {
+            installedSession.setDemandCalls.last?.shareTokenCount == 0
+        }
+        #expect(idleDemandApplied)
+        #expect(await registry.sessionState(for: displayID) == .active)
 
         subscription.cancel()
 
@@ -389,6 +416,66 @@ struct DisplayCaptureRegistryTests {
         let newSubscription = try await registry.acquireShare(display: SendableDisplay(newDisplay))
         #expect(createdModes.withLock { $0.first } == .powerEfficient)
         newSubscription.cancel()
+    }
+
+    @Test func staleShareDemandCallbackCannotMutateReplacementSession() async throws {
+        let displayID = CGDirectDisplayID(11013)
+        let replacementSession = FakeCaptureSession()
+        let staleSession = FakeCaptureSession()
+        let registry = DisplayCaptureRegistry()
+
+        await registry.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1920 × 1080",
+            session: replacementSession
+        )
+        _ = try await registry.acquireShareTokenForTesting(displayID: displayID)
+        replacementSession.testShareFrameConsumer.setHasDemand(true)
+        #expect(await waitUntil {
+            replacementSession.setDemandCalls.last?.shareTokenCount == 1
+        })
+        let appliedDemandCount = replacementSession.setDemandCalls.count
+        #expect(replacementSession.setDemandCalls.last?.shareTokenCount == 1)
+
+        await registry.recordShareFrameDemandForTesting(
+            false,
+            for: displayID,
+            consumer: staleSession.testShareFrameConsumer
+        )
+
+        #expect(replacementSession.setDemandCalls.count == appliedDemandCount)
+        #expect(replacementSession.setDemandCalls.last?.shareTokenCount == 1)
+    }
+
+    @Test func staleTrueShareDemandEventCannotOverrideCurrentFalseState() async throws {
+        let displayID = CGDirectDisplayID(11014)
+        let session = FakeCaptureSession()
+        let registry = DisplayCaptureRegistry()
+
+        await registry.installSessionForTesting(
+            displayID: displayID,
+            resolutionText: "1920 × 1080",
+            session: session
+        )
+        _ = try await registry.acquireShareTokenForTesting(displayID: displayID)
+        session.testShareFrameConsumer.setHasDemand(true)
+        #expect(await waitUntil {
+            session.setDemandCalls.last?.shareTokenCount == 1
+        })
+        session.testShareFrameConsumer.setHasDemand(false)
+        #expect(await waitUntil {
+            session.setDemandCalls.last?.shareTokenCount == 0
+        })
+        let appliedDemandCount = session.setDemandCalls.count
+
+        await registry.recordShareFrameDemandForTesting(
+            true,
+            for: displayID,
+            consumer: session.testShareFrameConsumer
+        )
+
+        #expect(session.setDemandCalls.count == appliedDemandCount)
+        #expect(session.setDemandCalls.last?.shareTokenCount == 0)
     }
 
     private func waitUntil(
@@ -454,6 +541,8 @@ struct DisplayCaptureLeaseBookTests {
         let cursorMutation = book.setPreviewShowsCursor(true, for: previewToken)
         #expect(cursorMutation?.previousValue == false)
         #expect(book.prepareShareForSharing(shareToken) == displayID)
+        let activatedShareDemand = book.setShareFrameDemand(true, for: displayID)
+        #expect(activatedShareDemand)
 
         let snapshot = book.demandSnapshot(for: displayID, performanceMode: .smooth)
 
@@ -475,6 +564,7 @@ struct DisplayCaptureLeaseBookTests {
         #expect(
             book.demandSnapshot(for: displayID, performanceMode: .automatic).shareCursorOverrideCount == 1
         )
+        #expect(book.demandSnapshot(for: displayID, performanceMode: .automatic).isEmpty)
 
         book.revertPreparedShare(shareToken)
         #expect(
@@ -486,6 +576,20 @@ struct DisplayCaptureLeaseBookTests {
         #expect(
             book.demandSnapshot(for: displayID, performanceMode: .automatic).shareCursorOverrideCount == 0
         )
+    }
+
+    @Test func shareRouteTokenDoesNotContributeCaptureDemandWithoutViewer() {
+        var book = DisplayCaptureLeaseBook()
+        let displayID = CGDirectDisplayID(21006)
+        _ = book.registerToken(displayID: displayID, kind: .share)
+
+        #expect(book.demandSnapshot(for: displayID, performanceMode: .automatic).shareTokenCount == 0)
+        let activatedShareDemand = book.setShareFrameDemand(true, for: displayID)
+        #expect(activatedShareDemand)
+        #expect(book.demandSnapshot(for: displayID, performanceMode: .automatic).shareTokenCount == 1)
+        let deactivatedShareDemand = book.setShareFrameDemand(false, for: displayID)
+        #expect(deactivatedShareDemand)
+        #expect(book.demandSnapshot(for: displayID, performanceMode: .automatic).shareTokenCount == 0)
     }
 
     @Test func releasingShareTokenWithPreviewRemainingStopsSharingWithoutDraining() {

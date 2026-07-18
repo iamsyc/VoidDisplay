@@ -157,11 +157,7 @@ func virtualDisplaySnapshot(
     configs: [(UUID, UInt32, DisplayRuntimeDisplayID)]
 ) -> DisplayRuntimeVirtualDisplaySnapshot {
     .init(
-        rebuildRequestCount: 0,
-        rebuildingConfigIDs: [],
         runningConfigIDs: configs.map(\.0),
-        recentlyAppliedConfigIDs: [],
-        rebuildFailureConfigIDs: [],
         configStoreHasLoadFailure: false,
         configStoreHasDiagnostics: false,
         managedDisplays: configs.map {
@@ -187,11 +183,7 @@ func disabledVirtualDisplaySnapshot(
     desiredEnabled: Bool = false
 ) -> DisplayRuntimeVirtualDisplaySnapshot {
     .init(
-        rebuildRequestCount: 0,
-        rebuildingConfigIDs: [],
         runningConfigIDs: [],
-        recentlyAppliedConfigIDs: [],
-        rebuildFailureConfigIDs: [],
         configStoreHasLoadFailure: false,
         configStoreHasDiagnostics: false,
         managedDisplays: [],
@@ -216,11 +208,7 @@ func runningVirtualDisplaySnapshot(
     desiredEnabled: Bool
 ) -> DisplayRuntimeVirtualDisplaySnapshot {
     .init(
-        rebuildRequestCount: 0,
-        rebuildingConfigIDs: [],
         runningConfigIDs: [configID],
-        recentlyAppliedConfigIDs: [],
-        rebuildFailureConfigIDs: [],
         configStoreHasLoadFailure: false,
         configStoreHasDiagnostics: false,
         managedDisplays: [
@@ -245,11 +233,7 @@ func mixedVirtualDisplaySnapshot(
     running: [(UUID, UInt32, DisplayRuntimeDisplayID)]
 ) -> DisplayRuntimeVirtualDisplaySnapshot {
     .init(
-        rebuildRequestCount: 0,
-        rebuildingConfigIDs: [],
         runningConfigIDs: running.map(\.0),
-        recentlyAppliedConfigIDs: [],
-        rebuildFailureConfigIDs: [],
         configStoreHasLoadFailure: false,
         configStoreHasDiagnostics: false,
         managedDisplays: running.map {

@@ -9,6 +9,14 @@ import OSLog
 import ScreenCaptureKit
 import Synchronization
 
+private final class DisplayCaptureStreamReference: @unchecked Sendable {
+    let value: SCStream
+
+    init(_ value: SCStream) {
+        self.value = value
+    }
+}
+
 private final class DisplayStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
     nonisolated(unsafe) weak var session: DisplayCaptureSession?
 
@@ -311,6 +319,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
     nonisolated private let metrics: DisplayCaptureMetricsStore
     nonisolated private let streamConfigurationCoordinator: DisplayCaptureStreamConfigurationCoordinator
     nonisolated private let demandDriver: DisplayCaptureDemandDriver
+    nonisolated private let streamActivity: DisplayCaptureStreamActivity
     nonisolated private let sourceVideoSpec: SourceVideoSpec
 
     nonisolated init(
@@ -337,7 +346,9 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         )
         let config = makeDisplayCaptureStreamConfiguration(from: state)
         let filter = try await Self.makeContentFilter(display: display)
-        self.stream = SCStream(filter: filter, configuration: config, delegate: output)
+        let captureStream = SCStream(filter: filter, configuration: config, delegate: output)
+        let sendableCaptureStream = DisplayCaptureStreamReference(captureStream)
+        self.stream = captureStream
         self.shareFrameConsumer = makeShareFrameConsumer()
         self.sourceVideoSpec = captureSizeContext.sourceVideoSpec
         self.shareFrameConsumer.updateSourceVideoSpec(captureSizeContext.sourceVideoSpec)
@@ -348,6 +359,10 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
             initialState: state
         )
         self.streamConfigurationCoordinator = streamConfigurationCoordinator
+        self.streamActivity = DisplayCaptureStreamActivity(
+            start: { try await sendableCaptureStream.value.startCapture() },
+            stop: { try await sendableCaptureStream.value.stopCapture() }
+        )
         self.demandDriver = DisplayCaptureDemandDriver(
             initialConfiguration: .init(
                 profile: state.profile,
@@ -390,7 +405,6 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         output.session = self
 
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
-        try await stream.startCapture()
     }
 
     package nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink) {
@@ -409,6 +423,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         shareFrameConsumer.updateSourceVideoSpec(sourceVideoSpec)
         shareFrameConsumer.updatePerformanceMode(demand.performanceMode)
         try await demandDriver.setDemand(demand)
+        try await streamActivity.setActive(!demand.isEmpty)
     }
 
     package nonisolated func captureMetricsSnapshot() -> DisplayCaptureMetricsSnapshot {
@@ -420,7 +435,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
         await streamConfigurationCoordinator.cancelPending()
         stopSharing()
         do {
-            try await stream.stopCapture()
+            try await streamActivity.stop()
         } catch {
             AppErrorMapper.logFailure(
                 "Stop screen capture stream",

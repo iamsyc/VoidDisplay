@@ -132,9 +132,6 @@ package nonisolated struct DisplayRuntimeManagedVirtualDisplaySurfaceState: Coda
     package let desiredEnabled: Bool?
     package let isRunning: Bool
     package let isLiveRuntime: Bool
-    package let isRebuilding: Bool
-    package let hasRecentApplySuccess: Bool
-    package let hasRebuildFailure: Bool
     package let hasRestoreFailure: Bool
     package let modeCount: Int?
     package let maximumPixelWidth: Int?
@@ -146,9 +143,6 @@ package nonisolated struct DisplayRuntimeManagedVirtualDisplaySurfaceState: Coda
         desiredEnabled: Bool?,
         isRunning: Bool,
         isLiveRuntime: Bool,
-        isRebuilding: Bool,
-        hasRecentApplySuccess: Bool,
-        hasRebuildFailure: Bool,
         hasRestoreFailure: Bool,
         modeCount: Int?,
         maximumPixelWidth: Int?,
@@ -159,9 +153,6 @@ package nonisolated struct DisplayRuntimeManagedVirtualDisplaySurfaceState: Coda
         self.desiredEnabled = desiredEnabled
         self.isRunning = isRunning
         self.isLiveRuntime = isLiveRuntime
-        self.isRebuilding = isRebuilding
-        self.hasRecentApplySuccess = hasRecentApplySuccess
-        self.hasRebuildFailure = hasRebuildFailure
         self.hasRestoreFailure = hasRestoreFailure
         self.modeCount = modeCount
         self.maximumPixelWidth = maximumPixelWidth

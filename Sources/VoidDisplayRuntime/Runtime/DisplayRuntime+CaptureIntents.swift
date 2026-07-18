@@ -99,6 +99,15 @@ extension DisplayRuntime {
         return await task.value
     }
 
+    func metadataOnlyCaptureIntentApplyResult(
+        for surfaceIdentity: DisplaySurfaceIdentity
+    ) -> DisplayRuntimeCaptureIntentApplyResult? {
+        guard let revision = effectiveCaptureIntentsBySurface[surfaceIdentity]?.intent.revision else {
+            return nil
+        }
+        return .applied(revision: revision)
+    }
+
     private func applyCurrentCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent,
         consumerKind: DisplaySurfaceConsumerKind

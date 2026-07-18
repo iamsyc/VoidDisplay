@@ -76,6 +76,68 @@ func TestRoomInvalidPublisherOfferPreservesCurrentPublisher(t *testing.T) {
 	}
 }
 
+func TestRoomSuccessfulPublisherOfferAtomicallyReplacesCurrentPublisher(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("2", nil, server.newPeerConnection)
+	current := &fakePeerConnection{}
+	room.publisher = &publisherSession{id: "current", pc: current}
+	room.publisherCodecs[videoCodecAV1] = struct{}{}
+	room.publisherSSRCs[videoCodecAV1] = 1234
+
+	result, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1))
+	if err != nil {
+		t.Fatalf("SetPublisherOffer returned error: %v", err)
+	}
+
+	if result.PublisherID == "" || result.PublisherID == "current" {
+		t.Fatalf("replacement publisher ID = %q", result.PublisherID)
+	}
+	if room.publisher == nil || room.publisher.id != result.PublisherID {
+		t.Fatalf("active publisher = %#v, want %q", room.publisher, result.PublisherID)
+	}
+	if !current.isClosed() {
+		t.Fatal("replaced publisher remained open")
+	}
+	if _, exists := room.publisherSSRCs[videoCodecAV1]; exists {
+		t.Fatal("replacement inherited previous publisher SSRC")
+	}
+}
+
+func TestRoomDoesNotCloseWhilePublisherOfferIsInFlight(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	factoryEntered := make(chan struct{})
+	releaseFactory := make(chan struct{})
+	offer := createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1)
+	room := NewRoom("2", nil, func() (*webrtc.PeerConnection, error) {
+		close(factoryEntered)
+		<-releaseFactory
+		return server.newPeerConnection()
+	})
+	result := make(chan error, 1)
+	go func() {
+		_, err := room.SetPublisherOffer(offer)
+		result <- err
+	}()
+
+	<-factoryEntered
+	if room.CloseIfNoPublisher() {
+		t.Fatal("room closed while publisher offer was in flight")
+	}
+	close(releaseFactory)
+	if err := <-result; err != nil {
+		t.Fatalf("publisher offer failed after close check: %v", err)
+	}
+}
+
 func TestRoomPublisherRejectsVP8OnlyOffer(t *testing.T) {
 	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
 	if err := server.startWebRTC(); err != nil {
