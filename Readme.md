@@ -24,41 +24,11 @@ Open the generated capability-protected `/display` URL in a modern browser on a 
 
 ## 📸 Screenshots
 
-### Display Overview
-
-View all active displays, including virtual displays and their resolutions.
-
-![Display overview](./docs/imgs/display-overview.png)
-
-### Virtual Display Management
-
-Create, start, stop, reorder, edit, and remove virtual displays from one list.
-
-![Virtual display management](./docs/imgs/virtual-display-management.png)
-
-### Screen Monitoring
-
-Start or stop monitoring for each display, with status shown directly in the list.
-
-![Screen monitoring list](./docs/imgs/screen-monitoring-list.png)
-
 ### Live Monitor Window
 
 Watch a display in a dedicated viewer with fit, 1:1, full screen, and cursor controls.
 
 ![Live monitor window](./docs/imgs/live-monitor-window.png)
-
-### Screen Sharing Service
-
-Start the local web service, choose sharing smoothness, and configure the port.
-
-![Screen sharing service settings](./docs/imgs/sharing-service-settings.png)
-
-### Sharing Links
-
-Share individual displays and copy per-display LAN viewing links.
-
-![Sharing display links](./docs/imgs/sharing-display-links.png)
 
 ### Browser Live View
 
@@ -101,24 +71,23 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 ### Create a Virtual Display
 
-1. Open VoidDisplay and go to the **Virtual Display** tab.
-2. Click the **+** button to add a new virtual display.
+1. Open VoidDisplay. The **Displays** page opens by default.
+2. Click **Add Virtual Display**.
 3. Choose a preset or configure a custom resolution and refresh rate.
 4. The virtual display appears immediately in your macOS display arrangement.
 
 ### Monitor a Screen
 
-1. Go to the **Screen Monitoring** tab.
-2. Select the display you want to monitor.
-3. A floating window opens showing the live content of that display.
+1. On the **Displays** page, enable the virtual display you want to monitor.
+2. Turn on **Preview** in that display's status row.
+3. A floating window opens with the live content. Turn Preview off or close the window to stop it.
 
 ### Share a Screen over LAN
 
-1. Go to the **Screen Sharing** tab.
-2. Start the web service and choose the sharing smoothness mode.
-3. Click **Share** next to the display you want to broadcast.
-4. Copy the generated LAN URL, such as `http://192.168.x.x:18090/display/1/{capability}`.
-5. Open that URL in a modern browser on the same network to watch the screen in real time.
+1. On the **Displays** page, open **Sharing Settings** to adjust performance mode or port when needed.
+2. Enable the target virtual display, then turn on **LAN Web View** in its status row. The web service starts automatically.
+3. Use **Copy Link**, or choose **Open Share Page** from the display's More menu.
+4. Open the generated URL, such as `http://192.168.x.x:18090/display/1/{capability}`, in a modern browser on the same network.
 
 Notes:
 - `/display/{capability}` and `/display/{id}/{capability}` are the protected page routes.
@@ -128,7 +97,7 @@ Notes:
 
 ## ❓ Troubleshooting
 
-**No displays appear in Screen Monitoring or Screen Sharing?**
+**Displays are missing, or Preview and LAN Web View are unavailable?**
 
 > macOS requires Screen Recording permission. Go to **System Settings → Privacy & Security → Screen Recording** and make sure VoidDisplay is enabled. If you changed the permission while the app was running, fully quit and reopen it.
 
@@ -142,7 +111,7 @@ Notes:
 
 **Virtual display failed to restore on app launch?**
 
-> If a virtual display fails to restore, you'll see an alert in the Virtual Display tab. If the configuration file is corrupted, you can reset it by deleting:  
+> If a virtual display fails to restore, you'll see an alert on the Displays page. If the configuration file is corrupted, you can reset it by deleting:
 > `~/Library/Application Support/com.developerchen.voiddisplay/virtual-displays.json`
 
 ## 🛠️ For Developers
@@ -190,15 +159,15 @@ scripts/release/verify.sh \
 
 ### Debug Entry Points
 
-UI entry: `HomeView` contains four tabs: **Displays**, **Virtual Display**, **Screen Monitoring**, **Screen Sharing**.
+UI entry: `HomeView` contains the **Displays** and **Diagnostics** sidebar destinations. The Displays surface owns virtual-display creation and management, preview, and LAN sharing actions.
 
 Key files for debugging:
 
 | Area | Files |
 |------|-------|
 | Virtual Display | `Sources/VoidDisplayVirtualDisplay/Services/VirtualDisplayOrchestrator.swift`, `Sources/VoidDisplayVirtualDisplay/Views/CreateVirtualDisplayObjectView.swift`, `Sources/VoidDisplayVirtualDisplay/Views/EditVirtualDisplayConfigView.swift` |
-| Screen Capture | `Sources/VoidDisplayCapture/ViewModels/CaptureChooseViewModel.swift`, `Sources/VoidDisplayCapture/Services/DisplayCaptureRegistry.swift`, `Sources/VoidDisplayCapture/Services/DisplayCaptureSession.swift`, `Sources/VoidDisplayFoundation/RuntimeSupport/DisplayStartCoordinator.swift` |
-| LAN Sharing | `Sources/VoidDisplaySharing/ViewModels/ShareViewModel.swift`, `Sources/VoidDisplaySharing/Services/SharingService.swift`, `Sources/VoidDisplaySharing/Web/WebServer.swift` |
+| Screen Capture | `Sources/VoidDisplayApp/AppState/CaptureController.swift`, `Sources/VoidDisplayCapture/Services/DisplayCaptureRegistry.swift`, `Sources/VoidDisplayCapture/Services/DisplayCaptureSession.swift`, `Sources/VoidDisplayFoundation/RuntimeSupport/DisplayStartCoordinator.swift` |
+| LAN Sharing | `Sources/VoidDisplayApp/AppState/SharingController.swift`, `Sources/VoidDisplaySharing/Services/DisplaySharingCoordinator.swift`, `Sources/VoidDisplaySharing/Services/SharingService.swift`, `Sources/VoidDisplaySharing/Web/WebServer.swift` |
 
 Unified logs (`Logger`, subsystem `com.developerchen.voiddisplay`):
 

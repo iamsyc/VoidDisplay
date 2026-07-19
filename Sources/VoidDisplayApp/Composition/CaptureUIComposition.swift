@@ -2,7 +2,6 @@ import Foundation
 import VoidDisplayCapture
 import VoidDisplayFoundation
 import VoidDisplayRuntime
-import VoidDisplayVirtualDisplay
 import ScreenCaptureKit
 
 @MainActor
@@ -28,9 +27,6 @@ package enum CaptureUIComposition {
             },
             previewIDForDisplayID: { displayID in
                 previewID(displayID: displayID, displayRuntime: displayRuntime)
-            },
-            isStartingDisplayID: { displayID in
-                capture.isStarting(displayID: displayID)
             },
             startPreview: { display, metadata in
                 try await startRuntimeBackedPreview(
@@ -210,43 +206,6 @@ package enum CaptureUIComposition {
         CaptureSharingStatusProvider { displayID in
             sharing.isDisplaySharing(displayID: displayID)
         }
-    }
-
-    package static func virtualDisplayStatusProvider(
-        virtualDisplay: VirtualDisplayController
-    ) -> CaptureVirtualDisplayStatusProvider {
-        CaptureVirtualDisplayStatusProvider { displayID in
-            virtualDisplay.isManagedVirtualDisplay(displayID: displayID)
-        }
-    }
-
-    package static func catalogActions(
-        displayRuntime: DisplayRuntime,
-        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
-    ) -> CaptureCatalogActions {
-        CaptureCatalogActions(
-            handleAppear: {
-                await displayRuntime.handleCatalogAppear(source: .capturePage)
-            },
-            handleDisappear: {
-                await displayRuntime.handleCatalogDisappear(source: .capturePage)
-            },
-            handleTopologyChanged: {
-                await displayRuntime.handleCatalogTopologyChanged()
-            },
-            requestPermission: {
-                await displayRuntime.requestCatalogPermission(source: .capturePage)
-            },
-            refreshPermission: {
-                await displayRuntime.refreshCatalogPermission(source: .capturePage)
-            },
-            forceRefresh: {
-                await displayRuntime.forceRefreshCatalog(source: .capturePage)
-            },
-            openScreenCapturePrivacySettings: { openURL in
-                openScreenCapturePrivacySettings(openURL)
-            }
-        )
     }
 }
 

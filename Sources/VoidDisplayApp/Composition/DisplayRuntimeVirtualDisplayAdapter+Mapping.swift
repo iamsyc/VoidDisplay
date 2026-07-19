@@ -25,23 +25,6 @@ extension DisplayRuntimeTransactionSource {
     }
 }
 
-extension VirtualDisplayTransactionStatus {
-    init(_ status: DisplayRuntimeTransactionStatus) {
-        switch status {
-        case .completed:
-            self = .completed
-        case .completedWithRecoveryFailures:
-            self = .completedWithRecoveryFailures
-        case .failed:
-            self = .failed
-        case .cancelled:
-            self = .cancelled
-        case .active:
-            self = .failed
-        }
-    }
-}
-
 extension DisplayRuntimeScopeEscalationReason {
     init?(_ reason: VirtualDisplayEnablePreflight.ScopeEscalationReason?) {
         guard let reason else { return nil }

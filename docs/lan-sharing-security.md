@@ -18,9 +18,13 @@
 
 UI 只展示具体显示器页面地址。停止分享会立即撤销该凭证。再次开始分享会生成新凭证，旧链接无法复用。无凭证旧路由和错误凭证统一返回 `404`，路由不会借此暴露目标是否存在或是否正在分享。
 
+路由只接受应用生成的精确原始路径。查询参数、尾斜杠、重复斜杠和其他规范化变体均返回 `404`。
+
 ## 请求与资源边界
 
-- HTTP 页面与 WebSocket 信令使用同一份 capability 校验。
+- HTTP 入口只接受带完整 `\r\n\r\n` 终止符的 `HTTP/1.1` 请求头。请求行必须包含 method、path 和 version 三个字段，header 名必须合法且非空。畸形请求返回 `400`，非 GET 返回 `405`，超出请求头上限的连接直接关闭。
+- HTTP 层只建模 method、path 和 headers，不接收或转发请求体。
+- 页面通过一次 MainActor 授权解析完成主屏别名解析、恒定时间 capability 比较和活动 SignalSessionHub 获取。WebSocket 在路由决策时执行相同授权，并在 `101 Switching Protocols` 发送完成后、注册客户端前重新验证 capability 和 SignalSessionHub identity，避免停止或重新分享期间的授权竞态。
 - WebSocket upgrade 要求 `Origin` 与请求 `Host` 完全同源。
 - 页面响应禁止缓存和 Referrer 传播，并启用 MIME sniffing 与 frame embedding 防护。
 - 每个分享目标最多接纳 16 个信令客户端。
@@ -37,6 +41,7 @@ UI 只展示具体显示器页面地址。停止分享会立即撤销该凭证�
 - 支持草稿与导出历史在持久化前清洗，加载旧记录时会迁移并重写其中残留的 capability、LAN 地址和凭证。
 - 配置附件最多读取 2 MiB。无效 JSON 或超限文件只导出包含来源类型、原始字节数和原因码的脱敏占位对象。
 - 每个支持包使用独立 report ID 生成文件名，同一秒重复导出不会覆盖已有包。压缩失败会删除 staging 和半成品，成功归档权限固定为当前用户读写。
+- 支持包直接导出到本地 ZIP，manifest 不包含恒定的传输 capability 字段。
 
 ## 威胁模型
 

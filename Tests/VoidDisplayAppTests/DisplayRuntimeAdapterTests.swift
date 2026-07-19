@@ -170,13 +170,10 @@ struct DisplayRuntimeAdapterTests {
             display: display,
             capturePerformancePreferences: capturePerformancePreferences
         )
-        let dependencies = SharingUIComposition.dependencies(
-            sharing: harness.sharingController,
-            displayRuntime: harness.runtime,
-            sharingAdapter: harness.sharingAdapter
+        let outcome = try await harness.sharingAdapter.beginLANWebViewSharing(
+            display: display,
+            runtime: harness.runtime
         )
-
-        let outcome = try await dependencies.sharingActions.beginSharing(display)
 
         guard case .started = outcome else {
             Issue.record("Expected LAN Web View sharing start to succeed.")
@@ -209,13 +206,10 @@ struct DisplayRuntimeAdapterTests {
                 displayID: display.displayID
             )
         )
-        let dependencies = SharingUIComposition.dependencies(
-            sharing: harness.sharingController,
-            displayRuntime: harness.runtime,
-            sharingAdapter: harness.sharingAdapter
+        let outcome = try await harness.sharingAdapter.beginLANWebViewSharing(
+            display: display,
+            runtime: harness.runtime
         )
-
-        let outcome = try await dependencies.sharingActions.beginSharing(display)
 
         guard case .started = outcome else {
             Issue.record("Expected managed virtual LAN Web View sharing start to succeed.")

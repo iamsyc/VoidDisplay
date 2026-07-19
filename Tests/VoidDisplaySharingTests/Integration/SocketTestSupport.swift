@@ -232,15 +232,10 @@ func websocketUpgradeRequest(
 
 @MainActor
 func startServerOnRandomPort(
-    targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-    accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool = { _, capability in
-        capability == socketTestAccessCapability
-    },
-    concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { target in
-        guard case .id(let id) = target else { return nil }
-        return .id(id)
-    },
-    sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
+    authorizationResolver: @escaping @MainActor @Sendable (
+        ShareTarget,
+        ShareAccessCapability
+    ) -> AuthorizedShareSession?,
     sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
 ) async throws -> (server: WebServer, port: UInt16) {
     for candidate in TestPortAllocator.randomPortCandidates(count: 60) {
@@ -250,10 +245,7 @@ func startServerOnRandomPort(
         do {
             let server = try WebServer(
                 using: endpointPort,
-                targetStateProvider: targetStateProvider,
-                accessValidator: accessValidator,
-                concreteTargetResolver: concreteTargetResolver,
-                sessionHubProvider: sessionHubProvider,
+                authorizationResolver: authorizationResolver,
                 sharingEventSink: sharingEventSink
             )
             let result = await server.startListener(timeout: 1.0)

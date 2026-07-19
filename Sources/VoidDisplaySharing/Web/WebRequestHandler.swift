@@ -2,18 +2,22 @@ import VoidDisplayDesignSystem
 import VoidDisplayFoundation
 import VoidDisplayObservability
 import Foundation
-package enum WebRequestDecision: Equatable {
+package struct AuthorizedShareSession: Sendable {
+    package let target: ShareTarget
+    package let sessionHub: any SignalSessionHub
+
+    package init(id: UInt32, sessionHub: any SignalSessionHub) {
+        target = .id(id)
+        self.sessionHub = sessionHub
+    }
+}
+
+package enum WebRequestDecision {
     case badRequest
-    case showDisplayPage(ShareTarget, ShareAccessCapability)
-    case openSignalSocket(ShareTarget, ShareAccessCapability)
-    case sharingUnavailable
+    case showDisplayPage(AuthorizedShareSession, ShareAccessCapability)
+    case openSignalSocket(AuthorizedShareSession, ShareAccessCapability)
     case methodNotAllowed
     case notFound
-}
-package enum ShareTargetState: Equatable {
-    case active
-    case knownInactive
-    case unknown
 }
 package struct WebRequestHandler {
     private let router = HttpRouter()
@@ -35,37 +39,18 @@ package struct WebRequestHandler {
     package func decision(
         forMethod method: String,
         path: String,
-        targetStateProvider: (ShareTarget) -> ShareTargetState,
-        accessValidator: (ShareTarget, ShareAccessCapability) -> Bool
+        authorizationResolver: (ShareTarget, ShareAccessCapability) -> AuthorizedShareSession?
     ) -> WebRequestDecision {
-        guard method.uppercased() == "GET" else {
+        guard method == "GET" else {
             return .methodNotAllowed
         }
         switch router.route(for: path) {
         case .display(let target, let capability):
-            guard accessValidator(target, capability) else {
-                return .notFound
-            }
-            let targetState = targetStateProvider(target)
-            switch targetState {
-            case .active, .knownInactive:
-                return .showDisplayPage(target, capability)
-            case .unknown:
-                return .notFound
-            }
+            guard let session = authorizationResolver(target, capability) else { return .notFound }
+            return .showDisplayPage(session, capability)
         case .signal(let target, let capability):
-            guard accessValidator(target, capability) else {
-                return .notFound
-            }
-            let targetState = targetStateProvider(target)
-            switch targetState {
-            case .active:
-                return .openSignalSocket(target, capability)
-            case .knownInactive:
-                return .sharingUnavailable
-            case .unknown:
-                return .notFound
-            }
+            guard let session = authorizationResolver(target, capability) else { return .notFound }
+            return .openSignalSocket(session, capability)
         case .notFound:
             return .notFound
         }
@@ -103,18 +88,6 @@ package struct WebRequestHandler {
                     ("Content-Security-Policy", resolvedContentSecurityPolicy)
                 ],
                 body: htmlBody
-            )
-        case .sharingUnavailable:
-            let body = "Sharing has stopped."
-            return buildResponse(
-                statusLine: "HTTP/1.1 503 Service Unavailable",
-                headers: [
-                    ("Content-Type", "text/plain; charset=utf-8"),
-                    ("Content-Length", "\(body.utf8.count)"),
-                    ("Cache-Control", "no-cache"),
-                    ("Connection", "close")
-                ],
-                body: body
             )
         case .methodNotAllowed:
             let body = "Method Not Allowed"

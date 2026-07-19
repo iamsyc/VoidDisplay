@@ -27,7 +27,7 @@ struct HTTPRequestAccumulatorTests {
         #expect(text == "GET /signal HTTP/1.1\r\nHost: 127.0.0.1:8081\r\n\r\n")
     }
 
-    @Test func returnsCompleteWhenConnectionEndsWithoutTerminator() throws {
+    @Test func returnsPartialPayloadForParserRejectionWhenConnectionEndsWithoutTerminator() throws {
         var accumulator = HTTPRequestAccumulator(maxBytes: 1024)
         let payload = try #require("GET / HTTP/1.1\r\nHost: localhost".data(using: .utf8))
 
@@ -37,6 +37,18 @@ struct HTTPRequestAccumulatorTests {
             return
         }
         #expect(data == payload)
+    }
+
+    @Test func completesAtHeaderBoundaryAndDropsTrailingBytes() throws {
+        var accumulator = HTTPRequestAccumulator(maxBytes: 1024)
+        let payload = try #require("GET / HTTP/1.1\r\nHost: localhost\r\n\r\nbody".data(using: .utf8))
+
+        let result = accumulator.ingest(chunk: payload, isComplete: false)
+        guard case .complete(let data?) = result else {
+            Issue.record("Expected complete header payload.")
+            return
+        }
+        #expect(data == Data("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8))
     }
 
     @Test func returnsNilWhenConnectionEndsWithNoData() {

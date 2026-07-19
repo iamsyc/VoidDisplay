@@ -22,26 +22,25 @@ struct FeedbackBundleExporterTests {
             }
         )
 
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: FeedbackDraft(happened: "Black screen", reproductionSteps: "Open app", expectedResult: "Shows content"),
             consent: FeedbackConsent(),
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [makeEvent()],
-            issues: [makeIssue()],
-            transportCapability: FeedbackTransportCapability.localExportOnly
+            issues: [makeIssue()]
         )
 
-        let entries = try archiveEntries(at: result.bundleURL)
+        let entries = try archiveEntries(at: bundleURL)
         let manifest = try decodeArchiveEntry(
             SupportBundleManifest.self,
             relativePathSuffix: "/manifest.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
         let state = try decodeArchiveEntry(
             ObservabilityStateSnapshot.self,
             relativePathSuffix: "/state/current-state.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
 
         #expect(entries.contains(where: { $0.hasSuffix("/manifest.json") }))
@@ -53,7 +52,8 @@ struct FeedbackBundleExporterTests {
         #expect(entries.contains(where: { $0.contains("/attachments/") }) == false)
         #expect(manifest.eventCount == 1)
         #expect(manifest.issueCount == 1)
-        #expect(manifest.transportCapability == FeedbackTransportCapability.localExportOnly)
+        let manifestJSON = try archiveEntryString(relativePathSuffix: "/manifest.json", archiveURL: bundleURL)
+        #expect(manifestJSON.contains("transportCapability") == false)
         #expect(manifest.attachments.isEmpty)
         #expect(manifest.consent == FeedbackConsent())
         #expect(manifest.consent.hasEnhancedCollection == false)
@@ -106,24 +106,23 @@ struct FeedbackBundleExporterTests {
             sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
         )
 
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: FeedbackDraft(),
             consent: FeedbackConsent(includeRelatedConfigSnapshots: true),
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [],
-            issues: [],
-            transportCapability: FeedbackTransportCapability.localExportOnly
+            issues: []
         )
 
-        let entries = try archiveEntries(at: result.bundleURL)
+        let entries = try archiveEntries(at: bundleURL)
         let virtualDisplayConfig = try archiveEntryString(
             relativePathSuffix: "/attachments/config/virtual-displays.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
         let shareMappings = try archiveEntryString(
             relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
 
         #expect(entries.contains(where: { $0.hasSuffix("/attachments/config/virtual-displays.json") }))
@@ -180,33 +179,32 @@ struct FeedbackBundleExporterTests {
             sanitizer: ObservabilitySanitizer(homePath: "/Users/tester")
         )
 
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: FeedbackDraft(),
             consent: FeedbackConsent(includeRelatedConfigSnapshots: true),
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [],
-            issues: [],
-            transportCapability: FeedbackTransportCapability.localExportOnly
+            issues: []
         )
 
         let virtualDisplayConfig = try archiveEntryString(
             relativePathSuffix: "/attachments/config/virtual-displays.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
         let shareMappings = try archiveEntryString(
             relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
         let virtualPlaceholder = try #require(try decodeArchiveEntry(
             JSONValue.self,
             relativePathSuffix: "/attachments/config/virtual-displays.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         ).objectValue)
         let sharePlaceholder = try #require(try decodeArchiveEntry(
             JSONValue.self,
             relativePathSuffix: "/attachments/config/display-share-id-mappings.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         ).objectValue)
 
         #expect(virtualPlaceholder["redacted"] == .bool(true))
@@ -254,21 +252,20 @@ struct FeedbackBundleExporterTests {
             }
         )
 
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: FeedbackDraft(happened: "Sharing failed"),
             consent: FeedbackConsent(includeUnifiedLogSummary: true),
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [],
-            issues: [],
-            transportCapability: FeedbackTransportCapability.localExportOnly
+            issues: []
         )
 
-        let entries = try archiveEntries(at: result.bundleURL)
+        let entries = try archiveEntries(at: bundleURL)
         let manifest = try decodeArchiveEntry(
             SupportBundleManifest.self,
             relativePathSuffix: "/manifest.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
 
         #expect(capturedCommand?.launchPath == "/usr/bin/log")
@@ -295,23 +292,22 @@ struct FeedbackBundleExporterTests {
             sanitizer: ObservabilitySanitizer()
         )
 
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: FeedbackDraft(happened: "Config export"),
             consent: FeedbackConsent(includeRelatedConfigSnapshots: true),
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [],
-            issues: [],
-            transportCapability: .localExportOnly
+            issues: []
         )
         let placeholder = try #require(try decodeArchiveEntry(
             JSONValue.self,
             relativePathSuffix: "/attachments/config/virtual-displays.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         ).objectValue)
         let attachment = try archiveEntryString(
             relativePathSuffix: "/attachments/config/virtual-displays.json",
-            archiveURL: result.bundleURL
+            archiveURL: bundleURL
         )
 
         #expect(placeholder["redacted"] == .bool(true))
@@ -409,14 +405,13 @@ struct FeedbackBundleExporterTests {
             latestMetadata: ["accessCapability": accessToken]
         )
 
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: FeedbackDraft(happened: "Failed at http://\(privateIP)/display/\(accessToken)"),
             consent: FeedbackConsent(),
             state: state,
             health: health,
             events: [event],
-            issues: [issue],
-            transportCapability: .localExportOnly
+            issues: [issue]
         )
 
         let coreArtifacts = try [
@@ -426,7 +421,7 @@ struct FeedbackBundleExporterTests {
             "/events/recent-events.ndjson",
             "/issues/recent-issues.json"
         ].map {
-            try archiveEntryString(relativePathSuffix: $0, archiveURL: result.bundleURL)
+            try archiveEntryString(relativePathSuffix: $0, archiveURL: bundleURL)
         }.joined(separator: "\n")
 
         for sensitiveValue in [accessToken, privatePath, privateIP, displayName] {
@@ -462,8 +457,7 @@ struct FeedbackBundleExporterTests {
                 state: makeStateSnapshot(),
                 health: makeHealthSummary(),
                 events: [],
-                issues: [],
-                transportCapability: .localExportOnly
+                issues: []
             )
             Issue.record("Expected archive creation to fail")
         } catch {}
@@ -502,8 +496,7 @@ struct FeedbackBundleExporterTests {
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [],
-            issues: [],
-            transportCapability: .localExportOnly
+            issues: []
         )
         let second = try exporter.exportBundle(
             draft: FeedbackDraft(happened: "Second"),
@@ -511,14 +504,13 @@ struct FeedbackBundleExporterTests {
             state: makeStateSnapshot(),
             health: makeHealthSummary(),
             events: [],
-            issues: [],
-            transportCapability: .localExportOnly
+            issues: []
         )
 
-        #expect(first.bundleURL != second.bundleURL)
-        #expect(FileManager.default.fileExists(atPath: first.bundleURL.path))
-        #expect(FileManager.default.fileExists(atPath: second.bundleURL.path))
-        let permissions = try FileManager.default.attributesOfItem(atPath: second.bundleURL.path)[.posixPermissions] as? NSNumber
+        #expect(first != second)
+        #expect(FileManager.default.fileExists(atPath: first.path))
+        #expect(FileManager.default.fileExists(atPath: second.path))
+        let permissions = try FileManager.default.attributesOfItem(atPath: second.path)[.posixPermissions] as? NSNumber
         #expect(permissions?.intValue == 0o600)
     }
 }

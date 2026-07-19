@@ -35,15 +35,12 @@ package final class VirtualDisplayListViewModel {
         }
     }
 
-    package var primaryDisplayRefreshTick: UInt64 = 0
     package var togglingConfigIds: Set<UUID> = []
     package var showDeleteConfirm = false
     package var deleteCandidate: VirtualDisplayConfig?
     package var showRestoreFailureAlert = false
     package var userFacingAlert: UserFacingAlertState?
 
-    @ObservationIgnored private var primaryDisplayMonitor = DebouncingDisplayReconfigurationMonitor()
-    @ObservationIgnored private var primaryDisplayFallbackCoordinator = PrimaryDisplayFallbackCoordinator()
     @ObservationIgnored private let dependencies: Dependencies
 
     package init(dependencies: Dependencies) {
@@ -58,11 +55,6 @@ package final class VirtualDisplayListViewModel {
         if !dependencies.restoreFailures().isEmpty {
             showRestoreFailureAlert = true
         }
-        startPrimaryDisplayMonitoring()
-    }
-
-    package func handleDisappear() {
-        stopPrimaryDisplayMonitoring()
     }
 
     package func handleRestoreFailuresChanged(_ failures: [VirtualDisplayRestoreFailure]) {
@@ -155,44 +147,5 @@ package final class VirtualDisplayListViewModel {
 
     package func dismissAlert() {
         userFacingAlert = nil
-    }
-
-    private func startPrimaryDisplayMonitoring() {
-        let started = primaryDisplayMonitor.start { [weak self] in
-            self?.primaryDisplayRefreshTick &+= 1
-        }
-        if started {
-            primaryDisplayFallbackCoordinator.stop()
-            return
-        }
-
-        AppLog.virtualDisplay.error(
-            "Primary display monitor callback registration failed; enabling polling fallback."
-        )
-        startPrimaryDisplayFallback()
-    }
-
-    private func stopPrimaryDisplayMonitoring() {
-        primaryDisplayMonitor.stop()
-        primaryDisplayFallbackCoordinator.stop()
-    }
-
-    private func startPrimaryDisplayFallback() {
-        primaryDisplayFallbackCoordinator.startIfNeeded(
-            onTick: { [weak self] in
-                self?.primaryDisplayRefreshTick &+= 1
-            },
-            attemptRecovery: { [weak self] in
-                guard let self else { return false }
-                return self.primaryDisplayMonitor.start {
-                    self.primaryDisplayRefreshTick &+= 1
-                }
-            },
-            onRecovered: {
-                AppLog.virtualDisplay.notice(
-                    "Primary display monitor callback recovered; disabling polling fallback."
-                )
-            }
-        )
     }
 }

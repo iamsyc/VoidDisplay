@@ -29,8 +29,8 @@ package struct HTTPRequestAccumulator {
             return .invalidTooLarge
         }
 
-        if buffer.range(of: headerTerminator) != nil {
-            return .complete(buffer)
+        if let boundary = buffer.range(of: headerTerminator) {
+            return .complete(Data(buffer[..<boundary.upperBound]))
         }
 
         if isComplete {

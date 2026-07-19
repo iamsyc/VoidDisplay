@@ -34,10 +34,7 @@ struct WebServiceControllerTests {
 
         let result = await sut.start(
             requestedPort: 1000,
-            targetStateProvider: { _ in .unknown },
-            accessValidator: { _, _ in true },
-            concreteTargetResolver: { $0 },
-            sessionHubProvider: { _ in nil },
+            authorizationResolver: { _, _ in nil },
             sharingEventSink: { _ in }
         )
 
@@ -55,10 +52,7 @@ struct WebServiceControllerTests {
 
         let result = await sut.start(
             requestedPort: 999,
-            targetStateProvider: { _ in .unknown },
-            accessValidator: { _, _ in true },
-            concreteTargetResolver: { $0 },
-            sessionHubProvider: { _ in nil },
+            authorizationResolver: { _, _ in nil },
             sharingEventSink: { _ in }
         )
 
@@ -79,10 +73,7 @@ struct WebServiceControllerTests {
 
         let result = await sut.start(
             requestedPort: 999,
-            targetStateProvider: { _ in .unknown },
-            accessValidator: { _, _ in true },
-            concreteTargetResolver: { $0 },
-            sessionHubProvider: { _ in nil },
+            authorizationResolver: { _, _ in nil },
             sharingEventSink: { _ in }
         )
         sut.stop()
@@ -106,10 +97,7 @@ struct WebServiceControllerTests {
 
         let result = await sut.start(
             requestedPort: 999,
-            targetStateProvider: { _ in .unknown },
-            accessValidator: { _, _ in true },
-            concreteTargetResolver: { $0 },
-            sessionHubProvider: { _ in nil },
+            authorizationResolver: { _, _ in nil },
             sharingEventSink: { _ in }
         )
         sut.stop()
@@ -133,10 +121,7 @@ struct WebServiceControllerTests {
 
         let result = await sut.start(
             requestedPort: port,
-            targetStateProvider: { _ in .unknown },
-            accessValidator: { _, _ in true },
-            concreteTargetResolver: { $0 },
-            sessionHubProvider: { _ in nil },
+            authorizationResolver: { _, _ in nil },
             sharingEventSink: { _ in }
         )
 
@@ -160,8 +145,9 @@ struct WebServiceControllerTests {
             harness: harness,
             sut: sut,
             requestedPort: port,
-            targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in TestSignalSessionHub() }
+            authorizationResolver: { _, _ in
+                AuthorizedShareSession(id: 1, sessionHub: TestSignalSessionHub())
+            }
         ) else {
             return
         }
@@ -276,8 +262,9 @@ struct WebServiceControllerTests {
             harness: harness,
             sut: sut,
             requestedPort: secondPort,
-            targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in TestSignalSessionHub() }
+            authorizationResolver: { _, _ in
+                AuthorizedShareSession(id: 1, sessionHub: TestSignalSessionHub())
+            }
         ) else {
             return
         }
@@ -320,19 +307,16 @@ struct WebServiceControllerTests {
         harness: WebServiceServerHarness,
         sut: WebServiceController,
         requestedPort: UInt16,
-        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState = { _ in .unknown },
-        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool = { _, _ in true },
-        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget? = { $0 },
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)? = { _ in nil }
+        authorizationResolver: @escaping @MainActor @Sendable (
+            ShareTarget,
+            ShareAccessCapability
+        ) -> AuthorizedShareSession? = { _, _ in nil }
     ) async -> (startTask: Task<WebServiceStartResult, Never>, server: ControlledWebServiceServer)? {
         let existingServerCount = harness.createdServers.count
         let startTask = Task {
             await sut.start(
                 requestedPort: requestedPort,
-                targetStateProvider: targetStateProvider,
-                accessValidator: accessValidator,
-                concreteTargetResolver: concreteTargetResolver,
-                sessionHubProvider: sessionHubProvider,
+                authorizationResolver: authorizationResolver,
                 sharingEventSink: { _ in }
             )
         }
@@ -409,10 +393,10 @@ private final class WebServiceServerHarness {
 
     func makeServer(
         _: NWEndpoint.Port,
-        _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        _: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
-        _: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        _: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
+        _: @escaping @MainActor @Sendable (
+            ShareTarget,
+            ShareAccessCapability
+        ) -> AuthorizedShareSession?,
         _: @escaping @MainActor @Sendable (SharingSessionEvent) -> Void,
         _ onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     ) throws -> any WebServiceServerProtocol {

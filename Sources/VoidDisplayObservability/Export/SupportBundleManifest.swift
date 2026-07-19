@@ -9,7 +9,6 @@ package nonisolated struct SupportBundleManifest: Codable, Equatable, Sendable {
 
     package let reportID: UUID
     package let generatedAt: Date
-    package let transportCapability: FeedbackTransportCapability
     package let app: AppInfo
     package let eventCount: Int
     package let issueCount: Int

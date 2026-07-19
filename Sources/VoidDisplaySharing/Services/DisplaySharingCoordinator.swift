@@ -230,44 +230,32 @@ package final class DisplaySharingCoordinator {
         }
     }
 
-    package func state(for target: ShareTarget) -> ShareTargetState {
-        switch target {
-        case .main:
-            guard let resolvedMainID = resolvedMainDisplayID() else {
-                return .knownInactive
-            }
-            return sessionsByDisplayID[resolvedMainID] != nil ? .active : .knownInactive
-        case .id(let id):
-            guard let displayID = displayIDsByShareID[id] else {
-                return .unknown
-            }
-            return sessionsByDisplayID[displayID] != nil ? .active : .knownInactive
-        }
-    }
-
-    package func sessionHub(for target: ShareTarget) -> (any SignalSessionHub)? {
-        switch target {
-        case .main:
-            guard let resolvedMainID = resolvedMainDisplayID() else { return nil }
-            return sessionsByDisplayID[resolvedMainID]?.subscription.shareFrameConsumer as? any SignalSessionHub
-        case .id(let id):
-            guard let displayID = displayIDsByShareID[id] else { return nil }
-            return sessionsByDisplayID[displayID]?.subscription.shareFrameConsumer as? any SignalSessionHub
-        }
-    }
-
-    package func resolveConcreteTarget(for target: ShareTarget) -> ShareTarget? {
+    package func authorize(
+        target: ShareTarget,
+        capability: ShareAccessCapability
+    ) -> AuthorizedShareSession? {
+        let shareID: UInt32
+        let displayID: CGDirectDisplayID
         switch target {
         case .main:
             guard let resolvedMainID = resolvedMainDisplayID(),
-                  let shareID = registrationsByDisplayID[resolvedMainID]?.shareID else {
+                  let resolvedShareID = registrationsByDisplayID[resolvedMainID]?.shareID else {
                 return nil
             }
-            return .id(shareID)
+            shareID = resolvedShareID
+            displayID = resolvedMainID
         case .id(let id):
-            guard displayIDsByShareID[id] != nil else { return nil }
-            return .id(id)
+            guard let resolvedDisplayID = displayIDsByShareID[id] else { return nil }
+            shareID = id
+            displayID = resolvedDisplayID
         }
+
+        guard let session = sessionsByDisplayID[displayID],
+              session.accessCapability.securelyMatches(capability),
+              let hub = session.subscription.shareFrameConsumer as? any SignalSessionHub else {
+            return nil
+        }
+        return AuthorizedShareSession(id: shareID, sessionHub: hub)
     }
 
     package func shareID(for displayID: CGDirectDisplayID) -> UInt32? {
@@ -285,19 +273,6 @@ package final class DisplaySharingCoordinator {
             return nil
         }
         return target.displayPath(accessCapability: capability)
-    }
-
-    package func validatesAccess(
-        to target: ShareTarget,
-        capability: ShareAccessCapability
-    ) -> Bool {
-        guard let concreteTarget = resolveConcreteTarget(for: target),
-              case .id(let shareID) = concreteTarget,
-              let displayID = displayIDsByShareID[shareID],
-              let session = sessionsByDisplayID[displayID] else {
-            return false
-        }
-        return session.accessCapability.securelyMatches(capability)
     }
 
     package func isSharing(displayID: CGDirectDisplayID) -> Bool {

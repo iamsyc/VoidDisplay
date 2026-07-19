@@ -66,7 +66,6 @@ struct ObservabilitySnapshotProviderTests {
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
             ),
-            transport: LocalExportTransport(),
             observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
             sanitizer: sanitizer
         )

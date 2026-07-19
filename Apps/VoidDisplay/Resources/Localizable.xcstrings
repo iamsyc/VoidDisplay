@@ -102,40 +102,6 @@
         }
       }
     },
-    "%lld connected" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld connected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已连接 %1$lld 人"
-          }
-        }
-      }
-    },
-    "%lld displays" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld displays"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld 台显示器"
-          }
-        }
-      }
-    },
     "%lld of %lld active" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -330,17 +296,6 @@
         }
       }
     },
-    "App Path" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用路径"
-          }
-        }
-      }
-    },
     "Applied" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -425,17 +380,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动"
-          }
-        }
-      }
-    },
-    "Automatic and Smooth send AV1 at source resolution on LAN. Actual frame rate follows encoder capability." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动和流畅会在局域网按源分辨率发送 AV1。实际帧率取决于编码能力。"
           }
         }
       }
@@ -1284,28 +1228,6 @@
         }
       }
     },
-    "Error Code" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "错误码"
-          }
-        }
-      }
-    },
-    "Error Domain" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "错误域"
-          }
-        }
-      }
-    },
     "Example: 1. Launch the app. 2. Open sharing. 3. Select a display." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1538,17 +1460,6 @@
         }
       }
     },
-    "Failure Reason" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "失败原因"
-          }
-        }
-      }
-    },
     "Fit" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1668,17 +1579,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "空闲"
-          }
-        }
-      }
-    },
-    "If a display is set to mirror mode, only one mirrored display appears here." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "如果显示器设置为镜像模式，这里只显示其中一个镜像显示器。"
           }
         }
       }
@@ -1904,17 +1804,6 @@
         }
       }
     },
-    "Last Error" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近一次错误"
-          }
-        }
-      }
-    },
     "Last Failure" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1988,17 +1877,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加载中..."
-          }
-        }
-      }
-    },
-    "Loading…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在加载…"
           }
         }
       }
@@ -2113,17 +1991,6 @@
         }
       }
     },
-    "No available display can be previewed right now." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前没有可预览的显示器。"
-          }
-        }
-      }
-    },
     "No Data" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2201,17 +2068,6 @@
         }
       }
     },
-    "No screen to share" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无可共享的屏幕"
-          }
-        }
-      }
-    },
     "No Virtual Display" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2219,17 +2075,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "没有虚拟显示器"
-          }
-        }
-      }
-    },
-    "No watchable screen" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无可预览的屏幕"
           }
         }
       }
@@ -2256,17 +2101,6 @@
         }
       }
     },
-    "Not Previewing" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未预览"
-          }
-        }
-      }
-    },
     "Not Running" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2280,17 +2114,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未运行"
-          }
-        }
-      }
-    },
-    "Not Sharing" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未共享"
           }
         }
       }
@@ -2637,17 +2460,6 @@
         }
       }
     },
-    "Preflight Permission" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "权限预检结果"
-          }
-        }
-      }
-    },
     "Preset" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2919,17 +2731,6 @@
         }
       }
     },
-    "Recovery Suggestion" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "建议操作"
-          }
-        }
-      }
-    },
     "Refresh" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2992,17 +2793,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请求权限"
-          }
-        }
-      }
-    },
-    "Request Permission Result" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请求权限结果"
           }
         }
       }
@@ -3529,28 +3319,6 @@
         }
       }
     },
-    "Service Running" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务运行中"
-          }
-        }
-      }
-    },
-    "Service Stopped" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务已停止"
-          }
-        }
-      }
-    },
     "Set as Primary" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3591,28 +3359,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共享失败"
-          }
-        }
-      }
-    },
-    "Share links are reachable from devices on the same local network. Send them only to trusted viewers." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "同一局域网内可访问这台 Mac 的设备都能打开共享链接。请只发送给可信观看者。"
-          }
-        }
-      }
-    },
-    "Share smoothness" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共享流畅度"
           }
         }
       }
@@ -3667,17 +3413,6 @@
         }
       }
     },
-    "Sharing in Progress" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共享中"
-          }
-        }
-      }
-    },
     "Smooth" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3707,28 +3442,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "启动预览失败"
-          }
-        }
-      }
-    },
-    "Start Service" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动服务"
-          }
-        }
-      }
-    },
-    "Start the Web service to share your screen with other devices." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动 Web 服务后，即可共享屏幕给其他设备。"
           }
         }
       }
@@ -3784,17 +3497,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止预览"
-          }
-        }
-      }
-    },
-    "Stop Service" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止服务"
           }
         }
       }
@@ -4480,17 +4182,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "屏幕录制"
-          }
-        }
-      }
-    },
-    "Web service is not running." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web 服务未运行。"
           }
         }
       }

@@ -98,8 +98,10 @@ struct WebServerSocketIntegrationTests {
 
     @Test func secondaryDisplayRouteAlsoUsesGenericPageTitle() async throws {
         let setup = try await startServerOnRandomPort(
-            targetStateProvider: { _ in .active },
-            sessionHubProvider: { _ in TestSignalSessionHub() }
+            authorizationResolver: { target, capability in
+                guard target == .id(7), capability == socketTestAccessCapability else { return nil }
+                return AuthorizedShareSession(id: 7, sessionHub: TestSignalSessionHub())
+            }
         )
         let server = setup.server
         let portValue = setup.port
@@ -145,6 +147,26 @@ struct WebServerSocketIntegrationTests {
         }
     }
 
+    @Test func oversizedHTTPRequestHeaderClosesConnectionWithoutResponse() async throws {
+        let setup = try await startMainSignalServer(sessionHub: TestSignalSessionHub())
+        let server = setup.server
+        let portValue = setup.port
+        defer { server.stopListener() }
+
+        var request = Data("GET / HTTP/1.1\r\nX-Fill: ".utf8)
+        request.append(Data(repeating: 0x61, count: 33 * 1024))
+        let responseData = try await Task.detached {
+            try await sendRequestAndReadUntilClose(
+                port: portValue,
+                request: request,
+                timeoutMilliseconds: 2_000
+            )
+        }.value
+
+        #expect(responseData.isEmpty)
+        #expect(server.activeStreamClientCount == 0)
+    }
+
     @Test func websocketUpgradeRequiresSameOriginAfterCapabilityValidation() async throws {
         let sessionHub = TestSignalSessionHub()
         let setup = try await startMainSignalServer(sessionHub: sessionHub)
@@ -173,6 +195,90 @@ struct WebServerSocketIntegrationTests {
         }
         #expect(server.activeStreamClientCount == 0)
         #expect(sessionHub.activeClientCount == 0)
+    }
+
+    @Test func websocketUpgradeRejectsCapabilityRevokedBeforeClientRegistration() async throws {
+        let sessionHub = TestSignalSessionHub()
+        var authorizationCallCount = 0
+        let setup = try await startServerOnRandomPort(
+            authorizationResolver: { target, capability in
+                authorizationCallCount += 1
+                guard authorizationCallCount == 1,
+                      capability == socketTestAccessCapability,
+                      Self.resolveMainAliasTarget(target) != nil else {
+                    return nil
+                }
+                return AuthorizedShareSession(id: Self.mainAliasShareID, sessionHub: sessionHub)
+            }
+        )
+        let server = setup.server
+        defer { server.stopListener() }
+
+        let socket = try await openWebSocket(path: Self.mainSignalPath, port: setup.port)
+        defer { close(socket) }
+
+        #expect(try await waitForSocketClose(socket))
+        #expect(authorizationCallCount == 2)
+        #expect(server.activeStreamClientCount == 0)
+        #expect(sessionHub.activeClientCount == 0)
+    }
+
+    @Test func websocketUpgradeRejectsReplacementHubBeforeClientRegistration() async throws {
+        let initialHub = TestSignalSessionHub()
+        let replacementHub = TestSignalSessionHub()
+        var authorizationCallCount = 0
+        let setup = try await startServerOnRandomPort(
+            authorizationResolver: { target, capability in
+                authorizationCallCount += 1
+                guard capability == socketTestAccessCapability,
+                      Self.resolveMainAliasTarget(target) != nil else {
+                    return nil
+                }
+                let hub = authorizationCallCount == 1 ? initialHub : replacementHub
+                return AuthorizedShareSession(id: Self.mainAliasShareID, sessionHub: hub)
+            }
+        )
+        let server = setup.server
+        defer { server.stopListener() }
+
+        let socket = try await openWebSocket(path: Self.mainSignalPath, port: setup.port)
+        defer { close(socket) }
+
+        #expect(try await waitForSocketClose(socket))
+        #expect(authorizationCallCount == 2)
+        #expect(server.activeStreamClientCount == 0)
+        #expect(initialHub.activeClientCount == 0)
+        #expect(replacementHub.activeClientCount == 0)
+    }
+
+    @Test func websocketUpgradeRegistersClientAfterSameHubReauthorization() async throws {
+        let sessionHub = TestSignalSessionHub()
+        var authorizationCallCount = 0
+        var authorizedTargets: [ShareTarget] = []
+        let setup = try await startServerOnRandomPort(
+            authorizationResolver: { target, capability in
+                authorizationCallCount += 1
+                authorizedTargets.append(target)
+                guard capability == socketTestAccessCapability,
+                      Self.resolveMainAliasTarget(target) != nil else {
+                    return nil
+                }
+                return AuthorizedShareSession(id: Self.mainAliasShareID, sessionHub: sessionHub)
+            }
+        )
+        let server = setup.server
+        defer { server.stopListener() }
+
+        let socket = try await openWebSocket(path: Self.mainSignalPath, port: setup.port)
+        defer { close(socket) }
+
+        let registered = await waitUntilAsync(timeout: .seconds(2)) {
+            authorizationCallCount == 2 &&
+                server.activeStreamClientCount == 1 &&
+                sessionHub.activeClientCount == 1
+        }
+        #expect(registered)
+        #expect(authorizedTargets == [.main, .id(Self.mainAliasShareID)])
     }
 
     @Test func oversizedIncompleteSignalFrameClosesConnection() async throws {
@@ -267,33 +373,19 @@ struct WebServerSocketIntegrationTests {
         let sessionHub = TestSignalSessionHub()
         let mainShareIDBox = MutableShareIDBox(Self.mainAliasShareID)
         let setup = try await startServerOnRandomPort(
-            targetStateProvider: { target in
+            authorizationResolver: { target, capability in
+                guard capability == socketTestAccessCapability else { return nil }
+                let id: UInt32
                 switch target {
                 case .main:
-                    .active
-                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
-                    .active
+                    id = mainShareIDBox.value
+                case .id(let resolvedID) where resolvedID == Self.mainAliasShareID || resolvedID == Self.replacementMainAliasShareID:
+                    guard resolvedID == mainShareIDBox.value else { return nil }
+                    id = resolvedID
                 default:
-                    .unknown
+                    return nil
                 }
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(mainShareIDBox.value)
-                case .id(let id) where id == Self.mainAliasShareID || id == Self.replacementMainAliasShareID:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                switch target {
-                case .id(let id) where id == mainShareIDBox.value:
-                    sessionHub
-                default:
-                    nil
-                }
+                return AuthorizedShareSession(id: id, sessionHub: sessionHub)
             },
             sharingEventSink: { event in
                 Task { @MainActor in
@@ -402,12 +494,10 @@ struct WebServerSocketIntegrationTests {
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void = { _ in }
     ) async throws -> (server: WebServer, port: UInt16) {
         try await startServerOnRandomPort(
-            targetStateProvider: { target in
-                target == .main ? .active : .unknown
-            },
-            concreteTargetResolver: Self.resolveMainAliasTarget,
-            sessionHubProvider: { target in
-                target == .id(Self.mainAliasShareID) ? sessionHub : nil
+            authorizationResolver: { target, capability in
+                guard capability == socketTestAccessCapability,
+                      Self.resolveMainAliasTarget(target) != nil else { return nil }
+                return AuthorizedShareSession(id: Self.mainAliasShareID, sessionHub: sessionHub)
             },
             sharingEventSink: sharingEventSink
         )
@@ -430,32 +520,15 @@ struct WebServerSocketIntegrationTests {
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async throws -> (server: WebServer, port: UInt16) {
         try await startServerOnRandomPort(
-            targetStateProvider: { target in
+            authorizationResolver: { target, capability in
+                guard capability == socketTestAccessCapability else { return nil }
                 switch target {
-                case .main, .id(7):
-                    .active
-                default:
-                    .unknown
-                }
-            },
-            concreteTargetResolver: { target in
-                switch target {
-                case .main:
-                    .id(Self.mainAliasShareID)
-                case .id(let id) where id == Self.mainAliasShareID || id == 7:
-                    .id(id)
-                default:
-                    nil
-                }
-            },
-            sessionHubProvider: { target in
-                switch target {
-                case .id(let id) where id == Self.mainAliasShareID:
-                    mainHub
+                case .main, .id(Self.mainAliasShareID):
+                    return AuthorizedShareSession(id: Self.mainAliasShareID, sessionHub: mainHub)
                 case .id(7):
-                    secondaryHub
+                    return AuthorizedShareSession(id: 7, sessionHub: secondaryHub)
                 default:
-                    nil
+                    return nil
                 }
             },
             sharingEventSink: sharingEventSink
@@ -485,10 +558,7 @@ struct WebServerSocketIntegrationTests {
             do {
                 server = try WebServer(
                     using: endpointPort,
-                    targetStateProvider: { _ in .unknown },
-                    accessValidator: { _, capability in capability == socketTestAccessCapability },
-                    concreteTargetResolver: { _ in nil },
-                    sessionHubProvider: { _ in nil },
+                    authorizationResolver: { _, _ in nil },
                     sharingEventSink: { _ in }
                 )
             } catch {

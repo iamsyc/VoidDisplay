@@ -14,6 +14,118 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
+    @Test func runtimeExecutorValidationAcceptsSuccessfulTerminalResults() throws {
+        try AppBootstrap.requireSuccessfulRuntimeResult(
+            status: .completed,
+            commandSucceeded: true,
+            operation: .create
+        )
+        try AppBootstrap.requireSuccessfulRuntimeResult(
+            status: .completedWithRecoveryFailures,
+            commandSucceeded: true,
+            operation: .editAndRebuild
+        )
+    }
+
+    @Test func runtimeExecutorValidationRejectsFailedCancelledAndCommandFailureResults() {
+        #expect(throws: DisplayRuntimeExecutorError.self) {
+            try AppBootstrap.requireSuccessfulRuntimeResult(
+                status: .failed,
+                commandSucceeded: true,
+                operation: .create
+            )
+        }
+        #expect(throws: DisplayRuntimeExecutorError.self) {
+            try AppBootstrap.requireSuccessfulRuntimeResult(
+                status: .cancelled,
+                commandSucceeded: true,
+                operation: .delete
+            )
+        }
+        #expect(throws: DisplayRuntimeExecutorError.self) {
+            try AppBootstrap.requireSuccessfulRuntimeResult(
+                status: .completed,
+                commandSucceeded: false,
+                operation: .rebuild
+            )
+        }
+    }
+
+    @Test func runtimeExecutorRequiresCreatedConfigID() throws {
+        let configID = UUID()
+        #expect(try AppBootstrap.requireCreatedConfigID(configID) == configID)
+        #expect(throws: DisplayRuntimeExecutorError.self) {
+            try AppBootstrap.requireCreatedConfigID(nil)
+        }
+    }
+
+    @Test func runtimeExecutorMapsThrownErrorsAtCompositionBoundary() async {
+        await expectRuntimeExecutorError(operation: .create, reason: "runtime_operation_failed") {
+            throw RuntimeExecutorProbeError.failed
+        }
+        await expectRuntimeExecutorError(operation: .delete, reason: "cancelled") {
+            throw CancellationError()
+        }
+        await expectRuntimeExecutorError(operation: .rebuild, reason: "known_failure") {
+            throw DisplayRuntimeExecutorError(operation: .rebuild, reason: "known_failure")
+        }
+    }
+
+    @Test func runtimeExecutorUsesDesiredEnabledFailureMessage() {
+        let enableError = DisplayRuntimeExecutorError(
+            operation: .setDesiredEnabled(true),
+            reason: "runtime_operation_failed"
+        )
+        let disableError = DisplayRuntimeExecutorError(
+            operation: .setDesiredEnabled(false),
+            reason: "runtime_operation_failed"
+        )
+
+        #expect(enableError.errorDescription == String(localized: "Enable failed."))
+        #expect(disableError.errorDescription == String(localized: "Disable failed."))
+    }
+
+    @Test func runtimeExecutorMapsDesiredEnabledFailureThroughLiveWiring() async {
+        let config = VirtualDisplayConfig(
+            displayName: "Executor Boundary",
+            serialNum: 88,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: true
+        )
+        let virtualDisplay = MockVirtualDisplayFacade()
+        virtualDisplay.currentDisplayConfigs = [config]
+        virtualDisplay.setDesiredEnabledError = RuntimeExecutorProbeError.failed
+        let environment = AppBootstrap.makeEnvironment(
+            preview: true,
+            capturePreviewService: MockCapturePreviewService(),
+            sharingService: MockSharingService(),
+            virtualDisplayFacade: virtualDisplay,
+            startupPlan: .init(shouldRestoreVirtualDisplays: false),
+            isRunningUnderXCTestOverride: true
+        )
+
+        do {
+            try await environment.virtualDisplay.setVirtualDisplayDesiredEnabled(
+                configId: config.id,
+                enabled: false,
+                source: .rowToggle
+            )
+            Issue.record("Expected DisplayRuntimeExecutorError.")
+        } catch let error as DisplayRuntimeExecutorError {
+            #expect(error.operation == .setDesiredEnabled(false))
+            #expect(error.reason == "runtime_operation_failed")
+            #expect(error.errorDescription == String(localized: "Disable failed."))
+        } catch {
+            Issue.record("Expected DisplayRuntimeExecutorError, received \(type(of: error)).")
+        }
+
+        #expect(virtualDisplay.setDesiredEnabledCallCount == 1)
+        #expect(virtualDisplay.setDesiredEnabledRequests.map(\.0) == [config.id])
+        #expect(virtualDisplay.setDesiredEnabledRequests.map(\.1) == [false])
+    }
+
     @Test func singleInstanceGuardBuildsStableSanitizedLockFileName() {
         #expect(
             AppSingleInstanceGuard.lockFileName(bundleIdentifier: "com.developerchen.voiddisplay")
@@ -232,4 +344,24 @@ struct AppBootstrapTests {
         #expect(sut.virtualDisplay.displayConfigs.first?.serialNum == fixtureConfig.serialNum)
         #expect(sut.virtualDisplay.runningConfigIds == [fixtureConfig.id])
     }
+
+    private func expectRuntimeExecutorError(
+        operation: DisplayRuntimeExecutorError.Operation,
+        reason: String,
+        body: () async throws -> Void
+    ) async {
+        do {
+            try await AppBootstrap.performRuntimeOperation(operation: operation, body)
+            Issue.record("Expected DisplayRuntimeExecutorError.")
+        } catch let error as DisplayRuntimeExecutorError {
+            #expect(error.operation == operation)
+            #expect(error.reason == reason)
+        } catch {
+            Issue.record("Expected DisplayRuntimeExecutorError, received \(type(of: error)).")
+        }
+    }
+}
+
+private enum RuntimeExecutorProbeError: Error {
+    case failed
 }

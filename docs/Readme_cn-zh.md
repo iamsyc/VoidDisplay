@@ -24,41 +24,11 @@
 
 ## 📸 界面截图
 
-### 显示器总览
-
-查看当前显示器、虚拟显示器以及对应分辨率。
-
-![显示器总览](./imgs/display-overview.png)
-
-### 虚拟显示器管理
-
-在一个列表中创建、启用、停止、排序、编辑和删除虚拟显示器。
-
-![虚拟显示器管理](./imgs/virtual-display-management.png)
-
-### 屏幕监听
-
-按显示器启动或停止监听，并直接查看每个显示器的监听状态。
-
-![屏幕监听列表](./imgs/screen-monitoring-list.png)
-
 ### 实时监听窗口
 
 在独立窗口中查看显示器画面，支持适应窗口、1:1、全屏和光标控制。
 
 ![实时监听窗口](./imgs/live-monitor-window.png)
-
-### 屏幕共享服务
-
-启动本机 Web 服务，选择共享流畅度，并配置端口。
-
-![屏幕共享服务设置](./imgs/sharing-service-settings.png)
-
-### 共享链接
-
-按显示器开启共享，并复制对应的局域网访问链接。
-
-![共享链接列表](./imgs/sharing-display-links.png)
 
 ### 浏览器实时画面
 
@@ -101,24 +71,23 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 ### 创建虚拟显示器
 
-1. 打开 VoidDisplay，进入 **虚拟显示器** 标签页。
-2. 点击 **+** 按钮添加新的虚拟显示器。
+1. 打开 VoidDisplay，默认进入 **显示器** 页面。
+2. 点击 **添加虚拟显示器**。
 3. 选择预设方案，或输入自定义的分辨率和刷新率。
 4. 虚拟显示器会立即出现在 macOS 的显示器排列中。
 
 ### 监视屏幕
 
-1. 进入 **屏幕监听** 标签页。
-2. 选择你想要监视的显示器。
-3. 系统会打开一个浮动窗口，实时显示该显示器的内容。
+1. 在 **显示器** 页面启用需要监视的虚拟显示器。
+2. 打开该显示器状态栏中的 **预览**。
+3. 系统会打开浮动窗口显示实时内容。关闭预览或浮动窗口即可停止。
 
 ### 局域网共享屏幕
 
-1. 进入 **屏幕共享** 标签页。
-2. 启动 Web 服务，并选择共享流畅度模式。
-3. 点击想要共享的显示器旁边的 **共享** 按钮。
-4. 复制生成的局域网地址，例如 `http://192.168.x.x:18090/display/1/{capability}`。
-5. 在同一网络的现代浏览器中打开该地址即可实时观看屏幕。
+1. 在 **显示器** 页面打开 **共享设置**，按需调整性能模式或端口。
+2. 启用目标虚拟显示器，再打开其状态栏中的 **局域网 Web 视图**。Web 服务会自动启动。
+3. 点击 **复制链接**，或在显示器的更多菜单中选择 **打开共享页面**。
+4. 在同一网络的现代浏览器中打开生成的地址，例如 `http://192.168.x.x:18090/display/1/{capability}`。
 
 说明：
 - 受保护页面路由是 `/display/{capability}` 和 `/display/{id}/{capability}`。
@@ -128,7 +97,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 ## ❓ 常见问题
 
-**屏幕监听或屏幕共享中没有可选的显示器？**
+**显示器缺失，或预览和局域网 Web 视图不可用？**
 
 > macOS 需要授予"屏幕录制"权限。前往 **系统设置 → 隐私与安全性 → 屏幕录制**，确保 VoidDisplay 已启用。如果在应用运行期间更改了权限，请完全退出应用后重新打开。
 
@@ -142,7 +111,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 **启动时虚拟显示器恢复失败？**
 
-> 如果虚拟显示器恢复失败，虚拟显示器标签页会弹出提示。如果配置文件损坏，可以删除以下文件来重置：  
+> 如果虚拟显示器恢复失败，显示器页面会弹出提示。如果配置文件损坏，可以删除以下文件来重置：
 > `~/Library/Application Support/com.developerchen.voiddisplay/virtual-displays.json`
 
 ## 🛠️ 开发者
@@ -174,15 +143,15 @@ CI 工作流细节与手动 UI smoke dispatch 入口见 `docs/testing/ci-workflo
 
 ### 调试入口
 
-UI 入口：`HomeView` 包含四个标签页：**显示器**、**虚拟显示器**、**屏幕监听**、**屏幕共享**。
+UI 入口：`HomeView` 包含**显示器**和**诊断**两个侧边栏入口。显示器页面统一承载虚拟显示器创建与管理、预览和局域网共享操作。
 
 常用调试文件：
 
 | 功能区域 | 文件 |
 |---------|------|
 | 虚拟显示器 | `Sources/VoidDisplayVirtualDisplay/Services/VirtualDisplayOrchestrator.swift`、`Sources/VoidDisplayVirtualDisplay/Views/CreateVirtualDisplayObjectView.swift`、`Sources/VoidDisplayVirtualDisplay/Views/EditVirtualDisplayConfigView.swift` |
-| 屏幕采集 | `Sources/VoidDisplayCapture/ViewModels/CaptureChooseViewModel.swift`、`Sources/VoidDisplayCapture/Services/DisplayCaptureRegistry.swift`、`Sources/VoidDisplayCapture/Services/DisplayCaptureSession.swift`、`Sources/VoidDisplayFoundation/RuntimeSupport/DisplayStartCoordinator.swift` |
-| 局域网共享 | `Sources/VoidDisplaySharing/ViewModels/ShareViewModel.swift`、`Sources/VoidDisplaySharing/Services/SharingService.swift`、`Sources/VoidDisplaySharing/Web/WebServer.swift` |
+| 屏幕采集 | `Sources/VoidDisplayApp/AppState/CaptureController.swift`、`Sources/VoidDisplayCapture/Services/DisplayCaptureRegistry.swift`、`Sources/VoidDisplayCapture/Services/DisplayCaptureSession.swift`、`Sources/VoidDisplayFoundation/RuntimeSupport/DisplayStartCoordinator.swift` |
+| 局域网共享 | `Sources/VoidDisplayApp/AppState/SharingController.swift`、`Sources/VoidDisplaySharing/Services/DisplaySharingCoordinator.swift`、`Sources/VoidDisplaySharing/Services/SharingService.swift`、`Sources/VoidDisplaySharing/Web/WebServer.swift` |
 
 统一日志（`Logger`，subsystem `com.developerchen.voiddisplay`）：
 

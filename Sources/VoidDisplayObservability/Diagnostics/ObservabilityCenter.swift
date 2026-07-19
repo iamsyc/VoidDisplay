@@ -6,7 +6,6 @@ package actor ObservabilityCenter {
     private let issueStore: IssueStore
     private let snapshotWriter: AgentSnapshotWriter
     private let exporter: FeedbackBundleExporter
-    private let transport: any FeedbackTransport
     private let observabilityDirectoryURL: URL
     private let sanitizer: ObservabilitySanitizer
 
@@ -20,7 +19,6 @@ package actor ObservabilityCenter {
         issueStore: IssueStore,
         snapshotWriter: AgentSnapshotWriter,
         exporter: FeedbackBundleExporter,
-        transport: any FeedbackTransport,
         observabilityDirectoryURL: URL,
         sanitizer: ObservabilitySanitizer
     ) {
@@ -28,7 +26,6 @@ package actor ObservabilityCenter {
         self.issueStore = issueStore
         self.snapshotWriter = snapshotWriter
         self.exporter = exporter
-        self.transport = transport
         self.observabilityDirectoryURL = observabilityDirectoryURL
         self.sanitizer = sanitizer
         self.lastExportedBundleURL = exporter.latestExportedBundleURL()
@@ -118,28 +115,25 @@ package actor ObservabilityCenter {
             AppLog.observability.warning("Agent snapshot flush failed during support export; continuing with the in-memory snapshot.")
         }
         let issues = await issueStore.recentIssues(limit: 100)
-        let transportCapability = transport.capability
-        let result = try exporter.exportBundle(
+        let bundleURL = try exporter.exportBundle(
             draft: draft,
             consent: consent,
             state: state,
             health: health,
             events: events,
-            issues: issues,
-            transportCapability: transportCapability
+            issues: issues
         )
-        try await transport.submit(bundleURL: result.bundleURL, manifest: result.manifest)
-        lastExportedBundleURL = result.bundleURL
+        lastExportedBundleURL = bundleURL
         await record(
             ObservabilityEvent(
                 severity: .notice,
                 subsystem: .observability,
                 operation: "Export support bundle",
                 message: "Exported support bundle.",
-                metadata: ["bundlePath": sanitizer.sanitize(fileURL: result.bundleURL)]
+                metadata: ["bundlePath": sanitizer.sanitize(fileURL: bundleURL)]
             )
         )
-        return result.bundleURL
+        return bundleURL
     }
 
     package func lastExportedBundleDisplayPath() -> String? {

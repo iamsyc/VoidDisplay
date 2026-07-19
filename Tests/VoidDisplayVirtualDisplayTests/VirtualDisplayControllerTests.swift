@@ -314,18 +314,13 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
     }
 
-    @Test func createVirtualDisplayRecoveryFailureIsPresentedAsSuccess() async throws {
+    @Test func createVirtualDisplayReturnsSemanticExecutorID() async throws {
         let virtualDisplay = MockVirtualDisplayFacade()
         let createdID = UUID()
         let sut = makeControllerEnvironment(
             virtualDisplayFacade: virtualDisplay,
             create: { _ in
-                VirtualDisplayCreateTransactionResult(
-                    transactionID: UUID(),
-                    status: .completedWithRecoveryFailures,
-                    createdConfigID: createdID,
-                    virtualDisplayCommandSucceeded: true
-                )
+                createdID
             }
         )
 
@@ -364,20 +359,16 @@ struct VirtualDisplayControllerTests {
                 #expect(updatedConfig.id == config.id)
                 #expect(expectedFingerprint == config.editRebuildFingerprint)
                 #expect(source == .editSaveAndRebuild)
-                return editRebuildHandle(
-                    configID: config.id,
-                    status: .completed,
-                    virtualDisplayCommandSucceeded: true
-                )
+                return editRebuildOperation()
             }
         ).virtualDisplay
 
-        let handle = try await sut.saveConfigAndRebuild(
+        let operation = try await sut.saveConfigAndRebuild(
             config,
             expectedConfigFingerprint: config.editRebuildFingerprint,
             source: .editSaveAndRebuild
         )
-        _ = try await handle.waitForSaveGate()
+        try await operation.waitForSave()
 
         #expect(requestCount == 1)
         #expect(virtualDisplay.updateConfigCallCount == 0)
@@ -397,40 +388,29 @@ struct VirtualDisplayControllerTests {
         var updated = original
         updated.displayName = "After Save Gate"
         virtualDisplay.currentDisplayConfigs = [original]
-        let transactionID = UUID()
         let controller = makeControllerEnvironment(
             virtualDisplayFacade: virtualDisplay,
             editAndRebuild: { _, _, _ in
-                VirtualDisplayEditRebuildTransactionHandle(
-                    transactionID: transactionID,
-                    saveGateTask: Task { @MainActor in
+                VirtualDisplayEditRebuildOperation(
+                    saveTask: Task { @MainActor in
                         try await Task.sleep(for: .milliseconds(25))
                         virtualDisplay.currentDisplayConfigs = [updated]
-                        return VirtualDisplayEditRebuildSaveGateResult(
-                            transactionID: transactionID,
-                            configID: updated.id
-                        )
                     },
-                    terminalResultTask: Task { @MainActor in
+                    completionTask: Task { @MainActor in
                         try await Task.sleep(for: .seconds(1))
-                        return VirtualDisplayEditRebuildTransactionResult(
-                            transactionID: transactionID,
-                            status: .completed,
-                            virtualDisplayCommandSucceeded: true
-                        )
                     }
                 )
             }
         ).virtualDisplay
 
-        let handle = try await controller.saveConfigAndRebuild(
+        let operation = try await controller.saveConfigAndRebuild(
             updated,
             expectedConfigFingerprint: original.editRebuildFingerprint,
             source: .editSaveAndRebuild
         )
         #expect(controller.getConfig(original.id)?.displayName == "Before Save Gate")
 
-        _ = try await handle.waitForSaveGate()
+        try await operation.waitForSave()
 
         #expect(controller.getConfig(original.id)?.displayName == "After Save Gate")
     }
@@ -450,14 +430,11 @@ struct VirtualDisplayControllerTests {
             virtualDisplayFacade: virtualDisplay,
             appliedBadgeDisplayDuration: .milliseconds(50)
         ).virtualDisplay
-        let handle = editRebuildHandle(
-            configID: config.id,
-            status: .completed,
-            virtualDisplayCommandSucceeded: true,
+        let operation = editRebuildOperation(
             terminalDelayNanoseconds: 80_000_000
         )
 
-        sut.startEditRebuildPresentation(configId: config.id, handle: handle)
+        sut.startEditRebuildPresentation(configId: config.id, operation: operation)
 
         #expect(sut.isRebuilding(configId: config.id))
         #expect(sut.hasRecentApplySuccess(configId: config.id) == false)
@@ -485,10 +462,11 @@ struct VirtualDisplayControllerTests {
 
         sut.startEditRebuildPresentation(
             configId: config.id,
-            handle: editRebuildHandle(
-                configID: config.id,
-                status: .failed,
-                virtualDisplayCommandSucceeded: false
+            operation: editRebuildOperation(
+                completionError: NSError(
+                    domain: "VirtualDisplayControllerTests",
+                    code: 136
+                )
             )
         )
 
@@ -541,30 +519,20 @@ private func makeControllerEnvironment(
     return ControllerTestEnvironment(virtualDisplay: controller)
 }
 
-private func editRebuildHandle(
-    configID: UUID,
-    status: VirtualDisplayTransactionStatus,
-    virtualDisplayCommandSucceeded: Bool,
+private func editRebuildOperation(
+    completionError: (any Error)? = nil,
     terminalDelayNanoseconds: UInt64 = 0
-) -> VirtualDisplayEditRebuildTransactionHandle {
-    let transactionID = UUID()
-    return VirtualDisplayEditRebuildTransactionHandle(
-        transactionID: transactionID,
-        saveGateTask: Task {
-            VirtualDisplayEditRebuildSaveGateResult(
-                transactionID: transactionID,
-                configID: configID
-            )
+) -> VirtualDisplayEditRebuildOperation {
+    VirtualDisplayEditRebuildOperation(
+        saveTask: Task {
         },
-        terminalResultTask: Task {
+        completionTask: Task {
             if terminalDelayNanoseconds > 0 {
                 try? await Task.sleep(for: .nanoseconds(terminalDelayNanoseconds))
             }
-            return VirtualDisplayEditRebuildTransactionResult(
-                transactionID: transactionID,
-                status: status,
-                virtualDisplayCommandSucceeded: virtualDisplayCommandSucceeded
-            )
+            if let completionError {
+                throw completionError
+            }
         }
     )
 }

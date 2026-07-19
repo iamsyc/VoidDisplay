@@ -385,7 +385,6 @@ private func makeFeedbackControllerObservability(
             displayShareMappingsURL: rootURL.appendingPathComponent("display-share-id-mappings.json"),
             sanitizer: sanitizer
         ),
-        transport: LocalExportTransport(),
         observabilityDirectoryURL: rootURL,
         sanitizer: sanitizer
     )

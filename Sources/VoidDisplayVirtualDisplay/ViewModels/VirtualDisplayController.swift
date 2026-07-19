@@ -22,14 +22,6 @@ package nonisolated enum VirtualDisplayDesiredEnabledRequestSource: Sendable {
     case unknown
 }
 
-private struct VirtualDisplayEditRebuildPresentationError: LocalizedError {
-    var errorDescription: String? { nil }
-}
-
-private struct VirtualDisplayRuntimeCommandPresentationError: LocalizedError {
-    var errorDescription: String? { nil }
-}
-
 @MainActor
 @Observable
 package final class VirtualDisplayController {
@@ -186,30 +178,27 @@ package final class VirtualDisplayController {
         _ updated: VirtualDisplayConfig,
         expectedConfigFingerprint: String,
         source: VirtualDisplayRebuildRequestSource = .unknown
-    ) async throws -> VirtualDisplayEditRebuildTransactionHandle {
-        let runtimeHandle = try await runtimeExecutors.editAndRebuild(
+    ) async throws -> VirtualDisplayEditRebuildOperation {
+        let runtimeOperation = try await runtimeExecutors.editAndRebuild(
             updated,
             expectedConfigFingerprint,
             source
         )
-        return VirtualDisplayEditRebuildTransactionHandle(
-            transactionID: runtimeHandle.transactionID,
-            saveGateTask: Task { @MainActor [weak self] in
-                let result = try await runtimeHandle.waitForSaveGate()
+        return VirtualDisplayEditRebuildOperation(
+            saveTask: Task { @MainActor [weak self] in
+                try await runtimeOperation.waitForSave()
                 self?.syncVirtualDisplayState()
-                return result
             },
-            terminalResultTask: Task { @MainActor [weak self] in
-                let result = try await runtimeHandle.waitForTerminalResult()
+            completionTask: Task { @MainActor [weak self] in
+                try await runtimeOperation.waitForCompletion()
                 self?.syncVirtualDisplayState()
-                return result
             }
         )
     }
 
     package func startEditRebuildPresentation(
         configId: UUID,
-        handle: VirtualDisplayEditRebuildTransactionHandle
+        operation: VirtualDisplayEditRebuildOperation
     ) {
         rebuildRequestCount += 1
 
@@ -239,10 +228,7 @@ package final class VirtualDisplayController {
 
             do {
                 defer { self.syncVirtualDisplayState() }
-                let result = try await handle.waitForTerminalResult()
-                guard result.status != .failed && result.status != .cancelled else {
-                    throw VirtualDisplayEditRebuildPresentationError()
-                }
+                try await operation.waitForCompletion()
                 self.rebuildPresentationState.markRebuildSuccess(configId: configId)
                 self.syncRebuildPresentationState()
                 self.scheduleAppliedBadgeClear(configId: configId)
@@ -302,29 +288,21 @@ package final class VirtualDisplayController {
     }
 
     @discardableResult
-    package func createVirtualDisplay(_ request: VirtualDisplayCreateRequest) async throws -> UUID? {
+    package func createVirtualDisplay(_ request: VirtualDisplayCreateRequest) async throws -> UUID {
         dismissPersistenceAlert()
         do {
-            let result = try await runtimeExecutors.create(request)
-            guard result.status != .failed,
-                  result.status != .cancelled,
-                  result.virtualDisplayCommandSucceeded
-            else {
-                throw VirtualDisplayRuntimeCommandPresentationError()
-            }
+            let configID = try await runtimeExecutors.create(request)
             syncVirtualDisplayState()
-            if let configID = result.createdConfigID {
-                await recordEvent(
-                    severity: .notice,
-                    operation: "Create virtual display",
-                    message: "Created virtual display configuration.",
-                    metadata: [
-                        "configID": configID.uuidString,
-                        "serialNumber": "\(request.serialNumber)"
-                    ]
-                )
-            }
-            return result.createdConfigID
+            await recordEvent(
+                severity: .notice,
+                operation: "Create virtual display",
+                message: "Created virtual display configuration.",
+                metadata: [
+                    "configID": configID.uuidString,
+                    "serialNumber": "\(request.serialNumber)"
+                ]
+            )
+            return configID
         } catch {
             syncVirtualDisplayState()
             recordPersistenceFailure(
@@ -338,13 +316,7 @@ package final class VirtualDisplayController {
     }
 
     package func deleteVirtualDisplay(configId: UUID) async throws {
-        let result = try await runtimeExecutors.delete(configId)
-        guard result.status != .failed,
-              result.status != .cancelled,
-              result.virtualDisplayCommandSucceeded
-        else {
-            throw VirtualDisplayRuntimeCommandPresentationError()
-        }
+        try await runtimeExecutors.delete(configId)
         clearRebuildPresentationState(configId: configId)
         syncVirtualDisplayState()
         await recordEvent(

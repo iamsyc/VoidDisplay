@@ -43,9 +43,8 @@ package nonisolated struct FeedbackBundleExporter {
         state: ObservabilityStateSnapshot,
         health: ObservabilityHealthSummary,
         events: [ObservabilityEvent],
-        issues: [IssueRecord],
-        transportCapability: FeedbackTransportCapability
-    ) throws -> FeedbackBundleExportResult {
+        issues: [IssueRecord]
+    ) throws -> URL {
         try createPrivateDirectory(at: exportsDirectoryURL)
 
         let generatedAt = dateProvider()
@@ -98,7 +97,6 @@ package nonisolated struct FeedbackBundleExporter {
         let manifest = SupportBundleManifest(
             reportID: reportID,
             generatedAt: generatedAt,
-            transportCapability: transportCapability,
             app: .init(
                 bundleIdentifier: state.app.bundleIdentifier,
                 version: state.app.version,
@@ -115,7 +113,7 @@ package nonisolated struct FeedbackBundleExporter {
         try validateArchive(at: bundleURL)
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: bundleURL.path)
         completed = true
-        return FeedbackBundleExportResult(bundleURL: bundleURL, manifest: manifest)
+        return bundleURL
     }
 
     package func latestExportedBundleURL() -> URL? {
