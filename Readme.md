@@ -1,8 +1,8 @@
 <div align="center">
   <img src="./docs/imgs/AppIcon.png" width="150" height="150"/>
   <h1>VoidDisplay</h1>
-  <p>Create virtual displays, monitor screens, and share them over LAN from your Mac.</p>
-  <a href="./docs/Readme_cn-zh.md">简体中文</a>
+  <p>Create virtual displays, preview them, and share them over LAN from your Mac.</p>
+  <a href="./README.zh-CN.md">简体中文</a>
 </div>
 
 ## ✨ Features
@@ -12,7 +12,7 @@
 Create virtual monitors with custom resolution and refresh rate.
 Perfect for headless Mac setups, display testing, or extending your workspace without a physical monitor.
 
-### 👀 Screen Monitoring
+### 👀 Preview
 
 Preview an enabled virtual display in its own dedicated floating window.
 Use it to inspect a managed display without switching macOS spaces.
@@ -21,20 +21,6 @@ Use it to inspect a managed display without switching macOS spaces.
 
 Share an enabled virtual display over your local network through the built-in low-latency live page.
 Open the generated capability-protected `/display` URL in a modern browser on a trusted LAN. Playback uses WebRTC media streaming with WebSocket signaling.
-
-## 📸 Screenshots
-
-### Live Monitor Window
-
-Watch a display in a dedicated viewer with fit, 1:1, full screen, and cursor controls.
-
-![Live monitor window](./docs/imgs/live-monitor-window.png)
-
-### Browser Live View
-
-Open the live page from another device to view the shared display in a browser.
-
-![Browser live view](./docs/imgs/browser-live-view.png)
 
 ## 💻 System Requirements
 
@@ -47,14 +33,16 @@ Open the live page from another device to view the shared display in a browser.
 
 Check the [Releases](https://github.com/iamsyc/VoidDisplay/releases) page for the latest build.
 
-### Unsigned Build Notice (First Launch)
+### Ad Hoc Signed Build Notice
 
 Current release builds are ad hoc signed only. They are not Developer ID signed, notarized, or certified by Apple, so macOS may block first launch with messages like:
+
 - "cannot be opened because Apple cannot check it for malicious software"
 - "is damaged and can't be opened"
 
 If this happens:
-1. Try Finder right-click on `VoidDisplay.app` -> **Open**.
+
+1. In Finder, right-click `VoidDisplay.app`, then choose **Open**.
 2. If still blocked, run:
 
 ```bash
@@ -64,21 +52,21 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 ### Build from Source
 
 1. Clone this repository.
-2. Open `VoidDisplay.xcworkspace` in Xcode 26+.
+2. Open `VoidDisplay.xcworkspace` in Xcode 26.5.
 3. Build and run (⌘R).
 
 ## 🚀 Getting Started
 
-### Create a Virtual Display
+### Add a Virtual Display
 
 1. Open VoidDisplay. The **Displays** page opens by default.
 2. Click **Add Virtual Display**.
 3. Choose a preset or configure a custom resolution and refresh rate.
 4. The virtual display appears immediately in your macOS display arrangement.
 
-### Monitor a Screen
+### Preview a Virtual Display
 
-1. On the **Displays** page, enable the virtual display you want to monitor.
+1. On the **Displays** page, enable the virtual display you want to preview.
 2. Turn on **Preview** in that display's status row.
 3. A floating window opens with the live content. Turn Preview off or close the window to stop it.
 
@@ -87,13 +75,14 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 1. On the **Displays** page, open **Sharing Settings** to adjust performance mode or port when needed.
 2. Enable the target virtual display, then turn on **LAN Web View** in its status row. The web service starts automatically.
 3. Use **Copy Link**, or choose **Open Share Page** from the display's More menu.
-4. Open the generated URL, such as `http://192.168.x.x:18090/display/1/{capability}`, in a modern browser on the same network.
+4. Open the generated URL, such as `http://192.168.x.x:8089/display/1/{capability}`, in a modern browser on the same network.
 
 Notes:
+
 - `/display/{capability}` and `/display/{id}/{capability}` are the protected page routes.
 - `/signal/{capability}` and `/signal/{id}/{capability}` are the protected WebSocket signaling routes.
 - The capability rotates whenever sharing restarts. Old and credentialless links are rejected.
-- HTTP and WebSocket traffic is not encrypted. Use LAN sharing only on a trusted network and do not expose it through public port forwarding or tunnels. See [LAN Web View security](./docs/lan-sharing-security.md).
+- HTTP and WebSocket traffic is not encrypted. Use LAN sharing only on a trusted network and do not expose it through public port forwarding or tunnels. See [LAN Web View security](./docs/security/lan-web-view.md).
 
 ## ❓ Troubleshooting
 
@@ -114,69 +103,22 @@ Notes:
 > If a virtual display fails to restore, you'll see an alert on the Displays page. If the configuration file is corrupted, you can reset it by deleting:
 > `~/Library/Application Support/com.developerchen.voiddisplay/virtual-displays.json`
 
-## 🛠️ For Developers
+## 🛠️ Development
 
 ### Build & Test
 
-Requirements: Xcode 26+, macOS 15.6 or later on an Intel or Apple Silicon Mac.
+Requirements: Xcode 26.5, macOS 15.6 or later on an Intel or Apple Silicon Mac.
 
 ```bash
 # Install pinned local tooling with mise or Homebrew fallback
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
 
-# Static checks, SwiftPM/JavaScript/Go tests, Xcode build, and UI smoke
+# Run the standard local validation gate
 scripts/dev/validate.sh
 ```
 
-`VoidDisplay` in Xcode is the app build/run and UI test scheme. Cmd-U does not run the SwiftPM, browser JavaScript, or Go test gate; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for complete unit coverage.
-
-Full project regression gate (heavier release-oriented check before opening/merging PR):
-
-```bash
-scripts/ci/full_regression.sh \
-  --destination "platform=macOS,arch=$(uname -m)"
-```
-
-This script runs static checks, all unit suites, a Debug build, UI tests, stability checks, and arm64 release smoke. It fails when:
-
-- tests were not actually executed (`totalTestCount == 0`)
-- any test fails
-- a required build emits warnings or errors
-- stability or release smoke fails
-
-CI workflow details and manual UI smoke dispatch are documented in `docs/testing/ci-workflows.md`.
-The [documentation index](./docs/README.md) links the current architecture, testing strategy, and LAN security contract.
-
-Release assets include a DMG, SHA256 checksum, SPDX SBOM, and GitHub artifact attestation. To verify downloaded release assets:
-
-```bash
-scripts/release/verify.sh \
-  --assets-dir release-assets \
-  --tag vX.Y.Z \
-  --label arm64 \
-  --arch arm64 \
-  --repository iamsyc/VoidDisplay \
-  --require-attestation true
-```
-
-### Debug Entry Points
-
-UI entry: `HomeView` contains the **Displays** and **Diagnostics** sidebar destinations. The Displays surface owns virtual-display creation and management, preview, and LAN sharing actions.
-
-Key files for debugging:
-
-| Area | Files |
-|------|-------|
-| Virtual Display | `Sources/VoidDisplayVirtualDisplay/Services/VirtualDisplayOrchestrator.swift`, `Sources/VoidDisplayVirtualDisplay/Views/CreateVirtualDisplayObjectView.swift`, `Sources/VoidDisplayVirtualDisplay/Views/EditVirtualDisplayConfigView.swift` |
-| Screen Capture | `Sources/VoidDisplayApp/AppState/CaptureController.swift`, `Sources/VoidDisplayCapture/Services/DisplayCaptureRegistry.swift`, `Sources/VoidDisplayCapture/Services/DisplayCaptureSession.swift`, `Sources/VoidDisplayFoundation/RuntimeSupport/DisplayStartCoordinator.swift` |
-| LAN Sharing | `Sources/VoidDisplayApp/AppState/SharingController.swift`, `Sources/VoidDisplaySharing/Services/DisplaySharingCoordinator.swift`, `Sources/VoidDisplaySharing/Services/SharingService.swift`, `Sources/VoidDisplaySharing/Web/WebServer.swift` |
-
-Unified logs (`Logger`, subsystem `com.developerchen.voiddisplay`):
-
-```bash
-log stream --style compact --predicate 'subsystem == "com.developerchen.voiddisplay"'
-```
+The [documentation index](./docs/README.md) links the current architecture, testing strategy, CI and release workflows, and LAN security contract.
 
 ## 📄 License
 

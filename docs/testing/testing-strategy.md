@@ -10,7 +10,7 @@
 | UI smoke | 少量关键用户可观察路径 | `scripts/ci/ui_smoke.sh` |
 | 完整回归 | 静态、单元、Debug build、UI、稳定性和 arm64 release smoke | `scripts/ci/full_regression.sh --destination "platform=macOS,arch=$(uname -m)"` |
 
-Xcode 的 `VoidDisplay` scheme 用于 App build、run 和 UI test。Cmd-U 不会执行 `Tests/` 下的 SwiftPM 测试，完整单元测试入口仍是 `scripts/ci/unit.sh`。
+Xcode 的 `VoidDisplay` scheme 用于 App build、run 和 UI test。Cmd-U 不会执行 SwiftPM、浏览器 JavaScript 或 Go 测试，完整单元与集成测试入口仍是 `scripts/ci/unit.sh`。
 
 ## 测试设计
 
@@ -43,7 +43,14 @@ scripts/ci/ui_smoke.sh \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
-跨模块、并发、持久化、网络、安全、脚本、工程设置或发布改动需要扩大验证范围。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。
+跨模块、并发、持久化、网络、安全、脚本、工程设置或发布改动需要扩大验证范围。本机支持对应 release target 时，完整回归入口是：
+
+```bash
+scripts/ci/full_regression.sh \
+  --destination "platform=macOS,arch=$(uname -m)"
+```
+
+该入口依次运行静态门禁、全部单元与集成测试、Debug build、UI 测试、稳定性检查和 arm64 release smoke。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。
 
 ## 环境故障分类
 

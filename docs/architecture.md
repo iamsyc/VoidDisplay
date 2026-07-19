@@ -6,20 +6,24 @@ VoidDisplay 在 macOS 上创建和管理 HiDPI 虚拟显示器，并为受管理
 
 用户主界面包含 `Displays` 和 `Diagnostics` 两个入口。`Displays` 以已保存的虚拟显示器配置为主列表，承载启用、编辑、Preview 和 LAN Web View 操作。物理显示器状态可以进入内部运行时目录，但不会形成独立的用户管理主线。
 
-## 模块职责
+## 组件职责
 
-| 模块 | 职责 |
+| 组件 | 职责 |
 | --- | --- |
-| `Apps/VoidDisplay` | 应用资源、工程入口和本地化资源 |
+| `Apps/VoidDisplay` | Xcode App 入口、应用图标、Info.plist 文案和本地化资源 |
 | `VoidDisplayApp` | SwiftUI 界面、应用装配、控制器和运行时适配 |
 | `VoidDisplayRuntime` | 显示目录、事务、consumer lease、需求聚合、快照和 intent 分发 |
-| `VoidDisplayVirtualDisplay` | 私有虚拟显示驱动、配置持久化、拓扑等待、回滚和底层命令结果 |
+| `VoidDisplayVirtualDisplay` | 虚拟显示器领域模型、配置持久化、编排、拓扑等待、回滚和编辑界面 |
+| `VoidDisplayCGVirtualDisplay` | 将运行时驱动接口映射到私有 `CGVirtualDisplay` 封装 |
+| `CGVirtualDisplayPrivate` | 私有 `CGVirtualDisplay` API 的 Objective-C 封装 |
 | `VoidDisplayCapture` | `SCStream` 生命周期、帧分发、Preview 渲染和采集性能状态 |
 | `VoidDisplaySharing` | HTTP、WebSocket、WebRTC、分享路由、viewer 会话和 relay 进程 |
+| `Tools/VoidDisplayRelay` | 由 App 启动的本地 Go relay，负责 loopback 控制 API、WebRTC room 和媒体转发 |
 | `VoidDisplayObservability` | 结构化诊断事件、快照收集和脱敏 |
 | `VoidDisplaySupport` | 支持草稿、历史记录和支持包编排 |
+| `VoidDisplayDesignSystem` | 跨功能界面的视觉 token、通用组件和展示模型 |
 | `VoidDisplayFoundation` | 跨模块基础类型、权限与持久化支撑 |
-| `VoidDisplayCGVirtualDisplay` | 私有 `CGVirtualDisplay` 框架封装 |
+| `WebRTC` / `WebRTCBinary` | M147 二进制依赖与 macOS header overlay；来源记录见 [SOURCES.md](../Vendor/WebRTCHeaders/M147/SOURCES.md) |
 
 SwiftPM target 和依赖关系以 [Package.swift](../Package.swift) 为准。
 
@@ -40,7 +44,7 @@ SwiftPM target 和依赖关系以 [Package.swift](../Package.swift) 为准。
 
 LAN Web View 的分享路由生命周期与帧需求分开管理。启用分享会建立受 capability 保护的页面与信令入口。零 viewer 时路由可以继续有效，采集流只在 Preview 或实际 viewer 产生帧需求时运行。
 
-完整访问和资源边界见 [LAN Web View 安全契约](./lan-sharing-security.md)。
+完整访问和资源边界见 [LAN Web View 安全契约](./security/lan-web-view.md)。
 
 ## 依赖边界
 
@@ -68,4 +72,4 @@ scripts/ci/xcode.sh --action build --configuration Debug \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
-跨模块、并发、持久化、网络、安全或发布相关改动按照 [测试策略](./testing/testing-strategy.md) 和根目录 `AGENTS.md` 提升验证范围。
+跨模块、并发、持久化、网络、安全或发布相关改动按照 [测试策略](./testing/testing-strategy.md) 和根目录 [AGENTS.md](../AGENTS.md) 提升验证范围。

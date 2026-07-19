@@ -18,6 +18,8 @@ The repository uses GitHub Free compatible capabilities only: standard macOS hos
 
 Xcode selection prefers the Xcode `26.5.0` installation and requires `xcodebuild` version prefix `26.5` with Swift `6.x` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` only for an intentional temporary override.
 
+Local command selection and environment-failure handling are documented in [Testing Strategy](./testing-strategy.md). This document covers workflow-side orchestration and release evidence.
+
 ## Branch Protection Gate
 
 Branch protection for `main` should require only:
@@ -33,54 +35,15 @@ Gate behavior:
 
 PR CI executes scripts from the checked-out PR head. Script and workflow integrity is enforced by code review plus `script-static-checks`; `ci-gate` remains the single required branch protection check. PR CI checkouts do not persist credentials, and bootstrap steps do not expose `GITHUB_TOKEN` to checked-out repository scripts.
 
-## Local Entrypoints
-
-Install tools:
-
-```sh
-scripts/dev/bootstrap.sh
-scripts/dev/doctor.sh
-```
-
-Common gates:
-
-```sh
-scripts/dev/validate.sh
-scripts/ci/static.sh
-scripts/ci/unit.sh
-scripts/ci/xcode.sh --action build --configuration Debug
-scripts/ci/xcode.sh --action test --configuration Debug \
-  --only-testing VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
-scripts/ci/ui_smoke.sh \
-  --only-testing VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
-scripts/ci/release_smoke.sh --arch arm64 --label arm64
-scripts/ci/full_regression.sh \
-  --destination "platform=macOS,arch=$(uname -m)" \
-  --out-dir .ai-tmp/full-regression
-scripts/ci/coverage.sh --out-dir .ai-tmp/coverage
-```
-
-`scripts/dev/validate.sh` is the local validation entrypoint for normal development. It runs static checks, SwiftPM tests, browser JavaScript tests, Go tests, an Xcode Debug build, and the default UI smoke test through the same scripts CI uses. It defaults the Xcode destination from the host architecture; pass `--destination` to override it, or `--skip-ui-smoke` only when local macOS UI automation authorization is unavailable and report that as an environment limitation.
-
-The shared Xcode `VoidDisplay` scheme is the app build/run and UI test scheme. Cmd-U does not run the SwiftPM, browser JavaScript, or Go test gate; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for complete unit coverage.
-
-`scripts/ci/xcode.sh --action test` requires `--only-testing` or `--test-plan`.
-
 ## Static Gate
 
-`scripts/ci/static.sh` runs:
+`scripts/ci/static.sh` delegates to shell, workflow, and project checks. The current gate covers:
 
-- `actionlint`
-- paid runner label check
-- 40-character action SHA pin check
-- `shellcheck`
-- `shfmt -d`
-- `bash -n`
-- `zsh -n`
-- `swiftformat --lint`
-- `swiftlint lint`
-- SwiftPM/Xcode log scanner fixtures
-- Swift script typecheck for release helper scripts
+- Shell syntax, formatting, lint, helper-source paths, and the `ROOT_DIR` / `TOOL_ROOT` execution contract.
+- `actionlint`, runner-label policy, 40-character action SHA pins, checkout credential isolation, PR token isolation, UI artifact synchronization, and release gate timeout budgeting.
+- Xcode project layout, relay build-phase inputs, unsigned local test builds, and SwiftPM/Xcode diagnostic scanner fixtures.
+- Bootstrap profile, change-classification, and release project-path fixtures.
+- Swift format and lint, release-helper type checking, browser JavaScript syntax, product source-file size limits, and the UI-test keyboard-input prohibition.
 
 All external action references must use a full 40-character commit SHA. Keep a tag comment after the SHA for maintainability, for example:
 
@@ -92,11 +55,9 @@ uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
 Release builds are ad hoc signed only. They are not Developer ID signed, notarized, stapled, or certified by Apple.
 
-Release workflow first resolves the target SHA without checking out target code, then verifies that SHA has a successful `ci-gate`. After that gate passes, release jobs execute scripts from the checked-out target commit and use JSON summaries and outputs to decide whether build and publish jobs should run.
+Release workflow first resolves the target SHA without checking out target code, then verifies that SHA has a successful `ci-gate` through inline GitHub API logic. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary. After the gate passes, release jobs execute scripts from the checked-out target commit and use JSON summaries and outputs to decide whether build and publish jobs should run.
 
-Before build or publish jobs run, the release workflow verifies the target commit has a successful `ci-gate` check with inline GitHub API logic that does not execute target checkout scripts. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary.
-
-Release assets per architecture:
+The current release workflow publishes this asset set per architecture:
 
 - `VoidDisplay-vX.Y.Z-arm64.dmg`
 - `VoidDisplay-vX.Y.Z-arm64.dmg.sha256`
@@ -109,7 +70,15 @@ Release assets per architecture:
 - `VoidDisplay-vX.Y.Z-intel64.dmg.summary.json`
 - `VoidDisplay-vX.Y.Z-intel64.dmg.verify-summary.json`
 
-Verify a downloaded asset set:
+This artifact set applies to releases produced by the current workflow. The `v2.1.0` release predates SBOM and attestation publishing and contains only the DMG and SHA256 checksum for each architecture.
+
+Verify a `v2.1.0` checksum from the directory containing both downloaded files:
+
+```sh
+shasum -a 256 -c VoidDisplay-v2.1.0-arm64.dmg.sha256
+```
+
+For releases containing the full asset set, run:
 
 ```sh
 scripts/release/verify.sh \
