@@ -9,17 +9,17 @@
 
 ### 🖥️ 虚拟显示器
 
-创建自定义分辨率和刷新率的虚拟显示器。  
+创建自定义分辨率和刷新率的虚拟显示器。
 适用于无头 Mac 部署、显示器测试，或者在没有物理显示器的情况下扩展你的工作空间。
 
 ### 👀 屏幕监听
 
-在独立的浮动窗口中监听任意已连接的显示器。  
-非常适合在不切换桌面的情况下关注副屏内容。
+在独立的浮动窗口中预览已启用的虚拟显示器。
+无需切换 macOS 空间即可检查受管理显示器的内容。
 
 ### 📡 局域网屏幕共享
 
-通过内置低延迟实时页面将任意显示器共享到局域网。  
+通过内置低延迟实时页面将已启用的虚拟显示器共享到局域网。
 在可信局域网的设备上，用现代浏览器打开应用生成的 capability 保护 `/display` 链接即可观看。播放链路使用 WebRTC 媒体流，并通过 WebSocket 传输信令。
 
 ## 📸 界面截图
@@ -125,21 +125,23 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
 
-# 静态检查、SwiftPM 测试、Go 测试、Xcode 构建和 UI smoke
+# 静态检查、SwiftPM/JavaScript/Go 测试、Xcode 构建和 UI smoke
 scripts/dev/validate.sh
 ```
 
-Xcode 里的 `VoidDisplay` scheme 是 app build/run 和 UI test 入口。Cmd-U 不会执行 `Tests/` 下的 SwiftPM 单元测试；需要单测覆盖时使用 `scripts/dev/validate.sh` 或 `scripts/ci/unit.sh`。
+Xcode 里的 `VoidDisplay` scheme 是 app build/run 和 UI test 入口。Cmd-U 不会执行 SwiftPM、浏览器 JavaScript 和 Go 测试门禁；完整单测覆盖使用 `scripts/dev/validate.sh` 或 `scripts/ci/unit.sh`。
 
 完整项目回归入口（打开或合并 PR 前的较重 release 取向检查）：
 
 ```bash
-scripts/ci/full_regression.sh
+scripts/ci/full_regression.sh \
+  --destination "platform=macOS,arch=$(uname -m)"
 ```
 
-该脚本会执行静态检查、SwiftPM 测试、Go 测试、Xcode Debug 构建、Xcode Debug 测试和 arm64 release smoke，并在 `.ai-tmp/full-regression/` 写入日志。
+该脚本会执行静态检查、全部单测、Xcode Debug 构建、UI 测试、稳定性检查和 arm64 release smoke，并在 `.ai-tmp/full-regression/` 写入日志。
 
 CI 工作流细节与手动 UI smoke dispatch 入口见 `docs/testing/ci-workflows.md`。
+[项目文档索引](./README.md)汇总了当前架构、测试策略和 LAN 安全契约。
 
 ### 调试入口
 
