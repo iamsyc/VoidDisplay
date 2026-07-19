@@ -1,5 +1,6 @@
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+import VoidDisplaySharingTestingSupport
 import Foundation
 import Testing
 
@@ -7,25 +8,21 @@ import Testing
 struct HttpHelperTests {
 
     @Test func parseHTTPRequestParsesRequestLineAndHeaders() throws {
-        let raw = """
-        GET /signal HTTP/1.1\r
-        Host: 127.0.0.1:8081\r
-        X-Test: value\r
-        \r
-        """
+        let raw = "GET /signal HTTP/1.1\r\n"
+            + "Host: 127.0.0.1:8081\r\n"
+            + "X-Test: value\r\n"
+            + "\r\n"
 
         let data = try #require(raw.data(using: .utf8))
         let request = try #require(parseHTTPRequest(from: data))
 
         #expect(request.method == "GET")
         #expect(request.path == "/signal")
-        #expect(request.version == "HTTP/1.1")
         #expect(request.headers["host"] == "127.0.0.1:8081")
         #expect(request.headers["x-test"] == "value")
-        #expect(request.body.isEmpty)
     }
 
-    @Test func parseHTTPRequestKeepsBodyWithCRLF() throws {
+    @Test func parseHTTPRequestIgnoresBytesAfterHeaders() throws {
         let raw = """
         POST /upload HTTP/1.1\r
         Content-Type: text/plain\r
@@ -37,35 +34,16 @@ struct HttpHelperTests {
 
         let data = try #require(raw.data(using: .utf8))
         let request = try #require(parseHTTPRequest(from: data))
-        let body = String(data: request.body, encoding: .utf8)
-
         #expect(request.method == "POST")
         #expect(request.path == "/upload")
-        #expect(body == "hello\r\nworld")
+        #expect(request.headers["content-length"] == "12")
     }
 
-    @Test func parseHTTPRequestAllowsHeaderOnlyPayloadWithoutTerminator() throws {
+    @Test func parseHTTPRequestRejectsHeaderWithoutTerminator() throws {
         let raw = "GET /display HTTP/1.1\r\nHost: localhost"
         let data = try #require(raw.data(using: .utf8))
 
-        let request = try #require(parseHTTPRequest(from: data))
-        #expect(request.method == "GET")
-        #expect(request.path == "/display")
-        #expect(request.headers["host"] == "localhost")
-        #expect(request.body.isEmpty)
-    }
-
-    @Test func parseHTTPRequestPreservesBinaryBodyBytes() throws {
-        let header = "POST /upload HTTP/1.1\r\n"
-            + "Content-Type: application/octet-stream\r\n"
-            + "Content-Length: 4\r\n"
-            + "\r\n"
-        var payload = try #require(header.data(using: .utf8))
-        let expectedBody = Data([0x00, 0xFF, 0x10, 0x7F])
-        payload.append(expectedBody)
-
-        let request = try #require(parseHTTPRequest(from: payload))
-        #expect(request.body == expectedBody)
+        #expect(parseHTTPRequest(from: data) == nil)
     }
 
     @Test func parseHTTPRequestRejectsInvalidRequestLine() throws {
@@ -79,11 +57,11 @@ struct HttpHelperTests {
     }
 
     @Test func parseHTTPRequestRejectsNonUTF8Data() {
-        let data = Data([0xFF, 0xFE, 0xFD])
+        let data = Data([0xFF, 0xFE, 0xFD]) + Data("\r\n\r\n".utf8)
         #expect(parseHTTPRequest(from: data) == nil)
     }
 
-    @Test func parseHTTPRequestIgnoresMalformedHeaderLines() throws {
+    @Test func parseHTTPRequestRejectsMalformedHeaderLines() throws {
         let raw = """
         GET / HTTP/1.1\r
         Host: localhost\r
@@ -91,13 +69,10 @@ struct HttpHelperTests {
         \r
         """
         let data = try #require(raw.data(using: .utf8))
-        let request = try #require(parseHTTPRequest(from: data))
-
-        #expect(request.headers["host"] == "localhost")
-        #expect(request.headers["brokenheaderline"] == nil)
+        #expect(parseHTTPRequest(from: data) == nil)
     }
 
-    @Test func parseHTTPRequestIgnoresHeaderWithEmptyKey() throws {
+    @Test func parseHTTPRequestRejectsHeaderWithEmptyKey() throws {
         let raw = """
         GET / HTTP/1.1\r
         : value-with-empty-key\r
@@ -105,10 +80,26 @@ struct HttpHelperTests {
         \r
         """
         let data = try #require(raw.data(using: .utf8))
-        let request = try #require(parseHTTPRequest(from: data))
+        #expect(parseHTTPRequest(from: data) == nil)
+    }
 
-        #expect(request.headers[""] == nil)
-        #expect(request.headers["host"] == "localhost")
+    @Test func parseHTTPRequestRejectsInvalidHeaderName() throws {
+        let data = try #require(
+            "GET / HTTP/1.1\r\nBad Header: value\r\n\r\n".data(using: .utf8)
+        )
+        #expect(parseHTTPRequest(from: data) == nil)
+    }
+
+    @Test func parseHTTPRequestRejectsWhitespaceAroundHeaderName() throws {
+        let data = try #require(
+            "GET / HTTP/1.1\r\n Host : value\r\n\r\n".data(using: .utf8)
+        )
+        #expect(parseHTTPRequest(from: data) == nil)
+    }
+
+    @Test func parseHTTPRequestRejectsUnsupportedHTTPVersion() throws {
+        let data = try #require("GET / HTTP/1.0\r\nHost: localhost\r\n\r\n".data(using: .utf8))
+        #expect(parseHTTPRequest(from: data) == nil)
     }
 
     @MainActor @Test func httpRouterRouteDecision() throws {
@@ -130,6 +121,8 @@ struct HttpHelperTests {
         #expect(router.route(for: "/display/frame") == .notFound)
         #expect(router.route(for: "/unknown") == .notFound)
         #expect(router.route(for: "%%%") == .notFound)
+        #expect(router.route(for: "/display//\(capability.rawValue)") == .notFound)
+        #expect(router.route(for: "/display/7/\(capability.rawValue)/") == .notFound)
     }
 
     @MainActor @Test func webRequestHandlerDecision() throws {
@@ -140,81 +133,66 @@ struct HttpHelperTests {
         let mainDisplayPath = ShareTarget.main.displayPath(accessCapability: capability)
         let displayPath = ShareTarget.id(4).displayPath(accessCapability: capability)
         let mainSignalPath = ShareTarget.main.signalPath(accessCapability: capability)
-        let acceptsCapability: (ShareTarget, ShareAccessCapability) -> Bool = { _, candidate in
-            candidate == capability
+        let hub = TestSignalSessionHub()
+        var authorizationCallCount = 0
+        let authorizationResolver: (ShareTarget, ShareAccessCapability) -> AuthorizedShareSession? = { target, candidate in
+            authorizationCallCount += 1
+            guard candidate == capability else { return nil }
+            switch target {
+            case .main:
+                return AuthorizedShareSession(id: 3, sessionHub: hub)
+            case .id(let id) where id == 4:
+                return AuthorizedShareSession(id: id, sessionHub: hub)
+            case .id:
+                return nil
+            }
         }
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: "/",
-                targetStateProvider: { _ in .knownInactive },
-                accessValidator: acceptsCapability
-            ) == .notFound
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: mainDisplayPath,
-                targetStateProvider: { _ in .knownInactive },
-                accessValidator: acceptsCapability
-            ) == .showDisplayPage(.main, capability)
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: displayPath,
-                targetStateProvider: { _ in .active },
-                accessValidator: acceptsCapability
-            ) == .showDisplayPage(.id(4), capability)
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: mainSignalPath,
-                targetStateProvider: { _ in .active },
-                accessValidator: acceptsCapability
-            ) == .openSignalSocket(.main, capability)
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: displayPath,
-                targetStateProvider: { _ in .active },
-                accessValidator: { _, _ in false }
-            ) == .notFound
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: "/stream",
-                targetStateProvider: { _ in .active },
-                accessValidator: acceptsCapability
-            ) == .notFound
-        )
-        #expect(
-            handler.decision(
-                forMethod: "POST",
-                path: mainSignalPath,
-                targetStateProvider: { _ in .active },
-                accessValidator: acceptsCapability
-            ) == .methodNotAllowed
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: "/404",
-                targetStateProvider: { _ in .active },
-                accessValidator: acceptsCapability
-            ) == .notFound
-        )
-        #expect(
-            handler.decision(
-                forMethod: "GET",
-                path: ShareTarget.id(9).displayPath(accessCapability: capability),
-                targetStateProvider: { _ in .unknown },
-                accessValidator: acceptsCapability
-            ) == .notFound
-        )
+        if case .notFound = handler.decision(forMethod: "GET", path: "/", authorizationResolver: authorizationResolver) {} else {
+            Issue.record("Expected root route to be rejected.")
+        }
+        #expect(authorizationCallCount == 0)
+        if case .showDisplayPage(let session, let resolvedCapability) = handler.decision(
+            forMethod: "GET", path: mainDisplayPath, authorizationResolver: authorizationResolver
+        ) {
+            #expect(session.target == .id(3))
+            #expect(resolvedCapability == capability)
+        } else {
+            Issue.record("Expected main display route to resolve once.")
+        }
+        #expect(authorizationCallCount == 1)
+        if case .showDisplayPage(let session, _) = handler.decision(
+            forMethod: "GET", path: displayPath, authorizationResolver: authorizationResolver
+        ) {
+            #expect(session.target == .id(4))
+        } else {
+            Issue.record("Expected concrete display route to resolve.")
+        }
+        if case .openSignalSocket(let session, let resolvedCapability) = handler.decision(
+            forMethod: "GET", path: mainSignalPath, authorizationResolver: authorizationResolver
+        ) {
+            #expect(session.target == .id(3))
+            #expect(ObjectIdentifier(session.sessionHub) == ObjectIdentifier(hub))
+            #expect(resolvedCapability == capability)
+        } else {
+            Issue.record("Expected main signal route to resolve.")
+        }
+        if case .notFound = handler.decision(
+            forMethod: "GET",
+            path: ShareTarget.id(9).displayPath(accessCapability: capability),
+            authorizationResolver: authorizationResolver
+        ) {} else {
+            Issue.record("Expected unknown target to be rejected.")
+        }
+        if case .methodNotAllowed = handler.decision(
+            forMethod: "POST", path: mainSignalPath, authorizationResolver: authorizationResolver
+        ) {} else {
+            Issue.record("Expected non-GET request to be rejected.")
+        }
+        if case .methodNotAllowed = handler.decision(
+            forMethod: "get", path: mainSignalPath, authorizationResolver: authorizationResolver
+        ) {} else {
+            Issue.record("Expected method matching to remain case-sensitive.")
+        }
     }
 
     @Test func webRequestHandlerResponsePayloads() throws {
@@ -223,9 +201,10 @@ struct HttpHelperTests {
         let capability = try #require(
             ShareAccessCapability(pathComponent: String(repeating: "c", count: 64))
         )
+        let session = AuthorizedShareSession(id: 7, sessionHub: TestSignalSessionHub())
 
         let displayResponse = handler.responseData(
-            for: .showDisplayPage(.id(7), capability),
+            for: .showDisplayPage(session, capability),
             htmlBody: page,
             contentSecurityPolicy: "default-src 'none'; script-src 'nonce-testnonce'"
         )
@@ -242,12 +221,6 @@ struct HttpHelperTests {
         let badRequestBody = "Bad Request"
         #expect(badRequestText.contains("400 Bad Request"))
         #expect(badRequestText.contains("Content-Length: \(badRequestBody.utf8.count)"))
-
-        let unavailableResponse = handler.responseData(for: .sharingUnavailable, htmlBody: page)
-        let unavailableText = try #require(String(data: unavailableResponse, encoding: .utf8))
-        let unavailableBody = "Sharing has stopped."
-        #expect(unavailableText.contains("503 Service Unavailable"))
-        #expect(unavailableText.contains("Content-Length: \(unavailableBody.utf8.count)"))
 
         let methodNotAllowedResponse = handler.responseData(for: .methodNotAllowed, htmlBody: page)
         let methodNotAllowedText = try #require(String(data: methodNotAllowedResponse, encoding: .utf8))
@@ -275,7 +248,7 @@ struct HttpHelperTests {
         #expect(text.contains("404 Not Found"))
     }
 
-    @MainActor @Test func httpRouterTreatsQueryRoutesConsistently() throws {
+    @MainActor @Test func httpRouterRejectsQueryAndPathVariants() throws {
         let router = HttpRouter()
         let capability = try #require(
             ShareAccessCapability(pathComponent: String(repeating: "d", count: 64))
@@ -283,11 +256,17 @@ struct HttpHelperTests {
         #expect(router.route(for: "/stream?t=123") == .notFound)
         #expect(router.route(for: "/stream/?t=123") == .notFound)
         #expect(
-            router.route(for: "/signal/9/\(capability.rawValue)?t=1") == .signal(.id(9), capability)
+            router.route(for: "/signal/9/\(capability.rawValue)?t=1") == .notFound
         )
         #expect(
-            router.route(for: "/display/9/\(capability.rawValue)?t=1") == .display(.id(9), capability)
+            router.route(for: "/display/9/\(capability.rawValue)?t=1") == .notFound
         )
+        #expect(router.route(for: "/display/9/\(capability.rawValue)/") == .notFound)
+        #expect(router.route(for: "/display//9/\(capability.rawValue)") == .notFound)
+        #expect(router.route(for: "/display/01/\(capability.rawValue)") == .notFound)
+        #expect(router.route(for: "/signal/+9/\(capability.rawValue)") == .notFound)
+        #expect(router.route(for: "/display/\(capability.rawValue.uppercased())") == .notFound)
+        #expect(ShareAccessCapability(pathComponent: capability.rawValue.uppercased()) == nil)
         #expect(router.route(for: "/?v=1") == .notFound)
     }
 }

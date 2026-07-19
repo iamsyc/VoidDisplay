@@ -89,10 +89,10 @@ package final class WebServer {
     private let requestHandler = WebRequestHandler()
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
     private var signalDecodersByConnectionKey: [ObjectIdentifier: WebSocketFrameDecoder] = [:]
-    private let targetStateProvider: @MainActor @Sendable (ShareTarget) -> ShareTargetState
-    private let accessValidator: @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool
-    private let concreteTargetResolver: @MainActor @Sendable (ShareTarget) -> ShareTarget?
-    private let sessionHubProvider: @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?
+    private let authorizationResolver: @MainActor @Sendable (
+        ShareTarget,
+        ShareAccessCapability
+    ) -> AuthorizedShareSession?
     private let sharingEventSink: @Sendable (SharingSessionEvent) -> Void
     private let onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)?
     private var didNotifyListenerStopped = false
@@ -105,17 +105,14 @@ package final class WebServer {
 
     package init(
         using port: NWEndpoint.Port = .http,
-        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
-        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
+        authorizationResolver: @escaping @MainActor @Sendable (
+            ShareTarget,
+            ShareAccessCapability
+        ) -> AuthorizedShareSession?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void,
         onListenerStopped: (@MainActor @Sendable (WebServiceServerStopReason) -> Void)? = nil
     ) throws {
-        self.targetStateProvider = targetStateProvider
-        self.accessValidator = accessValidator
-        self.concreteTargetResolver = concreteTargetResolver
-        self.sessionHubProvider = sessionHubProvider
+        self.authorizationResolver = authorizationResolver
         self.sharingEventSink = sharingEventSink
         self.onListenerStopped = onListenerStopped
 
@@ -303,14 +300,6 @@ package final class WebServer {
         }
     }
 
-    private func sessionHub(for target: ShareTarget) -> (any SignalSessionHub)? {
-        sessionHubProvider(target)
-    }
-
-    private func concreteTarget(for target: ShareTarget) -> ShareTarget? {
-        concreteTargetResolver(target)
-    }
-
     private struct DisplayPageResponse {
         let html: String
         let contentSecurityPolicy: String
@@ -373,46 +362,27 @@ package final class WebServer {
         let decision = requestHandler.decision(
             forMethod: request.method,
             path: request.path,
-            targetStateProvider: { [weak self] target in
-                self?.targetStateProvider(target) ?? .unknown
-            },
-            accessValidator: { [weak self] target, capability in
-                self?.accessValidator(target, capability) == true
+            authorizationResolver: { [weak self] target, capability in
+                self?.authorizationResolver(target, capability)
             }
         )
 
         switch decision {
-        case .showDisplayPage(let target, let capability):
-            guard let concreteTarget = concreteTarget(for: target) else {
-                sendResponseAndClose(
-                    requestHandler.responseData(for: .notFound),
-                    on: connection,
-                    failureContext: "Reject unresolved display target"
-                )
-                return
-            }
+        case .showDisplayPage(let session, let capability):
             let page = displayPage(
-                for: concreteTarget,
+                for: session.target,
                 accessCapability: capability
             )
             sendResponseAndClose(
                 requestHandler.responseData(
-                    for: .showDisplayPage(concreteTarget, capability),
+                    for: decision,
                     htmlBody: page.html,
                     contentSecurityPolicy: page.contentSecurityPolicy
                 ),
                 on: connection,
                 failureContext: "Send display page response"
             )
-        case .openSignalSocket(let target, _):
-            guard let concreteTarget = concreteTarget(for: target) else {
-                sendResponseAndClose(
-                    requestHandler.responseData(for: .notFound),
-                    on: connection,
-                    failureContext: "Reject unresolved websocket target"
-                )
-                return
-            }
+        case .openSignalSocket(let session, let capability):
             guard isValidWebSocketUpgrade(request.headers) else {
                 sendResponseAndClose(
                     requestHandler.responseData(for: .badRequest),
@@ -421,8 +391,13 @@ package final class WebServer {
                 )
                 return
             }
-            openSignalSocket(on: connection, target: concreteTarget, headers: request.headers)
-        case .badRequest, .sharingUnavailable, .methodNotAllowed, .notFound:
+            openSignalSocket(
+                on: connection,
+                session: session,
+                capability: capability,
+                headers: request.headers
+            )
+        case .badRequest, .methodNotAllowed, .notFound:
             sendResponseAndClose(
                 requestHandler.responseData(for: decision),
                 on: connection,
@@ -446,20 +421,26 @@ package final class WebServer {
         })
     }
 
-    private func openSignalSocket(on connection: NWConnection, target: ShareTarget, headers: [String: String]) {
+    private func openSignalSocket(
+        on connection: NWConnection,
+        session: AuthorizedShareSession,
+        capability: ShareAccessCapability,
+        headers: [String: String]
+    ) {
+        let target = session.target
         let endpoint = Self.endpointDescription(for: connection)
         AppLog.web.info(
             "WebServer: [\(endpoint, privacy: .private(mask: .hash))] initiating signaling WebSocket upgrade for target: \(String(describing: target))."
         )
-        guard let hub = sessionHub(for: target),
-              let acceptValue = makeWebSocketAcceptValue(headers: headers) else {
+        guard let acceptValue = makeWebSocketAcceptValue(headers: headers) else {
             sendResponseAndClose(
-                requestHandler.responseData(for: .sharingUnavailable),
+                requestHandler.responseData(for: .badRequest),
                 on: connection,
-                failureContext: "Reject missing live hub"
+                failureContext: "Reject invalid websocket key"
             )
             return
         }
+        let hub = session.sessionHub
 
         let wsKeyLength = headers["sec-websocket-key"]?.count ?? 0
         AppLog.web.debug(
@@ -477,12 +458,20 @@ package final class WebServer {
         let response = Data(responseString.utf8)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
                 if let error {
                     AppLog.web.error(
                         "WebServer: [\(endpoint, privacy: .private(mask: .hash))] WebSocket upgrade response failed: \(String(describing: error))."
                     )
                     AppErrorMapper.logFailure("Send websocket upgrade response", error: error, logger: AppLog.web)
+                    connection.cancel()
+                    return
+                }
+                guard let currentSession = self.authorizationResolver(target, capability),
+                      currentSession.sessionHub === hub else {
                     connection.cancel()
                     return
                 }

@@ -15,15 +15,15 @@ package typealias VirtualDisplayEditRebuildExecutor = @MainActor (
     VirtualDisplayConfig,
     String,
     VirtualDisplayRebuildRequestSource
-) async throws -> VirtualDisplayEditRebuildTransactionHandle
+) async throws -> VirtualDisplayEditRebuildOperation
 
 package typealias VirtualDisplayCreateExecutor = @MainActor (
     VirtualDisplayCreateRequest
-) async throws -> VirtualDisplayCreateTransactionResult
+) async throws -> UUID
 
 package typealias VirtualDisplayDeleteExecutor = @MainActor (
     UUID
-) async throws -> VirtualDisplayDeleteTransactionResult
+) async throws -> Void
 
 package struct VirtualDisplayRuntimeExecutors {
     package let rebuild: VirtualDisplayRebuildExecutor

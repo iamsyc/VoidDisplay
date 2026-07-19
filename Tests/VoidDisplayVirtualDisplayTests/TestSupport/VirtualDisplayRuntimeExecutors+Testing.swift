@@ -26,13 +26,7 @@ func testVirtualDisplayRuntimeExecutors(
             throw UnimplementedVirtualDisplayRuntimeExecutor()
         },
         delete: delete ?? { configID in
-            let result = try facade.deleteDisplayCommand(configID)
-            return VirtualDisplayDeleteTransactionResult(
-                transactionID: UUID(),
-                status: .completed,
-                configID: result.configID,
-                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
-            )
+            _ = try facade.deleteDisplayCommand(configID)
         }
     )
 }

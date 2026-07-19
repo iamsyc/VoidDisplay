@@ -303,15 +303,15 @@ package struct EditVirtualDisplayConfigView: View {
     private func performSaveAndRebuild(_ analysis: VirtualDisplayEditSaveAnalyzer.SaveAnalysis) async {
         guard let loadedConfig else { return }
         do {
-            let handle = try await virtualDisplay.saveConfigAndRebuild(
+            let operation = try await virtualDisplay.saveConfigAndRebuild(
                 analysis.updatedConfig,
                 expectedConfigFingerprint: loadedConfig.editRebuildFingerprint,
                 source: .editSaveAndRebuild
             )
-            _ = try await handle.waitForSaveGate()
+            try await operation.waitForSave()
             self.loadedConfig = analysis.updatedConfig
             dismiss()
-            virtualDisplay.startEditRebuildPresentation(configId: configId, handle: handle)
+            virtualDisplay.startEditRebuildPresentation(configId: configId, operation: operation)
         } catch {
             localAlert = UserFacingAlertState(
                 title: String(localized: "Save Failed"),

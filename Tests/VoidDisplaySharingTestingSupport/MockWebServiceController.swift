@@ -21,28 +21,19 @@ package final class MockWebServiceController: WebServiceControllerProtocol {
     package var disconnectCallCount = 0
     package var disconnectTargetCallCount = 0
     package var disconnectedTargetsHistory: [Set<ShareTarget>] = []
-    package var capturedTargetStateProvider: (@MainActor @Sendable (ShareTarget) -> ShareTargetState)?
-    package var capturedAccessValidator: (@MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool)?
-    package var capturedConcreteTargetResolver: (@MainActor @Sendable (ShareTarget) -> ShareTarget?)?
-    package var capturedSessionHubProvider: (@MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?)?
+    package var capturedAuthorizationResolver: (@MainActor @Sendable (ShareTarget, ShareAccessCapability) -> AuthorizedShareSession?)?
     package var capturedSharingEventSink: (@Sendable (SharingSessionEvent) -> Void)?
 
     package init() {}
 
     package func start(
         requestedPort: UInt16,
-        targetStateProvider: @escaping @MainActor @Sendable (ShareTarget) -> ShareTargetState,
-        accessValidator: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> Bool,
-        concreteTargetResolver: @escaping @MainActor @Sendable (ShareTarget) -> ShareTarget?,
-        sessionHubProvider: @escaping @MainActor @Sendable (ShareTarget) -> (any SignalSessionHub)?,
+        authorizationResolver: @escaping @MainActor @Sendable (ShareTarget, ShareAccessCapability) -> AuthorizedShareSession?,
         sharingEventSink: @escaping @Sendable (SharingSessionEvent) -> Void
     ) async -> WebServiceStartResult {
         startCallCount += 1
         lastRequestedPort = requestedPort
-        capturedTargetStateProvider = targetStateProvider
-        capturedAccessValidator = accessValidator
-        capturedConcreteTargetResolver = concreteTargetResolver
-        capturedSessionHubProvider = sessionHubProvider
+        capturedAuthorizationResolver = authorizationResolver
         capturedSharingEventSink = sharingEventSink
         switch startResult {
         case .started(let binding), .alreadyRunning(let binding):

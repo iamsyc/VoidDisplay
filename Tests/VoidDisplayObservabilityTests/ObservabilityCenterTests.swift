@@ -33,7 +33,6 @@ struct ObservabilityCenterTests {
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
             ),
-            transport: LocalExportTransport(),
             observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
             sanitizer: sanitizer
         )
@@ -135,7 +134,6 @@ struct ObservabilityCenterTests {
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
             ),
-            transport: LocalExportTransport(),
             observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
             sanitizer: sanitizer
         )
@@ -199,7 +197,6 @@ struct ObservabilityCenterTests {
                 displayShareMappingsURL: persistenceContext.displayShareIDMappingsURL,
                 sanitizer: sanitizer
             ),
-            transport: LocalExportTransport(),
             observabilityDirectoryURL: persistenceContext.observabilityDirectoryURL,
             sanitizer: sanitizer
         )
@@ -260,7 +257,6 @@ struct ObservabilityCenterTests {
                 displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
                 sanitizer: sanitizer
             ),
-            transport: LocalExportTransport(),
             observabilityDirectoryURL: tempURL,
             sanitizer: sanitizer
         )

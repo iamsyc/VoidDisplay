@@ -85,11 +85,8 @@ struct SharingServiceTests {
         #expect(mock.startCallCount == 1)
         #expect(sut.webServicePortValue == requestedPort)
         #expect(sut.isWebServiceRunning)
-        #expect(mock.capturedTargetStateProvider?(.main) == .knownInactive)
-        #expect(mock.capturedTargetStateProvider?(.id(123)) == .unknown)
-        #expect(mock.capturedConcreteTargetResolver?(.main) == nil)
-        #expect(mock.capturedConcreteTargetResolver?(.id(123)) == nil)
-        #expect(mock.capturedSessionHubProvider?(.main) == nil)
+        #expect(mock.capturedAuthorizationResolver?(.main, socketTestAccessCapability) == nil)
+        #expect(mock.capturedAuthorizationResolver?(.id(123), socketTestAccessCapability) == nil)
         #expect(mock.capturedSharingEventSink != nil)
     }
 

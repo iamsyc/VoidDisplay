@@ -63,7 +63,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         let presentation = HomeVirtualDisplayPresentationMapper.makePresentation(
             snapshot: displayRuntime.makeSnapshot(),
             displayConfigs: virtualDisplay.displayConfigs,
-            sharePageAddresses: SharingUIComposition.runtimeState(sharing: sharing).sharePageAddresses
+            sharePageAddresses: sharePageAddresses
         )
 
         let metrics = HomeLayoutMetrics.current
@@ -145,7 +145,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
             viewModel.handleAppear()
         }
         .onDisappear {
-            viewModel.handleDisappear()
             Task {
                 await displayRuntime.handleCatalogDisappear(source: .capturePage)
                 await displayRuntime.handleCatalogDisappear(source: .sharingPage)
@@ -345,7 +344,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 }
             } catch is CancellationError {
             } catch {
-                AppErrorMapper.logFailure("Start preview", error: error, logger: AppLog.capture)
                 presentActionError(
                     title: String(localized: "Start Preview Failed"),
                     message: AppErrorMapper.userMessage(
@@ -389,7 +387,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
                     displayID: displayID,
                     runtime: displayRuntime
                 )
-                AppErrorMapper.logFailure("Start sharing", error: error, logger: AppLog.sharing)
                 presentActionError(
                     title: String(localized: "Share Failed"),
                     message: AppErrorMapper.userMessage(
@@ -543,6 +540,18 @@ package struct HomeVirtualDisplaySurfaceView: View {
 
     private func presentActionError(title: String, message: String) {
         actionAlert = UserFacingAlertState(title: title, message: message)
+    }
+
+    private var sharePageAddresses: [CGDirectDisplayID: String] {
+        let catalogDisplayIDs = Set((sharing.displayCatalogState.displays ?? []).map(\.displayID))
+        let displayIDs = catalogDisplayIDs
+            .union(sharing.activeSharingDisplayIDs)
+            .union(sharing.startingDisplayIDs)
+        return Dictionary(
+            uniqueKeysWithValues: displayIDs.compactMap { displayID in
+                sharing.sharePageAddress(for: displayID).map { (displayID, $0) }
+            }
+        )
     }
 
     private var previewActions: CapturePreviewActions {

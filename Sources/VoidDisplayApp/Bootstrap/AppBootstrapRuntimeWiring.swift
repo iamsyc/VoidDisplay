@@ -1,6 +1,7 @@
 import VoidDisplayCapture
 import VoidDisplayRuntime
 import VoidDisplayVirtualDisplay
+import Foundation
 
 extension AppBootstrap {
     static func wireRuntime(
@@ -35,78 +36,131 @@ extension AppBootstrap {
     ) -> VirtualDisplayRuntimeExecutors {
         VirtualDisplayRuntimeExecutors(
             rebuild: { configID, source in
-            let result = try await runtime.rebuildVirtualDisplay(
-                configID: configID,
-                source: DisplayRuntimeTransactionSource(source)
-            )
-            guard result.status != .failed && result.status != .cancelled else {
-                throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
-            }
-            },
-            setDesiredEnabled: { configID, enabled, source in
-            let result = try await runtime.setVirtualDisplayDesiredEnabled(
-                configID: configID,
-                enabled: enabled,
-                source: DisplayRuntimeTransactionSource(source)
-            )
-            guard result.status != .failed && result.status != .cancelled else {
-                throw DisplayRuntimeRebuildExecutorError(transactionStatus: result.status.rawValue)
-            }
-            },
-            editAndRebuild: { updatedConfig, expectedConfigFingerprint, source in
-            let runtimeSource = DisplayRuntimeTransactionSource(source)
-            let runtimeHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
-                request: DisplayRuntimeVirtualDisplayEditRebuildRequest(
-                    editedConfig: DisplayRuntimeVirtualDisplayConfigEditDTO(adapterConfig: updatedConfig),
-                    expectedConfigFingerprint: expectedConfigFingerprint,
-                    source: runtimeSource
-                ),
-                source: runtimeSource
-            )
-            return VirtualDisplayEditRebuildTransactionHandle(
-                transactionID: runtimeHandle.transactionID.rawValue,
-                saveGateTask: Task { @MainActor in
-                    let saveGate = try await runtimeHandle.waitForSaveGate()
-                    return VirtualDisplayEditRebuildSaveGateResult(
-                        transactionID: saveGate.transactionID.rawValue,
-                        configID: saveGate.configID
+                try await performRuntimeOperation(operation: .rebuild) {
+                    let result = try await runtime.rebuildVirtualDisplay(
+                        configID: configID,
+                        source: DisplayRuntimeTransactionSource(source)
                     )
-                },
-                terminalResultTask: Task { @MainActor in
-                    let result = try await runtimeHandle.waitForTerminalResult()
-                    return VirtualDisplayEditRebuildTransactionResult(
-                        transactionID: result.transactionID.rawValue,
-                        status: VirtualDisplayTransactionStatus(result.status),
-                        virtualDisplayCommandSucceeded: result.virtualDisplayCommandSucceeded
+                    try requireSuccessfulRuntimeResult(
+                        status: result.status,
+                        commandSucceeded: result.virtualDisplayCommandSucceeded,
+                        operation: .rebuild
                     )
                 }
-            )
+            },
+            setDesiredEnabled: { configID, enabled, source in
+                let operation = DisplayRuntimeExecutorError.Operation.setDesiredEnabled(enabled)
+                try await performRuntimeOperation(operation: operation) {
+                    let result = try await runtime.setVirtualDisplayDesiredEnabled(
+                        configID: configID,
+                        enabled: enabled,
+                        source: DisplayRuntimeTransactionSource(source)
+                    )
+                    try requireSuccessfulRuntimeResult(
+                        status: result.status,
+                        commandSucceeded: result.virtualDisplayCommandSucceeded,
+                        operation: operation
+                    )
+                }
+            },
+            editAndRebuild: { updatedConfig, expectedConfigFingerprint, source in
+                let operation = DisplayRuntimeExecutorError.Operation.editAndRebuild
+                return try await performRuntimeOperation(operation: operation) {
+                    let runtimeSource = DisplayRuntimeTransactionSource(source)
+                    let runtimeHandle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+                        request: DisplayRuntimeVirtualDisplayEditRebuildRequest(
+                            editedConfig: DisplayRuntimeVirtualDisplayConfigEditDTO(adapterConfig: updatedConfig),
+                            expectedConfigFingerprint: expectedConfigFingerprint,
+                            source: runtimeSource
+                        ),
+                        source: runtimeSource
+                    )
+                    return VirtualDisplayEditRebuildOperation(
+                        saveTask: Task { @MainActor in
+                            try await performRuntimeOperation(operation: operation) {
+                                _ = try await runtimeHandle.waitForSaveGate()
+                            }
+                        },
+                        completionTask: Task { @MainActor in
+                            try await performRuntimeOperation(operation: operation) {
+                                let result = try await runtimeHandle.waitForTerminalResult()
+                                try requireSuccessfulRuntimeResult(
+                                    status: result.status,
+                                    commandSucceeded: result.virtualDisplayCommandSucceeded,
+                                    operation: operation
+                                )
+                            }
+                        }
+                    )
+                }
             },
             create: { request in
-            let source = DisplayRuntimeTransactionSource.createVirtualDisplaySheet
-            let result = try await runtime.createVirtualDisplay(
-                request: DisplayRuntimeVirtualDisplayCreateRequest(request: request, source: source),
-                source: source
-            )
-            return VirtualDisplayCreateTransactionResult(
-                transactionID: result.transactionID.rawValue,
-                status: VirtualDisplayTransactionStatus(result.status),
-                createdConfigID: result.createdConfigID,
-                virtualDisplayCommandSucceeded: result.runtimeCreationOutcome == .succeeded
-            )
+                try await performRuntimeOperation(operation: .create) {
+                    let source = DisplayRuntimeTransactionSource.createVirtualDisplaySheet
+                    let result = try await runtime.createVirtualDisplay(
+                        request: DisplayRuntimeVirtualDisplayCreateRequest(request: request, source: source),
+                        source: source
+                    )
+                    try requireSuccessfulRuntimeResult(
+                        status: result.status,
+                        commandSucceeded: result.runtimeCreationOutcome == .succeeded,
+                        operation: .create
+                    )
+                    return try requireCreatedConfigID(result.createdConfigID)
+                }
             },
             delete: { configID in
-            let result = try await runtime.deleteVirtualDisplay(
-                configID: configID,
-                source: .deleteVirtualDisplayConfirmation
-            )
-            return VirtualDisplayDeleteTransactionResult(
-                transactionID: result.transactionID.rawValue,
-                status: VirtualDisplayTransactionStatus(result.status),
-                configID: result.configID,
-                virtualDisplayCommandSucceeded: result.virtualDisplayCommandOutcome == .succeeded
-            )
+                try await performRuntimeOperation(operation: .delete) {
+                    let result = try await runtime.deleteVirtualDisplay(
+                        configID: configID,
+                        source: .deleteVirtualDisplayConfirmation
+                    )
+                    try requireSuccessfulRuntimeResult(
+                        status: result.status,
+                        commandSucceeded: result.virtualDisplayCommandOutcome == .succeeded,
+                        operation: .delete
+                    )
+                }
             }
         )
+    }
+
+    static func performRuntimeOperation<Result>(
+        operation: DisplayRuntimeExecutorError.Operation,
+        _ body: () async throws -> Result
+    ) async throws -> Result {
+        do {
+            return try await body()
+        } catch let error as DisplayRuntimeExecutorError {
+            throw error
+        } catch is CancellationError {
+            throw DisplayRuntimeExecutorError(operation: operation, reason: "cancelled")
+        } catch {
+            throw DisplayRuntimeExecutorError(operation: operation, reason: "runtime_operation_failed")
+        }
+    }
+
+    static func requireSuccessfulRuntimeResult(
+        status: DisplayRuntimeTransactionStatus,
+        commandSucceeded: Bool,
+        operation: DisplayRuntimeExecutorError.Operation
+    ) throws {
+        guard commandSucceeded,
+              status == .completed || status == .completedWithRecoveryFailures else {
+            throw DisplayRuntimeExecutorError(
+                operation: operation,
+                reason: commandSucceeded ? status.rawValue : "virtual_display_command_failed"
+            )
+        }
+    }
+
+    static func requireCreatedConfigID(_ configID: UUID?) throws -> UUID {
+        guard let configID else {
+            throw DisplayRuntimeExecutorError(
+                operation: .create,
+                reason: "missing_created_config_id"
+            )
+        }
+        return configID
     }
 }

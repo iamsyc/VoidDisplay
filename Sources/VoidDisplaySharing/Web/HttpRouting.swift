@@ -15,14 +15,13 @@ package struct ShareAccessCapability: Hashable, Sendable {
     package let rawValue: String
 
     package init?(pathComponent: String) {
-        let normalized = pathComponent.lowercased()
-        guard normalized.count == Self.pathComponentLength,
-              normalized.utf8.allSatisfy({ byte in
+        guard pathComponent.count == Self.pathComponentLength,
+              pathComponent.utf8.allSatisfy({ byte in
                   (48...57).contains(byte) || (97...102).contains(byte)
               }) else {
             return nil
         }
-        rawValue = normalized
+        rawValue = pathComponent
     }
 
     @inline(never)
@@ -82,24 +81,6 @@ package struct HttpRouter {
     private static let displayPath = "/display"
     private static let signalPath = "/signal"
 
-    private func normalizedPath(from rawPath: String) -> String? {
-        guard !rawPath.isEmpty else { return nil }
-        guard let path = URLComponents(string: rawPath)?.path, !path.isEmpty else {
-            return nil
-        }
-        guard path.hasPrefix("/") else { return nil }
-
-        var normalized = path
-        while normalized.contains("//") {
-            normalized = normalized.replacingOccurrences(of: "//", with: "/")
-        }
-
-        while normalized.count > 1 && normalized.hasSuffix("/") {
-            normalized.removeLast()
-        }
-        return normalized
-    }
-
     private func parseProtectedTarget(
         path: String,
         prefix: String
@@ -115,6 +96,7 @@ package struct HttpRouter {
         guard components.count == 2,
               let parsed = UInt32(components[0]),
               parsed > 0,
+              String(parsed) == components[0],
               let capability = ShareAccessCapability(pathComponent: String(components[1])) else {
             return nil
         }
@@ -122,14 +104,12 @@ package struct HttpRouter {
     }
 
     package func route(for rawPath: String) -> HttpRoute {
-        guard let path = normalizedPath(from: rawPath) else {
-            return .notFound
-        }
+        guard rawPath.hasPrefix("/") else { return .notFound }
 
-        if let protectedTarget = parseProtectedTarget(path: path, prefix: Self.displayPath) {
+        if let protectedTarget = parseProtectedTarget(path: rawPath, prefix: Self.displayPath) {
             return .display(protectedTarget.target, protectedTarget.capability)
         }
-        if let protectedTarget = parseProtectedTarget(path: path, prefix: Self.signalPath) {
+        if let protectedTarget = parseProtectedTarget(path: rawPath, prefix: Self.signalPath) {
             return .signal(protectedTarget.target, protectedTarget.capability)
         }
         return .notFound

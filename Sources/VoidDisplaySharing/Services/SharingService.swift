@@ -123,17 +123,8 @@ package final class SharingService: SharingServiceProtocol {
         }
         let result = await webServiceController.start(
             requestedPort: requestedPort,
-            targetStateProvider: { [weak self] target in
-                self?.sharingCoordinator.state(for: target) ?? .unknown
-            },
-            accessValidator: { [weak self] target, capability in
-                self?.sharingCoordinator.validatesAccess(to: target, capability: capability) == true
-            },
-            concreteTargetResolver: { [weak self] target in
-                self?.sharingCoordinator.resolveConcreteTarget(for: target)
-            },
-            sessionHubProvider: { [weak self] target in
-                self?.sharingCoordinator.sessionHub(for: target)
+            authorizationResolver: { [weak self] target, capability in
+                self?.sharingCoordinator.authorize(target: target, capability: capability)
             },
             sharingEventSink: { [weak self] event in
                 Task { @MainActor [weak self] in

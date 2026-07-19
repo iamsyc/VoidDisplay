@@ -22,7 +22,7 @@
 当前代表实现：
 
 - [HomeSmokeTests.swift](/Users/syc/Project/VoidDisplay/UITests/VoidDisplayUITests/Smoke/HomeSmokeTests.swift)
-- [ShareViewBehaviorTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplaySharingTests/Views/ShareViewBehaviorTests.swift)
+- [DisplaySharingCoordinatorTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplaySharingTests/Services/DisplaySharingCoordinatorTests.swift)
 - [EditVirtualDisplayWorkflowTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplayVirtualDisplayTests/EditVirtualDisplayWorkflowTests.swift)
 - [VirtualDisplayRowPresentationTests.swift](/Users/syc/Project/VoidDisplay/Tests/VoidDisplayVirtualDisplayTests/VirtualDisplayRowPresentationTests.swift)
 

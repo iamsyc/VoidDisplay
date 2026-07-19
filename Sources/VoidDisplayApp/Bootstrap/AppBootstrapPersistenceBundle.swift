@@ -42,7 +42,6 @@ extension AppBootstrap {
                 displayShareMappingsURL: context.displayShareIDMappingsURL,
                 sanitizer: sanitizer
             ),
-            transport: LocalExportTransport(),
             observabilityDirectoryURL: context.observabilityDirectoryURL,
             sanitizer: sanitizer
         )

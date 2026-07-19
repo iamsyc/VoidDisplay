@@ -400,58 +400,40 @@ struct DisplaySharingCoordinatorTests {
     }
 
     @MainActor
-    @Test func mainTargetContractIsActiveOrKnownInactiveAndHubIsNilWhenUnresolved() async throws {
+    @Test func authorizeResolvesMainAliasWithActiveHubAndRejectsInactiveTargets() async throws {
+        let capability = try #require(ShareAccessCapability(
+            pathComponent: String(repeating: "a", count: ShareAccessCapability.pathComponentLength)
+        ))
         let unresolvedCoordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
-        #expect(unresolvedCoordinator.state(for: ShareTarget.main) == .knownInactive)
-        #expect(unresolvedCoordinator.sessionHub(for: ShareTarget.main) == nil)
-
-        let inactiveCoordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
-        inactiveCoordinator.registerShareableDisplays([.init(displayID: 109, isMain: true, virtualSerial: nil)])
-        #expect(inactiveCoordinator.state(for: ShareTarget.main) == .knownInactive)
-        #expect(inactiveCoordinator.sessionHub(for: ShareTarget.main) == nil)
+        #expect(unresolvedCoordinator.authorize(target: .main, capability: capability) == nil)
 
         let activeSubscription = makeSubscription(displayID: 110)
         let activeCoordinator = DisplaySharingCoordinator(
             idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
-            acquireShare: { _, _ in .started(activeSubscription.subscription) }
+            acquireShare: { _, _ in .started(activeSubscription.subscription) },
+            accessCapabilityGenerator: { capability }
         )
         let display = SharedMockSCDisplay.make(displayID: 110, width: 1920, height: 1080)
         activeCoordinator.registerShareableDisplays([.init(displayID: 110, isMain: true, virtualSerial: nil)])
+        let shareID = try #require(activeCoordinator.shareID(for: 110))
+        #expect(activeCoordinator.authorize(target: .main, capability: capability) == nil)
         let outcome = try await activeCoordinator.startSharing(display: display)
         guard case .started = outcome else {
             Issue.record("Expected active sharing start to succeed.")
             return
         }
 
-        #expect(activeCoordinator.state(for: ShareTarget.main) == .active)
-        let hub = try #require(activeCoordinator.sessionHub(for: ShareTarget.main))
-        #expect(ObjectIdentifier(hub) == ObjectIdentifier(activeSubscription.share.sessionHub))
+        let mainSession = try #require(activeCoordinator.authorize(target: .main, capability: capability))
+        let concreteSession = try #require(activeCoordinator.authorize(target: .id(shareID), capability: capability))
+        #expect(mainSession.target == .id(shareID))
+        #expect(concreteSession.target == .id(shareID))
+        #expect(ObjectIdentifier(mainSession.sessionHub) == ObjectIdentifier(activeSubscription.share.sessionHub))
+        #expect(ObjectIdentifier(concreteSession.sessionHub) == ObjectIdentifier(activeSubscription.share.sessionHub))
+        #expect(activeCoordinator.authorize(target: .id(999_999), capability: capability) == nil)
 
         activeCoordinator.stopAllSharing()
         #expect(await waitUntil { activeSubscription.cancelCounter.value == 1 })
-    }
-
-    @MainActor
-    @Test func resolveConcreteTargetMapsMainAliasAndRejectsUnknownTargets() {
-        let coordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
-        coordinator.registerShareableDisplays([
-            .init(displayID: 201, isMain: true, virtualSerial: nil),
-            .init(displayID: 202, isMain: false, virtualSerial: nil)
-        ])
-
-        guard let mainShareID = coordinator.shareID(for: 201),
-              let secondaryShareID = coordinator.shareID(for: 202) else {
-            Issue.record("Expected registered displays to receive concrete share IDs.")
-            return
-        }
-
-        #expect(coordinator.resolveConcreteTarget(for: .main) == .id(mainShareID))
-        #expect(coordinator.resolveConcreteTarget(for: .id(mainShareID)) == .id(mainShareID))
-        #expect(coordinator.resolveConcreteTarget(for: .id(secondaryShareID)) == .id(secondaryShareID))
-        #expect(coordinator.resolveConcreteTarget(for: .id(999_999)) == nil)
-
-        let unresolvedCoordinator = DisplaySharingCoordinator(idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()))
-        #expect(unresolvedCoordinator.resolveConcreteTarget(for: .main) == nil)
+        #expect(activeCoordinator.authorize(target: .id(shareID), capability: capability) == nil)
     }
 
     @MainActor
@@ -503,7 +485,7 @@ struct DisplaySharingCoordinatorTests {
         ])
 
         #expect(coordinator.sharePagePath(for: displayID) == nil)
-        #expect(coordinator.validatesAccess(to: .main, capability: firstCapability) == false)
+        #expect(coordinator.authorize(target: .main, capability: firstCapability) == nil)
 
         guard case .started = try await coordinator.startSharing(display: display) else {
             Issue.record("Expected first sharing start to succeed.")
@@ -513,13 +495,13 @@ struct DisplaySharingCoordinatorTests {
             coordinator.sharePagePath(for: displayID)
                 == ShareTarget.id(9).displayPath(accessCapability: firstCapability)
         )
-        #expect(coordinator.validatesAccess(to: .main, capability: firstCapability))
-        #expect(coordinator.validatesAccess(to: .id(9), capability: firstCapability))
-        #expect(coordinator.validatesAccess(to: .id(9), capability: secondCapability) == false)
+        #expect(coordinator.authorize(target: .main, capability: firstCapability) != nil)
+        #expect(coordinator.authorize(target: .id(9), capability: firstCapability) != nil)
+        #expect(coordinator.authorize(target: .id(9), capability: secondCapability) == nil)
 
         coordinator.stopSharing(displayID: displayID)
         #expect(coordinator.sharePagePath(for: displayID) == nil)
-        #expect(coordinator.validatesAccess(to: .id(9), capability: firstCapability) == false)
+        #expect(coordinator.authorize(target: .id(9), capability: firstCapability) == nil)
 
         guard case .started = try await coordinator.startSharing(display: display) else {
             Issue.record("Expected restarted sharing session to succeed.")
@@ -529,8 +511,8 @@ struct DisplaySharingCoordinatorTests {
             coordinator.sharePagePath(for: displayID)
                 == ShareTarget.id(9).displayPath(accessCapability: secondCapability)
         )
-        #expect(coordinator.validatesAccess(to: .id(9), capability: firstCapability) == false)
-        #expect(coordinator.validatesAccess(to: .id(9), capability: secondCapability))
+        #expect(coordinator.authorize(target: .id(9), capability: firstCapability) == nil)
+        #expect(coordinator.authorize(target: .id(9), capability: secondCapability) != nil)
 
         coordinator.stopAllSharing()
         #expect(await waitUntil {
