@@ -26,11 +26,10 @@ Branch protection for `main` should require only:
 
 Gate behavior:
 
-- Non-code PRs pass through the fast path.
-- Code-relevant PRs run static checks, SwiftPM unit tests, Go unit tests, and Xcode Debug build.
-- UI-relevant PRs run the UI smoke matrix.
-- Code-relevant PRs targeting `main` also run arm64 release smoke. Main push, nightly, and release workflows cover x86_64 release smoke.
-- Code PRs run Dependency Review and block high or critical dependency vulnerabilities.
+- Every PR runs static checks, SwiftPM tests, browser JavaScript tests, Go tests, and an Xcode Debug build.
+- UI-relevant PRs and PRs with unknown paths run the UI smoke matrix.
+- Release-relevant PRs targeting `main` run arm64 release smoke. Main push, nightly, and release workflows cover x86_64 release smoke.
+- PRs that change dependency manifests run Dependency Review and block high or critical dependency vulnerabilities.
 
 PR CI executes scripts from the checked-out PR head. Script and workflow integrity is enforced by code review plus `script-static-checks`; `ci-gate` remains the single required branch protection check. PR CI checkouts do not persist credentials, and bootstrap steps do not expose `GITHUB_TOKEN` to checked-out repository scripts.
 
@@ -55,13 +54,15 @@ scripts/ci/xcode.sh --action test --configuration Debug \
 scripts/ci/ui_smoke.sh \
   --only-testing VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
 scripts/ci/release_smoke.sh --arch arm64 --label arm64
-scripts/ci/full_regression.sh --out-dir .ai-tmp/full-regression
+scripts/ci/full_regression.sh \
+  --destination "platform=macOS,arch=$(uname -m)" \
+  --out-dir .ai-tmp/full-regression
 scripts/ci/coverage.sh --out-dir .ai-tmp/coverage
 ```
 
-`scripts/dev/validate.sh` is the local validation entrypoint for normal development. It runs static checks, SwiftPM unit tests, Go unit tests, Xcode Debug build, and the default UI smoke test through the same scripts CI uses. It defaults the Xcode destination from the host architecture; pass `--destination` to override it, or `--skip-ui-smoke` only when local macOS UI automation authorization is unavailable and report that as an environment limitation.
+`scripts/dev/validate.sh` is the local validation entrypoint for normal development. It runs static checks, SwiftPM tests, browser JavaScript tests, Go tests, an Xcode Debug build, and the default UI smoke test through the same scripts CI uses. It defaults the Xcode destination from the host architecture; pass `--destination` to override it, or `--skip-ui-smoke` only when local macOS UI automation authorization is unavailable and report that as an environment limitation.
 
-The shared Xcode `VoidDisplay` scheme is the app build/run and UI test scheme. Cmd-U does not run SwiftPM tests from `Tests/`; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for unit coverage.
+The shared Xcode `VoidDisplay` scheme is the app build/run and UI test scheme. Cmd-U does not run the SwiftPM, browser JavaScript, or Go test gate; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for complete unit coverage.
 
 `scripts/ci/xcode.sh --action test` requires `--only-testing` or `--test-plan`.
 
@@ -127,3 +128,5 @@ scripts/release/verify.sh \
 `nightly.yml` calls `scripts/ci/full_regression.sh`, `scripts/ci/coverage.sh`, expanded UI smoke, and dual-architecture release dry run. It writes workflow summary output and retains artifacts for 7 days.
 
 `scripts/ci/full_regression.sh` also calls `scripts/ci/stability.sh`. The stability gate repeats the Swift capture-demand and relay-client churn tests, then runs every relay Go package with the race detector and the same bounded iteration count. Use `--iterations 1...100` or `STABILITY_ITERATIONS` to select the run length; the default is 20.
+
+The current testing layers and local scope rules are documented in [Testing Strategy](./testing-strategy.md).

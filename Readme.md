@@ -9,17 +9,17 @@
 
 ### 🖥️ Virtual Displays
 
-Create virtual monitors with custom resolution and refresh rate.  
+Create virtual monitors with custom resolution and refresh rate.
 Perfect for headless Mac setups, display testing, or extending your workspace without a physical monitor.
 
 ### 👀 Screen Monitoring
 
-Watch any connected display in its own dedicated floating window.  
-Great for keeping an eye on a secondary screen without switching desktops.
+Preview an enabled virtual display in its own dedicated floating window.
+Use it to inspect a managed display without switching macOS spaces.
 
 ### 📡 LAN Screen Sharing
 
-Share any display over your local network through the built-in low-latency live page.  
+Share an enabled virtual display over your local network through the built-in low-latency live page.
 Open the generated capability-protected `/display` URL in a modern browser on a trusted LAN. Playback uses WebRTC media streaming with WebSocket signaling.
 
 ## 📸 Screenshots
@@ -125,25 +125,28 @@ Requirements: Xcode 26+, macOS 15.6 or later on an Intel or Apple Silicon Mac.
 scripts/dev/bootstrap.sh
 scripts/dev/doctor.sh
 
-# Static checks, SwiftPM tests, Go tests, Xcode build, and UI smoke
+# Static checks, SwiftPM/JavaScript/Go tests, Xcode build, and UI smoke
 scripts/dev/validate.sh
 ```
 
-`VoidDisplay` in Xcode is the app build/run and UI test scheme. Cmd-U does not run the SwiftPM unit tests under `Tests/`; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for unit coverage.
+`VoidDisplay` in Xcode is the app build/run and UI test scheme. Cmd-U does not run the SwiftPM, browser JavaScript, or Go test gate; use `scripts/dev/validate.sh` or `scripts/ci/unit.sh` for complete unit coverage.
 
 Full project regression gate (heavier release-oriented check before opening/merging PR):
 
 ```bash
-scripts/ci/full_regression.sh
+scripts/ci/full_regression.sh \
+  --destination "platform=macOS,arch=$(uname -m)"
 ```
 
-This script runs end-to-end test/build gates and fails fast when:
+This script runs static checks, all unit suites, a Debug build, UI tests, stability checks, and arm64 release smoke. It fails when:
+
 - tests were not actually executed (`totalTestCount == 0`)
-- any test failed
-- Debug/Release build has warnings
-- Debug/Release build failed
+- any test fails
+- a required build emits warnings or errors
+- stability or release smoke fails
 
 CI workflow details and manual UI smoke dispatch are documented in `docs/testing/ci-workflows.md`.
+The [documentation index](./docs/README.md) links the current architecture, testing strategy, and LAN security contract.
 
 Release assets include a DMG, SHA256 checksum, SPDX SBOM, and GitHub artifact attestation. To verify downloaded release assets:
 
