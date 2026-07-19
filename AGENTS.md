@@ -100,10 +100,10 @@
 - Default to the repository scripts that wrap `xcodebuild`; use raw `xcodebuild` only for targeted diagnostics or capabilities the wrappers do not expose.
 - Write verbose logs to `.ai-tmp/` and report concise summaries only.
 - When available, use Xcode MCP only for high-value IDE-context tasks:
-- workspace/tab context resolution
-- project graph file operations
-- targeted diagnostics/tests
-- preview/snippet workflows hard to reproduce in shell
+  - workspace/tab context resolution
+  - project graph file operations
+  - targeted diagnostics/tests
+  - preview/snippet workflows hard to reproduce in shell
 - Avoid high-output calls unless necessary (full glob/full test list/full logs).
 - Scope early by path/pattern/target/test identifier.
 - If MCP shows instability (`Transport closed`, XPC/timeout), switch to shell fallback instead of repeated MCP retries.
