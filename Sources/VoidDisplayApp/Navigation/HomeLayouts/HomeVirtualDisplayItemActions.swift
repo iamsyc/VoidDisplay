@@ -85,6 +85,9 @@ package struct HomeVirtualDisplayItemToggleButton: View {
 package struct HomeVirtualDisplayItemCopyShareAddressButton: View {
     package let state: HomeVirtualDisplayItemRenderState
     package let actions: HomeLayoutActions
+    @State private var feedbackState = HomeCopyShareAddressFeedbackState()
+
+    private static let confirmationDuration: Duration = .seconds(2)
 
     package init(
         state: HomeVirtualDisplayItemRenderState,
@@ -99,20 +102,45 @@ package struct HomeVirtualDisplayItemCopyShareAddressButton: View {
     }
 
     package var body: some View {
-        if let shareAddress {
-            Button {
-                actions.perform(.copyShareAddress, for: state)
-            } label: {
-                Image(systemName: "doc.on.doc")
+        Group {
+            if let shareAddress {
+                Button(action: copyShareAddress) {
+                    HomeVirtualDisplayItemCopyShareAddressLabel(
+                        isShowingConfirmation: feedbackState.isShowingConfirmation
+                    )
+                }
+                .appActionButtonStyle(variant: .default)
+                .controlSize(.small)
+                .help(Text(verbatim: "\(String(localized: "Copy Access Link")): \(shareAddress)"))
+                .accessibilityLabel(Text("Copy Access Link"))
+                .accessibilityValue(
+                    feedbackState.isShowingConfirmation ? Text("Copied") : Text(verbatim: shareAddress)
+                )
+                .accessibilityIdentifier("home_virtual_display_copy_share_address_button")
+                .task(id: feedbackState.revision) { [revision = feedbackState.revision] in
+                    await hideConfirmationAfterDelay(revision: revision)
+                }
             }
-            .appActionButtonStyle(variant: .default)
-            .controlSize(.small)
-            .frame(minWidth: 32)
-            .help(shareAddress)
-            .accessibilityLabel(Text("Copy Link"))
-            .accessibilityValue(Text(verbatim: shareAddress))
-            .accessibilityIdentifier("home_virtual_display_copy_share_address_button")
         }
+        .onChange(of: shareAddress) { _, _ in
+            feedbackState.cancelConfirmation()
+        }
+    }
+
+    private func copyShareAddress() {
+        actions.perform(.copyShareAddress, for: state)
+        feedbackState.beginConfirmation()
+    }
+
+    private func hideConfirmationAfterDelay(revision: UInt64) async {
+        guard feedbackState.isShowingConfirmation else { return }
+
+        do {
+            try await Task.sleep(for: Self.confirmationDuration)
+        } catch {
+            return
+        }
+        feedbackState.endConfirmation(ifCurrent: revision)
     }
 }
 
@@ -133,6 +161,8 @@ package struct HomeVirtualDisplayItemEditButton: View {
             actions.perform(.edit, for: state)
         } label: {
             Image(systemName: "square.and.pencil")
+                .font(.callout)
+                .frame(width: AppUI.Spacing.large, height: AppUI.Spacing.large)
         }
         .appActionButtonStyle(variant: .default)
         .disabled(state.isBusy)
@@ -174,7 +204,7 @@ package struct HomeVirtualDisplayItemMoreMenu: View {
                 }
                 .disabled(!item.isSharing || shareURL == nil)
 
-                Button("Copy display address", systemImage: "doc.on.doc") {
+                Button("Copy Access Link", systemImage: "doc.on.doc") {
                     actions.perform(.copyShareAddress, for: state)
                 }
 

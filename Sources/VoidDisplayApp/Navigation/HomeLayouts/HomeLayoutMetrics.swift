@@ -4,7 +4,7 @@ import VoidDisplayDesignSystem
 package struct HomeLayoutMetrics: Equatable {
     package static let current = HomeLayoutMetrics(
         itemHorizontalPadding: AppUI.Spacing.large,
-        itemVerticalPadding: AppUI.Spacing.medium,
+        itemVerticalPadding: AppUI.List.rowVerticalInset,
         itemCornerRadius: 8,
         itemSpacing: AppUI.List.sectionSpacing,
         contentMaxWidth: 1240

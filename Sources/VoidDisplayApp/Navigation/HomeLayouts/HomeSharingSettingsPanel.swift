@@ -14,17 +14,8 @@ package struct HomeSharingSettingsPopoverButton: View {
         Button {
             isPresented.toggle()
         } label: {
-            HStack(spacing: 6) {
-                Label("Sharing Settings", systemImage: "gearshape")
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
+            Label("Sharing Settings", systemImage: "gearshape")
         }
-        .appActionButtonStyle(variant: .default)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             HomeSharingSettingsPanel(context: context)
                 .padding(AppUI.Spacing.large)
@@ -214,19 +205,10 @@ package struct HomeSharingSettingsPanel: View {
                 }
                 .accessibilityIdentifier("home_sharing_port_input")
 
-            if context.sharingSettings.isPortDirty {
-                Button {
-                    context.actions.applySharingPortDraft()
-                } label: {
-                    Image(systemName: "checkmark")
-                }
-                .appActionButtonStyle(variant: .default)
-                .controlSize(.small)
-                .frame(width: 30)
-                .help(Text("Apply"))
-                .accessibilityLabel(Text("Apply"))
-                .accessibilityIdentifier("home_sharing_port_apply_button")
-            }
+            HomeSharingPortApplyButton(
+                isVisible: context.sharingSettings.isPortDirty,
+                action: context.actions.applySharingPortDraft
+            )
 
             if context.sharingSettings.isWebServiceRunning {
                 HomeSharingPortStatusBadge(port: context.sharingSettings.webServicePortValue)

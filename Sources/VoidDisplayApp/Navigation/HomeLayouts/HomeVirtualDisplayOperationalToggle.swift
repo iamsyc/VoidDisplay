@@ -29,40 +29,38 @@ package struct HomeVirtualDisplayOperationalToggle: View {
     }
 
     package var body: some View {
-        HStack(spacing: AppUI.Spacing.xSmall) {
-            Toggle(isOn: runtimeStateBinding) {
-                Label {
-                    Text(statusItem.title)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } icon: {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(iconForegroundColor)
-                        .frame(width: 13)
-                }
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(DisplaySurfaceStatusTone.success.tintColor)
-            .disabled(isDisabled)
-            .accessibilityValue(Text(displayedStatusValue))
-            .accessibilityIdentifier(accessibilityIdentifier)
-
-            if isPending {
-                ProgressView()
-                    .controlSize(.mini)
-                    .accessibilityHidden(true)
-            }
-
-            if showsStatusDetail {
-                Text(displayedStatusValue)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(detailForegroundColor)
+        Toggle(isOn: runtimeStateBinding) {
+            Label {
+                Text(statusItem.title)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .accessibilityHidden(true)
+            } icon: {
+                Group {
+                    if isStarting || statusItem.tone == .warning {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(statusItem.tone.tintColor)
+                            .accessibilityHidden(true)
+                    } else if statusItem.tone == .danger {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(statusItem.tone.tintColor)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(iconForegroundColor)
+                    }
+                }
+                .frame(width: 13, height: 13)
             }
         }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .tint(DisplaySurfaceStatusTone.success.tintColor)
+        .disabled(isDisabled)
+        .accessibilityValue(Text(displayedStatusValue))
+        .accessibilityIdentifier(accessibilityIdentifier)
         .font(.caption)
         .fixedSize(horizontal: true, vertical: false)
         .help(Text("\(statusItem.title): \(displayedStatusValue)"))
@@ -82,26 +80,7 @@ package struct HomeVirtualDisplayOperationalToggle: View {
         isStarting ? String(localized: "Starting") : statusItem.value
     }
 
-    private var isPending: Bool {
-        if isStarting { return true }
-        return statusItem.tone == .warning
-    }
-
-    private var showsStatusDetail: Bool {
-        if isStarting { return true }
-        return switch statusItem.tone {
-        case .warning, .danger:
-            true
-        case .neutral, .info, .success:
-            false
-        }
-    }
-
     private var iconForegroundColor: Color {
         statusItem.tone == .neutral ? .secondary : statusItem.tone.tintColor
-    }
-
-    private var detailForegroundColor: Color {
-        isStarting ? .secondary : statusItem.tone.tintColor
     }
 }
