@@ -17,11 +17,14 @@ final class HomeSmokeTests: XCTestCase {
                 "detail_home",
                 "home_virtual_display_surface",
                 "home_summary_status_strip",
+                "home_add_virtual_display_button",
                 "home_sharing_settings_popover_button",
+                "home_refresh_button",
                 "home_virtual_display_list_row"
             ],
             timeout: 6
         )
+        assertHomePageActionsAreInToolbar(app)
 
         XCTAssertFalse(app.descendants(matching: .any)["sidebar_displays"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["sidebar_virtual_display"].exists)
@@ -32,9 +35,11 @@ final class HomeSmokeTests: XCTestCase {
 
         tapIdentifier(app, identifier: "sidebar_diagnostics")
         assertAllExist(app, identifiers: ["detail_diagnostics"], timeout: 1.5)
+        assertHomePageActionsAreAbsent(app)
 
         tapIdentifier(app, identifier: "sidebar_home")
         assertAllExist(app, identifiers: ["detail_home", "home_virtual_display_list_row"], timeout: 1.5)
+        assertHomePageActionsAreInToolbar(app)
     }
 
     @MainActor
@@ -74,6 +79,7 @@ final class HomeSmokeTests: XCTestCase {
             ],
             timeout: 6
         )
+        assertHomePageActionsAreInToolbar(app)
 
         let rows = app.descendants(matching: .any)
             .matching(identifier: "home_virtual_display_list_row")
@@ -106,6 +112,7 @@ final class HomeSmokeTests: XCTestCase {
         let app = launchAppForSmoke(windowSize: (760, 640))
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 6))
+        assertHomePageActionsAreInToolbar(app)
 
         for identifier in [
             "home_add_virtual_display_button",
@@ -214,5 +221,54 @@ final class HomeSmokeTests: XCTestCase {
 
         XCTAssertTrue(window.exists)
         assertExists(app, identifier: "capture_preview_waiting_for_identity", timeout: 2)
+    }
+
+    @MainActor
+    private func assertHomePageActionsAreInToolbar(
+        _ app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let toolbar = app.toolbars.firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 2), "Missing window toolbar", file: file, line: line)
+
+        for identifier in homePageActionIdentifiers {
+            let element = toolbar.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+            XCTAssertTrue(
+                element.waitForExistence(timeout: 2),
+                "Page action is outside the toolbar: \(identifier)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    @MainActor
+    private func assertHomePageActionsAreAbsent(
+        _ app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for identifier in homePageActionIdentifiers {
+            let element = app.descendants(matching: .any)
+                .matching(identifier: identifier)
+                .firstMatch
+            XCTAssertFalse(
+                element.waitForExistence(timeout: 0.5),
+                "Home page action remained visible outside Home: \(identifier)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private var homePageActionIdentifiers: [String] {
+        [
+            "home_refresh_button",
+            "home_sharing_settings_popover_button",
+            "home_add_virtual_display_button"
+        ]
     }
 }

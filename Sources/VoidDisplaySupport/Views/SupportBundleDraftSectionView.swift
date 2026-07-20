@@ -19,16 +19,13 @@ package struct SupportBundleDraftSectionView: View {
 
                 Spacer(minLength: 0)
 
-                if controller.isExporting {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityIdentifier("support_bundle_export_progress")
+                Button(action: onExport) {
+                    SupportBundleExportButtonLabel(isExporting: controller.isExporting)
                 }
-
-                Button(exportButtonTitle, action: onExport)
-                    .appActionButtonStyle(variant: .primary)
-                    .disabled(controller.isExporting)
-                    .accessibilityIdentifier("support_bundle_export_button")
+                .appActionButtonStyle(variant: .primary)
+                .disabled(controller.isExporting)
+                .accessibilityLabel(Text(exportButtonAccessibilityLabel))
+                .accessibilityIdentifier("support_bundle_export_button")
             }
 
             if let validationMessage = controller.validationMessage {
@@ -223,7 +220,7 @@ package struct SupportBundleDraftSectionView: View {
         RoundedRectangle(cornerRadius: AppUI.Corner.small, style: .continuous)
     }
 
-    private var exportButtonTitle: String {
+    private var exportButtonAccessibilityLabel: String {
         if controller.isExporting {
             return String(localized: "Exporting Support Bundle…")
         }

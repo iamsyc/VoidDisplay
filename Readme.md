@@ -74,7 +74,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 1. On the **Displays** page, open **Sharing Settings** to adjust performance mode or port when needed.
 2. Enable the target virtual display, then turn on **LAN Web View** in its status row. The web service starts automatically.
-3. Use **Copy Link**, or choose **Open Share Page** from the display's More menu.
+3. Use **Copy Access Link**, or choose **Open Share Page** from the display's More menu.
 4. Open the generated URL, such as `http://192.168.x.x:8089/display/1/{capability}`, in a modern browser on the same network.
 
 Notes:

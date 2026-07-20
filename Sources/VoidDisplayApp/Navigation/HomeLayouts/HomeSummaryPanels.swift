@@ -13,8 +13,9 @@ package struct HomeSummaryStatusStrip: View {
             HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
                 virtualDisplayMetric
                 runningMetric
-                Spacer(minLength: AppUI.Spacing.small)
+                statusDivider
                 HomeSummaryLiveActivityCluster(summary: context.presentation.summary)
+                Spacer(minLength: AppUI.Spacing.small)
                 if context.permissionStatus.canOpenSettings {
                     statusDivider
                     permissionStatus
@@ -44,7 +45,8 @@ package struct HomeSummaryStatusStrip: View {
             systemImage: "display.2",
             tint: .blue,
             isActive: true,
-            usesProminentValue: true
+            usesProminentValue: true,
+            minimumValueDigitCount: 2
         )
         .padding(.leading, context.metrics.itemHorizontalPadding)
     }
@@ -56,7 +58,8 @@ package struct HomeSummaryStatusStrip: View {
             systemImage: "checkmark.rectangle.stack",
             tint: summary.runningVirtualDisplayCount > 0 ? .green : .secondary,
             isActive: summary.runningVirtualDisplayCount > 0,
-            usesProminentValue: true
+            usesProminentValue: true,
+            minimumValueDigitCount: 2
         )
     }
 
@@ -155,7 +158,8 @@ private struct HomeSummaryPreviewStatus: View {
             value: "\(summary.previewingCount)",
             systemImage: "dot.scope.display",
             tint: summary.previewingCount > 0 ? .green : .secondary,
-            isActive: summary.previewingCount > 0
+            isActive: summary.previewingCount > 0,
+            minimumValueDigitCount: 2
         )
     }
 }
@@ -169,7 +173,8 @@ private struct HomeSummaryWebViewStatus: View {
             value: "\(summary.sharingCount)",
             systemImage: "network",
             tint: summary.sharingCount > 0 ? .green : .secondary,
-            isActive: summary.sharingCount > 0
+            isActive: summary.sharingCount > 0,
+            minimumValueDigitCount: 2
         )
     }
 }
@@ -183,7 +188,8 @@ private struct HomeSummaryViewersStatus: View {
             value: "\(summary.activeViewerCount)",
             systemImage: "person.2",
             tint: summary.activeViewerCount > 0 ? .blue : .secondary,
-            isActive: summary.activeViewerCount > 0
+            isActive: summary.activeViewerCount > 0,
+            minimumValueDigitCount: 2
         )
     }
 }
@@ -195,6 +201,7 @@ package struct HomeSummaryStatusItem: View {
     package let tint: Color
     package let isActive: Bool
     package let usesProminentValue: Bool
+    package let minimumValueDigitCount: Int
 
     package init(
         title: String,
@@ -202,7 +209,8 @@ package struct HomeSummaryStatusItem: View {
         systemImage: String,
         tint: Color,
         isActive: Bool,
-        usesProminentValue: Bool = false
+        usesProminentValue: Bool = false,
+        minimumValueDigitCount: Int = 0
     ) {
         self.title = title
         self.value = value
@@ -210,6 +218,7 @@ package struct HomeSummaryStatusItem: View {
         self.tint = tint
         self.isActive = isActive
         self.usesProminentValue = usesProminentValue
+        self.minimumValueDigitCount = minimumValueDigitCount
     }
 
     package var body: some View {
@@ -223,8 +232,17 @@ package struct HomeSummaryStatusItem: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            Text(value)
+            ZStack(alignment: .leading) {
+                if minimumValueDigitCount > 0 {
+                    Text(String(repeating: "8", count: minimumValueDigitCount))
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
+
+                Text(value)
+            }
                 .fontWeight(.semibold)
+                .monospacedDigit()
                 .foregroundStyle(valueForegroundColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)

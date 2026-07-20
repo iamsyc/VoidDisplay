@@ -41,9 +41,9 @@ package struct HomeVirtualDisplayItem: View {
                 .stroke(itemStroke, lineWidth: AppUI.Stroke.subtle)
         )
         .overlay(alignment: .leading) {
-            if showsStatusAccent {
+            if showsIssueAccent {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(statusAccent.opacity(colorScheme == .dark ? 0.72 : 0.58))
+                    .fill(AppThemeStatusPalette.standard.warning.opacity(colorScheme == .dark ? 0.72 : 0.58))
                     .frame(width: 3)
                     .padding(.vertical, AppUI.Spacing.medium)
                     .padding(.leading, 1)
@@ -82,7 +82,7 @@ package struct HomeVirtualDisplayItem: View {
 
             actionStack
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: AppUI.List.rowMinHeight, alignment: .leading)
     }
 
     private var compactLayout: some View {
@@ -164,14 +164,7 @@ package struct HomeVirtualDisplayItem: View {
         return AppUI.Surface.cardStroke(for: colorScheme)
     }
 
-    private var showsStatusAccent: Bool {
-        item.isRunning || item.hasIssue || rebuildFailureMessage != nil
-    }
-
-    private var statusAccent: Color {
-        if item.hasIssue || rebuildFailureMessage != nil {
-            return AppThemeStatusPalette.standard.warning
-        }
-        return item.isRunning ? AppThemeStatusPalette.standard.success : .secondary
+    private var showsIssueAccent: Bool {
+        item.hasIssue || rebuildFailureMessage != nil
     }
 }

@@ -15,8 +15,11 @@ package struct HomeLayoutShell<LayoutContent: View>: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HomeHeaderControls(context: context)
+            HomeSummaryStatusStrip(context: context)
             content
+        }
+        .toolbar {
+            HomeToolbarActions(context: context)
         }
     }
 }
