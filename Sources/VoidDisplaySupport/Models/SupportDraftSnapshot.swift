@@ -16,9 +16,9 @@ package nonisolated struct SupportDraftSnapshot: Codable, Equatable, Sendable {
         happened: String = "",
         reproductionSteps: String = "",
         expectedResult: String = "",
-        includeUnifiedLogSummary: Bool = false,
-        includeCrashReportExcerpt: Bool = false,
-        includeRelatedConfigSnapshots: Bool = false
+        includeUnifiedLogSummary: Bool = true,
+        includeCrashReportExcerpt: Bool = true,
+        includeRelatedConfigSnapshots: Bool = true
     ) {
         self.issueType = issueType
         self.happened = happened

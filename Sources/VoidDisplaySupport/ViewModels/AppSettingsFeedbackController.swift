@@ -26,15 +26,15 @@ package final class AppSettingsFeedbackController {
         didSet { handleDraftMutation() }
     }
 
-    package var includeUnifiedLogSummary = false {
+    package var includeUnifiedLogSummary = true {
         didSet { handleDraftMutation() }
     }
 
-    package var includeCrashReportExcerpt = false {
+    package var includeCrashReportExcerpt = true {
         didSet { handleDraftMutation() }
     }
 
-    package var includeRelatedConfigSnapshots = false {
+    package var includeRelatedConfigSnapshots = true {
         didSet { handleDraftMutation() }
     }
 
@@ -42,13 +42,11 @@ package final class AppSettingsFeedbackController {
     package var validationMessage: String?
 
     private(set) var isExporting = false
-    private(set) var exportCompleted = false
     private(set) var exportHistory: [SupportExportRecord] = []
     private(set) var completionRecord: SupportExportRecord?
 
     @ObservationIgnored private var hasPrepared = false
     @ObservationIgnored private var isRestoringState = false
-    @ObservationIgnored private var lastBundleURL: URL?
     @ObservationIgnored private var lastBundleDisplayInfoStorage: SupportBundleDisplayInfo?
     @ObservationIgnored private var latestExportDraft: FeedbackDraft?
     @ObservationIgnored private var exportAction: ((FeedbackDraft, FeedbackConsent) async throws -> URL)?
@@ -84,18 +82,6 @@ package final class AppSettingsFeedbackController {
         self.errorMessageProvider = errorMessageProvider
         self.dateProvider = dateProvider
         self.sanitizer = sanitizer
-    }
-
-    package var canRevealLastBundle: Bool {
-        completionRecord != nil || lastBundleURL != nil
-    }
-
-    package var canCopySummary: Bool {
-        completionRecord != nil
-    }
-
-    package var hasExportHistory: Bool {
-        exportHistory.isEmpty == false
     }
 
     package var latestExportRecord: SupportExportRecord? {
@@ -147,7 +133,6 @@ package final class AppSettingsFeedbackController {
         apply(snapshot: draftStore.load(), persistDraft: false)
         exportHistory = historyStore?.loadRecords() ?? []
         completionRecord = exportHistory.first
-        exportCompleted = completionRecord != nil
         if let latestRecord = exportHistory.first {
             updateLastExportedBundle(record: latestRecord)
         } else {
@@ -200,7 +185,6 @@ package final class AppSettingsFeedbackController {
     package func restoreLastExportedBundle(from observability: ObservabilityCenter) async {
         let url = await observability.exportedBundleURL()
         updateLastExportedBundle(url)
-        exportCompleted = completionRecord != nil
     }
 
     package func trackPageOpened() async {
@@ -213,13 +197,12 @@ package final class AppSettingsFeedbackController {
         let trimmedDraft = currentDraft.trimmedPayload()
         guard trimmedDraft.isEmpty == false else {
             validationMessage = String(localized: "Please fill in at least one problem field.")
-            await recordEvent(.validationFailed, severity: .warning)
+            await recordEvent(.validationFailed)
             return
         }
 
         validationMessage = nil
         isExporting = true
-        exportCompleted = false
         defer { isExporting = false }
 
         await recordEvent(.exportStarted)
@@ -232,7 +215,6 @@ package final class AppSettingsFeedbackController {
             latestExportDraft = sanitizer.sanitize(trimmedDraft)
             exportHistory = appendExportRecord(record)
             completionRecord = record
-            exportCompleted = true
             alert = nil
             await recordEvent(
                 .exportSucceeded,
@@ -304,15 +286,8 @@ package final class AppSettingsFeedbackController {
 
     package func startNewFeedback() async {
         isRestoringState = true
-        issueType = .other
-        happened = ""
-        reproductionSteps = ""
-        expectedResult = ""
-        includeUnifiedLogSummary = false
-        includeCrashReportExcerpt = false
-        includeRelatedConfigSnapshots = false
+        apply(snapshot: SupportDraftSnapshot(), persistDraft: false)
         validationMessage = nil
-        exportCompleted = false
         completionRecord = nil
         latestExportDraft = nil
         alert = nil
@@ -522,12 +497,10 @@ package final class AppSettingsFeedbackController {
     }
 
     private func updateLastExportedBundle(_ url: URL?) {
-        lastBundleURL = url
         lastBundleDisplayInfoStorage = url.flatMap { SupportBundleDisplayInfo(url: $0) }
     }
 
     private func updateLastExportedBundle(record: SupportExportRecord) {
-        lastBundleURL = record.resolvedBundleURL
         lastBundleDisplayInfoStorage = record.displayInfo
     }
 
@@ -543,7 +516,6 @@ package final class AppSettingsFeedbackController {
             completionRecord = exportHistory.first(where: { $0.id == record.id }) ?? completionRecord
         }
         if action == .bundleRevealed {
-            lastBundleURL = url
             lastBundleDisplayInfoStorage = record.displayInfo
         }
     }

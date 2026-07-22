@@ -28,7 +28,54 @@ struct SupportDraftStoreTests {
         #expect(store.load() == snapshot)
 
         store.clear()
-        #expect(store.load() == SupportDraftSnapshot())
+        let clearedSnapshot = store.load()
+        #expect(clearedSnapshot == SupportDraftSnapshot())
+        #expect(clearedSnapshot.feedbackDraft.isEmpty)
+        #expect(clearedSnapshot.includeUnifiedLogSummary)
+        #expect(clearedSnapshot.includeCrashReportExcerpt)
+        #expect(clearedSnapshot.includeRelatedConfigSnapshots)
+    }
+
+    @Test func explicitlyDisabledEnhancedDiagnosticsRemainDisabled() {
+        let suiteName = "support-draft-store-disabled-diagnostics.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Failed to create isolated defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = SupportDraftStore(defaults: defaults)
+        store.save(
+            SupportDraftSnapshot(
+                includeUnifiedLogSummary: false,
+                includeCrashReportExcerpt: false,
+                includeRelatedConfigSnapshots: false
+            )
+        )
+
+        let restoredSnapshot = store.load()
+        #expect(restoredSnapshot.includeUnifiedLogSummary == false)
+        #expect(restoredSnapshot.includeCrashReportExcerpt == false)
+        #expect(restoredSnapshot.includeRelatedConfigSnapshots == false)
+    }
+
+    @Test func preexistingDisabledEnhancedDiagnosticsRemainDisabled() {
+        let suiteName = "support-draft-store-preexisting-disabled.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            Issue.record("Failed to create isolated defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(false, forKey: "supportCenter.includeUnifiedLogSummary")
+        defaults.set(false, forKey: "supportCenter.includeCrashReportExcerpt")
+        defaults.set(false, forKey: "supportCenter.includeRelatedConfigSnapshots")
+
+        let store = SupportDraftStore(defaults: defaults)
+        let restoredSnapshot = store.load()
+        #expect(restoredSnapshot.includeUnifiedLogSummary == false)
+        #expect(restoredSnapshot.includeCrashReportExcerpt == false)
+        #expect(restoredSnapshot.includeRelatedConfigSnapshots == false)
     }
 
     @Test func saveAndLoadRemoveAccessSecretsFromPersistedDraft() {

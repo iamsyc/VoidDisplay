@@ -60,7 +60,7 @@ struct DiagnosticsDisplaySystemPanel: View {
                     tint: runtimeSummary.recentFailureCount == 0 ? .green : .orange
                 )
                 DiagnosticsMetricTile(
-                    title: String(localized: "Last Failure"),
+                    title: String(localized: "Latest Failure Code"),
                     value: runtimeSummary.lastFailureCode ?? "-",
                     systemImage: runtimeSummary.lastFailureCode == nil ? "checkmark.circle" : "exclamationmark.triangle",
                     tint: runtimeSummary.lastFailureCode == nil ? .green : .orange

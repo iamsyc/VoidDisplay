@@ -106,4 +106,46 @@ struct ObservabilityEventStoreTests {
         let persisted = try await store.recentEvents(limit: 100)
         #expect(persisted.count == 40)
     }
+
+    @Test func snapshotReturnsRecentEvidenceAndCompleteFilteredWindowSummary() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "event-store-snapshot")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let now = Date(timeIntervalSince1970: 4_000_000)
+        let store = EventStore(
+            directoryURL: tempURL,
+            deduplicationWindow: 0,
+            dateProvider: { now }
+        )
+        try await store.append(
+            ObservabilityEvent(
+                timestamp: now.addingTimeInterval(-60),
+                severity: .warning,
+                subsystem: .capture,
+                operation: "Capture display",
+                message: "Capture is delayed."
+            )
+        )
+        for index in 0..<3 {
+            try await store.append(
+                ObservabilityEvent(
+                    timestamp: now.addingTimeInterval(Double(index)),
+                    severity: .error,
+                    subsystem: .support,
+                    operation: "Support workflow \(index)",
+                    message: "Support workflow failed."
+                )
+            )
+        }
+
+        let snapshot = try await store.snapshot(
+            recentLimit: 2,
+            summarySince: now.addingTimeInterval(-24 * 60 * 60),
+            summaryExcludingSubsystems: [.support]
+        )
+
+        #expect(snapshot.recentEvents.count == 2)
+        #expect(snapshot.windowSummary.eventCount == 1)
+        #expect(snapshot.windowSummary.highestSeverity == .warning)
+    }
 }

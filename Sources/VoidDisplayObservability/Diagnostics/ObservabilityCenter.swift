@@ -2,12 +2,16 @@ import VoidDisplayFoundation
 import Foundation
 import OSLog
 package actor ObservabilityCenter {
+    private static let healthLookbackInterval: TimeInterval = 24 * 60 * 60
+    private static let supportEvidenceLookbackInterval: TimeInterval = 7 * 24 * 60 * 60
+
     private let eventStore: EventStore
     private let issueStore: IssueStore
     private let snapshotWriter: AgentSnapshotWriter
     private let exporter: FeedbackBundleExporter
     private let observabilityDirectoryURL: URL
     private let sanitizer: ObservabilitySanitizer
+    private let dateProvider: () -> Date
 
     private var snapshotProviders: [String: AnyObservabilitySnapshotProvider] = [:]
     private var latestStateSnapshot: ObservabilityStateSnapshot?
@@ -20,7 +24,8 @@ package actor ObservabilityCenter {
         snapshotWriter: AgentSnapshotWriter,
         exporter: FeedbackBundleExporter,
         observabilityDirectoryURL: URL,
-        sanitizer: ObservabilitySanitizer
+        sanitizer: ObservabilitySanitizer,
+        dateProvider: @escaping () -> Date = Date.init
     ) {
         self.eventStore = eventStore
         self.issueStore = issueStore
@@ -28,6 +33,7 @@ package actor ObservabilityCenter {
         self.exporter = exporter
         self.observabilityDirectoryURL = observabilityDirectoryURL
         self.sanitizer = sanitizer
+        self.dateProvider = dateProvider
         self.lastExportedBundleURL = exporter.latestExportedBundleURL()
     }
 
@@ -67,32 +73,49 @@ package actor ObservabilityCenter {
     }
 
     package func refreshSnapshot(reason: SnapshotRefreshReason) async {
+        let now = dateProvider()
+        let healthCutoff = now.addingTimeInterval(-Self.healthLookbackInterval)
         let sections = await buildSnapshotSections()
-        let issues = await issueStore.recentIssues(limit: 25)
-        let events: [ObservabilityEvent]
-        if let persistedEvents = try? await eventStore.recentEvents(limit: 200) {
-            events = persistedEvents
+        let issues = Array(
+            await issueStore.recentIssues(limit: 100, since: healthCutoff)
+                .filter { $0.subsystem != .support }
+                .prefix(25)
+        )
+        let eventSnapshot: ObservabilityEventSnapshot
+        if let persistedSnapshot = try? await eventStore.snapshot(
+            recentLimit: 200,
+            summarySince: healthCutoff,
+            summaryExcludingSubsystems: [.support]
+        ) {
+            eventSnapshot = persistedSnapshot
         } else {
-            events = await eventStore.recentInMemoryEvents(limit: 200)
+            eventSnapshot = await eventStore.inMemorySnapshot(
+                recentLimit: 200,
+                summarySince: healthCutoff,
+                summaryExcludingSubsystems: [.support]
+            )
         }
-        let highestSeverity = events.map(\.severity).max()
         let state = ObservabilityStateSnapshot(
-            generatedAt: Date(),
+            generatedAt: now,
             refreshReason: reason,
             app: makeAppInfo(),
             sections: sections
         )
         let health = ObservabilityHealthSummary(
-            generatedAt: Date(),
-            recentEventCount: events.count,
+            generatedAt: now,
+            recentEventCount: eventSnapshot.windowSummary.eventCount,
             recentIssueCount: issues.count,
-            highestSeverity: highestSeverity,
+            highestSeverity: eventSnapshot.windowSummary.highestSeverity,
             subsystemIssueCounts: makeSubsystemIssueCounts(from: issues),
             recentIssueMessages: issues.prefix(5).map(\.message)
         )
         latestStateSnapshot = state
         latestHealthSummary = health
-        await snapshotWriter.scheduleWrite(state: state, health: health, events: events)
+        await snapshotWriter.scheduleWrite(
+            state: state,
+            health: health,
+            events: eventSnapshot.recentEvents
+        )
     }
 
     package func exportBundle(
@@ -102,11 +125,12 @@ package actor ObservabilityCenter {
         await refreshSnapshot(reason: .exportRequested)
         let state = latestStateSnapshot ?? makeFallbackState(reason: .exportRequested)
         let health = latestHealthSummary ?? makeFallbackHealth()
+        let evidenceCutoff = dateProvider().addingTimeInterval(-Self.supportEvidenceLookbackInterval)
         let events: [ObservabilityEvent]
         do {
-            events = try await eventStore.recentEvents(limit: 2_000)
+            events = try await eventStore.recentEvents(limit: 2_000, since: evidenceCutoff)
         } catch {
-            events = await eventStore.recentInMemoryEvents(limit: 2_000)
+            events = await eventStore.recentInMemoryEvents(limit: 2_000, since: evidenceCutoff)
             AppLog.observability.warning("Persisted events were unavailable during support export; using in-memory events.")
         }
         do {
@@ -161,10 +185,12 @@ package actor ObservabilityCenter {
         issueLimit: Int = 25,
         eventLimit: Int = 200
     ) async -> ObservabilityDiagnosticsSnapshot {
+        let earliestDate = dateProvider().addingTimeInterval(-Self.healthLookbackInterval)
         let state = latestStateSnapshot ?? makeFallbackState(reason: .manualDiagnosticsRefresh)
         let health = latestHealthSummary ?? makeFallbackHealth()
-        let issues = await issueStore.recentIssues(limit: issueLimit)
-        let events = (try? await eventStore.recentEvents(limit: eventLimit)) ?? []
+        let issues = await issueStore.recentIssues(limit: issueLimit, since: earliestDate)
+        let events = ((try? await eventStore.recentEvents(limit: eventLimit)) ?? [])
+            .filter { $0.timestamp >= earliestDate }
         return ObservabilityDiagnosticsSnapshot(
             state: state,
             health: health,
@@ -273,7 +299,7 @@ package actor ObservabilityCenter {
 
     private func makeFallbackState(reason: SnapshotRefreshReason) -> ObservabilityStateSnapshot {
         ObservabilityStateSnapshot(
-            generatedAt: Date(),
+            generatedAt: dateProvider(),
             refreshReason: reason,
             app: makeAppInfo(),
             sections: [:]
@@ -282,7 +308,7 @@ package actor ObservabilityCenter {
 
     private func makeFallbackHealth() -> ObservabilityHealthSummary {
         ObservabilityHealthSummary(
-            generatedAt: Date(),
+            generatedAt: dateProvider(),
             recentEventCount: 0,
             recentIssueCount: 0,
             highestSeverity: nil,

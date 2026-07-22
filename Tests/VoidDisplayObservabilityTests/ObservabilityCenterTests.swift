@@ -275,6 +275,198 @@ struct ObservabilityCenterTests {
         )
         #expect(manifest.eventCount == 0)
     }
+
+    @Test func healthIgnoresSupportEventsButIncludesRuntimeWarnings() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "observability-health-domains")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let now = Date(timeIntervalSince1970: 4_000_000)
+        let observability = makeObservabilityCenter(rootURL: tempURL, now: now)
+
+        await observability.record(
+            ObservabilityEvent(
+                timestamp: now.addingTimeInterval(-60),
+                severity: .warning,
+                subsystem: .support,
+                operation: "Support workflow validation_failed",
+                message: "Support export validation failed."
+            )
+        )
+        var snapshot = await observability.diagnosticsSnapshot()
+        #expect(snapshot.health.recentEventCount == 0)
+        #expect(snapshot.health.highestSeverity == nil)
+        #expect(snapshot.events.count == 1)
+
+        await observability.record(
+            ObservabilityEvent(
+                timestamp: now,
+                severity: .warning,
+                subsystem: .capture,
+                operation: "Capture display",
+                message: "Capture is delayed."
+            )
+        )
+        snapshot = await observability.diagnosticsSnapshot()
+        #expect(snapshot.health.recentEventCount == 1)
+        #expect(snapshot.health.highestSeverity == .warning)
+        #expect(snapshot.events.count == 2)
+    }
+
+    @Test func oldRuntimeFailureLeavesHealthWindowButRemainsInSupportBundle() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "observability-health-window")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let now = Date(timeIntervalSince1970: 5_000_000)
+        let observability = makeObservabilityCenter(rootURL: tempURL, now: now)
+        await observability.record(
+            ObservabilityEvent(
+                timestamp: now.addingTimeInterval(-2 * 24 * 60 * 60),
+                severity: .error,
+                subsystem: .displayRuntime,
+                operation: "Restore display",
+                message: "Display restoration failed.",
+                deduplicationKey: "restore-display"
+            )
+        )
+
+        let snapshot = await observability.diagnosticsSnapshot()
+        #expect(snapshot.health.recentIssueCount == 0)
+        #expect(snapshot.health.highestSeverity == nil)
+        #expect(snapshot.issues.isEmpty)
+        #expect(snapshot.events.isEmpty)
+
+        let bundleURL = try await observability.exportBundle(
+            draft: FeedbackDraft(happened: "Display did not restore"),
+            consent: FeedbackConsent()
+        )
+        let manifest = try decodeArchiveEntry(
+            SupportBundleManifest.self,
+            relativePathSuffix: "/manifest.json",
+            archiveURL: bundleURL
+        )
+        let issues = try decodeArchiveEntry(
+            [IssueRecord].self,
+            relativePathSuffix: "/issues/recent-issues.json",
+            archiveURL: bundleURL
+        )
+
+        #expect(manifest.eventCount == 1)
+        #expect(manifest.issueCount == 1)
+        #expect(issues.map(\.deduplicationKey) == ["restore-display"])
+    }
+
+    @Test func supportBundleExcludesEventsOlderThanRetentionWindowByTimestamp() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "observability-export-retention")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let now = Date.now
+        let eventStore = makeEventStore(rootURL: tempURL, now: now)
+        try await eventStore.append(
+            ObservabilityEvent(
+                timestamp: now.addingTimeInterval(-8 * 24 * 60 * 60),
+                severity: .error,
+                subsystem: .displayRuntime,
+                operation: "Restore display",
+                message: "Expired evidence must not be exported.",
+                deduplicationKey: "expired-export-evidence"
+            )
+        )
+        let observability = makeObservabilityCenter(
+            rootURL: tempURL,
+            now: now,
+            eventStore: eventStore
+        )
+
+        let bundleURL = try await observability.exportBundle(
+            draft: FeedbackDraft(happened: "Display did not restore"),
+            consent: FeedbackConsent()
+        )
+        let manifest = try decodeArchiveEntry(
+            SupportBundleManifest.self,
+            relativePathSuffix: "/manifest.json",
+            archiveURL: bundleURL
+        )
+
+        #expect(manifest.eventCount == 0)
+    }
+
+    @Test func supportEventFloodDoesNotDisplaceRuntimeHealthEvidence() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "observability-health-support-flood")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let now = Date(timeIntervalSince1970: 6_000_000)
+        let eventStore = makeEventStore(rootURL: tempURL, now: now)
+        try await eventStore.append(
+            ObservabilityEvent(
+                timestamp: now.addingTimeInterval(-60),
+                severity: .warning,
+                subsystem: .capture,
+                operation: "Capture display",
+                message: "Capture is delayed."
+            )
+        )
+        for index in 0..<250 {
+            try await eventStore.append(
+                ObservabilityEvent(
+                    timestamp: now.addingTimeInterval(Double(index - 250)),
+                    severity: .info,
+                    subsystem: .support,
+                    operation: "Support workflow \(index)",
+                    message: "Recorded support workflow event."
+                )
+            )
+        }
+
+        let observability = makeObservabilityCenter(
+            rootURL: tempURL,
+            now: now,
+            eventStore: eventStore
+        )
+        await observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
+        let snapshot = await observability.diagnosticsSnapshot()
+
+        #expect(snapshot.health.recentEventCount == 1)
+        #expect(snapshot.health.highestSeverity == .warning)
+    }
+
+    @Test func runtimeInfoFloodDoesNotDisplaceEarlierRuntimeWarning() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "observability-health-runtime-flood")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let now = Date(timeIntervalSince1970: 7_000_000)
+        let eventStore = makeEventStore(rootURL: tempURL, now: now)
+        try await eventStore.append(
+            ObservabilityEvent(
+                timestamp: now.addingTimeInterval(-300),
+                severity: .warning,
+                subsystem: .capture,
+                operation: "Capture display",
+                message: "Capture is delayed."
+            )
+        )
+        for index in 0..<250 {
+            try await eventStore.append(
+                ObservabilityEvent(
+                    timestamp: now.addingTimeInterval(Double(index - 250)),
+                    severity: .info,
+                    subsystem: .sharing,
+                    operation: "Sharing heartbeat \(index)",
+                    message: "Sharing remains available."
+                )
+            )
+        }
+
+        let observability = makeObservabilityCenter(
+            rootURL: tempURL,
+            now: now,
+            eventStore: eventStore
+        )
+        await observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
+        let snapshot = await observability.diagnosticsSnapshot()
+
+        #expect(snapshot.health.recentEventCount == 251)
+        #expect(snapshot.health.highestSeverity == .warning)
+    }
 }
 
 private struct StaticSnapshotProvider<Snapshot: Codable & Sendable>: ObservabilitySnapshotProvider, Sendable {
@@ -291,6 +483,47 @@ private struct RedactionSnapshot: Codable, Equatable, Sendable {
     let path: String
     let url: String
     let message: String
+}
+
+private func makeObservabilityCenter(
+    rootURL: URL,
+    now: Date,
+    eventStore: EventStore? = nil
+) -> ObservabilityCenter {
+    let sanitizer = ObservabilitySanitizer(homePath: rootURL.deletingLastPathComponent().path)
+    return ObservabilityCenter(
+        eventStore: eventStore ?? EventStore(
+            directoryURL: rootURL.appendingPathComponent("events", isDirectory: true),
+            dateProvider: { now }
+        ),
+        issueStore: IssueStore(
+            fileURL: rootURL.appendingPathComponent("issues.json"),
+            dateProvider: { now }
+        ),
+        snapshotWriter: AgentSnapshotWriter(
+            currentStateURL: rootURL.appendingPathComponent("current-state.json"),
+            healthSummaryURL: rootURL.appendingPathComponent("health-summary.json"),
+            recentEventsURL: rootURL.appendingPathComponent("recent-events.ndjson"),
+            debounceDuration: .zero
+        ),
+        exporter: FeedbackBundleExporter(
+            exportsDirectoryURL: rootURL.appendingPathComponent("exports", isDirectory: true),
+            virtualDisplayConfigsURL: rootURL.appendingPathComponent("virtual-displays.json"),
+            displayShareMappingsURL: rootURL.appendingPathComponent("display-share-id-mappings.json"),
+            sanitizer: sanitizer
+        ),
+        observabilityDirectoryURL: rootURL,
+        sanitizer: sanitizer,
+        dateProvider: { now }
+    )
+}
+
+private func makeEventStore(rootURL: URL, now: Date) -> EventStore {
+    EventStore(
+        directoryURL: rootURL.appendingPathComponent("events", isDirectory: true),
+        deduplicationWindow: 0,
+        dateProvider: { now }
+    )
 }
 
 private func decodeArchiveEntry<T: Decodable>(
