@@ -296,6 +296,74 @@
         }
       }
     },
+    "Add the result you expected to see." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the result you expected to see."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "补充你原本期望看到的结果。"
+          }
+        }
+      }
+    },
+    "Add the steps in order when the problem can be reproduced." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the steps in order when the problem can be reproduced."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果问题可以复现，请按顺序补充操作步骤。"
+          }
+        }
+      }
+    },
+    "Always included: issue description, sanitized app status, recent events, and recent issues." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always included: issue description, sanitized app status, recent events, and recent issues."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "始终包含问题描述、已脱敏的应用状态、近期事件和近期问题。"
+          }
+        }
+      }
+    },
+    "App Health" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用健康"
+          }
+        }
+      }
+    },
     "Applied" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -892,6 +960,23 @@
         }
       }
     },
+    "Diagnostic Data" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostic Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断数据"
+          }
+        }
+      }
+    },
     "Diagnostics" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1201,6 +1286,40 @@
         }
       }
     },
+    "Enabled by default to provide more diagnostic context. Turn off any item you prefer not to include." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enabled by default to provide more diagnostic context. Turn off any item you prefer not to include."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认开启以提供更多排查信息；不希望包含的项目可单独关闭。"
+          }
+        }
+      }
+    },
+    "Enhanced diagnostics (enabled by default)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enhanced diagnostics (enabled by default)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "增强诊断（默认开启）"
+          }
+        }
+      }
+    },
     "Environment" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1274,6 +1393,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "期望结果"
+          }
+        }
+      }
+    },
+    "Expected Result (Optional)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expected Result (Optional)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预期结果（可选）"
           }
         }
       }
@@ -1677,17 +1813,6 @@
         }
       }
     },
-    "Includes more runtime records and helps when the issue is hard to reproduce or needs deeper investigation." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "会附带更多运行记录，适合问题难以稳定复现或需要进一步排查时开启。"
-          }
-        }
-      }
-    },
     "Invalid configuration: %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1817,6 +1942,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近失败"
+          }
+        }
+      }
+    },
+    "Latest Failure Code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest Failure Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最后失败代码"
           }
         }
       }
@@ -2225,17 +2367,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 Web 查看"
-          }
-        }
-      }
-    },
-    "Optional enhanced diagnostics" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可选增强诊断"
           }
         }
       }
@@ -2655,7 +2786,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最近失败"
+            "value" : "近期失败数"
           }
         }
       }
@@ -2777,6 +2908,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复现步骤"
+          }
+        }
+      }
+    },
+    "Reproduction Steps (Optional)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproduction Steps (Optional)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复现步骤（可选）"
           }
         }
       }
@@ -3264,6 +3412,23 @@
         }
       }
     },
+    "Saved locally on this Mac. Nothing is uploaded automatically." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved locally on this Mac. Nothing is uploaded automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持包仅保存到这台 Mac，不会自动上传。"
+          }
+        }
+      }
+    },
     "Section Count" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3575,6 +3740,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "支持包"
+          }
+        }
+      }
+    },
+    "Support Package Contents" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Support Package Contents"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持包内容"
           }
         }
       }

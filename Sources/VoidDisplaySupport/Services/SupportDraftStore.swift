@@ -26,14 +26,24 @@ package nonisolated struct SupportDraftStore {
 
     package func load() -> SupportDraftSnapshot {
         let rawIssueType = defaults.string(forKey: Keys.issueType)
+        let defaultSnapshot = SupportDraftSnapshot()
         return SupportDraftSnapshot(
             issueType: rawIssueType.flatMap(SupportIssueType.init(rawValue:)) ?? .other,
             happened: loadSanitizedValue(forKey: Keys.happened),
             reproductionSteps: loadSanitizedValue(forKey: Keys.reproductionSteps),
             expectedResult: loadSanitizedValue(forKey: Keys.expectedResult),
-            includeUnifiedLogSummary: defaults.bool(forKey: Keys.includeUnifiedLogSummary),
-            includeCrashReportExcerpt: defaults.bool(forKey: Keys.includeCrashReportExcerpt),
-            includeRelatedConfigSnapshots: defaults.bool(forKey: Keys.includeRelatedConfigSnapshots)
+            includeUnifiedLogSummary: loadPreference(
+                forKey: Keys.includeUnifiedLogSummary,
+                defaultValue: defaultSnapshot.includeUnifiedLogSummary
+            ),
+            includeCrashReportExcerpt: loadPreference(
+                forKey: Keys.includeCrashReportExcerpt,
+                defaultValue: defaultSnapshot.includeCrashReportExcerpt
+            ),
+            includeRelatedConfigSnapshots: loadPreference(
+                forKey: Keys.includeRelatedConfigSnapshots,
+                defaultValue: defaultSnapshot.includeRelatedConfigSnapshots
+            )
         )
     }
 
@@ -70,5 +80,10 @@ package nonisolated struct SupportDraftStore {
             defaults.set(safeValue, forKey: key)
         }
         return safeValue
+    }
+
+    private func loadPreference(forKey key: String, defaultValue: Bool) -> Bool {
+        guard defaults.object(forKey: key) != nil else { return defaultValue }
+        return defaults.bool(forKey: key)
     }
 }

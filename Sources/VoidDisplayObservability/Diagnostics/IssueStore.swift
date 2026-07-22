@@ -3,7 +3,9 @@ import Foundation
 package actor IssueStore {
     private let fileURL: URL
     private let limit: Int
+    private let retentionInterval: TimeInterval
     private let fileManager: FileManager
+    private let dateProvider: () -> Date
 
     private var issuesByKey: [String: IssueRecord] = [:]
     private var hasLoaded = false
@@ -11,16 +13,24 @@ package actor IssueStore {
     package init(
         fileURL: URL,
         limit: Int = 100,
-        fileManager: FileManager = .default
+        retentionInterval: TimeInterval = 7 * 24 * 60 * 60,
+        fileManager: FileManager = .default,
+        dateProvider: @escaping () -> Date = Date.init
     ) {
         self.fileURL = fileURL
         self.limit = limit
+        self.retentionInterval = retentionInterval
         self.fileManager = fileManager
+        self.dateProvider = dateProvider
     }
 
     package func record(event: ObservabilityEvent) async {
-        guard event.severity >= .error else { return }
+        guard event.severity >= .error, event.subsystem != .support else { return }
         loadIfNeeded()
+        pruneExpiredIssuesIfNeeded()
+
+        let expirationDate = dateProvider().addingTimeInterval(-retentionInterval)
+        guard event.timestamp >= expirationDate else { return }
 
         let key = event.deduplicationKey ?? [
             event.subsystem.rawValue,
@@ -58,9 +68,17 @@ package actor IssueStore {
         try? persist()
     }
 
-    package func recentIssues(limit requestedLimit: Int = 50) async -> [IssueRecord] {
+    package func recentIssues(
+        limit requestedLimit: Int = 50,
+        since earliestDate: Date? = nil
+    ) async -> [IssueRecord] {
         loadIfNeeded()
+        pruneExpiredIssuesIfNeeded()
         return issuesByKey.values
+            .filter { issue in
+                guard let earliestDate else { return true }
+                return issue.lastSeenAt >= earliestDate
+            }
             .sorted { lhs, rhs in
                 if lhs.lastSeenAt == rhs.lastSeenAt {
                     return lhs.occurrenceCount > rhs.occurrenceCount
@@ -88,6 +106,15 @@ package actor IssueStore {
         guard let data = try? Data(contentsOf: fileURL) else { return }
         guard let decoded = try? ObservabilityCodec.decode([IssueRecord].self, from: data) else { return }
         issuesByKey = Dictionary(uniqueKeysWithValues: decoded.map { ($0.deduplicationKey, $0) })
+        pruneExpiredIssuesIfNeeded()
+    }
+
+    private func pruneExpiredIssuesIfNeeded() {
+        let expirationDate = dateProvider().addingTimeInterval(-retentionInterval)
+        let retainedIssues = issuesByKey.filter { $0.value.lastSeenAt >= expirationDate }
+        guard retainedIssues.count != issuesByKey.count else { return }
+        issuesByKey = retainedIssues
+        try? persist()
     }
 
     private func persist() throws {

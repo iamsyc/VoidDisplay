@@ -141,12 +141,28 @@ final class HomeSmokeTests: XCTestCase {
             identifiers: [
                 "detail_diagnostics",
                 "diagnostics_intro_text",
+                "diagnostics_health_summary_panel",
+                "diagnostics_refresh_button",
                 "support_bundle_export_button",
                 "support_bundle_draft_panel",
+                "support_bundle_contents_summary",
+                "support_bundle_local_storage_notice",
                 "diagnostics_technical_disclosure"
             ],
             timeout: 3
         )
+
+        let healthPanel = smokeElement(app, identifier: "diagnostics_health_summary_panel")
+        let draftPanel = smokeElement(app, identifier: "support_bundle_draft_panel")
+        let technicalDisclosure = smokeElement(app, identifier: "diagnostics_technical_disclosure")
+        let reproductionField = smokeElement(app, identifier: "support_bundle_reproduction_field")
+        let expectedField = smokeElement(app, identifier: "support_bundle_expected_field")
+        XCTAssertLessThan(healthPanel.frame.minY, draftPanel.frame.minY)
+        XCTAssertLessThan(draftPanel.frame.minY, technicalDisclosure.frame.minY)
+        XCTAssertEqual(reproductionField.frame.minY, expectedField.frame.minY, accuracy: 2)
+        XCTAssertTrue(app.switches["support_bundle_include_log_toggle"].exists)
+        XCTAssertTrue(app.switches["support_bundle_include_crash_toggle"].exists)
+        XCTAssertTrue(app.switches["support_bundle_include_configs_toggle"].exists)
 
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_copy_summary_button"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reveal_button"].exists)
@@ -161,13 +177,29 @@ final class HomeSmokeTests: XCTestCase {
             identifier: "diagnostics_technical_disclosure",
             timeout: 3
         )
-        disclosure.tap()
+        let reproductionField = smokeElement(app, identifier: "support_bundle_reproduction_field")
+        let expectedField = smokeElement(app, identifier: "support_bundle_expected_field")
+        XCTAssertLessThan(reproductionField.frame.maxY, expectedField.frame.minY)
+        let scrollView = try XCTUnwrap(
+            app.scrollViews.allElementsBoundByIndex.max { lhs, rhs in
+                lhs.frame.width < rhs.frame.width
+            }
+        )
+        for _ in 0..<4 where disclosure.isHittable == false {
+            scrollView.scroll(byDeltaX: 0, deltaY: -320)
+        }
+        XCTAssertTrue(disclosure.isHittable)
+        disclosure.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)
+        ).click()
 
         let window = app.windows.firstMatch
-        for identifier in ["diagnostics_refresh_button", "diagnostics_open_data_directory_button"] {
-            let element = assertExists(app, identifier: identifier, timeout: 5)
-            XCTAssertTrue(window.frame.contains(element.frame), "Element is outside window: \(identifier)")
-        }
+        let openDirectoryButton = assertExists(
+            app,
+            identifier: "diagnostics_open_data_directory_button",
+            timeout: 5
+        )
+        XCTAssertTrue(window.frame.contains(openDirectoryButton.frame))
     }
 
     @MainActor

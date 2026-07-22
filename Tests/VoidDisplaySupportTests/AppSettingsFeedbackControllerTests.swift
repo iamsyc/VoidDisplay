@@ -8,6 +8,14 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AppSettingsFeedbackControllerTests {
+    @Test func enhancedDiagnosticsDefaultToEnabled() {
+        let controller = AppSettingsFeedbackController()
+
+        #expect(controller.includeUnifiedLogSummary)
+        #expect(controller.includeCrashReportExcerpt)
+        #expect(controller.includeRelatedConfigSnapshots)
+    }
+
     @Test func exportSupportBundleRejectsEmptyDraft() async {
         let recorder = EventRecorder()
         let controller = AppSettingsFeedbackController(
@@ -20,10 +28,11 @@ struct AppSettingsFeedbackControllerTests {
 
         await controller.exportSupportBundle()
 
-        #expect(controller.exportCompleted == false)
+        #expect(controller.completionRecord == nil)
         #expect(controller.validationMessage == String(localized: "Please fill in at least one problem field."))
         let event = recorder.events.last
         #expect(event?.subsystem == .support)
+        #expect(event?.severity == .info)
         #expect(event?.operation == SupportWorkflowEventAction.validationFailed.operation)
         #expect(event?.metadata["filledFieldCount"] == "0")
     }
@@ -38,6 +47,23 @@ struct AppSettingsFeedbackControllerTests {
         #expect(controller.includeCrashReportExcerpt == false)
         #expect(controller.includeRelatedConfigSnapshots)
         #expect(controller.usesRecommendedDiagnostics)
+    }
+
+    @Test func exportSupportBundleAcceptsAnyProblemField() async {
+        var exportedDraft: FeedbackDraft?
+        let controller = AppSettingsFeedbackController(
+            exportAction: { draft, _ in
+                exportedDraft = draft
+                return URL(fileURLWithPath: "/tmp/support-bundle-optional-field.zip")
+            }
+        )
+        controller.reproductionSteps = "1. Launch the app. 2. Start sharing."
+
+        await controller.exportSupportBundle()
+
+        #expect(exportedDraft?.happened.isEmpty == true)
+        #expect(exportedDraft?.reproductionSteps == "1. Launch the app. 2. Start sharing.")
+        #expect(controller.completionRecord != nil)
     }
 
     @Test func exportSupportBundleMarksCompletionAndPersistsHistory() async throws {
@@ -70,9 +96,7 @@ struct AppSettingsFeedbackControllerTests {
 
         await controller.exportSupportBundle()
 
-        #expect(controller.exportCompleted)
         #expect(controller.completionRecord?.issueType == .blackScreen)
-        #expect(controller.canRevealLastBundle)
         #expect(controller.latestExportRecord?.bundleFileName == "support-bundle-20260420-120000.zip")
         #expect(controller.lastBundleDisplayPath == ObservabilitySanitizer().sanitize(fileURL: expectedURL))
         #expect(controller.exportHistory.count == 1)
@@ -98,7 +122,6 @@ struct AppSettingsFeedbackControllerTests {
 
         await controller.exportSupportBundle()
 
-        #expect(controller.exportCompleted == false)
         #expect(controller.completionRecord == nil)
         #expect(controller.alert?.title == String(localized: "Export Failed"))
         #expect(controller.alert?.message == "Injected export failure")
@@ -195,10 +218,16 @@ struct AppSettingsFeedbackControllerTests {
         #expect(controller.happened.isEmpty)
         #expect(controller.reproductionSteps.isEmpty)
         #expect(controller.expectedResult.isEmpty)
+        #expect(controller.includeUnifiedLogSummary)
+        #expect(controller.includeCrashReportExcerpt)
+        #expect(controller.includeRelatedConfigSnapshots)
         #expect(controller.completionRecord == nil)
-        #expect(controller.exportCompleted == false)
         #expect(controller.exportHistory.count == 1)
-        #expect(SupportDraftStore(defaults: isolatedDefaults.defaults).load().isEmpty)
+        let storedSnapshot = SupportDraftStore(defaults: isolatedDefaults.defaults).load()
+        #expect(storedSnapshot.feedbackDraft.isEmpty)
+        #expect(storedSnapshot.includeUnifiedLogSummary)
+        #expect(storedSnapshot.includeCrashReportExcerpt)
+        #expect(storedSnapshot.includeRelatedConfigSnapshots)
     }
 
     @Test func applyFixturePopulatesDraftConsentAndIssueType() {
@@ -279,7 +308,7 @@ struct AppSettingsFeedbackControllerTests {
         #expect(controller.includeUnifiedLogSummary)
         #expect(controller.latestExportRecord?.bundleFileName == bundleURL.lastPathComponent)
         #expect(controller.completionRecord?.bundleFileName == bundleURL.lastPathComponent)
-        #expect(controller.exportCompleted)
+        #expect(controller.completionRecord != nil)
     }
 
     @Test func exportHistoryWriteFailureKeepsInMemoryCompletionState() async throws {
@@ -307,7 +336,6 @@ struct AppSettingsFeedbackControllerTests {
 
         await controller.exportSupportBundle()
 
-        #expect(controller.exportCompleted)
         #expect(controller.completionRecord?.bundleFileName == bundleURL.lastPathComponent)
         #expect(controller.exportHistory.map(\.bundleFileName) == [bundleURL.lastPathComponent])
         #expect(FileManager.default.fileExists(atPath: historyFileURL.path))

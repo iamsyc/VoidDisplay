@@ -12,21 +12,9 @@ package struct SupportBundleDraftSectionView: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
-            HStack(alignment: .center, spacing: AppUI.Spacing.medium) {
-                Text(String(localized: "Describe the Issue"))
-                    .font(.headline)
-                    .accessibilityIdentifier("support_bundle_draft_section")
-
-                Spacer(minLength: 0)
-
-                Button(action: onExport) {
-                    SupportBundleExportButtonLabel(isExporting: controller.isExporting)
-                }
-                .appActionButtonStyle(variant: .primary)
-                .disabled(controller.isExporting)
-                .accessibilityLabel(Text(exportButtonAccessibilityLabel))
-                .accessibilityIdentifier("support_bundle_export_button")
-            }
+            Text(String(localized: "Describe the Issue"))
+                .font(.headline)
+                .accessibilityIdentifier("support_bundle_draft_section")
 
             if let validationMessage = controller.validationMessage {
                 validationMessageView(validationMessage)
@@ -46,31 +34,20 @@ package struct SupportBundleDraftSectionView: View {
                 fieldIdentifier: "support_bundle_happened_field"
             )
 
-            supportField(
-                title: "Reproduction Steps",
-                description: "List the steps in order so the issue can be reproduced.",
-                placeholder: "Example: 1. Launch the app. 2. Open sharing. 3. Select a display.",
-                text: $controller.reproductionSteps,
-                lineLimit: 3...,
-                minHeight: 52,
-                titleIdentifier: "support_bundle_reproduction_title",
-                descriptionIdentifier: "support_bundle_reproduction_description",
-                fieldIdentifier: "support_bundle_reproduction_field"
-            )
+            optionalProblemDetails
 
-            supportField(
-                title: "Expected Result",
-                description: "Describe the result you expected to see.",
-                placeholder: "Example: The selected display should appear normally.",
-                text: $controller.expectedResult,
-                lineLimit: 2...,
-                minHeight: 44,
-                titleIdentifier: "support_bundle_expected_title",
-                descriptionIdentifier: "support_bundle_expected_description",
-                fieldIdentifier: "support_bundle_expected_field"
-            )
+            SupportBundleContentsSection(controller: controller)
 
-            diagnosticsSection
+            HStack {
+                Spacer(minLength: 0)
+                Button(action: onExport) {
+                    SupportBundleExportButtonLabel(isExporting: controller.isExporting)
+                }
+                .appActionButtonStyle(variant: .primary)
+                .disabled(controller.isExporting)
+                .accessibilityLabel(Text(exportButtonAccessibilityLabel))
+                .accessibilityIdentifier("support_bundle_export_button")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -152,26 +129,49 @@ package struct SupportBundleDraftSectionView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var diagnosticsSection: some View {
-        VStack(alignment: .leading, spacing: AppUI.Spacing.small - 1) {
-            Text(String(localized: "Optional enhanced diagnostics"))
-                .font(.subheadline.weight(.medium))
-            Text(String(localized: "Includes more runtime records and helps when the issue is hard to reproduce or needs deeper investigation."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("support_bundle_diagnostics_description")
-            Toggle(String(localized: "Include unified log summary"), isOn: $controller.includeUnifiedLogSummary)
-                .disabled(controller.isExporting)
-                .accessibilityIdentifier("support_bundle_include_log_toggle")
-            Toggle(String(localized: "Include latest crash report excerpt"), isOn: $controller.includeCrashReportExcerpt)
-                .disabled(controller.isExporting)
-                .accessibilityIdentifier("support_bundle_include_crash_toggle")
-            Toggle(String(localized: "Include related config snapshots"), isOn: $controller.includeRelatedConfigSnapshots)
-                .disabled(controller.isExporting)
-                .accessibilityIdentifier("support_bundle_include_configs_toggle")
+    @ViewBuilder
+    private var optionalProblemDetails: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: AppUI.Spacing.medium) {
+                reproductionField
+                    .frame(width: 340, alignment: .topLeading)
+                expectedResultField
+                    .frame(width: 340, alignment: .topLeading)
+            }
+
+            VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
+                reproductionField
+                expectedResultField
+            }
         }
-        .toggleStyle(.switch)
-        .controlSize(.small)
+    }
+
+    private var reproductionField: some View {
+        supportField(
+            title: "Reproduction Steps (Optional)",
+            description: "Add the steps in order when the problem can be reproduced.",
+            placeholder: "Example: 1. Launch the app. 2. Open sharing. 3. Select a display.",
+            text: $controller.reproductionSteps,
+            lineLimit: 3...,
+            minHeight: 52,
+            titleIdentifier: "support_bundle_reproduction_title",
+            descriptionIdentifier: "support_bundle_reproduction_description",
+            fieldIdentifier: "support_bundle_reproduction_field"
+        )
+    }
+
+    private var expectedResultField: some View {
+        supportField(
+            title: "Expected Result (Optional)",
+            description: "Add the result you expected to see.",
+            placeholder: "Example: The selected display should appear normally.",
+            text: $controller.expectedResult,
+            lineLimit: 3...,
+            minHeight: 52,
+            titleIdentifier: "support_bundle_expected_title",
+            descriptionIdentifier: "support_bundle_expected_description",
+            fieldIdentifier: "support_bundle_expected_field"
+        )
     }
 
     @ViewBuilder

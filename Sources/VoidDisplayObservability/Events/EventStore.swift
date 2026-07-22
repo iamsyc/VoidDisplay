@@ -1,5 +1,16 @@
 import VoidDisplayFoundation
 import Foundation
+
+package struct ObservabilityEventWindowSummary: Equatable, Sendable {
+    package let eventCount: Int
+    package let highestSeverity: ObservabilitySeverity?
+}
+
+package struct ObservabilityEventSnapshot: Equatable, Sendable {
+    package let recentEvents: [ObservabilityEvent]
+    package let windowSummary: ObservabilityEventWindowSummary
+}
+
 package actor EventStore {
     private let directoryURL: URL
     private let retentionDays: Int
@@ -53,16 +64,60 @@ package actor EventStore {
         }
     }
 
-    package func recentEvents(limit: Int = 2_000) async throws -> [ObservabilityEvent] {
+    package func recentEvents(
+        limit: Int = 2_000,
+        since earliestDate: Date? = nil,
+        excludingSubsystems: Set<ObservabilityDomain> = []
+    ) async throws -> [ObservabilityEvent] {
         let persisted = try loadPersistedEventsLocked()
-        guard !persisted.isEmpty else {
-            return Array(inMemoryEvents.suffix(limit))
-        }
-        return Array(persisted.suffix(limit))
+        let source = persisted.isEmpty ? inMemoryEvents : persisted
+        return filteredRecentEvents(
+            source,
+            limit: limit,
+            since: earliestDate,
+            excludingSubsystems: excludingSubsystems
+        )
     }
 
-    package func recentInMemoryEvents(limit: Int = 2_000) async -> [ObservabilityEvent] {
-        Array(inMemoryEvents.suffix(limit))
+    package func recentInMemoryEvents(
+        limit: Int = 2_000,
+        since earliestDate: Date? = nil,
+        excludingSubsystems: Set<ObservabilityDomain> = []
+    ) async -> [ObservabilityEvent] {
+        filteredRecentEvents(
+            inMemoryEvents,
+            limit: limit,
+            since: earliestDate,
+            excludingSubsystems: excludingSubsystems
+        )
+    }
+
+    package func snapshot(
+        recentLimit: Int,
+        summarySince earliestDate: Date,
+        summaryExcludingSubsystems: Set<ObservabilityDomain> = []
+    ) async throws -> ObservabilityEventSnapshot {
+        let persisted = try loadPersistedEventsLocked()
+        let source = persisted.isEmpty ? inMemoryEvents : persisted
+        return makeSnapshot(
+            source,
+            recentLimit: recentLimit,
+            summarySince: earliestDate,
+            summaryExcludingSubsystems: summaryExcludingSubsystems
+        )
+    }
+
+    package func inMemorySnapshot(
+        recentLimit: Int,
+        summarySince earliestDate: Date,
+        summaryExcludingSubsystems: Set<ObservabilityDomain> = []
+    ) async -> ObservabilityEventSnapshot {
+        makeSnapshot(
+            inMemoryEvents,
+            recentLimit: recentLimit,
+            summarySince: earliestDate,
+            summaryExcludingSubsystems: summaryExcludingSubsystems
+        )
     }
 
     package func pruneExpiredFiles() async throws {
@@ -91,6 +146,57 @@ package actor EventStore {
             }
         }
         return events.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private func filteredRecentEvents(
+        _ events: [ObservabilityEvent],
+        limit: Int,
+        since earliestDate: Date?,
+        excludingSubsystems: Set<ObservabilityDomain>
+    ) -> [ObservabilityEvent] {
+        let filtered = events.filter { event in
+            if let earliestDate, event.timestamp < earliestDate {
+                return false
+            }
+            return excludingSubsystems.contains(event.subsystem) == false
+        }
+        return Array(filtered.suffix(limit))
+    }
+
+    private func summarize(
+        _ events: [ObservabilityEvent],
+        since earliestDate: Date,
+        excludingSubsystems: Set<ObservabilityDomain>
+    ) -> ObservabilityEventWindowSummary {
+        var eventCount = 0
+        var highestSeverity: ObservabilitySeverity?
+        for event in events where
+            event.timestamp >= earliestDate &&
+            excludingSubsystems.contains(event.subsystem) == false
+        {
+            eventCount += 1
+            highestSeverity = max(highestSeverity ?? event.severity, event.severity)
+        }
+        return ObservabilityEventWindowSummary(
+            eventCount: eventCount,
+            highestSeverity: highestSeverity
+        )
+    }
+
+    private func makeSnapshot(
+        _ events: [ObservabilityEvent],
+        recentLimit: Int,
+        summarySince earliestDate: Date,
+        summaryExcludingSubsystems: Set<ObservabilityDomain>
+    ) -> ObservabilityEventSnapshot {
+        ObservabilityEventSnapshot(
+            recentEvents: Array(events.suffix(recentLimit)),
+            windowSummary: summarize(
+                events,
+                since: earliestDate,
+                excludingSubsystems: summaryExcludingSubsystems
+            )
+        )
     }
 
     private func pruneExpiredFilesLocked() throws {

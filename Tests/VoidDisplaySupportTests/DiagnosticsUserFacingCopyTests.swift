@@ -2,11 +2,18 @@ import Foundation
 import Testing
 
 struct DiagnosticsUserFacingCopyTests {
+    @Test func diagnosticsMetricLabelsAreDistinctInSimplifiedChinese() throws {
+        let localizableURL = repositoryRoot
+            .appendingPathComponent("Apps/VoidDisplay/Resources/Localizable.xcstrings")
+        let data = try Data(contentsOf: localizableURL)
+        let catalog = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let strings = try #require(catalog["strings"] as? [String: Any])
+
+        #expect(localizedValue(for: "Recent Failures", in: strings) == "近期失败数")
+        #expect(localizedValue(for: "Latest Failure Code", in: strings) == "最后失败代码")
+    }
+
     @Test func diagnosticsUserFacingCopyDoesNotExposeSurfaceTerminology() throws {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
         let globalForbiddenFragments = [
             "DisplaySurface",
             "Display Surface",
@@ -95,6 +102,21 @@ struct DiagnosticsUserFacingCopyTests {
                 }
             }
         }
+    }
+
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private func localizedValue(for key: String, in strings: [String: Any]) -> String? {
+        let entry = strings[key] as? [String: Any]
+        let localizations = entry?["localizations"] as? [String: Any]
+        let simplifiedChinese = localizations?["zh-Hans"] as? [String: Any]
+        let stringUnit = simplifiedChinese?["stringUnit"] as? [String: Any]
+        return stringUnit?["value"] as? String
     }
 
     private func swiftFiles(in directoryURL: URL) throws -> [URL] {
