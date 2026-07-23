@@ -12,15 +12,31 @@
 Create virtual monitors with custom resolution and refresh rate.
 Perfect for headless Mac setups, display testing, or extending your workspace without a physical monitor.
 
+The main window keeps each display's resolution, running state, preview controls, and LAN sharing controls in one list.
+
+![VoidDisplay main window with virtual display status and controls](./docs/imgs/home-overview.png)
+
+The creation sheet lets you name the display, configure its physical size and aspect ratio, and add preset or custom resolution modes with optional HiDPI.
+
+![Create virtual display sheet with display and resolution settings](./docs/imgs/add-virtual-display.png)
+
 ### 👀 Preview
 
 Preview an enabled virtual display in its own dedicated floating window.
 Use it to inspect a managed display without switching macOS spaces.
 
+The preview window supports Fit, 1:1, and cursor visibility controls.
+
+![Virtual display preview window](./docs/imgs/display-preview.png)
+
 ### 📡 LAN Screen Sharing
 
 Share an enabled virtual display over your local network through the built-in low-latency live page.
 Open the generated capability-protected `/display` URL in a modern browser on a trusted LAN. Playback uses WebRTC media streaming with WebSocket signaling.
+
+The browser page reports the current stream state and provides 1:1 and fullscreen viewing.
+
+![VoidDisplay LAN web view receiving a live display stream](./docs/imgs/lan-web-view.png)
 
 ## 💻 System Requirements
 
