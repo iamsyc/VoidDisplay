@@ -37,6 +37,27 @@ struct AppSettingsFeedbackControllerTests {
         #expect(event?.metadata["filledFieldCount"] == "0")
     }
 
+    @Test func unchangedDraftWritePreservesValidationUntilActualEdit() async {
+        let controller = AppSettingsFeedbackController(
+            exportAction: { _, _ in
+                Issue.record("exportAction should not run for an empty draft")
+                return URL(fileURLWithPath: "/tmp/unexpected.zip")
+            }
+        )
+
+        await controller.exportSupportBundle()
+        let validationMessage = controller.validationMessage
+        #expect(validationMessage != nil)
+
+        controller.happened = ""
+
+        #expect(controller.validationMessage == validationMessage)
+
+        controller.happened = "Preview stopped unexpectedly."
+
+        #expect(controller.validationMessage == nil)
+    }
+
     @Test func applyRecommendedDiagnosticsUsesCurrentIssueTypePresentation() {
         let controller = AppSettingsFeedbackController()
         controller.issueType = .virtualDisplayFailure

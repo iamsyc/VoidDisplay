@@ -9,42 +9,14 @@ struct DiagnosticsEventsPanel: View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.medium) {
             Label(String(localized: "Recent Events"), systemImage: "waveform.path.ecg")
                 .font(.headline)
+                .accessibilityIdentifier("diagnostics_recent_events")
 
             if let events, events.isEmpty == false {
-                let renderedEvents = Array(events.suffix(12).reversed())
-                ForEach(Array(renderedEvents.enumerated()), id: \.element.id) { index, event in
-                    VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-                        HStack(spacing: AppUI.Spacing.small) {
-                            Text(event.subsystem.rawValue)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(DiagnosticsPresentation.color(for: event.severity))
-                            Text(event.timestamp.formatted(date: .omitted, time: .standard))
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Text(event.message)
-                            .font(.footnote)
-                            .textSelection(.enabled)
-                        if event.metadata.isEmpty == false {
-                            DisclosureGroup(String(localized: "Details")) {
-                                Text(
-                                    verbatim: event.metadata
-                                        .sorted { $0.key < $1.key }
-                                        .map { "\($0.key)=\($0.value)" }
-                                        .joined(separator: "\n")
-                                )
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.tertiary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, AppUI.Spacing.xSmall)
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                    }
+                let groups = DiagnosticsEvidencePresentation.eventGroups(from: events)
+                ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                    DiagnosticsEventGroupRow(group: group)
 
-                    if index < renderedEvents.count - 1 {
+                    if index < groups.count - 1 {
                         Divider()
                     }
                 }
@@ -56,6 +28,72 @@ struct DiagnosticsEventsPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .appPanelStyle()
-        .accessibilityIdentifier("diagnostics_recent_events")
+    }
+}
+
+private struct DiagnosticsEventGroupRow: View {
+    let group: DiagnosticsEvidencePresentation.EventGroup
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
+            Text(group.title)
+                .font(.footnote.weight(.medium))
+            HStack(spacing: AppUI.Spacing.small) {
+                DiagnosticsSeverityTag(severity: group.severity)
+                DiagnosticsTag(title: group.domainTitle)
+                Text(DiagnosticsEvidencePresentation.timeText(group.latestTimestamp))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+                if group.occurrenceCount > 1 {
+                    Text(
+                        String(
+                            format: String(localized: "%lld events"),
+                            locale: .current,
+                            group.occurrenceCount
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                }
+            }
+
+            Button {
+                withAnimation {
+                    isExpanded.toggle()
+                }
+            } label: {
+                Label(
+                    String(localized: "Details"),
+                    systemImage: isExpanded ? "chevron.down" : "chevron.right"
+                )
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier(
+                group.transactionID == nil
+                    ? "diagnostics_event_details"
+                    : "diagnostics_transaction_details"
+            )
+            .accessibilityValue(
+                isExpanded
+                    ? String(localized: "Expanded")
+                    : String(localized: "Collapsed")
+            )
+
+            if isExpanded {
+                if let transactionID = group.transactionID {
+                    DiagnosticsTransactionTimeline(
+                        transactionID: transactionID,
+                        evidence: group.evidence
+                    )
+                } else {
+                    DiagnosticsRawEvidenceDetails(evidence: group.evidence)
+                }
+            }
+        }
     }
 }

@@ -297,6 +297,9 @@ struct RelaySessionHubTests {
         #expect(client.viewerOffers().first?.roomID == "2")
         #expect(client.viewerOffers().first?.clientID == "viewer-1")
         #expect(client.viewerOffers().first?.sdp == "viewer-offer")
+        #expect(await waitUntil {
+            socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"answer""#) })
+        })
         let answer = try #require(socket.decodedTextPayloads().first(where: { $0.contains(#""type":"answer""#) }))
         #expect(answer.contains(#""sdp":"relay-viewer-answer-viewer-1""#))
         #expect(answer.contains(#""sourceVideoSpec""#))
@@ -558,7 +561,9 @@ struct RelaySessionHubTests {
         hub.updatePerformanceMode(.powerEfficient)
 
         let publisher = factory.records().first?.publisher
-        #expect(publisher?.profiles().contains(WebRTCStreamingProfile(performanceMode: .powerEfficient)) == true)
+        #expect(await waitUntil {
+            publisher?.profiles().contains(WebRTCStreamingProfile(performanceMode: .powerEfficient)) == true
+        })
         #expect(factory.records().count == 1)
     }
 
@@ -581,7 +586,7 @@ struct RelaySessionHubTests {
             sourceVideoSpec: sourceSpec
         )
         let publisher = factory.records().first?.publisher
-        #expect(publisher?.profiles().contains(expectedProfile) == true)
+        #expect(await waitUntil { publisher?.profiles().contains(expectedProfile) == true })
     }
 
     @MainActor @Test func publisherStartupRefreshesProfileOutsideStateLock() async {

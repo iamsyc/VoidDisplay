@@ -32,10 +32,10 @@ package struct CapturePreviewToolbar: ToolbarContent {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .accessibilityLabel(String(localized: "Cursor"))
+                    .accessibilityIdentifier("capture_preview_cursor_toggle")
             }
             .padding(.horizontal, AppUI.Spacing.xSmall)
             .disabled(isUpdatingCursorCapture || isSharingDisplay)
-            .accessibilityIdentifier("capture_preview_cursor_toggle")
         }
     }
 }

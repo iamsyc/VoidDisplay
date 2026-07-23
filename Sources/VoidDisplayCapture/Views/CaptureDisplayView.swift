@@ -81,7 +81,9 @@ package struct CaptureDisplayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(window?.title ?? String(localized: "Preview")))
         .accessibilityIdentifier("capture_preview_content")
+        .navigationTitle(windowTitle)
         .toolbar {
             if previewState == .active {
                 CapturePreviewToolbar(
@@ -200,5 +202,17 @@ package extension CaptureDisplayView {
             await previewActions.closePreview(previewID)
             previewState = .released
         }
+    }
+
+    private var windowTitle: String {
+        guard let session else {
+            return String(localized: "Preview")
+        }
+        return String(
+            format: String(localized: "Preview: %@ · %@"),
+            locale: .current,
+            session.displayName,
+            session.resolutionText
+        )
     }
 }

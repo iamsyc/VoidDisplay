@@ -44,6 +44,7 @@ struct RuntimeDiagnosticsSummaryTests {
         #expect(summary.recentTransactionCount == 1)
         #expect(summary.recentFailureCount == 1)
         #expect(summary.lastFailureCode == "runtime_rebuild_failed")
+        #expect(summary.hasCurrentWarning == false)
 
         let renderedSummary = [
             summary.statusCode,
@@ -84,6 +85,7 @@ struct RuntimeDiagnosticsSummaryTests {
         #expect(summary.physicalDisplayCount == 0)
         #expect(summary.recentFailureCount == 0)
         #expect(summary.lastFailureCode == nil)
+        #expect(summary.hasCurrentWarning == false)
     }
 
     @Test func summarySeparatesVirtualRunningAndPhysicalDisplayCounts() throws {
@@ -175,6 +177,94 @@ struct RuntimeDiagnosticsSummaryTests {
 
         #expect(summary.recentFailureCount == 1)
         #expect(summary.lastFailureCode == "startup_restore_lower_command_failed")
+        #expect(summary.hasCurrentWarning == false)
+    }
+
+    @Test func summaryDetectsEveryCurrentRuntimeWarningSource() throws {
+        let restoreFailureID = try #require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000501")
+        )
+        let warningRuntimes: [(String, DisplayRuntimeSnapshot)] = [
+            (
+                "screen capture permission",
+                makeWarningRuntime(
+                    catalog: makeCatalog(
+                        hasScreenCapturePermission: false,
+                        lastPreflightPermission: true
+                    )
+                )
+            ),
+            (
+                "screen capture preflight",
+                makeWarningRuntime(
+                    catalog: makeCatalog(
+                        hasScreenCapturePermission: true,
+                        lastPreflightPermission: false
+                    )
+                )
+            ),
+            (
+                "display catalog load",
+                makeWarningRuntime(catalog: makeCatalog(hasLoadError: true))
+            ),
+            (
+                "sharing lifecycle",
+                makeWarningRuntime(
+                    sharing: DisplayRuntimeSharingSnapshot(
+                        activeSharingDisplayIDs: [],
+                        startingDisplayIDs: [],
+                        isSharing: false,
+                        isWebServiceRunning: false,
+                        preferredPort: nil,
+                        sharingClientCount: 0,
+                        sharingClientCounts: [],
+                        lifecycle: .init(
+                            phase: .failed,
+                            requestedPort: nil,
+                            boundPort: nil,
+                            failureReason: "binding_failed",
+                            hasFailureMessage: true
+                        ),
+                        routes: []
+                    )
+                )
+            ),
+            (
+                "virtual display configuration load",
+                makeWarningRuntime(
+                    virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot(
+                        runningConfigIDs: [],
+                        configStoreHasLoadFailure: true,
+                        configStoreHasDiagnostics: true,
+                        managedDisplays: [],
+                        configs: [],
+                        restoreFailureConfigIDs: []
+                    )
+                )
+            ),
+            (
+                "virtual display restore",
+                makeWarningRuntime(
+                    virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot(
+                        runningConfigIDs: [],
+                        configStoreHasLoadFailure: false,
+                        configStoreHasDiagnostics: false,
+                        managedDisplays: [],
+                        configs: [],
+                        restoreFailureConfigIDs: [restoreFailureID]
+                    )
+                )
+            )
+        ]
+
+        for (source, runtime) in warningRuntimes {
+            let state = try makeState(sections: [
+                "runtime": runtimeSection(runtime)
+            ])
+            let summary = RuntimeDiagnosticsSummary(state: state)
+
+            #expect(summary.hasCurrentWarning, "Missed current warning source: \(source)")
+        }
     }
 
     @Test func summaryReportsNewestRecentRuntimeFailure() throws {
@@ -381,6 +471,37 @@ private func makeRuntimeSnapshot() -> DisplayRuntimeSnapshot {
 
 private func runtimeSection(_ runtime: DisplayRuntimeSnapshot) throws -> JSONValue {
     try ObservabilityCodec.decode(JSONValue.self, from: ObservabilityCodec.encode(runtime))
+}
+
+private func makeWarningRuntime(
+    catalog: DisplayRuntimeCatalogSnapshot = .empty,
+    sharing: DisplayRuntimeSharingSnapshot = .empty,
+    virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot = .empty
+) -> DisplayRuntimeSnapshot {
+    DisplayRuntimeSnapshot(
+        surfaces: [],
+        catalog: catalog,
+        capture: .empty,
+        sharing: sharing,
+        virtualDisplay: virtualDisplay
+    )
+}
+
+private func makeCatalog(
+    hasScreenCapturePermission: Bool? = nil,
+    lastPreflightPermission: Bool? = nil,
+    hasLoadError: Bool = false
+) -> DisplayRuntimeCatalogSnapshot {
+    DisplayRuntimeCatalogSnapshot(
+        hasScreenCapturePermission: hasScreenCapturePermission,
+        lastPreflightPermission: lastPreflightPermission,
+        lastRequestPermission: nil,
+        isLoadingDisplays: false,
+        hasLoadError: hasLoadError,
+        lastLoadError: nil,
+        loadedDisplays: [],
+        topologySignature: []
+    )
 }
 
 private func makeState(sections: [String: JSONValue]) throws -> ObservabilityStateSnapshot {

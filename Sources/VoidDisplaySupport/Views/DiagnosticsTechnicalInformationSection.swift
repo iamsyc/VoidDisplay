@@ -10,6 +10,7 @@ struct DiagnosticsTechnicalInformationSection: View {
     let dataDirectoryDisplayPath: String?
     let latestBundleFullPath: String?
     let onOpenDataDirectory: () -> Void
+    let onExpandedContentLayout: () -> Void
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -20,6 +21,7 @@ struct DiagnosticsTechnicalInformationSection: View {
                     latestBundleFullPath: latestBundleFullPath,
                     onOpenDataDirectory: onOpenDataDirectory
                 )
+                .id("diagnostics_technical_content_anchor")
                 DiagnosticsDisplaySystemPanel(snapshot: snapshot)
                 DiagnosticsAdvancedSnapshotPanel(
                     isExpanded: $isAdvancedSnapshotExpanded,
@@ -29,6 +31,16 @@ struct DiagnosticsTechnicalInformationSection: View {
                 DiagnosticsEventsPanel(events: snapshot?.events)
             }
             .padding(.top, AppUI.Spacing.medium)
+            .onAppear {
+                guard isExpanded else { return }
+                onExpandedContentLayout()
+            }
+            .onGeometryChange(for: CGFloat.self) { geometry in
+                geometry.size.height
+            } action: { _, height in
+                guard isExpanded, height > 0 else { return }
+                onExpandedContentLayout()
+            }
         } label: {
             Label(String(localized: "Technical Information"), systemImage: "stethoscope")
                 .font(.headline)

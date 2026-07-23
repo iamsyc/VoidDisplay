@@ -93,25 +93,3 @@ package struct CapturePreviewWindowSizingHost: View {
         hasAppliedInitialSize = true
     }
 }
-
-private struct CapturePreviewWindowAccessor: NSViewRepresentable {
-    let onResolve: (NSWindow) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        Task { @MainActor in
-            if let window = view.window {
-                onResolve(window)
-            }
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        Task { @MainActor in
-            if let window = nsView.window {
-                onResolve(window)
-            }
-        }
-    }
-}

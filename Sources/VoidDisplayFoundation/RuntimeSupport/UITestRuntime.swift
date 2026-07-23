@@ -4,6 +4,8 @@ package enum UITestScenario: String {
     case displayCatalogLoading = "display_catalog_loading"
     case permissionDenied = "permission_denied"
     case settingsFeedback = "settings_feedback"
+    case diagnosticsRecoveredWarning = "diagnostics_recovered_warning"
+    case previewActive = "preview_active"
     case previewRecovery = "preview_recovery"
     case previewWindowPayload = "preview_window_payload"
 }

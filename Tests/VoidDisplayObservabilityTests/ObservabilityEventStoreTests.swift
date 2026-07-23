@@ -107,6 +107,94 @@ struct ObservabilityEventStoreTests {
         #expect(persisted.count == 40)
     }
 
+    @Test func persistedEventsReloadAcrossStoreInstancesWithMilliseconds() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "event-store-reload")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let timestamp = Date(timeIntervalSince1970: 1_000.123)
+        let ids = try [
+            #require(UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")),
+            #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        ]
+        let writer = EventStore(directoryURL: tempURL)
+        for (index, id) in ids.enumerated() {
+            try await writer.append(
+                ObservabilityEvent(
+                    id: id,
+                    timestamp: timestamp,
+                    severity: .info,
+                    subsystem: .displayRuntime,
+                    operation: "Virtual display transaction",
+                    message: "Virtual display transaction phase changed.",
+                    metadata: ["phase": "phase-\(index)"]
+                )
+            )
+        }
+
+        let reader = EventStore(directoryURL: tempURL)
+        let persisted = try await reader.recentEvents(limit: 10)
+
+        #expect(persisted.count == 2)
+        #expect(persisted.map(\.id) == ids)
+        #expect(persisted.allSatisfy { event in
+            abs(event.timestamp.timeIntervalSince(timestamp)) < 0.001
+        })
+    }
+
+    @Test func reloadsLegacyPrettyPrintedEventDocuments() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "event-store-legacy")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let events = (0..<2).map { index in
+            ObservabilityEvent(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(1_000 + index)),
+                severity: .info,
+                subsystem: .general,
+                operation: "Legacy \(index)",
+                message: "Legacy event \(index)."
+            )
+        }
+        let legacyData = try events.reduce(into: Data()) { data, event in
+            data.append(try ObservabilityCodec.encode(event))
+            data.append(Data([0x0A]))
+        }
+        try legacyData.write(
+            to: tempURL.appendingPathComponent("events-19700101.ndjson"),
+            options: [.atomic]
+        )
+
+        let reader = EventStore(directoryURL: tempURL)
+        let persisted = try await reader.recentEvents(limit: 10)
+
+        #expect(persisted.map(\.operation) == ["Legacy 0", "Legacy 1"])
+    }
+
+    @Test func reloadSkipsTruncatedRecordAndRecoversAtNextNDJSONLine() async throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "event-store-recovery")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let validEvent = ObservabilityEvent(
+            timestamp: Date(timeIntervalSince1970: 1_000.123),
+            severity: .notice,
+            subsystem: .observability,
+            operation: "Recovered",
+            message: "Valid event after a truncated record."
+        )
+        let writer = EventStore(directoryURL: tempURL)
+        try await writer.append(validEvent)
+        let fileURL = tempURL.appendingPathComponent("events-19700101.ndjson")
+        let validData = try Data(contentsOf: fileURL)
+        var data = Data(#"{"id":"truncated""#.utf8)
+        data.append(Data([0x0A]))
+        data.append(validData)
+        try data.write(
+            to: fileURL,
+            options: [.atomic]
+        )
+
+        let reader = EventStore(directoryURL: tempURL)
+        let persisted = try await reader.recentEvents(limit: 10)
+
+        #expect(persisted == [validEvent])
+    }
+
     @Test func snapshotReturnsRecentEvidenceAndCompleteFilteredWindowSummary() async throws {
         let tempURL = try makeTemporaryDirectory(prefix: "event-store-snapshot")
         defer { try? FileManager.default.removeItem(at: tempURL) }

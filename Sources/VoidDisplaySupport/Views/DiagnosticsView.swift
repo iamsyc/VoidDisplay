@@ -15,7 +15,8 @@ package struct DiagnosticsView: View {
     @State private var isRefreshing = false
     @State private var isTechnicalInformationExpanded = false
     @State private var isAdvancedSnapshotExpanded = false
-    @State private var technicalScrollAnchor = DiagnosticsScrollAnchor()
+    @State private var isTechnicalScrollPending = false
+    @State private var validationFocusRequest = 0
 
     package init(
         observability: ObservabilityCenter,
@@ -26,62 +27,73 @@ package struct DiagnosticsView: View {
     }
 
     package var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppUI.Spacing.medium + 2) {
-                Text(String(localized: "Review app health, add diagnostics if needed, then export a support bundle."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("diagnostics_intro_text")
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppUI.Spacing.medium + 2) {
+                    Text(String(localized: "Review app health, add diagnostics if needed, then export a support bundle."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("diagnostics_intro_text")
 
-                DiagnosticsOverviewPanel(
-                    snapshot: snapshot,
-                    isRefreshing: isRefreshing,
-                    onRefresh: { Task { await reload(refresh: true) } }
-                )
+                    DiagnosticsOverviewPanel(
+                        snapshot: snapshot,
+                        isRefreshing: isRefreshing,
+                        onRefresh: { Task { await reload(refresh: true) } }
+                    )
 
-                if let feedbackController {
-                    DiagnosticsFeedbackSections(
-                        controller: feedbackController,
-                        onExport: { Task { await exportSupportBundle() } },
-                        onCopySummary: { Task { await copySummary() } },
-                        onRevealLatestBundle: { Task { await revealLatestBundle() } },
-                        onStartNewFeedback: { Task { await startNewFeedback() } },
-                        onCopyHistorySummary: { recordID in
-                            Task { await copyHistorySummary(recordID: recordID) }
-                        },
-                        onRevealHistoryBundle: { recordID in
-                            Task { await revealHistoryBundle(recordID: recordID) }
+                    if let feedbackController {
+                        DiagnosticsFeedbackSections(
+                            controller: feedbackController,
+                            validationFocusRequest: validationFocusRequest,
+                            onExport: { Task { await exportSupportBundle() } },
+                            onCopySummary: { Task { await copySummary() } },
+                            onRevealLatestBundle: { Task { await revealLatestBundle() } },
+                            onStartNewFeedback: { Task { await startNewFeedback() } },
+                            onCopyHistorySummary: { recordID in
+                                Task { await copyHistorySummary(recordID: recordID) }
+                            },
+                            onRevealHistoryBundle: { recordID in
+                                Task { await revealHistoryBundle(recordID: recordID) }
+                            }
+                        )
+                    }
+
+                    DiagnosticsTechnicalInformationSection(
+                        isExpanded: Binding(
+                            get: { isTechnicalInformationExpanded },
+                            set: { expanded in
+                                isTechnicalScrollPending = expanded
+                                isTechnicalInformationExpanded = expanded
+                            }
+                        ),
+                        isAdvancedSnapshotExpanded: $isAdvancedSnapshotExpanded,
+                        snapshot: snapshot,
+                        dataDirectoryDisplayPath: dataDirectoryDisplayPath,
+                        latestBundleFullPath: latestBundleFullPath,
+                        onOpenDataDirectory: { Task { await openDataDirectory() } },
+                        onExpandedContentLayout: {
+                            guard isTechnicalScrollPending else { return }
+                            isTechnicalScrollPending = false
+                            proxy.scrollTo("diagnostics_technical_content_anchor", anchor: .top)
                         }
                     )
+                    .id("diagnostics_technical_anchor")
                 }
-
-                DiagnosticsScrollAnchorView(anchor: technicalScrollAnchor)
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-
-                DiagnosticsTechnicalInformationSection(
-                    isExpanded: $isTechnicalInformationExpanded,
-                    isAdvancedSnapshotExpanded: $isAdvancedSnapshotExpanded,
-                    snapshot: snapshot,
-                    dataDirectoryDisplayPath: dataDirectoryDisplayPath,
-                    latestBundleFullPath: latestBundleFullPath,
-                    onOpenDataDirectory: { Task { await openDataDirectory() } }
-                )
+                .appListContentInsets(bottom: false)
+                .padding(.bottom, AppUI.Spacing.large)
+                .frame(maxWidth: contentMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .appListContentInsets(bottom: false)
-            .padding(.bottom, AppUI.Spacing.large)
-            .frame(maxWidth: contentMaxWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
-        .onChange(of: isTechnicalInformationExpanded) { _, expanded in
-            if expanded {
-                technicalScrollAnchor.requestScrollToTop()
-            } else {
-                technicalScrollAnchor.cancelPendingScroll()
+            .onChange(of: validationFocusRequest) { _, request in
+                guard request > 0 else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    proxy.scrollTo("support_bundle_validation_anchor", anchor: .center)
+                }
             }
-        }
-        .task {
-            await prepare()
+            .task {
+                await prepare()
+            }
         }
     }
 
@@ -96,6 +108,17 @@ package struct DiagnosticsView: View {
                 feedbackController.applyFixture(fixture)
             }
             await feedbackController.trackPageOpened()
+        }
+        if UITestRuntime.isEnabled,
+           UITestRuntime.scenario == .diagnosticsRecoveredWarning {
+            await observability.record(
+                ObservabilityEvent(
+                    severity: .warning,
+                    subsystem: .capture,
+                    operation: "Screen capture permission check",
+                    message: "Screen capture permission unavailable."
+                )
+            )
         }
         dataDirectoryDisplayPath = await observability.dataDirectoryDisplayPath()
         if snapshot == nil {
@@ -131,6 +154,9 @@ package struct DiagnosticsView: View {
     private func exportSupportBundle() async {
         guard let feedbackController else { return }
         await feedbackController.exportSupportBundle()
+        if feedbackController.validationMessage != nil {
+            validationFocusRequest &+= 1
+        }
         snapshot = await observability.diagnosticsSnapshot()
     }
 
@@ -147,135 +173,5 @@ package struct DiagnosticsView: View {
     private func startNewFeedback() async {
         guard let feedbackController else { return }
         await feedbackController.startNewFeedback()
-    }
-}
-
-@MainActor
-private final class DiagnosticsScrollAnchor: NSObject {
-    weak var view: NSView?
-    private weak var observedDocumentView: NSView?
-    private var isScrollPending = false
-
-    func attach(_ view: NSView) {
-        self.view = view
-        observeDocumentFrameIfNeeded()
-    }
-
-    func requestScrollToTop() {
-        isScrollPending = true
-        observeDocumentFrameIfNeeded()
-        scrollToTopIfPossible()
-    }
-
-    func detach(_ view: NSView) {
-        guard self.view === view else { return }
-        self.view = nil
-        cancelPendingScroll()
-    }
-
-    func cancelPendingScroll() {
-        isScrollPending = false
-        stopObservingDocumentFrame()
-    }
-
-    @objc private func documentFrameDidChange(_ notification: Notification) {
-        scrollToTopIfPossible()
-    }
-
-    private func observeDocumentFrameIfNeeded() {
-        guard
-            isScrollPending,
-            let documentView = view?.enclosingScrollView?.documentView,
-            observedDocumentView !== documentView
-        else { return }
-
-        if let observedDocumentView {
-            NotificationCenter.default.removeObserver(
-                self,
-                name: NSView.frameDidChangeNotification,
-                object: observedDocumentView
-            )
-        }
-        observedDocumentView = documentView
-        documentView.postsFrameChangedNotifications = true
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(documentFrameDidChange(_:)),
-            name: NSView.frameDidChangeNotification,
-            object: documentView
-        )
-    }
-
-    private func scrollToTopIfPossible() {
-        guard isScrollPending else { return }
-        guard
-            let view,
-            let scrollView = view.enclosingScrollView,
-            let documentView = scrollView.documentView
-        else { return }
-
-        documentView.layoutSubtreeIfNeeded()
-        let targetFrame = view.convert(view.bounds, to: documentView)
-        let clipView = scrollView.contentView
-        var origin = clipView.bounds.origin
-        let topMargin = AppUI.Spacing.large * 2
-        let targetY = if documentView.isFlipped {
-            targetFrame.minY - topMargin
-        } else {
-            targetFrame.maxY - clipView.bounds.height + topMargin
-        }
-        let minimumY = documentView.bounds.minY
-        let maximumY = max(minimumY, documentView.bounds.maxY - clipView.bounds.height)
-        guard targetY <= maximumY + 1 else { return }
-        isScrollPending = false
-        stopObservingDocumentFrame()
-        origin.y = min(max(targetY, minimumY), maximumY)
-        clipView.scroll(to: origin)
-        scrollView.reflectScrolledClipView(clipView)
-    }
-
-    private func stopObservingDocumentFrame() {
-        guard let observedDocumentView else { return }
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSView.frameDidChangeNotification,
-            object: observedDocumentView
-        )
-        self.observedDocumentView = nil
-    }
-}
-
-private struct DiagnosticsScrollAnchorView: NSViewRepresentable {
-    let anchor: DiagnosticsScrollAnchor
-
-    func makeNSView(context: Context) -> NSView {
-        let view = DiagnosticsScrollAnchorHostView(anchor: anchor)
-        anchor.attach(view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        anchor.attach(nsView)
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Void) {
-        if let hostView = nsView as? DiagnosticsScrollAnchorHostView {
-            hostView.anchor.detach(nsView)
-        }
-    }
-}
-
-@MainActor
-private final class DiagnosticsScrollAnchorHostView: NSView {
-    let anchor: DiagnosticsScrollAnchor
-
-    init(anchor: DiagnosticsScrollAnchor) {
-        self.anchor = anchor
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
     }
 }

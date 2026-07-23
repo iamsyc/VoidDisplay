@@ -15,27 +15,27 @@ package final class AppSettingsFeedbackController {
     }
 
     package var happened = "" {
-        didSet { handleDraftMutation() }
+        didSet { handleDraftMutation(from: oldValue, to: happened) }
     }
 
     package var reproductionSteps = "" {
-        didSet { handleDraftMutation() }
+        didSet { handleDraftMutation(from: oldValue, to: reproductionSteps) }
     }
 
     package var expectedResult = "" {
-        didSet { handleDraftMutation() }
+        didSet { handleDraftMutation(from: oldValue, to: expectedResult) }
     }
 
     package var includeUnifiedLogSummary = true {
-        didSet { handleDraftMutation() }
+        didSet { handleDraftMutation(from: oldValue, to: includeUnifiedLogSummary) }
     }
 
     package var includeCrashReportExcerpt = true {
-        didSet { handleDraftMutation() }
+        didSet { handleDraftMutation(from: oldValue, to: includeCrashReportExcerpt) }
     }
 
     package var includeRelatedConfigSnapshots = true {
-        didSet { handleDraftMutation() }
+        didSet { handleDraftMutation(from: oldValue, to: includeRelatedConfigSnapshots) }
     }
 
     package var alert: UserFacingAlertState?
@@ -366,6 +366,11 @@ package final class AppSettingsFeedbackController {
         if hasPrepared {
             draftStore.save(currentDraftSnapshot)
         }
+    }
+
+    private func handleDraftMutation<Value: Equatable>(from previousValue: Value, to newValue: Value) {
+        guard previousValue != newValue else { return }
+        handleDraftMutation()
     }
 
     private var currentDraftSnapshot: SupportDraftSnapshot {

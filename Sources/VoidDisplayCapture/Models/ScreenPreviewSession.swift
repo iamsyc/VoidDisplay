@@ -21,4 +21,24 @@ package struct ScreenPreviewSession: Identifiable {
     package let previewSubscription: DisplayPreviewSubscription
     package var capturesCursor: Bool
     package var state: State
+
+    package init(
+        id: UUID,
+        displayID: CGDirectDisplayID,
+        displayName: String,
+        resolutionText: String,
+        isVirtualDisplay: Bool,
+        previewSubscription: DisplayPreviewSubscription,
+        capturesCursor: Bool,
+        state: State
+    ) {
+        self.id = id
+        self.displayID = displayID
+        self.displayName = displayName
+        self.resolutionText = resolutionText
+        self.isVirtualDisplay = isVirtualDisplay
+        self.previewSubscription = previewSubscription
+        self.capturesCursor = capturesCursor
+        self.state = state
+    }
 }

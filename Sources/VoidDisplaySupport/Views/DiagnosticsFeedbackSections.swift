@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DiagnosticsFeedbackSections: View {
     let controller: AppSettingsFeedbackController
+    let validationFocusRequest: Int
     let onExport: () -> Void
     let onCopySummary: () -> Void
     let onRevealLatestBundle: () -> Void
@@ -17,6 +18,7 @@ struct DiagnosticsFeedbackSections: View {
 
         SupportBundleDraftSectionView(
             controller: controller,
+            validationFocusRequest: validationFocusRequest,
             onExport: onExport
         )
 

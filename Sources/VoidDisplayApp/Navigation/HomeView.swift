@@ -43,21 +43,17 @@ package struct HomeView: View {
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $bindableNavigation.sidebarSelection) {
-                Section("Main") {
-                    NavigationLink(value: AppSidebarItem.home) {
-                        Label(String(localized: "Displays"), systemImage: "display.2")
-                    }
-                    .tag(AppSidebarItem.home)
-                    .accessibilityIdentifier("sidebar_home")
+                NavigationLink(value: AppSidebarItem.home) {
+                    Label(String(localized: "Displays"), systemImage: "display.2")
                 }
+                .tag(AppSidebarItem.home)
+                .accessibilityIdentifier("sidebar_home")
 
-                Section(String(localized: "Diagnostics")) {
-                    NavigationLink(value: AppSidebarItem.diagnostics) {
-                        Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
-                    }
-                    .tag(AppSidebarItem.diagnostics)
-                    .accessibilityIdentifier("sidebar_diagnostics")
+                NavigationLink(value: AppSidebarItem.diagnostics) {
+                    Label(String(localized: "Diagnostics"), systemImage: "stethoscope")
                 }
+                .tag(AppSidebarItem.diagnostics)
+                .accessibilityIdentifier("sidebar_diagnostics")
             }
             .listStyle(.sidebar)
             .accessibilityIdentifier("home_sidebar")

@@ -1,6 +1,11 @@
 import Foundation
 import VoidDisplayFoundation
 
+package enum SignalSessionClientAddResult: Sendable, Equatable {
+    case accepted(clientID: String)
+    case rejected(reason: String)
+}
+
 package protocol SignalSessionHub: AnyObject, Sendable, DisplayShareFrameConsumer {
     nonisolated var activeClientCount: Int { get }
     nonisolated func addClient(

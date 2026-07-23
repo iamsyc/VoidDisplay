@@ -201,6 +201,7 @@ package struct EditVirtualDisplayConfigView: View {
                 Text("Serial Number")
                 Spacer()
                 TextField("Serial Number", value: $serialNum, format: .number)
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 90)
                     .focused($focusedField, equals: .serialNumber)
