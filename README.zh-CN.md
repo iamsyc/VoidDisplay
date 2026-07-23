@@ -2,7 +2,7 @@
   <img src="./docs/imgs/AppIcon.png" width="150" height="150"/>
   <h1>虚幕（VoidDisplay）</h1>
   <p>在 Mac 上创建和预览虚拟显示器，并通过局域网共享画面。</p>
-  <a href="./Readme.md">English</a>
+  <a href="./README.md">English</a>
 </div>
 
 ## ✨ 功能特色
@@ -12,15 +12,31 @@
 创建自定义分辨率和刷新率的虚拟显示器。
 适用于无头 Mac 部署、显示器测试，或者在没有物理显示器的情况下扩展你的工作空间。
 
+主页面在一个列表中展示每块虚拟显示器的分辨率、运行状态、预览控制和局域网共享控制。
+
+![VoidDisplay 主页面中的虚拟显示器状态与控制](./docs/imgs/home-overview.png)
+
+创建面板支持设置名称、物理尺寸和宽高比，并可添加预设或自定义分辨率模式及 HiDPI。
+
+![添加虚拟显示器面板中的显示器与分辨率设置](./docs/imgs/add-virtual-display.png)
+
 ### 👀 预览
 
 在独立的浮动窗口中预览已启用的虚拟显示器。
 无需切换 macOS 空间即可检查受管理显示器的内容。
 
+预览窗口支持适应、1:1 和光标显示控制。
+
+![虚拟显示器预览窗口](./docs/imgs/display-preview.png)
+
 ### 📡 局域网屏幕共享
 
 通过内置低延迟实时页面将已启用的虚拟显示器共享到局域网。
 在可信局域网的设备上，用现代浏览器打开应用生成且受 capability 保护的 `/display` 链接即可观看。播放链路使用 WebRTC 媒体流，并通过 WebSocket 传输信令。
+
+浏览器页面会显示当前视频流状态，并支持 1:1 和全屏观看。
+
+![VoidDisplay 局域网 Web 页面正在接收实时显示器画面](./docs/imgs/lan-web-view.png)
 
 ## 💻 系统要求
 

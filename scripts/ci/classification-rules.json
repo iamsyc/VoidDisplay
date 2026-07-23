@@ -46,7 +46,7 @@
       "globs": []
     },
     "docs": {
-      "exact": ["AGENTS.md", "LICENSE", "Readme.md", "README.md"],
+      "exact": ["AGENTS.md", "LICENSE", "README.md"],
       "prefixes": ["docs/", ".github/PULL_REQUEST_TEMPLATE/"],
       "globs": ["LICENSE_*", "*.md"]
     }
