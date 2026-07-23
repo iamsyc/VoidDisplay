@@ -13,21 +13,27 @@ struct DiagnosticsIssuesPanel: View {
             if let issues, issues.isEmpty == false {
                 let visibleIssues = Array(issues.prefix(8))
                 ForEach(Array(visibleIssues.enumerated()), id: \.element.id) { index, issue in
+                    let presentation = DiagnosticsEvidencePresentation.issue(issue)
                     VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
-                        Text(issue.message)
-                            .font(.footnote)
-                            .textSelection(.enabled)
+                        Text(presentation.title)
+                            .font(.footnote.weight(.medium))
                         HStack(spacing: AppUI.Spacing.small) {
-                            DiagnosticsTag(title: issue.subsystem.rawValue)
-                            Text(issue.lastSeenAt.formatted(date: .abbreviated, time: .shortened))
+                            DiagnosticsTag(title: presentation.domainTitle)
+                            Text(presentation.lastSeenAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
-                            if issue.occurrenceCount > 1 {
-                                Text(verbatim: "x\(issue.occurrenceCount)")
+                            if presentation.occurrenceCount > 1 {
+                                Text(verbatim: "x\(presentation.occurrenceCount)")
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)
                             }
                         }
+
+                        DisclosureGroup(String(localized: "Details")) {
+                            DiagnosticsRawEvidenceDetails(evidence: [presentation.evidence])
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
 
                     if index < visibleIssues.count - 1 {

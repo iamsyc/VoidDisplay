@@ -97,6 +97,7 @@ package struct CreateVirtualDisplay: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 580)
+        .accessibilityIdentifier("virtual_display_create_form")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
@@ -106,6 +107,7 @@ package struct CreateVirtualDisplay: View {
                     }
                 }
                 .disabled(isCreating || selectedModes.isEmpty || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityIdentifier("virtual_display_create_button")
             }
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -113,6 +115,7 @@ package struct CreateVirtualDisplay: View {
                     isShow = false
                 }
                 .disabled(isCreating)
+                .accessibilityIdentifier("virtual_display_create_cancel_button")
             }
         }
         .interactiveDismissDisabled(isCreating)
@@ -158,6 +161,7 @@ package struct CreateVirtualDisplay: View {
                 Spacer()
                 if customSerialNum {
                     TextField("Serial Number", value: $serialNum, format: .number)
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                         .focused($focusedField, equals: .serialNumber)
@@ -168,6 +172,7 @@ package struct CreateVirtualDisplay: View {
             }
             
             Toggle("Custom Serial Number", isOn: $customSerialNum)
+                .accessibilityIdentifier("virtual_display_create_custom_serial_toggle")
         } header: {
             Text("Basic Info")
         }

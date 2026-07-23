@@ -16,6 +16,7 @@ struct FeedbackBundleExporterTests {
             virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
             displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
             sanitizer: ObservabilitySanitizer(homePath: "/Users/tester"),
+            dateProvider: { Date(timeIntervalSince1970: 1_000.123) },
             commandRunner: { _, _, _ in
                 commandInvocationCount += 1
                 return "private log from /Users/tester at http://192.168.0.4:8080/display"
@@ -54,6 +55,8 @@ struct FeedbackBundleExporterTests {
         #expect(manifest.issueCount == 1)
         let manifestJSON = try archiveEntryString(relativePathSuffix: "/manifest.json", archiveURL: bundleURL)
         #expect(manifestJSON.contains("transportCapability") == false)
+        #expect(manifestJSON.contains(#""generatedAt" : "1970-01-01T00:16:40Z""#))
+        #expect(manifestJSON.contains("1970-01-01T00:16:40.123Z") == false)
         #expect(manifest.attachments.isEmpty)
         #expect(manifest.consent == FeedbackConsent())
         #expect(manifest.consent.hasEnhancedCollection == false)

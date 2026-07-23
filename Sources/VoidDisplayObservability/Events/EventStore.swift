@@ -52,7 +52,7 @@ package actor EventStore {
             lastEventByDeduplicationKey[deduplicationKey] = event
         }
 
-        let lineData = try ObservabilityCodec.encode(event) + Data([0x0A])
+        let lineData = try Self.encodeEventLine(event) + Data([0x0A])
         let fileURL = directoryURL.appendingPathComponent(Self.filename(for: event.timestamp))
         if fileManager.fileExists(atPath: fileURL.path) {
             let handle = try FileHandle(forWritingTo: fileURL)
@@ -138,14 +138,87 @@ package actor EventStore {
         for fileURL in files {
             let data = try Data(contentsOf: fileURL)
             guard let content = String(data: data, encoding: .utf8) else { continue }
-            for line in content.split(whereSeparator: \.isNewline) {
-                guard let eventData = line.data(using: .utf8) else { continue }
-                if let event = try? ObservabilityCodec.decode(ObservabilityEvent.self, from: eventData) {
-                    events.append(event)
+            events.append(contentsOf: Self.decodeEvents(from: content))
+        }
+        return events.enumerated()
+            .sorted { lhs, rhs in
+                if lhs.element.timestamp != rhs.element.timestamp {
+                    return lhs.element.timestamp < rhs.element.timestamp
                 }
+                return lhs.offset < rhs.offset
+            }
+            .map { $0.element }
+    }
+
+    private static func decodeEvents(from content: String) -> [ObservabilityEvent] {
+        var events: [ObservabilityEvent] = []
+        var legacyDocument = ""
+
+        for rawLine in content.split(
+            omittingEmptySubsequences: false,
+            whereSeparator: \.isNewline
+        ) {
+            let line = String(rawLine)
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            guard trimmedLine.isEmpty == false else { continue }
+
+            if let event = decodeEvent(from: trimmedLine) {
+                events.append(event)
+                legacyDocument.removeAll(keepingCapacity: true)
+                continue
+            }
+
+            if trimmedLine.hasPrefix("{") {
+                legacyDocument = line + "\n"
+            } else if legacyDocument.isEmpty == false {
+                legacyDocument.append(line)
+                legacyDocument.append("\n")
+            }
+
+            if let event = decodeEvent(from: legacyDocument) {
+                events.append(event)
+                legacyDocument.removeAll(keepingCapacity: true)
             }
         }
-        return events.sorted { $0.timestamp < $1.timestamp }
+
+        return events
+    }
+
+    private static func decodeEvent(from document: String) -> ObservabilityEvent? {
+        guard document.isEmpty == false else { return nil }
+        return try? makeEventDecoder().decode(
+            ObservabilityEvent.self,
+            from: Data(document.utf8)
+        )
+    }
+
+    private static func encodeEventLine(_ event: ObservabilityEvent) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(date.formatted(preciseTimestampStyle))
+        }
+        return try encoder.encode(event)
+    }
+
+    private static func makeEventDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let timestamp = try container.decode(String.self)
+            if let preciseDate = try? Date(timestamp, strategy: preciseTimestampStyle) {
+                return preciseDate
+            }
+            if let legacyDate = try? Date(timestamp, strategy: legacyTimestampStyle) {
+                return legacyDate
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO 8601 timestamp."
+            )
+        }
+        return decoder
     }
 
     private func filteredRecentEvents(
@@ -245,4 +318,9 @@ package actor EventStore {
         formatter.dateFormat = "yyyyMMdd"
         return formatter
     }()
+
+    private static let preciseTimestampStyle = Date.ISO8601FormatStyle(
+        includingFractionalSeconds: true
+    )
+    private static let legacyTimestampStyle = Date.ISO8601FormatStyle()
 }

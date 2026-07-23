@@ -30,6 +30,7 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
     package let recentTransactionCount: Int
     package let recentFailureCount: Int
     package let lastFailureCode: String?
+    package let hasCurrentWarning: Bool
 
     package init(state: ObservabilityStateSnapshot?) {
         guard let state else {
@@ -81,6 +82,7 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         recentTransactionCount = runtime.transactions.recentTransactions.count
         recentFailureCount = Self.recentFailureCount(from: runtime)
         lastFailureCode = Self.latestFailureCode(from: runtime)
+        hasCurrentWarning = Self.hasCurrentWarning(in: runtime)
     }
 
     private static func unavailable(_ reason: RuntimeDiagnosticsUnavailableReason) -> Self {
@@ -107,6 +109,16 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         recentTransactionCount = 0
         recentFailureCount = 0
         lastFailureCode = nil
+        hasCurrentWarning = false
+    }
+
+    private static func hasCurrentWarning(in runtime: DisplayRuntimeSnapshot) -> Bool {
+        runtime.catalog.hasScreenCapturePermission == false ||
+            runtime.catalog.lastPreflightPermission == false ||
+            runtime.catalog.hasLoadError ||
+            runtime.sharing.lifecycle.phase == .failed ||
+            runtime.virtualDisplay.configStoreHasLoadFailure ||
+            runtime.virtualDisplay.restoreFailureConfigIDs.isEmpty == false
     }
 
     private static func recentFailureCount(from runtime: DisplayRuntimeSnapshot) -> Int {

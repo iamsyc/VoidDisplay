@@ -1,15 +1,18 @@
-import VoidDisplayCapture
-import Foundation
 //
 //  CaptureDisplayWindowRoot.swift
 //  VoidDisplay
 //
 
+import AppKit
+import Foundation
 import SwiftUI
+import VoidDisplayCapture
+
 package struct CaptureDisplayWindowRoot: View {
     package let previewID: CapturePreviewID?
     private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
+    @State private var waitingWindow: NSWindow?
 
     package init(
         previewID: CapturePreviewID?,
@@ -29,13 +32,20 @@ package struct CaptureDisplayWindowRoot: View {
                 previewActions: previewActions,
                 sharingStatusProvider: sharingStatusProvider
             )
-                .navigationTitle("Preview")
         case .waitingForPreviewID:
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel(Text("Preview"))
+                .accessibilityLabel(Text(waitingWindow?.title ?? ""))
                 .accessibilityIdentifier("capture_preview_waiting_for_identity")
+                .navigationTitle(String(localized: "Preview"))
+                .overlay {
+                    CapturePreviewWindowAccessor { window in
+                        guard waitingWindow !== window else { return }
+                        waitingWindow = window
+                    }
+                    .allowsHitTesting(false)
+                }
         }
     }
 }

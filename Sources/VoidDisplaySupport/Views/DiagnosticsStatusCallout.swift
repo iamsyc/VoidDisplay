@@ -13,10 +13,12 @@ struct DiagnosticsStatusCallout: View {
                 .font(.title3)
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
+                .accessibilityIdentifier("diagnostics_health_status_icon")
 
             VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("diagnostics_health_status_title")
                 Text(detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)

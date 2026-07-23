@@ -57,6 +57,16 @@ public struct VoidDisplayApplication: App {
                         observability: observability,
                         feedbackController: feedbackController
                     )
+                } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewActive {
+                    PreviewActiveUITestHost {
+                        HomeView(
+                            observability: observability,
+                            feedbackController: feedbackController,
+                            displayRuntime: displayRuntime,
+                            sharingAdapter: sharingAdapter,
+                            openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
+                        )
+                    }
                 } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewRecovery {
                     PreviewRecoveryUITestHost()
                 } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewWindowPayload {

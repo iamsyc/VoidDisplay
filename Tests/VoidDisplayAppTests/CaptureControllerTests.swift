@@ -113,6 +113,18 @@ struct CaptureControllerTests {
         #expect(controller.screenPreviewSessions.map(\.id) == [existingSession.id])
     }
 
+    @Test func closePreviewSessionRemovesServiceAndControllerSnapshots() {
+        let service = MockCapturePreviewService()
+        let existingSession = makeSession(id: UUID(), displayID: 67).session
+        service.currentSessions = [existingSession]
+        let controller = CaptureController(capturePreviewService: service)
+
+        controller.closePreviewSession(id: existingSession.id)
+
+        #expect(service.currentSessions.isEmpty)
+        #expect(controller.screenPreviewSessions.isEmpty)
+    }
+
     @Test func startPreviewRefreshesSnapshotFromLifecycleService() async throws {
         let service = MockCapturePreviewService()
         let subscriptionSession = TestAppDisplayCaptureSession()

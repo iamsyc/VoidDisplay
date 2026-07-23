@@ -22,7 +22,11 @@ package struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionPro
             return true
         case .displayCatalogLoading:
             return true
-        case .settingsFeedback, .previewRecovery, .previewWindowPayload:
+        case .settingsFeedback,
+             .diagnosticsRecoveredWarning,
+             .previewActive,
+             .previewRecovery,
+             .previewWindowPayload:
             return true
         case .permissionDenied:
             return false

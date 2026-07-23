@@ -6,8 +6,11 @@ import AppKit
 import SwiftUI
 package struct SupportBundleDraftSectionView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @FocusState private var focusedField: SupportBundleDraftFocusField?
+    @AccessibilityFocusState private var isValidationMessageFocused: Bool
 
     @Bindable var controller: AppSettingsFeedbackController
+    let validationFocusRequest: Int
     package let onExport: () -> Void
 
     package var body: some View {
@@ -31,7 +34,8 @@ package struct SupportBundleDraftSectionView: View {
                 minHeight: 52,
                 titleIdentifier: "support_bundle_happened_title",
                 descriptionIdentifier: "support_bundle_happened_description",
-                fieldIdentifier: "support_bundle_happened_field"
+                fieldIdentifier: "support_bundle_happened_field",
+                focusField: .happened
             )
 
             optionalProblemDetails
@@ -54,6 +58,16 @@ package struct SupportBundleDraftSectionView: View {
         .appPanelStyle()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("support_bundle_draft_panel")
+        .onChange(of: validationFocusRequest) { _, request in
+            guard request > 0 else { return }
+            focusedField = .happened
+            isValidationMessageFocused = true
+        }
+        .onChange(of: controller.validationMessage) { _, message in
+            if message == nil {
+                isValidationMessageFocused = false
+            }
+        }
     }
 
     private var issueTypeSection: some View {
@@ -156,7 +170,8 @@ package struct SupportBundleDraftSectionView: View {
             minHeight: 52,
             titleIdentifier: "support_bundle_reproduction_title",
             descriptionIdentifier: "support_bundle_reproduction_description",
-            fieldIdentifier: "support_bundle_reproduction_field"
+            fieldIdentifier: "support_bundle_reproduction_field",
+            focusField: .reproductionSteps
         )
     }
 
@@ -170,7 +185,8 @@ package struct SupportBundleDraftSectionView: View {
             minHeight: 52,
             titleIdentifier: "support_bundle_expected_title",
             descriptionIdentifier: "support_bundle_expected_description",
-            fieldIdentifier: "support_bundle_expected_field"
+            fieldIdentifier: "support_bundle_expected_field",
+            focusField: .expectedResult
         )
     }
 
@@ -184,7 +200,8 @@ package struct SupportBundleDraftSectionView: View {
         minHeight: CGFloat,
         titleIdentifier: String,
         descriptionIdentifier: String,
-        fieldIdentifier: String
+        fieldIdentifier: String,
+        focusField: SupportBundleDraftFocusField
     ) -> some View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
             Text(String(localized: title))
@@ -200,6 +217,7 @@ package struct SupportBundleDraftSectionView: View {
                 axis: .vertical
             )
             .lineLimit(lineLimit)
+            .focused($focusedField, equals: focusField)
             .textFieldStyle(.plain)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
@@ -235,5 +253,7 @@ package struct SupportBundleDraftSectionView: View {
             .accessibilityElement()
             .accessibilityLabel(validationMessage)
             .accessibilityIdentifier("support_bundle_validation_message")
+            .accessibilityFocused($isValidationMessageFocused)
+            .id("support_bundle_validation_anchor")
     }
 }

@@ -29,6 +29,7 @@ package struct VirtualDisplayPhysicalConfigurationSection: View {
                 Text("Screen Size")
                 Spacer()
                 TextField("Screen Size", value: $screenDiagonal, format: .number.precision(.fractionLength(1)))
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 80)
                     .focused(focusedField, equals: .screenDiagonal)

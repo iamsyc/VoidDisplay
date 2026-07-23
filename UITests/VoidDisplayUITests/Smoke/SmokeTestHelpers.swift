@@ -72,6 +72,22 @@ extension XCTestCase {
     }
 
     @MainActor
+    func waitForHittable(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 2,
+        pollInterval: TimeInterval = 0.05
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.isHittable {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        }
+        return element.isHittable
+    }
+
+    @MainActor
     func assertAllExist(
         _ app: XCUIApplication,
         identifiers: [String],
