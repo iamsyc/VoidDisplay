@@ -143,6 +143,39 @@ validate_relay_build_is_script_sandbox_compatible() {
 		'build -buildvcs=false -trimpath'
 }
 
+validate_release_smoke_pins_relay_go_binary() {
+	local fixture_bin="$AI_TMP_DIR/release-go-resolution-fixture/bin"
+	local fixture_go="$fixture_bin/go-real"
+	local resolved_go
+
+	assert_file_contains_all \
+		"$TOOL_ROOT/scripts/ci/release_smoke.sh" \
+		"Release smoke must resolve Go from trusted tool configuration before entering the Xcode script sandbox" \
+		'GO_BIN="$(resolve_trusted_go_binary)"' \
+		'GO_BIN="$GO_BIN"'
+	assert_file_contains_all \
+		"$TOOL_ROOT/scripts/lib/common.sh" \
+		"Go module download must honor the resolved Go executable" \
+		'mise -C "$TOOL_ROOT" which go' \
+		'local go_bin="${GO_BIN:-go}"' \
+		'"$go_bin" mod download'
+
+	mkdir -p "$fixture_bin"
+	printf '#!/usr/bin/env bash\n[[ "$1" == "-C" && "$2" == "$EXPECTED_TOOL_ROOT" && "$3" == "which" && "$4" == "go" ]] || exit 2\nprintf "%%s\\\\n" "$EXPECTED_GO_BIN"\n' \
+		>"$fixture_bin/mise"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$fixture_go"
+	chmod +x "$fixture_bin/mise" "$fixture_go"
+
+	resolved_go="$(
+		PATH="$fixture_bin:$PATH" \
+			EXPECTED_TOOL_ROOT="$TOOL_ROOT" \
+			EXPECTED_GO_BIN="$fixture_go" \
+			resolve_trusted_go_binary
+	)"
+	[[ "$resolved_go" == "$fixture_go" ]] ||
+		die "Trusted Go resolution ignored the tool-root mise configuration."
+}
+
 validate_xcode_runner_disables_signing() {
 	local runner="$TOOL_ROOT/scripts/ci/xcode.sh"
 	local base_command
@@ -254,6 +287,7 @@ validate_ui_tests_do_not_synthesize_keyboard_input() {
 validate_xcode_project_layout
 validate_xcode_shell_build_phase
 validate_relay_build_is_script_sandbox_compatible
+validate_release_smoke_pins_relay_go_binary
 validate_xcode_runner_disables_signing
 validate_xcode_log_scanner
 validate_swiftpm_log_scanner

@@ -35,6 +35,20 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 		fi
 	}
 
+	resolve_trusted_go_binary() {
+		local go_bin
+
+		if command -v mise >/dev/null 2>&1; then
+			go_bin="$(mise -C "$TOOL_ROOT" which go)" ||
+				die "Unable to resolve Go from the trusted tool configuration."
+		else
+			go_bin="$(command -v go || true)"
+		fi
+
+		[[ -n "$go_bin" && -x "$go_bin" ]] || die "Go executable could not be resolved."
+		printf '%s\n' "$go_bin"
+	}
+
 	timestamp() {
 		date +%Y%m%d-%H%M%S
 	}
@@ -78,8 +92,9 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 	go_mod_download_with_retry() {
 		local module_dir="$1"
 		local goproxy_value="${GOPROXY:-https://proxy.golang.org|https://goproxy.cn|direct}"
+		local go_bin="${GO_BIN:-go}"
 
-		(cd "$module_dir" && run_with_retry 3 env GOPROXY="$goproxy_value" go mod download)
+		(cd "$module_dir" && run_with_retry 3 env GOPROXY="$goproxy_value" "$go_bin" mod download)
 	}
 
 	collect_build_log_diagnostics() {
