@@ -164,7 +164,7 @@ workflow_dispatch)
 	[[ "$INPUT_TAG" == "$release_tag" ]] || die "Input tag $INPUT_TAG does not match MARKETING_VERSION $version."
 	ensure_target_is_on_main "$target_sha"
 	ensure_tag_matches_target_if_present "$release_tag" "$target_sha"
-	emit_result true "manual_dispatch"
+	emit_result true "manual_recovery"
 	;;
 push)
 	if [[ "$REF_TYPE" != "branch" || "$REF_NAME" != "main" ]]; then
@@ -173,6 +173,7 @@ push)
 	if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
 		die "Unable to compare against the previous main commit."
 	fi
+
 	previous_version="$(release_read_project_value_from_git MARKETING_VERSION "$BEFORE_SHA" "$project_file")"
 	previous_build_number="$(release_read_project_value_from_git CURRENT_PROJECT_VERSION "$BEFORE_SHA" "$project_file")"
 	release_require_positive_integer "$previous_build_number" "Previous CURRENT_PROJECT_VERSION is invalid: $previous_build_number."
@@ -188,6 +189,7 @@ push)
 		die "CURRENT_PROJECT_VERSION must increase when MARKETING_VERSION changes."
 	fi
 
+	ensure_target_is_on_main "$target_sha"
 	ensure_tag_matches_target_if_present "$release_tag" "$target_sha"
 	emit_result true "main_version_gate"
 	;;

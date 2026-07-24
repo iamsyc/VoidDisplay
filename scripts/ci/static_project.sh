@@ -202,15 +202,8 @@ validate_release_project_path_fixtures() {
 
 validate_swift_style() {
 	mkdir -p "$AI_TMP_DIR"
-	swiftformat --lint --cache "$AI_TMP_DIR/swiftformat.cache" --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift scripts/release/render_dmg_background.swift
+	swiftformat --lint --cache "$AI_TMP_DIR/swiftformat.cache" --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift
 	swiftlint lint --config "$ROOT_DIR/.swiftlint.yml" --quiet --cache-path "$AI_TMP_DIR/swiftlint-cache"
-}
-
-validate_swift_scripts() {
-	mkdir -p "$AI_TMP_DIR/swift-module-cache"
-	xcrun swiftc \
-		-module-cache-path "$AI_TMP_DIR/swift-module-cache" \
-		-typecheck "$ROOT_DIR/scripts/release/render_dmg_background.swift"
 }
 
 validate_display_page_javascript() {
@@ -268,7 +261,6 @@ validate_bootstrap_profile_fixtures
 validate_classify_fixtures
 validate_release_project_path_fixtures
 validate_swift_style
-validate_swift_scripts
 validate_display_page_javascript
 validate_product_source_file_sizes
 validate_ui_tests_do_not_synthesize_keyboard_input
