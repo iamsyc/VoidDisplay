@@ -104,22 +104,35 @@ x86_64_label="$(release_label_for_arch x86_64)"
 [[ "$build_number" =~ ^[0-9]+$ ]] || fail_publish "invalid_build_number" "Invalid CURRENT_PROJECT_VERSION: $build_number"
 
 publish_stage="git_tag"
-git fetch --tags --force
-existing_tag_sha="$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
+git -C "$TOOL_ROOT" fetch --tags --force
+existing_tag_sha="$(git -C "$TOOL_ROOT" rev-parse -q --verify "refs/tags/${TAG}^{commit}" 2>/dev/null || true)"
 if [[ -n "$existing_tag_sha" && "$existing_tag_sha" != "$TARGET_SHA" ]]; then
 	fail_publish "tag_conflict" "Tag $TAG already points to $existing_tag_sha, expected $TARGET_SHA."
 fi
 if [[ -z "$existing_tag_sha" ]]; then
-	git config user.name "github-actions[bot]"
-	git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-	git tag -a "$TAG" "$TARGET_SHA" -m "Release $TAG"
-	git push origin "refs/tags/${TAG}"
+	git -C "$TOOL_ROOT" config user.name "github-actions[bot]"
+	git -C "$TOOL_ROOT" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+	git -C "$TOOL_ROOT" tag -a "$TAG" "$TARGET_SHA" -m "Release $TAG"
+	git -C "$TOOL_ROOT" push origin "refs/tags/${TAG}"
 fi
 
 notes_path="$OUT_DIR/release-notes.md"
 publish_stage="release_notes"
-cat >"$notes_path" <<NOTES
-VoidDisplay $TAG
+if ! gh api \
+	--method POST \
+	"repos/${REPOSITORY}/releases/generate-notes" \
+	-f "tag_name=${TAG}" \
+	-f "target_commitish=${TARGET_SHA}" \
+	--jq '.body' >"$notes_path"; then
+	fail_publish "release_notes_failed" "Failed to generate GitHub release notes."
+fi
+if [[ ! -s "$notes_path" ]]; then
+	fail_publish "release_notes_empty" "GitHub generated empty release notes."
+fi
+
+cat >>"$notes_path" <<NOTES
+
+## Build and verification
 
 Build number: $build_number
 Target commit: $TARGET_SHA

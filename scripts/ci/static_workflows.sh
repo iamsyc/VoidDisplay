@@ -27,6 +27,13 @@ assert_no_match() {
 	fail_on_output "$message" "$(rg -n "$@" || true)"
 }
 
+assert_match() {
+	local message="$1"
+	shift
+
+	rg -q "$@" || die "$message"
+}
+
 validate_runner_labels() {
 	assert_no_match "Workflow uses a non-macOS, paid, or larger runner label." \
 		'(runs-on|runs_on):[[:space:]]*(ubuntu-|windows-|macos-latest-large|.*-large)' .github/workflows .github/actions
@@ -134,20 +141,49 @@ validate_release_publish_credentials() {
 			in_job && /^  [[:alnum:]_]+:/ {
 				exit
 			}
-			in_job && /uses:[[:space:]]*actions\/checkout@/ {
-				in_checkout = 1
+			in_job && /-[[:space:]]+name:[[:space:]]+Checkout trusted release tools/ {
+				checkout_kind = "trusted"
 			}
-			in_checkout && /persist-credentials:[[:space:]]*true/ {
-				saw_persist_credentials = 1
+			in_job && /-[[:space:]]+name:[[:space:]]+Checkout release target/ {
+				checkout_kind = "target"
+			}
+			in_job && checkout_kind == "trusted" && /persist-credentials:[[:space:]]*true/ {
+				saw_trusted_credentials = 1
+			}
+			in_job && checkout_kind == "target" && /persist-credentials:[[:space:]]*false/ {
+				saw_target_isolation = 1
+			}
+			in_job && checkout_kind == "target" && /persist-credentials:[[:space:]]*true/ {
+				print FILENAME ":" FNR ": release target checkout must not retain credentials"
 			}
 			END {
-				if (!saw_persist_credentials) {
-					print FILENAME ": publish_release checkout must persist credentials for authenticated tag fetch and push"
+				if (!saw_trusted_credentials) {
+					print FILENAME ": trusted publish checkout must persist credentials for authenticated tag fetch and push"
+				}
+				if (!saw_target_isolation) {
+					print FILENAME ": release target checkout must disable persisted credentials"
 				}
 			}
 		' .github/workflows/release.yml
 	)"
-	fail_on_output "Release publishing must retain checkout credentials for Git tag operations." "$invalid"
+	fail_on_output "Release publishing must isolate credentials from target source." "$invalid"
+}
+
+validate_release_automation_contract() {
+	assert_no_match "Release recovery must not accept an arbitrary target ref." \
+		'target_ref|TARGET_REF' .github/workflows/release.yml
+	assert_match "Release recovery must accept only a semantic version tag." \
+		'workflow_dispatch:' .github/workflows/release.yml
+	assert_match "Release jobs must check out target source into an isolated directory." \
+		'path:[[:space:]]*release-target' .github/workflows/release.yml
+	assert_match "Release target resolution must enforce main ancestry." \
+		'merge_base_commit.*targetSha' .github/workflows/release.yml
+	assert_match "Release publishing must include generated change notes." \
+		'releases/generate-notes' scripts/release/publish.sh
+	assert_no_match "DMG creation must not depend on Finder automation or fixed layout waits." \
+		'osascript|apply_dmg_layout|release_run_with_timeout' scripts/release/create_dmg.sh
+	[[ -f scripts/release/assets/VoidDisplay-template.dmg ]] ||
+		die "Deterministic DMG layout template is missing."
 }
 
 validate_ui_smoke_artifact_summary() {
@@ -263,6 +299,7 @@ validate_runner_labels
 validate_action_pinning
 validate_workflow_script_contract
 validate_release_publish_credentials
+validate_release_automation_contract
 validate_ui_smoke_artifact_summary
 validate_release_ci_gate_timeout
 

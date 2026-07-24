@@ -52,14 +52,22 @@ fi
 
 output_dir="$(dirname "${output_dmg}")"
 app_name="$(basename "${app_path}")"
+template_dmg="$TOOL_ROOT/scripts/release/assets/VoidDisplay-template.dmg"
+
+if [[ "$app_name" != "VoidDisplay.app" ]]; then
+	fail_dmg "DMG template requires VoidDisplay.app, received: ${app_name}"
+fi
+if [[ "$volume_name" != "VoidDisplay" ]]; then
+	fail_dmg "DMG template requires volume name VoidDisplay, received: ${volume_name}"
+fi
+if [[ ! -f "$template_dmg" ]]; then
+	fail_dmg "DMG template not found: ${template_dmg}"
+fi
 
 stage="prepare_output"
 mkdir -p "${output_dir}"
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/voiddisplay-dmg.XXXXXX")"
-stage_dir="${work_dir}/stage"
-background_dir="${stage_dir}/.background"
-background_path="${background_dir}/background.png"
 rw_dmg="${work_dir}/temp-rw.dmg"
 mount_path=""
 device=""
@@ -71,44 +79,24 @@ cleanup() {
 
 trap cleanup EXIT
 
-mkdir -p "${background_dir}"
-# Render the DMG background at build time from a fixed template.
-stage="render_background"
-if ! swift "$TOOL_ROOT/scripts/release/render_dmg_background.swift" "${background_path}"; then
-	fail_dmg "Failed to render DMG background image."
-fi
-
-stage="stage_payload"
-if ! cp -R "${app_path}" "${stage_dir}/"; then
-	fail_dmg "Failed to copy app bundle into DMG staging directory."
-fi
-if ! ln -s /Applications "${stage_dir}/Applications"; then
-	fail_dmg "Failed to create Applications symlink in DMG staging directory."
-fi
-if ! SetFile -a V "${background_dir}"; then
-	fail_dmg "Failed to hide DMG background directory with SetFile."
-fi
-
 stage="dmg_size"
 if ! app_kb="$(du -sk "${app_path}" | awk '{print $1}')"; then
 	fail_dmg "Failed to measure app bundle size."
 fi
-if ! background_kb="$(du -sk "${background_path}" | awk '{print $1}')"; then
-	fail_dmg "Failed to measure DMG background size."
-fi
-size_kb="$((app_kb + background_kb + 65536))"
+size_kb="$((app_kb + 65536))"
 
-stage="hdiutil_create"
-if ! hdiutil create \
-	-srcfolder "${stage_dir}" \
-	-volname "${volume_name}" \
-	-fs HFS+ \
-	-fsargs "-c c=64,a=16,e=16" \
+stage="prepare_template"
+if ! run_with_retry 3 hdiutil convert \
+	"${template_dmg}" \
 	-format UDRW \
-	-size "${size_kb}k" \
 	-ov \
-	"${rw_dmg}"; then
-	fail_dmg "Failed to create writable DMG."
+	-o "${rw_dmg}"; then
+	fail_dmg "Failed to prepare writable DMG template."
+fi
+
+stage="hdiutil_resize"
+if ! hdiutil resize -size "${size_kb}k" "${rw_dmg}"; then
+	fail_dmg "Failed to resize writable DMG template."
 fi
 
 stage="hdiutil_attach"
@@ -127,22 +115,31 @@ if [ -z "${device}" ] || [ -z "${mount_path}" ]; then
 fi
 
 mounted_volume_name="$(basename "${mount_path}")"
-
-stage="dmg_layout"
-layout_exit_code=0
-release_run_with_timeout 45 osascript "$TOOL_ROOT/scripts/release/apply_dmg_layout.applescript" "${mounted_volume_name}" "${app_name}" || layout_exit_code="$?"
-if [ "${layout_exit_code}" -ne 0 ]; then
-	if [ "${layout_exit_code}" -eq 124 ]; then
-		printf '[ERROR] DMG layout timed out after 45 seconds.\n' >&2
-		exit 124
-	else
-		printf '[ERROR] DMG layout failed with exit code %s.\n' "${layout_exit_code}" >&2
-		exit "${layout_exit_code}"
-	fi
+if [[ "$mounted_volume_name" != "$volume_name" ]]; then
+	fail_dmg "Mounted DMG volume name mismatch: ${mounted_volume_name}"
 fi
 
-SetFile -a V "${mount_path}/.background" || true
-bless --folder "${mount_path}" --openfolder "${mount_path}" >/dev/null 2>&1 || true
+stage="validate_template"
+if [[ ! -f "${mount_path}/.DS_Store" ]]; then
+	fail_dmg "DMG template is missing Finder layout metadata."
+fi
+if [[ ! -f "${mount_path}/.background/background.png" ]]; then
+	fail_dmg "DMG template is missing its background image."
+fi
+if [[ ! -L "${mount_path}/Applications" || "$(readlink "${mount_path}/Applications")" != "/Applications" ]]; then
+	fail_dmg "DMG template is missing the Applications symlink."
+fi
+if [[ ! -d "${mount_path}/${app_name}" ]]; then
+	fail_dmg "DMG template is missing the app placeholder."
+fi
+
+stage="install_app"
+if ! rmdir "${mount_path}/${app_name}"; then
+	fail_dmg "DMG app placeholder is not empty."
+fi
+if ! cp -R "${app_path}" "${mount_path}/"; then
+	fail_dmg "Failed to copy app bundle into DMG."
+fi
 
 stage="hdiutil_detach"
 release_detach_device "${device}"

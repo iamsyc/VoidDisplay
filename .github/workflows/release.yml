@@ -4,13 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag (must match v*.*.*)
+        description: Recovery only, release tag matching the selected main commit
         required: true
-        type: string
-      target_ref:
-        description: Branch or commit SHA to tag
-        required: false
-        default: main
         type: string
   push:
     branches:
@@ -42,6 +37,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 5
     outputs:
+      should_run: ${{ steps.resolve.outputs.should_run }}
       target_sha: ${{ steps.resolve.outputs.target_sha }}
     permissions:
       contents: read
@@ -51,8 +47,9 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+          PUSH_SHA: ${{ github.sha }}
           WORKFLOW_REF: ${{ github.ref }}
-          TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.sha }}
           SUMMARY_PATH: .ai-tmp/release-target/target-summary.json
         with:
           script: |
@@ -62,36 +59,94 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const eventName = process.env.EVENT_NAME;
+            const inputTag = process.env.INPUT_TAG;
+            const pushSha = process.env.PUSH_SHA;
             const workflowRef = process.env.WORKFLOW_REF;
-            const targetRef = process.env.TARGET_REF;
             const summaryPath = process.env.SUMMARY_PATH;
 
-            if (eventName === 'workflow_dispatch' && workflowRef !== 'refs/heads/main') {
-              throw new Error('Manual release dispatch must run from main. Use target_ref to select the release target.');
+            if (!['push', 'workflow_dispatch'].includes(eventName)) {
+              throw new Error(`Unsupported release event: ${eventName}`);
             }
-            if (!targetRef) {
-              throw new Error('TARGET_REF is required.');
+            if (eventName === 'workflow_dispatch' && workflowRef !== 'refs/heads/main') {
+              throw new Error('Recovery dispatch must run from main.');
             }
 
-            const response = await github.rest.repos.getCommit({
+            const mainResponse = await github.rest.repos.getBranch({
               owner,
               repo,
-              ref: targetRef,
+              branch: 'main',
             });
-            const targetSha = response.data.sha;
-            if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
-              throw new Error(`Resolved target SHA is invalid: ${targetSha}`);
+            const mainSha = mainResponse.data.commit.sha;
+            let targetSha = pushSha;
+            let releaseExists = false;
+            let resolution = 'push_sha';
+
+            if (eventName === 'workflow_dispatch') {
+              if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(inputTag)) {
+                throw new Error(`Recovery tag is invalid: ${inputTag}`);
+              }
+
+              try {
+                const tagResponse = await github.rest.repos.getCommit({
+                  owner,
+                  repo,
+                  ref: inputTag,
+                });
+                targetSha = tagResponse.data.sha;
+                resolution = 'existing_tag';
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+                targetSha = mainSha;
+                resolution = 'current_main';
+              }
+
+              try {
+                await github.rest.repos.getReleaseByTag({
+                  owner,
+                  repo,
+                  tag: inputTag,
+                });
+                releaseExists = true;
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+              }
             }
 
+            if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
+              throw new Error(`Release target SHA is invalid: ${targetSha}`);
+            }
+
+            if (targetSha !== mainSha) {
+              const comparison = await github.rest.repos.compareCommits({
+                owner,
+                repo,
+                base: targetSha,
+                head: mainSha,
+              });
+              if (comparison.data.merge_base_commit?.sha !== targetSha) {
+                throw new Error(`Release target ${targetSha} is not an ancestor of main ${mainSha}.`);
+              }
+            }
+
+            const shouldRun = !releaseExists;
+            core.setOutput('should_run', String(shouldRun));
             core.setOutput('target_sha', targetSha);
             await fs.mkdir(path.dirname(summaryPath), { recursive: true });
             await fs.writeFile(summaryPath, `${JSON.stringify({
               status: 'passed',
               repository: `${owner}/${repo}`,
               event_name: eventName,
+              input_tag: inputTag,
               workflow_ref: workflowRef,
-              target_ref: targetRef,
+              main_sha: mainSha,
               target_sha: targetSha,
+              resolution: resolution,
+              release_exists: releaseExists,
+              should_run: shouldRun,
             }, null, 2)}\n`);
 
       - name: Upload target summary
@@ -119,10 +174,18 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout trusted release tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.resolve_release_target.outputs.target_sha }}
+          path: release-target
           fetch-depth: 0
           persist-credentials: false
 
@@ -133,7 +196,8 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Prepare release metadata
         id: prepare
@@ -147,9 +211,10 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/prepare.sh" \
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/prepare.sh" \
             --event-name "$EVENT_NAME" \
-            --target-repo-dir "$GITHUB_WORKSPACE" \
+            --target-repo-dir "$target_root" \
             --before-sha "$BEFORE_SHA" \
             --input-tag "$INPUT_TAG" \
             --ref-name "$REF_NAME" \
@@ -189,10 +254,18 @@ jobs:
             arch: x86_64
             runs_on: macos-26-intel
     steps:
+      - name: Checkout trusted release tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
+          path: release-target
           fetch-depth: 0
           persist-credentials: false
 
@@ -206,14 +279,16 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Build ad hoc DMG and SBOM
         shell: bash
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --arch '${{ matrix.arch }}' \
             --label '${{ matrix.label }}' \
@@ -224,7 +299,8 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/.ai-tmp/release-${{ matrix.label }}/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --label '${{ matrix.label }}' \
@@ -285,12 +361,20 @@ jobs:
       contents: write
       attestations: read
     steps:
+      - name: Checkout trusted release tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ needs.prepare_release.outputs.target_sha }}
+          path: release-target
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Bootstrap publish tools
         shell: bash
@@ -299,7 +383,8 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
       - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -316,8 +401,9 @@ jobs:
           set -euo pipefail
           ls -lah release-assets
           tool_root="$GITHUB_WORKSPACE"
+          target_root="$GITHUB_WORKSPACE/release-target"
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --label arm64 \
@@ -325,7 +411,7 @@ jobs:
             --repository '${{ github.repository }}' \
             --require-attestation true
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --label intel64 \
@@ -340,7 +426,8 @@ jobs:
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/publish.sh" \
+          target_root="$GITHUB_WORKSPACE/release-target"
+          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/publish.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
             --tag '${{ needs.prepare_release.outputs.tag }}' \
             --target-sha '${{ needs.prepare_release.outputs.target_sha }}' \
@@ -369,7 +456,7 @@ jobs:
     name: require-ci-gate
     needs:
       - resolve_release_target
-    if: ${{ needs.resolve_release_target.outputs.target_sha != '' }}
+    if: ${{ needs.resolve_release_target.outputs.should_run == 'true' && needs.resolve_release_target.outputs.target_sha != '' }}
     runs-on: macos-26
     timeout-minutes: 75
     permissions:
