@@ -55,7 +55,30 @@ uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
 Release builds are ad hoc signed only. They are not Developer ID signed, notarized, stapled, or certified by Apple.
 
-Release workflow first resolves the target SHA without checking out target code, then verifies that SHA has a successful `ci-gate` through inline GitHub API logic. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary. After the gate passes, release jobs execute scripts from the checked-out target commit and use JSON summaries and outputs to decide whether build and publish jobs should run.
+Release workflow first resolves the target SHA without checking out target code, then verifies that SHA has a successful `ci-gate` through inline GitHub API logic. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary. After the gate passes, release jobs use JSON summaries and outputs to decide whether build and publish jobs should run.
+
+### Trusted Tool And Target Roots
+
+Release jobs use two checkouts:
+
+- `TOOL_ROOT` is the workflow commit at `github.sha`. Release scripts, bootstrap configuration, and the DMG template come from this checkout.
+- `ROOT_DIR` is the resolved release target under `release-target`. Product source, project metadata, and the app build come from this checkout.
+
+Every workflow script runs from `TOOL_ROOT` and receives both roots explicitly. A project-managed tool that uses repository configuration must be resolved against `TOOL_ROOT` before `xcodebuild` starts, then passed into Xcode as an absolute path. When mise is available, release smoke resolves Go with `mise -C "$TOOL_ROOT" which go` and passes `GO_BIN` into the `Build Relay` phase. This prevents tool shims from searching the release target for configuration that the Xcode script sandbox cannot read.
+
+### DMG Template Maintenance
+
+`scripts/release/assets/VoidDisplay-template.dmg` is the source of truth for the Finder layout. `create_dmg.sh` converts the template to a writable image, resizes it, validates its contents, replaces the empty app placeholder, and compresses the result.
+
+The template must contain:
+
+- Volume name `VoidDisplay`.
+- `.DS_Store` with the Finder layout.
+- `.background/background.png`.
+- An `Applications` symlink whose target is `/Applications`.
+- An empty `VoidDisplay.app` directory used as the app placeholder.
+
+The release path does not generate the background or Finder layout. Change the template only as an explicit maintenance task. Work on a copy under `.ai-tmp/`, preserve the required entries, replace the versioned template after reviewing the mounted layout, then run `scripts/ci/static.sh` and a host-architecture release build plus `scripts/release/verify.sh`. Main CI and the Release workflow provide the final dual-architecture evidence.
 
 The current release workflow publishes this asset set per architecture:
 
@@ -78,19 +101,45 @@ Verify a `v2.1.0` checksum from the directory containing both downloaded files:
 shasum -a 256 -c VoidDisplay-v2.1.0-arm64.dmg.sha256
 ```
 
-For releases containing the full asset set, run:
+For releases containing the full asset set, download the published files and run both architecture checks:
 
 ```sh
+release_dir=".ai-tmp/release-readback/vX.Y.Z"
+mkdir -p "$release_dir"
+gh release download vX.Y.Z --dir "$release_dir"
+
 scripts/release/verify.sh \
-  --assets-dir release-assets \
+  --assets-dir "$release_dir" \
   --tag vX.Y.Z \
   --label arm64 \
   --arch arm64 \
   --repository iamsyc/VoidDisplay \
   --require-attestation true
+
+scripts/release/verify.sh \
+  --assets-dir "$release_dir" \
+  --tag vX.Y.Z \
+  --label intel64 \
+  --arch x86_64 \
+  --repository iamsyc/VoidDisplay \
+  --require-attestation true
 ```
 
 `verify.sh` checks checksum, DMG mountability, bundle id, version, architecture, ad hoc codesign, SBOM JSON, and GitHub attestation when requested.
+
+### Stable Release Completion
+
+Before reporting a stable release as complete:
+
+1. Confirm the target commit has a successful `ci-gate`.
+2. Wait for the Release workflow to finish successfully, including both architecture builds and `publish-github-release`.
+3. Confirm the public release is neither a draft nor a prerelease, and resolve the release tag to the target commit.
+4. Confirm the public asset list contains the DMG, checksum, SPDX SBOM, build summary, and verification summary for arm64 and Intel.
+5. Download the public assets into a fresh directory and run both verification commands above with attestations required.
+6. Confirm the source PR is merged. When cleanup was requested, remove the local and remote topic branches.
+7. Confirm the local worktree is clean and `git rev-list --left-right --count main...origin/main` reports `0 0`.
+
+Report local verification, main CI, the Release workflow, and public asset readback separately. GitHub-hosted runners build and publish the release packages. Local release builds provide diagnostics or reproduction evidence and are not uploaded.
 
 ## Nightly
 
