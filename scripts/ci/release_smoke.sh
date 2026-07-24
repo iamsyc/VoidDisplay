@@ -60,7 +60,9 @@ done
 validate_release_arch "$ARCH"
 LABEL="${LABEL:-$(release_label_for_arch "$ARCH")}"
 require_release_label_for_arch "$ARCH" "$LABEL"
-require_command go jq rg xcodebuild lipo codesign
+require_command jq rg xcodebuild lipo codesign
+GO_BIN="$(resolve_trusted_go_binary)"
+export GO_BIN
 mkdir -p "$OUT_DIR"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$OUT_DIR/DerivedData}"
 APP_OUTPUT_FILE="${APP_OUTPUT_FILE:-$OUT_DIR/app-path.txt}"
@@ -80,6 +82,7 @@ xcodebuild \
 	-skipPackageUpdates \
 	-onlyUsePackageVersionsFromResolvedFile \
 	ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" \
+	GO_BIN="$GO_BIN" \
 	CODE_SIGNING_ALLOWED=NO \
 	CODE_SIGNING_REQUIRED=NO \
 	ARCHS="$ARCH" \
