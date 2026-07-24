@@ -122,6 +122,34 @@ validate_workflow_script_contract() {
 	fail_on_output "PR CI checkouts must disable persisted credentials." "$invalid"
 }
 
+validate_release_publish_credentials() {
+	local invalid
+
+	invalid="$(
+		awk '
+			/^  publish_release:/ {
+				in_job = 1
+				next
+			}
+			in_job && /^  [[:alnum:]_]+:/ {
+				exit
+			}
+			in_job && /uses:[[:space:]]*actions\/checkout@/ {
+				in_checkout = 1
+			}
+			in_checkout && /persist-credentials:[[:space:]]*true/ {
+				saw_persist_credentials = 1
+			}
+			END {
+				if (!saw_persist_credentials) {
+					print FILENAME ": publish_release checkout must persist credentials for authenticated tag fetch and push"
+				}
+			}
+		' .github/workflows/release.yml
+	)"
+	fail_on_output "Release publishing must retain checkout credentials for Git tag operations." "$invalid"
+}
+
 validate_ui_smoke_artifact_summary() {
 	local actual
 	local expected
@@ -234,6 +262,7 @@ actionlint
 validate_runner_labels
 validate_action_pinning
 validate_workflow_script_contract
+validate_release_publish_credentials
 validate_ui_smoke_artifact_summary
 validate_release_ci_gate_timeout
 
