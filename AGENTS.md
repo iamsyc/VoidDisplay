@@ -11,6 +11,8 @@
 - If the user asks to keep `main` linear, rebase or otherwise update the working branch onto the latest `main` before opening or merging the PR, and use a merge method that adds a single linear commit on `main` without creating a merge commit. Prefer `squash merge` when the repository supports it; otherwise use `rebase merge`.
 - Do not commit unless the user explicitly requests or approves commit for this task.
 - If task is analysis/question only, do not create branch or commit.
+- For release delivery, report main CI, the Release workflow, and public asset readback as separate evidence. Completion requires terminal success for the requested workflow, the release tag at the target commit, every advertised architecture downloaded and verified, and any requested branch cleanup.
+- During runner waits, report phase transitions and distinguish external queue or build time from local work. Reuse completed gates while tracked source remains unchanged.
 
 ## Exceptions
 - If user says stay on current branch / work on `main` / skip PR / skip waiting CI, follow that instruction for this task.
