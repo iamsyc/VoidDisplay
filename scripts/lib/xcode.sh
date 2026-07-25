@@ -7,8 +7,8 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 	source "$TOOL_ROOT/scripts/lib/common.sh"
 
 	select_required_xcode() {
-		local expected_xcode_prefix="${EXPECTED_XCODE_VERSION_PREFIX:-26.5}"
-		local expected_swift_prefix="${EXPECTED_SWIFT_VERSION_PREFIX:-6.}"
+		local expected_xcode_prefix="${EXPECTED_XCODE_VERSION_PREFIX:-26.6}"
+		local expected_swift_prefix="${EXPECTED_SWIFT_VERSION_PREFIX:-6.3}"
 		local candidates=()
 		local candidate
 
@@ -16,9 +16,9 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 			candidates+=("$DEVELOPER_DIR")
 		fi
 		candidates+=(
-			"/Applications/Xcode-26.5.0.app/Contents/Developer"
-			"/Applications/Xcode_26.5.app/Contents/Developer"
-			"/Applications/Xcode_26.5.0.app/Contents/Developer"
+			"/Applications/Xcode-26.6.0.app/Contents/Developer"
+			"/Applications/Xcode_26.6.app/Contents/Developer"
+			"/Applications/Xcode_26.6.0.app/Contents/Developer"
 			"/Applications/Xcode.app/Contents/Developer"
 		)
 

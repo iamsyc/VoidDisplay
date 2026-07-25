@@ -16,7 +16,7 @@ The workflow set is:
 
 The repository uses GitHub Free compatible capabilities only: standard macOS hosted runners, Dependabot, Dependency Review, CodeQL, release artifacts, and artifact attestations. Larger runners, self-hosted runners, paid scanning services, Developer ID signing, notarization, and stapling are out of scope.
 
-Xcode selection prefers the Xcode `26.5.0` installation and requires `xcodebuild` version prefix `26.5` with Swift `6.x` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` only for an intentional temporary override.
+Xcode selection prefers the Xcode `26.6.0` installation and requires `xcodebuild` version prefix `26.6` with Swift `6.3` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` and `EXPECTED_SWIFT_VERSION_PREFIX` only for an intentional temporary override.
 
 Local command selection and environment-failure handling are documented in [Testing Strategy](./testing-strategy.md). This document covers workflow-side orchestration and release evidence.
 
