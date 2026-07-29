@@ -50,6 +50,8 @@
 - For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.
 - Full-suite candidates include shared code, dependency or build settings, scripts or test infrastructure, large refactors, concurrency, persistence, network, security, release behavior, and user-requested full verification.
 - If the local environment cannot execute a required gate because of architecture, OS, Xcode, signing, or privacy-automation setup, record the missing evidence explicitly. Do not report that gate as passed.
+- Permission-sensitive real-app acceptance must use `scripts/dev/build_signed_runtime.sh` and launch the exact `app_path` recorded in `signed-runtime-summary.json`. An Xcode Personal Team `Apple Development` identity is sufficient for this local-only gate; do not use the resulting app in CI, Release, or public distribution.
+- If that development identity is unavailable, record the signed acceptance gate as an environment setup failure. Do not substitute an unsigned or ad hoc build, and do not infer privacy-permission behavior from ordinary signing-disabled validation.
 
 ### Remote CI Verification
 - `.github/workflows/ci.yml` and the reusable workflows it invokes are the source of truth for workflow-side change classification, runner images, job matrices, artifacts, and CI gate coverage.

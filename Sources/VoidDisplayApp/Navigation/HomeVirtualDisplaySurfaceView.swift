@@ -31,6 +31,9 @@ package struct HomeVirtualDisplaySurfaceView: View {
     @State private var sharingPortInput = ""
     @State private var sharingPortErrorMessage: String?
     @State private var isConfigStoreDetailsExpanded = false
+    @State private var displayDetectionState = HomeDisplayDetectionState()
+    @State private var homeSurfaceWidth = CGFloat.infinity
+    @State private var catalogSurfaceRegistration: DisplayRuntimeCatalogSurfaceRegistration?
 
     private struct EditingConfig: Identifiable {
         let id: UUID
@@ -87,7 +90,30 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 .appListContentInsets()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if context.displayDetection.showsStatus {
+                HStack {
+                    Spacer(minLength: 0)
+                    HomeDisplayDetectionStatus(
+                        presentation: context.displayDetection,
+                        rescanDisplays: context.actions.rescanDisplays
+                    )
+                    .padding(.horizontal, AppUI.Spacing.medium)
+                    .padding(.vertical, AppUI.Spacing.small)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .stroke(.quaternary, lineWidth: AppUI.Stroke.subtle)
+                    }
+                }
+                .padding(.horizontal, context.metrics.itemHorizontalPadding)
+                .padding(.vertical, AppUI.Spacing.small)
+            }
+        }
         .accessibilityElement(children: .contain)
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { newValue in
+            homeSurfaceWidth = newValue
+        }
         .sheet(isPresented: $createView) {
             CreateVirtualDisplay(isShow: $createView)
                 .environment(virtualDisplay)
@@ -143,18 +169,28 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
         .onAppear {
             viewModel.handleAppear()
+            registerCatalogSurfaceIfNeeded()
         }
         .onDisappear {
-            Task {
-                await displayRuntime.handleCatalogDisappear(source: .capturePage)
-                await displayRuntime.handleCatalogDisappear(source: .sharingPage)
-            }
+            displayDetectionState.invalidate()
+            unregisterCatalogSurfaceIfNeeded()
         }
-        .task {
-            await refreshCatalogForHomeSurface()
+        .task(id: catalogSurfaceRegistration) {
+            guard let catalogSurfaceRegistration else { return }
+            await refreshCatalogForHomeSurface(registration: catalogSurfaceRegistration)
+        }
+        .task(id: displayDetectionPresentation) {
+            await clearTransientDisplayDetectionFeedback(
+                presentation: displayDetectionPresentation
+            )
         }
         .onChange(of: virtualDisplay.restoreFailures) { _, newValue in
             viewModel.handleRestoreFailuresChanged(newValue)
+        }
+        .onChange(of: displayRuntime.makeSnapshot().catalog.isLoadingDisplays) { _, isLoading in
+            if isLoading {
+                displayDetectionState.catalogRefreshDidStart()
+            }
         }
         .onChange(of: sharing.isWebServiceRunning) { _, isRunning in
             Task {
@@ -190,15 +226,16 @@ package struct HomeVirtualDisplaySurfaceView: View {
             presentation: presentation,
             itemStates: itemStates,
             isCreateVirtualDisplayDisabled: virtualDisplay.configStorePresentation.hasLoadFailure,
+            showsRescanToolbarTitle:
+                homeSurfaceWidth >= metrics.minimumContentWidthForRescanToolbarTitle,
             permissionStatus: permissionStatus,
+            displayDetection: displayDetectionPresentation,
             sharingSettings: sharingSettings,
             actions: HomeLayoutActions(
                 createVirtualDisplay: {
                     createView = true
                 },
-                refresh: {
-                    Task { await refreshCatalogForHomeSurface(force: true) }
-                },
+                rescanDisplays: rescanDisplays,
                 openScreenCapturePrivacySettings: {
                     openScreenCapturePrivacySettings { url in
                         openURL(url)
@@ -256,6 +293,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: item.id),
                 isPrimary: viewModel.isPrimaryDisplay(configID: item.id),
                 canSetAsPrimary: canSetAsPrimary(item),
+                needsDisplayDetection: needsDisplayDetection(item),
+                isDisplayDetectionScanning: displayDetectionPresentation.isScanning,
                 isPreviewActionDisabled: isPreviewActionDisabled(item),
                 isPreviewStarting: item.displayID.map(capture.isStarting(displayID:)) ?? false,
                 isWebViewActionDisabled: isWebViewActionDisabled(item),
@@ -465,27 +504,72 @@ package struct HomeVirtualDisplaySurfaceView: View {
         }
     }
 
-    private func refreshCatalogForHomeSurface(force: Bool = false) async {
-        if force {
-            await displayRuntime.forceRefreshCatalog(source: .capturePage)
-        } else {
-            await displayRuntime.handleCatalogAppear(source: .capturePage)
+    private func registerCatalogSurfaceIfNeeded() {
+        guard catalogSurfaceRegistration == nil else { return }
+        catalogSurfaceRegistration = displayRuntime.registerCatalogSurface(source: .capturePage)
+    }
+
+    private func unregisterCatalogSurfaceIfNeeded() {
+        guard let registration = catalogSurfaceRegistration else { return }
+        catalogSurfaceRegistration = nil
+        Task {
+            await displayRuntime.unregisterCatalogSurface(registration)
         }
+    }
+
+    private func refreshCatalogForHomeSurface(
+        registration: DisplayRuntimeCatalogSurfaceRegistration
+    ) async {
+        await displayRuntime.refreshCatalogSurface(registration)
         if sharing.isWebServiceRunning {
             await displayRuntime.handleSharingServiceStateChanged(isRunning: true)
         }
+    }
+
+    private func forceRefreshCatalogForHomeSurface() async -> DisplayRuntimeCatalogRefreshOutcome {
+        await displayRuntime.forceRefreshCatalog(source: .capturePage)
+    }
+
+    private func rescanDisplays() {
+        guard !displayDetectionState.isScanning else { return }
+        let operationID = displayDetectionState.begin(
+            previousCatalog: displayRuntime.makeSnapshot().catalog
+        )
+
+        Task {
+            let refreshOutcome = await forceRefreshCatalogForHomeSurface()
+            displayDetectionState.complete(
+                operationID: operationID,
+                refreshOutcome: refreshOutcome
+            )
+        }
+    }
+
+    private func clearTransientDisplayDetectionFeedback(
+        presentation: HomeDisplayDetectionPresentation
+    ) async {
+        guard presentation.isTransient else { return }
+        do {
+            try await Task.sleep(for: .seconds(4))
+        } catch {
+            return
+        }
+        displayDetectionState.clearTransientOutcome(matching: presentation)
     }
 
     private func resolveDisplay(displayID: CGDirectDisplayID) async -> SCDisplay? {
         if let display = display(for: displayID) {
             return display
         }
-        await displayRuntime.forceRefreshCatalog(source: .capturePage)
+        _ = await displayRuntime.forceRefreshCatalog(source: .capturePage)
         return display(for: displayID)
     }
 
     private func display(for displayID: CGDirectDisplayID) -> SCDisplay? {
-        let displays = capture.displayCatalogState.displays ?? sharing.displayCatalogState.displays ?? []
+        let displays =
+            capture.displayCatalogState.activeShareableDisplays
+            ?? sharing.displayCatalogState.activeShareableDisplays
+            ?? []
         return displays.first { $0.displayID == displayID }
     }
 
@@ -520,6 +604,20 @@ package struct HomeVirtualDisplaySurfaceView: View {
         return display(for: displayID) == nil || capture.displayCatalogState.hasScreenCapturePermission == false
     }
 
+    private func needsDisplayDetection(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
+        guard capture.displayCatalogState.hasScreenCapturePermission == true,
+              capture.displayCatalogState.loadErrorMessage == nil,
+              capture.displayCatalogState.lastLoadError == nil,
+              item.isRunning,
+              !item.isPreviewing,
+              !item.isSharing,
+              let displayID = item.displayID
+        else {
+            return false
+        }
+        return display(for: displayID) == nil
+    }
+
     private func isWebViewActionDisabled(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
         if displayRuntime.isConsumerTransitionBusy(
             surfaceIdentity: .managedVirtualDisplay(configID: item.id)
@@ -543,7 +641,9 @@ package struct HomeVirtualDisplaySurfaceView: View {
     }
 
     private var sharePageAddresses: [CGDirectDisplayID: String] {
-        let catalogDisplayIDs = Set((sharing.displayCatalogState.displays ?? []).map(\.displayID))
+        let catalogDisplayIDs = Set(
+            (sharing.displayCatalogState.activeShareableDisplays ?? []).map(\.displayID)
+        )
         let displayIDs = catalogDisplayIDs
             .union(sharing.activeSharingDisplayIDs)
             .union(sharing.startingDisplayIDs)
@@ -571,6 +671,17 @@ package struct HomeVirtualDisplaySurfaceView: View {
         case nil:
             String(localized: "Checking")
         }
+    }
+
+    private var displayDetectionPresentation: HomeDisplayDetectionPresentation {
+        let catalog = displayRuntime.makeSnapshot().catalog
+        if displayDetectionState.isScanning || catalog.isLoadingDisplays {
+            return .scanning
+        }
+        if catalog.hasLoadError {
+            return .failed
+        }
+        return displayDetectionState.outcome
     }
 
     private var permissionSystemImage: String {

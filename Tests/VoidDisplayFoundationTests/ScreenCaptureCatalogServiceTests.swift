@@ -111,6 +111,25 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(sut.store.lastPreflightPermission == false)
     }
 
+    @Test func catalogSnapshotExposesOnlyActiveShareableDisplays() {
+        let hiddenDisplay = SharedMockSCDisplay.make(displayID: 91, width: 1920, height: 1080)
+        let activeDisplay = SharedMockSCDisplay.make(displayID: 92, width: 2560, height: 1440)
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: { [] },
+            activeDisplayIDsProvider: { [activeDisplay.displayID] }
+        )
+        sut.store.displays = [hiddenDisplay, activeDisplay]
+        sut.store.lastLoadedActiveDisplayTopologySignature = sut.currentActiveDisplayTopologySignature()
+
+        let snapshot = sut.makeCatalogStateSnapshot()
+
+        #expect(sut.store.activeShareableDisplays?.map(\.displayID) == [activeDisplay.displayID])
+        #expect(snapshot.loadedDisplays == [
+            .init(displayID: activeDisplay.displayID, pixelWidth: 2560, pixelHeight: 1440)
+        ])
+    }
+
     @Test func refreshFailurePersistsErrorDetails() async {
         let expected = NSError(domain: "CatalogTests", code: 42)
         let sut = ScreenCaptureCatalogService(
@@ -122,7 +141,7 @@ struct ScreenCaptureCatalogServiceTests {
 
         let result = await sut.submitRefresh(intent: .userForcedRefresh)
 
-        #expect(result == .failed)
+        #expect(result.result == .failed)
         #expect(sut.store.isLoadingDisplays == false)
         #expect(sut.store.loadErrorMessage != nil)
         #expect(sut.store.lastLoadError?.domain == expected.domain)
@@ -147,7 +166,7 @@ struct ScreenCaptureCatalogServiceTests {
 
         let result = await sut.submitRefresh(intent: .userForcedRefresh)
 
-        #expect(result == .clearedSnapshot)
+        #expect(result.result == .clearedSnapshot)
         #expect(await callFlag.wasCalled() == false)
         #expect(sut.store.hasScreenCapturePermission == false)
         #expect(sut.store.lastPreflightPermission == false)
@@ -182,8 +201,8 @@ struct ScreenCaptureCatalogServiceTests {
             }
         )
 
-        await sut.cancelRefresh()
-        #expect(await refresh.value == .failed)
+        let clearSettlement = await sut.clearSnapshotForDeniedPermission()
+        #expect(await refresh.value == clearSettlement)
         #expect(sut.store.isLoadingDisplays == false)
     }
 
@@ -207,7 +226,7 @@ struct ScreenCaptureCatalogServiceTests {
 
         let result = await sut.submitRefresh(intent: .permissionChanged)
 
-        #expect(result == .reusedSnapshot)
+        #expect(result.result == .reusedSnapshot)
         #expect(sut.store.lastRefreshResult == .reusedSnapshot)
         #expect(await gate.currentCallCount() == 0)
     }
@@ -224,13 +243,13 @@ struct ScreenCaptureCatalogServiceTests {
 
         let result = await sut.submitRefresh(intent: .permissionChanged)
 
-        #expect(result == .clearedSnapshot)
+        #expect(result.result == .clearedSnapshot)
         #expect(sut.store.displays == nil)
         #expect(sut.store.hasScreenCapturePermission == false)
         #expect(sut.store.lastRefreshResult == .clearedSnapshot)
     }
 
-    @Test func supersededRefreshDoesNotOverwriteLatestSnapshot() async {
+    @Test func supersededRefreshReturnsReplacementOutcomeWithoutOverwritingLatestSnapshot() async {
         let gate = SequencedCatalogServiceLoadGate(
             scriptedOutcomes: [
                 .failure(CatalogServiceControlledFailure()),
@@ -258,52 +277,18 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await waitForLoaderCall(gate, count: 2))
 
         await gate.release(call: 2)
-        #expect(await secondRefresh.value == .reloadedSnapshot)
+        #expect(await secondRefresh.value.result == .reloadedSnapshot)
         #expect(sut.store.displays?.isEmpty == true)
         #expect(sut.store.lastLoadError == nil)
 
         await gate.release(call: 1)
-        #expect(await firstRefresh.value == .failed)
+        #expect(await firstRefresh.value.result == .reloadedSnapshot)
         #expect(sut.store.displays?.isEmpty == true)
         #expect(sut.store.lastLoadError == nil)
         #expect(sut.store.lastRefreshResult == .reloadedSnapshot)
     }
 
-    @Test func cancelRefreshOnlyCancelsMatchingOwner() async {
-        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success])
-        let sut = ScreenCaptureCatalogService(
-            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
-            loadShareableDisplays: {
-                switch await gate.nextOutcome() {
-                case .success:
-                    return []
-                case .failure(let error):
-                    throw error
-                }
-            },
-            activeDisplayIDsProvider: { [404] }
-        )
-        let captureOwner = ScreenCaptureCatalogService.RefreshOwner()
-        let sharingOwner = ScreenCaptureCatalogService.RefreshOwner()
-        sut.store.hasScreenCapturePermission = true
-
-        let refresh = Task {
-            await sut.submitRefresh(intent: .userForcedRefresh, owner: captureOwner)
-        }
-        #expect(await waitForLoaderCall(gate, count: 1))
-        #expect(sut.store.isLoadingDisplays == true)
-
-        await sut.cancelRefresh(owner: sharingOwner)
-
-        #expect(sut.store.isLoadingDisplays == true)
-
-        await gate.release(call: 1)
-        #expect(await refresh.value == .reloadedSnapshot)
-        #expect(sut.store.isLoadingDisplays == false)
-        #expect(sut.store.lastRefreshResult == .reloadedSnapshot)
-    }
-
-    @Test func supersededRefreshDoesNotClearLoadingStateWhileReplacementRuns() async {
+    @Test func supersededRefreshWaitsForReplacementWithoutClearingLoadingState() async {
         let gate = SequencedCatalogServiceLoadGate(
             scriptedOutcomes: [
                 .failure(CatalogServiceControlledFailure()),
@@ -333,16 +318,55 @@ struct ScreenCaptureCatalogServiceTests {
 
         await gate.release(call: 1)
 
-        #expect(await firstRefresh.value == .failed)
         #expect(sut.store.isLoadingDisplays == true)
         #expect(sut.store.lastLoadError == nil)
         #expect(sut.store.lastRefreshResult == nil)
 
         await gate.release(call: 2)
 
-        #expect(await secondRefresh.value == .reloadedSnapshot)
+        #expect(await secondRefresh.value.result == .reloadedSnapshot)
+        #expect(await firstRefresh.value.result == .reloadedSnapshot)
         #expect(sut.store.isLoadingDisplays == false)
         #expect(sut.store.lastRefreshResult == .reloadedSnapshot)
+    }
+
+    @Test func supersededRefreshReturnsWhenReplacementSettlesEvenIfCancelledLoaderDoesNotReturn() async {
+        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success, .success])
+        let firstRefreshCompleted = CatalogServiceAsyncCallFlag()
+        let sut = ScreenCaptureCatalogService(
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success:
+                    return []
+                case .failure(let error):
+                    throw error
+                }
+            },
+            activeDisplayIDsProvider: { [506] }
+        )
+        sut.store.hasScreenCapturePermission = true
+
+        let firstRefresh = Task {
+            let result = await sut.submitRefresh(intent: .permissionChanged)
+            await firstRefreshCompleted.markCalled()
+            return result
+        }
+        #expect(await waitForLoaderCall(gate, count: 1))
+
+        let replacementRefresh = Task {
+            await sut.submitRefresh(intent: .userForcedRefresh)
+        }
+        #expect(await waitForLoaderCall(gate, count: 2))
+
+        await gate.release(call: 2)
+        #expect(await replacementRefresh.value.result == .reloadedSnapshot)
+        #expect(await eventually(timeoutNanoseconds: 250_000_000) {
+            await firstRefreshCompleted.wasCalled()
+        })
+
+        await gate.release(call: 1)
+        #expect(await firstRefresh.value.result == .reloadedSnapshot)
     }
 
     @Test func matchingCachedTopologyJoinsInFlightRefreshInsteadOfReusingStaleSnapshot() async {
@@ -382,8 +406,8 @@ struct ScreenCaptureCatalogServiceTests {
 
         await gate.release(call: 1)
 
-        #expect(await firstRefresh.value == .reloadedSnapshot)
-        #expect(await joinedRefresh.value == .reloadedSnapshot)
+        #expect(await firstRefresh.value.result == .reloadedSnapshot)
+        #expect(await joinedRefresh.value.result == .reloadedSnapshot)
         #expect(sut.store.displays?.map(\.displayID) == [808])
         #expect(sut.store.lastRefreshResult == .reloadedSnapshot)
     }
@@ -408,14 +432,19 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await waitForLoaderCall(gate, count: 1))
         #expect(sut.store.isLoadingDisplays == true)
 
-        await sut.clearSnapshotForDeniedPermission(loadErrorMessage: "permission denied")
+        let clearSettlement = await sut.clearSnapshotForDeniedPermission(
+            loadErrorMessage: "permission denied"
+        )
+        #expect(clearSettlement.result == .clearedSnapshot)
+        #expect(clearSettlement.catalog.hasScreenCapturePermission == false)
+        #expect(clearSettlement.catalog.loadedDisplays.isEmpty)
         #expect(sut.store.displays == nil)
         #expect(sut.store.hasScreenCapturePermission == false)
         #expect(sut.store.lastRefreshResult == .clearedSnapshot)
         #expect(sut.store.loadErrorMessage == "permission denied")
 
         await gate.release(call: 1)
-        #expect(await refresh.value == .failed)
+        #expect(await refresh.value == clearSettlement)
         #expect(sut.store.displays == nil)
         #expect(sut.store.hasScreenCapturePermission == false)
         #expect(sut.store.lastRefreshResult == .clearedSnapshot)
@@ -468,7 +497,7 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await waitForLoaderCall(gate, count: 1))
         await gate.release(call: 1)
 
-        #expect(await refresh.value == .reloadedSnapshot)
+        #expect(await refresh.value.result == .reloadedSnapshot)
         #expect(sut.store.displays?.map(\.displayID) == [displayID])
         #expect(sut.store.lastLoadedActiveDisplayTopologySignature == signatureBox.value)
     }
@@ -506,7 +535,7 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await waitForLoaderCall(gate, count: 2))
         await gate.release(call: 2)
 
-        #expect(await refresh.value == .reloadedSnapshot)
+        #expect(await refresh.value.result == .reloadedSnapshot)
         #expect(await gate.currentCallCount() == 2)
         #expect(sut.store.displays?.map(\.displayID) == [1002])
         #expect(sut.store.lastLoadedActiveDisplayTopologySignature == retriedSignature)
@@ -553,7 +582,7 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await waitForLoaderCall(gate, count: 3))
         await gate.release(call: 3)
 
-        #expect(await refresh.value == .reloadedSnapshot)
+        #expect(await refresh.value.result == .reloadedSnapshot)
         #expect(await gate.currentCallCount() == 3)
         #expect(sut.store.displays?.map(\.displayID) == [1103])
         #expect(sut.store.lastLoadedActiveDisplayTopologySignature == finalSignature)
@@ -604,7 +633,7 @@ struct ScreenCaptureCatalogServiceTests {
             await gate.release(call: index + 1)
         }
 
-        #expect(await refresh.value == .failed)
+        #expect(await refresh.value.result == .failed)
         #expect(await gate.currentCallCount() == 4)
         #expect(sut.store.displays?.map(\.displayID) == [1200])
         #expect(sut.store.lastLoadedActiveDisplayTopologySignature == stableSignature)
@@ -634,6 +663,20 @@ struct ScreenCaptureCatalogServiceTests {
         while DispatchTime.now().uptimeNanoseconds < deadline {
             if await condition() == false {
                 return false
+            }
+            await Task.yield()
+        }
+        return await condition()
+    }
+
+    private func eventually(
+        timeoutNanoseconds: UInt64,
+        condition: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await condition() {
+                return true
             }
             await Task.yield()
         }

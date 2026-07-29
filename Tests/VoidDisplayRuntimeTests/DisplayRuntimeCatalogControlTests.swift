@@ -9,8 +9,8 @@ struct DisplayRuntimeCatalogControlTests {
         let removedDisplayID = DisplayRuntimeDisplayID(1001)
         let keptDisplayID = DisplayRuntimeDisplayID(1002)
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: keptDisplayID, isMain: false),
             refreshResults: [.reloadedSnapshot],
-            visibleDisplays: [.init(displayID: keptDisplayID, pixelWidth: 2560, pixelHeight: 1440)]
         )
         let capture = FakeCaptureCommander(
             snapshot: captureSnapshot(displayIDs: [removedDisplayID, keptDisplayID])
@@ -47,9 +47,10 @@ struct DisplayRuntimeCatalogControlTests {
             demand: runtimeConsumerDemand()
         )
 
-        await runtime.handleCatalogAppear(source: .capturePage)
+        let registration = runtime.registerCatalogSurface(source: .capturePage)
+        await runtime.refreshCatalogSurface(registration)
 
-        #expect(catalog.submitCalls == [.init(intent: .permissionChanged, ownerScope: .capture)])
+        #expect(catalog.submitCalls == [.init(intent: .permissionChanged)])
         #expect(sharing.registeredDisplays == [[
             .init(displayID: keptDisplayID, virtualSerialNumber: 9002)
         ]])
@@ -57,20 +58,20 @@ struct DisplayRuntimeCatalogControlTests {
         #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .failed })
     }
 
-    @Test func sharingAppearWithStoppedServiceCancelsRefreshWithoutClearingSnapshot() async {
+    @Test func sharingAppearWithStoppedServiceSkipsRefreshWithoutClearingSnapshot() async {
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: 2001, isMain: false),
             refreshResults: [.reloadedSnapshot],
-            visibleDisplays: [.init(displayID: 2001, pixelWidth: 1920, pixelHeight: 1080)]
         )
         let sharing = FakeSharingCommander(
             snapshot: sharingSnapshot(isWebServiceRunning: false, activeDisplayIDs: [])
         )
         let runtime = makeRuntime(catalog: catalog, sharing: sharing)
 
-        await runtime.handleCatalogAppear(source: .sharingPage)
+        let registration = runtime.registerCatalogSurface(source: .sharingPage)
+        await runtime.refreshCatalogSurface(registration)
 
         #expect(catalog.submitCalls.isEmpty)
-        #expect(catalog.cancelledOwnerScopes == [.sharing])
         #expect(catalog.clearLoadErrorMessages.isEmpty)
         #expect(sharing.registeredDisplays.isEmpty)
     }
@@ -78,8 +79,8 @@ struct DisplayRuntimeCatalogControlTests {
     @Test func sharingServiceStartReusesSnapshotAndRegistersShareableDisplays() async {
         let displayID = DisplayRuntimeDisplayID(3001)
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: displayID, isMain: false),
             refreshResults: [.reusedSnapshot],
-            visibleDisplays: [.init(displayID: displayID, pixelWidth: 2560, pixelHeight: 1440)]
         )
         let sharing = FakeSharingCommander(
             snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [])
@@ -88,7 +89,7 @@ struct DisplayRuntimeCatalogControlTests {
 
         await runtime.handleSharingServiceStateChanged(isRunning: false)
 
-        #expect(catalog.submitCalls == [.init(intent: .serviceBecameRunning, ownerScope: .sharing)])
+        #expect(catalog.submitCalls == [.init(intent: .serviceBecameRunning)])
         #expect(sharing.registeredDisplays == [[
             .init(displayID: displayID, virtualSerialNumber: nil)
         ]])
@@ -97,9 +98,9 @@ struct DisplayRuntimeCatalogControlTests {
     @Test func permissionDeniedClearsSnapshotAndStopsInvalidSessions() async {
         let removedDisplayID = DisplayRuntimeDisplayID(4001)
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: removedDisplayID, isMain: false),
             refreshPermissionResults: [false],
             refreshResults: [.reloadedSnapshot],
-            visibleDisplays: [.init(displayID: removedDisplayID, pixelWidth: 1920, pixelHeight: 1080)]
         )
         let capture = FakeCaptureCommander(snapshot: captureSnapshot(displayIDs: [removedDisplayID]))
         let sharing = FakeSharingCommander(
@@ -140,6 +141,24 @@ struct DisplayRuntimeCatalogControlTests {
         #expect(observability.refreshReasons == [.screenCatalogStateChanged])
     }
 
+    @Test func forcedPermissionDenialReturnsTheCommanderClearSettlement() async {
+        let staleCatalog = catalogSnapshot(displayID: 4051, isMain: false)
+        let catalog = FakeCatalogCommander(
+            snapshot: staleCatalog,
+            refreshPermissionResults: [false],
+        )
+        let runtime = makeRuntime(catalog: catalog)
+
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
+
+        #expect(outcome.settlementID == 1)
+        #expect(outcome.result == .clearedSnapshot)
+        #expect(outcome.catalog.hasScreenCapturePermission == false)
+        #expect(outcome.catalog.lastPreflightPermission == false)
+        #expect(outcome.catalog.loadedDisplays.isEmpty)
+        #expect(catalog.clearLoadErrorMessages == [nil])
+    }
+
     @Test func sharingPermissionRequestDeniedPassesLoadErrorMessage() async {
         let catalog = FakeCatalogCommander()
         catalog.requestPermissionResult = false
@@ -157,8 +176,8 @@ struct DisplayRuntimeCatalogControlTests {
         let firstDisplayID = DisplayRuntimeDisplayID(5001)
         let secondDisplayID = DisplayRuntimeDisplayID(5002)
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: firstDisplayID, isMain: false),
             refreshResults: [.reloadedSnapshot],
-            visibleDisplays: [.init(displayID: firstDisplayID, pixelWidth: 1920, pixelHeight: 1080)]
         )
         catalog.shouldGateSubmitRefresh = true
         let sharing = FakeSharingCommander(
@@ -169,7 +188,7 @@ struct DisplayRuntimeCatalogControlTests {
         let firstRefresh = Task { await runtime.handleCatalogTopologyChanged() }
         await catalog.waitForSubmitCalls(1)
 
-        catalog.visibleDisplays = [.init(displayID: secondDisplayID, pixelWidth: 2560, pixelHeight: 1440)]
+        catalog.snapshot = catalogSnapshot(displayID: secondDisplayID, isMain: false)
         let secondRefresh = Task { await runtime.handleCatalogTopologyChanged() }
         catalog.releaseSubmitRefresh(call: 1)
 
@@ -179,8 +198,8 @@ struct DisplayRuntimeCatalogControlTests {
         await secondRefresh.value
 
         #expect(catalog.submitCalls == [
-            .init(intent: .topologyChanged, ownerScope: nil),
-            .init(intent: .topologyChanged, ownerScope: nil),
+            .init(intent: .topologyChanged),
+            .init(intent: .topologyChanged),
         ])
         #expect(sharing.registeredDisplays.last == [
             .init(displayID: secondDisplayID, virtualSerialNumber: nil)
@@ -189,8 +208,8 @@ struct DisplayRuntimeCatalogControlTests {
 
     @Test func failedRefreshSkipsConvergence() async {
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: 6001, isMain: false),
             refreshResults: [.failed],
-            visibleDisplays: [.init(displayID: 6001, pixelWidth: 1920, pixelHeight: 1080)]
         )
         let capture = FakeCaptureCommander(snapshot: captureSnapshot(displayIDs: [6002]))
         let sharing = FakeSharingCommander(
@@ -219,19 +238,118 @@ struct DisplayRuntimeCatalogControlTests {
             demand: runtimeConsumerDemand()
         )
 
-        await runtime.forceRefreshCatalog(source: .capturePage)
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
 
-        #expect(catalog.submitCalls == [.init(intent: .userForcedRefresh, ownerScope: .capture)])
+        #expect(outcome.result == .failed)
+        #expect(outcome.catalog == runtime.makeSnapshot().catalog)
+        #expect(catalog.submitCalls == [.init(intent: .userForcedRefresh)])
         #expect(sharing.registeredDisplays.isEmpty)
         #expect(captureIntentCommander.intents.count == 2)
         #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .attached })
+    }
+
+    @Test func supersededRefreshSkipsConvergenceWithoutReportingFailure() async {
+        let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: 6251, isMain: false),
+            refreshResults: [.superseded],
+        )
+        let sharing = FakeSharingCommander(
+            snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [])
+        )
+        let runtime = makeRuntime(catalog: catalog, sharing: sharing)
+
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
+
+        #expect(outcome.result == .superseded)
+        #expect(outcome.catalog == runtime.makeSnapshot().catalog)
+        #expect(catalog.submitCalls == [.init(intent: .userForcedRefresh)])
+        #expect(sharing.registeredDisplays.isEmpty)
+    }
+
+    @Test func forcedCaptureRefreshRegistersLatestDisplaysForRunningSharingService() async {
+        let displayID = DisplayRuntimeDisplayID(6301)
+        let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: displayID, isMain: false),
+            refreshResults: [.reloadedSnapshot],
+        )
+        let sharing = FakeSharingCommander(
+            snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [])
+        )
+        let runtime = makeRuntime(catalog: catalog, sharing: sharing)
+
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
+
+        #expect(outcome.result == .reloadedSnapshot)
+        #expect(catalog.submitCalls == [.init(intent: .userForcedRefresh)])
+        #expect(sharing.registeredDisplays == [[
+            .init(displayID: displayID, virtualSerialNumber: nil)
+        ]])
+    }
+
+    @Test func forcedRefreshOutcomeUsesTheCommanderCommittedCatalog() async {
+        let committedCatalog = catalogSnapshot(displayID: 6401, isMain: false)
+        let unrelatedCatalog = catalogSnapshot(displayID: 6402, isMain: false)
+        let catalogProvider = FakeCatalogProvider(snapshot: committedCatalog)
+        let catalogCommander = FakeCatalogCommander(
+            snapshot: committedCatalog,
+            refreshResults: [.reloadedSnapshot],
+        )
+        let observability = FakeObservabilityRecorder {
+            catalogProvider.setSnapshot(unrelatedCatalog)
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: catalogProvider,
+            catalogCommander: catalogCommander,
+            observabilityRecorder: observability
+        )
+
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
+
+        #expect(outcome.result == .reloadedSnapshot)
+        #expect(outcome.catalog == committedCatalog)
+        #expect(runtime.makeSnapshot().catalog == unrelatedCatalog)
+    }
+
+    @Test func forcedRefreshOutcomeKeepsTheCommanderCatalogAtomic() async {
+        let committedCatalog = catalogSnapshot(displayID: 6411, isMain: false)
+        let unrelatedCatalog = catalogSnapshot(displayID: 6412, isMain: false)
+        let catalogProvider = FakeCatalogProvider(snapshot: unrelatedCatalog)
+        let catalogCommander = FakeCatalogCommander(
+            snapshot: committedCatalog,
+            refreshResults: [.reloadedSnapshot],
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: catalogProvider,
+            catalogCommander: catalogCommander
+        )
+
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
+
+        #expect(outcome.result == .reloadedSnapshot)
+        #expect(outcome.catalog == committedCatalog)
+    }
+
+    @Test func catalogRegistrationCannotUnregisterAnotherActiveSurface() async {
+        let catalog = FakeCatalogCommander()
+        let runtime = makeRuntime(catalog: catalog)
+
+        let firstRegistration = runtime.registerCatalogSurface(source: .capturePage)
+        let secondRegistration = runtime.registerCatalogSurface(source: .capturePage)
+
+        await runtime.unregisterCatalogSurface(firstRegistration)
+        #expect(catalog.submitCalls.isEmpty)
+
+        await runtime.unregisterCatalogSurface(firstRegistration)
+        #expect(catalog.submitCalls.isEmpty)
+
+        await runtime.unregisterCatalogSurface(secondRegistration)
+        #expect(catalog.submitCalls.isEmpty)
     }
 
     @Test func clearedRefreshResultConvergesWithEmptyVisibleDisplays() async {
         let staleDisplayID = DisplayRuntimeDisplayID(6501)
         let catalog = FakeCatalogCommander(
             refreshResults: [.clearedSnapshot],
-            visibleDisplays: [.init(displayID: staleDisplayID, pixelWidth: 1920, pixelHeight: 1080)]
         )
         let capture = FakeCaptureCommander(snapshot: captureSnapshot(displayIDs: [staleDisplayID]))
         let sharing = FakeSharingCommander(
@@ -260,8 +378,10 @@ struct DisplayRuntimeCatalogControlTests {
             demand: runtimeConsumerDemand()
         )
 
-        await runtime.forceRefreshCatalog(source: .capturePage)
+        let outcome = await runtime.forceRefreshCatalog(source: .capturePage)
 
+        #expect(outcome.result == .clearedSnapshot)
+        #expect(outcome.catalog == runtime.makeSnapshot().catalog)
         #expect(sharing.registeredDisplays == [[]])
         #expect(captureIntentCommander.intents.suffix(2).allSatisfy { $0.kind == .drain })
         #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .failed })
@@ -269,8 +389,8 @@ struct DisplayRuntimeCatalogControlTests {
 
     @Test func sharingServiceStateChangeReadsCurrentSharingSnapshot() async {
         let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: 7001, isMain: false),
             refreshResults: [.reloadedSnapshot],
-            visibleDisplays: [.init(displayID: 7001, pixelWidth: 1920, pixelHeight: 1080)]
         )
         let sharing = FakeSharingCommander(
             snapshot: sharingSnapshot(isWebServiceRunning: false, activeDisplayIDs: [])
@@ -280,7 +400,24 @@ struct DisplayRuntimeCatalogControlTests {
         await runtime.handleSharingServiceStateChanged(isRunning: true)
 
         #expect(catalog.submitCalls.isEmpty)
-        #expect(catalog.cancelledOwnerScopes == [.sharing])
+        #expect(sharing.registeredDisplays.isEmpty)
+    }
+
+    @Test func forcedSharingRefreshWithStoppedServiceReportsFailure() async {
+        let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: 7101, isMain: false),
+            refreshResults: [.reloadedSnapshot],
+        )
+        let sharing = FakeSharingCommander(
+            snapshot: sharingSnapshot(isWebServiceRunning: false, activeDisplayIDs: [])
+        )
+        let runtime = makeRuntime(catalog: catalog, sharing: sharing)
+
+        let outcome = await runtime.forceRefreshCatalog(source: .sharingPage)
+
+        #expect(outcome.result == .failed)
+        #expect(outcome.catalog == runtime.makeSnapshot().catalog)
+        #expect(catalog.submitCalls.isEmpty)
         #expect(sharing.registeredDisplays.isEmpty)
     }
 }

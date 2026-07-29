@@ -52,6 +52,19 @@ scripts/ci/full_regression.sh \
 
 该入口依次运行静态门禁、全部单元与集成测试、Debug build、UI 测试、稳定性检查和 arm64 release smoke。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。
 
+### 隐私权限敏感的真实应用验收
+
+屏幕录制等 macOS 隐私权限会识别应用的代码签名身份。需要验证真实权限状态时，使用 Xcode Personal Team 自动管理的本机 `Apple Development` 身份构建验收副本：
+
+```bash
+scripts/dev/build_signed_runtime.sh \
+  --out-dir .ai-tmp/signed-runtime-acceptance
+```
+
+只启动 `.ai-tmp/signed-runtime-acceptance/signed-runtime-summary.json` 中 `app_path` 指向的应用。该流程只用于当前 Mac 上的开发验收，不进入 CI、Release 或公开分发。普通自动化测试继续使用隔离 provider，普通 Xcode 门禁继续关闭签名。
+
+免费 Apple Account 提供的 Xcode Personal Team 足以完成该流程，不要求 Developer ID、付费会员或公证。缺少可用 `Apple Development` 身份时，应在 Xcode 的 Accounts 设置中恢复 Personal Team 开发身份并重新构建；不得改用未签名或 ad hoc 副本声称权限验收通过。开发身份更新后，macOS 可能要求重新授予屏幕录制权限。
+
 ## 环境故障分类
 
 测试宿主在 bootstrapping 前被 macOS 隐私自动化、Accessibility、Input Monitoring、Gatekeeper 或签名策略终止时，应记录为环境设置失败。先通过 `.xcresult` 和统一日志确认宿主未进入测试，再处理机器环境并复测最小目标。

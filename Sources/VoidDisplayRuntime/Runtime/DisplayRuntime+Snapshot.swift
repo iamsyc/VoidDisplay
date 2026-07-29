@@ -4,6 +4,10 @@ import Foundation
 extension DisplayRuntime {
     package func makeSnapshot() -> DisplayRuntimeSnapshot {
         let catalog = catalogProvider?.makeCatalogSnapshot() ?? .empty
+        return makeSnapshot(catalog: catalog)
+    }
+
+    func makeSnapshot(catalog: DisplayRuntimeCatalogSnapshot) -> DisplayRuntimeSnapshot {
         let capture = captureProvider?.makeCaptureSnapshot() ?? .empty
         let sharing = sharingProvider?.makeSharingSnapshot() ?? .empty
         let virtualDisplay = virtualDisplayProvider?.makeVirtualDisplaySnapshot() ?? .empty

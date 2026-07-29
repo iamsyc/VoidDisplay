@@ -255,10 +255,6 @@ extension DisplayRuntime {
             kind: context.kind,
             affectedSurfaces: affectedScope.surfaces
         )
-        if topologyResult.status == .stable {
-            await convergeToVisibleDisplaysFromCurrentCatalog()
-            await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        }
         let postConvergenceSnapshot = makeSnapshot()
         let restoreIntents = makeLifecycleSessionRestoreIntents(
             kind: context.kind,

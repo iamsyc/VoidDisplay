@@ -22,7 +22,6 @@ final class FakeCatalogProvider: DisplayRuntimeCatalogProviding {
 
 struct DisplayRuntimeCatalogSubmitCall: Equatable {
     let intent: DisplayRuntimeCatalogRefreshIntent
-    let ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
 }
 
 @MainActor
@@ -82,27 +81,23 @@ final class FakeCatalogCommander: DisplayRuntimeCatalogProviding, DisplayRuntime
     var snapshot: DisplayRuntimeCatalogSnapshot
     var requestPermissionResult = true
     var refreshPermissionResults: [Bool]
-    var visibleDisplays: [DisplayRuntimeVisibleDisplay]
     var shouldGateSubmitRefresh = false
     private(set) var requestPermissionCallCount = 0
     private(set) var refreshPermissionCallCount = 0
     private(set) var submitCalls: [DisplayRuntimeCatalogSubmitCall] = []
     private(set) var clearLoadErrorMessages: [String?] = []
-    private(set) var cancelledOwnerScopes: [DisplayRuntimeCatalogRefreshOwnerScope?] = []
 
     init(
         snapshot: DisplayRuntimeCatalogSnapshot = .empty,
         recorder: RuntimeOperationRecorder? = nil,
         refreshPermissionResults: [Bool] = [true],
         refreshResults: [DisplayRuntimeCatalogRefreshResult] = [.reusedSnapshot],
-        visibleDisplays: [DisplayRuntimeVisibleDisplay] = [],
         onRefresh: (() -> Void)? = nil
     ) {
         self.snapshot = snapshot
         self.recorder = recorder
         self.refreshPermissionResults = refreshPermissionResults
         self.refreshResults = refreshResults
-        self.visibleDisplays = visibleDisplays
         self.onRefresh = onRefresh
     }
 
@@ -122,10 +117,9 @@ final class FakeCatalogCommander: DisplayRuntimeCatalogProviding, DisplayRuntime
     }
 
     func submitRefresh(
-        intent: DisplayRuntimeCatalogRefreshIntent,
-        ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
-    ) async -> DisplayRuntimeCatalogRefreshResult {
-        submitCalls.append(.init(intent: intent, ownerScope: ownerScope))
+        intent: DisplayRuntimeCatalogRefreshIntent
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
+        submitCalls.append(.init(intent: intent))
         recorder?.append("refresh:\(intent.rawValue)")
         resumeSubmitCallWaiters()
         onRefresh?()
@@ -135,22 +129,36 @@ final class FakeCatalogCommander: DisplayRuntimeCatalogProviding, DisplayRuntime
                 submitContinuations[callIndex] = continuation
             }
         }
-        if refreshResults.count > 1 {
-            return refreshResults.removeFirst()
-        }
-        return refreshResults.first ?? .reusedSnapshot
+        let result = refreshResults.count > 1
+            ? refreshResults.removeFirst()
+            : refreshResults.first ?? .reusedSnapshot
+        return DisplayRuntimeCatalogRefreshOutcome(
+            settlementID: UInt64(callIndex),
+            result: result,
+            catalog: snapshot
+        )
     }
 
-    func clearSnapshotForDeniedPermission(loadErrorMessage: String?) async {
+    func clearSnapshotForDeniedPermission(
+        loadErrorMessage: String?
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
         clearLoadErrorMessages.append(loadErrorMessage)
-    }
-
-    func cancelRefresh(ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?) async {
-        cancelledOwnerScopes.append(ownerScope)
-    }
-
-    func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay] {
-        visibleDisplays
+        let clearedSnapshot = DisplayRuntimeCatalogSnapshot(
+            hasScreenCapturePermission: false,
+            lastPreflightPermission: false,
+            lastRequestPermission: snapshot.lastRequestPermission,
+            isLoadingDisplays: false,
+            hasLoadError: loadErrorMessage != nil,
+            lastLoadError: nil,
+            loadedDisplays: [],
+            topologySignature: snapshot.topologySignature
+        )
+        snapshot = clearedSnapshot
+        return DisplayRuntimeCatalogRefreshOutcome(
+            settlementID: UInt64(submitCalls.count + clearLoadErrorMessages.count),
+            result: .clearedSnapshot,
+            catalog: clearedSnapshot
+        )
     }
 
     func releaseSubmitRefresh(call: Int) {
@@ -220,6 +228,23 @@ final class FakeCaptureCommander: DisplayRuntimeCaptureProviding {
 final class FakeObservabilityRecorder: DisplayRuntimeObservabilityRecording {
     private(set) var events: [DisplayRuntimeObservabilityEvent] = []
     private(set) var refreshReasons: [DisplayRuntimeObservabilityRefreshReason] = []
+    private let onRefreshSnapshot: (@MainActor (DisplayRuntimeObservabilityRefreshReason) -> Void)?
+
+    init(onRefreshSnapshot: (@MainActor () -> Void)? = nil) {
+        if let onRefreshSnapshot {
+            self.onRefreshSnapshot = { _ in
+                onRefreshSnapshot()
+            }
+        } else {
+            self.onRefreshSnapshot = nil
+        }
+    }
+
+    init(
+        onRefreshReason: @escaping @MainActor (DisplayRuntimeObservabilityRefreshReason) -> Void
+    ) {
+        onRefreshSnapshot = onRefreshReason
+    }
 
     func record(_ event: DisplayRuntimeObservabilityEvent) async {
         events.append(event)
@@ -227,6 +252,7 @@ final class FakeObservabilityRecorder: DisplayRuntimeObservabilityRecording {
 
     func refreshSnapshot(reason: DisplayRuntimeObservabilityRefreshReason) async {
         refreshReasons.append(reason)
+        onRefreshSnapshot?(reason)
     }
 }
 

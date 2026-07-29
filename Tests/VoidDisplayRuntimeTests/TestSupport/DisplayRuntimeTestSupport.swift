@@ -3,16 +3,6 @@
 @testable import VoidDisplayRuntime
 import Foundation
 
-func visibleDisplays(from catalog: DisplayRuntimeCatalogSnapshot) -> [DisplayRuntimeVisibleDisplay] {
-    catalog.loadedDisplays.map {
-        DisplayRuntimeVisibleDisplay(
-            displayID: $0.displayID,
-            pixelWidth: $0.pixelWidth,
-            pixelHeight: $0.pixelHeight
-        )
-    }
-}
-
 func fastTopologyWaitPolicy(maximumSampleCount: Int = 3) -> DisplayRuntimeTopologyWaitPolicy {
     .init(
         requiredStableSampleCount: 2,

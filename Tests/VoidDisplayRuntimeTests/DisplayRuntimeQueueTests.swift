@@ -157,7 +157,9 @@ struct DisplayRuntimeQueueTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )
@@ -231,7 +233,9 @@ struct DisplayRuntimeQueueTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )
@@ -297,7 +301,9 @@ struct DisplayRuntimeQueueTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
         )

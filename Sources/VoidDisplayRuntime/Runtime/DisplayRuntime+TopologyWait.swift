@@ -3,11 +3,20 @@ import Foundation
 @MainActor
 extension DisplayRuntime {
     @discardableResult
-    func refreshCatalogTopologyForTransaction() async -> DisplayRuntimeCatalogRefreshResult {
-        guard let catalogCommander else { return .failed }
-        let result = await catalogCommander.submitRefresh(intent: .topologyChanged, ownerScope: nil)
+    func refreshCatalogTopologyForTransaction() async -> DisplayRuntimeCatalogRefreshOutcome {
+        guard let catalogCommander else {
+            return DisplayRuntimeCatalogRefreshOutcome(
+                settlementID: nil,
+                result: .failed,
+                catalog: makeSnapshot().catalog
+            )
+        }
+        let outcome = await catalogCommander.submitRefresh(intent: .topologyChanged)
+        if outcome.result == .clearedSnapshot {
+            await handleRefreshOutcomeForConvergence(outcome)
+        }
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        return result
+        return outcome
     }
 
     func waitForPostCommandTopology(
@@ -23,8 +32,13 @@ extension DisplayRuntime {
                 try? await Task.sleep(for: .nanoseconds(topologyWaitPolicy.sampleIntervalNanoseconds))
             }
 
-            let refreshResult = await refreshCatalogTopologyForTransaction()
-            let snapshot = makeSnapshot()
+            let refreshOutcome = await refreshCatalogTopologyForTransaction()
+            if refreshOutcome.result == .superseded {
+                previousStableSample = nil
+                stableSampleCount = 0
+                continue
+            }
+            let snapshot = makeSnapshot(catalog: refreshOutcome.catalog)
             let sample = DisplayRuntimeTopologyStabilitySample(snapshot: snapshot)
             samples.append(sample)
 
@@ -35,7 +49,7 @@ extension DisplayRuntime {
                     failureReason: "screen_capture_permission_unavailable"
                 )
             }
-            if refreshResult == .failed {
+            if refreshOutcome.result == .failed {
                 return topologyResult(
                     status: .failed,
                     samples: samples,
@@ -55,6 +69,8 @@ extension DisplayRuntime {
                     stableSampleCount = 1
                 }
                 if stableSampleCount >= topologyWaitPolicy.requiredStableSampleCount {
+                    await handleRefreshOutcomeForConvergence(refreshOutcome)
+                    await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
                     return topologyResult(status: .stable, samples: samples, failureReason: nil)
                 }
             } else {

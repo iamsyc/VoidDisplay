@@ -75,7 +75,31 @@ package enum ScreenCaptureCatalogRefreshResult: Sendable, Equatable {
     case reloadedSnapshot
     case reusedSnapshot
     case clearedSnapshot
+    case superseded
     case failed
+}
+
+package struct ScreenCaptureCatalogDisplaySnapshot: Sendable, Equatable {
+    package let displayID: CGDirectDisplayID
+    package let pixelWidth: Int
+    package let pixelHeight: Int
+}
+
+package struct ScreenCaptureCatalogStateSnapshot: Sendable, Equatable {
+    package let hasScreenCapturePermission: Bool?
+    package let lastPreflightPermission: Bool?
+    package let lastRequestPermission: Bool?
+    package let isLoadingDisplays: Bool
+    package let hasLoadError: Bool
+    package let lastLoadError: ScreenCaptureDisplayCatalogLoadErrorInfo?
+    package let loadedDisplays: [ScreenCaptureCatalogDisplaySnapshot]
+    package let topologySignature: ScreenCaptureDisplayTopologySignature
+}
+
+package struct ScreenCaptureCatalogRefreshSettlement: Sendable, Equatable {
+    package let id: UInt64
+    package let result: ScreenCaptureCatalogRefreshResult
+    package let catalog: ScreenCaptureCatalogStateSnapshot
 }
 
 @MainActor
@@ -91,6 +115,14 @@ package final class ScreenCaptureCatalogStore {
     package var lastLoadError: ScreenCaptureDisplayCatalogLoadErrorInfo?
     package var showDebugInfo = false
     package var lastRefreshResult: ScreenCaptureCatalogRefreshResult?
+
+    package var activeShareableDisplays: [SCDisplay]? {
+        guard let displays else { return nil }
+        let activeDisplayIDs = Set(
+            (lastLoadedActiveDisplayTopologySignature ?? []).map(\.displayID)
+        )
+        return displays.filter { activeDisplayIDs.contains($0.displayID) }
+    }
 
     package init() {}
 }
@@ -122,18 +154,11 @@ package final class ScreenCaptureCatalogService {
             }
         )
     }
-    package struct RefreshOwner: Hashable, Sendable {
-        fileprivate let id = UUID()
-
-        package init() {}
-    }
-
     package typealias LoadShareableDisplays = @MainActor () async throws -> [SCDisplay]
     package typealias ActiveDisplayIDsProvider = @MainActor () -> Set<CGDirectDisplayID>
     package struct Dependencies {
         var permissionProvider: any ScreenCapturePermissionProvider
         var loadShareableDisplays: LoadShareableDisplays
-        var activeDisplayIDsProvider: ActiveDisplayIDsProvider
         var displayTopologySignatureProvider: @MainActor () -> ScreenCaptureDisplayTopologySignature
         var loadFailureMessage: String
         var logOperation: String
@@ -152,7 +177,6 @@ package final class ScreenCaptureCatalogService {
             return .init(
                 permissionProvider: ScreenCapturePermissionProviderFactory.makeDefault(),
                 loadShareableDisplays: ScreenCaptureShareableDisplayLoaderFactory.makeDefault(),
-                activeDisplayIDsProvider: activeDisplayIDsProvider,
                 displayTopologySignatureProvider: {
                     ScreenCaptureDisplayTopologySignatureResolver.current(
                         activeDisplayIDsProvider: activeDisplayIDsProvider
@@ -172,6 +196,15 @@ package final class ScreenCaptureCatalogService {
 
     private let dependencies: Dependencies
     private let coordinator: CatalogRefreshCoordinator
+    private var activeRefreshSubmissionCount = 0
+    private var refreshSettlementVersion: UInt64 = 0
+    private var lastRefreshSettlement: ScreenCaptureCatalogRefreshSettlement?
+    private var refreshSettlementWaiters: [UUID: RefreshSettlementWaiter] = [:]
+
+    private struct RefreshSettlementWaiter {
+        let afterSettlementID: UInt64
+        let continuation: CheckedContinuation<ScreenCaptureCatalogRefreshSettlement?, Never>
+    }
 
     package init(
         store: ScreenCaptureCatalogStore? = nil,
@@ -213,7 +246,6 @@ package final class ScreenCaptureCatalogService {
                 permissionProvider: permissionProvider ?? ScreenCapturePermissionProviderFactory.makeDefault(),
                 loadShareableDisplays: loadShareableDisplays
                     ?? ScreenCaptureShareableDisplayLoaderFactory.makeDefault(),
-                activeDisplayIDsProvider: resolvedActiveDisplayIDsProvider,
                 displayTopologySignatureProvider: displayTopologySignatureProvider ?? {
                     ScreenCaptureDisplayTopologySignatureResolver.current(
                         activeDisplayIDsProvider: resolvedActiveDisplayIDsProvider
@@ -258,28 +290,43 @@ package final class ScreenCaptureCatalogService {
         dependencies.displayTopologySignatureProvider()
     }
 
-    package func visibleDisplays(from displays: [SCDisplay]) -> [SCDisplay] {
-        let activeDisplayIDs = dependencies.activeDisplayIDsProvider()
-        return displays.filter { activeDisplayIDs.contains($0.displayID) }
-    }
-
-    package func clearSnapshotForDeniedPermission(loadErrorMessage: String? = nil) async {
+    @discardableResult
+    package func clearSnapshotForDeniedPermission(
+        loadErrorMessage: String? = nil
+    ) async -> ScreenCaptureCatalogRefreshSettlement {
         await coordinator.cancelActiveRefresh()
         applyClearedSnapshot(signature: currentActiveDisplayTopologySignature())
         store.loadErrorMessage = loadErrorMessage
-    }
-
-    package func cancelRefresh(owner: RefreshOwner? = nil) async {
-        let cancellation = await coordinator.cancelActiveRefresh(ownedBy: owner?.id)
-        if cancellation != .ignoredOtherOwner {
-            store.isLoadingDisplays = false
-        }
+        return recordRefreshSettlement(result: .clearedSnapshot)
     }
 
     @discardableResult
     package func submitRefresh(
-        intent: ScreenCaptureCatalogRefreshIntent,
-        owner: RefreshOwner? = nil
+        intent: ScreenCaptureCatalogRefreshIntent
+    ) async -> ScreenCaptureCatalogRefreshSettlement {
+        let startingSettlementVersion = refreshSettlementVersion
+        activeRefreshSubmissionCount += 1
+        let result = await executeRefresh(intent: intent)
+        let terminalSettlement = result == .superseded
+            ? nil
+            : recordRefreshSettlement(result: result)
+        if result != .superseded {
+            precondition(terminalSettlement != nil)
+        }
+        activeRefreshSubmissionCount -= 1
+        resumeRefreshSettlementWaitersIfIdle()
+
+        if let terminalSettlement {
+            return terminalSettlement
+        }
+        if let replacementSettlement = await waitForRefreshSettlement(after: startingSettlementVersion) {
+            return replacementSettlement
+        }
+        return makeRefreshSettlement(id: refreshSettlementVersion, result: .superseded)
+    }
+
+    private func executeRefresh(
+        intent: ScreenCaptureCatalogRefreshIntent
     ) async -> ScreenCaptureCatalogRefreshResult {
         var staleCommitRetryCount = 0
         var clearedSnapshotForCurrentRequest = false
@@ -292,8 +339,7 @@ package final class ScreenCaptureCatalogService {
                 permissionGranted: permissionGranted,
                 currentTopologySignature: requestSignature,
                 cachedTopologySignature: store.lastLoadedActiveDisplayTopologySignature,
-                hasCachedDisplays: store.displays != nil,
-                ownerID: owner?.id
+                hasCachedDisplays: store.displays != nil
             )
 
             switch await coordinator.prepare(request: request) {
@@ -341,6 +387,92 @@ package final class ScreenCaptureCatalogService {
                     continue
                 }
             }
+        }
+    }
+
+    package func makeCatalogStateSnapshot() -> ScreenCaptureCatalogStateSnapshot {
+        let topologySignature = store.lastLoadedActiveDisplayTopologySignature ?? []
+        return ScreenCaptureCatalogStateSnapshot(
+            hasScreenCapturePermission: store.hasScreenCapturePermission,
+            lastPreflightPermission: store.lastPreflightPermission,
+            lastRequestPermission: store.lastRequestPermission,
+            isLoadingDisplays: store.isLoadingDisplays,
+            hasLoadError: store.loadErrorMessage != nil || store.lastLoadError != nil,
+            lastLoadError: store.lastLoadError,
+            loadedDisplays: displaySnapshots(store.activeShareableDisplays ?? []),
+            topologySignature: topologySignature
+        )
+    }
+
+    private func recordRefreshSettlement(
+        result: ScreenCaptureCatalogRefreshResult
+    ) -> ScreenCaptureCatalogRefreshSettlement {
+        refreshSettlementVersion &+= 1
+        let settlement = makeRefreshSettlement(id: refreshSettlementVersion, result: result)
+        lastRefreshSettlement = settlement
+
+        let readyWaiterIDs = refreshSettlementWaiters.compactMap { waiterID, waiter in
+            waiter.afterSettlementID < settlement.id ? waiterID : nil
+        }
+        for waiterID in readyWaiterIDs {
+            refreshSettlementWaiters.removeValue(forKey: waiterID)?.continuation.resume(returning: settlement)
+        }
+        return settlement
+    }
+
+    private func waitForRefreshSettlement(
+        after settlementID: UInt64
+    ) async -> ScreenCaptureCatalogRefreshSettlement? {
+        if let lastRefreshSettlement, lastRefreshSettlement.id > settlementID {
+            return lastRefreshSettlement
+        }
+        guard activeRefreshSubmissionCount > 0 else { return nil }
+        let waiterID = UUID()
+        return await withCheckedContinuation { continuation in
+            if let lastRefreshSettlement, lastRefreshSettlement.id > settlementID {
+                continuation.resume(returning: lastRefreshSettlement)
+                return
+            }
+            guard activeRefreshSubmissionCount > 0 else {
+                continuation.resume(returning: nil)
+                return
+            }
+            refreshSettlementWaiters[waiterID] = RefreshSettlementWaiter(
+                afterSettlementID: settlementID,
+                continuation: continuation
+            )
+        }
+    }
+
+    private func resumeRefreshSettlementWaitersIfIdle() {
+        guard activeRefreshSubmissionCount == 0 else { return }
+        let waiters = refreshSettlementWaiters.values
+        refreshSettlementWaiters.removeAll()
+        for waiter in waiters {
+            waiter.continuation.resume(returning: nil)
+        }
+    }
+
+    private func makeRefreshSettlement(
+        id: UInt64,
+        result: ScreenCaptureCatalogRefreshResult
+    ) -> ScreenCaptureCatalogRefreshSettlement {
+        ScreenCaptureCatalogRefreshSettlement(
+            id: id,
+            result: result,
+            catalog: makeCatalogStateSnapshot()
+        )
+    }
+
+    private func displaySnapshots(
+        _ displays: [SCDisplay]
+    ) -> [ScreenCaptureCatalogDisplaySnapshot] {
+        displays.map {
+            ScreenCaptureCatalogDisplaySnapshot(
+                displayID: $0.displayID,
+                pixelWidth: $0.width,
+                pixelHeight: $0.height
+            )
         }
     }
 
@@ -410,23 +542,17 @@ package final class ScreenCaptureCatalogService {
             applyClearedSnapshot(signature: requestSignature)
             return .completed(.clearedSnapshot)
         case .failedSuperseded:
-            return .completed(.failed)
+            return .completed(.superseded)
         }
     }
 }
 package actor CatalogRefreshCoordinator {
-    package enum CancelResult: Sendable, Equatable {
-        case cancelledActiveRequest
-        case idle
-        case ignoredOtherOwner
-    }
     package struct Request: Sendable {
         let intent: ScreenCaptureCatalogRefreshIntent
         let permissionGranted: Bool
         let currentTopologySignature: ScreenCaptureDisplayTopologySignature
         let cachedTopologySignature: ScreenCaptureDisplayTopologySignature?
         let hasCachedDisplays: Bool
-        let ownerID: UUID?
     }
     package enum PrepareResult: Sendable, Equatable {
         case execute(loadID: UInt64, clearsSnapshotFirst: Bool)
@@ -446,9 +572,9 @@ package actor CatalogRefreshCoordinator {
     private let runtimeScenarioProbe: ScreenCaptureCatalogService.RuntimeScenarioProbe
     private var nextLoadID: UInt64 = 0
     private var activeLoadID: UInt64?
-    private var activeOwnerID: UUID?
     private var activeTask: Task<[SendableDisplay], Error>?
-    private var waiterCountsByLoadID: [UInt64: Int] = [:]
+    private var resolutionsByLoadID: [UInt64: ExecutionResult] = [:]
+    private var resolutionWaitersByLoadID: [UInt64: [CheckedContinuation<ExecutionResult, Never>]] = [:]
 
     package init(
         loadShareableDisplays: @escaping @Sendable () async throws -> [SendableDisplay],
@@ -484,89 +610,84 @@ package actor CatalogRefreshCoordinator {
 
         if canReuseSnapshot {
             if let activeLoadID {
-                waiterCountsByLoadID[activeLoadID, default: 0] += 1
                 return .awaitInFlight(loadID: activeLoadID)
             }
             return .reusedSnapshot
         }
 
-        activeTask?.cancel()
-        activeTask = nil
+        cancelActiveRefresh()
         nextLoadID &+= 1
         let loadID = nextLoadID
         activeLoadID = loadID
-        activeOwnerID = request.ownerID
-        waiterCountsByLoadID[loadID, default: 0] += 1
+        startLoad(loadID: loadID)
         return .execute(loadID: loadID, clearsSnapshotFirst: !request.hasCachedDisplays)
     }
 
     package func executeLoad(loadID: UInt64) async -> ExecutionResult {
-        guard waiterCountsByLoadID[loadID] != nil else {
+        if let resolution = resolutionsByLoadID[loadID] {
+            return resolution
+        }
+        guard activeLoadID == loadID else {
             return .failedSuperseded
         }
-        defer { finishWaiting(on: loadID) }
-
-        let task: Task<[SendableDisplay], Error>
-        if activeLoadID == loadID {
-            if let activeTask {
-                task = activeTask
-            } else {
-                let createdTask = Task<[SendableDisplay], Error> { [loadShareableDisplays, runtimeScenarioProbe] in
-                    if await MainActor.run(body: { runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() }) {
-                        try await Task.sleep(for: .seconds(3))
-                    }
-                    return try await loadShareableDisplays()
-                }
-                activeTask = createdTask
-                task = createdTask
+        return await withCheckedContinuation { continuation in
+            if let resolution = resolutionsByLoadID[loadID] {
+                continuation.resume(returning: resolution)
+                return
             }
-        } else {
-            return .failedSuperseded
-        }
-
-        do {
-            let displays = try await task.value
-            guard activeLoadID == loadID, !Task.isCancelled else {
-                return .failedSuperseded
-            }
-            return .reloadedSnapshot(displays)
-        } catch is CancellationError {
-            return .failedSuperseded
-        } catch {
             guard activeLoadID == loadID else {
-                return .failedSuperseded
+                continuation.resume(returning: .failedSuperseded)
+                return
             }
-            return .failed(error: error, shouldClearDisplays: false)
+            resolutionWaitersByLoadID[loadID, default: []].append(continuation)
         }
     }
 
     package func cancelActiveRefresh() {
+        guard let activeLoadID else { return }
         activeTask?.cancel()
         activeTask = nil
-        activeLoadID = nil
-        activeOwnerID = nil
+        self.activeLoadID = nil
+        resolve(loadID: activeLoadID, with: .failedSuperseded)
     }
 
-    package func cancelActiveRefresh(ownedBy ownerID: UUID?) -> CancelResult {
-        guard activeLoadID != nil else { return .idle }
-        if let ownerID, activeOwnerID != ownerID {
-            return .ignoredOtherOwner
+    private func startLoad(loadID: UInt64) {
+        let task = Task<[SendableDisplay], Error> { [loadShareableDisplays, runtimeScenarioProbe] in
+            if await MainActor.run(body: { runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() }) {
+                try await Task.sleep(for: .seconds(3))
+            }
+            return try await loadShareableDisplays()
         }
-        cancelActiveRefresh()
-        return .cancelledActiveRequest
+        activeTask = task
+        Task {
+            let resolution: ExecutionResult
+            do {
+                resolution = .reloadedSnapshot(try await task.value)
+            } catch is CancellationError {
+                resolution = .failedSuperseded
+            } catch {
+                resolution = .failed(error: error, shouldClearDisplays: false)
+            }
+            completeLoad(loadID: loadID, resolution: resolution)
+        }
     }
 
-    private func finishWaiting(on loadID: UInt64) {
-        guard let waiterCount = waiterCountsByLoadID[loadID] else { return }
-        if waiterCount > 1 {
-            waiterCountsByLoadID[loadID] = waiterCount - 1
-            return
+    private func completeLoad(loadID: UInt64, resolution: ExecutionResult) {
+        guard resolutionsByLoadID[loadID] == nil else { return }
+        if activeLoadID == loadID {
+            activeTask = nil
+            activeLoadID = nil
         }
+        resolve(loadID: loadID, with: resolution)
+    }
 
-        waiterCountsByLoadID.removeValue(forKey: loadID)
-        guard activeLoadID == loadID else { return }
-        activeTask = nil
-        activeLoadID = nil
-        activeOwnerID = nil
+    private func resolve(loadID: UInt64, with resolution: ExecutionResult) {
+        resolutionsByLoadID[loadID] = resolution
+        let waiters = resolutionWaitersByLoadID.removeValue(forKey: loadID) ?? []
+        for waiter in waiters {
+            waiter.resume(returning: resolution)
+        }
+        let oldestRetainedLoadID = nextLoadID > 32 ? nextLoadID - 32 : 0
+        resolutionsByLoadID = resolutionsByLoadID.filter { $0.key >= oldestRetainedLoadID }
     }
 }

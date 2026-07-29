@@ -12,6 +12,7 @@ struct HomeLayoutMetricsTests {
         #expect(metrics.itemCornerRadius == 8)
         #expect(metrics.itemSpacing == AppUI.List.sectionSpacing)
         #expect(metrics.contentMaxWidth == 1240)
+        #expect(metrics.minimumContentWidthForRescanToolbarTitle == 700)
     }
 }
 

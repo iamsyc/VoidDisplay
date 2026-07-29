@@ -99,12 +99,22 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 
 	collect_build_log_diagnostics() {
 		local log_path="$1"
+		local matches
+		local search_status=0
 
 		if [[ ! -f "$log_path" ]]; then
 			die "Build log not found: $log_path"
 		fi
 
-		rg -n '([A-Za-z0-9_./ -]+\.(swift|m|mm|c|cc|cpp|h|hpp):[0-9]+:[0-9]+: (warning|error):|(^|[[:space:]])ld: (warning|error):|(^|[[:space:]])clang: (warning|error):|\*\* (BUILD|TEST) FAILED \*\*)' "$log_path" || true
+		matches="$(
+			rg -n '([A-Za-z0-9_./ -]+\.(swift|m|mm|c|cc|cpp|h|hpp):[0-9]+:[0-9]+: (warning|error):|(^|[[:space:]])ld: (warning|error):|(^|[[:space:]])clang: (warning|error):|\*\* (BUILD|TEST) FAILED \*\*)' \
+				"$log_path"
+		)" || search_status=$?
+		case "$search_status" in
+		0) printf '%s\n' "$matches" ;;
+		1) return 0 ;;
+		*) die "Unable to scan build log: $log_path" ;;
+		esac
 	}
 
 	scan_build_log_for_diagnostics() {

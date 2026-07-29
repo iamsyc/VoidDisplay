@@ -24,7 +24,10 @@ struct DisplayRuntimeLifecycleTransactionTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                recorder: recorder,
+            ),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
@@ -224,7 +227,10 @@ struct DisplayRuntimeLifecycleTransactionTests {
             captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: 113, capturesCursor: true)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 113)),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                recorder: recorder,
+            ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
@@ -355,7 +361,10 @@ struct DisplayRuntimeLifecycleTransactionTests {
             captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: 122, capturesCursor: false)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 122)),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(recorder: recorder, visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                recorder: recorder,
+            ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
@@ -415,7 +424,10 @@ struct DisplayRuntimeLifecycleTransactionTests {
                     (peerConfigID, 1232, 124)
                 ])
             ),
-            catalogCommander: FakeCatalogCommander(refreshResults: [.reusedSnapshot, .failed]),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                refreshResults: [.reusedSnapshot, .failed]
+            ),
             sharingCommander: FakeSharingCommander(),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
