@@ -31,7 +31,9 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
 
     package func makeSharingSnapshot() -> DisplayRuntimeSharingSnapshot {
         guard let controller else { return .empty }
-        let displayIDsWithRouteProbe = Set((controller.displayCatalogState.displays ?? []).map(\.displayID))
+        let displayIDsWithRouteProbe = Set(
+            (controller.displayCatalogState.activeShareableDisplays ?? []).map(\.displayID)
+        )
             .union(controller.activeSharingDisplayIDs)
             .union(controller.startingDisplayIDs)
             .union(controller.sharingClientCounts.keys)
@@ -55,7 +57,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
     package func registerShareableDisplays(_ displays: [DisplayRuntimeShareableDisplayRegistration]) {
         guard let controller else { return }
         let registrationsByDisplayID = firstRegistrationsByDisplayID(displays)
-        let visibleDisplays = (controller.displayCatalogState.displays ?? []).filter {
+        let visibleDisplays = (controller.displayCatalogState.activeShareableDisplays ?? []).filter {
             registrationsByDisplayID[$0.displayID] != nil
         }
         controller.registerShareableDisplays(visibleDisplays) { displayID in
@@ -142,7 +144,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
     private func refreshLANWebViewConsumerDemands(runtime: DisplayRuntime) async {
         guard let controller else { return }
         let displaysByID = Dictionary(
-            uniqueKeysWithValues: (controller.displayCatalogState.displays ?? []).map { display in
+            uniqueKeysWithValues: (controller.displayCatalogState.activeShareableDisplays ?? []).map { display in
                 (display.displayID, display)
             }
         )

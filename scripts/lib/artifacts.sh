@@ -17,9 +17,18 @@ if [[ -z "${VOIDDISPLAY_ARTIFACTS_SH_SOURCED:-}" ]]; then
 
 	write_json_file() {
 		local file_path="$1"
+		local temporary_path
+		local write_status
 		shift
 		ensure_parent_dir "$file_path"
-		jq -n "$@" >"$file_path"
+		temporary_path="$(mktemp "$(dirname "$file_path")/.$(basename "$file_path").XXXXXX")"
+		write_status=0
+		jq -n "$@" >"$temporary_path" || write_status=$?
+		if [[ "$write_status" -ne 0 ]]; then
+			rm -f "$temporary_path"
+			return "$write_status"
+		fi
+		mv -f "$temporary_path" "$file_path"
 	}
 
 	append_github_output() {

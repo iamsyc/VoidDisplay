@@ -19,7 +19,7 @@ package struct HomeSummaryStatusStrip: View {
                 if context.permissionStatus.canOpenSettings {
                     statusDivider
                     permissionStatus
-                    permissionAction
+                    permissionActions
                 }
             }
 
@@ -72,7 +72,7 @@ package struct HomeSummaryStatusStrip: View {
                 Spacer(minLength: AppUI.Spacing.small)
                 if context.permissionStatus.canOpenSettings {
                     permissionStatus
-                    permissionAction
+                    permissionActions
                 }
             }
 
@@ -85,7 +85,7 @@ package struct HomeSummaryStatusStrip: View {
                 if context.permissionStatus.canOpenSettings {
                     HStack(alignment: .center, spacing: AppUI.Spacing.small) {
                         permissionStatus
-                        permissionAction
+                        permissionActions
                     }
                 }
             }
@@ -123,16 +123,38 @@ package struct HomeSummaryStatusStrip: View {
     }
 
     @ViewBuilder
-    private var permissionAction: some View {
+    private var permissionActions: some View {
         if context.permissionStatus.canOpenSettings {
-            Button {
-                context.actions.openScreenCapturePrivacySettings()
-            } label: {
-                Label("Open Privacy Settings", systemImage: "lock.shield")
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: AppUI.Spacing.small) {
+                    openPrivacySettingsButton
+                    checkPermissionAgainButton
+                }
+
+                VStack(alignment: .leading, spacing: AppUI.Spacing.small) {
+                    openPrivacySettingsButton
+                    checkPermissionAgainButton
+                }
             }
-            .appActionButtonStyle(variant: .default)
-            .accessibilityIdentifier("home_open_privacy_settings_button")
         }
+    }
+
+    private var openPrivacySettingsButton: some View {
+        Button {
+            context.actions.openScreenCapturePrivacySettings()
+        } label: {
+            Label("Open Privacy Settings", systemImage: "lock.shield")
+        }
+        .appActionButtonStyle(variant: .default)
+        .accessibilityIdentifier("home_open_privacy_settings_button")
+    }
+
+    private var checkPermissionAgainButton: some View {
+        Button("Check Again", systemImage: "arrow.clockwise", action: context.actions.rescanDisplays)
+            .appActionButtonStyle(variant: .default)
+            .disabled(context.displayDetection.isScanning)
+            .help(Text("After granting Screen Recording permission, check again."))
+            .accessibilityIdentifier("home_check_screen_recording_permission_button")
     }
 }
 

@@ -14,7 +14,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeAdapterTests {
-    @Test func catalogAdapterReturnsOnlyCurrentVisibleDisplayDTOs() {
+    @Test func catalogAdapterReturnsOnlyCurrentVisibleDisplayDTOsInRefreshSettlement() async {
         let hiddenDisplay = SharedMockSCDisplay.make(displayID: 8101, width: 1920, height: 1080)
         let visibleDisplay = SharedMockSCDisplay.make(displayID: 8102, width: 2560, height: 1440)
         let service = ScreenCaptureCatalogService(
@@ -22,12 +22,11 @@ struct DisplayRuntimeAdapterTests {
             loadShareableDisplays: { [hiddenDisplay, visibleDisplay] },
             activeDisplayIDsProvider: { [visibleDisplay.displayID] }
         )
-        service.store.displays = [hiddenDisplay, visibleDisplay]
         let sut = DisplayRuntimeCatalogAdapter(service: service)
 
-        let displays = sut.currentVisibleDisplays()
+        let outcome = await sut.submitRefresh(intent: .userForcedRefresh)
 
-        #expect(displays == [
+        #expect(outcome.catalog.loadedDisplays == [
             .init(displayID: visibleDisplay.displayID, pixelWidth: 2560, pixelHeight: 1440)
         ])
     }
@@ -117,6 +116,7 @@ struct DisplayRuntimeAdapterTests {
         let replacementDisplay = SharedMockSCDisplay.make(displayID: 8418, width: 2560, height: 1440)
         let harness = previewHarness(
             display: firstDisplay,
+            activeDisplayIDs: [firstDisplay.displayID, replacementDisplay.displayID],
             virtualDisplaySnapshot: managedVirtualDisplaySnapshot(
                 configID: configID,
                 displayID: firstDisplay.displayID
@@ -350,6 +350,7 @@ private final class AdapterTestPortPreferences: SharingPortPreferencesProtocol {
 @MainActor
 private func previewHarness(
     display: SCDisplay,
+    activeDisplayIDs: Set<CGDirectDisplayID>? = nil,
     virtualDisplaySnapshot: DisplayRuntimeVirtualDisplaySnapshot? = nil
 ) -> (
     catalogService: ScreenCaptureCatalogService,
@@ -358,17 +359,20 @@ private func previewHarness(
     runtime: DisplayRuntime,
     virtualDisplayProvider: AdapterTestVirtualDisplayProvider?
 ) {
+    let activeDisplayIDs = activeDisplayIDs ?? [display.displayID]
     let catalogService = ScreenCaptureCatalogService(
         permissionProvider: FailingScreenCapturePermissionProvider(),
         loadShareableDisplays: {
             Issue.record("Preview wiring tests must not load real shareable displays.")
             return [display]
         },
-        activeDisplayIDsProvider: { [display.displayID] }
+        activeDisplayIDsProvider: { activeDisplayIDs }
     )
     catalogService.store.hasScreenCapturePermission = true
     catalogService.store.lastPreflightPermission = true
     catalogService.store.displays = [display]
+    catalogService.store.lastLoadedActiveDisplayTopologySignature =
+        catalogService.currentActiveDisplayTopologySignature()
 
     let capturePreviewService = MockCapturePreviewService()
     let lifecycleService = CapturePreviewLifecycleService(
@@ -447,6 +451,8 @@ private func lanWebViewHarness(
     catalogService.store.hasScreenCapturePermission = true
     catalogService.store.lastPreflightPermission = true
     catalogService.store.displays = [display]
+    catalogService.store.lastLoadedActiveDisplayTopologySignature =
+        catalogService.currentActiveDisplayTopologySignature()
 
     let target = ShareTarget.id(9400 + UInt32(display.displayID % 100))
     let sharingService = MockSharingService()

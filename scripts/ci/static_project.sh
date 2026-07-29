@@ -5,6 +5,8 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/xcode.sh
+source "$TOOL_ROOT/scripts/lib/xcode.sh"
 
 cd "$ROOT_DIR"
 
@@ -30,7 +32,7 @@ assert_file_contains_all() {
 	shift 2
 
 	for required in "$@"; do
-		rg -F "$required" "$file" >/dev/null || die "$message: $required"
+		rg -F -- "$required" "$file" >/dev/null || die "$message: $required"
 	done
 }
 
@@ -176,26 +178,190 @@ validate_release_smoke_pins_relay_go_binary() {
 		die "Trusted Go resolution ignored the tool-root mise configuration."
 }
 
-validate_xcode_runner_disables_signing() {
+validate_xcode_runner_signing_modes() {
 	local runner="$TOOL_ROOT/scripts/ci/xcode.sh"
-	local base_command
-	local match_count
-	local setting
+	local signed_runtime_builder="$TOOL_ROOT/scripts/dev/build_signed_runtime.sh"
+	local runner_failure_fixture="$AI_TMP_DIR/xcode-runner-failure-summary"
+	local builder_failure_fixture="$AI_TMP_DIR/signed-runtime-failure-summary"
+	local positive_metadata
+	local positive_requirement
+	local adhoc_metadata
+	local missing_runtime_metadata
+	local weakened_requirement
 
-	base_command="$(
-		awk '
-			/^[[:space:]]*xcode_cmd=\([[:space:]]*$/ { inside = 1 }
-			inside { print }
-			inside && /^[[:space:]]*\)[[:space:]]*$/ { exit }
-		' "$runner"
+	assert_file_contains_all "$runner" "Xcode runner signing modes are incomplete" \
+		'SIGNING_MODE="disabled"' \
+		'--signing)' \
+		'disabled | development)' \
+		'"CODE_SIGNING_ALLOWED=NO"' \
+		'"CODE_SIGNING_REQUIRED=NO"' \
+		'"CODE_SIGNING_ALLOWED=YES"' \
+		'"CODE_SIGNING_REQUIRED=YES"' \
+		'"CODE_SIGN_STYLE=Manual"' \
+		'DEVELOPMENT_IDENTIFIER=""' \
+		'DEVELOPMENT_TEAM_IDENTIFIER=""' \
+		'--development-identifier)' \
+		'--development-team-identifier)' \
+		'"CODE_SIGN_IDENTITY=Apple Development"' \
+		'"ENABLE_HARDENED_RUNTIME=YES"' \
+		'pipeline_statuses=("${PIPESTATUS[@]}")' \
+		'tee_status="${pipeline_statuses[1]}"' \
+		'SUMMARY_FAILURE_REASON="build_log_write_failed"' \
+		'write_failed_summary_on_exit' \
+		'validate_development_project_path' \
+		'development_signing_authority' \
+		'verify_development_signed_app'
+	assert_file_contains_all "$signed_runtime_builder" "Signed runtime builder must own project signing inputs" \
+		'VOIDDISPLAY_DEVELOPMENT_IDENTIFIER' \
+		'VOIDDISPLAY_DEVELOPMENT_TEAM_IDENTIFIER' \
+		'--development-identifier "$DEVELOPMENT_IDENTIFIER"' \
+		'--development-team-identifier "$DEVELOPMENT_TEAM_IDENTIFIER"' \
+		'write_failed_summary_on_exit'
+	if rg -n -F 'sunyuchen1990@gmail.com' "$runner" >/dev/null; then
+		die "Generic Xcode runner must not pin a developer-specific certificate identity."
+	fi
+
+	mkdir -p "$runner_failure_fixture" "$builder_failure_fixture"
+	printf '{"status":"passed","reason":"stale"}\n' >"$runner_failure_fixture/xcode-summary.json"
+	if "$runner" \
+		--out-dir "$runner_failure_fixture" \
+		--action unsupported >/dev/null 2>&1; then
+		die "Xcode runner accepted an unsupported action."
+	fi
+	jq -e '
+		.status == "failed"
+			and .reason == "argument_validation_failed"
+	' "$runner_failure_fixture/xcode-summary.json" >/dev/null ||
+		die "Xcode runner left stale success evidence after a failed reused-output run."
+
+	printf '{"status":"passed","reason":"stale"}\n' >"$builder_failure_fixture/signed-runtime-summary.json"
+	if "$signed_runtime_builder" \
+		--out-dir "$builder_failure_fixture" \
+		--unsupported >/dev/null 2>&1; then
+		die "Signed runtime builder accepted an unsupported argument."
+	fi
+	jq -e '
+		.status == "failed"
+			and .reason == "argument_validation_failed"
+	' "$builder_failure_fixture/signed-runtime-summary.json" >/dev/null ||
+		die "Signed runtime builder left stale success evidence after a failed reused-output run."
+
+	positive_metadata=$'Identifier=com.developerchen.voiddisplay\nCodeDirectory v=20500 size=457 flags=0x10000(runtime)\nSignature size=4798\nAuthority=Apple Development: Developer (TEAM)\nInfo.plist entries=26\nTeamIdentifier=6HCGZ4HUVA\nSealed Resources version=2 rules=13 files=20'
+	positive_requirement='designated => identifier "com.developerchen.voiddisplay" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: Developer (TEAM)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */'
+	validate_development_signature_evidence \
+		"$positive_metadata" \
+		"$positive_requirement" \
+		"com.developerchen.voiddisplay" \
+		"6HCGZ4HUVA" \
+		"Apple Development: Developer (TEAM)"
+
+	missing_runtime_metadata="${positive_metadata/flags=0x10000(runtime)/flags=0x0(none)}"
+	if (
+		validate_development_signature_evidence \
+			"$missing_runtime_metadata" \
+			"$positive_requirement" \
+			"com.developerchen.voiddisplay" \
+			"6HCGZ4HUVA" \
+			"Apple Development: Developer (TEAM)"
+	) >/dev/null 2>&1; then
+		die "Development signature validation accepted an app without Hardened Runtime."
+	fi
+
+	weakened_requirement="($positive_requirement) or anchor apple generic"
+	if (
+		validate_development_signature_evidence \
+			"$positive_metadata" \
+			"$weakened_requirement" \
+			"com.developerchen.voiddisplay" \
+			"6HCGZ4HUVA" \
+			"Apple Development: Developer (TEAM)"
+	) >/dev/null 2>&1; then
+		die "Development signature validation accepted a weakened designated requirement."
+	fi
+
+	validate_development_project_path \
+		"$TOOL_ROOT/VoidDisplay.xcodeproj" \
+		"$TOOL_ROOT/VoidDisplay.xcodeproj"
+	if (
+		validate_development_project_path \
+			"$TOOL_ROOT/scripts" \
+			"$TOOL_ROOT/VoidDisplay.xcodeproj"
+	) >/dev/null 2>&1; then
+		die "Development project validation accepted a project outside the repository target."
+	fi
+
+	if (
+		validate_development_signature_evidence \
+			"$positive_metadata" \
+			"$positive_requirement" \
+			"com.developerchen.voiddisplay" \
+			"6HCGZ4HUVA" \
+			"Apple Development: Another Developer (TEAM)"
+	) >/dev/null 2>&1; then
+		die "Development signature validation accepted a different certificate authority."
+	fi
+
+	adhoc_metadata=$'Identifier=VoidDisplay\nCodeDirectory v=20400 size=420 flags=0x20002(adhoc,linker-signed)\nSignature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\nSealed Resources=none'
+	if (
+		validate_development_signature_evidence \
+			"$adhoc_metadata" \
+			'designated => cdhash H"0000000000000000000000000000000000000000"' \
+			"com.developerchen.voiddisplay" \
+			"6HCGZ4HUVA" \
+			"Apple Development: Developer (TEAM)"
+	) >/dev/null 2>&1; then
+		die "Development signature validation accepted an ad hoc application."
+	fi
+}
+
+validate_permission_sensitive_acceptance_contract() {
+	local workflow_references
+
+	assert_file_contains_all \
+		"$TOOL_ROOT/docs/testing/testing-strategy.md" \
+		"Testing strategy must document permission-sensitive signed acceptance" \
+		'scripts/dev/build_signed_runtime.sh' \
+		'signed-runtime-summary.json' \
+		'Xcode Personal Team' \
+		'不进入 CI、Release 或公开分发'
+	assert_file_contains_all \
+		"$TOOL_ROOT/AGENTS.md" \
+		"Agent policy must preserve permission-sensitive signed acceptance" \
+		'scripts/dev/build_signed_runtime.sh' \
+		'signed-runtime-summary.json' \
+		'Xcode Personal Team' \
+		'Do not substitute an unsigned or ad hoc build'
+	assert_file_contains_all \
+		"$TOOL_ROOT/README.md" \
+		"English development guide must expose the signed acceptance entry point" \
+		'scripts/dev/build_signed_runtime.sh' \
+		'signed-runtime-summary.json' \
+		'Xcode Personal Team'
+	assert_file_contains_all \
+		"$TOOL_ROOT/README.zh-CN.md" \
+		"Chinese development guide must expose the signed acceptance entry point" \
+		'scripts/dev/build_signed_runtime.sh' \
+		'signed-runtime-summary.json' \
+		'Xcode Personal Team'
+
+	workflow_references="$(
+		rg -n -F 'build_signed_runtime.sh' "$TOOL_ROOT/.github" || true
 	)"
-	[[ -n "$base_command" ]] || die "Xcode runner base command could not be resolved."
+	fail_on_output \
+		"Permission-sensitive signed acceptance must remain outside remote CI and Release workflows." \
+		"$workflow_references"
+}
 
-	for setting in CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO; do
-		match_count="$(rg -c "^[[:space:]]*\"$setting\"[[:space:]]*$" <<<"$base_command" || true)"
-		[[ "$match_count" == "1" ]] ||
-			die "Xcode runner base command must contain exactly one setting for every action: $setting"
-	done
+validate_home_popover_uses_system_focus() {
+	local source="$TOOL_ROOT/Sources/VoidDisplayApp/Navigation/HomeLayouts/HomeSharingSettingsPanel.swift"
+	local violations
+
+	violations="$(
+		rg -n 'NSApp\.keyWindow|makeFirstResponder' "$source" || true
+	)"
+	fail_on_output \
+		"Sharing Settings must leave focus ownership to SwiftUI and NavigationSplitView." \
+		"$violations"
 }
 
 validate_log_scanner() {
@@ -215,6 +381,24 @@ validate_log_scanner() {
 
 validate_xcode_log_scanner() {
 	validate_log_scanner scan_xcode_log_for_diagnostics Xcode "$TOOL_ROOT/scripts/ci/fixtures/xcode-log-scanner"
+}
+
+validate_log_scanner_propagates_search_errors() {
+	local fixture_root="$AI_TMP_DIR/log-scanner-search-error"
+	local fixture_bin="$fixture_root/bin"
+	local fixture_log="$fixture_root/build.log"
+
+	mkdir -p "$fixture_bin"
+	printf '#!/usr/bin/env bash\nexit 2\n' >"$fixture_bin/rg"
+	printf 'ordinary build output\n' >"$fixture_log"
+	chmod +x "$fixture_bin/rg"
+
+	if (
+		PATH="$fixture_bin:$PATH"
+		collect_build_log_diagnostics "$fixture_log" >/dev/null 2>&1
+	); then
+		die "Build log scanner accepted an rg I/O failure as an empty diagnostic result."
+	fi
 }
 
 validate_swiftpm_log_scanner() {
@@ -288,8 +472,11 @@ validate_xcode_project_layout
 validate_xcode_shell_build_phase
 validate_relay_build_is_script_sandbox_compatible
 validate_release_smoke_pins_relay_go_binary
-validate_xcode_runner_disables_signing
+validate_xcode_runner_signing_modes
+validate_permission_sensitive_acceptance_contract
+validate_home_popover_uses_system_focus
 validate_xcode_log_scanner
+validate_log_scanner_propagates_search_errors
 validate_swiftpm_log_scanner
 validate_bootstrap_profile_fixtures
 validate_classify_fixtures

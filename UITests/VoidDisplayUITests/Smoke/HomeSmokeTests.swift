@@ -19,7 +19,7 @@ final class HomeSmokeTests: XCTestCase {
                 "home_summary_status_strip",
                 "home_add_virtual_display_button",
                 "home_sharing_settings_popover_button",
-                "home_refresh_button",
+                "home_rescan_displays_button",
                 "home_virtual_display_list_row"
             ],
             timeout: 6
@@ -54,9 +54,321 @@ final class HomeSmokeTests: XCTestCase {
             app,
             identifiers: [
                 "home_header_screen_recording_permission_status",
-                "home_open_privacy_settings_button"
+                "home_open_privacy_settings_button",
+                "home_check_screen_recording_permission_button"
             ],
             timeout: 6
+        )
+    }
+
+    @MainActor
+    func testScreenRecordingRecoveryActionsFitAtNarrowWindowSize() throws {
+        let app = launchAppForSmoke(
+            windowSize: (600, 640),
+            scenario: "permission_denied"
+        )
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+
+        for identifier in [
+            "home_open_privacy_settings_button",
+            "home_check_screen_recording_permission_button"
+        ] {
+            let button = assertExists(app, identifier: identifier, timeout: 6)
+            XCTAssertTrue(
+                window.frame.contains(button.frame),
+                "Permission recovery action extends outside the narrow Home window: \(identifier)"
+            )
+            XCTAssertTrue(waitForHittable(button), "Permission recovery action is not usable: \(identifier)")
+        }
+    }
+
+    @MainActor
+    func testDisplayRescanExplainsPurposeAndReportsResult() throws {
+        let app = launchAppForSmoke(
+            windowSize: (600, 640),
+            scenario: "display_catalog_loading"
+        )
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+        let rescanButton = assertExists(
+            app,
+            identifier: "home_rescan_displays_button",
+            timeout: 6
+        )
+        let firstDisplayRow = assertExists(
+            app,
+            identifier: "home_virtual_display_list_row",
+            timeout: 6
+        )
+        let rowOriginBeforeRescan = firstDisplayRow.frame.minY
+
+        XCTAssertTrue(
+            ["Rescan Displays", "重新检测显示器"].contains(rescanButton.label),
+            "Unexpected rescan label: \(rescanButton.label)"
+        )
+        let initialLoadDeadline = Date().addingTimeInterval(6)
+        while !rescanButton.isEnabled, Date() < initialLoadDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(
+            rescanButton.isEnabled,
+            "Rescan button did not become ready after the initial display load."
+        )
+        rescanButton.click()
+
+        let scanningLabels = ["Detecting Displays…", "正在检测显示器…"]
+        let scanningDeadline = Date().addingTimeInterval(1)
+        while !scanningLabels.contains(rescanButton.value as? String ?? ""), Date() < scanningDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(
+            scanningLabels.contains(rescanButton.value as? String ?? ""),
+            "Rescan button did not expose its scanning state after the click."
+        )
+        let detectionStatus = assertExists(
+            app,
+            identifier: "home_display_detection_status",
+            timeout: 3
+        )
+        XCTAssertTrue(
+            window.frame.contains(detectionStatus.frame),
+            "Display detection feedback is outside the minimum-width window."
+        )
+        XCTAssertFalse(
+            detectionStatus.frame.intersects(firstDisplayRow.frame),
+            "Display detection feedback must not cover the display list."
+        )
+        XCTAssertEqual(
+            firstDisplayRow.frame.minY,
+            rowOriginBeforeRescan,
+            accuracy: 1,
+            "Display detection feedback must not move the display list."
+        )
+
+        let completionMessage = detectionStatus.staticTexts.firstMatch
+        let completionDeadline = Date().addingTimeInterval(5)
+        var completionValue = ""
+        while Date() < completionDeadline {
+            completionValue = completionMessage.value as? String ?? ""
+            if completionValue == "Display list is up to date."
+                || completionValue == "显示器列表已是最新。"
+                || completionValue.hasPrefix("Detected Displays:")
+                || completionValue.hasPrefix("检测到的显示器：")
+            {
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(
+            completionValue == "Display list is up to date."
+                || completionValue == "显示器列表已是最新。"
+                || completionValue.hasPrefix("Detected Displays:")
+                || completionValue.hasPrefix("检测到的显示器："),
+            "Display detection did not report its terminal result. Value: \(completionValue)"
+        )
+        XCTAssertTrue(
+            rescanButton.isEnabled,
+            "Rescan button did not become ready after reporting its terminal result."
+        )
+        XCTAssertTrue(
+            detectionStatus.exists,
+            "Terminal display detection feedback disappeared immediately."
+        )
+        XCTAssertEqual(
+            firstDisplayRow.frame.minY,
+            rowOriginBeforeRescan,
+            accuracy: 1,
+            "Terminal display detection feedback must not move the display list."
+        )
+    }
+
+    @MainActor
+    func testDisplayRescanButtonDoesNotMoveWhileScanning() throws {
+        let app = launchAppForSmoke(
+            windowSize: (1180, 720),
+            scenario: "display_catalog_loading"
+        )
+        let rescanButton = assertExists(
+            app,
+            identifier: "home_rescan_displays_button",
+            timeout: 6
+        )
+        let scanningLabels = ["Detecting Displays…", "正在检测显示器…"]
+        let initialLoadDeadline = Date().addingTimeInterval(6)
+        while !rescanButton.isEnabled, Date() < initialLoadDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(
+            rescanButton.isEnabled,
+            "Rescan button did not become ready after the initial display load."
+        )
+        let idleFrame = rescanButton.frame
+
+        rescanButton.click()
+        let scanningDeadline = Date().addingTimeInterval(1)
+        while !scanningLabels.contains(rescanButton.value as? String ?? ""), Date() < scanningDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(
+            scanningLabels.contains(rescanButton.value as? String ?? ""),
+            "Rescan button did not expose its scanning state."
+        )
+        let scanningFrame = rescanButton.frame
+
+        XCTAssertEqual(
+            scanningFrame.minX,
+            idleFrame.minX,
+            accuracy: 1,
+            "Rescan button must not move horizontally while scanning."
+        )
+        XCTAssertEqual(
+            scanningFrame.width,
+            idleFrame.width,
+            accuracy: 1,
+            "Rescan button width must remain stable while scanning."
+        )
+
+        let completedDeadline = Date().addingTimeInterval(5)
+        while !rescanButton.isEnabled, Date() < completedDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(
+            rescanButton.isEnabled,
+            "Rescan button did not become ready after display detection completed."
+        )
+        let completedFrame = rescanButton.frame
+        XCTAssertEqual(
+            completedFrame.minX,
+            idleFrame.minX,
+            accuracy: 1,
+            "Rescan button must return without horizontal movement after scanning."
+        )
+        XCTAssertEqual(
+            completedFrame.width,
+            idleFrame.width,
+            accuracy: 1,
+            "Rescan button width must remain stable after scanning."
+        )
+    }
+
+    @MainActor
+    func testDisplayRescanFeedbackRemainsVisibleAfterScrolling() throws {
+        let app = launchAppForSmoke(
+            windowSize: (600, 300),
+            scenario: "display_catalog_loading"
+        )
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+        let rescanButton = assertExists(
+            app,
+            identifier: "home_rescan_displays_button",
+            timeout: 6
+        )
+        let summary = assertExists(
+            app,
+            identifier: "home_summary_status_strip",
+            timeout: 6
+        )
+        let scrollView = try XCTUnwrap(
+            app.scrollViews.allElementsBoundByIndex.max { lhs, rhs in
+                lhs.frame.width < rhs.frame.width
+            }
+        )
+        let initialLoadDeadline = Date().addingTimeInterval(6)
+        while !rescanButton.isEnabled, Date() < initialLoadDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertTrue(rescanButton.isEnabled)
+
+        for _ in 0..<6 where summary.isHittable {
+            scrollView.scroll(byDeltaX: 0, deltaY: -240)
+        }
+        XCTAssertFalse(
+            summary.isHittable,
+            "Test precondition failed: the Home content did not scroll away from its top."
+        )
+
+        rescanButton.click()
+
+        let detectionStatus = assertExists(
+            app,
+            identifier: "home_display_detection_status",
+            timeout: 3
+        )
+        XCTAssertTrue(
+            window.frame.contains(detectionStatus.frame),
+            "Display detection feedback must remain in the visible viewport after scrolling."
+        )
+    }
+
+    @MainActor
+    func testInlineRescanControlRemainsStableWhileScanning() throws {
+        let app = launchAppForSmoke(
+            windowSize: (1180, 720),
+            scenario: "display_catalog_loading"
+        )
+        let inlineRescanIdentifier = "home_virtual_display_rescan_button"
+        var inlineRescanButton = assertExists(
+            app,
+            identifier: inlineRescanIdentifier,
+            timeout: 7
+        )
+
+        let initialLoadDeadline = Date.now.addingTimeInterval(6)
+        while !(inlineRescanButton.exists && inlineRescanButton.isEnabled),
+              Date.now < initialLoadDeadline {
+            RunLoop.current.run(until: Date.now.addingTimeInterval(0.05))
+            inlineRescanButton = smokeElement(app, identifier: inlineRescanIdentifier)
+        }
+        XCTAssertTrue(
+            inlineRescanButton.exists && inlineRescanButton.isEnabled,
+            "The inline rescan control did not become ready after the initial display load."
+        )
+        XCTAssertTrue(
+            waitForHittable(inlineRescanButton),
+            "The inline rescan control was not ready for interaction."
+        )
+        let idleFrame = inlineRescanButton.frame
+
+        inlineRescanButton.click()
+
+        let scanningLabels = ["Detecting Displays…", "正在检测显示器…"]
+        let scanningDeadline = Date.now.addingTimeInterval(2)
+        var scanningInlineRescanButton = smokeElement(app, identifier: inlineRescanIdentifier)
+        while Date.now < scanningDeadline {
+            let scanningValue = scanningInlineRescanButton.value as? String ?? ""
+            if scanningInlineRescanButton.exists,
+               !scanningInlineRescanButton.isEnabled,
+               scanningLabels.contains(scanningValue) {
+                break
+            }
+            RunLoop.current.run(until: Date.now.addingTimeInterval(0.05))
+            scanningInlineRescanButton = smokeElement(app, identifier: inlineRescanIdentifier)
+        }
+        XCTAssertTrue(
+            scanningInlineRescanButton.exists,
+            "The inline rescan control must remain mounted while scanning."
+        )
+        XCTAssertFalse(
+            scanningInlineRescanButton.isEnabled,
+            "The inline rescan control did not enter the scanning state."
+        )
+        XCTAssertTrue(
+            scanningLabels.contains(scanningInlineRescanButton.value as? String ?? ""),
+            "The inline rescan control did not expose its scanning state."
+        )
+        XCTAssertEqual(
+            scanningInlineRescanButton.frame.minX,
+            idleFrame.minX,
+            accuracy: 1,
+            "The inline rescan control must not move horizontally while scanning."
+        )
+        XCTAssertEqual(
+            scanningInlineRescanButton.frame.width,
+            idleFrame.width,
+            accuracy: 1,
+            "The inline rescan control width must remain stable while scanning."
         )
     }
 
@@ -121,7 +433,7 @@ final class HomeSmokeTests: XCTestCase {
         for identifier in [
             "home_add_virtual_display_button",
             "home_sharing_settings_popover_button",
-            "home_refresh_button",
+            "home_rescan_displays_button",
             "virtual_display_toggle_button",
             "home_virtual_display_preview_toggle",
             "home_virtual_display_web_view_toggle",
@@ -142,7 +454,7 @@ final class HomeSmokeTests: XCTestCase {
 
         for identifier in [
             "home_sharing_settings_popover_button",
-            "home_refresh_button",
+            "home_rescan_displays_button",
             "virtual_display_toggle_button",
             "home_virtual_display_preview_toggle",
             "home_virtual_display_web_view_toggle",
@@ -455,6 +767,52 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testDismissingSharingSettingsByClickingToolbarBlankClosesPopover() throws {
+        let app = launchAppForSmoke()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 6))
+        let toolbar = app.toolbars.firstMatch
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 2))
+        let systemSidebarToggle = app.buttons
+            .matching(
+                NSPredicate(
+                    format: "label CONTAINS[c] %@ OR label CONTAINS %@",
+                    "Sidebar",
+                    "边栏"
+                )
+            )
+            .firstMatch
+        XCTAssertTrue(
+            systemSidebarToggle.waitForExistence(timeout: 2),
+            "NavigationSplitView must expose its system sidebar toggle."
+        )
+        XCTAssertTrue(systemSidebarToggle.isHittable)
+
+        for _ in 0..<3 {
+            tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
+            let sharingSettingsPanel = assertExists(
+                app,
+                identifier: "home_sharing_settings_panel",
+                timeout: 2
+            )
+            let focusedPopoverControl = sharingSettingsPanel.descendants(matching: .any)
+                .matching(NSPredicate(format: "hasKeyboardFocus == true"))
+                .firstMatch
+            XCTAssertTrue(
+                focusedPopoverControl.waitForExistence(timeout: 1),
+                "Sharing settings should move focus into the presented popover."
+            )
+
+            toolbar.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).click()
+
+            XCTAssertFalse(
+                sharingSettingsPanel.waitForExistence(timeout: 1),
+                "Clicking the toolbar background should dismiss Sharing Settings."
+            )
+        }
+    }
+
+    @MainActor
     func testPreviewRecoveryRetryShowsRestartingState() throws {
         let app = launchAppForSmoke(scenario: "preview_recovery")
         assertAllExist(
@@ -599,7 +957,7 @@ final class HomeSmokeTests: XCTestCase {
 
     private var homePageActionIdentifiers: [String] {
         [
-            "home_refresh_button",
+            "home_rescan_displays_button",
             "home_sharing_settings_popover_button",
             "home_add_virtual_display_button"
         ]

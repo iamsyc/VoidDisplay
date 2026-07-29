@@ -2,12 +2,32 @@ import Foundation
 
 @MainActor
 extension DisplayRuntime {
-    package func handleCatalogAppear(source: DisplayRuntimeCatalogSource) async {
-        await refreshCatalogPermission(source: source)
+    package func registerCatalogSurface(
+        source: DisplayRuntimeCatalogSource
+    ) -> DisplayRuntimeCatalogSurfaceRegistration {
+        let registration = DisplayRuntimeCatalogSurfaceRegistration(source: source)
+        activeCatalogSurfaceRegistrations[source, default: []].insert(registration)
+        return registration
     }
 
-    package func handleCatalogDisappear(source: DisplayRuntimeCatalogSource) async {
-        await cancelRefresh(for: source)
+    package func refreshCatalogSurface(
+        _ registration: DisplayRuntimeCatalogSurfaceRegistration
+    ) async {
+        guard activeCatalogSurfaceRegistrations[registration.source]?.contains(registration) == true else {
+            return
+        }
+        await refreshCatalogPermission(source: registration.source)
+    }
+
+    package func unregisterCatalogSurface(
+        _ registration: DisplayRuntimeCatalogSurfaceRegistration
+    ) async {
+        guard var registrations = activeCatalogSurfaceRegistrations[registration.source],
+              registrations.remove(registration) != nil
+        else {
+            return
+        }
+        activeCatalogSurfaceRegistrations[registration.source] = registrations.isEmpty ? nil : registrations
     }
 
     package func requestCatalogPermission(source: DisplayRuntimeCatalogSource) async {
@@ -37,23 +57,33 @@ extension DisplayRuntime {
         await refreshAfterPermissionGranted(source: source)
     }
 
-    package func forceRefreshCatalog(source: DisplayRuntimeCatalogSource) async {
-        guard let catalogCommander else { return }
+    package func forceRefreshCatalog(
+        source: DisplayRuntimeCatalogSource
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
+        guard let catalogCommander else {
+            return DisplayRuntimeCatalogRefreshOutcome(
+                settlementID: nil,
+                result: .failed,
+                catalog: makeSnapshot().catalog
+            )
+        }
         let granted = catalogCommander.refreshPermission()
         guard granted else {
-            await clearSnapshotForDeniedPermission(source: source)
-            return
+            return await clearSnapshotForDeniedPermission(source: source)
         }
 
         switch source {
         case .capturePage:
-            await refreshAndConverge(intent: .userForcedRefresh, ownerScope: .capture)
+            return await refreshAndConverge(intent: .userForcedRefresh)
         case .sharingPage:
             guard currentSharingSnapshot().isWebServiceRunning else {
-                await catalogCommander.cancelRefresh(ownerScope: .sharing)
-                return
+                return DisplayRuntimeCatalogRefreshOutcome(
+                    settlementID: nil,
+                    result: .failed,
+                    catalog: makeSnapshot().catalog
+                )
             }
-            await refreshAndConverge(intent: .userForcedRefresh, ownerScope: .sharing)
+            return await refreshAndConverge(intent: .userForcedRefresh)
         }
     }
 
@@ -72,28 +102,18 @@ extension DisplayRuntime {
     }
 
     package func handleSharingServiceStateChanged(isRunning _: Bool) async {
-        guard let catalogCommander else { return }
         if currentSharingSnapshot().isWebServiceRunning {
             await refreshSharingCatalogForRunningService()
-        } else {
-            await catalogCommander.cancelRefresh(ownerScope: .sharing)
         }
     }
 
-    func convergeToVisibleDisplaysFromCurrentCatalog() async {
-        await convergeToVisibleDisplays(catalogCommander?.currentVisibleDisplays() ?? [])
-    }
-
     private func refreshAfterPermissionGranted(source: DisplayRuntimeCatalogSource) async {
-        guard let catalogCommander else { return }
         switch source {
         case .capturePage:
-            await refreshAndConverge(intent: .permissionChanged, ownerScope: .capture)
+            _ = await refreshAndConverge(intent: .permissionChanged)
         case .sharingPage:
             if currentSharingSnapshot().isWebServiceRunning {
                 await refreshSharingCatalogForRunningService()
-            } else {
-                await catalogCommander.cancelRefresh(ownerScope: .sharing)
             }
         }
     }
@@ -105,28 +125,27 @@ extension DisplayRuntime {
             return
         }
         guard currentSharingSnapshot().isWebServiceRunning else {
-            await catalogCommander.cancelRefresh(ownerScope: .sharing)
             return
         }
-        await refreshAndConverge(intent: .serviceBecameRunning, ownerScope: .sharing)
+        _ = await refreshAndConverge(intent: .serviceBecameRunning)
     }
 
-    private func cancelRefresh(for source: DisplayRuntimeCatalogSource) async {
-        guard let catalogCommander else { return }
-        switch source {
-        case .capturePage:
-            await catalogCommander.cancelRefresh(ownerScope: .capture)
-        case .sharingPage:
-            await catalogCommander.cancelRefresh(ownerScope: .sharing)
-        }
-    }
-
+    @discardableResult
     private func clearSnapshotForDeniedPermission(
         loadErrorMessage: String? = nil,
         source: DisplayRuntimeCatalogSource
-    ) async {
-        await catalogCommander?.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
-        await convergeToVisibleDisplays([])
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
+        guard let catalogCommander else {
+            return DisplayRuntimeCatalogRefreshOutcome(
+                settlementID: nil,
+                result: .failed,
+                catalog: makeSnapshot().catalog
+            )
+        }
+        let outcome = await catalogCommander.clearSnapshotForDeniedPermission(
+            loadErrorMessage: loadErrorMessage
+        )
+        await handleRefreshOutcomeForConvergence(outcome)
         await observabilityRecorder?.record(
             DisplayRuntimeObservabilityEvent(
                 severity: .warning,
@@ -137,6 +156,7 @@ extension DisplayRuntime {
             )
         )
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
+        return outcome
     }
 
     private func drainTopologyRefreshQueue() async {
@@ -153,33 +173,41 @@ extension DisplayRuntime {
             return
         }
 
-        let result = await catalogCommander.submitRefresh(intent: .topologyChanged, ownerScope: nil)
+        let outcome = await catalogCommander.submitRefresh(intent: .topologyChanged)
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        await handleRefreshResultForConvergence(result)
+        await handleRefreshOutcomeForConvergence(outcome)
     }
 
     private func refreshAndConverge(
-        intent: DisplayRuntimeCatalogRefreshIntent,
-        ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
-    ) async {
-        guard let catalogCommander else { return }
-        let result = await catalogCommander.submitRefresh(intent: intent, ownerScope: ownerScope)
+        intent: DisplayRuntimeCatalogRefreshIntent
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
+        guard let catalogCommander else {
+            return DisplayRuntimeCatalogRefreshOutcome(
+                settlementID: nil,
+                result: .failed,
+                catalog: makeSnapshot().catalog
+            )
+        }
+        let outcome = await catalogCommander.submitRefresh(intent: intent)
         await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        await handleRefreshResultForConvergence(result)
+        await handleRefreshOutcomeForConvergence(outcome)
+        return outcome
     }
 
-    private func handleRefreshResultForConvergence(_ result: DisplayRuntimeCatalogRefreshResult) async {
-        switch result {
+    func handleRefreshOutcomeForConvergence(
+        _ outcome: DisplayRuntimeCatalogRefreshOutcome
+    ) async {
+        switch outcome.result {
         case .reloadedSnapshot, .reusedSnapshot:
-            await convergeToVisibleDisplaysFromCurrentCatalog()
+            await convergeToVisibleDisplays(outcome.catalog.loadedDisplays)
         case .clearedSnapshot:
             await convergeToVisibleDisplays([])
-        case .failed:
+        case .superseded, .failed:
             return
         }
     }
 
-    private func convergeToVisibleDisplays(_ visibleDisplays: [DisplayRuntimeVisibleDisplay]) async {
+    private func convergeToVisibleDisplays(_ visibleDisplays: [DisplayRuntimeCatalogDisplay]) async {
         if currentSharingSnapshot().isWebServiceRunning {
             let virtualDisplays = currentVirtualDisplaySnapshot().managedDisplays
             var virtualSerialsByDisplayID: [DisplayRuntimeDisplayID: UInt32] = [:]
@@ -200,7 +228,7 @@ extension DisplayRuntime {
     }
 
     private func reconcileConsumerLeasesAfterCatalogConvergence(
-        visibleDisplays: [DisplayRuntimeVisibleDisplay]
+        visibleDisplays: [DisplayRuntimeCatalogDisplay]
     ) async {
         let visibleDisplayIDs = Set(visibleDisplays.map(\.displayID))
         let snapshot = makeSnapshot()

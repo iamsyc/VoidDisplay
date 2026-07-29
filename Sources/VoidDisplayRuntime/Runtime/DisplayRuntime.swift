@@ -63,6 +63,9 @@ package final class DisplayRuntime {
 
     @ObservationIgnored var topologyRefreshTask: Task<Void, Never>?
     @ObservationIgnored var hasPendingTopologyChange = false
+    @ObservationIgnored var activeCatalogSurfaceRegistrations: [
+        DisplayRuntimeCatalogSource: Set<DisplayRuntimeCatalogSurfaceRegistration>
+    ] = [:]
     @ObservationIgnored var virtualDisplayTransactionQueueTail: Task<Void, Never>?
     @ObservationIgnored var coalescibleVirtualDisplayTransactionTail: ActiveVirtualDisplayCoalescibleTail?
     var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]

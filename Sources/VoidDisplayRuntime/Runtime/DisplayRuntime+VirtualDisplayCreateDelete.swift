@@ -213,10 +213,6 @@ extension DisplayRuntime {
             kind: .virtualDisplayCreate,
             affectedSurfaces: affectedSurfaces
         )
-        if topologyResult.status == .stable {
-            await convergeToVisibleDisplaysFromCurrentCatalog()
-            await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        }
         let finalStatus = transactionStatus(after: topologyResult, restoreResults: [])
         let terminal = finalizeTransaction(
             transactionID: request.transactionID,
@@ -467,10 +463,6 @@ extension DisplayRuntime {
                 kind: .virtualDisplayDelete,
                 affectedSurfaces: affectedSurfaces
             )
-            if result.status == .stable {
-                await convergeToVisibleDisplaysFromCurrentCatalog()
-                await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-            }
             topologyResult = result
         } else {
             topologyResult = nil

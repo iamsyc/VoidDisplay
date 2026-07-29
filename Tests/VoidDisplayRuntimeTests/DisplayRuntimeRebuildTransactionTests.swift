@@ -33,8 +33,8 @@ struct DisplayRuntimeRebuildTransactionTests {
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 77)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 77)),
             catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
                 recorder: recorder,
-                visibleDisplays: visibleDisplays(from: catalog)
             ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureIntentCommander: captureIntentCommander,
@@ -129,8 +129,8 @@ struct DisplayRuntimeRebuildTransactionTests {
                 snapshot: virtualDisplaySnapshot(configID: configID, displayID: 57)
             ),
             catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
                 recorder: recorder,
-                visibleDisplays: visibleDisplays(from: catalog)
             ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
@@ -160,7 +160,9 @@ struct DisplayRuntimeRebuildTransactionTests {
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: virtualDisplaySnapshot(configID: configID, displayID: 56)
             ),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             captureIntentCommander: FakeCaptureIntentCommander(),
             virtualDisplayCommander: FakeVirtualDisplayCommander(delayNanoseconds: 100_000_000),
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -197,7 +199,9 @@ struct DisplayRuntimeRebuildTransactionTests {
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: virtualDisplaySnapshot(configID: configID, displayID: 57)
             ),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             captureIntentCommander: FakeCaptureIntentCommander(),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -242,7 +246,9 @@ struct DisplayRuntimeRebuildTransactionTests {
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: virtualDisplaySnapshot(configID: configID, displayID: 103)
             ),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: virtualDisplayCommander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -306,8 +312,8 @@ struct DisplayRuntimeRebuildTransactionTests {
                 )
             ),
             catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
                 recorder: recorder,
-                visibleDisplays: visibleDisplays(from: catalog)
             ),
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureIntentCommander: captureIntentCommander,
@@ -482,7 +488,9 @@ struct DisplayRuntimeRebuildTransactionTests {
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 101)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 101)),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -531,7 +539,9 @@ struct DisplayRuntimeRebuildTransactionTests {
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 102)),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 102)),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -597,8 +607,8 @@ struct DisplayRuntimeRebuildTransactionTests {
             ),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 105)),
             catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
                 recorder: recorder,
-                visibleDisplays: visibleDisplays(from: catalog)
             ),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(recorder: recorder),
@@ -713,7 +723,10 @@ struct DisplayRuntimeRebuildTransactionTests {
                 catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
                 sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: 103)),
                 virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 103)),
-                catalogCommander: FakeCatalogCommander(refreshResults: scenario.refreshResults),
+                catalogCommander: FakeCatalogCommander(
+                    snapshot: scenario.catalog,
+                    refreshResults: scenario.refreshResults
+                ),
                 captureIntentCommander: captureIntentCommander,
                 virtualDisplayCommander: FakeVirtualDisplayCommander(),
                 topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: scenario.maximumSampleCount)
@@ -823,6 +836,7 @@ struct DisplayRuntimeRebuildTransactionTests {
                 ),
                 virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 106)),
                 catalogCommander: FakeCatalogCommander(
+                    snapshot: scenario.catalog,
                     recorder: recorder,
                     refreshResults: scenario.refreshResults
                 ),

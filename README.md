@@ -132,7 +132,12 @@ scripts/dev/doctor.sh
 
 # Run the standard local validation gate
 scripts/dev/validate.sh
+
+# Build a local Xcode Personal Team copy for privacy-permission acceptance
+scripts/dev/build_signed_runtime.sh
 ```
+
+Permission-sensitive manual acceptance must launch the exact `app_path` recorded in the generated `signed-runtime-summary.json`. This local development signature works with Xcode Personal Team and does not change the ad hoc, unnotarized Release artifacts.
 
 The [documentation index](./docs/README.md) links the current architecture, testing strategy, CI and release workflows, and LAN security contract.
 

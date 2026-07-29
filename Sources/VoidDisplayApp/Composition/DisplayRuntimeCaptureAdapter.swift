@@ -135,7 +135,7 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         displayID: DisplayRuntimeDisplayID,
         in controller: CaptureController
     ) -> SCDisplay? {
-        (controller.displayCatalogState.displays ?? []).first {
+        (controller.displayCatalogState.activeShareableDisplays ?? []).first {
             $0.displayID == displayID
         }
     }

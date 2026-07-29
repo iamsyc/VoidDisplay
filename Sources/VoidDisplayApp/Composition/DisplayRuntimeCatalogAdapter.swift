@@ -7,48 +7,13 @@ import VoidDisplayRuntime
 @MainActor
 package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding, DisplayRuntimeCatalogCommanding {
     private let service: ScreenCaptureCatalogService
-    private let captureRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
-    private let sharingRefreshOwner = ScreenCaptureCatalogService.RefreshOwner()
 
     package init(service: ScreenCaptureCatalogService) {
         self.service = service
     }
 
     package func makeCatalogSnapshot() -> DisplayRuntimeCatalogSnapshot {
-        let store = service.store
-        return DisplayRuntimeCatalogSnapshot(
-            hasScreenCapturePermission: store.hasScreenCapturePermission,
-            lastPreflightPermission: store.lastPreflightPermission,
-            lastRequestPermission: store.lastRequestPermission,
-            isLoadingDisplays: store.isLoadingDisplays,
-            hasLoadError: store.loadErrorMessage != nil || store.lastLoadError != nil,
-            lastLoadError: store.lastLoadError.map {
-                .init(
-                    domain: $0.domain,
-                    code: $0.code,
-                    hasDescription: !$0.description.isEmpty,
-                    hasFailureReason: $0.failureReason != nil,
-                    hasRecoverySuggestion: $0.recoverySuggestion != nil
-                )
-            },
-            loadedDisplays: (store.displays ?? []).map {
-                .init(
-                    displayID: $0.displayID,
-                    pixelWidth: $0.width,
-                    pixelHeight: $0.height
-                )
-            },
-            topologySignature: (store.lastLoadedActiveDisplayTopologySignature ?? []).map {
-                .init(
-                    displayID: $0.displayID,
-                    isMain: $0.isMain,
-                    pixelWidth: $0.pixelWidth,
-                    pixelHeight: $0.pixelHeight,
-                    refreshRateMilliHertz: $0.refreshRateMilliHertz,
-                    mirrorsDisplayID: $0.mirrorsDisplayID
-                )
-            }
-        )
+        DisplayRuntimeCatalogSnapshot(service.makeCatalogStateSnapshot())
     }
 
     package func requestPermission() -> Bool {
@@ -60,45 +25,67 @@ package final class DisplayRuntimeCatalogAdapter: DisplayRuntimeCatalogProviding
     }
 
     package func submitRefresh(
-        intent: DisplayRuntimeCatalogRefreshIntent,
-        ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
-    ) async -> DisplayRuntimeCatalogRefreshResult {
-        let result = await service.submitRefresh(
-            intent: ScreenCaptureCatalogRefreshIntent(intent),
-            owner: owner(for: ownerScope)
+        intent: DisplayRuntimeCatalogRefreshIntent
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
+        DisplayRuntimeCatalogRefreshOutcome(
+            await service.submitRefresh(intent: ScreenCaptureCatalogRefreshIntent(intent))
         )
-        return DisplayRuntimeCatalogRefreshResult(result)
     }
 
-    package func clearSnapshotForDeniedPermission(loadErrorMessage: String?) async {
-        await service.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
+    package func clearSnapshotForDeniedPermission(
+        loadErrorMessage: String?
+    ) async -> DisplayRuntimeCatalogRefreshOutcome {
+        DisplayRuntimeCatalogRefreshOutcome(
+            await service.clearSnapshotForDeniedPermission(loadErrorMessage: loadErrorMessage)
+        )
     }
+}
 
-    package func cancelRefresh(ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?) async {
-        await service.cancelRefresh(owner: owner(for: ownerScope))
+private extension DisplayRuntimeCatalogSnapshot {
+    init(_ snapshot: ScreenCaptureCatalogStateSnapshot) {
+        self.init(
+            hasScreenCapturePermission: snapshot.hasScreenCapturePermission,
+            lastPreflightPermission: snapshot.lastPreflightPermission,
+            lastRequestPermission: snapshot.lastRequestPermission,
+            isLoadingDisplays: snapshot.isLoadingDisplays,
+            hasLoadError: snapshot.hasLoadError,
+            lastLoadError: snapshot.lastLoadError.map {
+                .init(
+                    domain: $0.domain,
+                    code: $0.code,
+                    hasDescription: !$0.description.isEmpty,
+                    hasFailureReason: $0.failureReason != nil,
+                    hasRecoverySuggestion: $0.recoverySuggestion != nil
+                )
+            },
+            loadedDisplays: snapshot.loadedDisplays.map {
+                .init(
+                    displayID: $0.displayID,
+                    pixelWidth: $0.pixelWidth,
+                    pixelHeight: $0.pixelHeight
+                )
+            },
+            topologySignature: snapshot.topologySignature.map {
+                .init(
+                    displayID: $0.displayID,
+                    isMain: $0.isMain,
+                    pixelWidth: $0.pixelWidth,
+                    pixelHeight: $0.pixelHeight,
+                    refreshRateMilliHertz: $0.refreshRateMilliHertz,
+                    mirrorsDisplayID: $0.mirrorsDisplayID
+                )
+            }
+        )
     }
+}
 
-    package func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay] {
-        return service.visibleDisplays(from: service.store.displays ?? []).map {
-            DisplayRuntimeVisibleDisplay(
-                displayID: $0.displayID,
-                pixelWidth: $0.width,
-                pixelHeight: $0.height
-            )
-        }
-    }
-
-    private func owner(
-        for scope: DisplayRuntimeCatalogRefreshOwnerScope?
-    ) -> ScreenCaptureCatalogService.RefreshOwner? {
-        switch scope {
-        case .capture:
-            captureRefreshOwner
-        case .sharing:
-            sharingRefreshOwner
-        case nil:
-            nil
-        }
+private extension DisplayRuntimeCatalogRefreshOutcome {
+    init(_ settlement: ScreenCaptureCatalogRefreshSettlement) {
+        self.init(
+            settlementID: settlement.id,
+            result: DisplayRuntimeCatalogRefreshResult(settlement.result),
+            catalog: DisplayRuntimeCatalogSnapshot(settlement.catalog)
+        )
     }
 }
 
@@ -126,6 +113,8 @@ private extension DisplayRuntimeCatalogRefreshResult {
             self = .reusedSnapshot
         case .clearedSnapshot:
             self = .clearedSnapshot
+        case .superseded:
+            self = .superseded
         case .failed:
             self = .failed
         }

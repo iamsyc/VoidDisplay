@@ -16,27 +16,36 @@ package nonisolated enum DisplayRuntimeCatalogRefreshResult: String, Codable, Eq
     case reloadedSnapshot
     case reusedSnapshot
     case clearedSnapshot
+    case superseded
     case failed
 }
 
-package nonisolated enum DisplayRuntimeCatalogRefreshOwnerScope: String, Codable, Equatable, Sendable {
-    case capture
-    case sharing
-}
-
-package nonisolated struct DisplayRuntimeVisibleDisplay: Codable, Equatable, Sendable {
-    package let displayID: DisplayRuntimeDisplayID
-    package let pixelWidth: Int?
-    package let pixelHeight: Int?
+package nonisolated struct DisplayRuntimeCatalogRefreshOutcome: Equatable, Sendable {
+    package let settlementID: UInt64?
+    package let result: DisplayRuntimeCatalogRefreshResult
+    package let catalog: DisplayRuntimeCatalogSnapshot
 
     package init(
-        displayID: DisplayRuntimeDisplayID,
-        pixelWidth: Int?,
-        pixelHeight: Int?
+        settlementID: UInt64?,
+        result: DisplayRuntimeCatalogRefreshResult,
+        catalog: DisplayRuntimeCatalogSnapshot
     ) {
-        self.displayID = displayID
-        self.pixelWidth = pixelWidth
-        self.pixelHeight = pixelHeight
+        self.settlementID = settlementID
+        self.result = result
+        self.catalog = catalog
+    }
+}
+
+package nonisolated struct DisplayRuntimeCatalogSurfaceRegistration: Hashable, Sendable {
+    package let id: UUID
+    package let source: DisplayRuntimeCatalogSource
+
+    package init(
+        id: UUID = UUID(),
+        source: DisplayRuntimeCatalogSource
+    ) {
+        self.id = id
+        self.source = source
     }
 }
 

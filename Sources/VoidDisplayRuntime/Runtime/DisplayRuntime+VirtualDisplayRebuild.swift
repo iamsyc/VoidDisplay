@@ -163,10 +163,6 @@ extension DisplayRuntime {
             kind: .virtualDisplayRebuild,
             affectedSurfaces: affectedSurfaces
         )
-        if topologyResult.status == .stable {
-            await convergeToVisibleDisplaysFromCurrentCatalog()
-            await observabilityRecorder?.refreshSnapshot(reason: .screenCatalogStateChanged)
-        }
         let postConvergenceSnapshot = makeSnapshot()
         let restoreIntents = makeSessionRestoreIntents(
             pauseIntents: pauseIntents,

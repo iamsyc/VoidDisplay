@@ -5772,6 +5772,193 @@
           }
         }
       }
+    },
+    "After granting Screen Recording permission, check again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After granting Screen Recording permission, check again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授予屏幕录制权限后，请重新检测。"
+          }
+        }
+      }
+    },
+    "Check Again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新检测"
+          }
+        }
+      }
+    },
+    "Couldn’t Detect Displays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t Detect Displays"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法检测显示器"
+          }
+        }
+      }
+    },
+    "Detected Displays: %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detected Displays: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检测到的显示器：%lld 台"
+          }
+        }
+      }
+    },
+    "Detecting Displays…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detecting Displays…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检测显示器…"
+          }
+        }
+      }
+    },
+    "Detecting displays available for preview and sharing…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detecting displays available for preview and sharing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检测可用于预览和共享的显示器…"
+          }
+        }
+      }
+    },
+    "Display list is up to date." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display list is up to date."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示器列表已是最新。"
+          }
+        }
+      }
+    },
+    "Get the latest displays available for preview and sharing. Use after connecting or disconnecting a display, granting Screen Recording permission, or when the display list is out of date." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get the latest displays available for preview and sharing. Use after connecting or disconnecting a display, granting Screen Recording permission, or when the display list is out of date."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新获取可用于预览和共享的显示器。连接或断开显示器、授予屏幕录制权限，或显示器列表未更新时使用。"
+          }
+        }
+      }
+    },
+    "Gets the latest displays available for preview and sharing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gets the latest displays available for preview and sharing."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取可用于预览和共享的最新显示器列表。"
+          }
+        }
+      }
+    },
+    "Rescan Displays" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rescan Displays"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新检测显示器"
+          }
+        }
+      }
+    },
+    "This virtual display is running but isn’t available for preview or sharing. Rescan displays to detect it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This virtual display is running but isn’t available for preview or sharing. Rescan displays to detect it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此虚拟显示器正在运行，但当前无法用于预览或共享。请重新检测显示器。"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

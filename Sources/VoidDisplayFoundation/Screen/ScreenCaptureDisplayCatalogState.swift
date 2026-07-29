@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import ScreenCaptureKit
 import CoreGraphics
-package struct ScreenCaptureDisplayCatalogLoadErrorInfo: Equatable {
+package struct ScreenCaptureDisplayCatalogLoadErrorInfo: Equatable, Sendable {
     package var domain: String
     package var code: Int
     package var description: String

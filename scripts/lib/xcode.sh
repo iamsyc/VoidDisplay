@@ -58,4 +58,138 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 		xcode_build="$(xcodebuild -version | awk 'NR==2{print $3}')"
 		printf 'xcode-%s-%s\n' "$xcode_version" "$xcode_build"
 	}
+
+	canonical_existing_path() {
+		local path="$1"
+		[[ -e "$path" ]] || die "Path does not exist: $path"
+		if [[ -d "$path" ]]; then
+			(cd "$path" && pwd -P)
+			return
+		fi
+		local parent
+		parent="$(cd "${path%/*}" && pwd -P)"
+		printf '%s/%s\n' "$parent" "${path##*/}"
+	}
+
+	validate_development_project_path() {
+		local project_path="$1"
+		local expected_project_path="$2"
+		local canonical_project_path
+		local canonical_expected_project_path
+
+		canonical_project_path="$(canonical_existing_path "$project_path")"
+		canonical_expected_project_path="$(canonical_existing_path "$expected_project_path")"
+		[[ "$canonical_project_path" == "$canonical_expected_project_path" ]] ||
+			die "Development signing is limited to the repository VoidDisplay project: $canonical_expected_project_path"
+	}
+
+	development_requirement_expression() {
+		local expected_identifier="$1"
+		local expected_authority="$2"
+		printf 'identifier "%s" and anchor apple generic and certificate leaf[subject.CN] = "%s" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */\n' \
+			"$expected_identifier" \
+			"$expected_authority"
+	}
+
+	development_signing_authority() {
+		local app_path="$1"
+		local metadata
+		local authority
+
+		metadata="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
+		authority="$(
+			awk '
+				/^Authority=Apple Development:/ {
+					sub(/^Authority=/, "")
+					print
+					exit
+				}
+			' <<<"$metadata"
+		)"
+		[[ "$authority" == "Apple Development: "* ]] ||
+			die "Development-signed app does not use an Apple Development certificate."
+		printf '%s\n' "$authority"
+	}
+
+	validate_development_signature_evidence() {
+		local metadata="$1"
+		local designated_requirement="$2"
+		local expected_identifier="$3"
+		local expected_team_identifier="$4"
+		local expected_authority="$5"
+		local actual_identifier
+		local actual_team_identifier
+		local authority
+		local actual_designated_requirement
+		local expected_designated_requirement
+
+		actual_identifier="$(awk -F= '$1 == "Identifier" { print $2; exit }' <<<"$metadata")"
+		actual_team_identifier="$(awk -F= '$1 == "TeamIdentifier" { print $2; exit }' <<<"$metadata")"
+		authority="$(
+			awk '
+				/^Authority=Apple Development:/ {
+					sub(/^Authority=/, "")
+					print
+					exit
+				}
+			' <<<"$metadata"
+		)"
+
+		[[ "$actual_identifier" == "$expected_identifier" ]] ||
+			die "Development-signed app identifier mismatch: expected=$expected_identifier actual=${actual_identifier:-missing}"
+		[[ "$actual_team_identifier" == "$expected_team_identifier" ]] ||
+			die "Development-signed app team mismatch: expected=$expected_team_identifier actual=${actual_team_identifier:-missing}"
+		[[ "$expected_authority" == "Apple Development: "* ]] ||
+			die "Expected signing authority is not an Apple Development certificate: $expected_authority"
+		[[ "$authority" == "$expected_authority" ]] ||
+			die "Development-signed app authority mismatch: expected=$expected_authority actual=${authority:-missing}"
+		! rg -q '(^Signature=adhoc$|CodeDirectory .*\badhoc\b|^TeamIdentifier=not set$)' <<<"$metadata" ||
+			die "Development-signed app resolved to an ad hoc signature."
+		rg -q '^CodeDirectory .*flags=.*\([^)]*\bruntime\b[^)]*\)' <<<"$metadata" ||
+			die "Development-signed app does not enable Hardened Runtime."
+		rg -q '^Info\.plist entries=[1-9][0-9]*$' <<<"$metadata" ||
+			die "Development-signed app does not bind its Info.plist."
+		rg -q '^Sealed Resources version=' <<<"$metadata" ||
+			die "Development-signed app does not seal its resources."
+		actual_designated_requirement="$(awk '/^designated => / { print; exit }' <<<"$designated_requirement")"
+		expected_designated_requirement="designated => $(development_requirement_expression "$expected_identifier" "$expected_authority")"
+		[[ "$actual_designated_requirement" == "$expected_designated_requirement" ]] ||
+			die "Development-signed app designated requirement differs from the expected canonical requirement."
+	}
+
+	verify_development_signed_app() {
+		local app_path="$1"
+		local expected_identifier="$2"
+		local expected_team_identifier="$3"
+		local expected_authority="$4"
+		local info_plist="$app_path/Contents/Info.plist"
+		local bundle_identifier
+		local metadata
+		local designated_requirement
+		local requirement_expression
+
+		[[ -d "$app_path" ]] || die "Development-signed app is missing: $app_path"
+		[[ -f "$info_plist" ]] || die "Development-signed app Info.plist is missing: $info_plist"
+
+		bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")"
+		[[ "$bundle_identifier" == "$expected_identifier" ]] ||
+			die "Development-signed app bundle identifier mismatch: expected=$expected_identifier actual=$bundle_identifier"
+
+		codesign --verify --deep --strict --verbose=2 "$app_path" ||
+			die "Development-signed app failed strict code-signature verification."
+		requirement_expression="$(development_requirement_expression "$expected_identifier" "$expected_authority")"
+		codesign --verify --deep --strict --verbose=2 -R="$requirement_expression" "$app_path" ||
+			die "Development-signed app failed the expected code requirement."
+		metadata="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
+		designated_requirement="$(codesign -dr - "$app_path" 2>&1)"
+		validate_development_signature_evidence \
+			"$metadata" \
+			"$designated_requirement" \
+			"$expected_identifier" \
+			"$expected_team_identifier" \
+			"$expected_authority"
+
+		info "Verified Apple Development signature: $expected_authority"
+		info "Verified signed app: $app_path"
+	}
 fi

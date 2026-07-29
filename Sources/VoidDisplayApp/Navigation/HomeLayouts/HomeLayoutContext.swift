@@ -26,6 +26,8 @@ package struct HomeVirtualDisplayItemRenderState: Identifiable {
     package let rebuildFailureMessage: String?
     package let isPrimary: Bool
     package let canSetAsPrimary: Bool
+    package let needsDisplayDetection: Bool
+    package let isDisplayDetectionScanning: Bool
     package let isPreviewActionDisabled: Bool
     package let isPreviewStarting: Bool
     package let isWebViewActionDisabled: Bool
@@ -43,6 +45,8 @@ package struct HomeVirtualDisplayItemRenderState: Identifiable {
         rebuildFailureMessage: String?,
         isPrimary: Bool,
         canSetAsPrimary: Bool,
+        needsDisplayDetection: Bool,
+        isDisplayDetectionScanning: Bool,
         isPreviewActionDisabled: Bool,
         isPreviewStarting: Bool,
         isWebViewActionDisabled: Bool,
@@ -57,6 +61,8 @@ package struct HomeVirtualDisplayItemRenderState: Identifiable {
         self.rebuildFailureMessage = rebuildFailureMessage
         self.isPrimary = isPrimary
         self.canSetAsPrimary = canSetAsPrimary
+        self.needsDisplayDetection = needsDisplayDetection
+        self.isDisplayDetectionScanning = isDisplayDetectionScanning
         self.isPreviewActionDisabled = isPreviewActionDisabled
         self.isPreviewStarting = isPreviewStarting
         self.isWebViewActionDisabled = isWebViewActionDisabled
@@ -113,7 +119,7 @@ package struct HomeSharingSettingsRenderState {
 
 package struct HomeLayoutActions {
     package let createVirtualDisplay: @MainActor () -> Void
-    package let refresh: @MainActor () -> Void
+    package let rescanDisplays: @MainActor () -> Void
     package let openScreenCapturePrivacySettings: @MainActor () -> Void
     package let performItemAction: @MainActor (
         HomeVirtualDisplayItemAction,
@@ -125,7 +131,7 @@ package struct HomeLayoutActions {
 
     package init(
         createVirtualDisplay: @escaping @MainActor () -> Void,
-        refresh: @escaping @MainActor () -> Void,
+        rescanDisplays: @escaping @MainActor () -> Void,
         openScreenCapturePrivacySettings: @escaping @MainActor () -> Void,
         performItemAction: @escaping @MainActor (
             HomeVirtualDisplayItemAction,
@@ -136,7 +142,7 @@ package struct HomeLayoutActions {
         applySharingPortDraft: @escaping @MainActor () -> Void
     ) {
         self.createVirtualDisplay = createVirtualDisplay
-        self.refresh = refresh
+        self.rescanDisplays = rescanDisplays
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
         self.performItemAction = performItemAction
         self.setCapturePerformanceMode = setCapturePerformanceMode
@@ -158,7 +164,9 @@ package struct HomeLayoutContext {
     package let presentation: HomeVirtualDisplaySurfacePresentation
     package let itemStates: [HomeVirtualDisplayItemRenderState]
     package let isCreateVirtualDisplayDisabled: Bool
+    package let showsRescanToolbarTitle: Bool
     package let permissionStatus: HomePermissionStatusRenderState
+    package let displayDetection: HomeDisplayDetectionPresentation
     package let sharingSettings: HomeSharingSettingsRenderState
     package let actions: HomeLayoutActions
 
@@ -175,7 +183,9 @@ package struct HomeLayoutContext {
         presentation: HomeVirtualDisplaySurfacePresentation,
         itemStates: [HomeVirtualDisplayItemRenderState],
         isCreateVirtualDisplayDisabled: Bool,
+        showsRescanToolbarTitle: Bool,
         permissionStatus: HomePermissionStatusRenderState,
+        displayDetection: HomeDisplayDetectionPresentation,
         sharingSettings: HomeSharingSettingsRenderState,
         actions: HomeLayoutActions
     ) {
@@ -183,7 +193,9 @@ package struct HomeLayoutContext {
         self.presentation = presentation
         self.itemStates = itemStates
         self.isCreateVirtualDisplayDisabled = isCreateVirtualDisplayDisabled
+        self.showsRescanToolbarTitle = showsRescanToolbarTitle
         self.permissionStatus = permissionStatus
+        self.displayDetection = displayDetection
         self.sharingSettings = sharingSettings
         self.actions = actions
     }

@@ -62,13 +62,10 @@ package protocol DisplayRuntimeStartupRestoreCommanding {
 package protocol DisplayRuntimeCatalogCommanding {
     func requestPermission() -> Bool
     func refreshPermission() -> Bool
-    func submitRefresh(
-        intent: DisplayRuntimeCatalogRefreshIntent,
-        ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?
-    ) async -> DisplayRuntimeCatalogRefreshResult
-    func clearSnapshotForDeniedPermission(loadErrorMessage: String?) async
-    func cancelRefresh(ownerScope: DisplayRuntimeCatalogRefreshOwnerScope?) async
-    func currentVisibleDisplays() -> [DisplayRuntimeVisibleDisplay]
+    func submitRefresh(intent: DisplayRuntimeCatalogRefreshIntent) async -> DisplayRuntimeCatalogRefreshOutcome
+    func clearSnapshotForDeniedPermission(
+        loadErrorMessage: String?
+    ) async -> DisplayRuntimeCatalogRefreshOutcome
 }
 
 @MainActor

@@ -132,7 +132,12 @@ scripts/dev/doctor.sh
 
 # 运行标准本地验证门禁
 scripts/dev/validate.sh
+
+# 使用 Xcode Personal Team 构建隐私权限验收副本
+scripts/dev/build_signed_runtime.sh
 ```
+
+隐私权限敏感的人工验收必须启动生成的 `signed-runtime-summary.json` 中 `app_path` 指向的应用。该本机开发签名支持 Xcode Personal Team，不会改变继续使用 ad hoc 签名且未经公证的 Release 产物。
 
 [项目文档索引](./docs/README.md)汇总了当前架构、测试策略、CI 与发布流程，以及 LAN 安全契约。
 

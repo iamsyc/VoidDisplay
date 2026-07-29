@@ -36,7 +36,9 @@ struct DisplayRuntimeStartupRestoreTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: provider,
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: commander,
             startupRestoreCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -139,7 +141,9 @@ struct DisplayRuntimeStartupRestoreTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: provider,
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: commander,
             startupRestoreCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
@@ -379,7 +383,10 @@ struct DisplayRuntimeStartupRestoreTests {
             let runtime = DisplayRuntime(
                 catalogProvider: FakeCatalogProvider(snapshot: scenario.catalog),
                 virtualDisplayProvider: provider,
-                catalogCommander: FakeCatalogCommander(refreshResults: scenario.refreshResults),
+                catalogCommander: FakeCatalogCommander(
+                    snapshot: scenario.catalog,
+                    refreshResults: scenario.refreshResults
+                ),
                 virtualDisplayCommander: commander,
                 startupRestoreCommander: commander,
                 topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 2)
@@ -429,7 +436,9 @@ struct DisplayRuntimeStartupRestoreTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: provider,
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: commander,
             startupRestoreCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()

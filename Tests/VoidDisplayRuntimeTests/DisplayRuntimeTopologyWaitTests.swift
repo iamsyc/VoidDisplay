@@ -22,7 +22,10 @@ struct DisplayRuntimeTopologyWaitTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 81)),
-            catalogCommander: FakeCatalogCommander(refreshResults: [.clearedSnapshot]),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                refreshResults: [.clearedSnapshot]
+            ),
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 4)
         )
@@ -47,8 +50,8 @@ struct DisplayRuntimeTopologyWaitTests {
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 82)),
             catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
                 refreshResults: [.reusedSnapshot, .failed],
-                visibleDisplays: visibleDisplays(from: catalog)
             ),
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 4)
@@ -79,7 +82,10 @@ struct DisplayRuntimeTopologyWaitTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 83)),
-            catalogCommander: FakeCatalogCommander(refreshResults: [.reusedSnapshot]),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                refreshResults: [.reusedSnapshot]
+            ),
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 2)
         )
@@ -113,18 +119,21 @@ struct DisplayRuntimeTopologyWaitTests {
         )
         let catalogProvider = FakeCatalogProvider(snapshot: firstCatalog)
         var refreshCount = 0
+        var catalogCommander: FakeCatalogCommander!
+        catalogCommander = FakeCatalogCommander(
+            snapshot: firstCatalog,
+            onRefresh: {
+                refreshCount += 1
+                if refreshCount == 3 {
+                    catalogProvider.setSnapshot(secondCatalog)
+                    catalogCommander.snapshot = secondCatalog
+                }
+            }
+        )
         let runtime = DisplayRuntime(
             catalogProvider: catalogProvider,
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 84)),
-            catalogCommander: FakeCatalogCommander(
-                visibleDisplays: visibleDisplays(from: secondCatalog),
-                onRefresh: {
-                    refreshCount += 1
-                    if refreshCount == 3 {
-                        catalogProvider.setSnapshot(secondCatalog)
-                    }
-                }
-            ),
+            catalogCommander: catalogCommander,
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 2)
         )
@@ -148,7 +157,7 @@ struct DisplayRuntimeTopologyWaitTests {
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: virtualDisplayProvider,
             catalogCommander: FakeCatalogCommander(
-                visibleDisplays: visibleDisplays(from: catalog),
+                snapshot: catalog,
                 onRefresh: {
                     refreshCount += 1
                     if refreshCount == 3 {
@@ -176,7 +185,9 @@ struct DisplayRuntimeTopologyWaitTests {
         let runtime = DisplayRuntime(
             catalogProvider: FakeCatalogProvider(snapshot: catalog),
             virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: virtualDisplaySnapshot(configID: configID, displayID: 88)),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             virtualDisplayCommander: FakeVirtualDisplayCommander(),
             topologyWaitPolicy: .init(
                 requiredStableSampleCount: 1,
@@ -191,5 +202,74 @@ struct DisplayRuntimeTopologyWaitTests {
         #expect(result.status == .completed)
         #expect(trace.topologyStabilityResult?.status == .stable)
         #expect(trace.topologyStabilityResult?.sampleCount == 1)
+    }
+
+    @Test func topologyConvergenceUsesTheStableRefreshSettlementVisibleDisplays() async throws {
+        let configID = UUID(uuidString: "C8C8C8C8-C8C8-C8C8-C8C8-C8C8C8C8C8C8")!
+        let committedDisplayID = DisplayRuntimeDisplayID(90)
+        let unrelatedDisplayID = DisplayRuntimeDisplayID(91)
+        let committedCatalog = catalogSnapshot(displayID: committedDisplayID, isMain: false)
+        let catalog = FakeCatalogCommander(
+            snapshot: committedCatalog,
+        )
+        let sharing = FakeSharingCommander(
+            snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [])
+        )
+        let observability = FakeObservabilityRecorder { reason in
+            if reason == .screenCatalogStateChanged, catalog.submitCalls.count == 2 {
+                catalog.snapshot = catalogSnapshot(displayID: unrelatedDisplayID, isMain: false)
+            }
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: catalog,
+            sharingProvider: sharing,
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: committedDisplayID)
+            ),
+            catalogCommander: catalog,
+            sharingCommander: sharing,
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            observabilityRecorder: observability,
+            topologyWaitPolicy: .init(
+                requiredStableSampleCount: 1,
+                maximumSampleCount: 1,
+                sampleIntervalNanoseconds: 0
+            )
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(
+            configID: configID,
+            source: .diagnostics
+        )
+
+        #expect(result.status == .completed)
+        #expect(sharing.registeredDisplays.last?.map(\.displayID) == [committedDisplayID])
+    }
+
+    @Test func rebuildTransactionDoesNotCountSupersededRefreshesAsStableSamples() async throws {
+        let configID = UUID(uuidString: "C7C7C7C7-C7C7-C7C7-C7C7-C7C7C7C7C7C7")!
+        let catalog = catalogSnapshot(displayID: 89, isMain: false)
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog),
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: 89)
+            ),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+                refreshResults: [.reusedSnapshot, .superseded, .superseded],
+            ),
+            virtualDisplayCommander: FakeVirtualDisplayCommander(),
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 2)
+        )
+
+        let result = try await runtime.rebuildVirtualDisplay(
+            configID: configID,
+            source: .diagnostics
+        )
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .completedWithRecoveryFailures)
+        #expect(trace.topologyStabilityResult?.status == .timedOut)
+        #expect(trace.topologyStabilityResult?.sampleCount == 0)
     }
 }

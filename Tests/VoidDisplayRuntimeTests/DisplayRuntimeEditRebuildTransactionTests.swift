@@ -154,7 +154,9 @@ struct DisplayRuntimeEditRebuildTransactionTests {
             virtualDisplayProvider: FakeVirtualDisplayProvider(
                 snapshot: virtualDisplaySnapshot(configID: configID, displayID: 114)
             ),
-            catalogCommander: FakeCatalogCommander(visibleDisplays: visibleDisplays(from: catalog)),
+            catalogCommander: FakeCatalogCommander(
+                snapshot: catalog,
+            ),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: virtualDisplayCommander,
             topologyWaitPolicy: fastTopologyWaitPolicy()

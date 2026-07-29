@@ -10,20 +10,24 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
     @Test func createTransactionRecordsCommandFactsAndRedactsDisplayName() async throws {
         let createdConfigID = UUID()
         let virtualDisplayProvider = FakeVirtualDisplayProvider(snapshot: .empty)
-        let catalogProvider = FakeCatalogProvider(snapshot: catalogSnapshot(displayIDs: [], mainDisplayID: nil))
+        let initialCatalog = catalogSnapshot(displayIDs: [], mainDisplayID: nil)
+        let catalogProvider = FakeCatalogProvider(snapshot: initialCatalog)
+        let catalogCommander = FakeCatalogCommander(snapshot: initialCatalog)
         let commander = FakeVirtualDisplayCommander()
         commander.createResult = createCommandResult(
             createdConfigID: createdConfigID,
             serialNumber: 9401
         )
         commander.onCreate = { _ in
+            let createdCatalog = catalogSnapshot(displayIDs: [77], mainDisplayID: 77)
             virtualDisplayProvider.setSnapshot(virtualDisplaySnapshot(configID: createdConfigID, displayID: 77))
-            catalogProvider.setSnapshot(catalogSnapshot(displayIDs: [77], mainDisplayID: 77))
+            catalogProvider.setSnapshot(createdCatalog)
+            catalogCommander.snapshot = createdCatalog
         }
         let runtime = DisplayRuntime(
             catalogProvider: catalogProvider,
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(),
+            catalogCommander: catalogCommander,
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
@@ -99,6 +103,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
             )
         )
         let virtualDisplayProvider = FakeVirtualDisplayProvider(snapshot: .empty)
+        let deniedCatalog = catalogProvider.makeCatalogSnapshot()
         let commander = FakeVirtualDisplayCommander()
         commander.createResult = createCommandResult(
             createdConfigID: createdConfigID,
@@ -110,7 +115,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         let runtime = DisplayRuntime(
             catalogProvider: catalogProvider,
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(),
+            catalogCommander: FakeCatalogCommander(snapshot: deniedCatalog),
             virtualDisplayCommander: commander,
             topologyWaitPolicy: fastTopologyWaitPolicy()
         )
@@ -134,10 +139,16 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
         let catalogProvider = FakeCatalogProvider(
             snapshot: catalogSnapshot(displayIDs: [displayID], mainDisplayID: displayID)
         )
+        let catalogCommander = FakeCatalogCommander(
+            snapshot: catalogProvider.makeCatalogSnapshot(),
+            recorder: recorder,
+        )
         let commander = FakeVirtualDisplayCommander(recorder: recorder)
         commander.onDelete = { _ in
+            let deletedCatalog = catalogSnapshot(displayIDs: [], mainDisplayID: nil)
             virtualDisplayProvider.setSnapshot(.empty)
-            catalogProvider.setSnapshot(catalogSnapshot(displayIDs: [], mainDisplayID: nil))
+            catalogProvider.setSnapshot(deletedCatalog)
+            catalogCommander.snapshot = deletedCatalog
         }
         let captureIntentCommander = FakeCaptureIntentCommander(recorder: recorder)
         let runtime = DisplayRuntime(
@@ -145,7 +156,7 @@ struct DisplayRuntimeCreateDeleteTransactionTests {
             captureProvider: FakeCaptureProvider(snapshot: previewCaptureSnapshot(displayID: displayID, capturesCursor: true)),
             sharingProvider: FakeSharingProvider(snapshot: activeSharingSnapshot(displayID: displayID)),
             virtualDisplayProvider: virtualDisplayProvider,
-            catalogCommander: FakeCatalogCommander(recorder: recorder),
+            catalogCommander: catalogCommander,
             sharingCommander: FakeSharingCommander(recorder: recorder),
             captureIntentCommander: captureIntentCommander,
             virtualDisplayCommander: commander,
