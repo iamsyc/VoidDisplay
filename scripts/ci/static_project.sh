@@ -183,6 +183,8 @@ validate_xcode_runner_signing_modes() {
 	local signed_runtime_builder="$TOOL_ROOT/scripts/dev/build_signed_runtime.sh"
 	local runner_failure_fixture="$AI_TMP_DIR/xcode-runner-failure-summary"
 	local builder_failure_fixture="$AI_TMP_DIR/signed-runtime-failure-summary"
+	local runner_failure_summary
+	local builder_failure_summary
 	local positive_metadata
 	local positive_requirement
 	local adhoc_metadata
@@ -228,11 +230,12 @@ validate_xcode_runner_signing_modes() {
 		--action unsupported >/dev/null 2>&1; then
 		die "Xcode runner accepted an unsupported action."
 	fi
+	runner_failure_summary="$(jq -c . "$runner_failure_fixture/xcode-summary.json" 2>&1 || true)"
 	jq -e '
 		.status == "failed"
 			and .reason == "argument_validation_failed"
 	' "$runner_failure_fixture/xcode-summary.json" >/dev/null ||
-		die "Xcode runner left stale success evidence after a failed reused-output run."
+		die "Xcode runner left invalid evidence after a failed reused-output run: $runner_failure_summary"
 
 	printf '{"status":"passed","reason":"stale"}\n' >"$builder_failure_fixture/signed-runtime-summary.json"
 	if "$signed_runtime_builder" \
@@ -240,11 +243,12 @@ validate_xcode_runner_signing_modes() {
 		--unsupported >/dev/null 2>&1; then
 		die "Signed runtime builder accepted an unsupported argument."
 	fi
+	builder_failure_summary="$(jq -c . "$builder_failure_fixture/signed-runtime-summary.json" 2>&1 || true)"
 	jq -e '
 		.status == "failed"
 			and .reason == "argument_validation_failed"
 	' "$builder_failure_fixture/signed-runtime-summary.json" >/dev/null ||
-		die "Signed runtime builder left stale success evidence after a failed reused-output run."
+		die "Signed runtime builder left invalid evidence after a failed reused-output run: $builder_failure_summary"
 
 	positive_metadata=$'Identifier=com.developerchen.voiddisplay\nCodeDirectory v=20500 size=457 flags=0x10000(runtime)\nSignature size=4798\nAuthority=Apple Development: Developer (TEAM)\nInfo.plist entries=26\nTeamIdentifier=6HCGZ4HUVA\nSealed Resources version=2 rules=13 files=20'
 	positive_requirement='designated => identifier "com.developerchen.voiddisplay" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: Developer (TEAM)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */'
