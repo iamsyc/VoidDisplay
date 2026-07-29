@@ -16,8 +16,6 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
-require_command go jq rg xcodebuild xcrun awk tr tail
-
 ACTION="build"
 CONFIGURATION="Debug"
 PROJECT_PATH="VoidDisplay.xcodeproj"
@@ -158,12 +156,15 @@ if [[ "$SIGNING_MODE" == "development" ]]; then
 	validate_development_project_path \
 		"$(normalize_path "$PROJECT_PATH")" \
 		"$ROOT_DIR/VoidDisplay.xcodeproj"
-	require_command codesign security
 	SUMMARY_FAILURE_REASON="signing_preflight_failed"
+	require_command codesign security
 	available_signing_identities="$(security find-identity -v -p codesigning)"
 	rg -q '"Apple Development:' <<<"$available_signing_identities" ||
 		die "No Apple Development signing identity is available."
 fi
+
+SUMMARY_FAILURE_REASON="dependency_preflight_failed"
+require_command go jq rg xcodebuild xcrun awk tr tail
 
 SUMMARY_FAILURE_REASON="toolchain_selection_failed"
 select_required_xcode

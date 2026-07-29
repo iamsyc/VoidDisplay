@@ -182,6 +182,7 @@ validate_xcode_runner_signing_modes() {
 	local runner="$TOOL_ROOT/scripts/ci/xcode.sh"
 	local signed_runtime_builder="$TOOL_ROOT/scripts/dev/build_signed_runtime.sh"
 	local runner_failure_fixture="$AI_TMP_DIR/xcode-runner-failure-summary"
+	local runner_failure_bin="$runner_failure_fixture/bin"
 	local builder_failure_fixture="$AI_TMP_DIR/signed-runtime-failure-summary"
 	local runner_failure_summary
 	local builder_failure_summary
@@ -223,9 +224,10 @@ validate_xcode_runner_signing_modes() {
 		die "Generic Xcode runner must not pin a developer-specific certificate identity."
 	fi
 
-	mkdir -p "$runner_failure_fixture" "$builder_failure_fixture"
+	mkdir -p "$runner_failure_bin" "$builder_failure_fixture"
+	ln -sf "$(command -v jq)" "$runner_failure_bin/jq"
 	printf '{"status":"passed","reason":"stale"}\n' >"$runner_failure_fixture/xcode-summary.json"
-	if "$runner" \
+	if PATH="$runner_failure_bin:/usr/bin:/bin:/usr/sbin:/sbin" "$runner" \
 		--out-dir "$runner_failure_fixture" \
 		--action unsupported >/dev/null 2>&1; then
 		die "Xcode runner accepted an unsupported action."
