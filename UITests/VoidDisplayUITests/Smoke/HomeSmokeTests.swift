@@ -810,6 +810,21 @@ final class HomeSmokeTests: XCTestCase {
                 "Clicking the toolbar background should dismiss Sharing Settings."
             )
         }
+
+        let sidebar = app.outlines.matching(identifier: "home_sidebar").firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 1))
+
+        systemSidebarToggle.click()
+        XCTAssertFalse(
+            sidebar.waitForExistence(timeout: 1),
+            "The system sidebar toggle should still collapse the sidebar after dismissing the popover."
+        )
+
+        systemSidebarToggle.click()
+        XCTAssertTrue(
+            sidebar.waitForExistence(timeout: 2),
+            "The system sidebar toggle should restore the sidebar."
+        )
     }
 
     @MainActor
