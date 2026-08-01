@@ -92,6 +92,16 @@ extension DisplayRuntime {
                 $0.rawValue < $1.rawValue
             }) {
                 let result = await applyCaptureIntent(drainIntent, consumerKind: kind)
+                guard currentSurfaceEpoch(for: surfaceIdentity) == nextEpoch else {
+                    quiesceFailures.append(
+                        DisplayRuntimeCaptureIntentApplyResult(
+                            revision: drainIntent.revision,
+                            outcome: .ignored,
+                            failureCode: DisplayRuntimeCaptureIntentFailureCode.epochMismatch
+                        )
+                    )
+                    break
+                }
                 if result.outcome != .applied {
                     quiesceFailures.append(result)
                 }
@@ -114,7 +124,7 @@ extension DisplayRuntime {
     ) async -> [DisplayRuntimeSessionRestoreResult] {
         var results: [DisplayRuntimeSessionRestoreResult] = []
 
-        for surfaceIdentity in batch.affectedSurfaceIdentities {
+        surfaceLoop: for surfaceIdentity in batch.affectedSurfaceIdentities {
             defer { consumerTransitionBusySurfaces.remove(surfaceIdentity) }
             var surfaceTransitions = batch.transitions.filter { $0.affectedSurface == surfaceIdentity }
             guard !surfaceTransitions.isEmpty else { continue }
@@ -162,6 +172,23 @@ extension DisplayRuntime {
                 consumerLeasesByID[$0.leaseID]?.state == .released
             }
             guard !surfaceTransitions.isEmpty else { continue }
+            let currentSurfaceResultStartIndex = results.endIndex
+            let invalidationFailureCode = topologyResult.map {
+                "topology_\($0.status.rawValue)"
+            } ?? DisplayRuntimeCaptureIntentFailureCode.epochMismatch
+            let invalidationStatus: DisplayRuntimeSessionRestoreStatus = topologyResult == nil
+                ? .invalidated
+                : .failed
+
+            guard currentSurfaceEpoch(for: surfaceIdentity) == surfaceTransitions[0].epoch else {
+                results.append(contentsOf: await invalidateConsumerTransition(
+                    surfaceTransitions,
+                    surfaceIdentity: surfaceIdentity,
+                    status: invalidationStatus,
+                    failureCode: invalidationFailureCode
+                ))
+                continue
+            }
 
             guard let resolvedDisplayID = resolvedVisibleDisplayID(
                 for: surfaceIdentity,
@@ -218,6 +245,16 @@ extension DisplayRuntime {
                     restoreIntent,
                     consumerKind: transition.consumerKind
                 )
+                guard currentSurfaceEpoch(for: surfaceIdentity) == transition.epoch else {
+                    results.removeSubrange(currentSurfaceResultStartIndex...)
+                    results.append(contentsOf: await invalidateConsumerTransition(
+                        surfaceTransitions,
+                        surfaceIdentity: surfaceIdentity,
+                        status: invalidationStatus,
+                        failureCode: invalidationFailureCode
+                    ))
+                    continue surfaceLoop
+                }
                 if applyResult.outcome == .applied {
                     let restoredTransitions = surfaceTransitions.filter {
                         $0.consumerKind == transition.consumerKind
@@ -300,6 +337,52 @@ extension DisplayRuntime {
             }
         }
         return results
+    }
+
+    private func invalidateConsumerTransition(
+        _ transitions: [DisplayRuntimeConsumerTransition],
+        surfaceIdentity: DisplaySurfaceIdentity,
+        status: DisplayRuntimeSessionRestoreStatus,
+        failureCode: String
+    ) async -> [DisplayRuntimeSessionRestoreResult] {
+        let currentEpoch = currentSurfaceEpoch(for: surfaceIdentity)
+        surfaceResolvedDisplayIDs.removeValue(forKey: surfaceIdentity)
+
+        for transition in transitions {
+            guard let lease = consumerLeasesByID[transition.leaseID],
+                  lease.state != .released
+            else {
+                continue
+            }
+            _ = replaceLease(
+                lease,
+                state: .failed,
+                surfaceEpoch: currentEpoch,
+                resolvedDisplayID: .some(nil),
+                demand: nil,
+                lastFailureCode: failureCode
+            )
+            notifyPreviewLeaseWaitersIfTerminal(leaseID: transition.leaseID)
+        }
+
+        let drainIntent = submitCaptureIntent(
+            surfaceIdentity: surfaceIdentity,
+            reason: .epochChanged
+        )
+        for kind in Set(transitions.map(\.consumerKind)).sorted(by: {
+            $0.rawValue < $1.rawValue
+        }) {
+            _ = await applyCaptureIntent(drainIntent, consumerKind: kind)
+        }
+
+        return uniqueTransitionsByKind(transitions).map { transition in
+            restoreResult(
+                transition: transition,
+                status: status,
+                resolvedDisplayID: nil,
+                failureReason: failureCode
+            )
+        }
     }
 
     func compensateConsumerTransition(

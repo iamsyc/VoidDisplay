@@ -465,6 +465,49 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.last?.aggregateDemand?.powerProfile == .powerEfficient)
     }
 
+    @Test func catalogClearDuringRestoreKeepsInvalidatedLeaseStopped() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 981)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(
+                snapshot: catalogSnapshot(displayID: 981, isMain: true)
+            ),
+            captureIntentCommander: captureIntentCommander
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .localUI),
+            demand: sourceDemand()
+        )
+        let transition = await runtime.beginConsumerTransition(
+            surfaceIdentities: [surfaceIdentity],
+            previousDisplayIDs: [surfaceIdentity: 981]
+        )
+        captureIntentCommander.shouldGateApply = true
+        let completionTask = Task { @MainActor in
+            await runtime.completeConsumerTransition(
+                transition,
+                snapshot: runtime.makeSnapshot(),
+                topologyResult: nil
+            )
+        }
+        await captureIntentCommander.waitForApplyCalls(3)
+
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(settlementID: 1, result: .clearedSnapshot, catalog: .empty)
+        )
+        captureIntentCommander.shouldGateApply = false
+        captureIntentCommander.releaseApply(call: 3)
+        let results = await completionTask.value
+
+        #expect(results.map(\.status) == [.invalidated])
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
+        #expect(captureIntentCommander.intents.last?.kind == .drain)
+        #expect(runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity) == false)
+    }
+
     @Test func powerProfileUpdatePreservesFailedLeaseStateAndFailureCode() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 990)
         let failureCode = DisplayRuntimeCaptureIntentFailureCode.applyFailed
