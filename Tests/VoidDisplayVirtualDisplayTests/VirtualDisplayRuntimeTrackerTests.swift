@@ -49,7 +49,8 @@ struct VirtualDisplayRuntimeTrackerTests {
 
         let record = try await tracker.createRuntimeDisplayWithRetries(
             from: config,
-            terminationConfirmed: false
+            terminationConfirmed: false,
+            configIsAvailable: { true }
         )
 
         #expect(record.displayID == 933)
@@ -69,7 +70,8 @@ struct VirtualDisplayRuntimeTrackerTests {
         do {
             let record = try await tracker.createRuntimeDisplayWithRetries(
                 from: config,
-                terminationConfirmed: false
+                terminationConfirmed: false,
+                configIsAvailable: { true }
             )
             Issue.record("Expected invalidConfiguration error, got \(record).")
         } catch let error as VirtualDisplayOperationError {
