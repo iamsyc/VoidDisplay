@@ -12,8 +12,6 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
-require_command jq uname
-
 OUT_DIR="${OUT_DIR:-$(make_artifact_dir signed-runtime)}"
 DEVELOPMENT_IDENTIFIER="${VOIDDISPLAY_DEVELOPMENT_IDENTIFIER:-com.developerchen.voiddisplay}"
 DEVELOPMENT_TEAM_IDENTIFIER="${VOIDDISPLAY_DEVELOPMENT_TEAM_IDENTIFIER:-6HCGZ4HUVA}"
@@ -28,23 +26,20 @@ write_failed_summary_on_exit() {
 	trap - EXIT
 	if [[ "$exit_status" -ne 0 && "$SUMMARY_TERMINAL" != "true" ]]; then
 		set +e
-		write_json_file "$failure_summary_path" \
-			--arg status "failed" \
-			--arg reason "$SUMMARY_FAILURE_REASON" \
-			--arg destination "$DESTINATION" \
-			--arg bundle_identifier "$DEVELOPMENT_IDENTIFIER" \
-			--arg team_identifier "$DEVELOPMENT_TEAM_IDENTIFIER" \
-			'{status: $status, reason: $reason, destination: $destination, bundle_identifier: $bundle_identifier, team_identifier: $team_identifier}'
+		rm -f -- "$failure_summary_path"
+		if command -v jq >/dev/null 2>&1; then
+			write_json_file "$failure_summary_path" \
+				--arg status "failed" \
+				--arg reason "$SUMMARY_FAILURE_REASON" \
+				--arg destination "$DESTINATION" \
+				--arg bundle_identifier "$DEVELOPMENT_IDENTIFIER" \
+				--arg team_identifier "$DEVELOPMENT_TEAM_IDENTIFIER" \
+				'{status: $status, reason: $reason, destination: $destination, bundle_identifier: $bundle_identifier, team_identifier: $team_identifier}'
+		fi
 	fi
 	exit "$exit_status"
 }
 trap write_failed_summary_on_exit EXIT
-
-host_arch="$(uname -m)"
-case "$host_arch" in
-arm64 | x86_64) DESTINATION="$(xcode_destination_for_arch "$host_arch")" ;;
-*) die "Unsupported host architecture for signed runtime build: $host_arch" ;;
-esac
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -67,6 +62,19 @@ mkdir -p "$OUT_DIR"
 XCODE_OUT_DIR="$OUT_DIR/xcode-build"
 XCODE_SUMMARY="$XCODE_OUT_DIR/xcode-summary.json"
 SUMMARY_PATH="$OUT_DIR/signed-runtime-summary.json"
+rm -f -- "$SUMMARY_PATH"
+
+SUMMARY_FAILURE_REASON="dependency_preflight_failed"
+require_command jq
+if [[ -z "$DESTINATION" ]]; then
+	require_command uname
+	host_arch="$(uname -m)"
+	case "$host_arch" in
+	arm64 | x86_64) DESTINATION="$(xcode_destination_for_arch "$host_arch")" ;;
+	*) die "Unsupported host architecture for signed runtime build: $host_arch" ;;
+	esac
+fi
+
 write_json_file "$SUMMARY_PATH" \
 	--arg status "running" \
 	--arg reason "in_progress" \

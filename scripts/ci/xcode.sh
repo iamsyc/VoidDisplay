@@ -40,15 +40,18 @@ write_failed_summary_on_exit() {
 	trap - EXIT
 	if [[ "$exit_status" -ne 0 && "$SUMMARY_TERMINAL" != "true" ]]; then
 		set +e
-		write_json_file "$failure_summary_path" \
-			--arg status "failed" \
-			--arg reason "$SUMMARY_FAILURE_REASON" \
-			--arg action "$ACTION" \
-			--arg configuration "$CONFIGURATION" \
-			--arg destination "$DESTINATION" \
-			--arg signing_mode "$SIGNING_MODE" \
-			--arg log_path "$LOG_PATH" \
-			'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, signing_mode: $signing_mode, log_path: $log_path}'
+		rm -f -- "$failure_summary_path"
+		if command -v jq >/dev/null 2>&1; then
+			write_json_file "$failure_summary_path" \
+				--arg status "failed" \
+				--arg reason "$SUMMARY_FAILURE_REASON" \
+				--arg action "$ACTION" \
+				--arg configuration "$CONFIGURATION" \
+				--arg destination "$DESTINATION" \
+				--arg signing_mode "$SIGNING_MODE" \
+				--arg log_path "$LOG_PATH" \
+				'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, signing_mode: $signing_mode, log_path: $log_path}'
+		fi
 	fi
 	exit "$exit_status"
 }
@@ -123,6 +126,11 @@ DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$OUT_DIR/DerivedData}"
 RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-$OUT_DIR/XcodeTests.xcresult}"
 LOG_PATH="$OUT_DIR/xcode-$ACTION-$CONFIGURATION.log"
 SUMMARY_PATH="${SUMMARY_PATH:-$OUT_DIR/xcode-summary.json}"
+rm -f -- "$SUMMARY_PATH"
+
+SUMMARY_FAILURE_REASON="dependency_preflight_failed"
+require_command jq
+
 write_json_file "$SUMMARY_PATH" \
 	--arg status "running" \
 	--arg reason "in_progress" \
@@ -132,6 +140,7 @@ write_json_file "$SUMMARY_PATH" \
 	--arg signing_mode "$SIGNING_MODE" \
 	'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, signing_mode: $signing_mode}'
 
+SUMMARY_FAILURE_REASON="argument_validation_failed"
 case "$ACTION" in
 build | build-for-testing | test) ;;
 *) die "Unsupported Xcode action: $ACTION" ;;
@@ -146,6 +155,10 @@ if [[ "$ACTION" == "test" && "${#ONLY_TESTING[@]}" -eq 0 && -z "$TEST_PLAN" ]]; 
 	die "xcode.sh --action test requires --only-testing or --test-plan."
 fi
 if [[ "$SIGNING_MODE" == "development" ]]; then
+	if [[ -n "${XCODE_XCCONFIG_FILE:-}" ]]; then
+		SUMMARY_FAILURE_REASON="signing_input_rejected"
+		die "Development signing does not accept XCODE_XCCONFIG_FILE."
+	fi
 	[[ "$ACTION" == "build" ]] || die "Development signing is limited to build actions."
 	[[ "$SCHEME" == "VoidDisplay" ]] || die "Development signing is limited to the VoidDisplay scheme."
 	[[ "$CONFIGURATION" == "Debug" ]] || die "Development signing is limited to Debug builds."
@@ -164,7 +177,7 @@ if [[ "$SIGNING_MODE" == "development" ]]; then
 fi
 
 SUMMARY_FAILURE_REASON="dependency_preflight_failed"
-require_command go jq rg xcodebuild xcrun awk tr tail
+require_command go rg xcodebuild xcrun awk tr tail
 
 SUMMARY_FAILURE_REASON="toolchain_selection_failed"
 select_required_xcode
