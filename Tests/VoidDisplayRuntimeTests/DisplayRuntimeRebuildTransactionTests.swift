@@ -279,6 +279,55 @@ struct DisplayRuntimeRebuildTransactionTests {
             .epochChanged
         ])
     }
+
+    @Test func catalogClearDuringQuiesceInvalidatesRebuildBeforeCommand() async throws {
+        let configID = UUID(uuidString: "C1C1C1C1-C1C1-C1C1-C1C1-C1C1C1C1C1C1")!
+        let displayID = DisplayRuntimeDisplayID(104)
+        let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: displayID, isMain: false),
+            refreshPermissionResults: [false]
+        )
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let virtualDisplayCommander = FakeVirtualDisplayCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: catalog,
+            virtualDisplayProvider: FakeVirtualDisplayProvider(
+                snapshot: virtualDisplaySnapshot(configID: configID, displayID: displayID)
+            ),
+            catalogCommander: catalog,
+            captureIntentCommander: captureIntentCommander,
+            virtualDisplayCommander: virtualDisplayCommander,
+            topologyWaitPolicy: fastTopologyWaitPolicy()
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: .managedVirtualDisplay(configID: configID),
+            kind: .preview,
+            owner: .init(source: .runtimeTest),
+            demand: runtimeConsumerDemand()
+        )
+        captureIntentCommander.shouldGateApply = true
+
+        let rebuild = Task {
+            try await runtime.rebuildVirtualDisplay(configID: configID, source: .diagnostics)
+        }
+        await captureIntentCommander.waitForApplyCalls(2)
+
+        let clearOutcome = await runtime.forceRefreshCatalog(source: .capturePage)
+        #expect(clearOutcome.result == .clearedSnapshot)
+
+        captureIntentCommander.shouldGateApply = false
+        captureIntentCommander.releaseApply(call: 2)
+        let result = try await rebuild.value
+        let trace = try #require(runtime.makeSnapshot().transactions.recentTransactions.first)
+
+        #expect(result.status == .failed)
+        #expect(result.virtualDisplayCommandSucceeded == false)
+        #expect(virtualDisplayCommander.rebuildCallCount == 0)
+        #expect(trace.failure?.reason == "consumer_session_quiesce_failed")
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
+    }
+
     @Test func rebuildTransactionDeduplicatesManagedDisplayEntriesBeforeQuiesce() async throws {
         let configID = UUID(uuidString: "58585858-5858-5858-5858-585858585858")!
         let sessionID = UUID(uuidString: "59595959-5959-5959-5959-595959595959")!
