@@ -23,6 +23,7 @@ package struct HomeView: View {
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @FocusState private var isSidebarFocused: Bool
 
     package init(
         observability: ObservabilityCenter,
@@ -56,6 +57,7 @@ package struct HomeView: View {
                 .accessibilityIdentifier("sidebar_diagnostics")
             }
             .listStyle(.sidebar)
+            .focused($isSidebarFocused)
             .accessibilityIdentifier("home_sidebar")
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
         } detail: {
@@ -70,7 +72,8 @@ package struct HomeView: View {
                             capturePerformancePreferences: capturePerformancePreferences,
                             displayRuntime: displayRuntime,
                             sharingAdapter: sharingAdapter,
-                            openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
+                            openScreenCapturePrivacySettings: openScreenCapturePrivacySettings,
+                            restoreSidebarFocus: restoreSidebarFocus
                         )
                         .navigationTitle(String(localized: "Displays"))
                         .accessibilityIdentifier("detail_home")
@@ -88,6 +91,16 @@ package struct HomeView: View {
         }
         .onAppear {
             columnVisibility = .all
+            restoreSidebarFocus()
+        }
+    }
+
+    private func restoreSidebarFocus() {
+        guard columnVisibility != .detailOnly else { return }
+        Task { @MainActor in
+            await Task.yield()
+            guard columnVisibility != .detailOnly else { return }
+            isSidebarFocused = true
         }
     }
 
