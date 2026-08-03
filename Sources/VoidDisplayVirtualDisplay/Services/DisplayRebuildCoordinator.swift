@@ -296,12 +296,18 @@ package final class DisplayRebuildCoordinator {
         terminationConfirmed: Bool
     ) async throws -> CGDirectDisplayID? {
         if let hook = dependencies.rebuildRuntimeDisplayHook {
+            guard configManager.config(id: config.id) != nil else {
+                throw VirtualDisplayOperationError.configNotFound
+            }
             try await hook(config, terminationConfirmed)
             return runtimeTracker.runtimeDisplayID(for: config.id)
         }
         let rebuiltRecord = try await runtimeTracker.createRuntimeDisplayWithRetries(
             from: config,
-            terminationConfirmed: terminationConfirmed
+            terminationConfirmed: terminationConfirmed,
+            configIsAvailable: { [configManager] in
+                configManager.config(id: config.id) != nil
+            }
         )
         return rebuiltRecord.displayID
     }

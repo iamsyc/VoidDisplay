@@ -138,7 +138,10 @@ final class VirtualDisplayEnableCoordinator {
             }
             let createdDisplayRecord = try await runtimeTracker.createRuntimeDisplayWithRetries(
                 from: config,
-                terminationConfirmed: terminationConfirmed
+                terminationConfirmed: terminationConfirmed,
+                configIsAvailable: { [configManager] in
+                    configManager.config(id: config.id) != nil
+                }
             )
             AppLog.virtualDisplay.notice(
                 "Enable created runtime display (config: \(config.id.uuidString, privacy: .public), serial: \(createdDisplayRecord.serialNum, privacy: .public), displayID: \(createdDisplayRecord.displayID, privacy: .public), recoveryMode: \(recoveryMode.logDescription, privacy: .public))."
