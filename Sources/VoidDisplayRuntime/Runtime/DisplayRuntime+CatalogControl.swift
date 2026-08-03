@@ -197,13 +197,46 @@ extension DisplayRuntime {
     func handleRefreshOutcomeForConvergence(
         _ outcome: DisplayRuntimeCatalogRefreshOutcome
     ) async {
+        guard let settlementID = outcome.settlementID else { return }
         switch outcome.result {
-        case .reloadedSnapshot, .reusedSnapshot:
-            await convergeToVisibleDisplays(outcome.catalog.loadedDisplays)
-        case .clearedSnapshot:
-            await convergeToVisibleDisplays([])
+        case .reloadedSnapshot, .reusedSnapshot, .clearedSnapshot:
+            break
         case .superseded, .failed:
             return
+        }
+
+        if let latestHandledCatalogSettlementID,
+           settlementID <= latestHandledCatalogSettlementID {
+            return
+        }
+        latestHandledCatalogSettlementID = settlementID
+
+        if outcome.result == .clearedSnapshot {
+            invalidateInFlightConsumerTransitionsForCatalogClear()
+        }
+        await convergeToVisibleDisplays(
+            outcome.result == .clearedSnapshot ? [] : outcome.catalog.loadedDisplays
+        )
+    }
+
+    private func invalidateInFlightConsumerTransitionsForCatalogClear() {
+        let attachingSurfaces = consumerLeasesByID.values.compactMap { lease in
+            lease.state == .attaching ? lease.surfaceIdentity : nil
+        }
+        let inFlightSurfaces = Set(attachingSurfaces).union(consumerTransitionBusySurfaces)
+
+        for surfaceIdentity in inFlightSurfaces {
+            let nextEpoch = currentSurfaceEpoch(for: surfaceIdentity).advanced()
+            surfaceEpochs[surfaceIdentity] = nextEpoch
+            surfaceResolvedDisplayIDs.removeValue(forKey: surfaceIdentity)
+            _ = submitCaptureIntent(
+                surfaceIdentity: surfaceIdentity,
+                surfaceEpoch: nextEpoch,
+                resolvedDisplayID: nil,
+                aggregateDemand: nil,
+                kind: .drain,
+                reason: .epochChanged
+            )
         }
     }
 

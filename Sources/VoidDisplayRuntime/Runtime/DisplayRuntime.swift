@@ -63,6 +63,7 @@ package final class DisplayRuntime {
 
     @ObservationIgnored var topologyRefreshTask: Task<Void, Never>?
     @ObservationIgnored var hasPendingTopologyChange = false
+    @ObservationIgnored var latestHandledCatalogSettlementID: UInt64?
     @ObservationIgnored var activeCatalogSurfaceRegistrations: [
         DisplayRuntimeCatalogSource: Set<DisplayRuntimeCatalogSurfaceRegistration>
     ] = [:]
