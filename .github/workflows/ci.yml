@@ -108,7 +108,7 @@ jobs:
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
-          comment-summary-in-pr: always
+          comment-summary-in-pr: never
 
   script_static_checks:
     name: script-static-checks
@@ -555,6 +555,7 @@ jobs:
             ];
             const summaryBody = summaryLines.join('\n');
             const commentBody = [marker, ...summaryLines].join('\n');
+            const shouldCreateComment = value('GATE_RESULT', 'unknown') !== 'success';
             await core.summary.addRaw(summaryBody + '\n').write();
 
             if (context.eventName !== 'pull_request') {
@@ -583,7 +584,7 @@ jobs:
                   comment_id: existing.id,
                   body: commentBody,
                 });
-              } else {
+              } else if (shouldCreateComment) {
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,

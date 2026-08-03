@@ -95,6 +95,8 @@ validate_workflow_script_contract() {
 	fail_on_output "Workflow script invocations must pass ROOT_DIR and TOOL_ROOT and execute through TOOL_ROOT." "$invalid"
 	assert_no_match "PR CI workflows must not expose GITHUB_TOKEN to checked-out repository scripts." \
 		'GITHUB_TOKEN:[[:space:]]*\$\{\{[[:space:]]*github\.token[[:space:]]*\}\}' "${pr_ci_workflow_files[@]}"
+	assert_no_match "Read-only dependency review must not request PR comments." \
+		'comment-summary-in-pr:[[:space:]]*(always|on-failure)' .github/workflows/ci.yml
 
 	invalid="$(
 		awk '
