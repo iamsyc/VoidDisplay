@@ -20,6 +20,10 @@ if [[ -z "${VOIDDISPLAY_ARTIFACTS_SH_SOURCED:-}" ]]; then
 		local temporary_path
 		local write_status
 		shift
+		if [[ -d "$file_path" ]]; then
+			warn "JSON artifact target must not be a directory: $file_path"
+			return 1
+		fi
 		ensure_parent_dir "$file_path"
 		temporary_path="$(mktemp "$(dirname "$file_path")/.$(basename "$file_path").XXXXXX")"
 		write_status=0

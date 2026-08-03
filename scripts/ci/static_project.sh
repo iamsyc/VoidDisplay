@@ -7,6 +7,8 @@ source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 source "$TOOL_ROOT/scripts/lib/common.sh"
 # shellcheck source=scripts/lib/xcode.sh
 source "$TOOL_ROOT/scripts/lib/xcode.sh"
+# shellcheck source=scripts/lib/artifacts.sh
+source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
@@ -178,12 +180,28 @@ validate_release_smoke_pins_relay_go_binary() {
 		die "Trusted Go resolution ignored the tool-root mise configuration."
 }
 
+validate_json_artifact_rejects_directory_target() {
+	local fixture_root="$AI_TMP_DIR/json-artifact-directory-target"
+	local directory_target="$fixture_root/summary.json"
+
+	mkdir -p "$directory_target"
+	if write_json_file "$directory_target" --arg status "passed" '{status: $status}' 2>/dev/null; then
+		die "JSON artifact writer accepted a directory target."
+	fi
+}
+
 validate_xcode_runner_signing_modes() {
 	local runner="$TOOL_ROOT/scripts/ci/xcode.sh"
 	local signed_runtime_builder="$TOOL_ROOT/scripts/dev/build_signed_runtime.sh"
 	local runner_failure_fixture="$AI_TMP_DIR/xcode-runner-failure-summary"
 	local runner_failure_bin="$runner_failure_fixture/bin"
 	local builder_failure_fixture="$AI_TMP_DIR/signed-runtime-failure-summary"
+	local broken_jq_bin="$AI_TMP_DIR/summary-broken-jq/bin"
+	local runner_broken_jq_fixture="$AI_TMP_DIR/xcode-runner-broken-jq"
+	local builder_broken_jq_fixture="$AI_TMP_DIR/signed-runtime-broken-jq"
+	local runner_xcconfig_fixture="$AI_TMP_DIR/xcode-runner-xcconfig"
+	local runner_xcconfig_bin="$runner_xcconfig_fixture/bin"
+	local runner_xcconfig_sentinel="$runner_xcconfig_fixture/xcodebuild-started"
 	local runner_failure_summary
 	local builder_failure_summary
 	local positive_metadata
@@ -251,6 +269,50 @@ validate_xcode_runner_signing_modes() {
 			and .reason == "argument_validation_failed"
 	' "$builder_failure_fixture/signed-runtime-summary.json" >/dev/null ||
 		die "Signed runtime builder left invalid evidence after a failed reused-output run: $builder_failure_summary"
+
+	mkdir -p "$broken_jq_bin" "$runner_broken_jq_fixture" "$builder_broken_jq_fixture"
+	printf '#!/bin/bash\nexit 42\n' >"$broken_jq_bin/jq"
+	chmod +x "$broken_jq_bin/jq"
+	printf '{"status":"passed","reason":"stale"}\n' >"$runner_broken_jq_fixture/xcode-summary.json"
+	if PATH="$broken_jq_bin:$PATH" "$runner" --out-dir "$runner_broken_jq_fixture" >/dev/null 2>&1; then
+		die "Xcode runner passed with a broken JSON writer."
+	fi
+	[[ ! -e "$runner_broken_jq_fixture/xcode-summary.json" ]] ||
+		die "Xcode runner retained stale success evidence after its JSON writer failed."
+
+	printf '{"status":"passed","reason":"stale"}\n' >"$builder_broken_jq_fixture/signed-runtime-summary.json"
+	if PATH="$broken_jq_bin:$PATH" OUT_DIR="$builder_broken_jq_fixture" "$signed_runtime_builder" >/dev/null 2>&1; then
+		die "Signed runtime builder passed with a broken JSON writer."
+	fi
+	[[ ! -e "$builder_broken_jq_fixture/signed-runtime-summary.json" ]] ||
+		die "Signed runtime builder retained stale success evidence after its JSON writer failed."
+
+	mkdir -p "$runner_xcconfig_bin"
+	printf '%s\n' \
+		'#!/bin/bash' \
+		'if [[ "${1:-}" == "-version" ]]; then printf "Xcode 26.6\nBuild version TEST\n"; exit 0; fi' \
+		': >"$XCODEBUILD_SENTINEL"' \
+		'exit 97' >"$runner_xcconfig_bin/xcodebuild"
+	printf '#!/bin/bash\nprintf "  1) TESTHASH \\"Apple Development: Developer (TEAM)\\"\n"\n' >"$runner_xcconfig_bin/security"
+	ln -sf /usr/bin/true "$runner_xcconfig_bin/codesign"
+	chmod +x "$runner_xcconfig_bin/xcodebuild" "$runner_xcconfig_bin/security"
+	if env \
+		PATH="$runner_xcconfig_bin:$PATH" \
+		DEVELOPER_DIR="$TOOL_ROOT" \
+		XCODE_XCCONFIG_FILE="$runner_xcconfig_fixture/ambient.xcconfig" \
+		XCODEBUILD_SENTINEL="$runner_xcconfig_sentinel" \
+		"$runner" \
+		--out-dir "$runner_xcconfig_fixture" \
+		--signing development \
+		--development-identifier com.developerchen.voiddisplay \
+		--development-team-identifier 6HCGZ4HUVA >/dev/null 2>&1; then
+		die "Xcode runner accepted an ambient development xcconfig."
+	fi
+	[[ ! -e "$runner_xcconfig_sentinel" ]] ||
+		die "Xcode runner started a development build with an ambient xcconfig."
+	jq -e '.status == "failed" and .reason == "signing_input_rejected"' \
+		"$runner_xcconfig_fixture/xcode-summary.json" >/dev/null ||
+		die "Xcode runner did not record the rejected ambient xcconfig."
 
 	positive_metadata=$'Identifier=com.developerchen.voiddisplay\nCodeDirectory v=20500 size=457 flags=0x10000(runtime)\nSignature size=4798\nAuthority=Apple Development: Developer (TEAM)\nInfo.plist entries=26\nTeamIdentifier=6HCGZ4HUVA\nSealed Resources version=2 rules=13 files=20'
 	positive_requirement='designated => identifier "com.developerchen.voiddisplay" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: Developer (TEAM)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */'
@@ -478,6 +540,7 @@ validate_xcode_project_layout
 validate_xcode_shell_build_phase
 validate_relay_build_is_script_sandbox_compatible
 validate_release_smoke_pins_relay_go_binary
+validate_json_artifact_rejects_directory_target
 validate_xcode_runner_signing_modes
 validate_permission_sensitive_acceptance_contract
 validate_home_popover_uses_system_focus
