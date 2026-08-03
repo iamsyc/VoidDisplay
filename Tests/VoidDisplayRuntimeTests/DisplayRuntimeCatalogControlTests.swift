@@ -329,6 +329,63 @@ struct DisplayRuntimeCatalogControlTests {
         #expect(outcome.catalog == committedCatalog)
     }
 
+    @Test func olderSettlementCannotOverwriteNewerCatalogConvergence() async {
+        let olderDisplayID = DisplayRuntimeDisplayID(6421)
+        let newerDisplayID = DisplayRuntimeDisplayID(6422)
+        let sharing = FakeSharingCommander(
+            snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [])
+        )
+        let runtime = DisplayRuntime(
+            sharingProvider: sharing,
+            sharingCommander: sharing
+        )
+
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(
+                settlementID: 2,
+                result: .reloadedSnapshot,
+                catalog: catalogSnapshot(displayID: newerDisplayID, isMain: false)
+            )
+        )
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(
+                settlementID: 1,
+                result: .reloadedSnapshot,
+                catalog: catalogSnapshot(displayID: olderDisplayID, isMain: false)
+            )
+        )
+
+        #expect(sharing.registeredDisplays == [[
+            .init(displayID: newerDisplayID, virtualSerialNumber: nil)
+        ]])
+    }
+
+    @Test func failedSettlementDoesNotSuppressEarlierSuccessfulConvergence() async {
+        let displayID = DisplayRuntimeDisplayID(6423)
+        let sharing = FakeSharingCommander(
+            snapshot: sharingSnapshot(isWebServiceRunning: true, activeDisplayIDs: [])
+        )
+        let runtime = DisplayRuntime(
+            sharingProvider: sharing,
+            sharingCommander: sharing
+        )
+
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(settlementID: 2, result: .failed, catalog: .empty)
+        )
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(
+                settlementID: 1,
+                result: .reloadedSnapshot,
+                catalog: catalogSnapshot(displayID: displayID, isMain: false)
+            )
+        )
+
+        #expect(sharing.registeredDisplays == [[
+            .init(displayID: displayID, virtualSerialNumber: nil)
+        ]])
+    }
+
     @Test func catalogRegistrationCannotUnregisterAnotherActiveSurface() async {
         let catalog = FakeCatalogCommander()
         let runtime = makeRuntime(catalog: catalog)

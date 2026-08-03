@@ -23,6 +23,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private let displayRuntime: DisplayRuntime
     private let sharingAdapter: DisplayRuntimeSharingAdapter
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
+    private let restoreSidebarFocus: @MainActor () -> Void
 
     @State private var viewModel: VirtualDisplayListViewModel
     @State private var createView = false
@@ -46,7 +47,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
         capturePerformancePreferences: CapturePerformancePreferences,
         displayRuntime: DisplayRuntime,
         sharingAdapter: DisplayRuntimeSharingAdapter,
-        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void
+        openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void,
+        restoreSidebarFocus: @escaping @MainActor () -> Void
     ) {
         self.capture = capture
         self.sharing = sharing
@@ -55,6 +57,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         self.displayRuntime = displayRuntime
         self.sharingAdapter = sharingAdapter
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
+        self.restoreSidebarFocus = restoreSidebarFocus
         _viewModel = State(initialValue: VirtualDisplayListViewModel(controller: virtualDisplay))
         _sharingPortInput = State(initialValue: String(sharing.preferredWebServicePort))
     }
@@ -253,7 +256,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 },
                 applySharingPortDraft: {
                     savePreferredSharingPort()
-                }
+                },
+                restoreSidebarFocus: restoreSidebarFocus
             )
         )
     }

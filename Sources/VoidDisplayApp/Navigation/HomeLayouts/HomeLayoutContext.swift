@@ -128,6 +128,7 @@ package struct HomeLayoutActions {
     package let setCapturePerformanceMode: @MainActor (CapturePerformanceMode) -> Void
     package let updateSharingPortDraft: @MainActor (String) -> Void
     package let applySharingPortDraft: @MainActor () -> Void
+    package let restoreSidebarFocus: @MainActor () -> Void
 
     package init(
         createVirtualDisplay: @escaping @MainActor () -> Void,
@@ -139,7 +140,8 @@ package struct HomeLayoutActions {
         ) -> Void,
         setCapturePerformanceMode: @escaping @MainActor (CapturePerformanceMode) -> Void,
         updateSharingPortDraft: @escaping @MainActor (String) -> Void,
-        applySharingPortDraft: @escaping @MainActor () -> Void
+        applySharingPortDraft: @escaping @MainActor () -> Void,
+        restoreSidebarFocus: @escaping @MainActor () -> Void
     ) {
         self.createVirtualDisplay = createVirtualDisplay
         self.rescanDisplays = rescanDisplays
@@ -148,6 +150,7 @@ package struct HomeLayoutActions {
         self.setCapturePerformanceMode = setCapturePerformanceMode
         self.updateSharingPortDraft = updateSharingPortDraft
         self.applySharingPortDraft = applySharingPortDraft
+        self.restoreSidebarFocus = restoreSidebarFocus
     }
 
     @MainActor
