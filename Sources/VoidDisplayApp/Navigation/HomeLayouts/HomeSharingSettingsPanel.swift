@@ -25,6 +25,10 @@ package struct HomeSharingSettingsPopoverButton: View {
         .accessibilityLabel(Text("Sharing Settings"))
         .accessibilityValue(Text(labelText))
         .accessibilityIdentifier("home_sharing_settings_popover_button")
+        .onChange(of: isPresented) { wasPresented, isPresented in
+            guard wasPresented, !isPresented else { return }
+            context.actions.restoreSidebarFocus()
+        }
     }
 
     private var labelText: String {

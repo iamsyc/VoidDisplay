@@ -752,6 +752,13 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
+    func testInitialFocusTargetsSelectedSidebarItem() throws {
+        let app = launchAppForSmoke(windowSize: (760, 640))
+
+        assertSelectedSidebarHasKeyboardFocus(app)
+    }
+
+    @MainActor
     func testFirstTabFocusesAVisibleControl() throws {
         let app = launchAppForSmoke(windowSize: (760, 640), advanceFocus: true)
         let window = app.windows.firstMatch
@@ -809,6 +816,7 @@ final class HomeSmokeTests: XCTestCase {
                 sharingSettingsPanel.waitForExistence(timeout: 1),
                 "Clicking the toolbar background should dismiss Sharing Settings."
             )
+            assertSelectedSidebarHasKeyboardFocus(app)
         }
 
         let sidebar = app.outlines.matching(identifier: "home_sidebar").firstMatch
@@ -818,6 +826,22 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertFalse(
             sidebar.waitForExistence(timeout: 1),
             "The system sidebar toggle should still collapse the sidebar after dismissing the popover."
+        )
+
+        tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
+        let collapsedSidebarPanel = assertExists(
+            app,
+            identifier: "home_sharing_settings_panel",
+            timeout: 2
+        )
+        toolbar.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).click()
+        XCTAssertFalse(
+            collapsedSidebarPanel.waitForExistence(timeout: 1),
+            "Clicking the toolbar background should dismiss Sharing Settings with the sidebar collapsed."
+        )
+        XCTAssertFalse(
+            sidebar.waitForExistence(timeout: 1),
+            "Dismissing Sharing Settings must not restore a collapsed sidebar."
         )
 
         systemSidebarToggle.click()
@@ -976,6 +1000,39 @@ final class HomeSmokeTests: XCTestCase {
             "home_sharing_settings_popover_button",
             "home_add_virtual_display_button"
         ]
+    }
+
+    @MainActor
+    private func assertSelectedSidebarHasKeyboardFocus(
+        _ app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        assertExists(
+            app,
+            identifier: "sidebar_home",
+            timeout: 2,
+            file: file,
+            line: line
+        )
+        assertExists(
+            app,
+            identifier: "detail_home",
+            timeout: 2,
+            file: file,
+            line: line
+        )
+
+        let focusedSidebar = app.outlines
+            .matching(identifier: "home_sidebar")
+            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
+            .firstMatch
+        XCTAssertTrue(
+            focusedSidebar.waitForExistence(timeout: 2),
+            "Selected sidebar did not receive keyboard focus.",
+            file: file,
+            line: line
+        )
     }
 
     @MainActor
