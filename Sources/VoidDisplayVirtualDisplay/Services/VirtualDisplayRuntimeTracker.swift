@@ -154,10 +154,14 @@ package final class VirtualDisplayRuntimeTracker {
     @discardableResult
     package func createRuntimeDisplayWithRetries(
         from config: VirtualDisplayConfig,
-        terminationConfirmed: Bool
+        terminationConfirmed: Bool,
+        configIsAvailable: () -> Bool
     ) async throws -> RuntimeDisplayRecord {
         let maxAttempts = terminationConfirmed ? 3 : 10
         for attempt in 1...maxAttempts {
+            guard configIsAvailable() else {
+                throw VirtualDisplayOperationError.configNotFound
+            }
             do {
                 return try createRuntimeDisplay(from: config)
             } catch {

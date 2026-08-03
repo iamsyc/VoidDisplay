@@ -312,6 +312,49 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
+    func resetDuringRebuildRetryDoesNotRecreateRemovedConfig() async throws {
+        let store = FakeVirtualDisplayStore()
+        let config = makeConfig(serial: 63, displayName: "Reset During Retry")
+        let driver = FakeOrchestratorRuntimeDriver(
+            scriptedResults: [
+                .failure(VirtualDisplayOperationError.creationFailed),
+                .success(serialNum: config.serialNum, displayID: 963)
+            ]
+        )
+        let clock = ResettingVirtualDisplayClock()
+        let sut = makeOrchestrator(
+            store: store,
+            initialConfigs: [config],
+            runtimeDriver: driver,
+            clock: clock
+        )
+        var createCallCountAtReset = 0
+        var resetResult: Result<Int, Error>?
+        clock.onFirstSleep = {
+            createCallCountAtReset = driver.createCallCount
+            resetResult = Result { try sut.resetAllVirtualDisplayData() }
+        }
+
+        do {
+            try await sut.rebuildVirtualDisplay(configId: config.id)
+            Issue.record("Expected rebuild to stop after reset removed its configuration.")
+        } catch let error as VirtualDisplayOperationError {
+            guard case .configNotFound = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        #expect(createCallCountAtReset == 1)
+        #expect(try resetResult?.get() == 1)
+        #expect(driver.createCallCount == 1)
+        #expect(sut.snapshot.configs.isEmpty)
+        #expect(sut.snapshot.runningConfigIds.isEmpty)
+    }
+
+    @Test
     func startupRestoreCommandRestoresSingleDesiredConfig() {
         let store = FakeVirtualDisplayStore()
         let config = makeConfig(serial: 64, displayName: "Desired")
@@ -363,6 +406,7 @@ private extension VirtualDisplayOrchestratorLightTests {
         inspector: any DisplayTopologyInspecting = DummyDisplayTopologyInspector(),
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool = { _ in false },
         runtimeDriver: (any VirtualDisplayRuntimeDriving)? = nil,
+        clock: (any VirtualDisplayClocking)? = nil,
         loadOnInit: Bool = true
     ) -> VirtualDisplayOrchestrator {
         store.nextLoadConfigs = initialConfigs
@@ -376,7 +420,8 @@ private extension VirtualDisplayOrchestratorLightTests {
             topologyStabilityTimeout: 0.1,
             topologyStabilityPollInterval: 0.01,
             rebuildRuntimeDisplayHook: nil,
-            runtimeDriver: runtimeDriver ?? TestVirtualDisplayRuntimeDriver()
+            runtimeDriver: runtimeDriver ?? TestVirtualDisplayRuntimeDriver(),
+            clock: clock
         )
         if loadOnInit {
             orchestrator.loadPersistedConfigs()
@@ -406,6 +451,32 @@ private extension VirtualDisplayOrchestratorLightTests {
         )
     }
 
+}
+
+@MainActor
+private final class ResettingVirtualDisplayClock: VirtualDisplayClocking {
+    var onFirstSleep: (() -> Void)?
+
+    private var currentTime: TimeInterval = 0
+    private var didRunFirstSleep = false
+
+    func now() -> TimeInterval {
+        currentTime
+    }
+
+    func sleep(for duration: Duration) async {
+        if !didRunFirstSleep {
+            didRunFirstSleep = true
+            onFirstSleep?()
+        }
+        let components = duration.components
+        currentTime += max(
+            0,
+            Double(components.seconds) +
+                Double(components.attoseconds) / 1_000_000_000_000_000_000
+        )
+        await Task.yield()
+    }
 }
 
 @MainActor
