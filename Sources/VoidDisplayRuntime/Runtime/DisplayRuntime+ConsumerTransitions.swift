@@ -173,19 +173,31 @@ extension DisplayRuntime {
             }
             guard !surfaceTransitions.isEmpty else { continue }
             let currentSurfaceResultStartIndex = results.endIndex
-            let invalidationFailureCode = topologyResult.map {
-                "topology_\($0.status.rawValue)"
-            } ?? DisplayRuntimeCaptureIntentFailureCode.epochMismatch
-            let invalidationStatus: DisplayRuntimeSessionRestoreStatus = topologyResult == nil
-                ? .invalidated
-                : .failed
+            let topologyFailureCode: String?
+            if let topologyResult, topologyResult.status != .stable {
+                topologyFailureCode = "topology_\(topologyResult.status.rawValue)"
+            } else {
+                topologyFailureCode = nil
+            }
+            let invalidationContext: (
+                status: DisplayRuntimeSessionRestoreStatus,
+                failureCode: String
+            )
+            if let topologyFailureCode {
+                invalidationContext = (.failed, topologyFailureCode)
+            } else {
+                invalidationContext = (
+                    .invalidated,
+                    DisplayRuntimeCaptureIntentFailureCode.epochMismatch
+                )
+            }
 
             guard currentSurfaceEpoch(for: surfaceIdentity) == surfaceTransitions[0].epoch else {
                 results.append(contentsOf: await invalidateConsumerTransition(
                     surfaceTransitions,
                     surfaceIdentity: surfaceIdentity,
-                    status: invalidationStatus,
-                    failureCode: invalidationFailureCode
+                    status: invalidationContext.status,
+                    failureCode: invalidationContext.failureCode
                 ))
                 continue
             }
@@ -194,9 +206,8 @@ extension DisplayRuntime {
                 for: surfaceIdentity,
                 snapshot: snapshot
             ) else {
-                let failureCode = topologyResult.map {
-                    "topology_\($0.status.rawValue)"
-                } ?? DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+                let failureCode = topologyFailureCode
+                    ?? DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
                 surfaceResolvedDisplayIDs.removeValue(forKey: surfaceIdentity)
                 for transition in surfaceTransitions {
                     guard let lease = consumerLeasesByID[transition.leaseID] else { continue }
@@ -250,8 +261,8 @@ extension DisplayRuntime {
                     results.append(contentsOf: await invalidateConsumerTransition(
                         surfaceTransitions,
                         surfaceIdentity: surfaceIdentity,
-                        status: invalidationStatus,
-                        failureCode: invalidationFailureCode
+                        status: invalidationContext.status,
+                        failureCode: invalidationContext.failureCode
                     ))
                     continue surfaceLoop
                 }

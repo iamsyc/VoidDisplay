@@ -508,6 +508,96 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity) == false)
     }
 
+    @Test func catalogClearDuringRestoreAfterStableTopologyUsesEpochInvalidation() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 982)
+        let captureIntentCommander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(
+                snapshot: catalogSnapshot(displayID: 982, isMain: true)
+            ),
+            captureIntentCommander: captureIntentCommander
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .localUI),
+            demand: sourceDemand()
+        )
+        let transition = await runtime.beginConsumerTransition(
+            surfaceIdentities: [surfaceIdentity],
+            previousDisplayIDs: [surfaceIdentity: 982]
+        )
+        captureIntentCommander.shouldGateApply = true
+        let completionTask = Task { @MainActor in
+            await runtime.completeConsumerTransition(
+                transition,
+                snapshot: runtime.makeSnapshot(),
+                topologyResult: .init(
+                    status: .stable,
+                    sampleCount: 1,
+                    failureReason: nil,
+                    lastSample: nil
+                )
+            )
+        }
+        await captureIntentCommander.waitForApplyCalls(3)
+
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(settlementID: 1, result: .clearedSnapshot, catalog: .empty)
+        )
+        captureIntentCommander.shouldGateApply = false
+        captureIntentCommander.releaseApply(call: 3)
+        let results = await completionTask.value
+
+        #expect(results.map(\.status) == [.invalidated])
+        #expect(results.map(\.failureReason) == [DisplayRuntimeCaptureIntentFailureCode.epochMismatch])
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .failed)
+        #expect(
+            runtime.consumerLease(leaseID: lease.id)?.lastFailureCode
+                == DisplayRuntimeCaptureIntentFailureCode.epochMismatch
+        )
+    }
+
+    @Test func stableTopologyWithoutResolvedDisplayUsesDisplayUnavailableFailure() async {
+        let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 983)
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(
+                snapshot: catalogSnapshot(displayID: 983, isMain: true)
+            ),
+            captureIntentCommander: FakeCaptureIntentCommander()
+        )
+        let lease = await attachConsumerForTesting(
+            runtime,
+            surfaceIdentity: surfaceIdentity,
+            kind: .preview,
+            owner: .init(source: .localUI),
+            demand: sourceDemand()
+        )
+        let transition = await runtime.beginConsumerTransition(
+            surfaceIdentities: [surfaceIdentity],
+            previousDisplayIDs: [surfaceIdentity: 983]
+        )
+
+        let results = await runtime.completeConsumerTransition(
+            transition,
+            snapshot: .empty,
+            topologyResult: .init(
+                status: .stable,
+                sampleCount: 1,
+                failureReason: nil,
+                lastSample: nil
+            )
+        )
+
+        #expect(results.map(\.status) == [.failed])
+        #expect(results.map(\.failureReason) == [DisplayRuntimeCaptureIntentFailureCode.displayUnavailable])
+        #expect(
+            runtime.consumerLease(leaseID: lease.id)?.lastFailureCode
+                == DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+        )
+    }
+
     @Test func powerProfileUpdatePreservesFailedLeaseStateAndFailureCode() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 990)
         let failureCode = DisplayRuntimeCaptureIntentFailureCode.applyFailed
