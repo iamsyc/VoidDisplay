@@ -8,7 +8,7 @@ source "$TOOL_ROOT/scripts/lib/common.sh"
 
 cd "$ROOT_DIR"
 
-require_command actionlint rg awk sort
+require_command actionlint rg awk sort node
 
 fail_on_output() {
 	local message="$1"
@@ -129,6 +129,10 @@ validate_workflow_script_contract() {
 		' "${pr_ci_workflow_files[@]}" || true
 	)"
 	fail_on_output "PR CI checkouts must disable persisted credentials." "$invalid"
+}
+
+validate_ci_summary_comment_policy() {
+	node scripts/ci/test_ci_summary_comment_policy.mjs
 }
 
 validate_release_publish_credentials() {
@@ -300,6 +304,7 @@ actionlint
 validate_runner_labels
 validate_action_pinning
 validate_workflow_script_contract
+validate_ci_summary_comment_policy
 validate_release_publish_credentials
 validate_release_automation_contract
 validate_ui_smoke_artifact_summary
