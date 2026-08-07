@@ -53,7 +53,6 @@ extension XCTestCase {
             app.launchEnvironment["VOIDDISPLAY_UI_TEST_ADVANCE_FOCUS"] = "1"
         }
         app.launch()
-        app.activate()
         return app
     }
 
@@ -67,8 +66,82 @@ extension XCTestCase {
         line: UInt = #line
     ) -> XCUIElement {
         let element = smokeElement(app, identifier: identifier)
-        XCTAssertTrue(element.waitForExistence(timeout: timeout), "Missing identifier: \(identifier)", file: file, line: line)
+        XCTAssertTrue(
+            waitForExistenceIfNeeded(element, timeout: timeout),
+            "Missing identifier: \(identifier)",
+            file: file,
+            line: line
+        )
         return element
+    }
+
+    @MainActor
+    func waitForExistenceIfNeeded(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        element.exists || element.waitForExistence(timeout: timeout)
+    }
+
+    @MainActor
+    func waitForCondition(
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.05,
+        _ condition: () -> Bool
+    ) -> Bool {
+        if condition() {
+            return true
+        }
+
+        let deadline = Date.now.addingTimeInterval(timeout)
+        while Date.now < deadline {
+            RunLoop.current.run(until: Date.now.addingTimeInterval(pollInterval))
+            if condition() {
+                return true
+            }
+        }
+        return condition()
+    }
+
+    @MainActor
+    func resizeWindow(
+        _ window: XCUIElement,
+        to targetSize: CGSize,
+        timeout: TimeInterval = 3,
+        accuracy: CGFloat = 6,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            waitForExistenceIfNeeded(window, timeout: timeout),
+            "Window must exist before resizing.",
+            file: file,
+            line: line
+        )
+
+        let initialFrame = window.frame
+        let topLeft = window.coordinate(withNormalizedOffset: .zero)
+        let resizeHandle = topLeft.withOffset(
+            CGVector(dx: initialFrame.width - 2, dy: initialFrame.height - 2)
+        )
+        let target = topLeft.withOffset(
+            CGVector(dx: targetSize.width - 2, dy: targetSize.height - 2)
+        )
+        resizeHandle.click(forDuration: 0.1, thenDragTo: target)
+
+        let deadline = Date.now.addingTimeInterval(timeout)
+        while Date.now < deadline {
+            let frame = window.frame
+            if abs(frame.width - targetSize.width) <= accuracy,
+               abs(frame.height - targetSize.height) <= accuracy
+            {
+                return
+            }
+            RunLoop.current.run(until: Date.now.addingTimeInterval(0.05))
+        }
+
+        XCTAssertEqual(window.frame.width, targetSize.width, accuracy: accuracy, file: file, line: line)
+        XCTAssertEqual(window.frame.height, targetSize.height, accuracy: accuracy, file: file, line: line)
     }
 
     @MainActor

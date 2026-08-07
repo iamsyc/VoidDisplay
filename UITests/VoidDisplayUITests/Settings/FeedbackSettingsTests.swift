@@ -16,7 +16,6 @@ final class FeedbackSettingsTests: XCTestCase {
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_EXPECTED"] = "The saved display should come back."
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_INCLUDE_CONFIGS"] = "1"
         app.launch()
-        app.activate()
 
         assertAllExist(
             app,

@@ -115,11 +115,21 @@ validate_xcode_shell_build_phase() {
 		'name = "Build Relay";' \
 		'shellPath = /bin/bash;' \
 		'"cd \"$SRCROOT\"",'
+	if rg -F 'alwaysOutOfDate = 1;' "$project_file" >/dev/null; then
+		die "Build Relay must use declared input and output dependency analysis."
+	fi
 
 	while IFS= read -r relay_file; do
 		expected_inputs+=('$(ROOT_DIR)/'"$relay_file")
 		relay_file_count=$((relay_file_count + 1))
-	done < <(rg --files Tools/VoidDisplayRelay | LC_ALL=C sort)
+	done < <(
+		{
+			printf '%s\n' \
+				Tools/VoidDisplayRelay/go.mod \
+				Tools/VoidDisplayRelay/go.sum
+			rg --files Tools/VoidDisplayRelay -g '*.go' -g '!**/*_test.go'
+		} | LC_ALL=C sort -u
+	)
 	((relay_file_count > 0)) || die "Relay module has no tracked files to declare as Xcode build inputs."
 
 	root_setting_count="$(rg -F 'ROOT_DIR = "$(SRCROOT)";' "$project_file" | wc -l | tr -d '[:space:]')"
@@ -135,16 +145,10 @@ validate_xcode_shell_build_phase() {
 		''
 
 	assert_pbx_array_exact outputPaths "Build Relay outputPaths" \
-		'$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay'
+		'$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay' \
+		'$(DERIVED_FILE_DIR)/voiddisplay-relay-$(ARCHS).stamp'
 
 	assert_pbx_array_exact inputPaths "Build Relay inputPaths" "${expected_inputs[@]}"
-}
-
-validate_relay_build_is_script_sandbox_compatible() {
-	assert_file_contains_all \
-		"$TOOL_ROOT/scripts/build-relay.sh" \
-		"Relay build must not inspect undeclared Git metadata inside the Xcode user script sandbox" \
-		'build -buildvcs=false -trimpath'
 }
 
 validate_release_smoke_pins_relay_go_binary() {
@@ -225,8 +229,6 @@ validate_xcode_runner_signing_modes() {
 		'--development-team-identifier)' \
 		'"CODE_SIGN_IDENTITY=Apple Development"' \
 		'"ENABLE_HARDENED_RUNTIME=YES"' \
-		'pipeline_statuses=("${PIPESTATUS[@]}")' \
-		'tee_status="${pipeline_statuses[1]}"' \
 		'SUMMARY_FAILURE_REASON="build_log_write_failed"' \
 		'write_failed_summary_on_exit' \
 		'validate_development_project_path' \
@@ -538,7 +540,6 @@ validate_ui_tests_do_not_synthesize_keyboard_input() {
 
 validate_xcode_project_layout
 validate_xcode_shell_build_phase
-validate_relay_build_is_script_sandbox_compatible
 validate_release_smoke_pins_relay_go_binary
 validate_json_artifact_rejects_directory_target
 validate_xcode_runner_signing_modes

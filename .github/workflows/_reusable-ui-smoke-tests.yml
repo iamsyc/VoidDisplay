@@ -4,10 +4,15 @@ on:
   workflow_call:
     inputs:
       only_testing:
-        description: xcodebuild -only-testing target.
+        description: Single xcodebuild -only-testing target used when only_testing_json is empty.
         required: false
         type: string
         default: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
+      only_testing_json:
+        description: JSON array of xcodebuild -only-testing targets executed together on one runner.
+        required: false
+        type: string
+        default: '[]'
       max_attempts:
         description: Retry attempts for runner/bootstrap flakiness.
         required: false
@@ -87,14 +92,43 @@ jobs:
         id: run_ui
         continue-on-error: true
         shell: bash
+        env:
+          UI_SELECTOR: ${{ inputs.only_testing }}
+          UI_SELECTORS_JSON: ${{ inputs.only_testing_json }}
+          MAX_ATTEMPTS: ${{ inputs.max_attempts }}
+          ENFORCE_FAILURE: ${{ inputs.enforce_failure }}
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
+          selectors=()
+          selector_args=()
+
+          if ! jq -e 'type == "array" and all(.[]; type == "string" and length > 0)' \
+            <<< "$UI_SELECTORS_JSON" >/dev/null; then
+            echo "only_testing_json must be a JSON array of non-empty strings." >&2
+            exit 1
+          fi
+
+          while IFS= read -r selector; do
+            selectors+=("$selector")
+          done < <(jq -r '.[]' <<< "$UI_SELECTORS_JSON")
+
+          if [ "${#selectors[@]}" -eq 0 ]; then
+            [ -n "$UI_SELECTOR" ] || {
+              echo "At least one UI selector is required." >&2
+              exit 1
+            }
+            selectors+=("$UI_SELECTOR")
+          fi
+
+          for selector in "${selectors[@]}"; do
+            selector_args+=(--only-testing "$selector")
+          done
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/ui_smoke.sh" \
-            --only-testing '${{ inputs.only_testing }}' \
-            --max-attempts '${{ inputs.max_attempts }}' \
-            --enforce-failure '${{ inputs.enforce_failure }}' \
+            "${selector_args[@]}" \
+            --max-attempts "$MAX_ATTEMPTS" \
+            --enforce-failure "$ENFORCE_FAILURE" \
             --out-dir .ai-tmp/ci-ui-smoke
 
       - name: Upload UI smoke artifacts

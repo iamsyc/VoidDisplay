@@ -47,8 +47,17 @@
          <ExecutionAction
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
-               title = "Terminate Existing VoidDisplay"
-               scriptText = "/usr/bin/pgrep -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; | while read pid; do ppid=$(/bin/ps -o ppid= -p &quot;$pid&quot; | /usr/bin/tr -d &apos;[:space:]&apos;); parent=$(/bin/ps -o comm= -p &quot;$ppid&quot;); case &quot;$parent&quot; in *debugserver) /bin/kill -9 &quot;$ppid&quot; &gt;/dev/null 2&gt;&amp;1 || true ;; esac; /bin/kill -9 &quot;$pid&quot; &gt;/dev/null 2&gt;&amp;1 || true; done">
+               title = "Validate UI Test Lock and Terminate Existing VoidDisplay"
+               scriptText = "&quot;${TOOL_ROOT:-${SRCROOT:-$PROJECT_DIR}}/scripts/lib/ui_test_session.sh&quot; scheme-test-pre">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "BA0465CF2E90E53C00012958"
+                     BuildableName = "VoidDisplay.app"
+                     BlueprintName = "VoidDisplay"
+                     ReferencedContainer = "container:VoidDisplay.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
             </ActionContent>
          </ExecutionAction>
       </PreActions>
@@ -80,8 +89,17 @@
          <ExecutionAction
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
-               title = "Terminate Existing VoidDisplay"
-               scriptText = "/usr/bin/pgrep -f &apos;/[V]oidDisplay.app/Contents/MacOS/VoidDisplay&apos; | while read pid; do ppid=$(/bin/ps -o ppid= -p &quot;$pid&quot; | /usr/bin/tr -d &apos;[:space:]&apos;); parent=$(/bin/ps -o comm= -p &quot;$ppid&quot;); case &quot;$parent&quot; in *debugserver) /bin/kill -9 &quot;$ppid&quot; &gt;/dev/null 2&gt;&amp;1 || true ;; esac; /bin/kill -9 &quot;$pid&quot; &gt;/dev/null 2&gt;&amp;1 || true; done">
+               title = "Refuse Active UI Test Session and Terminate Existing VoidDisplay"
+               scriptText = "&quot;${TOOL_ROOT:-${SRCROOT:-$PROJECT_DIR}}/scripts/lib/ui_test_session.sh&quot; scheme-launch-pre">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "BA0465CF2E90E53C00012958"
+                     BuildableName = "VoidDisplay.app"
+                     BlueprintName = "VoidDisplay"
+                     ReferencedContainer = "container:VoidDisplay.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
             </ActionContent>
          </ExecutionAction>
       </PreActions>

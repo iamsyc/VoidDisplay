@@ -12,44 +12,41 @@ if [[ -z "${VOIDDISPLAY_XCRESULT_SH_SOURCED:-}" ]]; then
 		xcrun xcresulttool get test-results summary --path "$xcresult_path"
 	}
 
-	xcresult_extract_metric() {
-		local summary="$1"
-		local key="$2"
-		local fallback="$3"
-		local line
-		local value
+	xcresult_test_evidence_json() {
+		local xcresult_path="$1"
+		shift
+		local summary
+		local tests
+		local selector
+		local requested_selectors_json='[]'
 
-		line="$(printf '%s\n' "$summary" | rg "\"$key\"" | tail -n 1)" || true
-		if [[ -z "$line" ]]; then
-			printf '%s' "$fallback"
-			return 0
+		[[ -d "$xcresult_path" ]] || return 1
+		summary="$(xcresult_summary_json "$xcresult_path" 2>/dev/null)" || return 1
+
+		if [[ "$#" -gt 0 ]]; then
+			requested_selectors_json="$(printf '%s\n' "$@" | jq -R . | jq -s .)" || return 1
+			tests="$(xcrun xcresulttool get test-results tests --path "$xcresult_path" 2>/dev/null)" || return 1
+			for selector in "$@"; do
+				[[ -n "$selector" ]] || return 1
+				jq -e --arg suffix "/$selector" \
+					'any(.. | objects | .nodeIdentifierURL?; type == "string" and endswith($suffix))' \
+					<<<"$tests" >/dev/null || return 1
+			done
 		fi
 
-		value="$(printf '%s\n' "$line" | awk -F': ' '{print $2}' | tr -d ',\"')"
-		if [[ -z "$value" ]]; then
-			printf '%s' "$fallback"
-		else
-			printf '%s' "$value"
-		fi
+		jq -ce \
+			--argjson requested_selectors "$requested_selectors_json" \
+			'(.totalTestCount // null) as $total
+			| (.passedTests // null) as $passed
+			| (.skippedTests // null) as $skipped
+			| (.failedTests // null) as $failed
+			| select([$total, $passed, $skipped, $failed] | all(.[]; type == "number"))
+			| select(.result == "Passed" and $total > 0 and $passed == $total and $skipped == 0 and $failed == 0)
+			| {result_status: .result, total_tests: $total, passed_tests: $passed, skipped_tests: $skipped, failed_tests: $failed, requested_selectors: $requested_selectors}' \
+			<<<"$summary"
 	}
 
-	guard_xcresult_test_count() {
-		local xcresult_path="$1"
-		local label="$2"
-		local summary
-		local total_tests
-		local failed_tests
-		local result_status
-
-		summary="$(xcresult_summary_json "$xcresult_path")"
-		total_tests="$(xcresult_extract_metric "$summary" totalTestCount 0)"
-		failed_tests="$(xcresult_extract_metric "$summary" failedTests 0)"
-		result_status="$(xcresult_extract_metric "$summary" result unknown)"
-
-		info "$label summary: result=$result_status totalTestCount=$total_tests failedTests=$failed_tests"
-
-		if [[ "$total_tests" == "0" ]]; then
-			die "$label invalid: totalTestCount == 0."
-		fi
+	xcresult_test_evidence_valid() {
+		xcresult_test_evidence_json "$@" >/dev/null
 	}
 fi

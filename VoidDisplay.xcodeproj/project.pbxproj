@@ -190,7 +190,6 @@
 /* Begin PBXShellScriptBuildPhase section */
 		CDAA20012F05000100000001 /* Build Relay */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			inputPaths = (
 				"$(TOOL_ROOT)/mise.toml",
 				"$(TOOL_ROOT)/mise.lock",
@@ -200,26 +199,21 @@
 				"$(TOOL_ROOT)/scripts/lib/architecture.sh",
 				"$(TOOL_ROOT)/scripts/lib/release_binaries.sh",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main.go",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/cmd/voiddisplay-relay/main_test.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.mod",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.sum",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/codec.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/feedback.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/ready.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/room.go",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/room_rtp_test.go",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/room_signaling_test.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/room_types.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/rtp_writer.go",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/rtp_writer_test.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server.go",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/server_test.go",
-				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/test_helpers_test.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/types.go",
 			);
 			name = "Build Relay";
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay",
+				"$(DERIVED_FILE_DIR)/voiddisplay-relay-$(ARCHS).stamp",
 			);
 			shellPath = /bin/bash;
 			shellScript = (
