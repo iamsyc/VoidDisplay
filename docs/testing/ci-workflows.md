@@ -86,12 +86,12 @@ The current release workflow publishes this asset set per architecture:
 - `VoidDisplay-vX.Y.Z-arm64.dmg.sha256`
 - `VoidDisplay-vX.Y.Z-arm64.dmg.spdx.json`
 - `VoidDisplay-vX.Y.Z-arm64.dmg.summary.json`
-- `VoidDisplay-vX.Y.Z-arm64.dmg.verify-summary.json`
+- `VoidDisplay-vX.Y.Z-arm64.verify-summary.json`
 - `VoidDisplay-vX.Y.Z-intel64.dmg`
 - `VoidDisplay-vX.Y.Z-intel64.dmg.sha256`
 - `VoidDisplay-vX.Y.Z-intel64.dmg.spdx.json`
 - `VoidDisplay-vX.Y.Z-intel64.dmg.summary.json`
-- `VoidDisplay-vX.Y.Z-intel64.dmg.verify-summary.json`
+- `VoidDisplay-vX.Y.Z-intel64.verify-summary.json`
 
 This artifact set applies to releases produced by the current workflow. The `v2.1.0` release predates SBOM and attestation publishing and contains only the DMG and SHA256 checksum for each architecture.
 
