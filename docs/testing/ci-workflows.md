@@ -29,7 +29,7 @@ Branch protection for `main` should require only:
 Gate behavior:
 
 - Every PR runs static checks, SwiftPM tests, browser JavaScript tests, Go tests, and an Xcode Debug build.
-- UI-relevant PRs and PRs with unknown paths run the UI smoke matrix.
+- UI-relevant PRs and PRs with unknown paths run two balanced UI smoke shards on separate runners. Selectors within each shard execute serially and share one DerivedData directory.
 - Release-relevant PRs targeting `main` run arm64 release smoke. Main push, nightly, and release workflows cover x86_64 release smoke.
 - PRs that change dependency manifests run Dependency Review and block high or critical dependency vulnerabilities.
 
@@ -65,6 +65,8 @@ Release jobs use two checkouts:
 - `ROOT_DIR` is the resolved release target under `release-target`. Product source, project metadata, and the app build come from this checkout.
 
 Every workflow script runs from `TOOL_ROOT` and receives both roots explicitly. A project-managed tool that uses repository configuration must be resolved against `TOOL_ROOT` before `xcodebuild` starts, then passed into Xcode as an absolute path. When mise is available, release smoke resolves Go with `mise -C "$TOOL_ROOT" which go` and passes `GO_BIN` into the `Build Relay` phase. This prevents tool shims from searching the release target for configuration that the Xcode script sandbox cannot read.
+
+Checkpoint resume and Xcode test-product reuse require `ROOT_DIR` and `TOOL_ROOT` to resolve to the same checkout, so the source fingerprint covers the scripts that produced the evidence. Split roots remain limited to release scripts, which do not reuse those artifacts.
 
 ### DMG Template Maintenance
 
@@ -143,7 +145,11 @@ Report local verification, main CI, the Release workflow, and public asset readb
 
 ## Nightly
 
-`nightly.yml` calls `scripts/ci/full_regression.sh`, `scripts/ci/coverage.sh`, expanded UI smoke, and dual-architecture release dry run. It writes workflow summary output and retains artifacts for 7 days.
+`nightly.yml` runs four independent lanes: core regression without UI, Xcode Debug preflight, or release packaging; full serial `VoidDisplayUITests`; coverage; and dual-architecture release dry run. The core lane calls `scripts/ci/full_regression.sh --skip-ui-tests --skip-xcode-preflight --skip-release-smoke`; the UI lane's `build-for-testing` owns the Debug app compilation, and the release lane owns arm64 and Intel Release builds. Coverage runs the SwiftPM suite with instrumentation and skips the JavaScript and Go suites already owned by core regression. The UI lane reuses the same DerivedData with `test-without-building`. It covers the complete UI target, including suites outside `HomeSmokeTests`, and retains one sequential full-suite signal for order and shared-state regressions.
+
+PR UI smoke uses two runner shards. The navigation-preview shard covers home navigation and both preview recovery flows. The display-list shard covers the display list surface and narrow-window actions. Each reusable workflow call accepts a JSON selector list and passes every selector to one `xcodebuild` invocation. The UI tests remain serial inside each GUI session while each shard compiles once. The two artifacts are `ui-smoke-navigation-preview` and `ui-smoke-display-list`.
+
+All Nightly lanes start independently. The workflow summary reports core regression and the full UI suite separately, and every artifact is retained for 7 days.
 
 `scripts/ci/full_regression.sh` also calls `scripts/ci/stability.sh`. The stability gate repeats the Swift capture-demand and relay-client churn tests, then runs every relay Go package with the race detector and the same bounded iteration count. Use `--iterations 1...100` or `STABILITY_ITERATIONS` to select the run length; the default is 20.
 

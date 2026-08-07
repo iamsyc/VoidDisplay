@@ -10,7 +10,7 @@
 | UI smoke | 少量关键用户可观察路径 | `scripts/ci/ui_smoke.sh` |
 | 完整回归 | 静态、单元、Debug build、UI、稳定性和 arm64 release smoke | `scripts/ci/full_regression.sh --destination "platform=macOS,arch=$(uname -m)"` |
 
-Xcode 的 `VoidDisplay` scheme 用于 App build、run 和 UI test。Cmd-U 不会执行 SwiftPM、浏览器 JavaScript 或 Go 测试，完整单元与集成测试入口仍是 `scripts/ci/unit.sh`。
+Xcode 的 `VoidDisplay` scheme 用于 App build 和 run。UI test 必须通过 `scripts/ci/ui_smoke.sh` 或 `scripts/ci/xcode.sh` 启动，以便 wrapper 在完整 `xcodebuild` 生命周期持有本用户的 UI session lock。Scheme 会拒绝没有 wrapper token 的 Cmd-U。完整单元与集成测试入口仍是 `scripts/ci/unit.sh`。
 
 ## 测试设计
 
@@ -50,7 +50,17 @@ scripts/ci/full_regression.sh \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
-该入口依次运行静态门禁、全部单元与集成测试、Debug build、UI 测试、稳定性检查和 arm64 release smoke。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。
+该入口先并行运行静态门禁、全部单元与集成测试和 `build-for-testing`，随后复用同一 DerivedData 串行执行 UI target。UI 完成后，稳定性检查和 arm64 release smoke 并行执行。每个并行 lane 的完整输出保存在本次 `OUT_DIR/lanes`，最终 summary 记录前置、UI、后置和总耗时。Nightly core 使用 `--skip-ui-tests --skip-xcode-preflight --skip-release-smoke` 跳过已由独立 runner 承担的完整 UI target、Debug 预构建和双架构 Release dry run。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。
+
+完整回归会在指定 `OUT_DIR` 写入 `full-regression-checkpoint.json`。同一源码指纹、目的架构、UI selector 和稳定性迭代参数再次使用该目录时，已通过且产物仍完整的阶段会直接复用。失败后重新执行原命令即可从最近的完整阶段继续；需要强制重跑全部阶段时增加 `--restart`。
+
+### 本机并发边界
+
+- 同一用户 GUI 会话只允许一个 XCUITest wrapper 运行。`xcode.sh` 在启动 `xcodebuild` 前获取 `DARWIN_USER_TEMP_DIR` 下跨工作树共享的 `lockf`，并在 `xcodebuild` 及其子进程完全退出后释放。`ui_smoke.sh` 的每次 attempt 委托给该入口。
+- 自动化脚本最多等待活动 UI session 10 分钟。Xcode 中直接执行 Test 会提示使用脚本入口；直接执行 Run 时会非阻塞检查锁，若测试正在运行，会在终止 App 之前拒绝本次动作。
+- UI session 会结束当前运行的 VoidDisplay，以满足同 Bundle ID 和单实例锁下的干净启动要求。测试结束后不会自动恢复原调试会话。
+- SwiftPM 单元测试保持一个进程，由 Swift Testing 在进程内并行未标记 `.serialized` 的 suite。SwiftPM、浏览器 JavaScript 和 Go 三条单元测试 lane 可并行执行。UI 运行期间不并发执行 stability 或其他 Xcode 重任务。
+- static lane 使用本次验证目录下独立的 `AI_TMP_DIR`。默认 artifact 目录包含进程 ID，避免多个 Agent 在同一秒启动时共享输出目录。
 
 ### 隐私权限敏感的真实应用验收
 

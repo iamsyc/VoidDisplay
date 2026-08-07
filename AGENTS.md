@@ -45,6 +45,8 @@
   - Targeted UI test when needed: `scripts/ci/ui_smoke.sh --only-testing '<test-identifier>' --destination "platform=macOS,arch=$(uname -m)"`.
 - For broad or high-risk non-UI changes, run `scripts/dev/validate.sh --skip-ui-smoke`.
 - For UI changes that require smoke coverage, run `scripts/dev/validate.sh --ui-selector '<test-identifier>'` or the unfiltered `scripts/dev/validate.sh` when its baseline selector covers the change.
+- While UI code or UI tests are still changing, run only the affected selector. After tracked source stops changing, run the complete UI target once as the final local gate.
+- If the complete UI target exposes one failing selector, repair and repeat that selector first; rerun the complete target only after the targeted failure is green.
 - Run `scripts/ci/full_regression.sh --destination "platform=macOS,arch=$(uname -m)"` only when the local machine supports its release targets and the change is broad, release-sensitive, or explicitly requires the full suite.
 - If related verification has already completed after the latest code change, and no repo-tracked file has changed since that verification, a later commit-only instruction must reuse the existing fresh verification result instead of rerunning the same tests.
 - For small, explicit, low-risk changes with tightly bounded impact, do not run the full `HomeSmokeTests` suite by default. Prefer build-only verification or a narrower targeted test that covers the changed control or flow.

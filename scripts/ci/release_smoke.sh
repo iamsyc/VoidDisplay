@@ -60,15 +60,16 @@ done
 validate_release_arch "$ARCH"
 LABEL="${LABEL:-$(release_label_for_arch "$ARCH")}"
 require_release_label_for_arch "$ARCH" "$LABEL"
-require_command jq rg xcodebuild lipo codesign
-GO_BIN="$(resolve_trusted_go_binary)"
-export GO_BIN
 mkdir -p "$OUT_DIR"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$OUT_DIR/DerivedData}"
 APP_OUTPUT_FILE="${APP_OUTPUT_FILE:-$OUT_DIR/app-path.txt}"
 SUMMARY_PATH="${SUMMARY_PATH:-$OUT_DIR/release-smoke-summary.json}"
 LOG_PATH="$OUT_DIR/xcode-release-build.log"
+rm -f -- "$SUMMARY_PATH" "$APP_OUTPUT_FILE" "$LOG_PATH"
 
+require_command jq rg xcodebuild lipo codesign
+GO_BIN="$(resolve_trusted_go_binary)"
+export GO_BIN
 select_required_xcode
 go_mod_download_with_retry "$ROOT_DIR/Tools/VoidDisplayRelay"
 

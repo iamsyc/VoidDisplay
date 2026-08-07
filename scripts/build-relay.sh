@@ -17,7 +17,7 @@ case "$TARGET_DIR" in
 *) TARGET_DIR="$ROOT_DIR/$TARGET_DIR" ;;
 esac
 OUTPUT_DIR="$TARGET_DIR/${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}"
-OUTPUT_PATH="$OUTPUT_DIR/voiddisplay-relay"
+OUTPUT_PATH="${SCRIPT_OUTPUT_FILE_0:-$OUTPUT_DIR/voiddisplay-relay}"
 GOPROXY_VALUE="${GOPROXY:-https://proxy.golang.org|https://goproxy.cn|direct}"
 
 resolve_target_arch() {
@@ -27,6 +27,8 @@ resolve_target_arch() {
 	if [[ -z "$arch" || "$arch" == "undefined_arch" ]]; then
 		if [[ -n "${ARCHS:-}" ]]; then
 			read -r -a arch_values <<<"$ARCHS"
+			[[ "${#arch_values[@]}" -eq 1 ]] ||
+				die "Build Relay requires exactly one target architecture, got: $ARCHS"
 			arch="${arch_values[0]:-}"
 		fi
 	fi
@@ -57,11 +59,12 @@ fi
 
 TARGET_ARCH="$(resolve_target_arch)"
 GOARCH_VALUE="$(goarch_for_arch "$TARGET_ARCH")"
+ARCH_STAMP_PATH="${SCRIPT_OUTPUT_FILE_1:-${DERIVED_FILE_DIR:-$TARGET_DIR}/voiddisplay-relay-$TARGET_ARCH.stamp}"
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$(dirname "$OUTPUT_PATH")" "$(dirname "$ARCH_STAMP_PATH")"
 cd "$RELAY_DIR"
 
-env GOPROXY="$GOPROXY_VALUE" "$GO_BIN" test ./...
 env GOPROXY="$GOPROXY_VALUE" GOOS=darwin GOARCH="$GOARCH_VALUE" "$GO_BIN" build -buildvcs=false -trimpath -o "$OUTPUT_PATH" ./cmd/voiddisplay-relay
 chmod +x "$OUTPUT_PATH"
 require_binary_arch "Relay" "$OUTPUT_PATH" "$TARGET_ARCH"
+printf 'arch=%s\n' "$TARGET_ARCH" >"$ARCH_STAMP_PATH"

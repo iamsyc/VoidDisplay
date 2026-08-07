@@ -12,9 +12,6 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
-require_command awk go jq swift tee
-select_required_xcode
-
 OUT_DIR="${OUT_DIR:-$(make_artifact_dir ci-stability)}"
 ITERATIONS="${STABILITY_ITERATIONS:-20}"
 SWIFT_FILTER="stability"
@@ -40,6 +37,16 @@ if ! [[ "$ITERATIONS" =~ ^[0-9]+$ ]] || [[ "$ITERATIONS" -lt 1 ]] || [[ "$ITERAT
 fi
 
 mkdir -p "$OUT_DIR/swift"
+summary_path="$OUT_DIR/stability-summary.json"
+go_log="$OUT_DIR/go-race.log"
+rm -f -- "$summary_path" "$go_log"
+while IFS= read -r -d '' stale_iteration_log; do
+	rm -f -- "$stale_iteration_log"
+done < <(/usr/bin/find "$OUT_DIR/swift" -type f -name 'iteration-*.log' -print0)
+
+require_command awk go jq swift tee
+select_required_xcode
+
 swift_test_count=0
 
 for iteration in $(seq 1 "$ITERATIONS"); do
@@ -77,7 +84,6 @@ for iteration in $(seq 1 "$ITERATIONS"); do
 	swift_test_count="$((swift_test_count + iteration_test_count))"
 done
 
-go_log="$OUT_DIR/go-race.log"
 set +e
 (
 	cd "$ROOT_DIR/Tools/VoidDisplayRelay"
@@ -96,7 +102,7 @@ if [[ "$go_package_count" -eq 0 ]]; then
 	die "Relay race stability gate exercised zero Go packages."
 fi
 
-write_json_file "$OUT_DIR/stability-summary.json" \
+write_json_file "$summary_path" \
 	--arg status "passed" \
 	--argjson iterations "$ITERATIONS" \
 	--argjson swift_test_count "$swift_test_count" \
@@ -108,4 +114,4 @@ info "Stability gate passed."
 info "Iterations: $ITERATIONS"
 info "Swift test executions: $swift_test_count"
 info "Go race packages: $go_package_count"
-info "Summary: $OUT_DIR/stability-summary.json"
+info "Summary: $summary_path"

@@ -27,7 +27,10 @@ done
 mkdir -p "$OUT_DIR"
 coverage_dir="$ROOT_DIR/.build/debug/codecov"
 rm -rf "$coverage_dir"
-env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/unit.sh" --enable-code-coverage YES --out-dir "$OUT_DIR/unit"
+env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/unit.sh" \
+	--enable-code-coverage YES \
+	--swift-only \
+	--out-dir "$OUT_DIR/unit"
 
 coverage_exists="false"
 coverage_file_count="0"

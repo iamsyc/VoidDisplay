@@ -65,7 +65,7 @@ validate_script_contract() {
 		'SCRIPT_ROOT=|SCRIPT_LIB_DIR=' scripts --glob '!scripts/ci/static_shell.sh'
 
 	invalid="$(
-		rg -n 'source .*scripts/lib/(common|artifacts|xcode|xcresult|architecture|release|release_binaries)\.sh|source "\$[A-Z_]+/(common|artifacts|xcode|xcresult|architecture|release|release_binaries)\.sh' scripts --glob '!scripts/ci/static_shell.sh' || true
+		rg -n 'source .*scripts/lib/(common|artifacts|xcode|xcresult|architecture|release|release_binaries|checkpoint|parallel|ui_test_session)\.sh|source "\$[A-Z_]+/(common|artifacts|xcode|xcresult|architecture|release|release_binaries|checkpoint|parallel|ui_test_session)\.sh' scripts --glob '!scripts/ci/static_shell.sh' || true
 	)"
 	invalid="$(printf '%s\n' "$invalid" | rg -v 'source "\$TOOL_ROOT/scripts/lib/' || true)"
 	fail_on_output "Helper source paths must use TOOL_ROOT." "$invalid"

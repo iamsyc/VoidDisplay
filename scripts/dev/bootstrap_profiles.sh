@@ -13,7 +13,7 @@ if [[ -z "${VOIDDISPLAY_BOOTSTRAP_PROFILES_SH_SOURCED:-}" ]]; then
 	bootstrap_profile_commands() {
 		case "$1" in
 		full)
-			printf '%s\n' actionlint shellcheck shfmt swiftformat swiftlint go jq node rg syft gh git xcrun xcodebuild swift bash zsh awk diff lipo codesign security
+			printf '%s\n' actionlint shellcheck shfmt swiftformat swiftlint go jq node rg syft gh git xcrun xcodebuild swift bash zsh awk diff lipo codesign security tee
 			;;
 		static)
 			printf '%s\n' actionlint shellcheck shfmt swiftformat swiftlint jq node rg git xcrun bash zsh awk diff grep sort wc tr
@@ -22,7 +22,7 @@ if [[ -z "${VOIDDISPLAY_BOOTSTRAP_PROFILES_SH_SOURCED:-}" ]]; then
 			printf '%s\n' git go jq node rg xcodebuild swift awk
 			;;
 		ui-smoke)
-			printf '%s\n' go jq rg xcodebuild grep xcrun awk tr tail
+			printf '%s\n' go jq rg xcodebuild grep xcrun awk tr tail tee
 			;;
 		xcode)
 			printf '%s\n' git go jq rg xcodebuild swift xcrun awk tr tail codesign security

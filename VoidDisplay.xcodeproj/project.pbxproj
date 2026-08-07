@@ -190,7 +190,6 @@
 /* Begin PBXShellScriptBuildPhase section */
 		CDAA20012F05000100000001 /* Build Relay */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			inputPaths = (
 				"$(TOOL_ROOT)/mise.toml",
 				"$(TOOL_ROOT)/mise.lock",
@@ -220,6 +219,7 @@
 			name = "Build Relay";
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/voiddisplay-relay",
+				"$(DERIVED_FILE_DIR)/voiddisplay-relay-$(ARCHS).stamp",
 			);
 			shellPath = /bin/bash;
 			shellScript = (

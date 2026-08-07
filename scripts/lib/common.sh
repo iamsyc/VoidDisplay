@@ -35,6 +35,17 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 		fi
 	}
 
+	require_repository_tool_root() {
+		local context="$1"
+		local canonical_root
+		local canonical_tool_root
+
+		canonical_root="$(cd "$ROOT_DIR" && pwd -P)"
+		canonical_tool_root="$(cd "$TOOL_ROOT" && pwd -P)"
+		[[ "$canonical_tool_root" == "$canonical_root" ]] ||
+			die "$context requires TOOL_ROOT to resolve to ROOT_DIR."
+	}
+
 	resolve_trusted_go_binary() {
 		local go_bin
 
@@ -56,7 +67,7 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 	make_artifact_dir() {
 		local name="$1"
 		local output_dir
-		output_dir="$AI_TMP_DIR/$name/$(timestamp)"
+		output_dir="$AI_TMP_DIR/$name/$(timestamp)-$$"
 		mkdir -p "$output_dir"
 		printf '%s\n' "$output_dir"
 	}

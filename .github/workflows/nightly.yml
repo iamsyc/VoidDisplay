@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  full_regression:
-    name: full-regression
+  core_regression:
+    name: core-regression
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -30,19 +30,80 @@ jobs:
           tool_root="$GITHUB_WORKSPACE"
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
 
-      - name: Run full regression gate
+      - name: Run core regression gate
         shell: bash
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/full_regression.sh" --out-dir .ai-tmp/nightly-full-regression
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/full_regression.sh" \
+            --skip-ui-tests \
+            --skip-release-smoke \
+            --skip-xcode-preflight \
+            --out-dir .ai-tmp/nightly-core-regression
 
-      - name: Upload full regression artifacts
+      - name: Upload core regression artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: nightly-full-regression
-          path: .ai-tmp/nightly-full-regression
+          name: nightly-core-regression
+          path: .ai-tmp/nightly-core-regression
+          if-no-files-found: warn
+          retention-days: 7
+
+  full_ui_tests:
+    name: full-ui-tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile xcode
+
+      - name: Cache Xcode metadata
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            .ai-tmp/nightly-full-ui/DerivedData/SourcePackages
+            .ai-tmp/nightly-full-ui/DerivedData/ModuleCache.noindex
+          key: xcode-meta-nightly-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
+          restore-keys: |
+            xcode-meta-nightly-ui-${{ runner.os }}-
+
+      - name: Build full UI test bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/xcode.sh" \
+            --action build-for-testing \
+            --configuration Debug \
+            --derived-data-path .ai-tmp/nightly-full-ui/DerivedData \
+            --out-dir .ai-tmp/nightly-full-ui/build
+
+      - name: Run full UI suite serially
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/xcode.sh" \
+            --action test-without-building \
+            --configuration Debug \
+            --derived-data-path .ai-tmp/nightly-full-ui/DerivedData \
+            --only-testing VoidDisplayUITests \
+            --out-dir .ai-tmp/nightly-full-ui/test
+
+      - name: Upload full UI artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nightly-full-ui
+          path: .ai-tmp/nightly-full-ui
           if-no-files-found: warn
           retention-days: 7
 
@@ -85,18 +146,18 @@ jobs:
     name: nightly-summary
     if: always()
     needs:
-      - full_regression
+      - core_regression
       - coverage
-      - ui_smoke_matrix
+      - full_ui_tests
       - release_dry_run
     runs-on: macos-26
     timeout-minutes: 5
     steps:
       - name: Write nightly summary
         env:
-          FULL_RESULT: ${{ needs.full_regression.result }}
+          CORE_RESULT: ${{ needs.core_regression.result }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
-          UI_RESULT: ${{ needs.ui_smoke_matrix.result }}
+          UI_RESULT: ${{ needs.full_ui_tests.result }}
           RELEASE_RESULT: ${{ needs.release_dry_run.result }}
         run: |
           {
@@ -104,37 +165,11 @@ jobs:
             echo
             echo "| Check | Result |"
             echo "| --- | --- |"
-            echo "| Full regression | ${FULL_RESULT} |"
+            echo "| Core regression | ${CORE_RESULT} |"
             echo "| Coverage | ${COVERAGE_RESULT} |"
-            echo "| UI smoke matrix | ${UI_RESULT} |"
+            echo "| Full serial UI suite | ${UI_RESULT} |"
             echo "| Release dry run | ${RELEASE_RESULT} |"
           } >> "$GITHUB_STEP_SUMMARY"
-
-  ui_smoke_matrix:
-    name: ui-smoke (${{ matrix.case_name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - case_name: baseline
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
-          - case_name: diagnostics
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testDiagnosticsNavigationSmoke_baseline
-          - case_name: listNarrow
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testListActionsRemainVisibleAtNarrowWindowSize
-          - case_name: focus
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testFirstTabFocusesAVisibleControl
-          - case_name: previewRecovery
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState
-          - case_name: previewWindowPayload
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing
-    uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
-    with:
-      only_testing: ${{ matrix.only_testing }}
-      max_attempts: 2
-      artifact_retention_days: 7
-      artifact_name_suffix: nightly-${{ matrix.case_name }}
-      enforce_failure: true
 
   release_dry_run:
     name: release-dry-run (${{ matrix.label }})

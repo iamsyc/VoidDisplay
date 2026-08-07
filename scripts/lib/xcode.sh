@@ -59,6 +59,56 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 		printf 'xcode-%s-%s\n' "$xcode_version" "$xcode_build"
 	}
 
+	xcode_test_products_manifest_path() {
+		local derived_data_path="$1"
+		printf '%s/Build/Products/voiddisplay-test-products.json\n' "$derived_data_path"
+	}
+
+	xcode_test_products_exist() {
+		local derived_data_path="$1"
+		local expected_configuration="$2"
+		local expected_destination="$3"
+		local expected_source_fingerprint="$4"
+		local expected_xcode_identity="$5"
+		local expected_root_dir="$6"
+		local expected_project="$7"
+		local expected_scheme="$8"
+		local products_path="$derived_data_path/Build/Products"
+		local manifest_path
+		local xctestrun_path
+
+		[[ -d "$products_path" ]] || return 1
+		manifest_path="$(xcode_test_products_manifest_path "$derived_data_path")"
+		[[ -s "$manifest_path" ]] || return 1
+		jq -e \
+			--arg configuration "$expected_configuration" \
+			--arg destination "$expected_destination" \
+			--arg source_fingerprint "$expected_source_fingerprint" \
+			--arg xcode_identity "$expected_xcode_identity" \
+			--arg root_dir "$expected_root_dir" \
+			--arg project "$expected_project" \
+			--arg scheme "$expected_scheme" \
+			'.version == 1
+			and .configuration == $configuration
+			and .destination == $destination
+			and .source_fingerprint == $source_fingerprint
+			and .xcode_identity == $xcode_identity
+			and .root_dir == $root_dir
+			and .project == $project
+			and .scheme == $scheme' \
+			"$manifest_path" >/dev/null || return 1
+
+		xctestrun_path="$(/usr/bin/find "$products_path" -type f -name '*.xctestrun' -size +0c -print -quit)"
+		[[ -n "$xctestrun_path" ]]
+	}
+
+	require_xcode_test_products() {
+		local derived_data_path="$1"
+
+		xcode_test_products_exist "$@" ||
+			die "Xcode test products are incomplete. Run build-for-testing first: $derived_data_path"
+	}
+
 	canonical_existing_path() {
 		local path="$1"
 		[[ -e "$path" ]] || die "Path does not exist: $path"

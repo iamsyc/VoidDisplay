@@ -217,19 +217,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - case_name: baseline
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
-          - case_name: listLayout
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testVirtualDisplayListSurfaceSmoke_baseline
-          - case_name: listNarrow
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testListActionsRemainVisibleAtNarrowWindowSize
-          - case_name: previewRecovery
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState
-          - case_name: previewWindowPayload
-            only_testing: VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing
+          - case_name: navigation-preview
+            only_testing_json: >-
+              [
+                "VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline",
+                "VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState",
+                "VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing"
+              ]
+          - case_name: display-list
+            only_testing_json: >-
+              [
+                "VoidDisplayUITests/HomeSmokeTests/testVirtualDisplayListSurfaceSmoke_baseline",
+                "VoidDisplayUITests/HomeSmokeTests/testListActionsRemainVisibleAcrossNarrowWindowSizes"
+              ]
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
-      only_testing: ${{ matrix.only_testing }}
+      only_testing_json: ${{ matrix.only_testing_json }}
       artifact_retention_days: 7
       artifact_name_suffix: ${{ matrix.case_name }}
       enforce_failure: true
@@ -493,8 +496,8 @@ jobs:
               `Artifact: ${value('UNIT_ARTIFACT')}`,
             ].join('<br>');
             const uiDetails = [
-              'Failure classification is written by ui-smoke-summary.json in each artifact.',
-              'Artifacts: ui-smoke-baseline, ui-smoke-listLayout, ui-smoke-listNarrow, ui-smoke-previewRecovery, ui-smoke-previewWindowPayload',
+              'Each shard runs its selectors serially and writes aggregate failure classification to ui-smoke-summary.json.',
+              'Artifacts: ui-smoke-navigation-preview, ui-smoke-display-list',
             ].join('<br>');
             const releaseStatus = context.eventName === 'pull_request'
               ? value('RELEASE_ARM64_RESULT', 'unknown')
