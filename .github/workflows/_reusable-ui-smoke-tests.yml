@@ -78,15 +78,11 @@ jobs:
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile ui-smoke
 
-      - name: Cache Xcode metadata
+      - name: Cache Xcode module metadata
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: |
-            .ai-tmp/ci-ui-smoke/DerivedData/SourcePackages
-            .ai-tmp/ci-ui-smoke/DerivedData/ModuleCache.noindex
+          path: .ai-tmp/ci-ui-smoke/DerivedData/ModuleCache.noindex
           key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
-          restore-keys: |
-            xcode-meta-ui-${{ runner.os }}-
 
       - name: Run UI smoke
         id: run_ui
