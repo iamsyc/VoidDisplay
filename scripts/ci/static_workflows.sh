@@ -131,6 +131,18 @@ validate_workflow_script_contract() {
 	fail_on_output "PR CI checkouts must disable persisted credentials." "$invalid"
 }
 
+validate_xcode_metadata_cache_contract() {
+	local ui_workflow_files=(
+		.github/workflows/_reusable-ui-smoke-tests.yml
+		.github/workflows/nightly.yml
+	)
+
+	assert_no_match "UI Xcode metadata caches must not persist SwiftPM package checkouts." \
+		'DerivedData/SourcePackages' "${ui_workflow_files[@]}"
+	assert_no_match "UI Xcode metadata caches must not restore across dependency lock states." \
+		'^[[:space:]]*restore-keys:' "${ui_workflow_files[@]}"
+}
+
 validate_ci_summary_comment_policy() {
 	node scripts/ci/test_ci_summary_comment_policy.mjs
 }
@@ -304,6 +316,7 @@ actionlint
 validate_runner_labels
 validate_action_pinning
 validate_workflow_script_contract
+validate_xcode_metadata_cache_contract
 validate_ci_summary_comment_policy
 validate_release_publish_credentials
 validate_release_automation_contract

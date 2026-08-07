@@ -21,10 +21,6 @@
 
 - [AppIcon PSD](./design/AppIcon/AppIcon_1024x1024.psd)：当前 Icon Composer 应用图标的可编辑源文件。运行时图标使用 `Apps/VoidDisplay/AppIcon.icon/Assets/AppIcon_1024x1024.png`。
 
-## 依赖维护记录
-
-- [WebRTC M147 Header Sources](../Vendor/WebRTCHeaders/M147/SOURCES.md)：二进制版本、校验值、头文件来源和重建步骤。该文件与 header overlay 放在一起，避免依赖升级时遗漏同步。
-
 ## 维护规则
 
 1. 文档描述当前事实或长期约束，执行期进度放在 issue、PR 或任务工作区。

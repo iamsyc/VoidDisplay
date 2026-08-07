@@ -65,15 +65,11 @@ jobs:
           tool_root="$GITHUB_WORKSPACE"
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile xcode
 
-      - name: Cache Xcode metadata
+      - name: Cache Xcode module metadata
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
-          path: |
-            .ai-tmp/nightly-full-ui/DerivedData/SourcePackages
-            .ai-tmp/nightly-full-ui/DerivedData/ModuleCache.noindex
+          path: .ai-tmp/nightly-full-ui/DerivedData/ModuleCache.noindex
           key: xcode-meta-nightly-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
-          restore-keys: |
-            xcode-meta-nightly-ui-${{ runner.os }}-
 
       - name: Build full UI test bundle
         shell: bash
