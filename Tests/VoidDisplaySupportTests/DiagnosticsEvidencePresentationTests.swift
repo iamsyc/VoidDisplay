@@ -77,6 +77,7 @@ struct DiagnosticsEvidencePresentationTests {
         let preparingID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000201"))
         let completedID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000202"))
         let otherID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000203"))
+        let persistingID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000204"))
         let events = [
             ObservabilityEvent(
                 id: completedID,
@@ -103,6 +104,18 @@ struct DiagnosticsEvidencePresentationTests {
                 ]
             ),
             ObservabilityEvent(
+                id: persistingID,
+                timestamp: Date(timeIntervalSince1970: 100.234),
+                severity: .info,
+                subsystem: .displayRuntime,
+                operation: "Virtual display transaction",
+                message: "Virtual display transaction phase changed.",
+                metadata: [
+                    "transactionID": "transaction-a",
+                    "phase": "persistingConfig"
+                ]
+            ),
+            ObservabilityEvent(
                 id: otherID,
                 timestamp: Date(timeIntervalSince1970: 100.789),
                 severity: .warning,
@@ -125,18 +138,29 @@ struct DiagnosticsEvidencePresentationTests {
         )
 
         #expect(groups.count == 2)
-        #expect(transactionA.occurrenceCount == 2)
-        #expect(phases.map(\.id) == [preparingID, completedID])
+        #expect(transactionA.occurrenceCount == 3)
+        #expect(phases.map(\.id) == [preparingID, persistingID, completedID])
         #expect(
             phases.map(\.title)
-                == [String(localized: "Preparing"), String(localized: "Completed")]
+                == [
+                    String(localized: "Preparing"),
+                    String(localized: "Persisting configuration"),
+                    String(localized: "Completed")
+                ]
         )
-        #expect(phases.map(\.rawPhase) == ["preparing", "completed"])
+        #expect(phases.map(\.rawPhase) == ["preparing", "persistingConfig", "completed"])
         #expect(phases.allSatisfy { phase in
             phase.operation == "Virtual display transaction"
                 && phase.message == "Virtual display transaction phase changed."
         })
-        #expect(phases.map(\.metadata) == [["phase": "preparing"], ["phase": "completed"]])
+        #expect(
+            phases.map(\.metadata)
+                == [
+                    ["phase": "preparing"],
+                    ["phase": "persistingConfig"],
+                    ["phase": "completed"]
+                ]
+        )
     }
 
     @Test func sameMillisecondTransactionPhasesPreserveSourceOrder() throws {

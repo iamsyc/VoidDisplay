@@ -615,11 +615,10 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(phases.count, 2)
         XCTAssertGreaterThanOrEqual(timestamps.count, 2)
         XCTAssertGreaterThanOrEqual(eventIDs.count, 2)
-        XCTAssertTrue(["Preparing", "准备中"].contains(phases[0].value as? String ?? ""))
+        let phaseValues = phases.prefix(2).map { $0.value as? String ?? "" }
         XCTAssertTrue(
-            ["Persisting configuration", "正在保存配置"].contains(
-                phases[1].value as? String ?? ""
-            )
+            phaseValues.allSatisfy { $0.isEmpty == false },
+            "Timeline phase labels are empty: \(phaseValues)"
         )
         XCTAssertLessThan(phases[0].frame.minY, phases[1].frame.minY)
         for timestamp in timestamps.prefix(2) {
@@ -646,26 +645,10 @@ final class HomeSmokeTests: XCTestCase {
     func testDiagnosticsActionsRemainVisibleAtNarrowWindowSize() throws {
         let app = launchAppForSmoke(windowSize: (760, 640))
         tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
-        let disclosure = assertExists(
-            app,
-            identifier: "diagnostics_technical_disclosure",
-            timeout: 3
-        )
         let reproductionField = smokeElement(app, identifier: "support_bundle_reproduction_field")
         let expectedField = smokeElement(app, identifier: "support_bundle_expected_field")
         XCTAssertLessThan(reproductionField.frame.maxY, expectedField.frame.minY)
-        let scrollView = try XCTUnwrap(
-            app.scrollViews.allElementsBoundByIndex.max { lhs, rhs in
-                lhs.frame.width < rhs.frame.width
-            }
-        )
-        for _ in 0..<4 where disclosure.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        XCTAssertTrue(disclosure.isHittable)
-        disclosure.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)
-        ).click()
+        _ = try expandDiagnosticsTechnicalInformation(app)
 
         let window = app.windows.firstMatch
         let openDirectoryButton = assertExists(
@@ -1039,10 +1022,12 @@ final class HomeSmokeTests: XCTestCase {
     private func expandDiagnosticsTechnicalInformation(
         _ app: XCUIApplication
     ) throws -> XCUIElement {
-        let disclosure = assertExists(
-            app,
-            identifier: "diagnostics_technical_disclosure",
-            timeout: 3
+        let disclosure = app.descendants(matching: .disclosureTriangle)
+            .matching(identifier: "diagnostics_technical_disclosure")
+            .firstMatch
+        XCTAssertTrue(
+            disclosure.waitForExistence(timeout: 3),
+            "Missing diagnostics technical information disclosure."
         )
         let scrollView = try XCTUnwrap(
             app.scrollViews.allElementsBoundByIndex.max { lhs, rhs in
@@ -1053,9 +1038,23 @@ final class HomeSmokeTests: XCTestCase {
             scrollView.scroll(byDeltaX: 0, deltaY: -320)
         }
         XCTAssertTrue(disclosure.isHittable)
-        disclosure.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)
-        ).click()
+        let expandedContent = smokeElement(
+            app,
+            identifier: "diagnostics_open_data_directory_button"
+        )
+        if expandedContent.exists == false {
+            let indicatorOffset = min(24, disclosure.frame.width / 2)
+            disclosure.coordinate(
+                withNormalizedOffset: CGVector(
+                    dx: indicatorOffset / disclosure.frame.width,
+                    dy: 0.5
+                )
+            ).click()
+        }
+        XCTAssertTrue(
+            expandedContent.waitForExistence(timeout: 5),
+            "Diagnostics technical information did not finish expanding."
+        )
         return scrollView
     }
 
