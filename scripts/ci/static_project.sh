@@ -127,7 +127,7 @@ validate_xcode_shell_build_phase() {
 			printf '%s\n' \
 				Tools/VoidDisplayRelay/go.mod \
 				Tools/VoidDisplayRelay/go.sum
-			rg --files Tools/VoidDisplayRelay -g '*.go' -g '!**/*_test.go'
+			rg --files Tools/VoidDisplayRelay -g '*.go'
 		} | LC_ALL=C sort -u
 	)
 	((relay_file_count > 0)) || die "Relay module has no tracked files to declare as Xcode build inputs."
