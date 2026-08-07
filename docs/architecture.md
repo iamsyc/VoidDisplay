@@ -23,7 +23,7 @@ VoidDisplay 在 macOS 上创建和管理 HiDPI 虚拟显示器，并为受管理
 | `VoidDisplaySupport` | 支持草稿、历史记录和支持包编排 |
 | `VoidDisplayDesignSystem` | 跨功能界面的视觉 token、通用组件和展示模型 |
 | `VoidDisplayFoundation` | 跨模块基础类型、权限与持久化支撑 |
-| `WebRTC` / `WebRTCBinary` | M147 二进制依赖与 macOS header overlay；来源记录见 [SOURCES.md](../Vendor/WebRTCHeaders/M147/SOURCES.md) |
+| `WebRTC` | `stasel/WebRTC` M150 SwiftPM 二进制依赖 |
 
 SwiftPM target 和依赖关系以 [Package.swift](../Package.swift) 为准。
 

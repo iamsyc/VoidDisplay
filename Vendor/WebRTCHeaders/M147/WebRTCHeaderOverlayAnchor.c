@@ -1,1 +1,0 @@
-void WebRTCHeaderOverlayAnchor(void) {}
