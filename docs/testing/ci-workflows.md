@@ -20,6 +20,18 @@ Xcode selection prefers the Xcode `26.6.0` installation and requires `xcodebuild
 
 Local command selection and environment-failure handling are documented in [Testing Strategy](./testing-strategy.md). This document covers workflow-side orchestration and release evidence.
 
+## Dependency Maintenance
+
+Dependabot Alerts and security updates remain enabled. Security updates are handled immediately, while routine version updates are disabled in `.github/dependabot.yml` and reviewed during scheduled maintenance windows.
+
+Routine dependency maintenance runs during the first week of January, April, July, and October. Each window keeps at most three dependency pull requests open at once:
+
+- GitHub Actions updates, with every action pinned to a full commit SHA and followed by its release tag in a comment.
+- Swift package updates, including native WebRTC packaging validation from a cold dependency state.
+- Relay Go module updates, with the related Pion modules upgraded as one coordinated dependency set.
+
+Major updates require an explicit upstream release-note and compatibility review. Dependency pull requests are never auto-merged. Swift dependency validation must not reuse `SourcePackages` across lock-file changes. Changes that affect actions, CodeQL, Nightly, or Release workflows also require the corresponding remote workflow evidence before delivery.
+
 ## Branch Protection Gate
 
 Branch protection for `main` should require only:

@@ -4,16 +4,18 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    # Routine version updates are handled in scheduled maintenance windows.
+    # Dependabot security updates use a separate pull request limit.
+    open-pull-requests-limit: 0
 
   - package-ecosystem: swift
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
 
   - package-ecosystem: gomod
     directory: /Tools/VoidDisplayRelay
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
