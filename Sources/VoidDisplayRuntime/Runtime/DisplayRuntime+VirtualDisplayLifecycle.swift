@@ -25,7 +25,7 @@ extension DisplayRuntime {
         do {
             try Task.checkCancellation()
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .cancelled,
@@ -50,7 +50,7 @@ extension DisplayRuntime {
         }
 
         guard preSnapshot.virtualDisplay.configs.contains(where: { $0.id == context.configID }) else {
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .failed,
@@ -67,7 +67,7 @@ extension DisplayRuntime {
         }
 
         guard let virtualDisplayCommander else {
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .failed,
@@ -96,7 +96,7 @@ extension DisplayRuntime {
                     trace.replacing(enablePreflight: enablePreflight)
                 }
             } catch {
-                _ = finalizeTransaction(
+                _ = await finalizeTransaction(
                     transactionID: context.transactionID,
                     kind: context.kind,
                     status: .failed,
@@ -124,7 +124,7 @@ extension DisplayRuntime {
                 trace.replacing(persistenceOutcome: persistenceResult.persistenceOutcome)
             }
             guard persistenceResult.persistenceOutcome == .saved else {
-                return finalizeTransaction(
+                return await finalizeTransaction(
                     transactionID: context.transactionID,
                     kind: context.kind,
                     status: .failed,
@@ -141,7 +141,7 @@ extension DisplayRuntime {
                 )
             }
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .failed,
@@ -187,7 +187,7 @@ extension DisplayRuntime {
                 consumerTransition,
                 transactionID: context.transactionID
             )
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .failed,
@@ -227,7 +227,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .failed,
@@ -288,7 +288,7 @@ extension DisplayRuntime {
             after: topologyResult,
             restoreResults: restoreResults
         )
-        return finalizeTransaction(
+        return await finalizeTransaction(
             transactionID: context.transactionID,
             kind: context.kind,
             status: finalStatus,

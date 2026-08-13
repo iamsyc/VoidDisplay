@@ -50,7 +50,7 @@ extension DisplayRuntime {
         do {
             try Task.checkCancellation()
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayCreate,
                 status: .cancelled,
@@ -78,7 +78,7 @@ extension DisplayRuntime {
         }
 
         guard isValidCreateRequest(request) else {
-            let terminal = finalizeTransaction(
+            let terminal = await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayCreate,
                 status: .failed,
@@ -103,7 +103,7 @@ extension DisplayRuntime {
 
         await appendPhase(.executingVirtualDisplayCommand, transactionID: request.transactionID)
         guard let virtualDisplayCommander else {
-            let terminal = finalizeTransaction(
+            let terminal = await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayCreate,
                 status: .failed,
@@ -131,7 +131,7 @@ extension DisplayRuntime {
             commandResult = try await virtualDisplayCommander.createVirtualDisplay(request: request)
         } catch let commandError as DisplayRuntimeVirtualDisplayCreateCommandError {
             recordCreateCommandFacts(commandError.result, transactionID: request.transactionID)
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayCreate,
                 status: .failed,
@@ -148,7 +148,7 @@ extension DisplayRuntime {
             )
             throw commandError
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayCreate,
                 status: .failed,
@@ -172,7 +172,7 @@ extension DisplayRuntime {
               commandResult.persistenceOutcome == .saved,
               commandResult.runtimeCreationOutcome == .succeeded
         else {
-            let terminal = finalizeTransaction(
+            let terminal = await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayCreate,
                 status: .failed,
@@ -214,7 +214,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedSurfaces
         )
         let finalStatus = transactionStatus(after: topologyResult, restoreResults: [])
-        let terminal = finalizeTransaction(
+        let terminal = await finalizeTransaction(
             transactionID: request.transactionID,
             kind: .virtualDisplayCreate,
             status: finalStatus,
@@ -245,7 +245,7 @@ extension DisplayRuntime {
         do {
             try Task.checkCancellation()
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
                 status: .cancelled,
@@ -271,7 +271,7 @@ extension DisplayRuntime {
         }
 
         guard preSnapshot.virtualDisplay.configs.contains(where: { $0.id == context.configID }) else {
-            let terminal = finalizeTransaction(
+            let terminal = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
                 status: .failed,
@@ -322,7 +322,7 @@ extension DisplayRuntime {
                 consumerTransition,
                 transactionID: context.transactionID
             )
-            let terminal = finalizeTransaction(
+            let terminal = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
                 status: .failed,
@@ -359,7 +359,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            let terminal = finalizeTransaction(
+            let terminal = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
                 status: .failed,
@@ -405,7 +405,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
                 status: .failed,
@@ -431,7 +431,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: .virtualDisplayDelete,
                 status: .failed,
@@ -500,7 +500,7 @@ extension DisplayRuntime {
         let finalStatus = topologyResult.map {
             transactionStatus(after: $0, restoreResults: restoreResults)
         } ?? .completed
-        let terminal = finalizeTransaction(
+        let terminal = await finalizeTransaction(
             transactionID: context.transactionID,
             kind: .virtualDisplayDelete,
             status: finalStatus,

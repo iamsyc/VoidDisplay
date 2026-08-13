@@ -7,6 +7,41 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeLifecycleTransactionTests {
+    @Test func finalizedTransactionRecordsTerminalEventBeforeReturning() async throws {
+        let observability = FakeObservabilityRecorder()
+        let runtime = DisplayRuntime(observabilityRecorder: observability)
+        let rawTransactionID = try #require(
+            UUID(uuidString: "E0010000-0000-0000-0000-000000000000")
+        )
+        let transactionID = DisplayRuntimeTransactionID(
+            rawValue: rawTransactionID
+        )
+        runtime.setActiveTrace(
+            runtime.makeInitialTrace(
+                transactionID: transactionID,
+                kind: .virtualDisplayEnable,
+                source: .virtualDisplayRowToggle
+            )
+        )
+
+        _ = await runtime.finalizeTransaction(
+            transactionID: transactionID,
+            kind: .virtualDisplayEnable,
+            status: .completed,
+            phase: .completed,
+            failure: nil,
+            virtualDisplayCommandSucceeded: true
+        )
+
+        let terminalEvent = observability.events.first { event in
+            event.metadata["transactionID"] == transactionID.rawValue.uuidString
+                && event.metadata["phase"] == "completed"
+        }
+        #expect(terminalEvent?.operation == "Virtual display transaction")
+        #expect(terminalEvent?.message == "Virtual display transaction phase changed.")
+        #expect(observability.refreshReasons.contains(.displayRuntimeTransactionChanged))
+    }
+
     @Test func enableTransactionSuccessRecordsEvidenceAndTraceKind() async throws {
         let configID = UUID(uuidString: "E0010000-0000-0000-0000-000000000001")!
         let catalog = catalogSnapshot(displayID: 107, isMain: false)
