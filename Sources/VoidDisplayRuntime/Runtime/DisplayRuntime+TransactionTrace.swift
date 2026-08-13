@@ -73,7 +73,7 @@ extension DisplayRuntime {
         persistenceOutcome: DisplayRuntimePersistenceOutcome? = nil,
         virtualDisplayCommandOutcome: DisplayRuntimeVirtualDisplayCommandOutcome? = nil,
         runtimeTrackingClearOutcome: DisplayRuntimeVirtualDisplayRuntimeTrackingClearOutcome? = nil
-    ) -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
+    ) async -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {
         let postEvidence = postSnapshot.map(DisplayRuntimeTransactionSnapshotEvidence.init(snapshot:))
         updateTrace(transactionID) { trace in
             trace.replacing(
@@ -94,10 +94,8 @@ extension DisplayRuntime {
                 recentTransactionTraces = Array(recentTransactionTraces.prefix(20))
             }
         }
-        Task {
-            await recordTransactionPhaseEvent(phase, transactionID: transactionID)
-            await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
-        }
+        await recordTransactionPhaseEvent(phase, transactionID: transactionID)
+        await observabilityRecorder?.refreshSnapshot(reason: .displayRuntimeTransactionChanged)
         return DisplayRuntimeVirtualDisplayRebuildTransactionResult(
             transactionID: transactionID,
             kind: kind,
@@ -140,25 +138,10 @@ extension DisplayRuntime {
         _ phase: DisplayRuntimeTransactionPhase,
         transactionID: DisplayRuntimeTransactionID
     ) async {
-        let severity: DisplayRuntimeObservabilitySeverity
-        switch phase {
-        case .failed, .cancelled:
-            severity = .warning
-        case .queued, .preparing, .persistingConfig, .compensatingPersistence, .quiescingSessions, .executingVirtualDisplayCommand,
-             .waitingForTopology, .restoringSessions, .completed:
-            severity = .info
-        }
         await observabilityRecorder?.record(
-            DisplayRuntimeObservabilityEvent(
-                domain: .displayRuntime,
-                severity: severity,
-                operation: "Virtual display transaction",
-                message: "Virtual display transaction phase changed.",
-                metadata: [
-                    "transactionID": transactionID.rawValue.uuidString,
-                    "phase": phase.rawValue
-                ],
-                deduplicationKey: nil
+            DisplayRuntimeTransactionObservability.event(
+                phase: phase,
+                transactionID: transactionID
             )
         )
     }

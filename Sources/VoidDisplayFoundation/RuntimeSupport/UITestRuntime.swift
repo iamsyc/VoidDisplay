@@ -1,15 +1,23 @@
+import CoreGraphics
 import Foundation
 package enum UITestScenario: String {
     case baseline
     case displayCatalogLoading = "display_catalog_loading"
+    case displayCatalogLoadingWithMissingManagedDisplay = "display_catalog_loading_missing_managed_display"
     case permissionDenied = "permission_denied"
     case settingsFeedback = "settings_feedback"
     case diagnosticsRecoveredWarning = "diagnostics_recovered_warning"
+    case diagnosticsTransactionTimeline = "diagnostics_transaction_timeline"
     case previewActive = "preview_active"
     case previewRecovery = "preview_recovery"
     case previewWindowPayload = "preview_window_payload"
 }
 package enum UITestRuntime {
+    package nonisolated static let managedVirtualDisplayIDBase: CGDirectDisplayID = 0xF000_0001
+    package nonisolated static let managedVirtualDisplayIDs: [CGDirectDisplayID] = [
+        managedVirtualDisplayIDBase,
+        managedVirtualDisplayIDBase + 1
+    ]
     package nonisolated static let modeEnvironmentKey = "VOIDDISPLAY_UI_TEST_MODE"
     package nonisolated static let scenarioEnvironmentKey = "VOIDDISPLAY_UI_TEST_SCENARIO"
     package nonisolated static let feedbackIssueTypeEnvironmentKey = "VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"
@@ -36,6 +44,19 @@ package enum UITestRuntime {
             return .baseline
         }
         return scenario
+    }
+
+    package nonisolated static var catalogManagedVirtualDisplayIDs: [CGDirectDisplayID] {
+        catalogManagedVirtualDisplayIDs(for: scenario)
+    }
+
+    package nonisolated static func catalogManagedVirtualDisplayIDs(
+        for scenario: UITestScenario
+    ) -> [CGDirectDisplayID] {
+        if scenario == .displayCatalogLoadingWithMissingManagedDisplay {
+            return [managedVirtualDisplayIDBase]
+        }
+        return managedVirtualDisplayIDs
     }
 
     package nonisolated static var feedbackExportFailureMessage: String? {

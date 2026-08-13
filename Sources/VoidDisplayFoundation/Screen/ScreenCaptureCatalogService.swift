@@ -150,7 +150,9 @@ package final class ScreenCaptureCatalogService {
                 UITestRuntime.isEnabled && UITestRuntime.scenario == .permissionDenied
             },
             shouldDelayDisplayLoadForUITest: {
-                UITestRuntime.isEnabled && UITestRuntime.scenario == .displayCatalogLoading
+                guard UITestRuntime.isEnabled else { return false }
+                return UITestRuntime.scenario == .displayCatalogLoading
+                    || UITestRuntime.scenario == .displayCatalogLoadingWithMissingManagedDisplay
             }
         )
     }

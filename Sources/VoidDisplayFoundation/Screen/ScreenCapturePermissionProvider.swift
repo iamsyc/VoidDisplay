@@ -20,10 +20,12 @@ package struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionPro
         switch scenario {
         case .baseline:
             return true
-        case .displayCatalogLoading:
+        case .displayCatalogLoading,
+             .displayCatalogLoadingWithMissingManagedDisplay:
             return true
         case .settingsFeedback,
              .diagnosticsRecoveredWarning,
+             .diagnosticsTransactionTimeline,
              .previewActive,
              .previewRecovery,
              .previewWindowPayload:

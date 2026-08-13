@@ -109,16 +109,10 @@ package struct DiagnosticsView: View {
             }
             await feedbackController.trackPageOpened()
         }
-        if UITestRuntime.isEnabled,
-           UITestRuntime.scenario == .diagnosticsRecoveredWarning {
-            await observability.record(
-                ObservabilityEvent(
-                    severity: .warning,
-                    subsystem: .capture,
-                    operation: "Screen capture permission check",
-                    message: "Screen capture permission unavailable."
-                )
-            )
+        if UITestRuntime.isEnabled {
+            for event in UITestDiagnosticsFixture.events(for: UITestRuntime.scenario) {
+                await observability.record(event)
+            }
         }
         dataDirectoryDisplayPath = await observability.dataDirectoryDisplayPath()
         if snapshot == nil {

@@ -217,7 +217,7 @@ final class HomeSmokeTests: XCTestCase {
     func testDisplayRescanControlsRemainStableWhileScanning() throws {
         let app = launchAppForSmoke(
             windowSize: (1180, 720),
-            scenario: "display_catalog_loading"
+            scenario: "display_catalog_loading_missing_managed_display"
         )
         let toolbarRescanIdentifier = "home_rescan_displays_button"
         let inlineRescanIdentifier = "home_virtual_display_rescan_button"
@@ -496,14 +496,7 @@ final class HomeSmokeTests: XCTestCase {
 
     @MainActor
     func testDiagnosticsRecentEventsAndTransactionTimeline() throws {
-        let app = launchAppForSmoke()
-        let toggle = assertExists(
-            app,
-            identifier: "virtual_display_toggle_button",
-            timeout: 6
-        )
-        toggle.tap()
-        XCTAssertTrue(waitForHittable(toggle, timeout: 6))
+        let app = launchAppForSmoke(scenario: "diagnostics_transaction_timeline")
         tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
 
         let scrollView = try expandDiagnosticsTechnicalInformation(app)
@@ -555,7 +548,10 @@ final class HomeSmokeTests: XCTestCase {
 
         XCTAssertTrue(waitForExistenceIfNeeded(phase, timeout: 5))
         XCTAssertTrue(waitForExistenceIfNeeded(transactionID, timeout: 5))
-        XCTAssertNotNil(UUID(uuidString: transactionID.value as? String ?? ""))
+        XCTAssertEqual(
+            transactionID.value as? String,
+            "00000000-0000-0000-0000-00000000D1A6"
+        )
 
         let phases = phaseQuery.allElementsBoundByIndex
         let timestamps = timestampQuery.allElementsBoundByIndex

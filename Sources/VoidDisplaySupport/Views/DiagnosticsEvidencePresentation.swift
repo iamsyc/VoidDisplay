@@ -1,5 +1,6 @@
 import Foundation
 import VoidDisplayObservability
+import VoidDisplayRuntime
 
 enum DiagnosticsEvidencePresentation {
     private static let visibleEventGroupLimit = 12
@@ -96,7 +97,7 @@ enum DiagnosticsEvidencePresentation {
         evidence
             .sorted(by: evidenceComesBefore)
             .map { item in
-                let rawPhase = item.metadata["phase"]
+                let rawPhase = item.metadata[DisplayRuntimeTransactionObservability.phaseMetadataKey]
                 return TransactionPhase(
                     id: item.id,
                     timestamp: item.timestamp,
@@ -105,7 +106,7 @@ enum DiagnosticsEvidencePresentation {
                     operation: item.operation,
                     message: item.message,
                     metadata: item.metadata.filter { key, _ in
-                        key != "transactionID"
+                        key != DisplayRuntimeTransactionObservability.transactionIDMetadataKey
                     }
                 )
             }
@@ -307,8 +308,10 @@ enum DiagnosticsEvidencePresentation {
 
     private static func transactionID(for event: ObservabilityEvent) -> String? {
         guard event.subsystem == .displayRuntime,
-              event.operation == "Virtual display transaction",
-              let transactionID = event.metadata["transactionID"],
+              event.operation == DisplayRuntimeTransactionObservability.operation,
+              let transactionID = event.metadata[
+                  DisplayRuntimeTransactionObservability.transactionIDMetadataKey
+              ],
               transactionID.isEmpty == false else {
             return nil
         }

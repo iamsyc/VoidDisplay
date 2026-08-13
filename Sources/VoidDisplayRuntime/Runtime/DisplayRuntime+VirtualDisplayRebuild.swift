@@ -27,7 +27,7 @@ extension DisplayRuntime {
         do {
             try Task.checkCancellation()
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .cancelled,
                 phase: .cancelled,
@@ -50,7 +50,7 @@ extension DisplayRuntime {
         }
 
         guard preSnapshot.virtualDisplay.configs.contains(where: { $0.id == request.configID }) else {
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .failed,
                 phase: .failed,
@@ -88,7 +88,7 @@ extension DisplayRuntime {
                 consumerTransition,
                 transactionID: request.transactionID
             )
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .failed,
                 phase: .failed,
@@ -112,7 +112,7 @@ extension DisplayRuntime {
             updateTrace(request.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .failed,
                 phase: .failed,
@@ -138,7 +138,7 @@ extension DisplayRuntime {
             updateTrace(request.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .failed,
                 phase: .failed,
@@ -190,7 +190,7 @@ extension DisplayRuntime {
             after: topologyResult,
             restoreResults: restoreResults
         )
-        return finalizeTransaction(
+        return await finalizeTransaction(
             transactionID: request.transactionID,
             status: finalStatus,
             phase: .completed,

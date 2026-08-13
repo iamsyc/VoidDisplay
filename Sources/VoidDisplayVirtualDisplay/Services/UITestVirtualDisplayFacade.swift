@@ -35,6 +35,10 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
 
     package init() {
         let fixtureConfigs = UITestFixture.virtualDisplayConfigs()
+        precondition(
+            fixtureConfigs.count == UITestRuntime.managedVirtualDisplayIDs.count,
+            "UI test virtual display configs and managed display identities must stay aligned."
+        )
         self.configs = fixtureConfigs
         self.runningConfigIds = Set(fixtureConfigs.prefix(1).map(\.id))
     }
@@ -312,7 +316,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
 
         var map: [UUID: CGDirectDisplayID] = [:]
         for (index, configID) in runningIDsInOrder.enumerated() {
-            map[configID] = index == 0 ? CGMainDisplayID() : CGDirectDisplayID(10_000 + index)
+            map[configID] = UITestRuntime.managedVirtualDisplayIDs[index]
         }
         return map
     }

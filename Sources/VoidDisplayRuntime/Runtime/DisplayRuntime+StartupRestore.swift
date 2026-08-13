@@ -169,7 +169,7 @@ extension DisplayRuntime {
                     )
                 }
                 let postSnapshot = self.makeSnapshot()
-                _ = self.finalizeTransaction(
+                _ = await self.finalizeTransaction(
                     transactionID: transactionID,
                     kind: .virtualDisplayStartupRestore,
                     status: status,
@@ -228,7 +228,7 @@ extension DisplayRuntime {
         do {
             try Task.checkCancellation()
         } catch {
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .cancelled,
@@ -268,7 +268,7 @@ extension DisplayRuntime {
         }
 
         guard preSnapshot.virtualDisplay.configs.contains(where: { $0.id == context.configID }) else {
-            return startupRestoreFailedConfigResult(
+            return await startupRestoreFailedConfigResult(
                 transactionID: context.transactionID,
                 configID: context.configID,
                 phase: .preparing,
@@ -304,7 +304,7 @@ extension DisplayRuntime {
                 consumerTransition,
                 transactionID: context.transactionID
             )
-            return startupRestoreFailedConfigResult(
+            return await startupRestoreFailedConfigResult(
                 transactionID: context.transactionID,
                 configID: context.configID,
                 phase: .quiescingSessions,
@@ -326,7 +326,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            return startupRestoreFailedConfigResult(
+            return await startupRestoreFailedConfigResult(
                 transactionID: context.transactionID,
                 configID: context.configID,
                 phase: .executingVirtualDisplayCommand,
@@ -364,7 +364,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            _ = finalizeTransaction(
+            _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
                 status: .failed,
@@ -416,7 +416,7 @@ extension DisplayRuntime {
             updateTrace(context.transactionID) { trace in
                 trace.replacing(restoreResults: restoreResults)
             }
-            return startupRestoreFailedConfigResult(
+            return await startupRestoreFailedConfigResult(
                 transactionID: context.transactionID,
                 configID: context.configID,
                 phase: .executingVirtualDisplayCommand,
@@ -469,7 +469,7 @@ extension DisplayRuntime {
         }
         let finalPostSnapshot = makeSnapshot()
         let finalStatus = transactionStatus(after: topologyResult, restoreResults: restoreResults)
-        _ = finalizeTransaction(
+        _ = await finalizeTransaction(
             transactionID: context.transactionID,
             kind: context.kind,
             status: finalStatus,
@@ -512,7 +512,7 @@ extension DisplayRuntime {
         underlyingDomain: String? = nil,
         underlyingCode: Int? = nil,
         compensation: DisplayRuntimeCompensationResult? = nil
-    ) -> DisplayRuntimeStartupRestoreConfigResult {
+    ) async -> DisplayRuntimeStartupRestoreConfigResult {
         let failure = DisplayRuntimeTransactionFailure(
             phase: phase,
             reason: reason,
@@ -520,7 +520,7 @@ extension DisplayRuntime {
             underlyingCode: underlyingCode,
             recoverability: recoverability
         )
-        _ = finalizeTransaction(
+        _ = await finalizeTransaction(
             transactionID: transactionID,
             kind: .virtualDisplayStartupRestore,
             status: .failed,

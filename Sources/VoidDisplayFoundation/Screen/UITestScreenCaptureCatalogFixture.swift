@@ -23,18 +23,29 @@ package enum UITestScreenCaptureCatalogFixture {
     private static let fallbackDisplayID = CGDirectDisplayID(9_001)
 
     package static func makeShareableDisplays() -> [SCDisplay] {
-        let displays = NSScreen.screens.compactMap(makeDisplay(for:))
+        var displays = NSScreen.screens.compactMap(makeDisplay(for:))
         if displays.isEmpty {
-            return [makeFallbackDisplay()]
+            displays.append(makeFallbackDisplay())
         }
+        let managedVirtualDisplayIDs = UITestRuntime.catalogManagedVirtualDisplayIDs
+        let managedDisplayIDs = Set(managedVirtualDisplayIDs)
+        displays.removeAll { managedDisplayIDs.contains($0.displayID) }
+        displays.append(contentsOf: managedVirtualDisplayIDs.map { displayID in
+            makeDisplay(
+                displayID: displayID,
+                width: 1920,
+                height: 1080
+            )
+        })
         return displays
     }
 
     package static func activeDisplayIDs() -> Set<CGDirectDisplayID> {
-        let ids = Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
+        var ids = Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         if ids.isEmpty {
-            return [fallbackDisplayID]
+            ids.insert(fallbackDisplayID)
         }
+        ids.formUnion(UITestRuntime.catalogManagedVirtualDisplayIDs)
         return ids
     }
 

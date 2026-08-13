@@ -39,7 +39,7 @@ extension DisplayRuntime {
             try Task.checkCancellation()
         } catch {
             saveGate.fail(DisplayRuntimeVirtualDisplayEditRebuildFailure(reason: "cancelled_before_virtual_display_command"))
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .cancelled,
@@ -67,7 +67,7 @@ extension DisplayRuntime {
                 )
             }
             saveGate.fail(DisplayRuntimeVirtualDisplayEditRebuildFailure(reason: "config_not_found"))
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -95,7 +95,7 @@ extension DisplayRuntime {
         await appendPhase(.persistingConfig, transactionID: request.transactionID)
         guard let virtualDisplayCommander else {
             saveGate.fail(DisplayRuntimeVirtualDisplayEditRebuildFailure(reason: "virtual_display_commander_unavailable"))
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -117,7 +117,7 @@ extension DisplayRuntime {
             saveResult = try await virtualDisplayCommander.saveConfigForRebuild(request: request)
         } catch DisplayRuntimeVirtualDisplayEditRebuildSaveCommandError.editRequestStale {
             saveGate.fail(DisplayRuntimeVirtualDisplayEditRebuildFailure(reason: "edit_request_stale"))
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -134,7 +134,7 @@ extension DisplayRuntime {
             )
         } catch {
             saveGate.fail(DisplayRuntimeVirtualDisplayEditRebuildFailure(reason: "config_save_failed"))
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -154,7 +154,7 @@ extension DisplayRuntime {
 
         guard saveResult.persistenceOutcome == .saved else {
             saveGate.fail(DisplayRuntimeVirtualDisplayEditRebuildFailure(reason: "config_save_failed"))
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -223,7 +223,7 @@ extension DisplayRuntime {
                     restoreIntentCount: consumerTransition.restoreIntentCount
                 )
             )
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -264,7 +264,7 @@ extension DisplayRuntime {
                     restoreIntentCount: consumerTransition.restoreIntentCount
                 )
             )
-            return finalizeTransaction(
+            return await finalizeTransaction(
                 transactionID: request.transactionID,
                 kind: .virtualDisplayEditRebuild,
                 status: .failed,
@@ -315,7 +315,7 @@ extension DisplayRuntime {
             after: topologyResult,
             restoreResults: restoreResults
         )
-        return finalizeTransaction(
+        return await finalizeTransaction(
             transactionID: request.transactionID,
             kind: .virtualDisplayEditRebuild,
             status: finalStatus,
