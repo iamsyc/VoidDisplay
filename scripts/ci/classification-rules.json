@@ -7,7 +7,7 @@
     },
     "ui": {
       "exact": [],
-      "prefixes": ["UITests/", "Apps/VoidDisplay/", "VoidDisplay.xcodeproj/", "Sources/VoidDisplayApp/", "Sources/VoidDisplayDesignSystem/", "Sources/VoidDisplayCapture/", "Sources/VoidDisplaySharing/", "Sources/VoidDisplaySupport/", "Sources/VoidDisplayVirtualDisplay/"],
+      "prefixes": ["UITests/", "Apps/VoidDisplay/", "VoidDisplay.xcodeproj/", "Sources/VoidDisplayApp/", "Sources/VoidDisplayDesignSystem/", "Sources/VoidDisplayCapture/", "Sources/VoidDisplaySharing/", "Sources/VoidDisplaySupport/", "Sources/VoidDisplayVirtualDisplay/", "Sources/VoidDisplayFoundation/", "Sources/VoidDisplayRuntime/", "Sources/VoidDisplayObservability/", "Sources/VoidDisplayCGVirtualDisplay/"],
       "globs": []
     },
     "script": {

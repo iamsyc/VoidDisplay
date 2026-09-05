@@ -21,7 +21,7 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
         let mainWindow = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(mainWindow, timeout: 6))
         mainWindow.buttons[XCUIIdentifierCloseWindow].click()
-        XCTAssertFalse(mainWindow.waitForExistence(timeout: 2))
+        XCTAssertTrue(waitForAbsence(mainWindow, timeout: 2))
         openQuickActionsPanel(app, excluding: existingMenuBarWindowIDs)
 
         assertAllExist(
@@ -62,30 +62,32 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
-        let toggleButton = rows[1].buttons["menu_bar_virtual_display_toggle_button"]
-        XCTAssertTrue(waitForHittable(toggleButton))
-        toggleButton.click()
-        XCTAssertTrue(
-            waitForCondition(timeout: 8) {
-                ["Enable", "启用"].contains(toggleButton.label)
-            },
-            "The virtual display did not reach the disabled state."
-        )
+        performSmokeStep("Disable and enable a display from the menu bar") {
+            let toggleButton = rows[1].buttons["menu_bar_virtual_display_toggle_button"]
+            XCTAssertTrue(waitForHittable(toggleButton))
+            toggleButton.click()
+            XCTAssertTrue(
+                waitForCondition(timeout: 8) {
+                    ["Enable", "启用"].contains(toggleButton.label)
+                },
+                "The virtual display did not reach the disabled state."
+            )
 
-        toggleButton.click()
-        XCTAssertTrue(
-            waitForCondition(timeout: 8) {
-                ["Disable", "停用"].contains(toggleButton.label)
-            },
-            "The virtual display did not return to the enabled state."
-        )
-        XCTAssertTrue(
-            waitForCondition(timeout: 8) {
-                rows[1].buttons["menu_bar_open_preview_button"].exists
-                    && rows[1].buttons["menu_bar_web_view_button"].exists
-            },
-            "Runtime actions did not appear after the virtual display started."
-        )
+            toggleButton.click()
+            XCTAssertTrue(
+                waitForCondition(timeout: 8) {
+                    ["Disable", "停用"].contains(toggleButton.label)
+                },
+                "The virtual display did not return to the enabled state."
+            )
+            XCTAssertTrue(
+                waitForCondition(timeout: 8) {
+                    rows[1].buttons["menu_bar_open_preview_button"].exists
+                        && rows[1].buttons["menu_bar_web_view_button"].exists
+                },
+                "Runtime actions did not appear after the virtual display started."
+            )
+        }
 
         let previewButton = rows[0].buttons["menu_bar_open_preview_button"]
         XCTAssertTrue(waitForHittable(previewButton))
@@ -98,6 +100,58 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
         tapIdentifier(app, identifier: "menu_bar_open_main_window_button")
         assertExists(app, identifier: "detail_home", timeout: 4)
         XCTAssertFalse(smokeElement(app, identifier: "capture_preview_waiting_for_identity").exists)
+
+        let homeRows = app.descendants(matching: .any)
+            .matching(identifier: "home_virtual_display_list_row")
+        XCTAssertEqual(homeRows.count, 2)
+        let editedRow = homeRows.element(boundBy: 1)
+
+        for enabled in [false, true] {
+            performSmokeStep("Save preserves the menu bar's \(enabled ? "enabled" : "disabled") state") {
+                editedRow.buttons["virtual_display_edit_button"].click()
+                let form = assertExists(app, identifier: "edit_virtual_display_form")
+                let hiDPI = assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle")
+                let originalHiDPI = (hiDPI.value as? NSNumber)?.boolValue
+                XCTAssertNotNil(originalHiDPI)
+                for _ in 0..<4 where !hiDPI.isHittable {
+                    form.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -240)
+                }
+                XCTAssertTrue(hiDPI.isHittable)
+                hiDPI.click()
+                let editedHiDPI = (hiDPI.value as? NSNumber)?.boolValue
+                XCTAssertEqual(editedHiDPI, originalHiDPI.map { !$0 })
+
+                openQuickActionsPanel(app, excluding: existingMenuBarWindowIDs)
+                let menuToggle = rows[1].buttons["menu_bar_virtual_display_toggle_button"]
+                XCTAssertTrue(waitForHittable(menuToggle))
+                menuToggle.click()
+                let expectedLabels = enabled ? ["Disable", "停用"] : ["Enable", "启用"]
+                XCTAssertTrue(waitForCondition(timeout: 8) { expectedLabels.contains(menuToggle.label) })
+
+                tapIdentifier(app, identifier: "virtual_display_edit_name_field")
+                XCTAssertTrue(waitForAbsence(panel, timeout: 2))
+                XCTAssertTrue(form.exists, "The original edit form must remain open after the menu bar action.")
+                let saveIdentifier = enabled
+                    ? "virtual_display_edit_save_only_button"
+                    : "virtual_display_edit_save_button"
+                tapIdentifier(app, identifier: saveIdentifier)
+                XCTAssertTrue(waitForAbsence(form, timeout: 2))
+                XCTAssertTrue(
+                    expectedLabels.contains(editedRow.buttons["virtual_display_toggle_button"].label),
+                    "Saving the edit must preserve the latest enabled intent from the menu bar."
+                )
+                XCTAssertEqual(editedRow.switches["home_virtual_display_preview_toggle"].isEnabled, enabled)
+
+                editedRow.buttons["virtual_display_edit_button"].click()
+                XCTAssertEqual(
+                    (assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle").value as? NSNumber)?.boolValue,
+                    editedHiDPI,
+                    "The edited mode must also persist when preserving the menu bar state."
+                )
+                tapIdentifier(app, identifier: "virtual_display_edit_cancel_button")
+                XCTAssertTrue(waitForAbsence(form, timeout: 2))
+            }
+        }
     }
 
     @MainActor

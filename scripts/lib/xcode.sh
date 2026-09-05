@@ -6,6 +6,11 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 	# shellcheck source=scripts/lib/common.sh
 	source "$TOOL_ROOT/scripts/lib/common.sh"
 
+	require_xcode_build_environment() {
+		[[ -z "${XCODE_XCCONFIG_FILE:-}" ]] ||
+			die "XCODE_XCCONFIG_FILE is not supported by repository builds. Unset it before running validation."
+	}
+
 	select_required_xcode() {
 		local expected_xcode_prefix="${EXPECTED_XCODE_VERSION_PREFIX:-26.6}"
 		local expected_swift_prefix="${EXPECTED_SWIFT_VERSION_PREFIX:-6.3}"
@@ -76,6 +81,7 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 		local products_path="$derived_data_path/Build/Products"
 		local manifest_path
 		local xctestrun_path
+		local binary
 
 		[[ -d "$products_path" ]] || return 1
 		manifest_path="$(xcode_test_products_manifest_path "$derived_data_path")"
@@ -97,6 +103,13 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 			and .project == $project
 			and .scheme == $scheme' \
 			"$manifest_path" >/dev/null || return 1
+		for binary in \
+			"VoidDisplay.app/Contents/MacOS/VoidDisplay" \
+			"VoidDisplay.app/Contents/MacOS/VoidDisplayHost" \
+			"VoidDisplayUITests-Runner.app/Contents/MacOS/VoidDisplayUITests-Runner" \
+			"VoidDisplayUITests-Runner.app/Contents/PlugIns/VoidDisplayUITests.xctest/Contents/MacOS/VoidDisplayUITests"; do
+			[[ -s "$products_path/$expected_configuration/$binary" && -x "$products_path/$expected_configuration/$binary" ]] || return 1
+		done
 
 		xctestrun_path="$(/usr/bin/find "$products_path" -type f -name '*.xctestrun' -size +0c -print -quit)"
 		[[ -n "$xctestrun_path" ]]

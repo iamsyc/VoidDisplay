@@ -29,16 +29,17 @@ git -C "$fixture_repository" commit -qm initial
 for helper_name in common artifacts checkpoint; do
 	cp "$real_tool_root/scripts/lib/$helper_name.sh" "$fixture_tool_root/scripts/lib/$helper_name.sh"
 done
+cp "$real_tool_root/scripts/lib/"{source_fingerprint,ui_test_report}.mjs "$fixture_tool_root/scripts/lib/"
 
 printf '%s\n' \
 	'#!/usr/bin/env bash' \
 	'xcode_destination_for_arch() { printf '\''platform=macOS,arch=%s\n'\'' "$1"; }' \
 	>"$fixture_tool_root/scripts/lib/architecture.sh"
+cp "$real_tool_root/scripts/lib/xcode.sh" "$fixture_tool_root/scripts/lib/xcode.sh"
 printf '%s\n' \
-	'#!/usr/bin/env bash' \
 	'select_required_xcode() { :; }' \
-	'xcode_test_products_exist() { [[ -f "$1/fixture-products-valid" ]]; }' \
-	>"$fixture_tool_root/scripts/lib/xcode.sh"
+	'xcode_test_products_exist() { [[ -f "$1/fixture-products-valid" && "$(cat "$1/fixture-products-valid")" == "$4" ]]; }' \
+	>>"$fixture_tool_root/scripts/lib/xcode.sh"
 cp "$real_tool_root/scripts/lib/xcresult.sh" "$fixture_tool_root/scripts/lib/xcresult.sh"
 
 cat >"$fixture_tool_root/scripts/ci/xcode.sh" <<'STUB'
@@ -64,16 +65,26 @@ if [[ "$action" == "build-for-testing" ]]; then
     exit 65
   fi
   if [[ -n "${UI_FIXTURE_BUILD_STARTED:-}" ]]; then : >"$UI_FIXTURE_BUILD_STARTED"; while [[ ! -e "$UI_FIXTURE_BUILD_RELEASE" ]]; do sleep 0.02; done; fi
-  mkdir -p "$derived_data"; : >"$derived_data/fixture-products-valid"
+  mkdir -p "$derived_data"; node "$TOOL_ROOT/scripts/lib/source_fingerprint.mjs" "$ROOT_DIR" xcode >"$derived_data/fixture-products-valid"
   exit 0
 fi
+if [[ "${UI_FIXTURE_PREFLIGHT_FAILURE:-false}" == "true" ]]; then
+  jq -n '{status:"failed",reason:"ui_session_acquire_failed",log_path:"",result_bundle:""}' >"$out_dir/xcode-summary.json"
+  exit 1
+fi
 bump test.count
+if [[ "${UI_FIXTURE_RETRY_ONCE:-false}" == "true" && "$(cat "$UI_FIXTURE_COUNTS/test.count")" == "1" ]]; then
+  log="$out_dir/test.log"
+  printf '    t = 0.01s Launch com.developerchen.voiddisplay\nEarly unexpected exit, operation never finished bootstrapping\n' >"$log"
+  jq -n --arg log "$log" '{status:"failed",reason:"xcodebuild_failed",log_path:$log,result_bundle:""}' >"$out_dir/xcode-summary.json"
+  exit 65
+fi
 if [[ -n "${UI_FIXTURE_STARTED:-}" ]]; then : >"$UI_FIXTURE_STARTED"; while [[ ! -e "$UI_FIXTURE_RELEASE" ]]; do sleep 0.02; done; fi
 result="$out_dir/Result.xcresult"; mkdir -p "$result"
 count=1; [[ "${selectors[0]}" != "VoidDisplayUITests" ]] || count=12
 jq -n --argjson count "$count" '{result:"Passed", totalTestCount:$count, passedTests:$count, skippedTests:0, failedTests:0}' >"$result/summary.json"
-jq -n --arg selector "${selectors[0]}" '{testNodes:[{nodeIdentifierURL:"test://com.apple.xcode/VoidDisplay/VoidDisplayUITests"}, {nodeIdentifierURL:("test://com.apple.xcode/VoidDisplay/" + $selector)}]}' >"$result/tests.json"
-log="$out_dir/test.log"; printf 'passed\n' >"$log"
+jq -n --arg selector "${selectors[0]}" '{testNodes:[{nodeIdentifierURL:"test://com.apple.xcode/VoidDisplay/VoidDisplayUITests"}, {nodeIdentifierURL:("test://com.apple.xcode/VoidDisplay/" + $selector),nodeType:"Test Case",result:"Passed",durationInSeconds:2}]}' >"$result/tests.json"
+log="$out_dir/xcode-test-without-building-Debug.log"; printf '    t = 0.01s Launch com.developerchen.voiddisplay\npassed\n' >"$log"
 jq -n --arg result "$result" --arg log "$log" --argjson count "$count" --argjson selectors "$(printf '%s\n' "${selectors[@]}" | jq -R . | jq -s .)" '{status:"passed", reason:"passed", log_path:$log, result_bundle:$result, only_testing:$selectors, total_tests:$count, passed_tests:$count, skipped_tests:0, failed_tests:0}' >"$out_dir/xcode-summary.json"
 STUB
 
@@ -89,7 +100,18 @@ case "$4" in
   *) exit 1 ;;
 esac
 STUB
-chmod +x "$fixture_tool_root/scripts/ci/xcode.sh" "$fixture_bin/xcodebuild" "$fixture_bin/xcrun"
+real_node="$(command -v node)"
+cat >"$fixture_bin/node" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+"$UI_FIXTURE_REAL_NODE" "$@"
+if [[ "$1" == */ui_test_report.mjs && "${2:-}" == "--combine" && -n "${UI_FIXTURE_REPORT_STARTED:-}" ]]; then
+  : >"$UI_FIXTURE_REPORT_STARTED"
+  while [[ ! -e "$UI_FIXTURE_REPORT_RELEASE" ]]; do sleep 0.02; done
+fi
+STUB
+chmod +x "$fixture_tool_root/scripts/ci/xcode.sh" "$fixture_bin/xcodebuild" "$fixture_bin/xcrun" "$fixture_bin/node"
+export UI_FIXTURE_REAL_NODE="$real_node"
 
 run_ui() {
 	local out_dir="$1"
@@ -103,6 +125,10 @@ run_ui() {
 		UI_TEST_EVIDENCE_ROOT="$evidence_root" \
 		UI_FIXTURE_COUNTS="$counts_root" \
 		UI_FIXTURE_BUILD_FAILURE="${UI_FIXTURE_BUILD_FAILURE:-false}" \
+		UI_FIXTURE_RETRY_ONCE="${UI_FIXTURE_RETRY_ONCE:-false}" \
+		UI_FIXTURE_PREFLIGHT_FAILURE="${UI_FIXTURE_PREFLIGHT_FAILURE:-false}" \
+		UI_FIXTURE_REPORT_STARTED="${UI_FIXTURE_REPORT_STARTED:-}" \
+		UI_FIXTURE_REPORT_RELEASE="${UI_FIXTURE_REPORT_RELEASE:-}" \
 		UI_FIXTURE_BUILD_STARTED="${UI_FIXTURE_BUILD_STARTED:-}" \
 		UI_FIXTURE_BUILD_RELEASE="${UI_FIXTURE_BUILD_RELEASE:-}" \
 		UI_FIXTURE_STARTED="${UI_FIXTURE_STARTED:-}" \
@@ -141,9 +167,19 @@ run_ui "$fixture_root/targeted-2" --only-testing VoidDisplayUITests/HomeSmokeTes
 [[ "$(<"$fixture_counts/test.count")" == "2" ]] || die "Targeted UI evidence was reused unexpectedly."
 jq -e '.build_reused == true and .test_evidence_reused == false' "$fixture_root/targeted-2/ui-smoke-summary.json" >/dev/null
 
+mkdir -p "$fixture_root/retry-counts"
+UI_RUN_EVIDENCE_ROOT="$fixture_root/retry-evidence" UI_RUN_COUNTS_ROOT="$fixture_root/retry-counts" \
+	UI_FIXTURE_RETRY_ONCE=true run_ui "$fixture_root/retry-report" --only-testing VoidDisplayUITests --max-attempts 2
+jq -e '.attempts == 2 and .recorded_launches == 2 and .executed_launches == 2' \
+	"$fixture_root/retry-report/ui-test-report.json" >/dev/null || die "Retry report lost bootstrap attempt cost."
+UI_RUN_EVIDENCE_ROOT="$fixture_root/retry-evidence" UI_RUN_COUNTS_ROOT="$fixture_root/retry-counts" \
+	run_ui "$fixture_root/retry-report-reused" --only-testing VoidDisplayUITests
+jq -e '.attempts == 2 and .recorded_launches == 2 and .executed_launches == 0 and .evidence_reused == true' \
+	"$fixture_root/retry-report-reused/ui-test-report.json" >/dev/null || die "Reused report lost retry history."
+
 explicit_derived_data="$fixture_root/explicit-products/DerivedData"
 mkdir -p "$explicit_derived_data"
-: >"$explicit_derived_data/fixture-products-valid"
+node "$real_tool_root/scripts/lib/source_fingerprint.mjs" "$fixture_repository" xcode >"$explicit_derived_data/fixture-products-valid"
 run_ui "$fixture_root/explicit-reuse" \
 	--only-testing VoidDisplayUITests/HomeSmokeTests/testScreenRecordingRecoveryActionsFitAtNarrowWindowSize \
 	--test-without-building \
@@ -159,6 +195,29 @@ run_ui "$fixture_root/full-2" --only-testing VoidDisplayUITests
 [[ "$(<"$fixture_counts/test.count")" == "4" ]] || die "Completed full UI evidence was not reused."
 jq -e '.test_evidence_reused == true' "$fixture_root/full-2/ui-smoke-summary.json" >/dev/null
 
+printf 'SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG EXTERNAL\n' >"$fixture_root/external.xcconfig"
+if XCODE_XCCONFIG_FILE="$fixture_root/external.xcconfig" \
+	run_ui "$fixture_root/full-2" --only-testing VoidDisplayUITests >"$fixture_root/xcconfig.log" 2>&1; then
+	die "Full UI reused successful evidence with an external xcconfig."
+fi
+jq -e '.status == "failed" and .reason == "build_input_rejected"' \
+	"$fixture_root/full-2/ui-smoke-summary.json" >/dev/null ||
+	die "External xcconfig rejection left stale UI success evidence."
+[[ "$(<"$fixture_counts/build.count")" == "1" && "$(<"$fixture_counts/test.count")" == "4" ]] ||
+	die "Rejected xcconfig started a build or test."
+run_ui "$fixture_root/full-after-rejection" --only-testing VoidDisplayUITests
+jq -e '.test_evidence_reused == true' "$fixture_root/full-after-rejection/ui-smoke-summary.json" >/dev/null ||
+	die "External xcconfig rejection discarded valid evidence for the normal environment."
+
+run_ui "$fixture_root/build-only" --build-only
+[[ "$(<"$fixture_counts/test.count")" == "4" ]] || die "Build-only preflight executed UI tests."
+[[ "$(<"$fixture_counts/build.count")" == "1" ]] || die "Build-only preflight ignored shared products."
+printf 'documentation\n' >"$fixture_repository/README.md"
+git -C "$fixture_repository" add README.md tracked.txt
+git -C "$fixture_repository" commit -qm documentation
+run_ui "$fixture_root/after-commit" --only-testing VoidDisplayUITests
+[[ "$(<"$fixture_counts/test.count")" == "4" ]] || die "A documentation commit discarded full UI evidence."
+
 run_ui "$fixture_root/full-rerun" --only-testing VoidDisplayUITests --rerun
 [[ "$(<"$fixture_counts/test.count")" == "5" ]] || die "--rerun did not execute the full target."
 
@@ -166,6 +225,7 @@ printf 'changed\n' >"$fixture_repository/tracked.txt"
 run_ui "$fixture_root/source-change" --only-testing VoidDisplayUITests
 [[ "$(<"$fixture_counts/build.count")" == "2" ]] || die "Source change reused stale test products."
 [[ "$(<"$fixture_counts/test.count")" == "6" ]] || die "Source change reused stale UI evidence."
+[[ "$(jq -r .derived_data_path "$fixture_root/source-change/ui-smoke-summary.json")" == "$(jq -r .derived_data_path "$fixture_root/full-1/ui-smoke-summary.json")" ]] || die "Source edits discarded incremental build products."
 
 while IFS= read -r evidence_file; do
 	printf 'invalid\n' >"$evidence_file"
@@ -246,14 +306,14 @@ UI_RUN_COUNTS_ROOT="$concurrent_counts" \
 	UI_FIXTURE_STARTED="$active_test_started" \
 	UI_FIXTURE_RELEASE="$active_test_release" \
 	run_ui "$fixture_root/active-holder" \
-	--only-testing VoidDisplayUITests/HomeSmokeTests/testDiagnosticsEvidenceJourney --rerun &
+	--only-testing VoidDisplayUITests/DiagnosticsSmokeTests/testDiagnosticsEvidenceJourney --rerun &
 active_holder_pid=$!
 wait_for_path "$active_test_started"
 
 UI_RUN_COUNTS_ROOT="$concurrent_counts" \
 	UI_RUN_EVIDENCE_ROOT="$concurrent_evidence" \
 	run_ui "$fixture_root/rebuild-contender" \
-	--only-testing VoidDisplayUITests/HomeSmokeTests/testDiagnosticsEmptyExportFocusesVisibleValidation \
+	--only-testing VoidDisplayUITests/DiagnosticsSmokeTests/testDiagnosticsEmptyExportFocusesVisibleValidation \
 	--rebuild &
 rebuild_contender_pid=$!
 sleep 0.2
@@ -292,8 +352,46 @@ check_regression "targeted output must preserve the full result" \
 check_regression "preserved full evidence is reusable" \
 	jq -e '.test_evidence_reused == true' "$shared_out/ui-smoke-summary.json"
 
+# Pause after report generation while another selector uses the same output directory.
+report_started="$fixture_root/report.started"
+report_release="$fixture_root/report.release"
+UI_RUN_EVIDENCE_ROOT="$shared_evidence" UI_FIXTURE_REPORT_STARTED="$report_started" \
+	UI_FIXTURE_REPORT_RELEASE="$report_release" run_ui "$shared_out" \
+	--only-testing VoidDisplayUITests --rerun >"$fixture_root/report-holder.log" 2>&1 &
+report_holder_pid=$!
+wait_for_path "$report_started"
+UI_RUN_EVIDENCE_ROOT="$shared_evidence" run_ui "$shared_out" --build-only \
+	>"$fixture_root/report-contender.log" 2>&1 &
+report_contender_pid=$!
+for _ in {1..200}; do
+	if grep -q 'waiting up to' "$fixture_root/report-contender.log"; then break; fi
+	sleep 0.02
+done
+check_regression "shared output contender reached its lock" grep -q 'waiting up to' "$fixture_root/report-contender.log"
+: >"$report_release"
+if wait "$report_holder_pid"; then report_holder_status=0; else report_holder_status=$?; fi
+if wait "$report_contender_pid"; then report_contender_status=0; else report_contender_status=$?; fi
+check_regression "concurrent build-only did not remove the full run report" test "$report_holder_status" -eq 0
+check_regression "shared output build-only completed" test "$report_contender_status" -eq 0
+UI_RUN_EVIDENCE_ROOT="$shared_evidence" run_ui "$fixture_root/report-reused" --only-testing VoidDisplayUITests
+check_regression "concurrent full evidence remains reusable" \
+	jq -e '.test_evidence_reused == true' "$fixture_root/report-reused/ui-smoke-summary.json"
+
+preflight_out="$fixture_root/preflight-output"
+run_ui "$preflight_out" --only-testing VoidDisplayUITests --rerun
+tests_before_preflight="$(read_count "$fixture_counts/test.count")"
+if UI_FIXTURE_PREFLIGHT_FAILURE=true run_ui "$preflight_out" --only-testing VoidDisplayUITests --rerun; then
+	die "Preflight failure passed the UI gate."
+fi
+check_regression "preflight failure did not launch tests" test "$(read_count "$fixture_counts/test.count")" = "$tests_before_preflight"
+check_regression "preflight failure did not republish previous test cost" \
+	jq -e '.total_tests == 0 and .recorded_launches == null and .test_duration_seconds == null and .cases == []' \
+	"$preflight_out/ui-test-report.json"
+
 for enforce in true false; do
 	failure_out="$fixture_root/build-failure-$enforce"
+	run_ui "$failure_out" --only-testing VoidDisplayUITests --rerun
+	[[ -s "$failure_out/ui-test-report.md" ]] || die "Successful UI fixture did not publish a report."
 	if UI_FIXTURE_BUILD_FAILURE=true run_ui "$failure_out" \
 		--only-testing VoidDisplayUITests --rebuild --enforce-failure "$enforce"; then
 		failure_status=0
@@ -303,6 +401,8 @@ for enforce in true false; do
 	check_regression "build failure has a failed aggregate summary ($enforce)" \
 		jq -e '.status == "failed" and .reason == "xcodebuild_failed" and (.log_file | endswith("build.log"))' \
 		"$failure_out/ui-smoke-summary.json"
+	check_regression "build failure removes the previous invocation report ($enforce)" \
+		test ! -e "$failure_out/ui-test-report.md"
 	if [[ "$enforce" == "true" ]]; then
 		check_regression "enforced build failure returns nonzero" test "$failure_status" -ne 0
 	else

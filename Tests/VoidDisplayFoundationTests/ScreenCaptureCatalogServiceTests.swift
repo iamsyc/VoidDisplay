@@ -231,6 +231,41 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await gate.currentCallCount() == 0)
     }
 
+    @Test func snapshotCommittedWhilePreparingInitialRefreshRemainsAvailableDuringLoad() async {
+        let store = ScreenCaptureCatalogStore()
+        let display = SharedMockSCDisplay.make(displayID: 707, width: 1920, height: 1080)
+        let signature = makeTestDisplayTopologySignature([707])
+        let gate = SequencedCatalogServiceLoadGate(scriptedOutcomes: [.success])
+        let sut = ScreenCaptureCatalogService(
+            store: store,
+            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
+            loadShareableDisplays: {
+                switch await gate.nextOutcome() {
+                case .success: return [display]
+                case .failure(let error): throw error
+                }
+            },
+            activeDisplayIDsProvider: { [707] },
+            displayTopologySignatureProvider: { signature },
+            runtimeScenarioProbe: .init(shouldShortCircuitDisplayLoadAsPermissionDenied: {
+                // The request has captured an empty store before awaiting preparation.
+                // Model a different refresh committing its snapshot during that suspension.
+                #expect(store.displays == nil)
+                store.displays = [display]
+                store.lastLoadedActiveDisplayTopologySignature = signature
+                return false
+            })
+        )
+
+        let refresh = Task { await sut.submitRefresh(intent: .permissionChanged) }
+        #expect(await waitForLoaderCall(gate, count: 1))
+        #expect(await eventually(timeoutNanoseconds: 1_000_000_000) { await store.isLoadingDisplays })
+        #expect(store.activeShareableDisplays?.map(\.displayID) == [707])
+        await gate.release(call: 1)
+        #expect(await refresh.value.result == .reloadedSnapshot)
+        #expect(store.activeShareableDisplays?.map(\.displayID) == [707])
+    }
+
     @Test func permissionDeniedClearsSnapshot() async {
         let sut = ScreenCaptureCatalogService(
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: false, requestResult: false),

@@ -18,7 +18,7 @@ if [[ -n "$forbidden" ]]; then
 fi
 
 test_count="$(rg -n '^[[:space:]]*func test' UITests/VoidDisplayUITests --glob '*.swift' | wc -l | tr -d ' ')"
-[[ "$test_count" -le 13 ]] || die "UI journey budget exceeded: $test_count tests, maximum 13."
+[[ "$test_count" -gt 0 ]] || die "The UI target contains no test journeys."
 
 while IFS= read -r selector; do
 	class_name="$(cut -d/ -f2 <<<"$selector")"
@@ -32,3 +32,4 @@ done < <(rg --no-filename -o 'VoidDisplayUITests/[[:alnum:]_]+/test[[:alnum:]_]+
 
 info "Static UI test gate passed."
 info "UI journeys: $test_count"
+node --test "$TOOL_ROOT/scripts/ci/test_test_quality.mjs"

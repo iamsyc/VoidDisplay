@@ -27,9 +27,11 @@ DESTINATION="$(xcode_destination_for_arch arm64)"
 TEST_WITHOUT_BUILDING="false"
 REBUILD="false"
 RERUN="false"
+BUILD_ONLY="false"
 BUILD_LOCK_WAIT_SECONDS="${VOIDDISPLAY_UI_SESSION_WAIT_SECONDS:-600}"
 ACTIVE_XCODE_RUNNER_PID=""
 ACTIVE_ATTEMPT=0
+ATTEMPT_REPORTS=()
 ACTIVE_LOG_FILE=""
 STARTED_AT="$(date +%s)"
 
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--test-without-building)
 		TEST_WITHOUT_BUILDING="true"
+		shift
+		;;
+	--build-only)
+		BUILD_ONLY="true"
 		shift
 		;;
 	--rebuild)
@@ -91,19 +97,21 @@ if ! [[ "$BUILD_LOCK_WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
 	die "Invalid UI build lifecycle wait: $BUILD_LOCK_WAIT_SECONDS"
 fi
 
-require_command git grep jq lockf shasum xcodebuild xcrun
+require_command git grep jq lockf mktemp node shasum xcodebuild xcrun
 select_required_xcode
-source_fingerprint="$(source_tree_fingerprint)"
+source_fingerprint="$(source_tree_fingerprint xcode)"
 xcode_identity="$(xcodebuild -version)"
 evidence_root="$(normalize_path "${UI_TEST_EVIDENCE_ROOT:-$ROOT_DIR/.ai-tmp/test-evidence/ui}")"
-build_key="$(checkpoint_run_fingerprint "$source_fingerprint" "$xcode_identity" "$DESTINATION" Debug)"
+products_key="$(checkpoint_run_fingerprint "$ROOT_DIR" "$xcode_identity" "$DESTINATION" Debug)"
+os_identity="$(sw_vers -productVersion)-$(sw_vers -buildVersion)"
+build_key="$(checkpoint_run_fingerprint "$source_fingerprint" "$xcode_identity" "$os_identity" "$DESTINATION" Debug)"
 explicit_derived_data="false"
 if [[ -n "$DERIVED_DATA_PATH" ]]; then
 	explicit_derived_data="true"
 elif [[ "$TEST_WITHOUT_BUILDING" == "true" ]]; then
 	die "--test-without-building requires --derived-data-path."
 else
-	DERIVED_DATA_PATH="$evidence_root/builds/$build_key/DerivedData"
+	DERIVED_DATA_PATH="$evidence_root/builds/$products_key/DerivedData"
 fi
 if [[ "$REBUILD" == "true" && "$explicit_derived_data" == "true" ]]; then
 	die "--rebuild cannot remove a caller-owned --derived-data-path."
@@ -111,7 +119,6 @@ fi
 
 mkdir -p "$OUT_DIR" "$evidence_root/locks" "$evidence_root/results"
 SUMMARY_FILE="$OUT_DIR/ui-smoke-summary.json"
-rm -f -- "$SUMMARY_FILE"
 only_testing_json="$(printf '%s\n' "${ONLY_TESTING[@]}" | jq -R . | jq -s .)"
 selector_key="$(printf '%s\0' "${ONLY_TESTING[@]}" | shasum -a 256 | awk '{print $1}')"
 run_signature="$(checkpoint_run_fingerprint "$build_key" "$selector_key")"
@@ -120,6 +127,15 @@ exec 8>"$run_lock"
 if ! /usr/bin/lockf -s -t 0 8; then
 	die "The same UI source and selector set is already running."
 fi
+# Different selectors may share OUT_DIR; protect its summary and published report too.
+exec 6>"$OUT_DIR/.ui-smoke.lock"
+if ! /usr/bin/lockf -s -t 0 6; then
+	info "Another UI run is writing this output directory; waiting up to $BUILD_LOCK_WAIT_SECONDS seconds."
+	/usr/bin/lockf -s -t "$BUILD_LOCK_WAIT_SECONDS" 6 || die "Timed out waiting for the UI output directory."
+fi
+rm -f -- "$SUMMARY_FILE" "$OUT_DIR/ui-test-report.json" "$OUT_DIR/ui-test-report.md"
+mkdir -p "$OUT_DIR/runs/$run_signature"
+run_dir="$(mktemp -d "$OUT_DIR/runs/$run_signature/invocation.XXXXXX")"
 
 is_full_target="false"
 if [[ "${#ONLY_TESTING[@]}" -eq 1 && "${ONLY_TESTING[0]}" == "VoidDisplayUITests" ]]; then
@@ -144,10 +160,29 @@ write_summary() {
 		--argjson max_attempts "$MAX_ATTEMPTS" \
 		--arg log_file "$log_file" \
 		--arg source_fingerprint "$source_fingerprint" \
+		--arg revision "$(git rev-parse HEAD)" \
+		--arg derived_data_path "$DERIVED_DATA_PATH" \
+		--arg result_bundle "${RESULT_BUNDLE:-}" \
+		--arg report_path "${REPORT_PATH:-}" \
+		--argjson build_only "$BUILD_ONLY" \
 		--argjson build_reused "$build_reused" \
 		--argjson test_evidence_reused "$test_evidence_reused" \
 		--argjson execution_duration_seconds "$duration_seconds" \
-		'{status: $status, reason: $reason, only_testing: $only_testing, attempt: $attempt, max_attempts: $max_attempts, log_file: $log_file, source_fingerprint: $source_fingerprint, build_reused: $build_reused, test_evidence_reused: $test_evidence_reused, execution_duration_seconds: $execution_duration_seconds}'
+		'{status: $status, reason: $reason, only_testing: $only_testing, attempt: $attempt, max_attempts: $max_attempts, log_file: $log_file, source_fingerprint: $source_fingerprint, revision: $revision, derived_data_path: $derived_data_path, result_bundle: $result_bundle, report_path: $report_path, build_only: $build_only, build_reused: $build_reused, test_evidence_reused: $test_evidence_reused, execution_duration_seconds: $execution_duration_seconds}'
+}
+
+write_test_report() {
+	local log_file="$1"
+	local report_base="$2"
+	if [[ -d "${RESULT_BUNDLE:-}" ]] && node "$TOOL_ROOT/scripts/lib/ui_test_report.mjs" "$RESULT_BUNDLE" "$log_file" "$DESTINATION" "$report_base" false; then
+		:
+	else
+		[[ "$xcode_status" -ne 0 ]] || return 1
+		node "$TOOL_ROOT/scripts/lib/ui_test_report.mjs" --log-only "$log_file" "$DESTINATION" "$report_base" || return 1
+	fi
+	ATTEMPT_REPORTS+=("$report_base.json")
+	node "$TOOL_ROOT/scripts/lib/ui_test_report.mjs" --combine "$OUT_DIR/ui-test-report" false "${ATTEMPT_REPORTS[@]}" || return 1
+	REPORT_PATH="$OUT_DIR/ui-test-report.json"
 }
 
 full_evidence_valid() {
@@ -160,6 +195,7 @@ full_evidence_valid() {
 		--argjson only_testing "$only_testing_json" \
 		'.status == "passed" and .source_fingerprint == $source_fingerprint and .run_signature == $run_signature and .only_testing == $only_testing and .total_tests > 0 and .failed_tests == 0' \
 		"$evidence_path" >/dev/null 2>&1 || return 1
+	jq -e '.schema_version == 1' "$(jq -r '.report_path' "$evidence_path")" >/dev/null 2>&1 || return 1
 	result_bundle="$(jq -er '.result_bundle | select(type == "string" and length > 0)' "$evidence_path")" || return 1
 	xcresult_test_evidence_valid "$result_bundle" "VoidDisplayUITests"
 }
@@ -205,7 +241,7 @@ forward_active_xcode_signal() {
 }
 
 ensure_source_unchanged() {
-	if ! (require_source_tree_unchanged "$source_fingerprint" "UI smoke $1"); then
+	if ! (require_source_tree_unchanged "$source_fingerprint" "UI smoke $1" xcode); then
 		finish_failure "$ACTIVE_ATTEMPT" "source_changed" "$ACTIVE_LOG_FILE"
 	fi
 }
@@ -216,16 +252,24 @@ trap 'forward_active_xcode_signal INT 130' INT
 trap 'forward_active_xcode_signal TERM 143' TERM
 trap 'forward_active_xcode_signal HUP 129' HUP
 
+if ! (require_xcode_build_environment); then
+	write_summary "failed" "build_input_rejected" 0 ""
+	exit 1
+fi
+
 if [[ "$is_full_target" == "true" && "$RERUN" != "true" ]] && full_evidence_valid; then
 	ensure_source_unchanged "evidence reuse"
 	test_evidence_reused="true"
 	build_reused="true"
+	RESULT_BUNDLE="$(jq -r '.result_bundle' "$evidence_path")"
+	node "$TOOL_ROOT/scripts/lib/ui_test_report.mjs" --combine "$OUT_DIR/ui-test-report" true "$(jq -r '.report_path' "$evidence_path")" || finish_failure 0 "test_report_failed" ""
+	REPORT_PATH="$OUT_DIR/ui-test-report.json"
 	write_summary "passed" "reused_test_evidence" 0 "$(jq -r '.log_file // ""' "$evidence_path")"
 	info "Reusing completed full UI target evidence."
 	exit 0
 fi
 
-build_lock="$evidence_root/locks/build-$build_key.lock"
+build_lock="$evidence_root/locks/build-$products_key.lock"
 exec 7>"$build_lock"
 if ! /usr/bin/lockf -s -t 0 7; then
 	info "Another UI selector is using these test products; waiting up to $BUILD_LOCK_WAIT_SECONDS seconds."
@@ -258,7 +302,7 @@ else
 		build_reused="true"
 	else
 		info "Building UI test products for source fingerprint $source_fingerprint."
-		build_dir="$OUT_DIR/runs/$run_signature/build"
+		build_dir="$run_dir/build"
 		ACTIVE_LOG_FILE="$build_dir/xcode-build-for-testing-Debug.log"
 		"$TOOL_ROOT/scripts/ci/xcode.sh" \
 			--action build-for-testing \
@@ -280,11 +324,18 @@ else
 	fi
 fi
 
+if [[ "$BUILD_ONLY" == "true" ]]; then
+	ensure_source_unchanged "build completion"
+	write_summary "passed" "test_products_ready" 0 "$ACTIVE_LOG_FILE"
+	info "UI test products ready; no UI tests executed."
+	exit 0
+fi
+
 last_reason="not_run"
 last_log_file=""
 for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
 	info "UI smoke attempt $attempt/$MAX_ATTEMPTS"
-	attempt_dir="$OUT_DIR/runs/$run_signature/attempt-$attempt"
+	attempt_dir="$run_dir/attempt-$attempt"
 	xcode_summary="$attempt_dir/xcode-summary.json"
 	fallback_log="$attempt_dir/xcode-test-without-building-Debug.log"
 	mkdir -p "$attempt_dir"
@@ -306,17 +357,24 @@ for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
 	ACTIVE_XCODE_RUNNER_PID=$!
 	if wait "$ACTIVE_XCODE_RUNNER_PID"; then xcode_status=0; else xcode_status=$?; fi
 	ACTIVE_XCODE_RUNNER_PID=""
-	summary_log=""
+	log_file="$fallback_log"
 	if [[ -f "$xcode_summary" ]]; then
-		summary_log="$(jq -r 'if type == "object" then (.log_path // "") else "" end' "$xcode_summary" 2>/dev/null || true)"
+		log_file="$(jq -r 'if type == "object" then (.log_path // "") else "" end' "$xcode_summary" 2>/dev/null || true)"
 	fi
-	log_file="${summary_log:-$fallback_log}"
+	RESULT_BUNDLE="$(jq -r '.result_bundle // ""' "$xcode_summary" 2>/dev/null || true)"
+	if ! write_test_report "$log_file" "$attempt_dir/ui-test-report"; then
+		[[ "$xcode_status" -ne 0 ]] || finish_failure "$attempt" "test_report_failed" "$log_file"
+	fi
 
 	if [[ "$xcode_status" -eq 0 ]]; then
 		ensure_source_unchanged "test completion"
+		RESULT_BUNDLE="$(jq -er '.result_bundle' "$xcode_summary")"
 		if [[ "$is_full_target" == "true" ]]; then
 			result_bundle="$(jq -er '.result_bundle' "$xcode_summary")"
+			stored_report="$run_dir/ui-test-report.json"
+			cp "$REPORT_PATH" "$stored_report"
 			write_json_file "$evidence_path" \
+				--arg report_path "$stored_report" \
 				--arg source_fingerprint "$source_fingerprint" \
 				--arg run_signature "$run_signature" \
 				--argjson only_testing "$only_testing_json" \
@@ -324,7 +382,7 @@ for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
 				--arg log_file "$log_file" \
 				--argjson total_tests "$(jq '.total_tests' "$xcode_summary")" \
 				--argjson failed_tests "$(jq '.failed_tests' "$xcode_summary")" \
-				'{status: "passed", source_fingerprint: $source_fingerprint, run_signature: $run_signature, only_testing: $only_testing, result_bundle: $result_bundle, log_file: $log_file, total_tests: $total_tests, failed_tests: $failed_tests}'
+				'{status: "passed", report_path: $report_path, source_fingerprint: $source_fingerprint, run_signature: $run_signature, only_testing: $only_testing, result_bundle: $result_bundle, log_file: $log_file, total_tests: $total_tests, failed_tests: $failed_tests}'
 		fi
 		write_summary "passed" "none" "$attempt" "$log_file"
 		info "UI smoke passed."

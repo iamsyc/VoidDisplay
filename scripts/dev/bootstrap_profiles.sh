@@ -22,13 +22,13 @@ if [[ -z "${VOIDDISPLAY_BOOTSTRAP_PROFILES_SH_SOURCED:-}" ]]; then
 			printf '%s\n' git go jq node rg xcodebuild swift awk
 			;;
 		ui-smoke)
-			printf '%s\n' git go jq lockf rg shasum xcodebuild grep xcrun awk tr tail tee
+			printf '%s\n' git go jq lockf mktemp node rg shasum xcodebuild grep xcrun awk tr tail tee
 			;;
 		xcode)
-			printf '%s\n' git go jq rg xcodebuild swift xcrun awk tr tail codesign security
+			printf '%s\n' git go jq node rg xcodebuild swift xcrun awk tr tail codesign security
 			;;
 		release-smoke)
-			printf '%s\n' go jq rg xcodebuild lipo codesign xcrun
+			printf '%s\n' go jq node rg xcodebuild lipo codesign xcrun
 			;;
 		*)
 			return 1
@@ -56,7 +56,7 @@ if [[ -z "${VOIDDISPLAY_BOOTSTRAP_PROFILES_SH_SOURCED:-}" ]]; then
 			printf '%s\n' go node aqua:jqlang/jq aqua:BurntSushi/ripgrep
 			;;
 		ui-smoke | xcode | release-smoke)
-			printf '%s\n' go aqua:jqlang/jq aqua:BurntSushi/ripgrep
+			printf '%s\n' go node aqua:jqlang/jq aqua:BurntSushi/ripgrep
 			;;
 		*)
 			return 1

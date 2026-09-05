@@ -310,32 +310,9 @@ struct RelaySessionHubTests {
     }
 
     @MainActor @Test func viewerOfferWaitsForPublisherStartupBeforeForwardingToRelay() async throws {
+        let clock = ManualTestClock()
         let startGate = AsyncGate()
-        let publisher = FakePublisherSession(onStart: {
-            await startGate.wait()
-        })
-        let client = FakeRelayClient()
-        let hub = RelaySessionHub(
-            relayClientProvider: { client },
-            publisherFactory: { _, _, _ in publisher }
-        )
-        let socket = RelayTestSocketConnection()
-        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
-        #expect(await waitUntil { startGate.waitCallCount() == 1 })
-
-        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(client.viewerOffers().isEmpty)
-
-        startGate.open()
-
-        #expect(await waitUntil { client.viewerOffers().count == 1 })
-        #expect(client.viewerOffers().first?.sdp == "viewer-offer")
-        #expect(await waitUntil { socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"answer""#) }) })
-    }
-
-    @MainActor @Test func viewerOfferTimesOutWhenPublisherStartupDoesNotComplete() async throws {
-        let startGate = AsyncGate()
+        defer { startGate.open() }
         let publisher = FakePublisherSession(onStart: {
             await startGate.wait()
         })
@@ -343,7 +320,38 @@ struct RelaySessionHubTests {
         let hub = RelaySessionHub(
             relayClientProvider: { client },
             publisherFactory: { _, _, _ in publisher },
-            publisherStartupWaitTimeout: .milliseconds(30)
+            publisherStartupClock: clock
+        )
+        let socket = RelayTestSocketConnection()
+        #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
+        #expect(await waitUntil { startGate.waitCallCount() == 1 })
+
+        hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
+        #expect(await waitUntil { clock.pendingSleepCount == 1 })
+        #expect(client.viewerOffers().isEmpty)
+
+        startGate.open()
+        #expect(await waitUntil { hub.state.withLock { $0.publisher != nil } })
+        clock.advance(by: .milliseconds(25))
+
+        #expect(await waitUntil { client.viewerOffers().count == 1 })
+        #expect(client.viewerOffers().first?.sdp == "viewer-offer")
+        #expect(await waitUntil { socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"answer""#) }) })
+    }
+
+    @MainActor @Test func viewerOfferTimesOutWhenPublisherStartupDoesNotComplete() async throws {
+        let clock = ManualTestClock()
+        let startGate = AsyncGate()
+        defer { startGate.open() }
+        let publisher = FakePublisherSession(onStart: {
+            await startGate.wait()
+        })
+        let client = FakeRelayClient()
+        let hub = RelaySessionHub(
+            relayClientProvider: { client },
+            publisherFactory: { _, _, _ in publisher },
+            publisherStartupWaitTimeout: .milliseconds(30),
+            publisherStartupClock: clock
         )
         let socket = RelayTestSocketConnection()
         #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
@@ -351,6 +359,8 @@ struct RelaySessionHubTests {
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)
 
+        #expect(await waitUntil { clock.pendingSleepCount == 1 })
+        clock.advance(by: .milliseconds(30))
         #expect(await waitUntil { socket.decodedTextPayloads().contains(where: { $0.contains(#""type":"codec_pending""#) }) })
         #expect(socket.decodedTextPayloads().contains(where: { $0.contains(#""reason":"publisher_codec_pending""#) }))
         #expect(client.viewerOffers().isEmpty)
@@ -714,7 +724,10 @@ struct RelaySessionHubTests {
         #expect(isRelayAccepted(hub.addClient(socket, target: .id(2), makeClientID: { "viewer-1" }, eventSink: { _ in })))
 
         hub.receiveSignalText(#"{"type":"ice_candidate","candidate":"candidate:queued","sdpMid":"0","sdpMLineIndex":0}"#, from: socket)
-        try? await Task.sleep(for: .milliseconds(20))
+        #expect(hub.state.withLock { state in
+            let viewer = state.clients[ObjectIdentifier(socket)]
+            return viewer?.pendingViewerCandidates.count == 1 && viewer?.candidateDrainTask == nil
+        })
         #expect(client.viewerCandidates().isEmpty)
 
         hub.receiveSignalText(#"{"type":"offer","sdp":"viewer-offer"}"#, from: socket)

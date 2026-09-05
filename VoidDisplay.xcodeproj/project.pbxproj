@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		FCEB55DC5EEF2BA376EA02FD /* VoidDisplayApp in Frameworks */ = {isa = PBXBuildFile; productRef = 9FED0F7AAD6710D42320E832 /* VoidDisplayApp */; };
 		CDAB90000000000000000007 /* VoidDisplayVirtualDisplayHost in Frameworks */ = {isa = PBXBuildFile; productRef = CDAB90000000000000000006 /* VoidDisplayVirtualDisplayHost */; };
 		CDAB90000000000000000008 /* VoidDisplayHost in Embed Display Host */ = {isa = PBXBuildFile; fileRef = CDAB90000000000000000002 /* VoidDisplayHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		FCEB55DC5EEF2BA376EA02FD /* VoidDisplayApp in Frameworks */ = {isa = PBXBuildFile; productRef = 9FED0F7AAD6710D42320E832 /* VoidDisplayApp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,12 +32,12 @@
 /* Begin PBXCopyFilesBuildPhase section */
 		CDAB90000000000000000009 /* Embed Display Host */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 6;
-			files = (CDAB90000000000000000008 /* VoidDisplayHost in Embed Display Host */, );
+			dstSubfolder = Executables;
+			files = (
+				CDAB90000000000000000008 /* VoidDisplayHost in Embed Display Host */,
+			);
 			name = "Embed Display Host";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -92,7 +92,9 @@
 		};
 		CDAB90000000000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			files = (CDAB90000000000000000007 /* VoidDisplayVirtualDisplayHost in Frameworks */, );
+			files = (
+				CDAB90000000000000000007 /* VoidDisplayVirtualDisplayHost in Frameworks */,
+			);
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -134,7 +136,9 @@
 			);
 			buildRules = (
 			);
-			dependencies = (CDAB9000000000000000000B /* PBXTargetDependency */, );
+			dependencies = (
+				CDAB9000000000000000000B /* PBXTargetDependency */,
+			);
 			fileSystemSynchronizedGroups = (
 				BA0465D22E90E53C00012958 /* VoidDisplay */,
 			);
@@ -170,12 +174,19 @@
 		CDAB90000000000000000001 /* VoidDisplayHost */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CDAB9000000000000000000C /* Build configuration list for PBXNativeTarget "VoidDisplayHost" */;
-			buildPhases = (CDAB90000000000000000004 /* Sources */, CDAB90000000000000000005 /* Frameworks */, );
-			buildRules = ();
-			dependencies = ();
-			fileSystemSynchronizedGroups = (CDAB90000000000000000003 /* VoidDisplayHost */, );
+			buildPhases = (
+				CDAB90000000000000000004 /* Sources */,
+				CDAB90000000000000000005 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				CDAB90000000000000000003 /* VoidDisplayHost */,
+			);
 			name = VoidDisplayHost;
-			packageProductDependencies = (CDAB90000000000000000006 /* VoidDisplayVirtualDisplayHost */, );
+			packageProductDependencies = (
+				CDAB90000000000000000006 /* VoidDisplayVirtualDisplayHost */,
+			);
 			productName = VoidDisplayHost;
 			productReference = CDAB90000000000000000002 /* VoidDisplayHost */;
 			productType = "com.apple.product-type.tool";
@@ -295,7 +306,8 @@
 		};
 		CDAB90000000000000000004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			files = ();
+			files = (
+			);
 		};
 /* End PBXSourcesBuildPhase section */
 
@@ -659,7 +671,11 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				OTHER_LDFLAGS = ("$(inherited)", "-framework", AppIntents, );
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					AppIntents,
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -682,7 +698,11 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				OTHER_LDFLAGS = ("$(inherited)", "-framework", AppIntents, );
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					AppIntents,
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -724,7 +744,10 @@
 		};
 		CDAB9000000000000000000C /* Build configuration list for PBXNativeTarget "VoidDisplayHost" */ = {
 			isa = XCConfigurationList;
-			buildConfigurations = (CDAB9000000000000000000D /* Debug */, CDAB9000000000000000000E /* Release */, );
+			buildConfigurations = (
+				CDAB9000000000000000000D /* Debug configuration for PBXNativeTarget "VoidDisplayHost" */,
+				CDAB9000000000000000000E /* Release configuration for PBXNativeTarget "VoidDisplayHost" */,
+			);
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */

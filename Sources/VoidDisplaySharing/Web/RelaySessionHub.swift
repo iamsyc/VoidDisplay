@@ -102,6 +102,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
     let state: Mutex<State>
     let relayClientProvider: RelayClientProvider
     let publisherFactory: PublisherFactory
+    let publisherStartupClock: any Clock<Duration>
     let publisherStartupWaitTimeout: Duration
     nonisolated package static let maxClients = 16
     nonisolated package static let maxOffersPerClient = 3
@@ -124,7 +125,8 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         onDemandChanged: @escaping @Sendable (Bool) -> Void = { _ in },
         relayClientProvider: @escaping RelayClientProvider,
         publisherFactory: PublisherFactory? = nil,
-        publisherStartupWaitTimeout: Duration = .seconds(2)
+        publisherStartupWaitTimeout: Duration = .seconds(2),
+        publisherStartupClock: any Clock<Duration> = ContinuousClock()
     ) {
         self.state = Mutex(State(onDemandChanged: onDemandChanged))
 #if canImport(WebRTC)
@@ -141,6 +143,7 @@ package final class RelaySessionHub: Sendable, SignalSessionHub {
         self.publisherFactory = publisherFactory ?? { _, _, _ in nil }
 #endif
         self.relayClientProvider = relayClientProvider
+        self.publisherStartupClock = publisherStartupClock
         self.publisherStartupWaitTimeout = publisherStartupWaitTimeout
     }
 

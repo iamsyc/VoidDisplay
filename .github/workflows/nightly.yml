@@ -71,28 +71,23 @@ jobs:
           path: .ai-tmp/nightly-full-ui/DerivedData/ModuleCache.noindex
           key: xcode-meta-nightly-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
 
-      - name: Build full UI test bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/xcode.sh" \
-            --action build-for-testing \
-            --configuration Debug \
-            --derived-data-path .ai-tmp/nightly-full-ui/DerivedData \
-            --out-dir .ai-tmp/nightly-full-ui/build
-
       - name: Run full UI suite serially
         shell: bash
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/xcode.sh" \
-            --action test-without-building \
-            --configuration Debug \
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/ui_smoke.sh" \
             --derived-data-path .ai-tmp/nightly-full-ui/DerivedData \
             --only-testing VoidDisplayUITests \
             --out-dir .ai-tmp/nightly-full-ui/test
+
+      - name: Write UI timing and failure summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f .ai-tmp/nightly-full-ui/test/ui-test-report.md ]]; then
+            cat .ai-tmp/nightly-full-ui/test/ui-test-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload full UI artifacts
         if: always()
@@ -119,6 +114,13 @@ jobs:
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
+
+      - name: Restore previous coverage baseline
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: .ai-tmp/test-evidence/coverage
+          key: coverage-baseline-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: coverage-baseline-${{ runner.os }}-${{ github.ref_name }}-
 
       - name: Run coverage unit gate
         shell: bash

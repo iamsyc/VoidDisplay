@@ -29,6 +29,17 @@ project="VoidDisplay.xcodeproj"
 scheme="VoidDisplay"
 configuration="Debug"
 destination="platform=macOS,arch=arm64"
+product_binaries=(
+	"VoidDisplay.app/Contents/MacOS/VoidDisplay"
+	"VoidDisplay.app/Contents/MacOS/VoidDisplayHost"
+	"VoidDisplayUITests-Runner.app/Contents/MacOS/VoidDisplayUITests-Runner"
+	"VoidDisplayUITests-Runner.app/Contents/PlugIns/VoidDisplayUITests.xctest/Contents/MacOS/VoidDisplayUITests"
+)
+for binary in "${product_binaries[@]}"; do
+	mkdir -p "$products_path/$configuration/${binary%/*}"
+	printf 'fixture executable\n' >"$products_path/$configuration/$binary"
+	chmod +x "$products_path/$configuration/$binary"
+done
 mkdir -p "$root_dir"
 printf 'fixture xctestrun\n' >"$xctestrun_path"
 write_json_file "$manifest_path" \
@@ -53,6 +64,13 @@ products_args=(
 )
 xcode_test_products_exist "${products_args[@]}" ||
 	die "Xcode product probe rejected matching build provenance."
+for binary in "${product_binaries[@]}"; do
+	mv "$products_path/$configuration/$binary" "$fixture_root/saved-binary"
+	if xcode_test_products_exist "${products_args[@]}"; then
+		die "Xcode product probe accepted a missing executable: $binary"
+	fi
+	mv "$fixture_root/saved-binary" "$products_path/$configuration/$binary"
+done
 if xcode_test_products_exist \
 	"$derived_data" Release "$destination" "$source_fingerprint" "$xcode_identity" "$root_dir" "$project" "$scheme"; then
 	die "Xcode product probe accepted the wrong configuration."

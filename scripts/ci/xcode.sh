@@ -44,6 +44,7 @@ DEVELOPMENT_TEAM_IDENTIFIER=""
 SUMMARY_TERMINAL="false"
 SUMMARY_FAILURE_REASON="argument_validation_failed"
 XCODEBUILD_PID=""
+XCODEBUILD_STARTED="false"
 XCODEBUILD_TEE_PID=""
 XCODEBUILD_LOG_FIFO=""
 
@@ -61,6 +62,11 @@ write_failed_summary_on_exit() {
 	release_ui_test_session || true
 	if [[ "$exit_status" -ne 0 && "$SUMMARY_TERMINAL" != "true" ]]; then
 		set +e
+		local current_log="" current_result=""
+		if [[ "$XCODEBUILD_STARTED" == "true" ]]; then
+			current_log="$LOG_PATH"
+			if [[ "$is_test_action" == "true" ]]; then current_result="$RESULT_BUNDLE_PATH"; fi
+		fi
 		rm -f -- "$failure_summary_path"
 		if command -v jq >/dev/null 2>&1; then
 			write_json_file "$failure_summary_path" \
@@ -70,10 +76,11 @@ write_failed_summary_on_exit() {
 				--arg configuration "$CONFIGURATION" \
 				--arg destination "$DESTINATION" \
 				--arg signing_mode "$SIGNING_MODE" \
-				--arg log_path "$LOG_PATH" \
+				--arg log_path "$current_log" \
+				--arg result_bundle "$current_result" \
 				--arg test_plan "$TEST_PLAN" \
 				--argjson only_testing "$ONLY_TESTING_JSON" \
-				'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, signing_mode: $signing_mode, log_path: $log_path, test_plan: $test_plan, only_testing: $only_testing}'
+				'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, signing_mode: $signing_mode, log_path: $log_path, result_bundle: $result_bundle, test_plan: $test_plan, only_testing: $only_testing}'
 		fi
 	fi
 	exit "$exit_status"
@@ -224,11 +231,9 @@ esac
 if [[ "$is_test_action" == "true" && "${#ONLY_TESTING[@]}" -eq 0 && -z "$TEST_PLAN" ]]; then
 	die "xcode.sh --action $ACTION requires --only-testing or --test-plan."
 fi
+SUMMARY_FAILURE_REASON="build_input_rejected"
+require_xcode_build_environment
 if [[ "$SIGNING_MODE" == "development" ]]; then
-	if [[ -n "${XCODE_XCCONFIG_FILE:-}" ]]; then
-		SUMMARY_FAILURE_REASON="signing_input_rejected"
-		die "Development signing does not accept XCODE_XCCONFIG_FILE."
-	fi
 	[[ "$ACTION" == "build" ]] || die "Development signing is limited to build actions."
 	[[ "$SCHEME" == "VoidDisplay" ]] || die "Development signing is limited to the VoidDisplay scheme."
 	[[ "$CONFIGURATION" == "Debug" ]] || die "Development signing is limited to Debug builds."
@@ -247,7 +252,7 @@ if [[ "$SIGNING_MODE" == "development" ]]; then
 fi
 
 SUMMARY_FAILURE_REASON="dependency_preflight_failed"
-require_command rg xcodebuild xcrun awk tr tail
+require_command node rg xcodebuild xcrun awk tr tail
 
 case "$ACTION" in
 build | build-for-testing | test)
@@ -260,7 +265,7 @@ SUMMARY_FAILURE_REASON="toolchain_selection_failed"
 select_required_xcode
 
 if [[ "$ACTION" == "build-for-testing" || "$ACTION" == "test-without-building" ]]; then
-	source_fingerprint="$(source_tree_fingerprint)"
+	source_fingerprint="$(source_tree_fingerprint xcode)"
 	xcode_identity="$(xcodebuild -version)"
 fi
 if [[ "$ACTION" == "test-without-building" ]]; then
@@ -338,6 +343,11 @@ if [[ "$is_test_action" == "true" ]]; then
 	done
 fi
 
+# A failed or interrupted incremental build must never leave old provenance usable.
+if [[ "$ACTION" != "test-without-building" ]]; then
+	rm -f -- "$(xcode_test_products_manifest_path "$DERIVED_DATA_PATH")"
+fi
+
 SUMMARY_FAILURE_REASON="xcodebuild_failed"
 if ! : >"$LOG_PATH"; then
 	SUMMARY_FAILURE_REASON="build_log_write_failed"
@@ -348,6 +358,7 @@ XCODEBUILD_LOG_FIFO="$OUT_DIR/xcodebuild-output.$$.fifo"
 tee "$LOG_PATH" <"$XCODEBUILD_LOG_FIFO" &
 XCODEBUILD_TEE_PID=$!
 set +e
+XCODEBUILD_STARTED="true"
 "${xcode_cmd[@]}" "$ACTION" >"$XCODEBUILD_LOG_FIFO" 2>&1 &
 XCODEBUILD_PID=$!
 wait "$XCODEBUILD_PID"
@@ -380,20 +391,6 @@ fi
 
 SUMMARY_FAILURE_REASON="diagnostic_scan_failed"
 scan_xcode_log_for_diagnostics "Xcode $ACTION" "$LOG_PATH"
-
-if [[ "$ACTION" == "build-for-testing" ]]; then
-	SUMMARY_FAILURE_REASON="test_products_manifest_failed"
-	require_source_tree_unchanged "$source_fingerprint" "Xcode build-for-testing"
-	write_json_file "$(xcode_test_products_manifest_path "$DERIVED_DATA_PATH")" \
-		--arg configuration "$CONFIGURATION" \
-		--arg destination "$DESTINATION" \
-		--arg source_fingerprint "$source_fingerprint" \
-		--arg xcode_identity "$xcode_identity" \
-		--arg root_dir "$ROOT_DIR" \
-		--arg project "$PROJECT_PATH" \
-		--arg scheme "$SCHEME" \
-		'{version: 1, configuration: $configuration, destination: $destination, source_fingerprint: $source_fingerprint, xcode_identity: $xcode_identity, root_dir: $root_dir, project: $project, scheme: $scheme}'
-fi
 
 app_path="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/VoidDisplay.app"
 host_path="$app_path/Contents/MacOS/VoidDisplayHost"
@@ -479,6 +476,20 @@ else
 		--arg signing_mode "$SIGNING_MODE" \
 		'{status: $status, display_host_path: $display_host_path, display_host_verified: $display_host_verified, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, signing_mode: $signing_mode}'
 fi
+if [[ "$ACTION" == "build-for-testing" ]]; then
+	SUMMARY_FAILURE_REASON="test_products_manifest_failed"
+	require_source_tree_unchanged "$source_fingerprint" "Xcode build-for-testing" xcode
+	write_json_file "$(xcode_test_products_manifest_path "$DERIVED_DATA_PATH")" \
+		--arg configuration "$CONFIGURATION" \
+		--arg destination "$DESTINATION" \
+		--arg source_fingerprint "$source_fingerprint" \
+		--arg xcode_identity "$xcode_identity" \
+		--arg root_dir "$ROOT_DIR" \
+		--arg project "$PROJECT_PATH" \
+		--arg scheme "$SCHEME" \
+		'{version: 1, configuration: $configuration, destination: $destination, source_fingerprint: $source_fingerprint, xcode_identity: $xcode_identity, root_dir: $root_dir, project: $project, scheme: $scheme}'
+fi
+
 SUMMARY_TERMINAL="true"
 
 info "Xcode $ACTION gate passed."

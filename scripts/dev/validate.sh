@@ -88,10 +88,9 @@ write_json_file "$summary_path" \
 	--arg destination "$DESTINATION" \
 	--arg ui_selector "$UI_SELECTOR" \
 	'{status: $status, phase: $phase, destination: $destination, ui_selector: $ui_selector}'
-shared_derived_data="$OUT_DIR/xcode-shared/DerivedData"
-xcode_preflight_action="build"
+xcode_preflight=("$TOOL_ROOT/scripts/ci/xcode.sh" --action build --configuration Debug)
 if [[ "$RUN_UI_SMOKE" == "true" ]]; then
-	xcode_preflight_action="build-for-testing"
+	xcode_preflight=("$TOOL_ROOT/scripts/ci/ui_smoke.sh" --build-only --only-testing "$UI_SELECTOR")
 fi
 
 failure_phase="preflight"
@@ -105,11 +104,8 @@ parallel_group_start unit "$OUT_DIR/lanes/unit.log" \
 	"$TOOL_ROOT/scripts/ci/unit.sh" --out-dir "$OUT_DIR/unit"
 parallel_group_start xcode-preflight "$OUT_DIR/lanes/xcode-preflight.log" \
 	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" \
-	"$TOOL_ROOT/scripts/ci/xcode.sh" \
-	--action "$xcode_preflight_action" \
-	--configuration Debug \
+	"${xcode_preflight[@]}" \
 	--destination "$DESTINATION" \
-	--derived-data-path "$shared_derived_data" \
 	--out-dir "$OUT_DIR/xcode-build"
 parallel_group_wait "local validation preflight"
 preflight_duration_seconds="$(($(date +%s) - preflight_started_at))"
@@ -123,8 +119,6 @@ if [[ "$RUN_UI_SMOKE" == "true" ]]; then
 	parallel_group_start_streamed ui-smoke "$OUT_DIR/lanes/ui-smoke.log" \
 		env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/ui_smoke.sh" \
 		--only-testing "$UI_SELECTOR" \
-		--test-without-building \
-		--derived-data-path "$shared_derived_data" \
 		--destination "$DESTINATION" \
 		--out-dir "$OUT_DIR/ui-smoke"
 	parallel_group_wait "local validation UI smoke"

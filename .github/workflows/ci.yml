@@ -58,6 +58,7 @@ jobs:
       requires_unit: ${{ steps.classify.outputs.requires_unit }}
       requires_xcode_build: ${{ steps.classify.outputs.requires_xcode_build }}
       requires_ui_smoke: ${{ steps.classify.outputs.requires_ui_smoke }}
+      ui_selectors_json: ${{ steps.classify.outputs.ui_selectors_json }}
       requires_release_smoke: ${{ steps.classify.outputs.requires_release_smoke }}
     steps:
       - name: Checkout
@@ -215,12 +216,7 @@ jobs:
     if: ${{ needs.classify_changes.outputs.requires_ui_smoke == 'true' }}
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
-      only_testing_json: >-
-        [
-          "VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney",
-          "VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState",
-          "VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing"
-        ]
+      only_testing_json: ${{ needs.classify_changes.outputs.ui_selectors_json }}
       artifact_retention_days: 7
       artifact_name_suffix: pr
       enforce_failure: true

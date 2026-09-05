@@ -1,5 +1,7 @@
 # 测试策略
 
+仓库的 Xcode 构建、UI 测试和完整回归入口不接受 `XCODE_XCCONFIG_FILE`。运行前需移除该环境变量；入口会在构建或复用成功证据前拒绝它，避免外部配置与已验证产物不一致。
+
 ## 分层
 
 | 层级 | 覆盖内容 | 入口 |
@@ -7,7 +9,7 @@
 | 静态门禁 | Shell、workflow、格式、lint、工程结构和项目静态约束 | `scripts/ci/static.sh` |
 | 单元与集成测试 | SwiftPM、浏览器 JavaScript、Go relay | `scripts/ci/unit.sh` |
 | Xcode build | App target、资源、工程配置和编译诊断 | `scripts/ci/xcode.sh --action build` |
-| UI smoke | 最多 13 个关键用户旅程，每个旅程独立启动应用 | `scripts/ci/ui_smoke.sh` |
+| UI smoke | 按职责组织关键用户旅程，用实测耗时和启动次数控制成本 | `scripts/ci/ui_smoke.sh` |
 | 完整回归 | 静态、单元、Debug build、UI、稳定性和 arm64 release smoke | `scripts/ci/full_regression.sh --destination "platform=macOS,arch=$(uname -m)"` |
 
 Xcode 的 `VoidDisplay` scheme 用于 App build 和 run。UI test 必须通过 `scripts/ci/ui_smoke.sh` 或 `scripts/ci/xcode.sh` 启动，以便 wrapper 在完整 `xcodebuild` 生命周期持有本用户的 UI session lock。Scheme 会拒绝没有 wrapper token 的 Cmd-U。完整单元与集成测试入口仍是 `scripts/ci/unit.sh`。
@@ -24,7 +26,7 @@ Xcode 的 `VoidDisplay` scheme 用于 App build 和 run。UI test 必须通过 `
 
 UI smoke 复用 [SmokeTestHelpers.swift](../../UITests/VoidDisplayUITests/Smoke/SmokeTestHelpers.swift)。共享端口通过 `-sharing.preferredPort <port>` launch arguments 注入，测试不直接写硬编码 suite。
 
-UI 用例按用户旅程组织。纯文本映射、状态转换、按钮可用性和组件固有尺寸在 Swift 单元测试中验证；UI 层只保留真实窗口、布局、点击结果和关键辅助功能路径。UI 测试禁止使用 `.typeKey`、`.typeText`、`XCUIKeyboardKey`、`CGEvent` 或 System Events 合成键盘输入，焦点状态通过测试环境注入和 AppKit 焦点遍历验证。
+UI 用例按用户旅程组织，分为 Home、VirtualDisplay、Preview、Diagnostics、MenuBar 和 Settings。独立前置条件保留独立启动；同一前置状态下的连续操作合并，并用 `performSmokeStep` 标记阶段。预览和设置使用真实窗口、控制器及运行时，模拟边界放在采集与系统 provider。纯文本映射、状态转换、按钮可用性和组件固有尺寸在 Swift 单元测试中验证；UI 层只保留真实窗口、布局、点击结果和关键辅助功能路径。UI 测试禁止使用 `.typeKey`、`.typeText`、`XCUIKeyboardKey`、`CGEvent` 或 System Events 合成键盘输入，焦点状态通过测试环境注入和 AppKit 焦点遍历验证。
 
 ## 本地验证
 
@@ -45,9 +47,15 @@ scripts/ci/ui_smoke.sh \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
+源码指纹使用各文件内容的定长摘要、路径、类型和可执行位，不包含提交哈希；二进制内容中的分隔符不会改变文件记录边界。Xcode 指纹排除文档、单元测试和 workflow；产品源码、UI 测试、资源、依赖与构建脚本变化会使构建失效。提交相同文件或只改文档不会导致 UI 重建。完整回归 checkpoint 仍使用全仓库内容指纹。
+
+`validate.sh`、`full_regression.sh` 和 `ui_smoke.sh` 共用受管构建缓存。前置阶段调用 `ui_smoke.sh --build-only`，先检查完整证据，再校验或构建产物，随后直接复用。
+
+DerivedData 按仓库、工具链、目的架构和配置保留，源码改变后仍使用 Xcode 增量编译；产物清单必须与当前源码匹配才可跳过构建。完整测试证据额外区分 macOS 版本。
+
 `ui_smoke.sh` 默认按源码指纹、Xcode 版本、目标架构和配置复用 `build-for-testing` 产物，定向 selector 每次执行 `test-without-building`。完整 `VoidDisplayUITests` 通过后会复用有效结果；`--rerun` 强制重新执行，`--rebuild` 同时重建受管测试产物。相同源码和 selector 已在运行时会立即拒绝；共享同一构建键的其他 selector 通过生命周期锁串行执行完整性校验、重建、构建和测试，任何运行中的 selector 都不会被并发 `--rebuild` 删除测试产物。
 
-每次运行的构建日志及测试结果写入 `OUT_DIR/runs/<run_signature>/`，顶层 `ui-smoke-summary.json` 保留本次入口汇总。不同源码或 selector 使用不同运行目录，同一输出目录中的定向运行不会覆盖完整测试证据。取得构建生命周期锁后及发布通过证据前，均验证源码未变化；发生变化时记录 `source_changed` 并废弃结果。预构建失败同样写入顶层失败汇总，保留实际原因和日志路径，并遵循 `--enforce-failure` 的退出语义。
+每次运行的构建日志及测试结果写入独立的 `OUT_DIR/runs/<run_signature>/invocation.*/`，顶层 `ui-smoke-summary.json` 保留本次入口汇总。使用同一 `OUT_DIR` 的入口串行写入，定向运行和预构建不会覆盖完整测试证据或删除正在发布的报告。取得构建生命周期锁后及发布通过证据前，均验证源码未变化；发生变化时记录 `source_changed` 并废弃结果。预构建失败同样写入顶层失败汇总，保留实际原因，并遵循 `--enforce-failure` 的退出语义。Xcode 尚未启动时，失败汇总的日志和结果路径为空，不计入历史运行的用例或启动次数。
 
 跨模块、并发、持久化、网络、安全、脚本、工程设置或发布改动需要扩大验证范围。本机支持对应 release target 时，完整回归入口是：
 
@@ -104,3 +112,11 @@ scripts/dev/verify_display_host.sh \
 ## 远程 CI
 
 远程 runner、变更分类、job matrix 和 artifact 由 workflow 决定。仓库分支保护或 ruleset 与实时 PR check suite 共同决定哪些 check 属于外部必需门禁。本地通过不能替代远程 CI 结果。详细说明见 [CI Workflows](./ci-workflows.md)。
+
+## 耗时与覆盖率报告
+
+`ui-test-report.json` 和 `ui-test-report.md` 从 xcresult 和执行日志提取每例耗时、启动次数、阶段及失败 selector 的复跑命令，重试保留每次尝试的成本和结果。缺失日志或耗时显示为不可用，复用历史证据时分别显示历史启动次数和本次零启动。新增旅程需说明独立启动原因，合并时保留原行为断言，评审实测总耗时及慢用例变化，不以固定用例数量限制覆盖。耗时比较需记录同一主机、Xcode、selector 和是否复用构建，编译与排队时间单列。
+
+`scripts/ci/coverage.sh` 运行带插桩的 SwiftPM 测试并解析 LLVM JSON。解析入口把仓库根目录解析为真实路径，使符号链接入口与编译器记录的源码路径一致。`coverage-report.json` 保留各模块行、函数、区域覆盖率以及每个文件的未覆盖区域起始行，Markdown 列出模块变化和缺口最大的文件。这里只度量 SwiftPM 执行到的源码，UI、JavaScript、Go 属于独立证据。不存在统一百分比阈值。
+
+通过后的报告保存为 `.ai-tmp/test-evidence/coverage/latest.json`，下次与其比较；首次运行标记基线缺失，新增模块不伪造历史变化。Nightly 恢复同分支的上一份基线，并把覆盖率与 UI 报告写入 job summary。

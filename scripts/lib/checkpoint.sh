@@ -7,27 +7,7 @@ if [[ -z "${VOIDDISPLAY_CHECKPOINT_SH_SOURCED:-}" ]]; then
 	source "$TOOL_ROOT/scripts/lib/common.sh"
 
 	source_tree_fingerprint() {
-		(
-			cd "$ROOT_DIR" || exit
-			printf 'head\0'
-			git rev-parse HEAD
-			printf 'tracked-diff\0'
-			git diff --binary HEAD --
-			while IFS= read -r -d '' untracked_path; do
-				printf 'untracked\0%s\0' "$untracked_path"
-				if /usr/bin/stat -f '%Lp' "$untracked_path" >/dev/null 2>&1; then
-					/usr/bin/stat -f '%Lp' "$untracked_path"
-				else
-					/usr/bin/stat -c '%a' "$untracked_path"
-				fi
-				if [[ -L "$untracked_path" ]]; then
-					printf 'symlink\0'
-					/bin/readlink "$untracked_path"
-				else
-					shasum -a 256 -- "$untracked_path" | awk '{print $1}'
-				fi
-			done < <(git ls-files --others --exclude-standard -z)
-		) | shasum -a 256 | awk '{print $1}'
+		node "$TOOL_ROOT/scripts/lib/source_fingerprint.mjs" "$ROOT_DIR" "${1:-all}"
 	}
 
 	checkpoint_run_fingerprint() {
@@ -113,7 +93,7 @@ if [[ -z "${VOIDDISPLAY_CHECKPOINT_SH_SOURCED:-}" ]]; then
 		local context="$2"
 		local actual_fingerprint
 
-		actual_fingerprint="$(source_tree_fingerprint)"
+		actual_fingerprint="$(source_tree_fingerprint "${3:-all}")"
 		[[ "$actual_fingerprint" == "$expected_fingerprint" ]] ||
 			die "Repository source changed during $context. Discard this mixed-source result and rerun the gate."
 	}

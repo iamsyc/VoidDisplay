@@ -52,13 +52,8 @@ public struct VoidDisplayApplication: App {
     public var body: some Scene {
         Window("VoidDisplay", id: AppWindowID.main) {
             Group {
-                if UITestRuntime.isEnabled && UITestRuntime.scenario == .settingsFeedback {
-                    AppSettingsView(
-                        observability: observability,
-                        feedbackController: feedbackController
-                    )
-                } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewActive {
-                    PreviewActiveUITestHost {
+                if UITestRuntime.isEnabled && [.previewActive, .previewRecovery].contains(UITestRuntime.scenario) {
+                    PreviewUITestHost(capture: capture, displayRuntime: displayRuntime) {
                         HomeView(
                             observability: observability,
                             feedbackController: feedbackController,
@@ -67,8 +62,6 @@ public struct VoidDisplayApplication: App {
                             openScreenCapturePrivacySettings: openScreenCapturePrivacySettings
                         )
                     }
-                } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewRecovery {
-                    PreviewRecoveryUITestHost()
                 } else if UITestRuntime.isEnabled && UITestRuntime.scenario == .previewWindowPayload {
                     CaptureDisplayWindowRoot(
                         previewID: nil,
@@ -224,26 +217,6 @@ private final class UITestFocusTraversalView: NSView {
         guard window != nil else { return }
         DispatchQueue.main.async { [weak self] in
             self?.window?.selectNextKeyView(nil)
-        }
-    }
-}
-
-private struct PreviewRecoveryUITestHost: View {
-    @State private var state = CapturePreviewState.failed(
-        failureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
-    )
-
-    var body: some View {
-        if state == .released {
-            Text(verbatim: "Preview Closed")
-                .accessibilityIdentifier("capture_preview_closed_state")
-        } else {
-            CapturePreviewRecoveryView(
-                state: state,
-                isRetrying: state == .restarting,
-                retry: { state = .restarting },
-                close: { state = .released }
-            )
         }
     }
 }

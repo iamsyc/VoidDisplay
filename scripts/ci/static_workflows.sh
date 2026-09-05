@@ -139,8 +139,16 @@ validate_xcode_metadata_cache_contract() {
 
 	assert_no_match "UI Xcode metadata caches must not persist SwiftPM package checkouts." \
 		'DerivedData/SourcePackages' "${ui_workflow_files[@]}"
-	assert_no_match "UI Xcode metadata caches must not restore across dependency lock states." \
-		'^[[:space:]]*restore-keys:' "${ui_workflow_files[@]}"
+	local invalid
+	invalid="$(awk '
+		function check_step() {
+			if (step ~ /DerivedData\// && step ~ /restore-keys:/) print FILENAME ": UI build metadata has a restore prefix"
+		}
+		/^[[:space:]]*- name:/ { check_step(); step = "" }
+		{ step = step $0 "\n" }
+		END { check_step() }
+	' "${ui_workflow_files[@]}")"
+	fail_on_output "UI Xcode metadata caches must not restore across dependency lock states." "$invalid"
 }
 
 validate_ci_summary_comment_policy() {

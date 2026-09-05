@@ -86,12 +86,18 @@ struct VirtualDisplayProcessTests {
 
     @Test func cancellationTerminatesHostBeforeReady() async throws {
         var terminated = false
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let readyMarker = directory.appendingPathComponent("request-read")
+        let quotedPath = "'" + readyMarker.path.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
         let task = Task {
-            try await driver(script: "read request; exec sleep 60").createRuntimeDisplay(
+            try await driver(script: "read request; touch \(quotedPath); exec sleep 60").createRuntimeDisplay(
                 descriptor: descriptor, onTermination: { terminated = true }
             )
         }
-        try await Task.sleep(for: .milliseconds(100))
+        defer { task.cancel() }
+        #expect(await waitUntil { FileManager.default.fileExists(atPath: readyMarker.path) })
         task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
         #expect(await waitUntil { terminated })

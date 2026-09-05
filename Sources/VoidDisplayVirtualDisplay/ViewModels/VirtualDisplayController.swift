@@ -338,7 +338,12 @@ package final class VirtualDisplayController {
             fallback: String(localized: "Failed to save display settings.")
         ) {
             try mutateAndSync {
-                try virtualDisplayFacade.updateConfig(updated)
+                guard let current = virtualDisplayFacade.snapshot.configs.first(where: { $0.id == updated.id }) else {
+                    throw VirtualDisplayOperationError.configNotFound
+                }
+                var edited = updated
+                edited.desiredEnabled = current.desiredEnabled
+                try virtualDisplayFacade.updateConfig(edited)
             }
         }
         Task {

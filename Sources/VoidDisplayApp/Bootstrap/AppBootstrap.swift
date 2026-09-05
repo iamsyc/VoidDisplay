@@ -27,7 +27,9 @@ package enum AppBootstrap {
                 : nil,
             virtualDisplayFacade: UITestVirtualDisplayFacade(),
             startupPlan: .init(
-                shouldRestoreVirtualDisplays: UITestRuntime.scenario != .menuBarQuickActions
+                shouldRestoreVirtualDisplays: ![
+                    .menuBarQuickActions, .previewActive, .previewRecovery
+                ].contains(UITestRuntime.scenario)
             )
         )
     }
