@@ -113,6 +113,8 @@ scripts/dev/verify_display_host.sh \
 
 远程 runner、变更分类、job matrix 和 artifact 由 workflow 决定。仓库分支保护或 ruleset 与实时 PR check suite 共同决定哪些 check 属于外部必需门禁。本地通过不能替代远程 CI 结果。详细说明见 [CI Workflows](./ci-workflows.md)。
 
+CI 的完整 UI 旅程需要容纳 1180×720 窗口、菜单栏和 Dock。PR 与 Nightly 在运行前通过 `scripts/dev/prepare_ui_display.swift` 检查桌面，必要时选择至少 1280×900 的受支持显示模式，变更仅应用于当前登录会话。没有可用模式时明确报告环境准备失败，不启动会因窗口超出屏幕而误报的 UI 测试。菜单栏启停过程中控件会暂时呈现为进度指示器，交互测试等待按钮恢复可用后再读取终态。
+
 ## 耗时与覆盖率报告
 
 `ui-test-report.json` 和 `ui-test-report.md` 从 xcresult 和执行日志提取每例耗时、启动次数、阶段及失败 selector 的复跑命令，重试保留每次尝试的成本和结果。缺失日志或耗时显示为不可用，复用历史证据时分别显示历史启动次数和本次零启动。新增旅程需说明独立启动原因，合并时保留原行为断言，评审实测总耗时及慢用例变化，不以固定用例数量限制覆盖。耗时比较需记录同一主机、Xcode、selector 和是否复用构建，编译与排队时间单列。

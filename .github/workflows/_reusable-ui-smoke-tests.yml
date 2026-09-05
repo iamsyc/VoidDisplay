@@ -78,6 +78,14 @@ jobs:
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile ui-smoke
 
+      - name: Prepare UI desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          mkdir -p "$tool_root/.ai-tmp/ui-display/ModuleCache"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" xcrun swift -swift-version 6 -module-cache-path "$tool_root/.ai-tmp/ui-display/ModuleCache" "$tool_root/scripts/dev/prepare_ui_display.swift"
+
       - name: Run UI smoke
         id: run_ui
         continue-on-error: true

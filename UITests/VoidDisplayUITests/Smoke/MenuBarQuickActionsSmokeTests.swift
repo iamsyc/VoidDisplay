@@ -68,7 +68,8 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
             toggleButton.click()
             XCTAssertTrue(
                 waitForCondition(timeout: 8) {
-                    ["Enable", "启用"].contains(toggleButton.label)
+                    toggleButton.exists && toggleButton.isEnabled
+                        && ["Enable", "启用"].contains(toggleButton.label)
                 },
                 "The virtual display did not reach the disabled state."
             )
@@ -76,7 +77,8 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
             toggleButton.click()
             XCTAssertTrue(
                 waitForCondition(timeout: 8) {
-                    ["Disable", "停用"].contains(toggleButton.label)
+                    toggleButton.exists && toggleButton.isEnabled
+                        && ["Disable", "停用"].contains(toggleButton.label)
                 },
                 "The virtual display did not return to the enabled state."
             )
@@ -126,7 +128,9 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
                 XCTAssertTrue(waitForHittable(menuToggle))
                 menuToggle.click()
                 let expectedLabels = enabled ? ["Disable", "停用"] : ["Enable", "启用"]
-                XCTAssertTrue(waitForCondition(timeout: 8) { expectedLabels.contains(menuToggle.label) })
+                XCTAssertTrue(waitForCondition(timeout: 8) {
+                    menuToggle.exists && menuToggle.isEnabled && expectedLabels.contains(menuToggle.label)
+                })
 
                 tapIdentifier(app, identifier: "virtual_display_edit_name_field")
                 XCTAssertTrue(waitForAbsence(panel, timeout: 2))

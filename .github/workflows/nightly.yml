@@ -71,6 +71,14 @@ jobs:
           path: .ai-tmp/nightly-full-ui/DerivedData/ModuleCache.noindex
           key: xcode-meta-nightly-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
 
+      - name: Prepare UI desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          mkdir -p "$tool_root/.ai-tmp/ui-display/ModuleCache"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" xcrun swift -swift-version 6 -module-cache-path "$tool_root/.ai-tmp/ui-display/ModuleCache" "$tool_root/scripts/dev/prepare_ui_display.swift"
+
       - name: Run full UI suite serially
         shell: bash
         run: |
