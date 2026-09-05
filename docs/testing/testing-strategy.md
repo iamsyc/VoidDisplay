@@ -81,6 +81,20 @@ scripts/dev/build_signed_runtime.sh \
 
 免费 Apple Account 提供的 Xcode Personal Team 足以完成该流程，不要求 Developer ID、付费会员或公证。缺少可用 `Apple Development` 身份时，应在 Xcode 的 Accounts 设置中恢复 Personal Team 开发身份并重新构建；不得改用未签名或 ad hoc 副本声称权限验收通过。开发身份更新后，macOS 可能要求重新授予屏幕录制权限。
 
+### 原生显示模式与进程回收验收
+
+`VirtualDisplayModeSelectionTests` 覆盖尺寸、HiDPI 和刷新率选择；`VirtualDisplayProcessTests` 使用无显示器副作用的子进程覆盖 EOF、提前退出、无效响应、超时、取消和管道断开。`VirtualDisplayRuntimeTrackerTests` 覆盖创建中的序列号占用、取消、reset、配置删除和 generation 竞争。
+
+需要实际创建原生显示器时，先完成上述开发签名构建，再单独运行：
+
+```bash
+scripts/dev/verify_display_host.sh \
+  .ai-tmp/signed-runtime-acceptance/signed-runtime-summary.json \
+  .ai-tmp/display-host-acceptance
+```
+
+该验收创建序列号 `4000932` 的临时显示器，覆盖小尺寸普通模式、HiDPI、同序列号重复创建、59.94 Hz、120 Hz、进程终止和父进程退出，逐次核对实际逻辑尺寸、像素尺寸与回收结果。序列号已在线时会中止。测试不改应用保存配置，结果写入 `native-acceptance.json`，原始显示列表必须保持一致。这个入口有真实显示副作用，不加入普通单元或 UI 自动化门禁；应用内的编辑、重建、预览和共享仍需通过签名 App 验收。
+
 ## 环境故障分类
 
 测试宿主在 bootstrapping 前被 macOS 隐私自动化、Accessibility、Input Monitoring、Gatekeeper 或签名策略终止时，应记录为环境设置失败。先通过 `.xcresult` 和统一日志确认宿主未进入测试，再处理机器环境并复测最小目标。

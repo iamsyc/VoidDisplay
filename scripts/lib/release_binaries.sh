@@ -69,14 +69,17 @@ if [[ -z "${VOIDDISPLAY_RELEASE_BINARIES_SH_SOURCED:-}" ]]; then
 		local app_binary
 		local webrtc_binary
 		local relay_binary="$app_path/Contents/Resources/voiddisplay-relay"
+		local host_binary="$app_path/Contents/MacOS/VoidDisplayHost"
 
 		app_binary="$(resolve_app_binary "$app_path")"
 		webrtc_binary="$(resolve_webrtc_binary "$app_path/Contents/Frameworks/WebRTC.framework")"
 
+		[[ -x "$host_binary" ]] || die "Expected display host to be executable: $host_binary"
 		[[ -x "$relay_binary" ]] || die "Expected relay binary to be executable: $relay_binary"
 
 		require_binary_arch "App" "$app_binary" "$expected_arch"
 		require_binary_arch "WebRTC" "$webrtc_binary" "$expected_arch"
+		require_binary_arch "Display host" "$host_binary" "$expected_arch"
 		require_binary_arch "Relay" "$relay_binary" "$expected_arch"
 	}
 
@@ -87,8 +90,10 @@ if [[ -z "${VOIDDISPLAY_RELEASE_BINARIES_SH_SOURCED:-}" ]]; then
 		local webrtc_binary
 		local temp_binary
 		local relay_binary="$app_path/Contents/Resources/voiddisplay-relay"
+		local host_binary="$app_path/Contents/MacOS/VoidDisplayHost"
 
 		[[ -d "$app_path" ]] || die "Expected app not found: $app_path"
+		[[ -x "$host_binary" ]] || die "Expected display host to be executable: $host_binary"
 		[[ -x "$relay_binary" ]] || die "Expected relay binary to be executable: $relay_binary"
 		webrtc_binary="$(resolve_webrtc_binary "$webrtc_framework")"
 
@@ -101,12 +106,15 @@ if [[ -z "${VOIDDISPLAY_RELEASE_BINARIES_SH_SOURCED:-}" ]]; then
 		info "WebRTC binary after thin:"
 		lipo -archs "$webrtc_binary"
 
+		require_binary_arch "Display host" "$host_binary" "$expected_arch"
 		require_binary_arch "Relay" "$relay_binary" "$expected_arch"
 		info "Applying ad hoc signature for local release packaging. Developer ID signing and notarization are not configured."
+		codesign --force --sign - --timestamp=none "$host_binary"
 		codesign --force --sign - --timestamp=none "$relay_binary"
 		codesign --force --sign - --timestamp=none "$webrtc_framework"
 		codesign --force --sign - --timestamp=none --deep "$app_path"
 		codesign --verify --deep --strict --verbose=2 "$app_path"
+		codesign --verify --strict --verbose=2 "$host_binary"
 		codesign --verify --strict --verbose=2 "$relay_binary"
 
 		validate_release_app_binaries "$app_path" "$expected_arch"

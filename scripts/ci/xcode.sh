@@ -17,6 +17,8 @@ source "$TOOL_ROOT/scripts/lib/architecture.sh"
 source "$TOOL_ROOT/scripts/lib/xcresult.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/release_binaries.sh
+source "$TOOL_ROOT/scripts/lib/release_binaries.sh"
 # shellcheck source=scripts/lib/parallel.sh
 source "$TOOL_ROOT/scripts/lib/parallel.sh"
 
@@ -393,7 +395,11 @@ if [[ "$ACTION" == "build-for-testing" ]]; then
 		'{version: 1, configuration: $configuration, destination: $destination, source_fingerprint: $source_fingerprint, xcode_identity: $xcode_identity, root_dir: $root_dir, project: $project, scheme: $scheme}'
 fi
 
-app_path=""
+app_path="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/VoidDisplay.app"
+host_path="$app_path/Contents/MacOS/VoidDisplayHost"
+SUMMARY_FAILURE_REASON="display_host_verification_failed"
+[[ -x "$host_path" ]] || die "Embedded display host is missing or not executable: $host_path"
+require_binary_arch "Display host" "$host_path" "$(lipo -archs "$(resolve_app_binary "$app_path")")"
 signature_verified="false"
 signing_authority=""
 if [[ "$SIGNING_MODE" == "development" ]]; then
@@ -405,6 +411,13 @@ if [[ "$SIGNING_MODE" == "development" ]]; then
 		"$DEVELOPMENT_IDENTIFIER" \
 		"$DEVELOPMENT_TEAM_IDENTIFIER" \
 		"$signing_authority"
+	codesign --verify --strict --verbose=2 \
+		-R="$(development_requirement_expression "VoidDisplayHost" "$signing_authority")" "$host_path"
+	host_metadata="$(codesign -dv --verbose=4 "$host_path" 2>&1)"
+	[[ "$(awk -F= '$1 == "TeamIdentifier" { print $2; exit }' <<<"$host_metadata")" == "$DEVELOPMENT_TEAM_IDENTIFIER" ]] ||
+		die "Display host signing team differs from the app."
+	rg -q '^CodeDirectory .*flags=.*\([^)]*\bruntime\b[^)]*\)' <<<"$host_metadata" ||
+		die "Display host does not enable Hardened Runtime."
 	signature_verified="true"
 fi
 
@@ -416,6 +429,8 @@ fi
 if [[ "$is_test_action" == "true" ]]; then
 	write_json_file "$SUMMARY_PATH" \
 		--arg status "passed" \
+		--arg display_host_path "$host_path" \
+		--argjson display_host_verified true \
 		--arg reason "passed" \
 		--arg action "$ACTION" \
 		--arg configuration "$CONFIGURATION" \
@@ -430,10 +445,12 @@ if [[ "$is_test_action" == "true" ]]; then
 		--argjson passed_tests "$passed_tests" \
 		--argjson skipped_tests "$skipped_tests" \
 		--argjson failed_tests "$failed_tests" \
-		'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, result_bundle: $result_bundle, result_status: $result_status, signing_mode: $signing_mode, test_plan: $test_plan, only_testing: $only_testing, total_tests: $total_tests, passed_tests: $passed_tests, skipped_tests: $skipped_tests, failed_tests: $failed_tests}'
+		'{status: $status, display_host_path: $display_host_path, display_host_verified: $display_host_verified, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, result_bundle: $result_bundle, result_status: $result_status, signing_mode: $signing_mode, test_plan: $test_plan, only_testing: $only_testing, total_tests: $total_tests, passed_tests: $passed_tests, skipped_tests: $skipped_tests, failed_tests: $failed_tests}'
 elif [[ "$SIGNING_MODE" == "development" ]]; then
 	write_json_file "$SUMMARY_PATH" \
 		--arg status "passed" \
+		--arg display_host_path "$host_path" \
+		--argjson display_host_verified true \
 		--arg reason "passed" \
 		--arg action "$ACTION" \
 		--arg configuration "$CONFIGURATION" \
@@ -448,17 +465,19 @@ elif [[ "$SIGNING_MODE" == "development" ]]; then
 		--argjson signature_verified "$signature_verified" \
 		--argjson hardened_runtime_verified true \
 		--argjson designated_requirement_verified true \
-		'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, signing_mode: $signing_mode, app_path: $app_path, bundle_identifier: $bundle_identifier, team_identifier: $team_identifier, signing_authority: $signing_authority, project_path: $project_path, signature_verified: $signature_verified, hardened_runtime_verified: $hardened_runtime_verified, designated_requirement_verified: $designated_requirement_verified}'
+		'{status: $status, display_host_path: $display_host_path, display_host_verified: $display_host_verified, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, signing_mode: $signing_mode, app_path: $app_path, bundle_identifier: $bundle_identifier, team_identifier: $team_identifier, signing_authority: $signing_authority, project_path: $project_path, signature_verified: $signature_verified, hardened_runtime_verified: $hardened_runtime_verified, designated_requirement_verified: $designated_requirement_verified}'
 else
 	write_json_file "$SUMMARY_PATH" \
 		--arg status "passed" \
+		--arg display_host_path "$host_path" \
+		--argjson display_host_verified true \
 		--arg reason "passed" \
 		--arg action "$ACTION" \
 		--arg configuration "$CONFIGURATION" \
 		--arg destination "$DESTINATION" \
 		--arg log_path "$LOG_PATH" \
 		--arg signing_mode "$SIGNING_MODE" \
-		'{status: $status, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, signing_mode: $signing_mode}'
+		'{status: $status, display_host_path: $display_host_path, display_host_verified: $display_host_verified, reason: $reason, action: $action, configuration: $configuration, destination: $destination, log_path: $log_path, signing_mode: $signing_mode}'
 fi
 SUMMARY_TERMINAL="true"
 

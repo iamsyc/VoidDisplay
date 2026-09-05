@@ -13,13 +13,13 @@ struct UITestVirtualDisplayFacadeTests {
     }
 
     @Test
-    func restoredFixturesUseEveryReservedDisplayIdentity() throws {
+    func restoredFixturesUseEveryReservedDisplayIdentity() async throws {
         let facade = UITestVirtualDisplayFacade()
         let configs = facade.snapshot.configs
         let runID = try #require(configs.first?.id)
 
         for config in configs {
-            let result = facade.restoreVirtualDisplayForStartupCommand(
+            let result = await facade.restoreVirtualDisplayForStartupCommand(
                 VirtualDisplayStartupRestoreCommandRequest(
                     transactionID: config.id,
                     runID: runID,

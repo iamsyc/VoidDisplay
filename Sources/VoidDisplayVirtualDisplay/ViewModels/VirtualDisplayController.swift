@@ -402,12 +402,6 @@ package final class VirtualDisplayController {
         return moved
     }
 
-    package func applyModes(configId: UUID, modes: [ResolutionSelection]) {
-        mutateAndSync {
-            virtualDisplayFacade.applyModes(configId: configId, modes: modes)
-        }
-    }
-
     package func nextAvailableSerialNumber() -> UInt32 {
         virtualDisplayFacade.nextAvailableSerialNumber()
     }

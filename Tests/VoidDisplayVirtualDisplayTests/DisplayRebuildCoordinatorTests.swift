@@ -500,7 +500,7 @@ private final class NoopRuntimeDriver: VirtualDisplayRuntimeDriving {
     func createRuntimeDisplay(
         descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling {
+    ) async throws -> any VirtualDisplayRuntimeHandling {
         throw VirtualDisplayOperationError.creationFailed
     }
 }

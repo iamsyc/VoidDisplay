@@ -7,15 +7,110 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct VirtualDisplayRuntimeTrackerTests {
+    @Test func pendingCreationReservesSerialNumber() async throws {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 91)
+        var resume: CheckedContinuation<Void, Never>?
+        driver.beforeReturning = { await withCheckedContinuation { resume = $0 } }
+        let task = Task { try await tracker.createRuntimeDisplay(from: config) }
+        while resume == nil { await Task.yield() }
+        #expect(tracker.activeSerialNumbers.contains(91))
+        await #expect(throws: VirtualDisplayOperationError.self) {
+            _ = try await tracker.createRuntimeDisplay(from: makeConfig(serial: 91))
+        }
+        #expect(driver.createCallCount == 1)
+        resume?.resume()
+        _ = try await task.value
+    }
+
+    @Test func clearingPendingCreationRejectsLateReadyHandle() async {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 92)
+        var resume: CheckedContinuation<Void, Never>?
+        driver.beforeReturning = { await withCheckedContinuation { resume = $0 } }
+        let task = Task { try await tracker.createRuntimeDisplay(from: config) }
+        while resume == nil { await Task.yield() }
+        tracker.clearRuntimeTracking(configId: config.id, keepGeneration: false)
+        resume?.resume()
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
+        #expect(!tracker.hasActiveRuntimeDisplay(configId: config.id))
+        #expect(!tracker.isVirtualDisplayRunning(configId: config.id))
+        #expect(tracker.runtimeGeneration(for: config.id) == nil)
+        #expect(tracker.activeSerialNumbers.isEmpty)
+    }
+
+    @Test func cancellingPendingCreationKeepsGenerationUntilTerminationArrives() async {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 94)
+        var resume: CheckedContinuation<Void, Never>?
+        driver.beforeReturning = { await withCheckedContinuation { resume = $0 } }
+        let task = Task { try await tracker.createRuntimeDisplay(from: config) }
+        while resume == nil { await Task.yield() }
+        let generation = tracker.runtimeGeneration(for: config.id)
+        tracker.clearRuntimeTracking(configId: config.id, keepGeneration: true)
+        resume?.resume()
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
+        #expect(generation != nil)
+        #expect(tracker.runtimeGeneration(for: config.id) == generation)
+        driver.triggerTermination(for: config.id)
+        #expect(tracker.runtimeGeneration(for: config.id) == nil)
+    }
+
+    @Test func resetWhileCreatingCannotOverwriteReplacementRuntime() async throws {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 95)
+        var resume: CheckedContinuation<Void, Never>?
+        driver.beforeReturning = { await withCheckedContinuation { resume = $0 } }
+        let oldTask = Task { try await tracker.createRuntimeDisplay(from: config) }
+        while resume == nil { await Task.yield() }
+        tracker.resetAll()
+        driver.beforeReturning = nil
+        let replacement = try await tracker.createRuntimeDisplay(from: config)
+        resume?.resume()
+        await #expect(throws: CancellationError.self) { _ = try await oldTask.value }
+        #expect(tracker.runtimeGeneration(for: config.id) == replacement.generation)
+        #expect(tracker.runtimeDisplayID(for: config.id) == replacement.displayID)
+        #expect(tracker.isVirtualDisplayRunning(configId: config.id))
+    }
+
+    @Test func configRemovedDuringCreateReleasesReadyRuntime() async {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 96)
+        var available = true
+        driver.beforeReturning = { available = false }
+        await #expect(throws: VirtualDisplayOperationError.self) {
+            _ = try await tracker.createRuntimeDisplayWithRetries(from: config, terminationConfirmed: true) { available }
+        }
+        #expect(!tracker.hasActiveRuntimeDisplay(configId: config.id))
+        #expect(tracker.runningConfigIDs().isEmpty)
+    }
+
+    @Test func terminationBeforeReadyCannotCommitDeadRuntime() async {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 93)
+        driver.beforeReturning = { driver.triggerTermination(for: config.id) }
+        await #expect(throws: VirtualDisplayOperationError.self) {
+            _ = try await tracker.createRuntimeDisplay(from: config)
+        }
+        #expect(!tracker.hasActiveRuntimeDisplay(configId: config.id))
+        #expect(tracker.runtimeGeneration(for: config.id) == nil)
+    }
+
     @Test
-    func createRuntimeDisplayUsesDriverAndReturnsRecord() throws {
+    func createRuntimeDisplayUsesDriverAndReturnsRecord() async throws {
         let driver = FakeVirtualDisplayRuntimeDriver(
             scriptedResults: [.success(serialNum: 22, displayID: 920)]
         )
         let tracker = makeTracker(runtimeDriver: driver)
         let config = makeConfig(serial: 22)
 
-        let record = try tracker.createRuntimeDisplay(from: config)
+        let record = try await tracker.createRuntimeDisplay(from: config)
 
         #expect(record.configId == config.id)
         #expect(record.serialNum == 22)
@@ -57,6 +152,28 @@ struct VirtualDisplayRuntimeTrackerTests {
         #expect(driver.createCallCount == 2)
     }
 
+    @Test(arguments: [false, true])
+    func hostExitBeforeCreationCompletesStillRetries(returnsReady: Bool) async throws {
+        let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+        let tracker = makeTracker(runtimeDriver: driver)
+        let config = makeConfig(serial: 96)
+        driver.beforeReturning = {
+            guard driver.createCallCount == 1 else { return }
+            driver.triggerTermination(for: config.id)
+            // The production driver preserves explicit cancellation when its pipe closes.
+            try Task.checkCancellation()
+            if !returnsReady { throw VirtualDisplayOperationError.creationFailed }
+        }
+
+        let record = try await tracker.createRuntimeDisplayWithRetries(
+            from: config, terminationConfirmed: true, configIsAvailable: { true }
+        )
+
+        #expect(driver.createCallCount == 2)
+        #expect(tracker.runtimeDisplayID(for: config.id) == record.displayID)
+        #expect(tracker.isVirtualDisplayRunning(configId: config.id))
+    }
+
     @Test
     func createRuntimeDisplayWithRetriesDoesNotRetryNonCreationFailure() async {
         let driver = FakeVirtualDisplayRuntimeDriver(
@@ -87,13 +204,13 @@ struct VirtualDisplayRuntimeTrackerTests {
     }
 
     @Test
-    func terminationCallbackClearsRuntimeState() throws {
+    func terminationCallbackClearsRuntimeState() async throws {
         let driver = FakeVirtualDisplayRuntimeDriver(
             scriptedResults: [.success(serialNum: 55, displayID: 955)]
         )
         let tracker = makeTracker(runtimeDriver: driver)
         let config = makeConfig(serial: 55)
-        _ = try tracker.createRuntimeDisplay(from: config)
+        _ = try await tracker.createRuntimeDisplay(from: config)
 
         driver.triggerTermination(for: config.id)
 
@@ -103,13 +220,13 @@ struct VirtualDisplayRuntimeTrackerTests {
     }
 
     @Test
-    func staleTerminationCallbackIsIgnoredWhenGenerationAdvanced() throws {
+    func staleTerminationCallbackIsIgnoredWhenGenerationAdvanced() async throws {
         let driver = FakeVirtualDisplayRuntimeDriver(
             scriptedResults: [.success(serialNum: 66, displayID: 966)]
         )
         let tracker = makeTracker(runtimeDriver: driver)
         let config = makeConfig(serial: 66)
-        _ = try tracker.createRuntimeDisplay(from: config)
+        _ = try await tracker.createRuntimeDisplay(from: config)
         tracker.clearRuntimeTracking(configId: config.id, keepGeneration: true)
         tracker.markConfigRunning(configId: config.id, generation: 2, runtimeDisplayID: 777)
 
@@ -240,6 +357,7 @@ private final class FakeVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
 
     private let scriptedResults: [CreateResult]
     private var nextIndex = 0
+    var beforeReturning: (() async throws -> Void)?
     private var latestTerminationHandler: (@MainActor () -> Void)?
 
     private(set) var createCallCount = 0
@@ -252,10 +370,11 @@ private final class FakeVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
     func createRuntimeDisplay(
         descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling {
+    ) async throws -> any VirtualDisplayRuntimeHandling {
         createCallCount += 1
         createdDescriptors.append(descriptor)
         latestTerminationHandler = onTermination
+        try await beforeReturning?()
         let result: CreateResult
         if scriptedResults.indices.contains(nextIndex) {
             result = scriptedResults[nextIndex]
@@ -289,7 +408,4 @@ private final class FakeVirtualDisplayRuntimeHandle: VirtualDisplayRuntimeHandli
         self.displayID = displayID
     }
 
-    func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool {
-        !modes.isEmpty
-    }
 }

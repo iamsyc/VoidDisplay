@@ -105,6 +105,7 @@ APP_PATH="$(
 			and .team_identifier == $team_identifier
 			and (.signing_authority | startswith("Apple Development: "))
 			and .signature_verified == true
+			and .display_host_verified == true
 			and .hardened_runtime_verified == true
 			and .designated_requirement_verified == true
 		)
@@ -119,11 +120,12 @@ write_json_file "$SUMMARY_PATH" \
 	--arg status "passed" \
 	--arg destination "$DESTINATION" \
 	--arg app_path "$APP_PATH" \
+	--arg display_host_path "$(jq -er '.display_host_path' "$XCODE_SUMMARY")" \
 	--arg bundle_identifier "$DEVELOPMENT_IDENTIFIER" \
 	--arg team_identifier "$DEVELOPMENT_TEAM_IDENTIFIER" \
 	--arg signing_authority "$SIGNING_AUTHORITY" \
 	--arg xcode_summary "$XCODE_SUMMARY" \
-	'{status: $status, destination: $destination, app_path: $app_path, bundle_identifier: $bundle_identifier, team_identifier: $team_identifier, signing_authority: $signing_authority, xcode_summary: $xcode_summary}'
+	'{status: $status, destination: $destination, app_path: $app_path, display_host_path: $display_host_path, bundle_identifier: $bundle_identifier, team_identifier: $team_identifier, signing_authority: $signing_authority, xcode_summary: $xcode_summary}'
 SUMMARY_TERMINAL="true"
 
 info "Signed runtime build passed."

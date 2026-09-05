@@ -3,7 +3,7 @@ import VoidDisplayObservability
 import CoreGraphics
 import Foundation
 
-package struct VirtualDisplayRuntimePixelDimensions: Equatable, Sendable {
+package struct VirtualDisplayRuntimePixelDimensions: Equatable, Codable, Sendable {
     package let width: UInt32
     package let height: UInt32
 
@@ -13,7 +13,7 @@ package struct VirtualDisplayRuntimePixelDimensions: Equatable, Sendable {
     }
 }
 
-package struct VirtualDisplayRuntimeMode: Equatable, Sendable {
+package struct VirtualDisplayRuntimeMode: Equatable, Codable, Sendable {
     package let width: Int
     package let height: Int
     package let refreshRate: Double
@@ -27,7 +27,7 @@ package struct VirtualDisplayRuntimeMode: Equatable, Sendable {
     }
 }
 
-package struct VirtualDisplayRuntimeDescriptor: Equatable, Sendable {
+package struct VirtualDisplayRuntimeDescriptor: Equatable, Codable, Sendable {
     package let name: String
     package let serialNumber: UInt32
     package let physicalSize: CGSize
@@ -50,10 +50,9 @@ package struct VirtualDisplayRuntimeDescriptor: Equatable, Sendable {
 }
 
 @MainActor
-package protocol VirtualDisplayRuntimeHandling: AnyObject {
+package protocol VirtualDisplayRuntimeHandling: AnyObject, Sendable {
     var serialNum: UInt32 { get }
     var displayID: CGDirectDisplayID { get }
-    func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool
 }
 
 @MainActor
@@ -61,5 +60,29 @@ package protocol VirtualDisplayRuntimeDriving: AnyObject {
     func createRuntimeDisplay(
         descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling
+    ) async throws -> any VirtualDisplayRuntimeHandling
+}
+
+/// The host reports readiness only after selecting and reading back the actual mode.
+package enum VirtualDisplayHostResponse: Codable, Sendable {
+    case ready(displayID: CGDirectDisplayID, mode: VirtualDisplayRuntimeDisplayMode)
+    case failed(String)
+}
+
+package struct VirtualDisplayRuntimeDisplayMode: Equatable, Codable, Sendable {
+    package let id: Int32
+    package let width: Int
+    package let height: Int
+    package let pixelWidth: Int
+    package let pixelHeight: Int
+    package let refreshRate: Double
+
+    package init(id: Int32, width: Int, height: Int, pixelWidth: Int, pixelHeight: Int, refreshRate: Double) {
+        self.id = id
+        self.width = width
+        self.height = height
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.refreshRate = refreshRate
+    }
 }

@@ -282,7 +282,7 @@ package protocol VirtualDisplayCommanding: AnyObject {
     func loadPersistedVirtualDisplayConfigsForStartupRestoreCommand() -> VirtualDisplayStartupRestoreConfigLoadResult
     func restoreVirtualDisplayForStartupCommand(
         _ request: VirtualDisplayStartupRestoreCommandRequest
-    ) -> VirtualDisplayStartupRestoreCommandResult
+    ) async -> VirtualDisplayStartupRestoreCommandResult
     func clearRestoreFailures()
 
     @discardableResult
@@ -295,7 +295,7 @@ package protocol VirtualDisplayCommanding: AnyObject {
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> VirtualDisplayCreateCommandResult
+    ) async throws -> VirtualDisplayCreateCommandResult
 
     func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws
     func enableDisplayPreflight(_ configId: UUID) -> VirtualDisplayEnablePreflight
@@ -309,7 +309,6 @@ package protocol VirtualDisplayCommanding: AnyObject {
     func moveConfig(_ configId: UUID, direction: VirtualDisplayReorderDirection) throws -> Bool
     @discardableResult
     func moveConfigToFirstEnabledPosition(_ configId: UUID) throws -> Bool
-    func applyModes(configId: UUID, modes: [ResolutionSelection])
     func rebuildVirtualDisplay(configId: UUID) async throws
     func reconcileMainDisplayPolicyIfNeeded() async throws
 }

@@ -1,37 +1,90 @@
-import VoidDisplayVirtualDisplay
-import VoidDisplayFoundation
-import CGVirtualDisplayPrivate
 import CoreGraphics
+import Darwin
 import Foundation
+import OSLog
+import VoidDisplayObservability
+import VoidDisplayVirtualDisplay
 
 @MainActor
 package final class CGVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDriving {
+    private let executableURL: URL?
+    private let arguments: [String]
+    private let readyTimeout: Duration
+
+    package init(
+        executableURL: URL? = Bundle.main.url(forAuxiliaryExecutable: "VoidDisplayHost"),
+        arguments: [String] = [],
+        readyTimeout: Duration = .seconds(5)
+    ) {
+        self.executableURL = executableURL
+        self.arguments = arguments
+        self.readyTimeout = readyTimeout
+    }
+
     package func createRuntimeDisplay(
-        descriptor runtimeDescriptor: VirtualDisplayRuntimeDescriptor,
+        descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling {
-        let cgDescriptor = CGVirtualDisplayDescriptor()
-        cgDescriptor.setDispatchQueue(DispatchQueue.main)
-        cgDescriptor.terminationHandler = { _, _ in
-            Task { @MainActor in
-                onTermination()
+    ) async throws -> any VirtualDisplayRuntimeHandling {
+        try Task.checkCancellation()
+        guard let executableURL else { throw VirtualDisplayOperationError.creationFailed }
+        let process = Process()
+        let input = Pipe()
+        let output = Pipe()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { _ in Task { @MainActor in onTermination() } }
+        var committed = false
+        defer {
+            try? output.fileHandleForReading.close()
+            if !committed {
+                try? input.fileHandleForWriting.close()
+                if process.isRunning { process.terminate() }
             }
         }
-        cgDescriptor.name = runtimeDescriptor.name
-        cgDescriptor.maxPixelsWide = runtimeDescriptor.maximumPixelDimensions.width
-        cgDescriptor.maxPixelsHigh = runtimeDescriptor.maximumPixelDimensions.height
-        cgDescriptor.sizeInMillimeters = runtimeDescriptor.physicalSize
-        cgDescriptor.productID = ManagedVirtualDisplayIdentity.productID
-        cgDescriptor.vendorID = ManagedVirtualDisplayIdentity.vendorID
-        cgDescriptor.serialNum = runtimeDescriptor.serialNumber
-
-        let display = CGVirtualDisplay(descriptor: cgDescriptor)
-        let runtimeHandle = CGVirtualDisplayRuntimeHandle(display: display)
-        let applied = runtimeHandle.applyModes(runtimeDescriptor.modes)
-        guard applied else {
+        do {
+            try process.run()
+            try input.fileHandleForReading.close()
+            try output.fileHandleForWriting.close()
+            // A host may exit before reading its request. Convert EPIPE into a creation error
+            // instead of allowing SIGPIPE to terminate the main app.
+            guard fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+                throw VirtualDisplayOperationError.creationFailed
+            }
+            var data = try JSONEncoder().encode(descriptor)
+            data.append(0x0A)
+            let timeout = Task {
+                try await Task.sleep(for: readyTimeout)
+                if process.isRunning { process.terminate() }
+            }
+            defer { timeout.cancel() }
+            let response = try await withTaskCancellationHandler {
+                try await Task.detached { [data] in
+                    try input.fileHandleForWriting.write(contentsOf: data)
+                }.value
+                var lines = output.fileHandleForReading.bytes.lines.makeAsyncIterator()
+                guard let line = try await lines.next() else { throw VirtualDisplayOperationError.creationFailed }
+                return try JSONDecoder().decode(VirtualDisplayHostResponse.self, from: Data(line.utf8))
+            } onCancel: {
+                if process.isRunning { process.terminate() }
+            }
+            try Task.checkCancellation()
+            guard case .ready(let displayID, _) = response, displayID != 0, process.isRunning else {
+                AppLog.virtualDisplay.error("Virtual display host did not become ready: \(String(describing: response), privacy: .public)")
+                throw VirtualDisplayOperationError.creationFailed
+            }
+            committed = true
+            return VirtualDisplayProcessHandle(serialNum: descriptor.serialNumber, displayID: displayID,
+                                               process: process, lifetimeInput: input.fileHandleForWriting)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Task.isCancelled { throw CancellationError() }
+            AppLog.virtualDisplay.error("Virtual display host creation failed: \(String(describing: error), privacy: .public)")
             throw VirtualDisplayOperationError.creationFailed
         }
-        return runtimeHandle
     }
 }
 
@@ -41,48 +94,21 @@ package func makeVirtualDisplayRuntimeDriver() -> any VirtualDisplayRuntimeDrivi
 }
 
 @MainActor
-private final class CGVirtualDisplayRuntimeHandle: VirtualDisplayRuntimeHandling {
-    private let display: CGVirtualDisplay
+private final class VirtualDisplayProcessHandle: VirtualDisplayRuntimeHandling {
+    let serialNum: UInt32
+    let displayID: CGDirectDisplayID
+    private let process: Process
+    private let lifetimeInput: FileHandle
 
-    package init(display: CGVirtualDisplay) {
-        self.display = display
+    init(serialNum: UInt32, displayID: CGDirectDisplayID, process: Process, lifetimeInput: FileHandle) {
+        self.serialNum = serialNum
+        self.displayID = displayID
+        self.process = process
+        self.lifetimeInput = lifetimeInput
     }
 
-    package var serialNum: UInt32 {
-        display.serialNum
-    }
-
-    package var displayID: CGDirectDisplayID {
-        display.displayID
-    }
-
-    package func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool {
-        let settings = CGVirtualDisplaySettings()
-        settings.hiDPI = modes.contains(where: { $0.isHiDPI }) ? 1 : 0
-        settings.modes = buildDisplayModes(from: modes)
-        return display.apply(settings)
-    }
-
-    private func buildDisplayModes(from modes: [VirtualDisplayRuntimeMode]) -> [CGVirtualDisplayMode] {
-        var displayModes: [CGVirtualDisplayMode] = []
-        for mode in modes {
-            if mode.isHiDPI {
-                displayModes.append(
-                    CGVirtualDisplayMode(
-                        width: UInt(mode.width * 2),
-                        height: UInt(mode.height * 2),
-                        refreshRate: CGFloat(mode.refreshRate)
-                    )
-                )
-            }
-            displayModes.append(
-                CGVirtualDisplayMode(
-                    width: UInt(mode.width),
-                    height: UInt(mode.height),
-                    refreshRate: CGFloat(mode.refreshRate)
-                )
-            )
-        }
-        return displayModes
+    deinit {
+        // Releasing the handle ends the owning process, including native mode-selection resources.
+        try? lifetimeInput.close()
     }
 }

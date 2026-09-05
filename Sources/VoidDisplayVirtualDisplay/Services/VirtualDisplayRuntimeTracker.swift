@@ -14,6 +14,12 @@ package final class VirtualDisplayRuntimeTracker {
     private var runtimeGenerationByConfigId: [UUID: UInt64] = [:]
     private var runningConfigIds: Set<UUID> = []
     private var nextRuntimeGeneration: UInt64 = 1
+    private struct PendingCreation {
+        let serialNum: UInt32
+        let generation: UInt64
+        let task: Task<any VirtualDisplayRuntimeHandling, Error>
+    }
+    private var pendingCreations: [UUID: PendingCreation] = [:]
 
     private let teardownCoordinator: any DisplayTeardownCoordinating
     private let runtimeDriver: any VirtualDisplayRuntimeDriving
@@ -39,7 +45,7 @@ package final class VirtualDisplayRuntimeTracker {
     }
 
     package func hasRuntimeDisplay(serialNum: UInt32) -> Bool {
-        activeRuntimeHandlesByConfigId.values.contains(where: { $0.serialNum == serialNum })
+        activeSerialNumbers.contains(serialNum)
     }
 
     package func hasActiveRuntimeDisplay(configId: UUID) -> Bool {
@@ -70,7 +76,7 @@ package final class VirtualDisplayRuntimeTracker {
     }
 
     package var activeSerialNumbers: Set<UInt32> {
-        Set(activeRuntimeHandlesByConfigId.values.map(\.serialNum))
+        Set(activeRuntimeHandlesByConfigId.values.map(\.serialNum)).union(pendingCreations.values.map(\.serialNum))
     }
 
     package func runtimeDisplayIDForSerial(_ serialNum: UInt32, configs: [VirtualDisplayConfig]) -> CGDirectDisplayID? {
@@ -89,7 +95,7 @@ package final class VirtualDisplayRuntimeTracker {
     package func createRuntimeDisplay(
         from config: VirtualDisplayConfig,
         maxPixels: (width: UInt32, height: UInt32)? = nil
-    ) throws -> RuntimeDisplayRecord {
+    ) async throws -> RuntimeDisplayRecord {
         if let existing = activeRuntimeHandlesByConfigId[config.id] {
             let generation = runtimeGenerationByConfigId[config.id] ?? allocateRuntimeGeneration()
             runtimeGenerationByConfigId[config.id] = generation
@@ -106,7 +112,8 @@ package final class VirtualDisplayRuntimeTracker {
             )
         }
 
-        if activeRuntimeHandlesByConfigId.values.contains(where: { $0.serialNum == config.serialNum }) {
+        try Task.checkCancellation()
+        if activeSerialNumbers.contains(config.serialNum) {
             throw VirtualDisplayOperationError.duplicateSerialNumber(config.serialNum)
         }
 
@@ -119,19 +126,40 @@ package final class VirtualDisplayRuntimeTracker {
         AppLog.virtualDisplay.debug(
             "Create runtime display begin (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), generation: \(generation, privacy: .public), pendingGenerationBeforeCreate: \(String(describing: self.runtimeGenerationByConfigId[config.id]), privacy: .public))."
         )
-        let runtimeHandle = try runtimeDriver.createRuntimeDisplay(
-            descriptor: runtimeDescriptor(
-                from: config,
-                maximumPixelDimensions: maxPixels
-            ),
-            onTermination: { [weak self] in
-                self?.handleVirtualDisplayTermination(
-                    configId: config.id,
-                    serialNum: config.serialNum,
-                    generation: generation
-                )
+        let task = Task {
+            try await runtimeDriver.createRuntimeDisplay(
+                descriptor: runtimeDescriptor(from: config, maximumPixelDimensions: maxPixels),
+                onTermination: { [weak self] in
+                    self?.handleVirtualDisplayTermination(configId: config.id, serialNum: config.serialNum, generation: generation)
+                }
+            )
+        }
+        runtimeGenerationByConfigId[config.id] = generation
+        pendingCreations[config.id] = PendingCreation(serialNum: config.serialNum, generation: generation, task: task)
+        defer {
+            if pendingCreations[config.id]?.generation == generation {
+                pendingCreations[config.id] = nil
             }
-        )
+        }
+        let runtimeHandle: any VirtualDisplayRuntimeHandling
+        do {
+            runtimeHandle = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            if Task.isCancelled || task.isCancelled { throw CancellationError() }
+            guard pendingCreations[config.id]?.generation == generation,
+                  runtimeGenerationByConfigId[config.id] == generation else {
+                throw VirtualDisplayOperationError.creationFailed
+            }
+        } catch {
+            if pendingCreations[config.id]?.generation == generation,
+               runtimeGenerationByConfigId[config.id] == generation {
+                runtimeGenerationByConfigId[config.id] = nil
+            }
+            throw error
+        }
         AppLog.virtualDisplay.debug(
             "Create runtime display descriptor instantiated (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), generation: \(generation, privacy: .public), provisionalDisplayID: \(runtimeHandle.displayID, privacy: .public))."
         )
@@ -163,7 +191,12 @@ package final class VirtualDisplayRuntimeTracker {
                 throw VirtualDisplayOperationError.configNotFound
             }
             do {
-                return try createRuntimeDisplay(from: config)
+                let record = try await createRuntimeDisplay(from: config)
+                guard configIsAvailable() else {
+                    clearRuntimeTracking(configId: config.id, keepGeneration: true)
+                    throw VirtualDisplayOperationError.configNotFound
+                }
+                return record
             } catch {
                 let shouldRetry: Bool
                 if let virtualDisplayError = error as? VirtualDisplayOperationError,
@@ -193,22 +226,13 @@ package final class VirtualDisplayRuntimeTracker {
         throw VirtualDisplayOperationError.creationFailed
     }
 
-    // MARK: - Apply modes
-
-    package func applyModes(configId: UUID, modes: [ResolutionSelection]) {
-        guard let runtimeHandle = activeRuntimeHandlesByConfigId[configId] else { return }
-        let applied = runtimeHandle.applyModes(modes.map { runtimeMode($0) })
-        if !applied {
-            AppLog.virtualDisplay.error("Apply virtual display modes failed (serial: \(runtimeHandle.serialNum, privacy: .public)).")
-        }
-    }
-
     // MARK: - Runtime tracking cleanup
 
     package func clearRuntimeTracking(
         configId: UUID,
         keepGeneration: Bool
     ) {
+        pendingCreations.removeValue(forKey: configId)?.task.cancel()
         teardownCoordinator.cancelTerminationWaiter(configId: configId)
         activeRuntimeHandlesByConfigId[configId] = nil
         runtimeDisplayIDHintsByConfigId[configId] = nil
@@ -225,6 +249,8 @@ package final class VirtualDisplayRuntimeTracker {
     package func resetAll() {
         teardownCoordinator.cancelAllTerminationWaiters()
         teardownCoordinator.cancelAllOfflineWaiters()
+        pendingCreations.values.forEach { $0.task.cancel() }
+        pendingCreations.removeAll()
         activeRuntimeHandlesByConfigId.removeAll()
         runtimeDisplayIDHintsByConfigId.removeAll()
         runtimeGenerationByConfigId.removeAll()
@@ -270,6 +296,8 @@ package final class VirtualDisplayRuntimeTracker {
         AppLog.virtualDisplay.notice(
             "Virtual display terminated (config: \(configId.uuidString, privacy: .public), serial: \(serialNum, privacy: .public), generation: \(generation, privacy: .public), displayID: \(String(describing: currentDisplayID), privacy: .public))."
         )
+        // The driver reports a natural host failure. Preserve that error so creation can retry.
+        pendingCreations.removeValue(forKey: configId)
         activeRuntimeHandlesByConfigId[configId] = nil
         runtimeDisplayIDHintsByConfigId[configId] = nil
         runtimeGenerationByConfigId[configId] = nil

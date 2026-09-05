@@ -63,7 +63,6 @@ struct VirtualDisplayControllerTests {
         #expect(rebuildTriggered)
         #expect(rebuildPresentationSettled)
         #expect(virtualDisplay.rebuildVirtualDisplayConfigIds == [config.id])
-        #expect(virtualDisplay.applyModesCallCount == 0)
     }
 
     @Test func startRebuildForwardsConcurrentDuplicateRequestsToExecutor() async {

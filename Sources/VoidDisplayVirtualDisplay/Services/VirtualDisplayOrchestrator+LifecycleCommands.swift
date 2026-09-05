@@ -29,7 +29,7 @@ extension VirtualDisplayOrchestrator {
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> VirtualDisplayCreateCommandResult {
+    ) async throws -> VirtualDisplayCreateCommandResult {
         if runtimeTracker.hasRuntimeDisplay(serialNum: serialNum) ||
             configManager.allConfigs().contains(where: { $0.serialNum == serialNum }) {
             throw VirtualDisplayOperationError.duplicateSerialNumber(serialNum)
@@ -72,7 +72,7 @@ extension VirtualDisplayOrchestrator {
         }
 
         do {
-            _ = try runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
+            _ = try await runtimeTracker.createRuntimeDisplay(from: config, maxPixels: maxPixels)
             return VirtualDisplayCreateCommandResult(
                 createdConfigID: config.id,
                 persistenceOutcome: .saved,

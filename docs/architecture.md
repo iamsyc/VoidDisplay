@@ -14,7 +14,8 @@ VoidDisplay 在 macOS 上创建和管理 HiDPI 虚拟显示器，并为受管理
 | `VoidDisplayApp` | SwiftUI 界面、应用装配、控制器和运行时适配 |
 | `VoidDisplayRuntime` | 显示目录、事务、consumer lease、需求聚合、快照和 intent 分发 |
 | `VoidDisplayVirtualDisplay` | 虚拟显示器领域模型、配置持久化、编排、拓扑等待、回滚和编辑界面 |
-| `VoidDisplayCGVirtualDisplay` | 将运行时驱动接口映射到私有 `CGVirtualDisplay` 封装 |
+| `VoidDisplayCGVirtualDisplay` | 异步启动并持有每块虚拟屏的辅助进程，管理就绪、取消和退出通知 |
+| `Apps/VoidDisplayHost` / `VoidDisplayVirtualDisplayHost` | 每进程创建一块原生虚拟屏，选择并核实实际模式，随父进程管道关闭退出 |
 | `CGVirtualDisplayPrivate` | 私有 `CGVirtualDisplay` API 的 Objective-C 封装 |
 | `VoidDisplayCapture` | `SCStream` 生命周期、帧分发、Preview 渲染和采集性能状态 |
 | `VoidDisplaySharing` | HTTP、WebSocket、WebRTC、分享路由、viewer 会话和 relay 进程 |
@@ -37,6 +38,16 @@ SwiftPM target 和依赖关系以 [Package.swift](../Package.swift) 为准。
 - 聚合后的采集需求、有效 capture intent、事务 trace 和运行时快照。
 
 应用启动通过 `DisplayRuntime.restoreStartupVirtualDisplays(source: .startup)` 恢复期望启用的虚拟显示器。用户发起的虚拟显示器变更先进入运行时事务，再经 App adapter 调用 `VoidDisplayVirtualDisplay` 的底层命令。事务在拓扑收敛后更新目录，并对已有 consumer lease 执行恢复或失败收口。
+
+## 原生虚拟屏进程
+
+App 为每块运行中的虚拟屏启动 `Contents/MacOS/VoidDisplayHost`。该程序先接收一行 JSON 创建描述，在自身首次查询显示模式前创建原生显示器，再按逻辑尺寸、像素尺寸和刷新率选择模式并读回验证。HiDPI 的像素尺寸为逻辑尺寸的两倍，刷新率按 CoreGraphics 返回的整数 Hz 匹配。
+
+这个进程边界处理了原生 API 的两个生命周期限制：进程先查询其他显示器时，新建虚拟屏的模式查询可能为空；主动切换模式后，释放 `CGVirtualDisplay` 对象可能无法回收显示器，退出创建进程才能完整释放。主应用持有辅助程序的标准输入管道，停用或重建时关闭管道；应用异常退出也产生 EOF。辅助程序异常退出通过现有 generation 机制回报，过期回调不能清除新实例。
+
+创建过程异步等待 ready，失败、超时或取消会结束辅助程序并进入现有回滚流程。创建期间预留序列号和 generation，清理操作会取消未完成的创建，阻止迟到的 ready 恢复已清理状态。保存配置不直接修改运行中的原生对象，重建始终关闭旧进程后创建新实例。
+
+辅助程序通过 Xcode target dependency 和 copy phase 随 App 构建、嵌入。构建门禁检查它与 App 的架构一致，本机签名验收另行核对开发签名；发布打包对辅助程序执行相同架构校验与签名步骤。
 
 ## 数据平面
 

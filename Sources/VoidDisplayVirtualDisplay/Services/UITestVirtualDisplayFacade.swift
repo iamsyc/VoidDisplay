@@ -49,7 +49,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
 
     package func restoreVirtualDisplayForStartupCommand(
         _ request: VirtualDisplayStartupRestoreCommandRequest
-    ) -> VirtualDisplayStartupRestoreCommandResult {
+    ) async -> VirtualDisplayStartupRestoreCommandResult {
         let preDisplayID = runtimeDisplayIDs()[request.configID]
         guard let config = configs.first(where: { $0.id == request.configID }) else {
             return startupRestoreCommandResult(
@@ -123,7 +123,7 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> VirtualDisplayCreateCommandResult {
+    ) async throws -> VirtualDisplayCreateCommandResult {
         let result = VirtualDisplayCreateCommandResult(
             createdConfigID: nil,
             persistenceOutcome: .notAttempted,
@@ -275,20 +275,6 @@ package final class UITestVirtualDisplayFacade: VirtualDisplayFacade {
         let config = configs.remove(at: sourceIndex)
         configs.insert(config, at: firstEnabledIndex)
         return true
-    }
-
-    package func applyModes(configId: UUID, modes: [ResolutionSelection]) {
-        guard let index = configs.firstIndex(where: { $0.id == configId }) else { return }
-        var config = configs[index]
-        config.modes = modes.map {
-            .init(
-                width: $0.width,
-                height: $0.height,
-                refreshRate: $0.refreshRate,
-                enableHiDPI: $0.enableHiDPI
-            )
-        }
-        configs[index] = config
     }
 
     package func rebuildVirtualDisplay(configId: UUID) async throws {
