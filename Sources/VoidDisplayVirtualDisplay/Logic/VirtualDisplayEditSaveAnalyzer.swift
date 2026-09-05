@@ -30,21 +30,6 @@ package struct VirtualDisplayEditSaveAnalyzer {
             self.initialAspectRatio = initialAspectRatio
         }
     }
-    package struct SaveAnalysis {
-        package let updatedConfig: VirtualDisplayConfig
-        package let shouldApplyModesImmediately: Bool
-        package let requiresSaveAndRebuild: Bool
-
-        package init(
-            updatedConfig: VirtualDisplayConfig,
-            shouldApplyModesImmediately: Bool,
-            requiresSaveAndRebuild: Bool
-        ) {
-            self.updatedConfig = updatedConfig
-            self.shouldApplyModesImmediately = shouldApplyModesImmediately
-            self.requiresSaveAndRebuild = requiresSaveAndRebuild
-        }
-    }
     package enum ValidationError: Error, Equatable {
         case configNotFound
         case emptyName
@@ -58,9 +43,8 @@ package struct VirtualDisplayEditSaveAnalyzer {
         original: VirtualDisplayConfig?,
         configId: UUID,
         draft: Draft,
-        existingConfigs: [VirtualDisplayConfig],
-        isRunning: Bool
-    ) -> Result<SaveAnalysis, ValidationError> {
+        existingConfigs: [VirtualDisplayConfig]
+    ) -> Result<VirtualDisplayConfig, ValidationError> {
         guard let original else {
             return .failure(.configNotFound)
         }
@@ -105,24 +89,7 @@ package struct VirtualDisplayEditSaveAnalyzer {
             updated.physicalHeight = size.height
         }
 
-        let newMaxPixels = updated.maxPixelDimensions
-        let oldMaxPixels = original.maxPixelDimensions
-        let requiresSaveAndRebuild = isRunning && (
-            original.displayName != updated.displayName ||
-            original.serialNum != updated.serialNum ||
-            original.physicalWidth != updated.physicalWidth ||
-            original.physicalHeight != updated.physicalHeight ||
-            newMaxPixels.width > oldMaxPixels.width ||
-            newMaxPixels.height > oldMaxPixels.height
-        )
-
-        return .success(
-            SaveAnalysis(
-                updatedConfig: updated,
-                shouldApplyModesImmediately: isRunning && !requiresSaveAndRebuild,
-                requiresSaveAndRebuild: requiresSaveAndRebuild
-            )
-        )
+        return .success(updated)
     }
 
     package static func inferPhysicalInputs(

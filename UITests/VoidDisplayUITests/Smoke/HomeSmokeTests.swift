@@ -673,7 +673,7 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testCreateAndEditSheetsOpenAndCancel() throws {
+    func testCreateEditAndRebuildJourney() throws {
         let app = launchAppForSmoke()
 
         tapIdentifier(app, identifier: "home_add_virtual_display_button", timeout: 6)
@@ -698,6 +698,35 @@ final class HomeSmokeTests: XCTestCase {
         assertSingleFormLabel(app, english: "Serial Number", chinese: "序列号")
         tapIdentifier(app, identifier: "virtual_display_edit_cancel_button")
         XCTAssertFalse(smokeElement(app, identifier: "edit_virtual_display_form").waitForExistence(timeout: 1))
+
+        tapIdentifier(app, identifier: "virtual_display_edit_button")
+        let hiDPI = assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle")
+        let form = smokeElement(app, identifier: "edit_virtual_display_form")
+        for _ in 0..<4 where !hiDPI.isHittable {
+            form.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -240)
+        }
+        XCTAssertTrue(hiDPI.isHittable)
+        hiDPI.click()
+        XCTAssertEqual((hiDPI.value as? NSNumber)?.boolValue, true)
+        tapIdentifier(app, identifier: "virtual_display_edit_save_only_button")
+        XCTAssertFalse(form.waitForExistence(timeout: 1))
+
+        let appliedBadge = app.staticTexts.matching(
+            NSPredicate(format: "value IN %@", ["Applied", "已应用"])
+        ).firstMatch
+        XCTAssertFalse(appliedBadge.exists)
+        tapIdentifier(app, identifier: "virtual_display_edit_button")
+        XCTAssertEqual(
+            (assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle").value as? NSNumber)?.boolValue,
+            true,
+            "Save Only must persist the edited mode before reopening the form."
+        )
+        tapIdentifier(app, identifier: "virtual_display_edit_save_and_rebuild_button")
+        XCTAssertFalse(form.waitForExistence(timeout: 1))
+        XCTAssertTrue(
+            appliedBadge.waitForExistence(timeout: 8),
+            "Reopening an unchanged saved configuration must still execute the requested rebuild."
+        )
     }
 
     @MainActor

@@ -3409,6 +3409,23 @@
         }
       }
     },
+    "Save Only keeps the running display unchanged. Save and Rebuild Now applies these settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Only keeps the running display unchanged. Save and Rebuild Now applies these settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“仅保存”保留当前运行状态；“保存并立即重建”会应用这些设置。"
+          }
+        }
+      }
+    },
     "Save Only" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3671,17 +3688,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "流畅优先"
-          }
-        }
-      }
-    },
-    "Some changes require rebuild when the display is running." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示器运行时，部分修改需要重建后才能生效。"
           }
         }
       }
