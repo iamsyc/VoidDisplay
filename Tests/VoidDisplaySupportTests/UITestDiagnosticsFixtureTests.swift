@@ -8,17 +8,18 @@ struct UITestDiagnosticsFixtureTests {
     func transactionTimelineProvidesOrderedTerminalEvidence() throws {
         let events = UITestDiagnosticsFixture.events(for: .diagnosticsTransactionTimeline)
 
-        #expect(events.count == 2)
-        #expect(events.map {
+        #expect(events.count == 3)
+        #expect(events.dropFirst().map {
             $0.metadata[DisplayRuntimeTransactionObservability.phaseMetadataKey]
         } == ["queued", "completed"])
-        #expect(events.allSatisfy {
+        #expect(events.dropFirst().allSatisfy {
             $0.metadata[DisplayRuntimeTransactionObservability.transactionIDMetadataKey]
                 == "00000000-0000-0000-0000-00000000D1A6"
         })
-        let first = try #require(events.first)
+        let first = try #require(events.dropFirst().first)
         let last = try #require(events.last)
         #expect(first.timestamp < last.timestamp)
+        #expect(events.first?.severity == .warning)
     }
 
     @Test

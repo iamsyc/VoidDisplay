@@ -41,7 +41,7 @@ Branch protection for `main` should require only:
 Gate behavior:
 
 - Every PR runs static checks, SwiftPM tests, browser JavaScript tests, Go tests, and an Xcode Debug build.
-- UI-relevant PRs and PRs with unknown paths run two balanced UI smoke shards on separate runners. Selectors within each shard execute serially and share one DerivedData directory.
+- UI-relevant PRs and PRs with unknown paths run one UI smoke job. Its selectors execute serially and share one `build-for-testing` product directory.
 - Release-relevant PRs targeting `main` run arm64 release smoke. Main push, nightly, and release workflows cover x86_64 release smoke.
 - PRs that change dependency manifests run Dependency Review and block high or critical dependency vulnerabilities.
 
@@ -159,7 +159,7 @@ Report local verification, main CI, the Release workflow, and public asset readb
 
 `nightly.yml` runs four independent lanes: core regression without UI, Xcode Debug preflight, or release packaging; full serial `VoidDisplayUITests`; coverage; and dual-architecture release dry run. The core lane calls `scripts/ci/full_regression.sh --skip-ui-tests --skip-xcode-preflight --skip-release-smoke`; the UI lane's `build-for-testing` owns the Debug app compilation, and the release lane owns arm64 and Intel Release builds. Coverage runs the SwiftPM suite with instrumentation and skips the JavaScript and Go suites already owned by core regression. The UI lane reuses the same DerivedData with `test-without-building`. It covers the complete UI target, including suites outside `HomeSmokeTests`, and retains one sequential full-suite signal for order and shared-state regressions.
 
-PR UI smoke uses two runner shards. The navigation-preview shard covers home navigation and both preview recovery flows. The display-list shard covers the display list surface and narrow-window actions. Each reusable workflow call accepts a JSON selector list and passes every selector to one `xcodebuild` invocation. The UI tests remain serial inside each GUI session while each shard compiles once. The two artifacts are `ui-smoke-navigation-preview` and `ui-smoke-display-list`.
+PR UI smoke uses one runner. It covers the Home core journey and two preview recovery paths, passes all selectors to one `xcodebuild` invocation, and produces `ui-smoke-pr`. Nightly remains the sole workflow that executes the complete `VoidDisplayUITests` target once.
 
 All Nightly lanes start independently. The workflow summary reports core regression and the full UI suite separately, and every artifact is retained for 7 days.
 

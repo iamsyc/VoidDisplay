@@ -17,7 +17,7 @@ source "$TOOL_ROOT/scripts/lib/checkpoint.sh"
 cd "$ROOT_DIR"
 
 OUT_DIR="${OUT_DIR:-$(make_artifact_dir local-validation)}"
-UI_SELECTOR="VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"
+UI_SELECTOR="VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"
 RUN_UI_SMOKE="true"
 
 host_arch="$(uname -m)"

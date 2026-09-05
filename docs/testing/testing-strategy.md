@@ -7,7 +7,7 @@
 | 静态门禁 | Shell、workflow、格式、lint、工程结构和项目静态约束 | `scripts/ci/static.sh` |
 | 单元与集成测试 | SwiftPM、浏览器 JavaScript、Go relay | `scripts/ci/unit.sh` |
 | Xcode build | App target、资源、工程配置和编译诊断 | `scripts/ci/xcode.sh --action build` |
-| UI smoke | 少量关键用户可观察路径 | `scripts/ci/ui_smoke.sh` |
+| UI smoke | 最多 13 个关键用户旅程，每个旅程独立启动应用 | `scripts/ci/ui_smoke.sh` |
 | 完整回归 | 静态、单元、Debug build、UI、稳定性和 arm64 release smoke | `scripts/ci/full_regression.sh --destination "platform=macOS,arch=$(uname -m)"` |
 
 Xcode 的 `VoidDisplay` scheme 用于 App build 和 run。UI test 必须通过 `scripts/ci/ui_smoke.sh` 或 `scripts/ci/xcode.sh` 启动，以便 wrapper 在完整 `xcodebuild` 生命周期持有本用户的 UI session lock。Scheme 会拒绝没有 wrapper token 的 Cmd-U。完整单元与集成测试入口仍是 `scripts/ci/unit.sh`。
@@ -23,6 +23,8 @@ Xcode 的 `VoidDisplay` scheme 用于 App build 和 run。UI test 必须通过 `
 - 同一契约优先在最接近所有权的层级验证，避免在多个 target 重复覆盖实现细节。
 
 UI smoke 复用 [SmokeTestHelpers.swift](../../UITests/VoidDisplayUITests/Smoke/SmokeTestHelpers.swift)。共享端口通过 `-sharing.preferredPort <port>` launch arguments 注入，测试不直接写硬编码 suite。
+
+UI 用例按用户旅程组织。纯文本映射、状态转换、按钮可用性和组件固有尺寸在 Swift 单元测试中验证；UI 层只保留真实窗口、布局、点击结果和关键辅助功能路径。UI 测试禁止使用 `.typeKey`、`.typeText`、`XCUIKeyboardKey`、`CGEvent` 或 System Events 合成键盘输入，焦点状态通过测试环境注入和 AppKit 焦点遍历验证。
 
 ## 本地验证
 
@@ -43,6 +45,10 @@ scripts/ci/ui_smoke.sh \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
+`ui_smoke.sh` 默认按源码指纹、Xcode 版本、目标架构和配置复用 `build-for-testing` 产物，定向 selector 每次执行 `test-without-building`。完整 `VoidDisplayUITests` 通过后会复用有效结果；`--rerun` 强制重新执行，`--rebuild` 同时重建受管测试产物。相同源码和 selector 已在运行时会立即拒绝；共享同一构建键的其他 selector 通过生命周期锁串行执行完整性校验、重建、构建和测试，任何运行中的 selector 都不会被并发 `--rebuild` 删除测试产物。
+
+每次运行的构建日志及测试结果写入 `OUT_DIR/runs/<run_signature>/`，顶层 `ui-smoke-summary.json` 保留本次入口汇总。不同源码或 selector 使用不同运行目录，同一输出目录中的定向运行不会覆盖完整测试证据。取得构建生命周期锁后及发布通过证据前，均验证源码未变化；发生变化时记录 `source_changed` 并废弃结果。预构建失败同样写入顶层失败汇总，保留实际原因和日志路径，并遵循 `--enforce-failure` 的退出语义。
+
 跨模块、并发、持久化、网络、安全、脚本、工程设置或发布改动需要扩大验证范围。本机支持对应 release target 时，完整回归入口是：
 
 ```bash
@@ -50,7 +56,7 @@ scripts/ci/full_regression.sh \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
-该入口先并行运行静态门禁、全部单元与集成测试和 `build-for-testing`，随后复用同一 DerivedData 串行执行 UI target。UI 完成后，稳定性检查和 arm64 release smoke 并行执行。每个并行 lane 的完整输出保存在本次 `OUT_DIR/lanes`，最终 summary 记录前置、UI、后置和总耗时。Nightly core 使用 `--skip-ui-tests --skip-xcode-preflight --skip-release-smoke` 跳过已由独立 runner 承担的完整 UI target、Debug 预构建和双架构 Release dry run。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。
+该入口先并行运行静态门禁、全部单元与集成测试和 `build-for-testing`，随后复用同一 DerivedData 串行执行 UI target。UI 完成后，稳定性检查和 arm64 release smoke 并行执行。每个并行 lane 的完整输出保存在本次 `OUT_DIR/lanes`，最终 summary 记录前置、UI、后置和总耗时。Nightly core 使用 `--skip-ui-tests --skip-xcode-preflight --skip-release-smoke` 跳过已由独立 runner 承担的完整 UI target、Debug 预构建和双架构 Release dry run。完整命令选择规则见根目录 [AGENTS.md](../../AGENTS.md)。日常开发不得在源码未变化时重复运行完整 UI 目标。
 
 完整回归会在指定 `OUT_DIR` 写入 `full-regression-checkpoint.json`。同一源码指纹、目的架构、UI selector 和稳定性迭代参数再次使用该目录时，已通过且产物仍完整的阶段会直接复用。失败后重新执行原命令即可从最近的完整阶段继续；需要强制重跑全部阶段时增加 `--restart`。
 

@@ -205,27 +205,22 @@ validate_release_automation_contract() {
 }
 
 validate_ui_smoke_artifact_summary() {
-	local actual
-	local expected
+	local ui_job
 
-	expected="$(
-		awk '
-			/^  ui_smoke_tests:/ { in_job = 1; next }
-			in_job && /^  [[:alnum:]_]+:/ { exit }
-			in_job && /-[[:space:]]+case_name:/ { print "ui-smoke-" $3 }
-		' .github/workflows/ci.yml | sort
-	)"
-	actual="$(
-		rg 'Artifacts: ui-smoke-' .github/workflows/ci.yml |
-			rg -o 'ui-smoke-[[:alnum:]_-]+' |
-			sort
-	)"
-
-	if [[ "$actual" != "$expected" ]]; then
-		printf 'Expected UI smoke artifacts:\n%s\n' "$expected" >&2
-		printf 'Declared UI smoke artifacts:\n%s\n' "$actual" >&2
-		die "PR UI smoke matrix and artifact summary must stay synchronized."
+	ui_job="$(awk '
+		/^  ui_smoke_tests:/ { inside = 1 }
+		inside && /^  [[:alnum:]_]+:/ && $1 != "ui_smoke_tests:" { exit }
+		inside { print }
+	' .github/workflows/ci.yml)"
+	if rg -q '^[[:space:]]+(matrix:|strategy:)' <<<"$ui_job"; then
+		die "PR UI smoke must use one runner and one test build."
 	fi
+	assert_match "PR UI smoke artifact must use the stable pr name." \
+		'artifact_name_suffix:[[:space:]]*pr' .github/workflows/ci.yml
+	assert_match "CI summary must name the single PR UI artifact." \
+		'Artifact: ui-smoke-pr' .github/workflows/ci.yml
+	[[ "$(rg -c -- '--only-testing VoidDisplayUITests' .github/workflows/nightly.yml)" -eq 1 ]] ||
+		die "Nightly must run the full UI target exactly once."
 }
 
 validate_release_ci_gate_timeout() {

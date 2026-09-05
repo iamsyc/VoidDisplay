@@ -208,33 +208,21 @@ jobs:
           retention-days: 7
 
   ui_smoke_tests:
-    name: ui-smoke-tests (${{ matrix.case_name }})
+    name: ui-smoke-tests
     needs:
       - classify_changes
       - script_static_checks
     if: ${{ needs.classify_changes.outputs.requires_ui_smoke == 'true' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - case_name: navigation-preview
-            only_testing_json: >-
-              [
-                "VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline",
-                "VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState",
-                "VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing"
-              ]
-          - case_name: display-list
-            only_testing_json: >-
-              [
-                "VoidDisplayUITests/HomeSmokeTests/testVirtualDisplayListSurfaceSmoke_baseline",
-                "VoidDisplayUITests/HomeSmokeTests/testListActionsRemainVisibleAcrossNarrowWindowSizes"
-              ]
     uses: ./.github/workflows/_reusable-ui-smoke-tests.yml
     with:
-      only_testing_json: ${{ matrix.only_testing_json }}
+      only_testing_json: >-
+        [
+          "VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney",
+          "VoidDisplayUITests/HomeSmokeTests/testPreviewRecoveryRetryShowsRestartingState",
+          "VoidDisplayUITests/HomeSmokeTests/testPreviewWindowWaitsForIdentityWithoutClosing"
+        ]
       artifact_retention_days: 7
-      artifact_name_suffix: ${{ matrix.case_name }}
+      artifact_name_suffix: pr
       enforce_failure: true
 
   release_build_check_arm64:
@@ -496,8 +484,8 @@ jobs:
               `Artifact: ${value('UNIT_ARTIFACT')}`,
             ].join('<br>');
             const uiDetails = [
-              'Each shard runs its selectors serially and writes aggregate failure classification to ui-smoke-summary.json.',
-              'Artifacts: ui-smoke-navigation-preview, ui-smoke-display-list',
+              'The PR UI job builds once, runs its selectors serially, and writes aggregate failure classification to ui-smoke-summary.json.',
+              'Artifact: ui-smoke-pr',
             ].join('<br>');
             const releaseStatus = context.eventName === 'pull_request'
               ? value('RELEASE_ARM64_RESULT', 'unknown')

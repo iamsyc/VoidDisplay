@@ -85,7 +85,7 @@ jq -n '{result: "Passed", totalTestCount: 3, passedTests: 3, skippedTests: 0, fa
 jq -n '{result: "Passed", totalTestCount: 0, passedTests: 0, skippedTests: 0, failedTests: 0}' >"$fixture_root/zero.json"
 jq -n '{result: "Failed", totalTestCount: 3, passedTests: 2, skippedTests: 0, failedTests: 1}' >"$fixture_root/failed.json"
 jq -n '{result: "Passed", totalTestCount: 3, passedTests: 0, skippedTests: 3, failedTests: 0}' >"$fixture_root/all-skipped.json"
-jq -n '{testNodes: [{nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"}]}' >"$fixture_root/tests.json"
+jq -n '{testNodes: [{nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"}]}' >"$fixture_root/tests.json"
 
 valid_evidence="$(
 	PATH="$fixture_bin:$PATH" XCRESULT_FIXTURE_ROOT="$fixture_root" XCRESULT_FIXTURE_MODE=valid \
@@ -93,7 +93,7 @@ valid_evidence="$(
 		"$result_bundle" \
 		"VoidDisplayUITests" \
 		"VoidDisplayUITests/HomeSmokeTests" \
-		"VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"
+		"VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"
 )" ||
 	die "xcresult evidence probe rejected a passing result."
 jq -e \
@@ -105,7 +105,7 @@ jq -e \
 	and .requested_selectors == [
 		"VoidDisplayUITests",
 		"VoidDisplayUITests/HomeSmokeTests",
-		"VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"
+		"VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"
 	]' \
 	<<<"$valid_evidence" >/dev/null ||
 	die "xcresult evidence probe returned unexpected normalized evidence."
@@ -128,7 +128,7 @@ fi
 if PATH="$fixture_bin:$PATH" XCRESULT_FIXTURE_ROOT="$fixture_root" \
 	xcresult_test_evidence_valid \
 	"$result_bundle" \
-	"VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline" \
+	"VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney" \
 	"VoidDisplayUITests/HomeSmokeTests/testSelectorThatDoesNotExist"; then
 	die "xcresult selector probe accepted one valid selector plus one missing selector."
 fi

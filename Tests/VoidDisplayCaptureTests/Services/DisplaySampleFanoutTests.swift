@@ -60,6 +60,7 @@ private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink
     private let entrySignal = BlockingPreviewSinkEntrySignal()
     private let releaseSemaphore = DispatchSemaphore(value: 0)
     private let hasEntered = Mutex(false)
+    private let completedSubmissions = Mutex(0)
 
     nonisolated func submitFrame(_ _: CMSampleBuffer) {
         let shouldSignal = hasEntered.withLock { entered -> Bool in
@@ -71,8 +72,9 @@ private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink
             Task {
                 await entrySignal.markEntered()
             }
+            releaseSemaphore.wait()
         }
-        releaseSemaphore.wait()
+        completedSubmissions.withLock { $0 += 1 }
     }
 
     nonisolated func waitForEntry() async {
@@ -81,6 +83,10 @@ private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink
 
     nonisolated func release() {
         releaseSemaphore.signal()
+    }
+
+    nonisolated func completedFrameCount() -> Int {
+        completedSubmissions.withLock { $0 }
     }
 }
 
@@ -124,6 +130,8 @@ struct DisplaySampleFanoutTests {
 
         sink.release()
         await publishTask.value
+        let finishedBothFrames = await waitUntil { sink.completedFrameCount() == 2 }
+        #expect(finishedBothFrames)
     }
 
     nonisolated private func publishDetachedFrame(

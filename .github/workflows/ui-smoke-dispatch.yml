@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       only_testing:
-        description: xcodebuild -only-testing target (e.g. VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline)
+        description: xcodebuild -only-testing target (e.g. VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney)
         required: false
-        default: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
+        default: VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney
         type: string
       max_attempts:
         description: Retry attempts for runner/bootstrap flakiness

@@ -22,7 +22,7 @@ if [[ -z "${VOIDDISPLAY_BOOTSTRAP_PROFILES_SH_SOURCED:-}" ]]; then
 			printf '%s\n' git go jq node rg xcodebuild swift awk
 			;;
 		ui-smoke)
-			printf '%s\n' go jq rg xcodebuild grep xcrun awk tr tail tee
+			printf '%s\n' git go jq lockf rg shasum xcodebuild grep xcrun awk tr tail tee
 			;;
 		xcode)
 			printf '%s\n' git go jq rg xcodebuild swift xcrun awk tr tail codesign security

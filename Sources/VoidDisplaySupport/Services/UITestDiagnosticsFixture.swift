@@ -9,16 +9,9 @@ enum UITestDiagnosticsFixture {
     static func events(for scenario: UITestScenario) -> [ObservabilityEvent] {
         switch scenario {
         case .diagnosticsRecoveredWarning:
-            [
-                ObservabilityEvent(
-                    severity: .warning,
-                    subsystem: .capture,
-                    operation: "Screen capture permission check",
-                    message: "Screen capture permission unavailable."
-                )
-            ]
+            [recoveredWarningEvent]
         case .diagnosticsTransactionTimeline:
-            transactionTimelineEvents
+            [recoveredWarningEvent] + transactionTimelineEvents
         case .baseline,
              .displayCatalogLoading,
              .displayCatalogLoadingWithMissingManagedDisplay,
@@ -29,6 +22,15 @@ enum UITestDiagnosticsFixture {
              .previewWindowPayload:
             []
         }
+    }
+
+    private static var recoveredWarningEvent: ObservabilityEvent {
+        ObservabilityEvent(
+            severity: .warning,
+            subsystem: .capture,
+            operation: "Screen capture permission check",
+            message: "Screen capture permission unavailable."
+        )
     }
 
     private static var transactionTimelineEvents: [ObservabilityEvent] {
