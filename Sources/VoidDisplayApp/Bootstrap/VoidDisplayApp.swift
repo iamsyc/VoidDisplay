@@ -50,7 +50,7 @@ public struct VoidDisplayApplication: App {
     }
 
     public var body: some Scene {
-        WindowGroup {
+        Window("VoidDisplay", id: AppWindowID.main) {
             Group {
                 if UITestRuntime.isEnabled && UITestRuntime.scenario == .settingsFeedback {
                     AppSettingsView(
@@ -94,6 +94,16 @@ public struct VoidDisplayApplication: App {
             .environment(virtualDisplay)
             .environment(capturePerformancePreferences)
             .environment(navigation)
+            .background {
+                if UITestRuntime.isEnabled {
+                    UITestWindowSizeHost(
+                        size: UITestRuntime.windowSize
+                            ?? UITestWindowSize(width: 1180, height: 720)
+                    )
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
+                }
+            }
             .overlay {
                 if UITestRuntime.shouldAdvanceFocus {
                     UITestFocusTraversalHost()
@@ -108,6 +118,19 @@ public struct VoidDisplayApplication: App {
             width: UITestRuntime.windowSize?.width ?? 1180,
             height: UITestRuntime.windowSize?.height ?? 720
         )
+
+        MenuBarExtra("VoidDisplay", systemImage: "display.2") {
+            MenuBarQuickActionsView(
+                capture: capture,
+                sharing: sharing,
+                virtualDisplay: virtualDisplay,
+                capturePerformancePreferences: capturePerformancePreferences,
+                displayRuntime: displayRuntime,
+                sharingAdapter: sharingAdapter
+            )
+            .environment(navigation)
+        }
+        .menuBarExtraStyle(.window)
 
         WindowGroup(for: CapturePreviewID.self) { $previewID in
             CaptureDisplayWindowRoot(
@@ -124,6 +147,9 @@ public struct VoidDisplayApplication: App {
                 .environment(virtualDisplay)
         }
         .windowToolbarStyle(.unifiedCompact(showsTitle: true))
+        .commands {
+            MainWindowCommands(navigation: navigation)
+        }
 
         Settings {
             AppSettingsView(
@@ -145,6 +171,51 @@ private struct UITestFocusTraversalHost: NSViewRepresentable {
     }
 
     func updateNSView(_: NSView, context _: Context) {}
+}
+
+private struct UITestWindowSizeHost: NSViewRepresentable {
+    let size: UITestWindowSize
+
+    func makeNSView(context _: Context) -> NSView {
+        UITestWindowSizeView(size: size)
+    }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        guard let sizeView = nsView as? UITestWindowSizeView else { return }
+        sizeView.apply(size: size)
+    }
+}
+
+private final class UITestWindowSizeView: NSView {
+    private var size: UITestWindowSize
+
+    init(size: UITestWindowSize) {
+        self.size = size
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyWindowSize()
+    }
+
+    func apply(size: UITestWindowSize) {
+        self.size = size
+        applyWindowSize()
+    }
+
+    private func applyWindowSize() {
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            window?.setContentSize(NSSize(width: size.width, height: size.height))
+        }
+    }
 }
 
 private final class UITestFocusTraversalView: NSView {

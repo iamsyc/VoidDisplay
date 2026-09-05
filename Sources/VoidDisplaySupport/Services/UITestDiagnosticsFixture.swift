@@ -19,7 +19,8 @@ enum UITestDiagnosticsFixture {
              .settingsFeedback,
              .previewActive,
              .previewRecovery,
-             .previewWindowPayload:
+             .previewWindowPayload,
+             .menuBarQuickActions:
             []
         }
     }

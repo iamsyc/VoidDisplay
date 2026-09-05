@@ -271,6 +271,35 @@ package final class HomeVirtualDisplaySurfaceController {
         }
     }
 
+    package func performMenuBarAction(
+        _ action: MenuBarVirtualDisplayAction,
+        for item: HomeVirtualDisplayItemPresentation,
+        openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
+    ) {
+        switch action {
+        case .toggle:
+            perform(
+                .toggle,
+                for: item,
+                openPreviewWindow: openPreviewWindow,
+                openSharePage: { _ in },
+                editConfig: { _ in }
+            )
+        case .openPreview:
+            startPreview(item, openPreviewWindow: openPreviewWindow)
+        case .toggleWebView:
+            perform(
+                .webView,
+                for: item,
+                openPreviewWindow: openPreviewWindow,
+                openSharePage: { _ in },
+                editConfig: { _ in }
+            )
+        case .copyShareAddress:
+            copyShareAddress(item)
+        }
+    }
+
     package func dismissActionAlert() {
         actionAlert = nil
     }

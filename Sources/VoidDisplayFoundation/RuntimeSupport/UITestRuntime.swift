@@ -11,6 +11,7 @@ package enum UITestScenario: String {
     case previewActive = "preview_active"
     case previewRecovery = "preview_recovery"
     case previewWindowPayload = "preview_window_payload"
+    case menuBarQuickActions = "menu_bar_quick_actions"
 }
 package enum UITestRuntime {
     package nonisolated static let managedVirtualDisplayIDBase: CGDirectDisplayID = 0xF000_0001

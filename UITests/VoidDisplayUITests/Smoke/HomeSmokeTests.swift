@@ -870,17 +870,32 @@ final class HomeSmokeTests: XCTestCase {
 
         let closeButton = window.buttons[XCUIIdentifierCloseWindow]
         XCTAssertTrue(waitForExistenceIfNeeded(closeButton, timeout: 2))
-        closeButton.click()
+        app.activate()
+        let closeWindowCandidates = [
+            app.menuItems["Close Window"],
+            app.menuItems["Close"],
+            app.menuItems["关闭窗口"],
+            app.menuItems["关闭"]
+        ]
+        let closeWindowItem = closeWindowCandidates.first {
+            waitForExistenceIfNeeded($0, timeout: 1)
+        } ?? closeWindowCandidates[0]
+        XCTAssertTrue(waitForExistenceIfNeeded(closeWindowItem, timeout: 2))
+        closeWindowItem.click()
         XCTAssertFalse(window.waitForExistence(timeout: 3))
 
         app.activate()
-        let englishNewWindowItem = app.menuItems["New Window"]
-        let localizedNewWindowItem = app.menuItems["新建窗口"]
-        let newWindowItem = waitForExistenceIfNeeded(englishNewWindowItem, timeout: 2)
-            ? englishNewWindowItem
-            : localizedNewWindowItem
-        XCTAssertTrue(waitForExistenceIfNeeded(newWindowItem, timeout: 2))
-        newWindowItem.click()
+        let mainWindowCommandCandidates = [
+            app.menuItems["Open VoidDisplay"],
+            app.menuItems["打开 VoidDisplay"]
+        ]
+        let openMainWindowItem = mainWindowCommandCandidates.first {
+            waitForExistenceIfNeeded($0, timeout: 1)
+        } ?? mainWindowCommandCandidates[0]
+        XCTAssertTrue(waitForExistenceIfNeeded(openMainWindowItem, timeout: 2))
+        XCTAssertFalse(app.menuItems["New Window"].exists)
+        XCTAssertFalse(app.menuItems["新建窗口"].exists)
+        openMainWindowItem.click()
         assertAllExist(
             app,
             identifiers: ["detail_home", "home_virtual_display_preview_toggle"],
@@ -890,6 +905,8 @@ final class HomeSmokeTests: XCTestCase {
             .matching(identifier: "home_virtual_display_preview_toggle")
             .firstMatch
         XCTAssertEqual((previewToggle.value as? NSNumber)?.boolValue, false)
+        XCTAssertFalse(smokeElement(app, identifier: "capture_preview_waiting_for_identity").exists)
+        XCTAssertEqual(app.windows.count, 1)
     }
 
     @MainActor
