@@ -196,13 +196,6 @@ let package = Package(
             swiftSettings: sharedSwiftSettings
         ),
         .testTarget(
-            name: "VoidDisplayDesignSystemTests",
-            dependencies: [
-                "VoidDisplayDesignSystem"
-            ],
-            swiftSettings: sharedSwiftSettings
-        ),
-        .testTarget(
             name: "VoidDisplayFoundationTests",
             dependencies: [
                 "VoidDisplayFoundation",

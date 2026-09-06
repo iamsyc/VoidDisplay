@@ -22,13 +22,13 @@ package enum UITestScreenCaptureCatalogFixture {
 
     private static let fallbackDisplayID = CGDirectDisplayID(9_001)
 
-    package static func makeShareableDisplays() -> [SCDisplay] {
+    package static func makeShareableDisplays(for scenario: UITestScenario) -> [SCDisplay] {
         var displays = NSScreen.screens.compactMap(makeDisplay(for:))
         if displays.isEmpty {
             displays.append(makeFallbackDisplay())
         }
-        let managedVirtualDisplayIDs = UITestRuntime.catalogManagedVirtualDisplayIDs
-        let managedDisplayIDs = Set(managedVirtualDisplayIDs)
+        let managedVirtualDisplayIDs = UITestRuntime.catalogManagedVirtualDisplayIDs(for: scenario)
+        let managedDisplayIDs = Set(UITestRuntime.managedVirtualDisplayIDs)
         displays.removeAll { managedDisplayIDs.contains($0.displayID) }
         displays.append(contentsOf: managedVirtualDisplayIDs.map { displayID in
             makeDisplay(
@@ -40,13 +40,26 @@ package enum UITestScreenCaptureCatalogFixture {
         return displays
     }
 
-    package static func activeDisplayIDs() -> Set<CGDirectDisplayID> {
+    package static func activeDisplayIDs(for scenario: UITestScenario) -> Set<CGDirectDisplayID> {
         var ids = Set(NSScreen.screens.compactMap(\.cgDirectDisplayID))
         if ids.isEmpty {
             ids.insert(fallbackDisplayID)
         }
-        ids.formUnion(UITestRuntime.catalogManagedVirtualDisplayIDs)
+        ids.subtract(UITestRuntime.managedVirtualDisplayIDs)
+        ids.formUnion(UITestRuntime.catalogManagedVirtualDisplayIDs(for: scenario))
         return ids
+    }
+
+    package nonisolated static func makeLoader(
+        for scenario: UITestScenario,
+        clock: some Clock<Duration> = ContinuousClock()
+    ) -> ScreenCaptureCatalogService.LoadShareableDisplays {
+        return { @MainActor in
+            if scenario == .displayCatalogLoading || scenario == .displayCatalogLoadingWithMissingManagedDisplay {
+                try await clock.sleep(for: .seconds(3))
+            }
+            return makeShareableDisplays(for: scenario)
+        }
     }
 
     private static func makeDisplay(for screen: NSScreen) -> SCDisplay? {
@@ -75,9 +88,8 @@ package enum ScreenCaptureShareableDisplayLoaderFactory {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> ScreenCaptureCatalogService.LoadShareableDisplays {
         if environment[UITestRuntime.modeEnvironmentKey] == "1" {
-            return {
-                UITestScreenCaptureCatalogFixture.makeShareableDisplays()
-            }
+            let scenario = UITestScenario(rawValue: environment[UITestRuntime.scenarioEnvironmentKey] ?? "") ?? .baseline
+            return UITestScreenCaptureCatalogFixture.makeLoader(for: scenario)
         }
 
         if environment[PersistenceContext.xCTestConfigurationEnvironmentKey] != nil {
@@ -98,8 +110,9 @@ package enum ScreenCaptureActiveDisplayIDsProviderFactory {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> ScreenCaptureCatalogService.ActiveDisplayIDsProvider {
         if environment[UITestRuntime.modeEnvironmentKey] == "1" {
+            let scenario = UITestScenario(rawValue: environment[UITestRuntime.scenarioEnvironmentKey] ?? "") ?? .baseline
             return {
-                UITestScreenCaptureCatalogFixture.activeDisplayIDs()
+                UITestScreenCaptureCatalogFixture.activeDisplayIDs(for: scenario)
             }
         }
 

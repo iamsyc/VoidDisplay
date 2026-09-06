@@ -47,10 +47,6 @@ package enum UITestRuntime {
         return scenario
     }
 
-    package nonisolated static var catalogManagedVirtualDisplayIDs: [CGDirectDisplayID] {
-        catalogManagedVirtualDisplayIDs(for: scenario)
-    }
-
     package nonisolated static func catalogManagedVirtualDisplayIDs(
         for scenario: UITestScenario
     ) -> [CGDirectDisplayID] {
