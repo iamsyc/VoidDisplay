@@ -204,7 +204,7 @@ final class HomeSmokeTests: XCTestCase {
             identifier: toolbarRescanIdentifier,
             timeout: 6
         )
-        let inlineRescanButton = assertExists(
+        let initialInlineRescanButton = assertExists(
             app,
             identifier: inlineRescanIdentifier,
             timeout: 7
@@ -213,19 +213,28 @@ final class HomeSmokeTests: XCTestCase {
 
         XCTAssertTrue(
             waitForCondition(timeout: 2) {
-                !inlineRescanButton.isEnabled &&
-                    scanningLabels.contains(inlineRescanButton.value as? String ?? "")
+                !initialInlineRescanButton.isEnabled &&
+                    scanningLabels.contains(initialInlineRescanButton.value as? String ?? "")
             },
             "The inline rescan control did not expose the initial scanning state."
         )
-        let initialInlineScanningFrame = inlineRescanButton.frame
+        let initialInlineScanningFrame = initialInlineRescanButton.frame
 
         XCTAssertTrue(
-            waitForCondition(timeout: 6) {
-                toolbarRescanButton.isEnabled &&
-                    inlineRescanButton.isEnabled
-            },
-            "The rescan controls did not become ready after the initial display load."
+            waitForCondition(timeout: 6) { toolbarRescanButton.isEnabled },
+            "The toolbar rescan control did not become ready after the initial display load."
+        )
+        // The first display's scanning button disappears when its catalog entry loads.
+        // Continue with the second fixture display, which remains missing from the catalog.
+        let missingDisplayRow = app.descendants(matching: .any)
+            .matching(identifier: "home_virtual_display_list_row")
+            .element(boundBy: 1)
+        let inlineRescanButton = missingDisplayRow.descendants(matching: .any)
+            .matching(identifier: inlineRescanIdentifier)
+            .firstMatch
+        XCTAssertTrue(
+            waitForCondition(timeout: 6) { inlineRescanButton.exists && inlineRescanButton.isEnabled },
+            "The missing display's rescan control did not become ready after the initial display load."
         )
         XCTAssertTrue(
             waitForHittable(inlineRescanButton),
@@ -233,6 +242,10 @@ final class HomeSmokeTests: XCTestCase {
         )
         let idleToolbarFrame = toolbarRescanButton.frame
         let idleInlineFrame = inlineRescanButton.frame
+        XCTAssertTrue(
+            missingDisplayRow.frame.contains(idleInlineFrame),
+            "The inline rescan control must stay within the missing display row."
+        )
 
         XCTAssertEqual(
             initialInlineScanningFrame.minX,

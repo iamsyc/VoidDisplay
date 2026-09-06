@@ -22,55 +22,25 @@ struct DisplaySurfacePresentationMapperTests {
             state: .attached,
             activeViewerCount: 3
         )
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeSnapshot(
             surfaces: [
-                DisplaySurface(
-                    identity: identity,
-                    kind: .managedVirtualDisplay,
-                    currentDisplayID: displayID,
-                    isAuxiliary: false,
-                    catalog: nil,
-                    capture: nil,
+                managedVirtualSurface(
+                    configID: configID,
+                    displayID: displayID,
+                    desiredEnabled: true,
+                    isRunning: true,
+                    isLiveRuntime: true,
+                    serialNumber: 13,
                     sharing: DisplayRuntimeSharingSurfaceState(
                         displayID: displayID,
                         isStarting: false,
                         isActive: true,
                         viewerCount: 3,
                         hasRoute: true
-                    ),
-                    managedVirtualDisplay: DisplayRuntimeManagedVirtualDisplaySurfaceState(
-                        configID: configID,
-                        serialNumber: 13,
-                        desiredEnabled: true,
-                        isRunning: true,
-                        isLiveRuntime: true,
-                        hasRestoreFailure: false,
-                        modeCount: 1,
-                        maximumPixelWidth: 1920,
-                        maximumPixelHeight: 1080
                     )
                 )
             ],
-            catalog: .empty,
-            capture: .empty,
-            sharing: DisplayRuntimeSharingSnapshot(
-                activeSharingDisplayIDs: [displayID],
-                startingDisplayIDs: [],
-                isSharing: true,
-                isWebServiceRunning: true,
-                preferredPort: nil,
-                sharingClientCount: 3,
-                sharingClientCounts: [DisplayRuntimeDisplayClientCount(displayID: displayID, count: 3)],
-                lifecycle: DisplayRuntimeSharingLifecycle(
-                    phase: .running,
-                    requestedPort: nil,
-                    boundPort: nil,
-                    failureReason: nil,
-                    hasFailureMessage: false
-                ),
-                routes: [DisplayRuntimeShareRoute(displayID: displayID, hasConcreteRoute: true)]
-            ),
-            virtualDisplay: .empty,
+            sharing: sharingSnapshot(displayID: displayID, viewerCount: 3),
             consumerLeases: [previewLease, lanLease].map(DisplayRuntimeConsumerLeaseSnapshot.init),
             aggregatedDemands: [
                 DisplayRuntimeAggregatedDemand(
@@ -159,74 +129,30 @@ struct DisplaySurfacePresentationMapperTests {
     @Test func hidesCatalogOnlyPhysicalSurfacesFromHomeOverview() throws {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
         let managedIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
-        let physicalIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 900)
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeSnapshot(
             surfaces: [
-                DisplaySurface(
-                    identity: managedIdentity,
-                    kind: .managedVirtualDisplay,
-                    currentDisplayID: nil,
-                    isAuxiliary: false,
-                    catalog: nil,
-                    capture: nil,
-                    sharing: nil,
-                    managedVirtualDisplay: DisplayRuntimeManagedVirtualDisplaySurfaceState(
-                        configID: configID,
-                        serialNumber: 14,
-                        desiredEnabled: true,
-                        isRunning: true,
-                        isLiveRuntime: false,
-                        hasRestoreFailure: false,
-                        modeCount: 1,
-                        maximumPixelWidth: 3840,
-                        maximumPixelHeight: 2160
-                    )
+                managedVirtualSurface(
+                    configID: configID,
+                    desiredEnabled: true,
+                    isRunning: true,
+                    maximumPixelWidth: 3840,
+                    maximumPixelHeight: 2160
                 ),
-                DisplaySurface(
-                    identity: physicalIdentity,
-                    kind: .physicalDisplay,
-                    currentDisplayID: 900,
-                    isAuxiliary: true,
-                    catalog: DisplayRuntimeCatalogSurfaceState(
-                        displayID: 900,
-                        isVisible: true,
-                        isMain: true,
-                        pixelWidth: 1920,
-                        pixelHeight: 1080,
-                        refreshRateMilliHertz: nil,
-                        mirrorsDisplayID: nil
-                    ),
-                    capture: nil,
+                physicalSurface(
+                    displayID: 900,
+                    pixelWidth: 1920,
+                    pixelHeight: 1080,
+                    isMain: true,
                     sharing: DisplayRuntimeSharingSurfaceState(
                         displayID: 900,
                         isStarting: false,
                         isActive: false,
                         viewerCount: 0,
                         hasRoute: true
-                    ),
-                    managedVirtualDisplay: nil
+                    )
                 )
             ],
-            catalog: .empty,
-            capture: .empty,
-            sharing: DisplayRuntimeSharingSnapshot(
-                activeSharingDisplayIDs: [],
-                startingDisplayIDs: [],
-                isSharing: false,
-                isWebServiceRunning: true,
-                preferredPort: nil,
-                sharingClientCount: 0,
-                sharingClientCounts: [],
-                lifecycle: DisplayRuntimeSharingLifecycle(
-                    phase: .running,
-                    requestedPort: nil,
-                    boundPort: nil,
-                    failureReason: nil,
-                    hasFailureMessage: false
-                ),
-                routes: [DisplayRuntimeShareRoute(displayID: 900, hasConcreteRoute: true)]
-            ),
-            virtualDisplay: .empty,
+            sharing: sharingSnapshot(displayID: 900, isActive: false, viewerCount: 0),
             consumerLeases: [],
             aggregatedDemands: [],
             effectiveCaptureIntents: []
@@ -242,21 +168,29 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(presentation.surfaces.first?.subtitle == "3840 × 2160 pixels")
     }
 
-    @Test func managedVirtualDisplayStatusSeparatesConfigurationAndRunningState() throws {
+    @Test(arguments: [
+        (enabled: Optional(true), running: true, displayID: Optional<DisplayRuntimeDisplayID>(114), expected: "Enabled · Running"),
+        (enabled: Optional(true), running: false, displayID: nil, expected: "Enabled · Not Running"),
+        (enabled: Optional(false), running: false, displayID: nil, expected: "Disabled"),
+        (enabled: nil, running: false, displayID: nil, expected: "Configuration Missing")
+    ])
+    func managedVirtualDisplayStatusReflectsConfigurationAndRuntime(
+        state: (enabled: Bool?, running: Bool, displayID: DisplayRuntimeDisplayID?, expected: String)
+    ) throws {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000114"))
         let surface = managedVirtualSurface(
             configID: configID,
-            displayID: 114,
-            desiredEnabled: true,
-            isRunning: true,
-            isLiveRuntime: true
+            displayID: state.displayID,
+            desiredEnabled: state.enabled,
+            isRunning: state.running,
+            isLiveRuntime: state.running
         )
         let presentation = DisplaySurfacePresentationMapper.makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface)
         )
 
         let item = try #require(presentation.surfaces.first)
-        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
+        #expect(compactValue("displays_virtual_display_status", in: item) == state.expected)
     }
 
     @Test func managedVirtualDisplayStatusShowsStartingForActiveStartupRestore() throws {
@@ -578,39 +512,6 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
 
-    @Test func managedVirtualDisplayStatusShowsNotRunningWithoutFailureEvidence() throws {
-        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000117"))
-        let surface = managedVirtualSurface(configID: configID, desiredEnabled: true)
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
-            snapshot: managedVirtualSnapshot(surface: surface)
-        )
-
-        let item = try #require(presentation.surfaces.first)
-        #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Not Running")
-    }
-
-    @Test func managedVirtualDisplayStatusHidesRuntimeStateWhenDisabled() throws {
-        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000118"))
-        let surface = managedVirtualSurface(configID: configID, desiredEnabled: false)
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
-            snapshot: managedVirtualSnapshot(surface: surface)
-        )
-
-        let item = try #require(presentation.surfaces.first)
-        #expect(compactValue("displays_virtual_display_status", in: item) == "Disabled")
-    }
-
-    @Test func managedVirtualDisplayStatusShowsMissingConfigurationWhenDesiredStateIsUnavailable() throws {
-        let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000120"))
-        let surface = managedVirtualSurface(configID: configID, desiredEnabled: nil)
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
-            snapshot: managedVirtualSnapshot(surface: surface)
-        )
-
-        let item = try #require(presentation.surfaces.first)
-        #expect(compactValue("displays_virtual_display_status", in: item) == "Configuration Missing")
-    }
-
     @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() throws {
         let displayID: DisplayRuntimeDisplayID = 77
         let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
@@ -621,31 +522,10 @@ struct DisplaySurfacePresentationMapperTests {
             state: .failed,
             lastFailureCode: "capture_intent_permission_unavailable"
         )
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeSnapshot(
             surfaces: [
-                DisplaySurface(
-                    identity: identity,
-                    kind: .physicalDisplay,
-                    currentDisplayID: displayID,
-                    isAuxiliary: true,
-                    catalog: DisplayRuntimeCatalogSurfaceState(
-                        displayID: displayID,
-                        isVisible: true,
-                        isMain: false,
-                        pixelWidth: 1280,
-                        pixelHeight: 720,
-                        refreshRateMilliHertz: nil,
-                        mirrorsDisplayID: nil
-                    ),
-                    capture: nil,
-                    sharing: nil,
-                    managedVirtualDisplay: nil
-                )
+                physicalSurface(displayID: displayID, pixelWidth: 1280, pixelHeight: 720)
             ],
-            catalog: .empty,
-            capture: .empty,
-            sharing: .empty,
-            virtualDisplay: .empty,
             consumerLeases: [DisplayRuntimeConsumerLeaseSnapshot(lease: failedLease)]
         )
 
@@ -665,23 +545,12 @@ struct DisplaySurfacePresentationMapperTests {
     @Test func surfaceFactsWithoutRuntimeDemandDoNotEnableControlState() throws {
         let displayID: DisplayRuntimeDisplayID = 78
         let sessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000078"))
-        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeSnapshot(
             surfaces: [
-                DisplaySurface(
-                    identity: identity,
-                    kind: .physicalDisplay,
-                    currentDisplayID: displayID,
-                    isAuxiliary: true,
-                    catalog: DisplayRuntimeCatalogSurfaceState(
-                        displayID: displayID,
-                        isVisible: true,
-                        isMain: false,
-                        pixelWidth: 2560,
-                        pixelHeight: 1440,
-                        refreshRateMilliHertz: nil,
-                        mirrorsDisplayID: nil
-                    ),
+                physicalSurface(
+                    displayID: displayID,
+                    pixelWidth: 2560,
+                    pixelHeight: 1440,
                     capture: DisplayRuntimeCaptureSurfaceState(
                         displayID: displayID,
                         isStarting: true,
@@ -695,11 +564,9 @@ struct DisplaySurfacePresentationMapperTests {
                         isActive: true,
                         viewerCount: 2,
                         hasRoute: true
-                    ),
-                    managedVirtualDisplay: nil
+                    )
                 )
             ],
-            catalog: .empty,
             capture: DisplayRuntimeCaptureSnapshot(
                 startingDisplayIDs: [displayID],
                 sessions: [
@@ -719,26 +586,7 @@ struct DisplaySurfacePresentationMapperTests {
                     )
                 ]
             ),
-            sharing: DisplayRuntimeSharingSnapshot(
-                activeSharingDisplayIDs: [displayID],
-                startingDisplayIDs: [displayID],
-                isSharing: true,
-                isWebServiceRunning: true,
-                preferredPort: nil,
-                sharingClientCount: 2,
-                sharingClientCounts: [
-                    DisplayRuntimeDisplayClientCount(displayID: displayID, count: 2)
-                ],
-                lifecycle: DisplayRuntimeSharingLifecycle(
-                    phase: .running,
-                    requestedPort: nil,
-                    boundPort: nil,
-                    failureReason: nil,
-                    hasFailureMessage: false
-                ),
-                routes: [DisplayRuntimeShareRoute(displayID: displayID, hasConcreteRoute: true)]
-            ),
-            virtualDisplay: .empty,
+            sharing: sharingSnapshot(displayID: displayID, isStarting: true, viewerCount: 2),
             consumerLeases: [],
             aggregatedDemands: [],
             effectiveCaptureIntents: []
@@ -779,31 +627,10 @@ struct DisplaySurfacePresentationMapperTests {
             activeViewerCount: 4,
             permitsExplicitDowngrade: false
         )
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeSnapshot(
             surfaces: [
-                DisplaySurface(
-                    identity: identity,
-                    kind: .physicalDisplay,
-                    currentDisplayID: displayID,
-                    isAuxiliary: true,
-                    catalog: DisplayRuntimeCatalogSurfaceState(
-                        displayID: displayID,
-                        isVisible: true,
-                        isMain: false,
-                        pixelWidth: 2560,
-                        pixelHeight: 1440,
-                        refreshRateMilliHertz: nil,
-                        mirrorsDisplayID: nil
-                    ),
-                    capture: nil,
-                    sharing: nil,
-                    managedVirtualDisplay: nil
-                )
+                physicalSurface(displayID: displayID, pixelWidth: 2560, pixelHeight: 1440)
             ],
-            catalog: .empty,
-            capture: .empty,
-            sharing: .empty,
-            virtualDisplay: .empty,
             consumerLeases: [],
             aggregatedDemands: [],
             effectiveCaptureIntents: [
@@ -906,17 +733,88 @@ struct DisplaySurfacePresentationMapperTests {
         )
     }
 
+    private func makeSnapshot(
+        surfaces: [DisplaySurface],
+        capture: DisplayRuntimeCaptureSnapshot = .empty,
+        sharing: DisplayRuntimeSharingSnapshot = .empty,
+        transactions: DisplayRuntimeTransactionSnapshot = .empty,
+        consumerLeases: [DisplayRuntimeConsumerLeaseSnapshot] = [],
+        aggregatedDemands: [DisplayRuntimeAggregatedDemand] = [],
+        effectiveCaptureIntents: [DisplayRuntimeEffectiveCaptureIntent] = []
+    ) -> DisplayRuntimeSnapshot {
+        DisplayRuntimeSnapshot(
+            surfaces: surfaces,
+            catalog: .empty,
+            capture: capture,
+            sharing: sharing,
+            virtualDisplay: .empty,
+            transactions: transactions,
+            consumerLeases: consumerLeases,
+            aggregatedDemands: aggregatedDemands,
+            effectiveCaptureIntents: effectiveCaptureIntents
+        )
+    }
+
+    private func physicalSurface(
+        displayID: DisplayRuntimeDisplayID,
+        pixelWidth: Int,
+        pixelHeight: Int,
+        isMain: Bool = false,
+        capture: DisplayRuntimeCaptureSurfaceState? = nil,
+        sharing: DisplayRuntimeSharingSurfaceState? = nil
+    ) -> DisplaySurface {
+        DisplaySurface(
+            identity: .physicalDisplay(displayID: displayID),
+            kind: .physicalDisplay,
+            currentDisplayID: displayID,
+            isAuxiliary: true,
+            catalog: DisplayRuntimeCatalogSurfaceState(
+                displayID: displayID,
+                isVisible: true,
+                isMain: isMain,
+                pixelWidth: pixelWidth,
+                pixelHeight: pixelHeight,
+                refreshRateMilliHertz: nil,
+                mirrorsDisplayID: nil
+            ),
+            capture: capture,
+            sharing: sharing,
+            managedVirtualDisplay: nil
+        )
+    }
+
+    private func sharingSnapshot(
+        displayID: DisplayRuntimeDisplayID,
+        isActive: Bool = true,
+        isStarting: Bool = false,
+        viewerCount: Int
+    ) -> DisplayRuntimeSharingSnapshot {
+        DisplayRuntimeSharingSnapshot(
+            activeSharingDisplayIDs: isActive ? [displayID] : [],
+            startingDisplayIDs: isStarting ? [displayID] : [],
+            isSharing: isActive,
+            isWebServiceRunning: true,
+            preferredPort: nil,
+            sharingClientCount: viewerCount,
+            sharingClientCounts: isActive ? [.init(displayID: displayID, count: viewerCount)] : [],
+            lifecycle: .init(
+                phase: .running,
+                requestedPort: nil,
+                boundPort: nil,
+                failureReason: nil,
+                hasFailureMessage: false
+            ),
+            routes: [.init(displayID: displayID, hasConcreteRoute: true)]
+        )
+    }
+
     private func managedVirtualSnapshot(
         surface: DisplaySurface,
         activeTransactions: [DisplayRuntimeTransactionTrace] = [],
         recentTransactions: [DisplayRuntimeTransactionTrace] = []
     ) -> DisplayRuntimeSnapshot {
-        DisplayRuntimeSnapshot(
+        makeSnapshot(
             surfaces: [surface],
-            catalog: .empty,
-            capture: .empty,
-            sharing: .empty,
-            virtualDisplay: .empty,
             transactions: .init(
                 activeTransactions: activeTransactions,
                 recentTransactions: recentTransactions
@@ -930,7 +828,11 @@ struct DisplaySurfacePresentationMapperTests {
         desiredEnabled: Bool?,
         isRunning: Bool = false,
         isLiveRuntime: Bool = false,
-        hasRestoreFailure: Bool = false
+        hasRestoreFailure: Bool = false,
+        serialNumber: UInt32 = 14,
+        maximumPixelWidth: Int = 1920,
+        maximumPixelHeight: Int = 1080,
+        sharing: DisplayRuntimeSharingSurfaceState? = nil
     ) -> DisplaySurface {
         DisplaySurface(
             identity: .managedVirtualDisplay(configID: configID),
@@ -939,17 +841,17 @@ struct DisplaySurfacePresentationMapperTests {
             isAuxiliary: false,
             catalog: nil,
             capture: nil,
-            sharing: nil,
+            sharing: sharing,
             managedVirtualDisplay: DisplayRuntimeManagedVirtualDisplaySurfaceState(
                 configID: configID,
-                serialNumber: 14,
+                serialNumber: serialNumber,
                 desiredEnabled: desiredEnabled,
                 isRunning: isRunning,
                 isLiveRuntime: isLiveRuntime,
                 hasRestoreFailure: hasRestoreFailure,
                 modeCount: 1,
-                maximumPixelWidth: 1920,
-                maximumPixelHeight: 1080
+                maximumPixelWidth: maximumPixelWidth,
+                maximumPixelHeight: maximumPixelHeight
             )
         )
     }

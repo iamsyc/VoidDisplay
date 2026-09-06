@@ -149,61 +149,32 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(sut.store.displays == nil)
     }
 
-    @Test func runtimeProbePermissionDeniedShortCircuitsLoad() async {
-        let callFlag = CatalogServiceAsyncCallFlag()
+    @Test func cancelledRefreshCancelsLoaderSleepWithoutPublishingDisplays() async throws {
+        let clock = ManualTestClock()
+        var loaderCompleted = false
         let sut = ScreenCaptureCatalogService(
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
             loadShareableDisplays: {
-                await callFlag.markCalled()
+                try await clock.sleep(for: .seconds(3))
+                loaderCompleted = true
                 return []
             },
-            activeDisplayIDsProvider: { [] },
-            runtimeScenarioProbe: .init(
-                shouldShortCircuitDisplayLoadAsPermissionDenied: { true }
-            )
+            activeDisplayIDsProvider: { [] }
         )
-        sut.store.hasScreenCapturePermission = true
-
-        let result = await sut.submitRefresh(intent: .userForcedRefresh)
-
-        #expect(result.result == .clearedSnapshot)
-        #expect(await callFlag.wasCalled() == false)
-        #expect(sut.store.hasScreenCapturePermission == false)
-        #expect(sut.store.lastPreflightPermission == false)
-        #expect(sut.store.displays == nil)
-        #expect(sut.store.isLoadingDisplays == false)
-    }
-
-    @Test func runtimeProbeDisplayCatalogLoadingKeepsLoadingStateBeforeLoaderRuns() async {
-        let callFlag = CatalogServiceAsyncCallFlag()
-        let sut = ScreenCaptureCatalogService(
-            permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
-            loadShareableDisplays: {
-                await callFlag.markCalled()
-                return []
-            },
-            activeDisplayIDsProvider: { [] },
-            runtimeScenarioProbe: .init(
-                shouldShortCircuitDisplayLoadAsPermissionDenied: { false },
-                shouldDelayDisplayLoadForUITest: { true }
-            )
-        )
-        sut.store.hasScreenCapturePermission = true
-
-        let refresh = Task {
-            await sut.submitRefresh(intent: .userForcedRefresh)
+        let refresh = Task { await sut.submitRefresh(intent: .userForcedRefresh) }
+        defer {
+            refresh.cancel()
+            clock.advance(by: .seconds(3))
         }
+        try #require(await waitUntil { clock.pendingSleepCount == 1 && sut.store.isLoadingDisplays })
 
-        #expect(await waitUntil { sut.store.isLoadingDisplays == true })
-        #expect(
-            await staysTrue(timeoutNanoseconds: 100_000_000) {
-                await callFlag.wasCalled() == false
-            }
-        )
+        let cleared = await sut.clearSnapshotForDeniedPermission()
 
-        let clearSettlement = await sut.clearSnapshotForDeniedPermission()
-        #expect(await refresh.value == clearSettlement)
-        #expect(sut.store.isLoadingDisplays == false)
+        #expect(await waitUntil { clock.pendingSleepCount == 0 })
+        #expect(await refresh.value == cleared)
+        #expect(!loaderCompleted)
+        #expect(!sut.store.isLoadingDisplays)
+        #expect(sut.store.displays == nil)
     }
 
     @Test func unchangedTopologyReusesSnapshotWithoutReload() async {
@@ -231,7 +202,7 @@ struct ScreenCaptureCatalogServiceTests {
         #expect(await gate.currentCallCount() == 0)
     }
 
-    @Test func snapshotCommittedWhilePreparingInitialRefreshRemainsAvailableDuringLoad() async {
+    @Test func snapshotPublishedDuringRefreshRemainsAvailableUntilLoadCompletes() async {
         let store = ScreenCaptureCatalogStore()
         let display = SharedMockSCDisplay.make(displayID: 707, width: 1920, height: 1080)
         let signature = makeTestDisplayTopologySignature([707])
@@ -240,21 +211,17 @@ struct ScreenCaptureCatalogServiceTests {
             store: store,
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: true, requestResult: true),
             loadShareableDisplays: {
+                // Publish a snapshot after refresh starts, before its load completes.
+                #expect(store.displays == nil)
+                store.displays = [display]
+                store.lastLoadedActiveDisplayTopologySignature = signature
                 switch await gate.nextOutcome() {
                 case .success: return [display]
                 case .failure(let error): throw error
                 }
             },
             activeDisplayIDsProvider: { [707] },
-            displayTopologySignatureProvider: { signature },
-            runtimeScenarioProbe: .init(shouldShortCircuitDisplayLoadAsPermissionDenied: {
-                // The request has captured an empty store before awaiting preparation.
-                // Model a different refresh committing its snapshot during that suspension.
-                #expect(store.displays == nil)
-                store.displays = [display]
-                store.lastLoadedActiveDisplayTopologySignature = signature
-                return false
-            })
+            displayTopologySignatureProvider: { signature }
         )
 
         let refresh = Task { await sut.submitRefresh(intent: .permissionChanged) }
@@ -267,18 +234,24 @@ struct ScreenCaptureCatalogServiceTests {
     }
 
     @Test func permissionDeniedClearsSnapshot() async {
+        let callFlag = CatalogServiceAsyncCallFlag()
         let sut = ScreenCaptureCatalogService(
             permissionProvider: MockScreenCapturePermissionProvider(preflightResult: false, requestResult: false),
-            loadShareableDisplays: { [] },
+            loadShareableDisplays: {
+                await callFlag.markCalled()
+                return []
+            },
             activeDisplayIDsProvider: { [202] }
         )
         sut.store.displays = []
         sut.store.hasScreenCapturePermission = true
-        _ = sut.refreshPermission()
 
         let result = await sut.submitRefresh(intent: .permissionChanged)
 
         #expect(result.result == .clearedSnapshot)
+        #expect(await callFlag.wasCalled() == false)
+        #expect(sut.store.lastPreflightPermission == false)
+        #expect(sut.store.isLoadingDisplays == false)
         #expect(sut.store.displays == nil)
         #expect(sut.store.hasScreenCapturePermission == false)
         #expect(sut.store.lastRefreshResult == .clearedSnapshot)

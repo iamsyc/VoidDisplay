@@ -133,29 +133,6 @@ package final class ScreenCaptureCatalogService {
         case completed(ScreenCaptureCatalogRefreshResult)
         case retry
     }
-    package struct RuntimeScenarioProbe {
-        var shouldShortCircuitDisplayLoadAsPermissionDenied: @MainActor () -> Bool
-        var shouldDelayDisplayLoadForUITest: @MainActor () -> Bool
-
-        init(
-            shouldShortCircuitDisplayLoadAsPermissionDenied: @escaping @MainActor () -> Bool,
-            shouldDelayDisplayLoadForUITest: @escaping @MainActor () -> Bool = { false }
-        ) {
-            self.shouldShortCircuitDisplayLoadAsPermissionDenied = shouldShortCircuitDisplayLoadAsPermissionDenied
-            self.shouldDelayDisplayLoadForUITest = shouldDelayDisplayLoadForUITest
-        }
-
-        static let live = Self(
-            shouldShortCircuitDisplayLoadAsPermissionDenied: {
-                UITestRuntime.isEnabled && UITestRuntime.scenario == .permissionDenied
-            },
-            shouldDelayDisplayLoadForUITest: {
-                guard UITestRuntime.isEnabled else { return false }
-                return UITestRuntime.scenario == .displayCatalogLoading
-                    || UITestRuntime.scenario == .displayCatalogLoadingWithMissingManagedDisplay
-            }
-        )
-    }
     package typealias LoadShareableDisplays = @MainActor () async throws -> [SCDisplay]
     package typealias ActiveDisplayIDsProvider = @MainActor () -> Set<CGDirectDisplayID>
     package struct Dependencies {
@@ -165,7 +142,6 @@ package final class ScreenCaptureCatalogService {
         var loadFailureMessage: String
         var logOperation: String
         var logger: Logger
-        var runtimeScenarioProbe: RuntimeScenarioProbe
 
         static func live(
             loadFailureMessage: String = String(localized: "Failed to load displays. Check permission and try again."),
@@ -186,8 +162,7 @@ package final class ScreenCaptureCatalogService {
                 },
                 loadFailureMessage: loadFailureMessage,
                 logOperation: logOperation,
-                logger: logger,
-                runtimeScenarioProbe: .live
+                logger: logger
             )
         }
     }
@@ -217,12 +192,9 @@ package final class ScreenCaptureCatalogService {
         self.store = resolvedStore
         self.dependencies = dependencies
         self.coordinator = CatalogRefreshCoordinator(
-            loadShareableDisplays: {
-                try await Task { @MainActor in
-                    try await loadShareableDisplays().map(SendableDisplay.init)
-                }.value
-            },
-            runtimeScenarioProbe: dependencies.runtimeScenarioProbe
+            loadShareableDisplays: { @MainActor in
+                try await loadShareableDisplays().map(SendableDisplay.init)
+            }
         )
     }
 
@@ -237,8 +209,7 @@ package final class ScreenCaptureCatalogService {
         logger: Logger = Logger(
             subsystem: Bundle.main.bundleIdentifier ?? "com.developerchen.voiddisplay",
             category: "capture"
-        ),
-        runtimeScenarioProbe: RuntimeScenarioProbe = .live
+        )
     ) {
         let resolvedActiveDisplayIDsProvider = activeDisplayIDsProvider
             ?? ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault()
@@ -255,8 +226,7 @@ package final class ScreenCaptureCatalogService {
                 },
                 loadFailureMessage: loadFailureMessage,
                 logOperation: logOperation,
-                logger: logger,
-                runtimeScenarioProbe: runtimeScenarioProbe
+                logger: logger
             )
         )
     }
@@ -565,7 +535,6 @@ package actor CatalogRefreshCoordinator {
     }
 
     private let loadShareableDisplays: @Sendable () async throws -> [SendableDisplay]
-    private let runtimeScenarioProbe: ScreenCaptureCatalogService.RuntimeScenarioProbe
     private var nextLoadID: UInt64 = 0
     private var activeLoadID: UInt64?
     private var activeTask: Task<[SendableDisplay], Error>?
@@ -573,19 +542,12 @@ package actor CatalogRefreshCoordinator {
     private var resolutionWaitersByLoadID: [UInt64: [CheckedContinuation<ExecutionResult, Never>]] = [:]
 
     package init(
-        loadShareableDisplays: @escaping @Sendable () async throws -> [SendableDisplay],
-        runtimeScenarioProbe: ScreenCaptureCatalogService.RuntimeScenarioProbe
+        loadShareableDisplays: @escaping @Sendable () async throws -> [SendableDisplay]
     ) {
         self.loadShareableDisplays = loadShareableDisplays
-        self.runtimeScenarioProbe = runtimeScenarioProbe
     }
 
-    package func prepare(request: Request) async -> PrepareResult {
-        if await MainActor.run(body: { runtimeScenarioProbe.shouldShortCircuitDisplayLoadAsPermissionDenied() }) {
-            cancelActiveRefresh()
-            return .clearedSnapshot
-        }
-
+    package func prepare(request: Request) -> PrepareResult {
         guard request.permissionGranted else {
             cancelActiveRefresh()
             return .clearedSnapshot
@@ -648,10 +610,7 @@ package actor CatalogRefreshCoordinator {
     }
 
     private func startLoad(loadID: UInt64) {
-        let task = Task<[SendableDisplay], Error> { [loadShareableDisplays, runtimeScenarioProbe] in
-            if await MainActor.run(body: { runtimeScenarioProbe.shouldDelayDisplayLoadForUITest() }) {
-                try await Task.sleep(for: .seconds(3))
-            }
+        let task = Task<[SendableDisplay], Error> { [loadShareableDisplays] in
             return try await loadShareableDisplays()
         }
         activeTask = task
