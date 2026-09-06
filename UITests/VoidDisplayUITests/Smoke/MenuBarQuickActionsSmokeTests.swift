@@ -67,19 +67,13 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
             XCTAssertTrue(waitForHittable(toggleButton))
             toggleButton.click()
             XCTAssertTrue(
-                waitForCondition(timeout: 8) {
-                    toggleButton.exists && toggleButton.isEnabled
-                        && ["Enable", "启用"].contains(toggleButton.label)
-                },
+                waitForToggleState(toggleButton, enabled: false),
                 "The virtual display did not reach the disabled state."
             )
 
             toggleButton.click()
             XCTAssertTrue(
-                waitForCondition(timeout: 8) {
-                    toggleButton.exists && toggleButton.isEnabled
-                        && ["Disable", "停用"].contains(toggleButton.label)
-                },
+                waitForToggleState(toggleButton, enabled: true),
                 "The virtual display did not return to the enabled state."
             )
             XCTAssertTrue(
@@ -128,9 +122,10 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
                 XCTAssertTrue(waitForHittable(menuToggle))
                 menuToggle.click()
                 let expectedLabels = enabled ? ["Disable", "停用"] : ["Enable", "启用"]
-                XCTAssertTrue(waitForCondition(timeout: 8) {
-                    menuToggle.exists && menuToggle.isEnabled && expectedLabels.contains(menuToggle.label)
-                })
+                XCTAssertTrue(
+                    waitForToggleState(menuToggle, enabled: enabled),
+                    "The menu bar toggle did not finish changing the display's enabled state."
+                )
 
                 tapIdentifier(app, identifier: "virtual_display_edit_name_field")
                 XCTAssertTrue(waitForAbsence(panel, timeout: 2))
@@ -155,6 +150,15 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
                 tapIdentifier(app, identifier: "virtual_display_edit_cancel_button")
                 XCTAssertTrue(waitForAbsence(form, timeout: 2))
             }
+        }
+    }
+
+    @MainActor
+    private func waitForToggleState(_ button: XCUIElement, enabled: Bool) -> Bool {
+        let expectedLabels = enabled ? ["Disable", "停用"] : ["Enable", "启用"]
+        // Runtime queue and catalog updates can outlast UI animations on CI.
+        return waitForCondition(timeout: 15, pollInterval: 0.2) {
+            button.exists && button.isEnabled && expectedLabels.contains(button.label)
         }
     }
 
