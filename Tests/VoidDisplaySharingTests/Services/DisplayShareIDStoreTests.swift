@@ -28,5 +28,10 @@ struct DisplayShareIDStoreTests {
         #expect(newDisplayID != mainID)
         #expect(newDisplayID != virtualID)
         #expect(newDisplayID == max(mainID, virtualID) + 1)
+
+        let reassignedMainID = secondStore.assignID(for: "physical:main", excluding: [mainID])
+        #expect(reassignedMainID == newDisplayID + 1)
+        let thirdStore = DisplayShareIDStore(storeURL: storeURL)
+        #expect(thirdStore.assignID(for: "physical:main", excluding: [mainID]) == reassignedMainID)
     }
 }

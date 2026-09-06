@@ -111,14 +111,14 @@ package final class VirtualDisplayConfigManager {
     }
 
     package func appendConfig(_ config: VirtualDisplayConfig) throws {
-        try mutateConfigs(reason: .userCreatedConfig) { candidate in
+        try mutateConfigs { candidate in
             candidate.append(config)
         }
     }
 
     package func removeConfig(_ configId: UUID) throws {
         guard configs.contains(where: { $0.id == configId }) else { return }
-        try mutateConfigs(reason: .userDeletedConfig) { candidate in
+        try mutateConfigs { candidate in
             candidate.removeAll { $0.id == configId }
         }
     }
@@ -132,7 +132,7 @@ package final class VirtualDisplayConfigManager {
         guard let index = configs.firstIndex(where: { $0.id == updated.id }) else {
             throw VirtualDisplayOperationError.configNotFound
         }
-        try mutateConfigs(reason: .userEditedConfig) { candidate in
+        try mutateConfigs { candidate in
             candidate[index] = updated
         }
     }
@@ -141,13 +141,12 @@ package final class VirtualDisplayConfigManager {
 
     package func setDesiredEnabled(
         _ configId: UUID,
-        enabled: Bool,
-        reason: VirtualDisplayConfigRepository.PersistReason
+        enabled: Bool
     ) throws {
         guard let index = configs.firstIndex(where: { $0.id == configId }) else {
             throw VirtualDisplayOperationError.configNotFound
         }
-        try mutateConfigs(reason: reason) { candidate in
+        try mutateConfigs { candidate in
             var updated = candidate[index]
             updated.desiredEnabled = enabled
             candidate[index] = updated
@@ -180,7 +179,7 @@ package final class VirtualDisplayConfigManager {
 
         guard configs.indices.contains(destinationIndex) else { return false }
 
-        try mutateConfigs(reason: .userReorderedConfigs) { candidate in
+        try mutateConfigs { candidate in
             candidate.swapAt(sourceIndex, destinationIndex)
         }
         return true
@@ -201,7 +200,7 @@ package final class VirtualDisplayConfigManager {
             return false
         }
 
-        try mutateConfigs(reason: .userReorderedConfigs) { candidate in
+        try mutateConfigs { candidate in
             let config = candidate.remove(at: sourceIndex)
             candidate.insert(config, at: firstEnabledIndex)
         }
@@ -225,12 +224,11 @@ package final class VirtualDisplayConfigManager {
     // MARK: - Persistence
 
     private func mutateConfigs(
-        reason: VirtualDisplayConfigRepository.PersistReason,
         _ mutation: (inout [VirtualDisplayConfig]) throws -> Void
     ) throws {
         var candidate = configs
         try mutation(&candidate)
-        try configRepository.save(candidate, reason: reason)
+        try configRepository.save(candidate)
         configs = candidate
         persistedConfigLoadResult = .succeeded(configs: configs)
     }

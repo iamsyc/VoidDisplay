@@ -214,7 +214,6 @@ package actor DisplayCaptureRegistry {
         guard record.state != .draining else {
             throw RegistryError.sessionUnavailable
         }
-        sessionStore.markActive(displayID: displayID)
         let tokenID = leaseBook.registerToken(displayID: displayID, kind: kind)
         if kind == .share {
             _ = leaseBook.setShareFrameDemand(
@@ -236,7 +235,6 @@ package actor DisplayCaptureRegistry {
         guard record.state != .draining else {
             throw RegistryError.sessionUnavailable
         }
-        sessionStore.markActive(displayID: displayID)
         return leaseBook.registerToken(displayID: displayID, kind: kind)
     }
 
@@ -419,10 +417,7 @@ package actor DisplayCaptureRegistry {
     }
 
     private func finishDrainingSession(displayID: CGDirectDisplayID) {
-        sessionStore.finishDraining(
-            displayID: displayID,
-            hasActiveTokens: leaseBook.hasActiveTokens(for: displayID)
-        )
+        sessionStore.finishDraining(displayID: displayID)
     }
 
     private func initialProfile(

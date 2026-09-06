@@ -7,11 +7,6 @@ package enum DisplayStartOutcome<Value: Sendable>: Sendable {
     case invalidated
 }
 
-package enum DisplayStartKind: Hashable, Sendable {
-    case preview
-    case sharing
-}
-
 package final class DisplayStartInvalidationContext: Sendable {
     private struct State {
         var isInvalidated = false
@@ -106,64 +101,42 @@ package final class DisplayStartInvalidationContext: Sendable {
 }
 
 @MainActor
-package final class DisplayStreamStartCoordinator {
+package final class DisplayStreamStartCoordinator<Value: Sendable> {
     package init() {}
-
-    private struct OperationKey: Hashable {
-        let kind: DisplayStartKind
-        let displayID: CGDirectDisplayID
-    }
-
-    private enum OperationCompletion {
-        case finished(Any)
-        case invalidated
-        case failed(any Error)
-    }
 
     private final class OperationRecord {
         let token = UUID()
         let invalidationContext = DisplayStartInvalidationContext()
-        var waiters: [UUID: (OperationCompletion) -> Void] = [:]
+        var waiters: [CheckedContinuation<DisplayStartOutcome<Value>, any Error>] = []
         var task: Task<Void, Never>?
     }
 
-    private var operations: [OperationKey: OperationRecord] = [:]
+    private var operations: [CGDirectDisplayID: OperationRecord] = [:]
 
-    package func isStarting(
-        kind: DisplayStartKind,
-        displayID: CGDirectDisplayID
-    ) -> Bool {
-        operations[OperationKey(kind: kind, displayID: displayID)] != nil
+    package func isStarting(displayID: CGDirectDisplayID) -> Bool {
+        operations[displayID] != nil
     }
 
-    package func start<Value: Sendable>(
-        kind: DisplayStartKind,
+    package func start(
         displayID: CGDirectDisplayID,
         operation: @escaping @MainActor (DisplayStartInvalidationContext) async throws -> DisplayStartOutcome<Value>
     ) async throws -> DisplayStartOutcome<Value> {
-        let key = OperationKey(kind: kind, displayID: displayID)
-        if let existing = operations[key] {
+        if let existing = operations[displayID] {
             return try await awaitResult(from: existing)
         }
 
         let record = OperationRecord()
-        operations[key] = record
+        operations[displayID] = record
         let operationToken = record.token
         record.task = Task { @MainActor [weak self] in
-            let completion: OperationCompletion
+            let completion: Result<DisplayStartOutcome<Value>, any Error>
             do {
-                let outcome = try await operation(record.invalidationContext)
-                switch outcome {
-                case .started(let value):
-                    completion = .finished(value)
-                case .invalidated:
-                    completion = .invalidated
-                }
+                completion = .success(try await operation(record.invalidationContext))
             } catch {
-                completion = .failed(error)
+                completion = .failure(error)
             }
             self?.complete(
-                key: key,
+                displayID: displayID,
                 operationToken: operationToken,
                 completion: completion
             )
@@ -172,78 +145,46 @@ package final class DisplayStreamStartCoordinator {
         return try await awaitResult(from: record)
     }
 
-    package func invalidate(
-        kind: DisplayStartKind,
-        displayID: CGDirectDisplayID
-    ) {
-        invalidate(key: OperationKey(kind: kind, displayID: displayID))
-    }
-
-    package func invalidateAll(displayID: CGDirectDisplayID) {
-        invalidate(kind: .preview, displayID: displayID)
-        invalidate(kind: .sharing, displayID: displayID)
-    }
-
-    package func invalidateAll(kind: DisplayStartKind) {
-        let keysToInvalidate = operations.keys.filter { $0.kind == kind }
-        for key in keysToInvalidate {
-            invalidate(key: key)
+    package func invalidate(displayID: CGDirectDisplayID) {
+        guard let record = operations.removeValue(forKey: displayID) else { return }
+        record.invalidationContext.invalidate()
+        record.task?.cancel()
+        let waiters = record.waiters
+        record.waiters.removeAll()
+        for waiter in waiters {
+            waiter.resume(returning: .invalidated)
         }
     }
 
-    package func waiterCountForTesting(
-        kind: DisplayStartKind,
-        displayID: CGDirectDisplayID
-    ) -> Int {
-        operations[OperationKey(kind: kind, displayID: displayID)]?.waiters.count ?? 0
+    package func invalidateAll() {
+        for displayID in Array(operations.keys) {
+            invalidate(displayID: displayID)
+        }
     }
 
-    private func awaitResult<Value: Sendable>(
+    package func waiterCountForTesting(displayID: CGDirectDisplayID) -> Int {
+        operations[displayID]?.waiters.count ?? 0
+    }
+
+    private func awaitResult(
         from record: OperationRecord
     ) async throws -> DisplayStartOutcome<Value> {
         try await withCheckedThrowingContinuation { continuation in
-            let waiterID = UUID()
-            record.waiters[waiterID] = { completion in
-                switch completion {
-                case .finished(let value):
-                    guard let typedValue = value as? Value else {
-                        continuation.resume(throwing: StartCoordinatorTypeMismatchError())
-                        return
-                    }
-                    continuation.resume(returning: .started(typedValue))
-                case .invalidated:
-                    continuation.resume(returning: .invalidated)
-                case .failed(let error):
-                    continuation.resume(throwing: error)
-                }
-            }
+            record.waiters.append(continuation)
         }
     }
 
     private func complete(
-        key: OperationKey,
+        displayID: CGDirectDisplayID,
         operationToken: UUID,
-        completion: OperationCompletion
+        completion: Result<DisplayStartOutcome<Value>, any Error>
     ) {
-        guard let record = operations[key], record.token == operationToken else { return }
-        operations.removeValue(forKey: key)
-        let waiters = Array(record.waiters.values)
+        guard let record = operations[displayID], record.token == operationToken else { return }
+        operations.removeValue(forKey: displayID)
+        let waiters = record.waiters
         record.waiters.removeAll()
         for waiter in waiters {
-            waiter(completion)
-        }
-    }
-
-    private func invalidate(key: OperationKey) {
-        guard let record = operations.removeValue(forKey: key) else { return }
-        record.invalidationContext.invalidate()
-        record.task?.cancel()
-        let waiters = Array(record.waiters.values)
-        record.waiters.removeAll()
-        for waiter in waiters {
-            waiter(.invalidated)
+            waiter.resume(with: completion)
         }
     }
 }
-
-package struct StartCoordinatorTypeMismatchError: Error {}

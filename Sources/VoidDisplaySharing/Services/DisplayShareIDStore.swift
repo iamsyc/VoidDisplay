@@ -47,21 +47,14 @@ package final class DisplayShareIDStore {
             return existing
         }
 
-        let next = nextAvailableID(excluding: excludedIDs, ignoringKey: key)
+        let next = nextAvailableID(excluding: excludedIDs)
         mappings[key] = next
         persist()
         return next
     }
 
-    private func nextAvailableID(
-        excluding excludedIDs: Set<UInt32>,
-        ignoringKey ignoredKey: String? = nil
-    ) -> UInt32 {
-        var used = Set(mappings.values)
-        if let ignoredKey, let existing = mappings[ignoredKey] {
-            used.remove(existing)
-        }
-        used.formUnion(excludedIDs)
+    private func nextAvailableID(excluding excludedIDs: Set<UInt32>) -> UInt32 {
+        let used = Set(mappings.values).union(excludedIDs)
         var next: UInt32 = 1
         while used.contains(next) {
             next &+= 1

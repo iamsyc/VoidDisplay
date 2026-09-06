@@ -7,7 +7,7 @@ package protocol VirtualDisplayStoring {
     func load() throws -> [VirtualDisplayConfig]
     func save(_ configs: [VirtualDisplayConfig]) throws
     func reset() throws
-    func diagnostics() throws -> VirtualDisplayStoreDiagnostics
+    func diagnostics() -> VirtualDisplayStoreDiagnostics
 }
 
 extension VirtualDisplayStore: VirtualDisplayStoring {}
@@ -19,15 +19,6 @@ package enum VirtualDisplayConfigRepositoryState {
 @MainActor
 package final class VirtualDisplayConfigRepository {
     package typealias FailureReporter = (_ operation: String, _ error: Error) -> Void
-    package enum PersistReason: String {
-        case userCreatedConfig
-        case userEditedConfig
-        case userReorderedConfigs
-        case userDeletedConfig
-        case userToggledDesiredEnabled
-        case runtimeDisableCleanup
-        case runtimeRebuildRecovery
-    }
     package enum LoadResult {
         case success([VirtualDisplayConfig])
         case failure(VirtualDisplayConfigStoreError)
@@ -35,7 +26,6 @@ package final class VirtualDisplayConfigRepository {
 
     private let store: any VirtualDisplayStoring
     private let reportFailure: FailureReporter
-    private var lastPersistedDisplayNamesByConfigId: [UUID: String] = [:]
 
     private(set) var state: VirtualDisplayConfigRepositoryState
 
@@ -47,7 +37,7 @@ package final class VirtualDisplayConfigRepository {
         self.reportFailure = reportFailure ?? { operation, error in
             AppErrorMapper.logFailure(operation, error: error, logger: AppLog.persistence)
         }
-        self.state = .ready(diagnostics: Self.resolveDiagnostics(from: store))
+        self.state = .ready(diagnostics: store.diagnostics())
     }
 
     package var loadFailureMessage: String? {
@@ -69,94 +59,46 @@ package final class VirtualDisplayConfigRepository {
     }
 
     package func load() -> LoadResult {
-        let diagnostics = Self.resolveDiagnostics(from: store)
+        let diagnostics = store.diagnostics()
         do {
             let configs = try store.load()
-            lastPersistedDisplayNamesByConfigId = Dictionary(
-                uniqueKeysWithValues: configs.map { ($0.id, $0.displayName) }
-            )
             state = .ready(diagnostics: diagnostics)
             return .success(configs)
-        } catch let error as VirtualDisplayConfigStoreError {
-            reportFailure("Load virtual display configs", error)
-            lastPersistedDisplayNamesByConfigId.removeAll()
-            state = .loadFailed(error: error, diagnostics: diagnostics)
-            return .failure(error)
         } catch {
             reportFailure("Load virtual display configs", error)
-            let wrapped = VirtualDisplayConfigStoreError.ioFailed(operation: "load", underlying: error)
-            lastPersistedDisplayNamesByConfigId.removeAll()
+            let wrapped = error as? VirtualDisplayConfigStoreError
+                ?? .ioFailed(operation: "load", underlying: error)
             state = .loadFailed(error: wrapped, diagnostics: diagnostics)
             return .failure(wrapped)
         }
     }
 
-    package func save(_ configs: [VirtualDisplayConfig], reason: PersistReason) throws {
-        try ensureWritable(for: reason)
-        try validateDisplayNameMutation(in: configs, for: reason)
+    package func save(_ configs: [VirtualDisplayConfig]) throws {
+        try ensureWritable()
         do {
             try store.save(configs)
         } catch {
             reportFailure("Save virtual display configs", error)
             throw error
         }
-        lastPersistedDisplayNamesByConfigId = Dictionary(
-            uniqueKeysWithValues: configs.map { ($0.id, $0.displayName) }
-        )
-        state = .ready(diagnostics: Self.resolveDiagnostics(from: store))
+        state = .ready(diagnostics: store.diagnostics())
     }
 
     package func reset() throws {
         do {
             try store.reset()
-            lastPersistedDisplayNamesByConfigId.removeAll()
-            state = .ready(diagnostics: Self.resolveDiagnostics(from: store))
+            state = .ready(diagnostics: store.diagnostics())
         } catch {
             reportFailure("Reset virtual display configs", error)
             throw error
         }
     }
 
-    private func ensureWritable(for reason: PersistReason) throws {
+    private func ensureWritable() throws {
         guard case .loadFailed(let error, let diagnostics) = state else { return }
         AppLog.virtualDisplay.error(
-            "Blocked virtual display config persistence due to config store load failure (reason: \(reason.rawValue, privacy: .public), \(diagnostics.summary, privacy: .public)): \(String(describing: error), privacy: .public)"
+            "Blocked virtual display config persistence due to config store load failure (\(diagnostics.summary, privacy: .public)): \(String(describing: error), privacy: .public)"
         )
         throw error
-    }
-
-    private func validateDisplayNameMutation(in configs: [VirtualDisplayConfig], for reason: PersistReason) throws {
-        guard !reasonAllowsDisplayNameMutation(reason) else { return }
-        for config in configs {
-            guard let previousName = lastPersistedDisplayNamesByConfigId[config.id] else { continue }
-            guard previousName != config.displayName else { continue }
-            AppLog.virtualDisplay.error(
-                "Blocked disallowed displayName mutation (reason: \(reason.rawValue, privacy: .public), config: \(config.id.uuidString, privacy: .public), previous: \(previousName, privacy: .public), current: \(config.displayName, privacy: .public))."
-            )
-            throw VirtualDisplayOperationError.invalidConfiguration(
-                String(localized: "Display configuration update is inconsistent with the requested operation.")
-            )
-        }
-    }
-
-    private func reasonAllowsDisplayNameMutation(_ reason: PersistReason) -> Bool {
-        switch reason {
-        case .userCreatedConfig, .userEditedConfig:
-            true
-        case .userReorderedConfigs, .userDeletedConfig, .userToggledDesiredEnabled,
-                .runtimeDisableCleanup, .runtimeRebuildRecovery:
-            false
-        }
-    }
-
-    private static func resolveDiagnostics(from store: any VirtualDisplayStoring) -> VirtualDisplayStoreDiagnostics {
-        (try? store.diagnostics()) ?? fallbackDiagnostics()
-    }
-
-    private static func fallbackDiagnostics() -> VirtualDisplayStoreDiagnostics {
-        VirtualDisplayStoreDiagnostics(
-            primaryStoreURL: URL(fileURLWithPath: "/unavailable"),
-            isTestIsolatedPath: false
-        )
     }
 }

@@ -8,10 +8,10 @@ package nonisolated struct ObservabilitySectionSanitizer: Sendable {
     }
 
     package func sanitize(_ sections: [String: JSONValue]) -> [String: JSONValue] {
-        sections.mapValues(recursivelySanitize)
+        sections.mapValues(sanitize)
     }
 
-    private func recursivelySanitize(_ value: JSONValue) -> JSONValue {
+    package func sanitize(_ value: JSONValue) -> JSONValue {
         switch value {
         case .object(let object):
             return .object(object.reduce(into: [String: JSONValue]()) { result, entry in
@@ -19,11 +19,11 @@ package nonisolated struct ObservabilitySectionSanitizer: Sendable {
                 if sanitizer.shouldRedactValue(forKey: entry.key) {
                     result[key] = .string("<redacted>")
                 } else {
-                    result[key] = recursivelySanitize(entry.value)
+                    result[key] = sanitize(entry.value)
                 }
             })
         case .array(let array):
-            return .array(array.map(recursivelySanitize))
+            return .array(array.map(sanitize))
         case .string(let string):
             return .string(sanitizer.sanitize(text: string) ?? string)
         case .number, .bool, .null:

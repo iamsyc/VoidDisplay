@@ -277,7 +277,7 @@ struct DisplaySharingCoordinatorTests {
         let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let acquireGate = DisplaySharingCoordinatorAsyncGate()
         let subscription = makeSubscription(displayID: displayID)
-        let startCoordinator = DisplayStreamStartCoordinator()
+        let startCoordinator = DisplayStreamStartCoordinator<Void>()
         let coordinator = DisplaySharingCoordinator(
             idStore: DisplayShareIDStore(storeURL: temporaryStoreURL()),
             startCoordinator: startCoordinator,
@@ -298,7 +298,6 @@ struct DisplaySharingCoordinatorTests {
         }
         #expect(await waitForCoordinatorWaiters(
             startCoordinator,
-            kind: .sharing,
             displayID: displayID,
             count: 2
         ))
@@ -617,22 +616,21 @@ struct DisplaySharingCoordinatorTests {
     }
 
     private func waitForCoordinatorWaiters(
-        _ coordinator: DisplayStreamStartCoordinator,
-        kind: DisplayStartKind,
+        _ coordinator: DisplayStreamStartCoordinator<Void>,
         displayID: CGDirectDisplayID,
         count: Int
     ) async -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + AsyncTestTimeouts.defaultAsyncAssertion
         while DispatchTime.now().uptimeNanoseconds < deadline {
             if await MainActor.run(body: {
-                coordinator.waiterCountForTesting(kind: kind, displayID: displayID) >= count
+                coordinator.waiterCountForTesting(displayID: displayID) >= count
             }) {
                 return true
             }
             await Task.yield()
         }
         return await MainActor.run(body: {
-            coordinator.waiterCountForTesting(kind: kind, displayID: displayID) >= count
+            coordinator.waiterCountForTesting(displayID: displayID) >= count
         })
     }
 }

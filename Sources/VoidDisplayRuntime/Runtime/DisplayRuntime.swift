@@ -48,11 +48,7 @@ package final class DisplayRuntime {
     var surfaceEpochs: [DisplaySurfaceIdentity: DisplaySurfaceEpoch] = [:]
     var surfaceResolvedDisplayIDs: [DisplaySurfaceIdentity: DisplayRuntimeDisplayID] = [:]
     var captureIntentRevisionCounter: UInt64 = 0
-    var captureIntentsByRevision: [DisplayRuntimeCaptureIntentRevision: DisplayRuntimeCaptureIntent] = [:]
     var effectiveCaptureIntentsBySurface: [DisplaySurfaceIdentity: DisplayRuntimeEffectiveCaptureIntent] = [:]
-    var captureIntentApplyResultsByRevision: [
-        DisplayRuntimeCaptureIntentRevision: DisplayRuntimeCaptureIntentApplyResult
-    ] = [:]
     var consumerTransitionBusySurfaces: Set<DisplaySurfaceIdentity> = []
     @ObservationIgnored var previewLeaseWaiters: [
         DisplayRuntimeConsumerLeaseID: [UUID: CheckedContinuation<DisplayRuntimeConsumerLease?, Never>]

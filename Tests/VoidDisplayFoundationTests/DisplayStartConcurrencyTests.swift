@@ -111,13 +111,32 @@ struct DisplayStartInvalidationContextTests {
 @Suite(.serialized)
 @MainActor
 struct DisplayStreamStartCoordinatorTests {
+    @Test func failedStartClearsOperationAndAllowsRetry() async throws {
+        let coordinator = DisplayStreamStartCoordinator<Int>()
+        let displayID: CGDirectDisplayID = 903
+
+        await #expect(throws: CancellationError.self) {
+            try await coordinator.start(displayID: displayID) { _ -> DisplayStartOutcome<Int> in
+                throw CancellationError()
+            }
+        }
+        #expect(coordinator.isStarting(displayID: displayID) == false)
+
+        let outcome = try await coordinator.start(displayID: displayID) { _ in .started(3) }
+        guard case .started(let value) = outcome else {
+            Issue.record("Expected retry to start after failed operation.")
+            return
+        }
+        #expect(value == 3)
+    }
+
     @Test func invalidateReturnsInvalidatedBeforeBlockedOperationCompletes() async throws {
-        let coordinator = DisplayStreamStartCoordinator()
+        let coordinator = DisplayStreamStartCoordinator<Int>()
         let gate = DisplayStartCoordinatorGate()
         let displayID: CGDirectDisplayID = 901
 
         let task = Task { @MainActor in
-            try await coordinator.start(kind: .sharing, displayID: displayID) { _ in
+            try await coordinator.start(displayID: displayID) { _ in
                 await gate.wait()
                 return .started(1)
             }
@@ -125,7 +144,7 @@ struct DisplayStreamStartCoordinatorTests {
 
         #expect(await waitForDisplayStartCoordinatorGate(gate, count: 1))
 
-        coordinator.invalidate(kind: .sharing, displayID: displayID)
+        coordinator.invalidate(displayID: displayID)
         let outcome = try await task.value
 
         if case .invalidated = outcome {
@@ -134,24 +153,24 @@ struct DisplayStreamStartCoordinatorTests {
         }
 
         await gate.releaseOne()
-        #expect(coordinator.isStarting(kind: .sharing, displayID: displayID) == false)
+        #expect(coordinator.isStarting(displayID: displayID) == false)
     }
 
     @Test func invalidatedOldOperationCannotCompleteNewOperationRecord() async throws {
-        let coordinator = DisplayStreamStartCoordinator()
+        let coordinator = DisplayStreamStartCoordinator<Int>()
         let firstGate = DisplayStartCoordinatorGate()
         let secondGate = DisplayStartCoordinatorGate()
         let displayID: CGDirectDisplayID = 902
 
         let firstTask = Task { @MainActor in
-            try await coordinator.start(kind: .sharing, displayID: displayID) { _ in
+            try await coordinator.start(displayID: displayID) { _ in
                 await firstGate.wait()
                 return .started(1)
             }
         }
         #expect(await waitForDisplayStartCoordinatorGate(firstGate, count: 1))
 
-        coordinator.invalidate(kind: .sharing, displayID: displayID)
+        coordinator.invalidate(displayID: displayID)
         let firstOutcome = try await firstTask.value
         if case .invalidated = firstOutcome {
         } else {
@@ -159,7 +178,7 @@ struct DisplayStreamStartCoordinatorTests {
         }
 
         let secondTask = Task { @MainActor in
-            try await coordinator.start(kind: .sharing, displayID: displayID) { _ in
+            try await coordinator.start(displayID: displayID) { _ in
                 await secondGate.wait()
                 return .started(2)
             }
@@ -169,7 +188,7 @@ struct DisplayStreamStartCoordinatorTests {
         await firstGate.releaseOne()
         await Task.yield()
 
-        #expect(coordinator.isStarting(kind: .sharing, displayID: displayID))
+        #expect(coordinator.isStarting(displayID: displayID))
 
         await secondGate.releaseOne()
         let secondOutcome = try await secondTask.value
@@ -180,6 +199,6 @@ struct DisplayStreamStartCoordinatorTests {
         }
 
         #expect(value == 2)
-        #expect(coordinator.isStarting(kind: .sharing, displayID: displayID) == false)
+        #expect(coordinator.isStarting(displayID: displayID) == false)
     }
 }

@@ -65,41 +65,6 @@ package struct VirtualDisplayConfig: Identifiable, Codable, Equatable {
         self.desiredEnabled = desiredEnabled
     }
 
-    // MARK: - Codable
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case displayName
-        case serialNum
-        case physicalWidth
-        case physicalHeight
-        case modes
-        case desiredEnabled
-    }
-
-    package init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        displayName = try container.decode(String.self, forKey: .displayName)
-        serialNum = try container.decode(UInt32.self, forKey: .serialNum)
-        physicalWidth = try container.decode(Int.self, forKey: .physicalWidth)
-        physicalHeight = try container.decode(Int.self, forKey: .physicalHeight)
-        modes = try container.decode([ModeConfig].self, forKey: .modes)
-
-        desiredEnabled = try container.decode(Bool.self, forKey: .desiredEnabled)
-    }
-
-    package func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(displayName, forKey: .displayName)
-        try container.encode(serialNum, forKey: .serialNum)
-        try container.encode(physicalWidth, forKey: .physicalWidth)
-        try container.encode(physicalHeight, forKey: .physicalHeight)
-        try container.encode(modes, forKey: .modes)
-        try container.encode(desiredEnabled, forKey: .desiredEnabled)
-    }
-    
     /// Get resolution selections from stored modes
     package var resolutionModes: [ResolutionSelection] {
         modes.map { $0.toResolutionSelection() }

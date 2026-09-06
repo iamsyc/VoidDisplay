@@ -132,7 +132,7 @@ package struct VirtualDisplayStore {
         }
     }
 
-    package func diagnostics() throws -> VirtualDisplayStoreDiagnostics {
+    package func diagnostics() -> VirtualDisplayStoreDiagnostics {
         return VirtualDisplayStoreDiagnostics(
             primaryStoreURL: storeURL,
             isTestIsolatedPath: mode == .testIsolatedWritable
@@ -144,8 +144,6 @@ package struct VirtualDisplayStore {
         let wrapped: FileFormat
         do {
             wrapped = try decoder.decode(FileFormat.self, from: data)
-        } catch let error as DecodingError {
-            throw VirtualDisplayConfigStoreError.decodingFailed(underlying: error)
         } catch {
             throw VirtualDisplayConfigStoreError.decodingFailed(underlying: error)
         }

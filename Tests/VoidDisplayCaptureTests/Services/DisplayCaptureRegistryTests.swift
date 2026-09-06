@@ -661,27 +661,10 @@ struct DisplayCaptureSessionStoreTests {
             session: session
         )
         store.beginDraining(displayID: displayID) { _ in }
-        store.finishDraining(displayID: displayID, hasActiveTokens: false)
+        store.finishDraining(displayID: displayID)
 
         #expect(store.record(for: displayID) == nil)
         #expect(store.sessionState(for: displayID) == .stopped)
-    }
-
-    @Test func finishDrainingRestoresActiveStateWhenTokensReappear() {
-        var store = DisplayCaptureSessionStore()
-        let displayID = CGDirectDisplayID(22004)
-        let session = SessionStoreFakeSession()
-
-        store.installSessionForTesting(
-            displayID: displayID,
-            resolutionText: "1600 × 900",
-            session: session
-        )
-        store.beginDraining(displayID: displayID) { _ in }
-        store.finishDraining(displayID: displayID, hasActiveTokens: true)
-
-        #expect(store.record(for: displayID) != nil)
-        #expect(store.sessionState(for: displayID) == .active)
     }
 }
 

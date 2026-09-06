@@ -73,6 +73,27 @@ struct VirtualDisplayConfigManagerTests {
     }
 
     @Test
+    func toggleReorderAndDeletePreserveRemainingConfigurationFields() throws {
+        let store = FakeVirtualDisplayStore()
+        let manager = makeManager(store: store)
+        let configA = makeConfig(serial: 12, name: "User named A")
+        let configB = makeConfig(serial: 13, name: "User named B")
+        load(manager: manager, store: store, configs: [configA, configB])
+
+        var disabledA = configA
+        disabledA.desiredEnabled = false
+        try manager.setDesiredEnabled(configA.id, enabled: false)
+        #expect(store.savedConfigs.last == [disabledA, configB])
+
+        #expect(try manager.moveConfig(configB.id, direction: .up))
+        #expect(store.savedConfigs.last == [configB, disabledA])
+
+        try manager.removeConfig(configA.id)
+        #expect(store.savedConfigs.last == [configB])
+        #expect(manager.allConfigs() == [configB])
+    }
+
+    @Test
     func updateConfigMissingConfigThrowsConfigNotFound() {
         let store = FakeVirtualDisplayStore()
         let manager = makeManager(store: store)
@@ -144,8 +165,7 @@ struct VirtualDisplayConfigManagerTests {
         do {
             try manager.setDesiredEnabled(
                 UUID(),
-                enabled: true,
-                reason: .userToggledDesiredEnabled
+                enabled: true
             )
             Issue.record("Expected configNotFound")
         } catch VirtualDisplayOperationError.configNotFound {
@@ -259,8 +279,7 @@ struct VirtualDisplayConfigManagerTests {
         #expect(throws: Error.self) {
             try manager.setDesiredEnabled(
                 config.id,
-                enabled: true,
-                reason: .userToggledDesiredEnabled
+                enabled: true
             )
         }
         #expect(manager.allConfigs().first?.desiredEnabled == false)

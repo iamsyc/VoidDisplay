@@ -50,12 +50,6 @@ package struct DisplayCaptureSessionStore {
         )
     }
 
-    package mutating func markActive(displayID: CGDirectDisplayID) {
-        guard var record = recordsByDisplayID[displayID] else { return }
-        record.state = .active
-        recordsByDisplayID[displayID] = record
-    }
-
     package mutating func markInitializing(displayID: CGDirectDisplayID) {
         initializingDisplayIDs.insert(displayID)
     }
@@ -93,17 +87,10 @@ package struct DisplayCaptureSessionStore {
         }
     }
 
-    package mutating func finishDraining(displayID: CGDirectDisplayID, hasActiveTokens: Bool) {
+    package mutating func finishDraining(displayID: CGDirectDisplayID) {
         sessionDrainTasksByDisplayID[displayID] = nil
         guard let record = recordsByDisplayID[displayID] else { return }
         guard record.state == .draining else { return }
-
-        if hasActiveTokens {
-            var resumedRecord = record
-            resumedRecord.state = .active
-            recordsByDisplayID[displayID] = resumedRecord
-            return
-        }
 
         recordsByDisplayID.removeValue(forKey: displayID)
     }
