@@ -406,7 +406,7 @@ private extension VirtualDisplayOrchestratorLightTests {
         inspector: any DisplayTopologyInspecting = DummyDisplayTopologyInspector(),
         managedDisplayOnlineChecker: @escaping (UInt32) -> Bool = { _ in false },
         runtimeDriver: (any VirtualDisplayRuntimeDriving)? = nil,
-        clock: (any VirtualDisplayClocking)? = nil,
+        clock: any VirtualDisplayClocking = TestVirtualDisplayClock(),
         loadOnInit: Bool = true
     ) -> VirtualDisplayOrchestrator {
         store.nextLoadConfigs = initialConfigs
