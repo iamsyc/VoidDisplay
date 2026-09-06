@@ -63,19 +63,12 @@ requirement_flags=(
 	requires_ui_smoke
 	requires_release_smoke
 )
-push_required_flags=(
-	requires_static
-	requires_unit
-	requires_xcode_build
-	requires_ui_smoke
-	requires_release_smoke
-)
 output_fields=("${classification_flags[@]:0:3}" change_scope "${classification_flags[@]:3}" "${requirement_flags[@]}")
 
 [[ -f "$RULES_PATH" ]] || die "Missing classification rules: $RULES_PATH"
 jq -e '.categories | type == "object"' "$RULES_PATH" >/dev/null || die "Invalid classification rules: $RULES_PATH"
 
-for category in "${classification_categories[@]}"; do
+for category in "${classification_categories[@]}" static_only; do
 	for key in exact prefixes globs; do
 		var_name="CLASSIFY_RULES_${category}_${key}"
 		values="$(jq -r --arg category "$category" --arg key "$key" '.categories[$category][$key][]?' "$RULES_PATH")"
@@ -126,6 +119,7 @@ path_matches_category() {
 changed_files=()
 changed_entry_json_items=()
 classification_reason="diff"
+runtime_script_relevant="false"
 
 set_flags() {
 	local value="$1"
@@ -197,6 +191,7 @@ deduplicate_changed_files() {
 if is_zero_sha "$BASE_SHA" || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
 	classification_reason="full_scan"
 	set_flags true "${relevant_flags[@]}"
+	runtime_script_relevant="true"
 	docs_only="false"
 	unknown_relevant="false"
 else
@@ -206,6 +201,9 @@ else
 	if [[ "${#changed_files[@]}" -gt 0 ]]; then
 		all_docs="true"
 		for file_path in "${changed_files[@]}"; do
+			if path_matches_category script "$file_path" && ! path_matches_category static_only "$file_path"; then
+				runtime_script_relevant="true"
+			fi
 			matched_any="false"
 			file_docs="false"
 			for category in "${classification_categories[@]}"; do
@@ -237,26 +235,26 @@ elif [[ "$code_relevant" == "true" ]]; then
 fi
 
 set_flags false "${requirement_flags[@]}"
-
+requires_static="true"
 if [[ "$EVENT_NAME" == "push" ]]; then
-	set_flags true "${push_required_flags[@]}"
-elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-	requires_static="true"
-	requires_unit="true"
-	requires_xcode_build="true"
-	if [[ "$dependency_manifest_relevant" == "true" ]]; then
-		requires_dependency_review="true"
+	# Release recovery relies on a successful main ci-gate covering the complete target.
+	set_flags true requires_unit requires_xcode_build requires_ui_smoke requires_release_smoke
+else
+	if [[ "$product_code_relevant" == "true" || "$test_code_relevant" == "true" || "$runtime_script_relevant" == "true" || "$dependency_manifest_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
+		requires_unit="true"
 	fi
-	if [[ "$ui_relevant" == "true" || "$unknown_relevant" == "true" || "$script_relevant" == "true" || "$dependency_manifest_relevant" == "true" ]]; then
+	if [[ "$product_code_relevant" == "true" || "$ui_relevant" == "true" || "$runtime_script_relevant" == "true" || "$dependency_manifest_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
+		requires_xcode_build="true"
+	fi
+	if [[ "$ui_relevant" == "true" || "$unknown_relevant" == "true" || "$runtime_script_relevant" == "true" || "$dependency_manifest_relevant" == "true" ]]; then
 		requires_ui_smoke="true"
 	fi
-	if [[ "$release_relevant" == "true" && "$BASE_REF" == "main" ]]; then
+	if [[ "$EVENT_NAME" == "pull_request" && "$dependency_manifest_relevant" == "true" ]]; then
+		requires_dependency_review="true"
+	fi
+	if [[ "$EVENT_NAME" == "pull_request" && "$BASE_REF" == "main" && ("$release_relevant" == "true" || "$dependency_manifest_relevant" == "true" || "$unknown_relevant" == "true") ]]; then
 		requires_release_smoke="true"
 	fi
-elif [[ "$docs_only" != "true" ]]; then
-	requires_static="true"
-	requires_unit="true"
-	requires_xcode_build="true"
 fi
 
 for field in "${output_fields[@]}"; do

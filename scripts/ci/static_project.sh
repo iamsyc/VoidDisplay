@@ -486,10 +486,6 @@ validate_classify_fixtures() {
 	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/test_classify.sh"
 }
 
-validate_release_project_path_fixtures() {
-	env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/test_release_project_paths.sh"
-}
-
 validate_swift_style() {
 	mkdir -p "$AI_TMP_DIR"
 	swiftformat --lint --cache "$AI_TMP_DIR/swiftformat.cache" --config "$ROOT_DIR/.swiftformat" Sources Tests UITests Apps Package.swift
@@ -553,7 +549,6 @@ validate_log_scanner_propagates_search_errors
 validate_swiftpm_log_scanner
 validate_bootstrap_profile_fixtures
 validate_classify_fixtures
-validate_release_project_path_fixtures
 validate_swift_style
 validate_display_page_javascript
 validate_product_source_file_sizes

@@ -41,8 +41,5 @@ run = "scripts/ci/full_regression.sh"
 [tasks."release:verify"]
 run = "scripts/release/verify.sh"
 
-[tasks."release:prepare"]
-run = "scripts/release/prepare.sh"
-
 [tasks."release:publish"]
 run = "scripts/release/publish.sh"

@@ -45,6 +45,11 @@
       "prefixes": [],
       "globs": []
     },
+    "static_only": {
+      "exact": [".github/workflows/codeql.yml", ".github/dependabot.yml", ".swiftformat", ".swiftlint.yml"],
+      "prefixes": [],
+      "globs": ["scripts/ci/static_*.sh", "scripts/ci/test_*.sh", "scripts/ci/test_*.mjs"]
+    },
     "docs": {
       "exact": ["AGENTS.md", "LICENSE", "README.md"],
       "prefixes": ["docs/", ".github/PULL_REQUEST_TEMPLATE/"],

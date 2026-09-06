@@ -90,7 +90,8 @@ assert_profile_covers_scripts static \
 	scripts/ci/static_workflows.sh \
 	scripts/ci/static_project.sh \
 	scripts/ci/test_bootstrap_profiles.sh \
-	scripts/ci/test_classify.sh
+	scripts/ci/test_classify.sh \
+	scripts/ci/test_unit_filters.sh
 
 assert_profile_covers_scripts unit scripts/ci/unit.sh
 assert_profile_covers_scripts xcode scripts/dev/doctor.sh scripts/ci/xcode.sh
