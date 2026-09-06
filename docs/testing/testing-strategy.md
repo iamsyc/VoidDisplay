@@ -122,3 +122,21 @@ CI 的完整 UI 旅程需要容纳 1180×720 窗口、菜单栏和 Dock。PR 与
 `scripts/ci/coverage.sh` 运行带插桩的 SwiftPM 测试并解析 LLVM JSON。解析入口把仓库根目录解析为真实路径，使符号链接入口与编译器记录的源码路径一致。`coverage-report.json` 保留各模块行、函数、区域覆盖率以及每个文件的未覆盖区域起始行，Markdown 列出模块变化和缺口最大的文件。这里只度量 SwiftPM 执行到的源码，UI、JavaScript、Go 属于独立证据。不存在统一百分比阈值。
 
 通过后的报告保存为 `.ai-tmp/test-evidence/coverage/latest.json`，下次与其比较；首次运行标记基线缺失，新增模块不伪造历史变化。Nightly 恢复同分支的上一份基线，并把覆盖率与 UI 报告写入 job summary。
+
+覆盖缺口按业务风险处理。先从 JSON 的文件和区域定位控制器、状态机、持久化及模块适配边界，再检查现有断言。SwiftUI `body` 和窗口布局使用 UI 证据，不因整个模块的百分比偏低而重复启动页面，也不从原始覆盖率中移除这些文件。
+
+| 关键风险 | 主要验证位置 |
+| --- | --- |
+| 无效端口、服务启动失败时不得创建共享会话 | `HomeVirtualDisplaySurfaceControllerTests` |
+| 排序、重置失败保留配置并显示持久化错误，重试可完成 | `HomeVirtualDisplaySurfaceControllerTests`、`VirtualDisplayControllerTests` |
+| 预览与共享的租约释放、显示器替换后身份连续性 | `DisplayRuntimeAdapterTests` 及 Runtime、Capture、Sharing 对应测试 |
+| 反馈诊断授权、导出失败重试、历史恢复及复制状态 | `AppSettingsFeedbackControllerTests` |
+| 菜单栏、编辑保存、窗口和布局的真实交互 | 对应 UI smoke 旅程 |
+
+## 本地测试产物保留
+
+日常验证使用默认受管 DerivedData，每个仓库、工具链和目标复用同一构建目录。一次性诊断指定独立 DerivedData 后，任务完成且构建进程退出时应删除该目录；保留所在运行目录中的汇总、日志、覆盖率和 `.xcresult`。不要为每次重跑复制整套构建产物。
+
+保留当前受管 UI 构建、SwiftPM `.build`、覆盖率基线和最近一次完整回归证据。未解决失败的日志及结果保留到问题关闭；成功历史证据完成交接后保留 7 天。签名验收 app、发布包、截图和含源码的 worktree 按各自任务管理，不随构建缓存清理。
+
+大范围回归前使用 `df -h .` 检查可用空间，使用 `du -hd 1 .ai-tmp` 定位旧运行。空间不足时先列出待清理目录，确认没有运行中的构建或测试、目标位于 `.ai-tmp` 内且属于可再生产物，再清理已结束运行的 DerivedData。清理清单及前后空间记录放在本次 `.ai-tmp` 任务目录；禁止整体删除 `.ai-tmp`。可用空间低于 10 GiB 时先处理旧产物，再开始完整回归。

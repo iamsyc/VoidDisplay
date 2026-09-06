@@ -362,6 +362,107 @@ struct AppSettingsFeedbackControllerTests {
         #expect(FileManager.default.fileExists(atPath: historyFileURL.path))
     }
 
+    @Test func exportRespectsOptedOutDiagnosticsAndKeepsFailedDraftForRetry() async throws {
+        var attemptCount = 0
+        var receivedConsents: [FeedbackConsent] = []
+        let bundleURL = URL(fileURLWithPath: "/tmp/support-consent-retry.zip")
+        let controller = AppSettingsFeedbackController(
+            exportAction: { draft, consent in
+                attemptCount += 1
+                receivedConsents.append(consent)
+                #expect(draft.happened == "Sharing stopped")
+                if attemptCount == 1 {
+                    throw NSError(domain: "support-tests", code: 1)
+                }
+                return bundleURL
+            }
+        )
+        controller.happened = "  Sharing stopped  "
+        controller.includeUnifiedLogSummary = false
+        controller.includeCrashReportExcerpt = false
+        controller.includeRelatedConfigSnapshots = false
+
+        await controller.exportSupportBundle()
+
+        #expect(controller.alert != nil)
+        #expect(controller.isExporting == false)
+        #expect(controller.exportHistory.isEmpty)
+        #expect(controller.happened == "  Sharing stopped  ")
+        await controller.exportSupportBundle()
+
+        let optedOut = FeedbackConsent(
+            includeUnifiedLogSummary: false,
+            includeCrashReportExcerpt: false,
+            includeRelatedConfigSnapshots: false
+        )
+        #expect(receivedConsents == [optedOut, optedOut])
+        #expect(controller.alert == nil)
+        #expect(controller.isExporting == false)
+        #expect(controller.exportHistory.count == 1)
+        #expect(controller.completionRecord?.bundleFileName == bundleURL.lastPathComponent)
+    }
+
+    @Test func restoredHistoryCopiesSavedSummaryAndRevealsOnlyExistingBundle() async throws {
+        let root = try makeTemporaryDirectory(prefix: "support-history-actions")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaults = makeIsolatedDefaults(prefix: "support-history-actions")
+        defer { defaults.defaults.removePersistentDomain(forName: defaults.suiteName) }
+        let bundleURL = root.appendingPathComponent("support-bundle.zip")
+        try Data("bundle".utf8).write(to: bundleURL)
+        let record = SupportExportRecord(
+            exportedAt: Date(timeIntervalSince1970: 100), issueType: .other,
+            bundleFileName: bundleURL.lastPathComponent,
+            sanitizedBundlePath: ObservabilitySanitizer().sanitize(fileURL: bundleURL),
+            draftPreview: "Saved problem"
+        )
+        let historyStore = SupportHistoryStore(historyFileURL: root.appendingPathComponent("history.json"))
+        try historyStore.saveRecords([record])
+        var copied: [String] = []
+        var revealed: [URL] = []
+        let actionDate = Date(timeIntervalSince1970: 200)
+        let controller = AppSettingsFeedbackController(
+            defaults: defaults.defaults, historyStore: historyStore,
+            revealAction: { revealed.append($0) }, copyAction: { copied.append($0) },
+            summaryAction: { _ in Issue.record("Restored history must use the saved summary"); return "unexpected" },
+            dateProvider: { actionDate }
+        )
+        await controller.prepare(observability: makeFeedbackControllerObservability(rootURL: root, exportsDirectoryURL: root))
+        controller.happened = "A new unexported draft"
+
+        await controller.copySummary()
+        await controller.revealHistoryBundle(recordID: record.id)
+
+        #expect(copied == [record.historyCopyText])
+        #expect(revealed == [bundleURL])
+        let saved = try #require(historyStore.loadRecords().first)
+        #expect(saved.summaryCopiedAt == actionDate)
+        #expect(saved.revealedAt == actionDate)
+        try FileManager.default.removeItem(at: bundleURL)
+        await controller.revealHistoryBundle(recordID: record.id)
+        await controller.copyHistorySummary(recordID: UUID())
+        #expect(revealed.count == 1)
+        #expect(copied.count == 1)
+    }
+
+    @Test func emptyGeneratedSummaryDoesNotReportCopySuccess() async {
+        var copied: [String] = []
+        let recorder = EventRecorder()
+        let controller = AppSettingsFeedbackController(
+            eventRecorder: { recorder.record($0) },
+            exportAction: { _, _ in URL(fileURLWithPath: "/tmp/support-empty-summary.zip") },
+            copyAction: { copied.append($0) }, summaryAction: { _ in "" }
+        )
+        controller.happened = "Sharing stopped"
+        await controller.exportSupportBundle()
+        #expect(controller.completionRecord != nil)
+
+        await controller.copySummary()
+
+        #expect(copied.isEmpty)
+        #expect(controller.completionRecord?.summaryCopiedAt == nil)
+        #expect(recorder.events.contains { $0.operation == SupportWorkflowEventAction.summaryCopied.operation } == false)
+    }
+
     @Test func supportEventsUseSupportDomainAndMetadata() async throws {
         let tempURL = try makeTemporaryDirectory(prefix: "feedback-controller-events")
         defer { try? FileManager.default.removeItem(at: tempURL) }
