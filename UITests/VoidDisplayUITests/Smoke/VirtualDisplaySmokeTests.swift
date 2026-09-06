@@ -60,7 +60,8 @@ final class VirtualDisplaySmokeTests: XCTestCase {
                 "Save Only must persist the edited mode before reopening the form."
             )
             tapIdentifier(app, identifier: "virtual_display_edit_save_and_rebuild_button")
-            XCTAssertTrue(waitForAbsence(form, timeout: 1))
+            // Rebuild saves through the runtime queue before dismissing the form.
+            XCTAssertTrue(waitForAbsence(form))
             XCTAssertTrue(
                 appliedBadge.waitForExistence(timeout: 8),
                 "Reopening an unchanged saved configuration must still execute the requested rebuild."
