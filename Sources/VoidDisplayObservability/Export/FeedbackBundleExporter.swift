@@ -1,6 +1,8 @@
 import VoidDisplayFoundation
+import Darwin
 import Dispatch
 import Foundation
+import Synchronization
 package nonisolated struct FeedbackBundleExporter {
     package typealias CommandRunner = (_ launchPath: String, _ arguments: [String], _ timeout: TimeInterval) -> String?
     package typealias ArchiveWriter = (_ sourceURL: URL, _ destinationURL: URL) throws -> Void
@@ -331,7 +333,7 @@ package nonisolated struct FeedbackBundleExporter {
         return try handle.read(upToCount: maximumByteCount) ?? Data()
     }
 
-    private static func runCommand(
+    static func runCommand(
         _ launchPath: String,
         arguments: [String],
         timeout: TimeInterval
@@ -342,7 +344,11 @@ package nonisolated struct FeedbackBundleExporter {
 
         let outputPipe = Pipe()
         process.standardOutput = outputPipe
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
+        defer {
+            try? outputPipe.fileHandleForWriting.close()
+            try? outputPipe.fileHandleForReading.close()
+        }
         let semaphore = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in
             semaphore.signal()
@@ -350,15 +356,37 @@ package nonisolated struct FeedbackBundleExporter {
 
         do {
             try process.run()
-            let result = semaphore.wait(timeout: .now() + timeout)
-            guard result == .success else {
-                process.terminate()
-                process.waitUntilExit()
-                return nil
+            try? outputPipe.fileHandleForWriting.close()
+            let output = Mutex<Data?>(nil)
+            let reader = DispatchGroup()
+            reader.enter()
+            DispatchQueue.global(qos: .utility).async {
+                defer { reader.leave() }
+                do {
+                    var tail = Data()
+                    let maximumBytes = 512 * 1024
+                    while let chunk = try outputPipe.fileHandleForReading.read(upToCount: 64 * 1024), !chunk.isEmpty {
+                        tail.append(chunk)
+                        if tail.count > maximumBytes {
+                            tail = Data(tail.suffix(maximumBytes))
+                        }
+                    }
+                    // A byte-bounded suffix may start inside a UTF-8 character.
+                    while let first = tail.first, first & 0xC0 == 0x80 { tail.removeFirst() }
+                    output.withLock { $0 = tail }
+                } catch {
+                    // Log collection is optional; a pipe read failure omits the attachment.
+                }
             }
-            guard process.terminationStatus == 0 else { return nil }
-            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            guard !data.isEmpty else { return nil }
+            let completed = semaphore.wait(timeout: .now() + timeout) == .success
+            if !completed, process.isRunning {
+                // Enforce the collection deadline even if the child ignores SIGTERM.
+                kill(process.processIdentifier, SIGKILL)
+            }
+            process.waitUntilExit()
+            reader.wait()
+            guard completed, process.terminationStatus == 0,
+                  let data = output.withLock({ $0 }), !data.isEmpty else { return nil }
             return String(data: data, encoding: .utf8)
         } catch {
             return nil

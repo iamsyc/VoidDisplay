@@ -265,6 +265,7 @@
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/go.sum",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/codec.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/feedback.go",
+				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/publisher_lifecycle_test.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/ready.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/room.go",
 				"$(ROOT_DIR)/Tools/VoidDisplayRelay/internal/relay/room_rtp_test.go",

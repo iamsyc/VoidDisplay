@@ -12,6 +12,28 @@ import Foundation
 @MainActor
 struct VirtualDisplayAndResolutionTests {
 
+    @Test func storeRejectsInvalidModeBoundsOnSaveAndLoad() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".ai-tmp/mode-store-tests/\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(storeURL: root.appendingPathComponent("displays.json"))
+        for mode in [
+            VirtualDisplayConfig.ModeConfig(width: 8193, height: 1, refreshRate: 60, enableHiDPI: false),
+            .init(width: 1, height: 4097, refreshRate: 60, enableHiDPI: true),
+            .init(width: Int.max, height: 1, refreshRate: 60, enableHiDPI: true),
+            .init(width: 0, height: 1080, refreshRate: 60, enableHiDPI: false),
+            .init(width: 1920, height: 1080, refreshRate: 0, enableHiDPI: false)
+        ] {
+            let config = VirtualDisplayConfig(
+                displayName: "Invalid", serialNum: 1, physicalWidth: 300, physicalHeight: 200,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false), mode]
+            )
+            #expect(throws: VirtualDisplayConfigStoreError.self) { try store.save([config]) }
+            let data = try JSONEncoder().encode(VirtualDisplayStore.FileFormat(schemaVersion: 3, configs: [config]))
+            #expect(throws: VirtualDisplayConfigStoreError.self) { try store.decodeConfigs(from: data) }
+        }
+    }
+
     @Test func resolutionsParsing() {
         let res = DisplayResolutionPreset.w1920h1080.logicalSize
         #expect(res.0 == 1920)

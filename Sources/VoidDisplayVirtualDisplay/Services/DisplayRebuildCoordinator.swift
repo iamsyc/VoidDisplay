@@ -258,37 +258,58 @@ package final class DisplayRebuildCoordinator {
 
         var recreatedPrioritizedDisplayID: CGDirectDisplayID?
         var recreatedContinuityPreferredDisplayID: CGDirectDisplayID?
+        var firstCreationError: Error?
         for runningConfigID in orderedConfigIDs {
+            try Task.checkCancellation()
             guard let runningConfig = configManager.allConfigs().first(where: { $0.id == runningConfigID }) else { continue }
             let terminationConfirmed = terminationConfirmedByConfigID[runningConfigID] ?? true
 
-            let recreatedDisplayID = try await recreateRuntimeDisplayForRebuild(
-                config: runningConfig,
-                terminationConfirmed: terminationConfirmed
-            )
-            if runningConfigID == prioritizedConfigID {
-                recreatedPrioritizedDisplayID = recreatedDisplayID
-            }
-            if runningConfigID == continuityPreferredConfigID {
-                recreatedContinuityPreferredDisplayID = recreatedDisplayID
+            do {
+                let recreatedDisplayID = try await recreateRuntimeDisplayForRebuild(
+                    config: runningConfig,
+                    terminationConfirmed: terminationConfirmed
+                )
+                if runningConfigID == prioritizedConfigID {
+                    recreatedPrioritizedDisplayID = recreatedDisplayID
+                }
+                if runningConfigID == continuityPreferredConfigID {
+                    recreatedContinuityPreferredDisplayID = recreatedDisplayID
+                }
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError { throw error }
+                if let operationError = error as? VirtualDisplayOperationError,
+                   case .configNotFound = operationError { throw error }
+                firstCreationError = firstCreationError ?? error
+                AppLog.virtualDisplay.error(
+                    "Fleet rebuild failed to restore display; continuing peer restoration (config: \(runningConfigID.uuidString, privacy: .public), serial: \(runningConfig.serialNum, privacy: .public), error: \(String(describing: error), privacy: .public))."
+                )
             }
         }
 
-        try await ensureHealthyTopologyAfterEnable(
-            preferredMainDisplayID: (
-                mainPolicyBeforeRebuild.applies
-                    ? (mainPolicyBeforeRebuild.targetConfigID.flatMap { runtimeTracker.runtimeDisplayID(for: $0) })
-                    : nil
-            ) ?? (
-                preferPrioritizedAsContinuityMain
-                    ? (recreatedPrioritizedDisplayID ??
-                        recreatedContinuityPreferredDisplayID ??
-                        fallbackPreferredMainDisplayID)
-                    : (recreatedContinuityPreferredDisplayID ??
-                        recreatedPrioritizedDisplayID ??
-                        fallbackPreferredMainDisplayID)
-            )
+        try Task.checkCancellation()
+        let preferredMainDisplayID = (
+            mainPolicyBeforeRebuild.applies
+                ? (mainPolicyBeforeRebuild.targetConfigID.flatMap { runtimeTracker.runtimeDisplayID(for: $0) })
+                : nil
+        ) ?? (
+            preferPrioritizedAsContinuityMain
+                ? (recreatedPrioritizedDisplayID ??
+                    recreatedContinuityPreferredDisplayID ??
+                    fallbackPreferredMainDisplayID)
+                : (recreatedContinuityPreferredDisplayID ??
+                    recreatedPrioritizedDisplayID ??
+                    fallbackPreferredMainDisplayID)
         )
+        do {
+            try await ensureHealthyTopologyAfterEnable(preferredMainDisplayID: preferredMainDisplayID)
+        } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            throw firstCreationError ?? error
+        }
+        try Task.checkCancellation()
+        if let firstCreationError { throw firstCreationError }
     }
 
     private func recreateRuntimeDisplayForRebuild(

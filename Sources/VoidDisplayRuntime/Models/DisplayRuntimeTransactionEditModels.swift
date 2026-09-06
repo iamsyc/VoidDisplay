@@ -127,7 +127,6 @@ package nonisolated struct DisplayRuntimeVirtualDisplayConfigEvidence: Codable, 
     }
 
     package init(snapshotConfig: DisplayRuntimeVirtualDisplayConfig) {
-        let maximumPixelDimensions = snapshotConfig.maximumPixelDimensions
         self.init(
             id: snapshotConfig.id,
             serialNumber: snapshotConfig.serialNumber,
@@ -135,8 +134,8 @@ package nonisolated struct DisplayRuntimeVirtualDisplayConfigEvidence: Codable, 
             physicalWidthMillimeters: UInt32(clamping: snapshotConfig.physicalWidthMillimeters),
             physicalHeightMillimeters: UInt32(clamping: snapshotConfig.physicalHeightMillimeters),
             modeCount: snapshotConfig.modes.count,
-            maximumPixelWidth: maximumPixelDimensions.width,
-            maximumPixelHeight: maximumPixelDimensions.height
+            maximumPixelWidth: snapshotConfig.maximumPixelWidth,
+            maximumPixelHeight: snapshotConfig.maximumPixelHeight
         )
     }
 }

@@ -7,6 +7,43 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct VirtualDisplayRuntimeTrackerTests {
+    @Test(arguments: [false, true])
+    func modeBoundsAgreeAcrossCreationPersistenceAndRuntime(reverse: Bool) async throws {
+        let scenarios: [([VirtualDisplayConfig.ModeConfig], UInt32, UInt32)] = [
+            ([.init(width: 5120, height: 2880, refreshRate: 60, enableHiDPI: false),
+              .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)], 5120, 2880),
+            ([.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false),
+              .init(width: 1080, height: 1920, refreshRate: 60, enableHiDPI: false)], 1920, 1920),
+            ([.init(width: 3000, height: 1000, refreshRate: 60, enableHiDPI: false),
+              .init(width: 1000, height: 2000, refreshRate: 60, enableHiDPI: true)], 3000, 4000),
+            ([.init(width: 4096, height: 4096, refreshRate: 60, enableHiDPI: true)], 8192, 8192)
+        ]
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".ai-tmp/mode-bounds-tests/\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = VirtualDisplayStore(storeURL: root.appendingPathComponent("displays.json"), mode: .testIsolatedWritable)
+        for (modes, width, height) in scenarios {
+            var config = makeConfig(serial: 97)
+            config.modes = reverse ? Array(modes.reversed()) : modes
+            let creationBounds = CreateVirtualDisplayInputValidator.maxPixelDimensions(for: config.resolutionModes)
+            #expect(creationBounds == .resolved(width: width, height: height))
+            #expect(config.maxPixelDimensions.width == width)
+            #expect(config.maxPixelDimensions.height == height)
+            try store.save([config])
+            let loaded = try #require(store.load().first)
+            #expect(loaded == config)
+            guard case .resolved(let creationWidth, let creationHeight) = creationBounds else { continue }
+            for useCreationDimensions in [false, true] {
+                let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
+                let tracker = makeTracker(runtimeDriver: driver)
+                _ = try await tracker.createRuntimeDisplay(
+                    from: loaded, maxPixels: useCreationDimensions ? (creationWidth, creationHeight) : nil
+                )
+                #expect(driver.createdDescriptors.first?.maximumPixelDimensions == .init(width: width, height: height))
+            }
+        }
+    }
+
     @Test func pendingCreationReservesSerialNumber() async throws {
         let driver = FakeVirtualDisplayRuntimeDriver(scriptedResults: [])
         let tracker = makeTracker(runtimeDriver: driver)

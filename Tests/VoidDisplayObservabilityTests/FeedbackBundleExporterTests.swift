@@ -6,6 +6,37 @@ import Testing
 
 @Suite(.serialized)
 struct FeedbackBundleExporterTests {
+    @Test func syntheticLargeLogProducesSanitizedTailAttachment() throws {
+        let tempURL = try makeTemporaryDirectory(prefix: "support-bundle-log-tail")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let logURL = tempURL.appendingPathComponent("synthetic-log.txt")
+        let content = (0..<12_000).map { "中文日志行=\($0) path=/Users/tester/private.txt host=192.168.0.4" }.joined(separator: "\n")
+        try content.write(to: logURL, atomically: true, encoding: .utf8)
+        let exporter = FeedbackBundleExporter(
+            exportsDirectoryURL: tempURL.appendingPathComponent("exports"),
+            virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
+            displayShareMappingsURL: tempURL.appendingPathComponent("display-share-id-mappings.json"),
+            sanitizer: ObservabilitySanitizer(homePath: "/Users/tester"),
+            commandRunner: { _, _, timeout in
+                FeedbackBundleExporter.runCommand("/bin/cat", arguments: [logURL.path], timeout: timeout)
+            }
+        )
+        let bundle = try exporter.exportBundle(
+            draft: FeedbackDraft(), consent: FeedbackConsent(includeUnifiedLogSummary: true),
+            state: makeStateSnapshot(), health: makeHealthSummary(), events: [], issues: []
+        )
+        let manifest = try decodeArchiveEntry(SupportBundleManifest.self, relativePathSuffix: "/manifest.json", archiveURL: bundle)
+        #expect(manifest.attachments.contains("attachments/unified-log.txt"))
+        let log = try archiveEntryString(relativePathSuffix: "/attachments/unified-log.txt", archiveURL: bundle)
+        let lines = log.split(whereSeparator: \.isNewline)
+        #expect(lines.count == 300)
+        #expect(lines.first?.contains("中文日志行=11700") == true)
+        #expect(lines.last?.contains("中文日志行=11999") == true)
+        #expect(!log.contains("/Users/tester"))
+        #expect(!log.contains("192.168.0.4"))
+        #expect(log.contains("<redacted-ip>"))
+    }
+
     @Test func exportBundleProducesExpectedArchiveLayout() throws {
         let tempURL = try makeTemporaryDirectory(prefix: "support-bundle")
         defer { try? FileManager.default.removeItem(at: tempURL) }

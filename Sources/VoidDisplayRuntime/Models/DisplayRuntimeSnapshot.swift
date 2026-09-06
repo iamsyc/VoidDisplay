@@ -14,7 +14,7 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
     package let consumerSummary: DisplayRuntimeConsumerSummarySnapshot
 
     package init(
-        schemaVersion: Int = 4,
+        schemaVersion: Int = 5,
         surfaces: [DisplaySurface],
         catalog: DisplayRuntimeCatalogSnapshot,
         capture: DisplayRuntimeCaptureSnapshot,
