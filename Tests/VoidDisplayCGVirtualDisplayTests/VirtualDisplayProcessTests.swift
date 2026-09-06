@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import Testing
 import VoidDisplayVirtualDisplay
@@ -21,9 +22,21 @@ struct VirtualDisplayProcessTests {
 
     @Test func unexpectedHostExitReportsTermination() async throws {
         var terminated = false
-        let handle = try await driver(script: try readyScript(tail: "exec sleep 0.1")).createRuntimeDisplay(
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pidFile = directory.appendingPathComponent("host-pid")
+        let quotedPIDPath = "'" + pidFile.path.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+        // Keep the host alive until creation finishes before simulating an unexpected exit.
+        let script = "printf '%s\\n' \"$$\" >\(quotedPIDPath); \(try readyScript())"
+        let handle = try await driver(script: script).createRuntimeDisplay(
             descriptor: descriptor, onTermination: { terminated = true }
         )
+        let pidText = try String(contentsOf: pidFile, encoding: .utf8)
+        let hostPID = try #require(Int32(pidText.trimmingCharacters(in: .whitespacesAndNewlines)))
+        try #require(hostPID > 0)
+        try #require(!terminated)
+        #expect(kill(hostPID, SIGTERM) == 0)
         #expect(await waitUntil { terminated })
         withExtendedLifetime(handle) {}
     }
@@ -113,12 +126,12 @@ struct VirtualDisplayProcessTests {
         CGVirtualDisplayRuntimeDriver(executableURL: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script], readyTimeout: timeout)
     }
 
-    private func readyScript(tail: String = "while IFS= read -r line; do :; done") throws -> String {
+    private func readyScript() throws -> String {
         let response = VirtualDisplayHostResponse.ready(displayID: 9001, mode: .init(
             id: 1, width: 1920, height: 1080, pixelWidth: 1920, pixelHeight: 1080, refreshRate: 60
         ))
         let json = String(decoding: try JSONEncoder().encode(response), as: UTF8.self)
-        return "read request; printf '%s\\n' '\(json)'; \(tail)"
+        return "read request; printf '%s\\n' '\(json)'; while IFS= read -r line; do :; done"
     }
 
     private func waitUntil(_ condition: () -> Bool) async -> Bool {
