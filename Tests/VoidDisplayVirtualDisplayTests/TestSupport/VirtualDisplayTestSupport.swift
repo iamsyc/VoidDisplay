@@ -11,7 +11,6 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
     var saveError: Error?
     var scriptedSaveErrors: [Error?] = []
     var resetError: Error?
-    var diagnosticsError: Error?
 
     var nextLoadConfigs: [VirtualDisplayConfig]?
     var savedConfigs: [[VirtualDisplayConfig]] = []
@@ -52,10 +51,7 @@ final class FakeVirtualDisplayStore: VirtualDisplayStoring {
         savedConfigs.removeAll()
     }
 
-    func diagnostics() throws -> VirtualDisplayStoreDiagnostics {
-        if let diagnosticsError {
-            throw diagnosticsError
-        }
-        return diagnosticsValue
+    func diagnostics() -> VirtualDisplayStoreDiagnostics {
+        diagnosticsValue
     }
 }

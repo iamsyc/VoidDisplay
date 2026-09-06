@@ -13,12 +13,12 @@ package final class CapturePreviewLifecycleService: CapturePreviewLifecycleServi
     ) async throws -> DisplayStartOutcome<DisplayPreviewSubscription>
 
     private let capturePreviewService: any CapturePreviewServiceProtocol
-    private let startCoordinator: DisplayStreamStartCoordinator
+    private let startCoordinator: DisplayStreamStartCoordinator<UUID>
     private let acquirePreview: AcquirePreview
 
     package init(
         capturePreviewService: any CapturePreviewServiceProtocol,
-        startCoordinator: DisplayStreamStartCoordinator = DisplayStreamStartCoordinator(),
+        startCoordinator: DisplayStreamStartCoordinator<UUID> = DisplayStreamStartCoordinator<UUID>(),
         captureRegistry: DisplayCaptureRegistry = .shared,
         acquirePreview: AcquirePreview? = nil
     ) {
@@ -42,7 +42,6 @@ package final class CapturePreviewLifecycleService: CapturePreviewLifecycleServi
         }
 
         return try await startCoordinator.start(
-            kind: .preview,
             displayID: displayID
         ) { [capturePreviewService, acquirePreview] invalidationContext in
             if let existingSession = capturePreviewService.currentSessions.first(
@@ -114,7 +113,7 @@ package final class CapturePreviewLifecycleService: CapturePreviewLifecycleServi
     }
 
     package func removePreviewSessions(displayID: CGDirectDisplayID) {
-        startCoordinator.invalidate(kind: .preview, displayID: displayID)
+        startCoordinator.invalidate(displayID: displayID)
         capturePreviewService.removePreviewSessions(displayID: displayID)
     }
 

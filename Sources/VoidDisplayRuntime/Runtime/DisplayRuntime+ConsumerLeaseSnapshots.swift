@@ -45,7 +45,7 @@ extension DisplayRuntime {
     }
 
     package func currentLatestCaptureIntentRevision() -> DisplayRuntimeCaptureIntentRevision? {
-        captureIntentsByRevision.keys.max()
+        captureIntentRevisionCounter == 0 ? nil : .init(rawValue: captureIntentRevisionCounter)
     }
 
     package func currentSurfaceEpoch(
@@ -84,17 +84,15 @@ extension DisplayRuntime {
     package func recordCaptureIntentApplyResult(
         _ result: DisplayRuntimeCaptureIntentApplyResult
     ) -> DisplayRuntimeCaptureIntentApplyResult {
-        guard let intent = captureIntentsByRevision[result.revision],
-              let currentEffectiveIntent = effectiveCaptureIntentsBySurface[intent.surfaceIdentity],
-              currentEffectiveIntent.intent.revision == result.revision
+        guard let currentEffectiveIntent = effectiveCaptureIntentsBySurface.values.first(where: {
+            $0.intent.revision == result.revision
+        })
         else {
-            let ignoredResult = result.ignored()
-            captureIntentApplyResultsByRevision[ignoredResult.revision] = ignoredResult
-            return ignoredResult
+            return result.ignored()
         }
 
+        let intent = currentEffectiveIntent.intent
         let acceptedResult = result.outcome == .ignored ? result.ignored() : result
-        captureIntentApplyResultsByRevision[acceptedResult.revision] = acceptedResult
         let failureCode = acceptedResult.outcome == .failed ? acceptedResult.failureCode : nil
         effectiveCaptureIntentsBySurface[intent.surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(
             intent: intent,
@@ -102,11 +100,5 @@ extension DisplayRuntime {
             lastFailureCode: failureCode
         )
         return acceptedResult
-    }
-
-    package func captureIntentApplyResult(
-        for revision: DisplayRuntimeCaptureIntentRevision
-    ) -> DisplayRuntimeCaptureIntentApplyResult? {
-        captureIntentApplyResultsByRevision[revision]
     }
 }

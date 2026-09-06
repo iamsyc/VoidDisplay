@@ -254,7 +254,7 @@ package nonisolated struct FeedbackBundleExporter {
     }
 
     private func redactedConfigSnapshot(_ value: JSONValue, sourceURL: URL) -> JSONValue {
-        let sanitized = recursivelySanitizeConfigSnapshot(value)
+        let sanitized = ObservabilitySectionSanitizer(sanitizer: sanitizer).sanitize(value)
         guard sourceURL == displayShareMappingsURL,
               case .object(var object) = sanitized else {
             return sanitized
@@ -264,26 +264,6 @@ package nonisolated struct FeedbackBundleExporter {
             object["mappings"] = .string("<redacted>")
         }
         return .object(object)
-    }
-
-    private func recursivelySanitizeConfigSnapshot(_ value: JSONValue) -> JSONValue {
-        switch value {
-        case .object(let object):
-            return .object(object.reduce(into: [String: JSONValue]()) { result, entry in
-                let key = sanitizer.sanitize(text: entry.key) ?? entry.key
-                if sanitizer.shouldRedactValue(forKey: entry.key) {
-                    result[key] = .string("<redacted>")
-                } else {
-                    result[key] = recursivelySanitizeConfigSnapshot(entry.value)
-                }
-            })
-        case .array(let array):
-            return .array(array.map(recursivelySanitizeConfigSnapshot))
-        case .string(let string):
-            return .string(sanitizer.sanitize(text: string) ?? string)
-        case .number, .bool, .null:
-            return value
-        }
     }
 
     private func mappingCount(in value: JSONValue) -> Int {

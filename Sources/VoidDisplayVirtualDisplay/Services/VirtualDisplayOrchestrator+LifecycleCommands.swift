@@ -126,7 +126,7 @@ extension VirtualDisplayOrchestrator {
     // MARK: - Disable
 
     package func setDesiredEnabled(_ configId: UUID, enabled: Bool) throws {
-        try configManager.setDesiredEnabled(configId, enabled: enabled, reason: .userToggledDesiredEnabled)
+        try configManager.setDesiredEnabled(configId, enabled: enabled)
     }
 
     package func disableRuntimeDisplayByConfig(_ configId: UUID) throws -> VirtualDisplayLifecycleCommandResult {

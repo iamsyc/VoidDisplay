@@ -234,7 +234,7 @@ struct VirtualDisplayAndResolutionTests {
         let storeURL = tempRoot.appendingPathComponent("virtual-displays.json", isDirectory: false)
         let store = makeStore(storeURL: storeURL, mode: .testIsolatedWritable)
 
-        let diagnostics = try store.diagnostics()
+        let diagnostics = store.diagnostics()
 
         #expect(diagnostics.primaryStoreURL == storeURL)
         #expect(diagnostics.isTestIsolatedPath)

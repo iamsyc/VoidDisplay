@@ -49,7 +49,6 @@ extension DisplayRuntime {
             reason: reason,
             revision: DisplayRuntimeCaptureIntentRevision(rawValue: captureIntentRevisionCounter)
         )
-        captureIntentsByRevision[intent.revision] = intent
         effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
         return intent
     }

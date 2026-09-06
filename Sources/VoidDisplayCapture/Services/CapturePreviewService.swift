@@ -23,43 +23,68 @@ package protocol CapturePreviewServiceProtocol: AnyObject {
 
 @MainActor
 package final class CapturePreviewService: CapturePreviewServiceProtocol {
-    private let sessionStore: CapturePreviewSessionStore
+    private var sessions: [ScreenPreviewSession]
 
     package init(initialSessions: [ScreenPreviewSession] = []) {
-        self.sessionStore = CapturePreviewSessionStore(initialSessions: initialSessions)
+        self.sessions = initialSessions
     }
 
     package var currentSessions: [ScreenPreviewSession] {
-        sessionStore.currentSessions
+        sessions
     }
 
     package func previewSession(for id: UUID) -> ScreenPreviewSession? {
-        sessionStore.session(for: id)
+        sessions.first { $0.id == id }
     }
 
     package func addPreviewSession(_ session: ScreenPreviewSession) {
-        sessionStore.add(session)
+        sessions.append(session)
     }
 
     package func updatePreviewSessionState(
         id: UUID,
         state: ScreenPreviewSession.State
     ) {
-        sessionStore.updateState(id: id, state: state)
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        let currentState = sessions[index].state
+        guard shouldApplyStateTransition(from: currentState, to: state) else { return }
+        sessions[index].state = state
     }
 
     package func updatePreviewSessionCapturesCursor(
         id: UUID,
         capturesCursor: Bool
     ) {
-        sessionStore.updateCapturesCursor(id: id, capturesCursor: capturesCursor)
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        guard sessions[index].capturesCursor != capturesCursor else { return }
+        sessions[index].capturesCursor = capturesCursor
     }
 
     package func removePreviewSession(id: UUID) {
-        sessionStore.remove(id: id)
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[index].previewSubscription.cancel()
+        sessions.remove(at: index)
     }
 
     package func removePreviewSessions(displayID: CGDirectDisplayID) {
-        sessionStore.remove(displayID: displayID)
+        let removalIndexes = sessions.indices.filter { sessions[$0].displayID == displayID }
+        guard !removalIndexes.isEmpty else { return }
+
+        for index in removalIndexes {
+            sessions[index].previewSubscription.cancel()
+        }
+        sessions.removeAll { $0.displayID == displayID }
+    }
+
+    private func shouldApplyStateTransition(
+        from currentState: ScreenPreviewSession.State,
+        to nextState: ScreenPreviewSession.State
+    ) -> Bool {
+        switch (currentState, nextState) {
+        case (.starting, .active):
+            true
+        case (.starting, .starting), (.active, .active), (.active, .starting):
+            false
+        }
     }
 }

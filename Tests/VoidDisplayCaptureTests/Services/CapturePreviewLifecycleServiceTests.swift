@@ -87,6 +87,27 @@ private actor CapturePreviewLifecycleAcquirePreviewGate {
 @Suite(.serialized)
 @MainActor
 struct CapturePreviewLifecycleServiceTests {
+    @Test func previewServicePreservesActiveStateAndCancelsOnlyRemovedSessions() async {
+        let first = makeSession(id: UUID(), displayID: 720)
+        let second = makeSession(id: UUID(), displayID: 721)
+        let service = CapturePreviewService(initialSessions: [first.session, second.session])
+
+        service.updatePreviewSessionState(id: first.session.id, state: .active)
+        service.updatePreviewSessionState(id: first.session.id, state: .starting)
+        service.updatePreviewSessionCapturesCursor(id: first.session.id, capturesCursor: true)
+        #expect(service.previewSession(for: first.session.id)?.state == .active)
+        #expect(service.previewSession(for: first.session.id)?.capturesCursor == true)
+
+        service.removePreviewSessions(displayID: 720)
+        #expect(service.currentSessions.map(\.id) == [second.session.id])
+        #expect(await waitUntil { first.cancelCounter.value == 1 })
+        #expect(second.cancelCounter.value == 0)
+
+        service.removePreviewSession(id: second.session.id)
+        #expect(service.currentSessions.isEmpty)
+        #expect(await waitUntil { second.cancelCounter.value == 1 })
+    }
+
     @Test func startPreviewCreatesSessionAndReturnsID() async throws {
         let service = MockCapturePreviewService()
         let previewRecord = makePreview(displayID: 701)

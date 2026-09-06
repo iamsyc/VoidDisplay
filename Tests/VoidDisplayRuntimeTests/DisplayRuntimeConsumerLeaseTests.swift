@@ -36,7 +36,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.first?.revision.rawValue == 1)
         #expect(captureIntentCommander.intents.first?.aggregateDemand?.capturesCursor == true)
         #expect(captureIntentCommander.returnedResults.first?.outcome == .applied)
-        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 1))?.outcome == .applied)
+        #expect(runtime.currentEffectiveCaptureIntentSnapshot().first?.lastApplyResult?.outcome == .applied)
     }
 
     @Test func detachRemovesDemandAndEmitsDrainingIntentForLastLease() async {
@@ -208,8 +208,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
         #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 3])
         #expect(captureIntentCommander.returnedResults.map(\.outcome) == [.applied, .applied])
-        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 1))?.outcome == .applied)
-        #expect(runtime.captureIntentApplyResult(for: .init(rawValue: 3))?.outcome == .applied)
+        #expect(runtime.currentEffectiveCaptureIntentSnapshot().first?.lastApplyResult == detachResult.applyResult)
         #expect(runtime.currentLatestCaptureIntentRevision()?.rawValue == 3)
     }
 
@@ -239,12 +238,12 @@ struct DisplayRuntimeConsumerLeaseTests {
         )
         let attachedRevision = captureIntentCommander.intents[0].revision
 
-        _ = await runtime.detachPreviewConsumer(leaseID: lease.id)
+        let detachResult = await runtime.detachPreviewConsumer(leaseID: lease.id)
 
         let effectiveIntent = runtime.currentEffectiveCaptureIntentSnapshot().first
         #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
         #expect(captureIntentCommander.returnedResults.last?.revision == attachedRevision)
-        #expect(runtime.captureIntentApplyResult(for: attachedRevision)?.outcome == .ignored)
+        #expect(detachResult.applyResult?.outcome == .ignored)
         #expect(effectiveIntent?.intent.reason == .detach)
         #expect(effectiveIntent?.intent.revision.rawValue == 2)
         #expect(effectiveIntent?.lastApplyResult == nil)

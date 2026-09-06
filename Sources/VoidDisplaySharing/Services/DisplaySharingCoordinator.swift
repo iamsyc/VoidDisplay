@@ -40,13 +40,13 @@ package final class DisplaySharingCoordinator {
     private var sessionsByDisplayID: [CGDirectDisplayID: SharingSession] = [:]
     private var mainDisplayID: CGDirectDisplayID?
     private let idStore: DisplayShareIDStore
-    private let startCoordinator: DisplayStreamStartCoordinator
+    private let startCoordinator: DisplayStreamStartCoordinator<Void>
     private let acquireShare: AcquireShare
     private let accessCapabilityGenerator: @MainActor () throws -> ShareAccessCapability
 
     package init(
         idStore: DisplayShareIDStore,
-        startCoordinator: DisplayStreamStartCoordinator = DisplayStreamStartCoordinator(),
+        startCoordinator: DisplayStreamStartCoordinator<Void> = DisplayStreamStartCoordinator<Void>(),
         acquireShare: @escaping AcquireShare = { _, _ in throw CancellationError() },
         accessCapabilityGenerator: @escaping @MainActor () throws -> ShareAccessCapability = ShareAccessCapability.generate
     ) {
@@ -65,7 +65,7 @@ package final class DisplaySharingCoordinator {
     }
 
     package func isStarting(displayID: CGDirectDisplayID) -> Bool {
-        startCoordinator.isStarting(kind: .sharing, displayID: displayID)
+        startCoordinator.isStarting(displayID: displayID)
     }
 
     @discardableResult
@@ -145,7 +145,7 @@ package final class DisplaySharingCoordinator {
         displayIDsByShareID = nextDisplayIDsByShareID
         mainDisplayID = resolvedMainDisplayID ?? mainDisplayID
         for displayID in displayIDsToInvalidate {
-            startCoordinator.invalidate(kind: .sharing, displayID: displayID)
+            startCoordinator.invalidate(displayID: displayID)
         }
 
         let registeredDisplayIDs = Set(nextRegistrationsByDisplayID.keys)
@@ -162,7 +162,6 @@ package final class DisplaySharingCoordinator {
         }
 
         return try await startCoordinator.start(
-            kind: .sharing,
             displayID: displayID
         ) { [self, acquireShare] invalidationContext in
             guard self.registrationsByDisplayID[displayID] != nil else {
@@ -214,7 +213,7 @@ package final class DisplaySharingCoordinator {
     }
 
     package func stopSharing(displayID: CGDirectDisplayID) {
-        startCoordinator.invalidate(kind: .sharing, displayID: displayID)
+        startCoordinator.invalidate(displayID: displayID)
         stopActiveSharingSession(displayID: displayID)
     }
 
@@ -224,7 +223,7 @@ package final class DisplaySharingCoordinator {
     }
 
     package func stopAllSharing() {
-        startCoordinator.invalidateAll(kind: .sharing)
+        startCoordinator.invalidateAll()
         for displayID in Array(sessionsByDisplayID.keys) {
             stopActiveSharingSession(displayID: displayID)
         }
