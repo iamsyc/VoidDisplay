@@ -118,10 +118,10 @@ run_rename_case() {
 }
 
 run_file_case docs_only pull_request main \
-	"docs_only=true code_relevant=false requires_static=true requires_unit=true requires_xcode_build=true unknown_relevant=false" \
+	"docs_only=true code_relevant=false requires_static=true requires_unit=false requires_xcode_build=false requires_ui_smoke=false unknown_relevant=false" \
 	docs/change.md
 run_file_case codeql_workflow pull_request main \
-	"ci_config_relevant=true script_relevant=true code_relevant=true requires_static=true requires_unit=true requires_xcode_build=true" \
+	"ci_config_relevant=true script_relevant=true code_relevant=true requires_static=true requires_unit=false requires_xcode_build=false requires_ui_smoke=false" \
 	.github/workflows/codeql.yml
 run_file_case mise_config pull_request main \
 	"tooling_config_relevant=true ci_config_relevant=true requires_static=true requires_dependency_review=false requires_unit=true requires_xcode_build=true" \
@@ -142,7 +142,7 @@ run_file_case go_manifest pull_request main \
 	"product_code_relevant=true dependency_manifest_relevant=true release_relevant=true requires_release_smoke=true requires_unit=true requires_xcode_build=true" \
 	Tools/VoidDisplayRelay/go.mod
 run_file_case swift_tests pull_request main \
-	"test_code_relevant=true requires_unit=true requires_xcode_build=true requires_ui_smoke=false" \
+	"test_code_relevant=true requires_unit=true requires_xcode_build=false requires_ui_smoke=false" \
 	Tests/VoidDisplayFoundationTests/FooTests.swift
 run_file_case ui_tests pull_request main \
 	"test_code_relevant=true ui_relevant=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true" \
@@ -162,11 +162,14 @@ run_file_case release_script pull_request main \
 run_file_case unknown_path pull_request main \
 	"unknown_relevant=true docs_only=false code_relevant=false requires_static=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true" \
 	Config/new.yml
+run_file_case release_recovery_static_push push "" \
+	"requires_static=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
+	scripts/ci/test_release_target.mjs
 run_file_case main_push_docs push "" \
 	"docs_only=true requires_static=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
 	docs/push.md
 run_file_case license_variant_docs pull_request main \
-	"docs_only=true code_relevant=false requires_static=true requires_unit=true requires_xcode_build=true unknown_relevant=false" \
+	"docs_only=true code_relevant=false requires_static=true requires_unit=false requires_xcode_build=false unknown_relevant=false" \
 	LICENSE_THIRD_PARTY
 
 run_rename_case rename_docs_to_code docs/old.md Sources/VoidDisplayFoundation/Renamed.swift \
@@ -187,3 +190,37 @@ run_file_case runtime_requires_ui pull_request main \
 	"requires_ui_smoke=true" Sources/VoidDisplayRuntime/Runtime.swift
 run_file_case test_infrastructure_requires_ui pull_request main \
 	"requires_ui_smoke=true" scripts/ci/ui_smoke.sh
+
+run_file_case mixed_independent_workflow_and_tests pull_request main \
+	"requires_static=true requires_unit=true requires_xcode_build=false requires_ui_smoke=false requires_release_smoke=false" \
+	.github/workflows/codeql.yml Tests/VoidDisplayFoundationTests/FooTests.swift docs/testing.md
+run_file_case mixed_workflow_and_product pull_request main \
+	"requires_static=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true" \
+	.github/workflows/codeql.yml Sources/VoidDisplayFoundation/Foo.swift
+run_file_case ci_orchestration pull_request main \
+	"requires_unit=true requires_xcode_build=true requires_ui_smoke=true" .github/workflows/ci.yml
+run_file_case nightly_orchestration pull_request main \
+	"requires_unit=true requires_xcode_build=true requires_ui_smoke=true" .github/workflows/nightly.yml
+run_file_case independent_workflow_push push "" \
+	"requires_static=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
+	.github/workflows/codeql.yml
+run_file_case unit_tests_push push "" \
+	"requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
+	Tests/VoidDisplayFoundationTests/FooTests.swift
+run_file_case product_push push "" \
+	"requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
+	Sources/VoidDisplayFoundation/Foo.swift
+run_file_case dependency_push push "" \
+	"requires_dependency_review=false requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
+	Package.resolved
+run_file_case unknown_push push "" \
+	"unknown_relevant=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true requires_release_smoke=true" \
+	Config/new.yml
+run_file_case static_script pull_request main \
+	"requires_static=true requires_unit=false requires_xcode_build=false requires_ui_smoke=false" scripts/ci/static_workflows.sh
+run_file_case shared_build_helper pull_request main \
+	"requires_unit=true requires_xcode_build=true requires_ui_smoke=true" scripts/lib/xcode.sh
+run_file_case swift_lint_config pull_request main \
+	"requires_static=true requires_unit=false requires_xcode_build=false requires_ui_smoke=false" .swiftlint.yml
+
+info "Change-scope gate fixtures passed."

@@ -29,8 +29,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   classify_changes:
@@ -204,7 +204,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: xcode-build
-          path: .ai-tmp/xcode-build
+          path: |
+            .ai-tmp/xcode-build
+            !.ai-tmp/xcode-build/DerivedData
           if-no-files-found: warn
           retention-days: 7
 
@@ -261,7 +263,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-smoke-arm64
-          path: .ai-tmp/release-check-arm64
+          path: |
+            .ai-tmp/release-check-arm64
+            !.ai-tmp/release-check-arm64/DerivedData
           if-no-files-found: warn
           retention-days: 7
 
@@ -305,7 +309,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-smoke-intel64
-          path: .ai-tmp/release-check-intel64
+          path: |
+            .ai-tmp/release-check-intel64
+            !.ai-tmp/release-check-intel64/DerivedData
           if-no-files-found: warn
           retention-days: 7
 
@@ -517,7 +523,7 @@ jobs:
               `xcode=${value('REQUIRES_XCODE_BUILD')}`,
               `ui=${value('REQUIRES_UI_SMOKE')}`,
               `release=${value('REQUIRES_RELEASE_SMOKE')}`,
-              'PRs always run static, unit, and xcode build gates.',
+              'Static runs for every PR. Unit, Xcode, UI, and release gates follow the changed paths.',
             ].join('<br>');
             const rows = [
               ['Change Scope', value('CHANGE_SCOPE', 'unknown'), classificationDetails],

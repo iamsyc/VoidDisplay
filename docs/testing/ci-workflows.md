@@ -40,10 +40,15 @@ Branch protection for `main` should require only:
 
 Gate behavior:
 
-- Every PR runs static checks, SwiftPM tests, browser JavaScript tests, Go tests, and an Xcode Debug build.
-- UI-relevant PRs and PRs with unknown paths run one UI smoke job. Its selectors execute serially and share one `build-for-testing` product directory.
-- Release-relevant PRs targeting `main` run arm64 release smoke. Main push, nightly, and release workflows cover x86_64 release smoke.
+- Every PR runs static checks. Documentation, CodeQL configuration, Dependabot configuration, Swift lint/format configuration, and static-check fixtures do not require app compilation or UI automation.
+- PRs with unit-test changes run the SwiftPM, browser JavaScript, and Go unit gate. Product code, dependency manifests, unknown paths, and scripts that affect runtime validation also require an Xcode Debug build.
+- PRs with UI-relevant changes, dependency changes, unknown paths, and runtime validation scripts run one UI smoke job. Its selectors execute serially and share one `build-for-testing` product directory. Independent workflow configuration mixed with product or test changes retains those changes' required gates.
+- Release-relevant changes, dependency changes, and unknown paths in PRs targeting `main` run arm64 release smoke. Every triggered main push CI retains static, unit, Debug build, UI smoke, and both release architectures, so release recovery always consumes complete target evidence. Nightly and Release retain their full architecture coverage.
 - PRs that change dependency manifests run Dependency Review and block high or critical dependency vulnerabilities.
+
+The path categories in `scripts/ci/classification-rules.json` and `scripts/ci/classify.sh` own these decisions. Only explicitly listed independent configuration and static-check paths receive the narrower policy; new workflow or script paths retain runtime validation. The `ci-gate` job checks every required result and accepts intentional skips.
+
+PR updates share a concurrency group and cancel the previous PR run. Main CI groups include the commit SHA and do not cancel running checks, so a later push cannot remove the exact-commit evidence awaited by Release.
 
 PR CI executes scripts from the checked-out PR head. Script and workflow integrity is enforced by code review plus `script-static-checks`; `ci-gate` remains the single required branch protection check. PR CI checkouts do not persist credentials, and bootstrap steps do not expose `GITHUB_TOKEN` to checked-out repository scripts.
 
@@ -54,7 +59,7 @@ PR CI executes scripts from the checked-out PR head. Script and workflow integri
 - Shell syntax, formatting, lint, helper-source paths, and the `ROOT_DIR` / `TOOL_ROOT` execution contract.
 - `actionlint`, runner-label policy, 40-character action SHA pins, checkout credential isolation, PR token isolation, UI artifact synchronization, and release gate timeout budgeting.
 - Xcode project layout, relay build-phase inputs, unsigned local test builds, and SwiftPM/Xcode diagnostic scanner fixtures.
-- Bootstrap profile, change-classification, and release project-path fixtures.
+- Bootstrap profile, change-classification, native SwiftPM filter, release-target eligibility, release CI provenance and main ancestry, CI concurrency, and artifact-selection fixtures.
 - Swift format and lint, release-helper type checking, browser JavaScript syntax, product source-file size limits, and the UI-test keyboard-input prohibition.
 
 All external action references must use a full 40-character commit SHA. Keep a tag comment after the SHA for maintainability, for example:
@@ -67,7 +72,15 @@ uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
 Release builds are ad hoc signed only. They are not Developer ID signed, notarized, stapled, or certified by Apple.
 
-Release workflow first resolves the target SHA without checking out target code, then verifies that SHA has a successful `ci-gate` through inline GitHub API logic. Missing, pending, failed, cancelled, or inaccessible gate state stops the release and writes a JSON summary. After the gate passes, release jobs use JSON summaries and outputs to decide whether build and publish jobs should run.
+Release workflow resolves the target SHA, checks main ancestry, and reads version/build metadata through the GitHub contents API before checking out target code. This resolver owns release eligibility: an unchanged version with an existing tag is skipped immediately; version changes require an increased build number and cannot replace a tag at another commit. Recovery dispatch skips an existing release before reading build metadata; otherwise, its input tag must match the selected target's version.
+
+Only an eligible target waits for `ci.yml` triggered by a push to `main` on that exact SHA. Release selects the newest matching workflow run, waits for it to finish, and requires its latest `ci-gate` job to succeed. PR checks, other workflows, and generic commit statuses cannot supply release evidence. Missing or pending runs are polled within the bounded wait; failed, cancelled, absent, or inaccessible gate results stop the release and write a JSON summary with the selected run and job IDs.
+
+After CI succeeds, the gate reads current `main` again and requires the target to remain its tip or ancestor. A rollback during the CI wait therefore revokes release eligibility. Build and publish jobs consume the resolver's validated tag, SHA, version, and build number after this gate passes. There is no separate post-gate metadata preparation job.
+
+### CI Diagnostic Artifacts
+
+Ordinary Debug and Release smoke jobs upload their logs and JSON summaries while excluding DerivedData. UI jobs retain invocation logs, timing reports, and complete `.xcresult` bundles, while excluding reusable build products and dependency caches. These uploads are diagnostic evidence; formal packages remain in the Release asset flow. Artifact-selection fixtures exercise both retained evidence and excluded build paths.
 
 ### Trusted Tool And Target Roots
 
@@ -145,7 +158,7 @@ scripts/release/verify.sh \
 
 Before reporting a stable release as complete:
 
-1. Confirm the target commit has a successful `ci-gate`.
+1. Confirm the target commit has a successful `ci-gate` from its `ci.yml` main push run and remains on `main`.
 2. Wait for the Release workflow to finish successfully, including both architecture builds and `publish-github-release`.
 3. Confirm the public release is neither a draft nor a prerelease, and resolve the release tag to the target commit.
 4. Confirm the public asset list contains the DMG, checksum, SPDX SBOM, build summary, and verification summary for arm64 and Intel.

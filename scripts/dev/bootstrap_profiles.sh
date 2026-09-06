@@ -16,7 +16,7 @@ if [[ -z "${VOIDDISPLAY_BOOTSTRAP_PROFILES_SH_SOURCED:-}" ]]; then
 			printf '%s\n' actionlint shellcheck shfmt swiftformat swiftlint go jq node rg syft gh git xcrun xcodebuild swift bash zsh awk diff lipo codesign security tee
 			;;
 		static)
-			printf '%s\n' actionlint shellcheck shfmt swiftformat swiftlint jq node rg git xcrun bash zsh awk diff grep sort wc tr
+			printf '%s\n' actionlint shellcheck shfmt swiftformat swiftlint jq node rg git xcrun xcodebuild swift bash zsh awk diff grep sort wc tr mktemp
 			;;
 		unit)
 			printf '%s\n' git go jq node rg xcodebuild swift awk

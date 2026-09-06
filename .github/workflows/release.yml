@@ -39,6 +39,9 @@ jobs:
     outputs:
       should_run: ${{ steps.resolve.outputs.should_run }}
       target_sha: ${{ steps.resolve.outputs.target_sha }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      build_number: ${{ steps.resolve.outputs.build_number }}
     permissions:
       contents: read
     steps:
@@ -49,15 +52,14 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
           PUSH_SHA: ${{ github.sha }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
           WORKFLOW_REF: ${{ github.ref }}
           SUMMARY_PATH: .ai-tmp/release-target/target-summary.json
         with:
           script: |
             const fs = require('fs/promises');
             const path = require('path');
-
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
+            const { owner, repo } = context.repo;
             const eventName = process.env.EVENT_NAME;
             const inputTag = process.env.INPUT_TAG;
             const pushSha = process.env.PUSH_SHA;
@@ -71,70 +73,110 @@ jobs:
               throw new Error('Recovery dispatch must run from main.');
             }
 
-            const mainResponse = await github.rest.repos.getBranch({
-              owner,
-              repo,
-              branch: 'main',
-            });
+            const findTag = async (tag) => {
+              try {
+                const reference = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+                const response = await github.rest.repos.getCommit({ owner, repo, ref: reference.data.ref });
+                return response.data.sha;
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                return null;
+              }
+            };
+            const hasRelease = async (tag) => {
+              try {
+                await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+                return true;
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                return false;
+              }
+            };
+            const readProject = async (ref) => {
+              const response = await github.rest.repos.getContent({
+                owner, repo, ref, path: 'VoidDisplay.xcodeproj/project.pbxproj',
+              });
+              if (response.data.type !== 'file' || response.data.encoding !== 'base64') {
+                throw new Error(`Unable to read project metadata at ${ref}.`);
+              }
+              const source = Buffer.from(response.data.content, 'base64').toString('utf8');
+              const value = (key) => {
+                const pattern = new RegExp(`^[ \\t]*${key}[ \\t]*=[ \\t]*([^;]+);`, 'gm');
+                const values = [...new Set([...source.matchAll(pattern)].map(match => match[1].trim()))];
+                if (values.length !== 1) throw new Error(`Expected one unique ${key} at ${ref}.`);
+                return values[0];
+              };
+              const version = value('MARKETING_VERSION');
+              const buildNumber = value('CURRENT_PROJECT_VERSION');
+              if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version)) {
+                throw new Error(`Invalid MARKETING_VERSION: ${version}.`);
+              }
+              if (!/^[1-9][0-9]*$/.test(buildNumber)) {
+                throw new Error(`Invalid CURRENT_PROJECT_VERSION: ${buildNumber}.`);
+              }
+              return { version, buildNumber };
+            };
+
+            const mainResponse = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
             const mainSha = mainResponse.data.commit.sha;
             let targetSha = pushSha;
-            let releaseExists = false;
             let resolution = 'push_sha';
-
+            let tagSha;
             if (eventName === 'workflow_dispatch') {
               if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(inputTag)) {
                 throw new Error(`Recovery tag is invalid: ${inputTag}`);
               }
-
-              try {
-                const tagResponse = await github.rest.repos.getCommit({
-                  owner,
-                  repo,
-                  ref: inputTag,
-                });
-                targetSha = tagResponse.data.sha;
-                resolution = 'existing_tag';
-              } catch (error) {
-                if (error.status !== 404) {
-                  throw error;
-                }
-                targetSha = mainSha;
-                resolution = 'current_main';
-              }
-
-              try {
-                await github.rest.repos.getReleaseByTag({
-                  owner,
-                  repo,
-                  tag: inputTag,
-                });
-                releaseExists = true;
-              } catch (error) {
-                if (error.status !== 404) {
-                  throw error;
-                }
-              }
+              tagSha = await findTag(inputTag);
+              targetSha = tagSha || mainSha;
+              resolution = tagSha ? 'existing_tag' : 'current_main';
             }
-
             if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
               throw new Error(`Release target SHA is invalid: ${targetSha}`);
             }
-
             if (targetSha !== mainSha) {
-              const comparison = await github.rest.repos.compareCommits({
-                owner,
-                repo,
-                base: targetSha,
-                head: mainSha,
-              });
+              const comparison = await github.rest.repos.compareCommits({ owner, repo, base: targetSha, head: mainSha });
               if (comparison.data.merge_base_commit?.sha !== targetSha) {
                 throw new Error(`Release target ${targetSha} is not an ancestor of main ${mainSha}.`);
               }
             }
 
-            const shouldRun = !releaseExists;
+            let releaseExists = eventName === 'workflow_dispatch' && tagSha ? await hasRelease(inputTag) : false;
+            const { version, buildNumber } = releaseExists
+              ? { version: '', buildNumber: '' }
+              : await readProject(targetSha);
+            const tag = releaseExists ? inputTag : `v${version}`;
+            if (eventName === 'workflow_dispatch' && inputTag !== tag) {
+              throw new Error(`Input tag ${inputTag} does not match MARKETING_VERSION ${version}.`);
+            }
+            if (eventName === 'push') tagSha = await findTag(tag);
+            if (eventName === 'push' && tagSha) releaseExists = await hasRelease(tag);
+            let shouldRun = !releaseExists;
+            let reason = releaseExists ? 'release_exists' : 'manual_recovery';
+            if (eventName === 'push') {
+              const beforeSha = process.env.BEFORE_SHA;
+              if (!/^[0-9a-f]{40}$/i.test(beforeSha || '') || /^0+$/.test(beforeSha)) {
+                throw new Error('Unable to compare against the previous main commit.');
+              }
+              const previous = await readProject(beforeSha);
+              if (previous.version === version && tagSha) {
+                shouldRun = false;
+                reason = 'version_unchanged_existing_tag';
+              } else {
+                if (previous.version !== version && Number(buildNumber) <= Number(previous.buildNumber)) {
+                  throw new Error('CURRENT_PROJECT_VERSION must increase when MARKETING_VERSION changes.');
+                }
+                if (tagSha && tagSha !== targetSha) {
+                  throw new Error(`Tag ${tag} already points to ${tagSha}, expected ${targetSha}.`);
+                }
+                reason = releaseExists ? 'release_exists' : 'main_version_gate';
+              }
+            }
+
             core.setOutput('should_run', String(shouldRun));
             core.setOutput('target_sha', targetSha);
+            core.setOutput('tag', tag);
+            core.setOutput('version', version);
+            core.setOutput('build_number', buildNumber);
             await fs.mkdir(path.dirname(summaryPath), { recursive: true });
             await fs.writeFile(summaryPath, `${JSON.stringify({
               status: 'passed',
@@ -144,9 +186,13 @@ jobs:
               workflow_ref: workflowRef,
               main_sha: mainSha,
               target_sha: targetSha,
-              resolution: resolution,
+              resolution,
               release_exists: releaseExists,
               should_run: shouldRun,
+              reason,
+              tag,
+              version,
+              build_number: buildNumber,
             }, null, 2)}\n`);
 
       - name: Upload target summary
@@ -158,85 +204,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  prepare_release:
-    name: prepare-release
-    needs:
-      - resolve_release_target
-      - require_ci_gate
-    runs-on: macos-26
-    timeout-minutes: 10
-    outputs:
-      should_release: ${{ steps.prepare.outputs.should_release }}
-      tag: ${{ steps.prepare.outputs.tag }}
-      target_sha: ${{ steps.prepare.outputs.target_sha }}
-      version: ${{ steps.prepare.outputs.version }}
-      build_number: ${{ steps.prepare.outputs.build_number }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout trusted release tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout release target
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          ref: ${{ needs.resolve_release_target.outputs.target_sha }}
-          path: release-target
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Bootstrap prepare tools
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE"
-          target_root="$GITHUB_WORKSPACE/release-target"
-          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh"
-
-      - name: Prepare release metadata
-        id: prepare
-        shell: bash
-        env:
-          BEFORE_SHA: ${{ github.event.before || '' }}
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-        run: |
-          set -euo pipefail
-          tool_root="$GITHUB_WORKSPACE"
-          target_root="$GITHUB_WORKSPACE/release-target"
-          ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/prepare.sh" \
-            --event-name "$EVENT_NAME" \
-            --target-repo-dir "$target_root" \
-            --before-sha "$BEFORE_SHA" \
-            --input-tag "$INPUT_TAG" \
-            --ref-name "$REF_NAME" \
-            --ref-type "$REF_TYPE" \
-            --github-output "$GITHUB_OUTPUT" \
-            --summary "$GITHUB_WORKSPACE/.ai-tmp/release-prepare/prepare-summary.json"
-
-      - name: Upload prepare summary
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-prepare-summary
-          path: .ai-tmp/release-prepare
-          if-no-files-found: warn
-          retention-days: 14
-
   build_dmg:
     name: build-dmg (${{ matrix.label }})
     needs:
-      - prepare_release
+      - resolve_release_target
       - require_ci_gate
-    if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
+    if: ${{ needs.resolve_release_target.outputs.should_run == 'true' }}
     runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 40
     permissions:
@@ -264,7 +237,7 @@ jobs:
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare_release.outputs.target_sha }}
+          ref: ${{ needs.resolve_release_target.outputs.target_sha }}
           path: release-target
           fetch-depth: 0
           persist-credentials: false
@@ -289,7 +262,7 @@ jobs:
           tool_root="$GITHUB_WORKSPACE"
           target_root="$GITHUB_WORKSPACE/release-target"
           ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/build.sh" \
-            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --tag '${{ needs.resolve_release_target.outputs.tag }}' \
             --arch '${{ matrix.arch }}' \
             --label '${{ matrix.label }}' \
             --out-dir "$GITHUB_WORKSPACE/.ai-tmp/release-${{ matrix.label }}"
@@ -302,7 +275,7 @@ jobs:
           target_root="$GITHUB_WORKSPACE/release-target"
           ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/.ai-tmp/release-${{ matrix.label }}/release-assets" \
-            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --tag '${{ needs.resolve_release_target.outputs.tag }}' \
             --label '${{ matrix.label }}' \
             --arch '${{ matrix.arch }}'
 
@@ -324,8 +297,8 @@ jobs:
       - name: Attest SBOM
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
-          subject-path: .ai-tmp/release-${{ matrix.label }}/release-assets/VoidDisplay-${{ needs.prepare_release.outputs.tag }}-${{ matrix.label }}.dmg
-          sbom-path: .ai-tmp/release-${{ matrix.label }}/release-assets/VoidDisplay-${{ needs.prepare_release.outputs.tag }}-${{ matrix.label }}.dmg.spdx.json
+          subject-path: .ai-tmp/release-${{ matrix.label }}/release-assets/VoidDisplay-${{ needs.resolve_release_target.outputs.tag }}-${{ matrix.label }}.dmg
+          sbom-path: .ai-tmp/release-${{ matrix.label }}/release-assets/VoidDisplay-${{ needs.resolve_release_target.outputs.tag }}-${{ matrix.label }}.dmg.spdx.json
 
       - name: Upload release summaries
         if: always()
@@ -351,10 +324,10 @@ jobs:
   publish_release:
     name: publish-github-release
     needs:
-      - prepare_release
+      - resolve_release_target
       - require_ci_gate
       - build_dmg
-    if: ${{ needs.prepare_release.outputs.should_release == 'true' }}
+    if: ${{ needs.resolve_release_target.outputs.should_run == 'true' }}
     runs-on: macos-26
     timeout-minutes: 15
     permissions:
@@ -371,7 +344,7 @@ jobs:
       - name: Checkout release target
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ needs.prepare_release.outputs.target_sha }}
+          ref: ${{ needs.resolve_release_target.outputs.target_sha }}
           path: release-target
           fetch-depth: 0
           persist-credentials: false
@@ -405,7 +378,7 @@ jobs:
 
           ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
-            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --tag '${{ needs.resolve_release_target.outputs.tag }}' \
             --label arm64 \
             --arch arm64 \
             --repository '${{ github.repository }}' \
@@ -413,7 +386,7 @@ jobs:
 
           ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/verify.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
-            --tag '${{ needs.prepare_release.outputs.tag }}' \
+            --tag '${{ needs.resolve_release_target.outputs.tag }}' \
             --label intel64 \
             --arch x86_64 \
             --repository '${{ github.repository }}' \
@@ -429,8 +402,8 @@ jobs:
           target_root="$GITHUB_WORKSPACE/release-target"
           ROOT_DIR="$target_root" TOOL_ROOT="$tool_root" "$tool_root/scripts/release/publish.sh" \
             --assets-dir "$GITHUB_WORKSPACE/release-assets" \
-            --tag '${{ needs.prepare_release.outputs.tag }}' \
-            --target-sha '${{ needs.prepare_release.outputs.target_sha }}' \
+            --tag '${{ needs.resolve_release_target.outputs.tag }}' \
+            --target-sha '${{ needs.resolve_release_target.outputs.target_sha }}' \
             --repository '${{ github.repository }}' \
             --out-dir "$GITHUB_WORKSPACE/.ai-tmp/release-publish"
 
@@ -461,8 +434,7 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
-      checks: read
-      statuses: read
+      actions: read
     steps:
       - name: Require target ci-gate
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -513,103 +485,85 @@ jobs:
                 repository,
                 target_sha: targetSha,
                 check_name: checkName,
-                gate_state: snapshot.gate_state,
-                source: snapshot.source,
-                detail: snapshot.detail,
+                ...snapshot,
                 elapsed_seconds: elapsedSeconds,
               };
               await fs.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
             };
 
-            const listCheckRuns = async () => {
-              const checkRuns = [];
-              for (let page = 1; ; page += 1) {
-                const response = await github.rest.checks.listForRef({
-                  owner,
-                  repo,
-                  ref: targetSha,
-                  check_name: checkName,
-                  per_page: 100,
-                  page,
-                });
-                const pageRuns = response.data.check_runs || [];
-                checkRuns.push(...pageRuns);
-                if (pageRuns.length < 100) {
-                  break;
-                }
-              }
-              return checkRuns;
-            };
-
             const loadGateSnapshot = async () => {
               snapshot = {
                 gate_state: 'missing',
-                source: 'checks',
-                detail: 'No matching check run found.',
+                source: 'workflow_jobs',
+                detail: 'No main push CI run found for the target SHA.',
               };
 
               try {
-                const checkRuns = await listCheckRuns();
-                const latestCheckRun = checkRuns
-                  .filter((checkRun) => checkRun.name === checkName)
-                  .sort((left, right) => {
-                    const leftTime = Date.parse(left.started_at || left.completed_at || left.created_at || '') || 0;
-                    const rightTime = Date.parse(right.started_at || right.completed_at || right.created_at || '') || 0;
-                    return leftTime - rightTime;
-                  })
-                  .at(-1);
-
-                if (latestCheckRun) {
-                  const checkStatus = latestCheckRun.status || 'unknown';
-                  const checkConclusion = latestCheckRun.conclusion || '';
-                  snapshot.detail = `check_status=${checkStatus} conclusion=${checkConclusion || 'none'}`;
-                  if (checkStatus === 'completed' && checkConclusion === 'success') {
-                    snapshot.gate_state = 'success';
-                  } else if (checkStatus === 'completed') {
-                    snapshot.gate_state = 'failure';
-                  } else {
-                    snapshot.gate_state = 'pending';
-                  }
-                  return;
-                }
-
-                snapshot.source = 'statuses';
-                const statusResponse = await github.rest.repos.getCombinedStatusForRef({
+                const workflowRuns = await github.paginate(github.rest.actions.listWorkflowRuns, {
                   owner,
                   repo,
-                  ref: targetSha,
+                  workflow_id: 'ci.yml',
+                  branch: 'main',
+                  event: 'push',
+                  head_sha: targetSha,
                   per_page: 100,
                 });
-                const latestStatus = (statusResponse.data.statuses || [])
-                  .filter((status) => status.context === checkName)
-                  .sort((left, right) => {
-                    const leftTime = Date.parse(left.created_at || '') || 0;
-                    const rightTime = Date.parse(right.created_at || '') || 0;
-                    return leftTime - rightTime;
-                  })
+                const workflowRun = workflowRuns
+                  .sort((left, right) => left.id - right.id)
                   .at(-1);
+                if (!workflowRun) return;
 
-                if (!latestStatus) {
-                  snapshot.gate_state = 'missing';
-                  snapshot.detail = 'No matching commit status found.';
+                snapshot.workflow_run_id = workflowRun.id;
+                snapshot.workflow_run_attempt = workflowRun.run_attempt;
+                snapshot.detail = `run_status=${workflowRun.status} conclusion=${workflowRun.conclusion || 'none'}`;
+                // A rerun can still expose a previous attempt's successful job while it is pending.
+                if (workflowRun.status !== 'completed') {
+                  snapshot.gate_state = 'pending';
                   return;
                 }
 
-                const statusState = latestStatus.state || 'unknown';
-                snapshot.detail = `status_state=${statusState}`;
-                if (statusState === 'success') {
-                  snapshot.gate_state = 'success';
-                } else if (statusState === 'pending') {
-                  snapshot.gate_state = 'pending';
-                } else {
+                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  owner,
+                  repo,
+                  run_id: workflowRun.id,
+                  filter: 'latest',
+                  per_page: 100,
+                });
+                const job = jobs.find((candidate) => candidate.name === checkName);
+                if (!job) {
                   snapshot.gate_state = 'failure';
+                  snapshot.detail = `Completed main push CI run has no ${checkName} job.`;
+                  return;
                 }
+
+                snapshot.job_id = job.id;
+                snapshot.detail = `job_status=${job.status} conclusion=${job.conclusion || 'none'}`;
+                if (job.status !== 'completed') {
+                  snapshot.gate_state = 'pending';
+                  return;
+                }
+                if (job.conclusion !== 'success') {
+                  snapshot.gate_state = 'failure';
+                  return;
+                }
+
+                // Recheck main after the CI wait so a rollback revokes pending release eligibility.
+                const main = await github.rest.repos.getBranch({ owner, repo, branch: 'main' });
+                snapshot.main_sha = main.data.commit.sha;
+                if (snapshot.main_sha !== targetSha) {
+                  const comparison = await github.rest.repos.compareCommits({
+                    owner, repo, base: targetSha, head: snapshot.main_sha,
+                  });
+                  if (comparison.data.merge_base_commit?.sha !== targetSha) {
+                    snapshot.gate_state = 'target_not_on_main';
+                    snapshot.detail = `Target is no longer an ancestor of main (${snapshot.main_sha}).`;
+                    return;
+                  }
+                }
+                snapshot.gate_state = 'success';
               } catch (error) {
-                snapshot = {
-                  gate_state: 'api_error',
-                  source: snapshot.source,
-                  detail: error.message,
-                };
+                snapshot.gate_state = 'api_error';
+                snapshot.detail = error.message;
               }
             };
 
@@ -622,11 +576,11 @@ jobs:
 
               if (snapshot.gate_state === 'success') {
                 await writeSummary('passed', 'ci_gate_success', elapsedSeconds);
-                core.info(`Required target check passed: ${checkName} on ${targetSha}`);
+                core.info(`Required main push CI passed: ${checkName} on ${targetSha}, run ${snapshot.workflow_run_id}, attempt ${snapshot.workflow_run_attempt}`);
                 return;
               }
 
-              if (snapshot.gate_state === 'failure' || snapshot.gate_state === 'api_error') {
+              if (['failure', 'api_error', 'target_not_on_main'].includes(snapshot.gate_state)) {
                 await writeSummary('failed', `ci_gate_${snapshot.gate_state}`, elapsedSeconds);
                 throw new Error(`Required target check ${checkName} is ${snapshot.gate_state} for ${targetSha}. ${snapshot.detail}`);
               }

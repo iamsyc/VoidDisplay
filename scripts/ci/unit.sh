@@ -29,8 +29,8 @@ RUN_GO_TESTS="true"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-	--filter | --only-testing)
-		SWIFT_FILTERS+=("${2#*:}")
+	--filter)
+		SWIFT_FILTERS+=("$2")
 		shift 2
 		;;
 	--enable-code-coverage)
@@ -114,7 +114,7 @@ if [[ "$ENABLE_CODE_COVERAGE" == "YES" ]]; then
 fi
 if [[ "${#SWIFT_FILTERS[@]}" -gt 0 ]]; then
 	for filter in "${SWIFT_FILTERS[@]}"; do
-		[[ -n "$filter" ]] && swift_test_cmd+=(--filter "${filter##*/}")
+		swift_test_cmd+=(--filter "$filter")
 	done
 fi
 

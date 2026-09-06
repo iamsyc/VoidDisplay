@@ -321,6 +321,9 @@ validate_action_pinning
 validate_workflow_script_contract
 validate_xcode_metadata_cache_contract
 validate_ci_summary_comment_policy
+node scripts/ci/test_release_target.mjs
+node --test scripts/ci/test_release_ci_gate.mjs
+node scripts/ci/test_ci_artifact_paths.mjs
 validate_release_publish_credentials
 validate_release_automation_contract
 validate_ui_smoke_artifact_summary

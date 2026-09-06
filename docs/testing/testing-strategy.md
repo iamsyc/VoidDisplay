@@ -47,6 +47,8 @@ scripts/ci/ui_smoke.sh \
   --destination "platform=macOS,arch=$(uname -m)"
 ```
 
+`unit.sh --filter` 原样传递 SwiftPM 的筛选表达式，保留 suite、方法和正则语义，也支持多个 `--filter`。未命中测试时门禁失败，避免同名方法让错误的 suite 显示通过。`--only-testing` 用于 Xcode/UI 入口。
+
 源码指纹使用各文件内容的定长摘要、路径、类型和可执行位，不包含提交哈希；二进制内容中的分隔符不会改变文件记录边界。Xcode 指纹排除文档、单元测试和 workflow；产品源码、UI 测试、资源、依赖与构建脚本变化会使构建失效。提交相同文件或只改文档不会导致 UI 重建。完整回归 checkpoint 仍使用全仓库内容指纹。
 
 `validate.sh`、`full_regression.sh` 和 `ui_smoke.sh` 共用受管构建缓存。前置阶段调用 `ui_smoke.sh --build-only`，先检查完整证据，再校验或构建产物，随后直接复用。
@@ -111,7 +113,7 @@ scripts/dev/verify_display_host.sh \
 
 ## 远程 CI
 
-远程 runner、变更分类、job matrix 和 artifact 由 workflow 决定。仓库分支保护或 ruleset 与实时 PR check suite 共同决定哪些 check 属于外部必需门禁。本地通过不能替代远程 CI 结果。详细说明见 [CI Workflows](./ci-workflows.md)。
+远程 runner、变更分类、job matrix 和 artifact 由 workflow 决定。PR 中，文档和明确列出的独立配置只运行静态检查，单元测试变更执行单元门禁，产品、依赖、构建与测试运行脚本变更执行相关构建及 UI 门禁；混合变更取所需门禁的并集。触发 CI 的 main push 保留完整门禁，为发布恢复提供完整目标验证。仓库分支保护或 ruleset 与实时 PR check suite 共同决定哪些 check 属于外部必需门禁。本地通过不能替代远程 CI 结果。详细说明见 [CI Workflows](./ci-workflows.md)。
 
 CI 的完整 UI 旅程需要容纳 1180×720 窗口、菜单栏和 Dock。PR 与 Nightly 在运行前通过 `scripts/dev/prepare_ui_display.swift` 检查桌面，必要时选择至少 1280×900 的受支持显示模式，变更仅应用于当前登录会话。没有可用模式时明确报告环境准备失败，不启动会因窗口超出屏幕而误报的 UI 测试。菜单栏启停过程中控件会暂时呈现为进度指示器，交互测试等待按钮恢复可用后再读取终态。
 
