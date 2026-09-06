@@ -61,12 +61,7 @@ package final class CGVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDriving 
             }
             defer { timeout.cancel() }
             let response = try await withTaskCancellationHandler {
-                try await Task.detached { [data] in
-                    try input.fileHandleForWriting.write(contentsOf: data)
-                }.value
-                var lines = output.fileHandleForReading.bytes.lines.makeAsyncIterator()
-                guard let line = try await lines.next() else { throw VirtualDisplayOperationError.creationFailed }
-                return try JSONDecoder().decode(VirtualDisplayHostResponse.self, from: Data(line.utf8))
+                try await Self.exchangeRequest(data, input: input.fileHandleForWriting, output: output.fileHandleForReading)
             } onCancel: {
                 if process.isRunning { process.terminate() }
             }
@@ -84,6 +79,30 @@ package final class CGVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDriving 
             if Task.isCancelled { throw CancellationError() }
             AppLog.virtualDisplay.error("Virtual display host creation failed: \(String(describing: error), privacy: .public)")
             throw VirtualDisplayOperationError.creationFailed
+        }
+    }
+
+    private nonisolated static func exchangeRequest(
+        _ request: Data, input: FileHandle, output: FileHandle
+    ) async throws -> VirtualDisplayHostResponse {
+        try await withCheckedThrowingContinuation { continuation in
+            // Pipe I/O can block. Keep cooperative workers available for timeout and cancellation tasks.
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    try input.write(contentsOf: request)
+                    var response = Data()
+                    var buffer = [UInt8](repeating: 0, count: 4096)
+                    while true {
+                        let count = Darwin.read(output.fileDescriptor, &buffer, buffer.count)
+                        if count < 0, errno == EINTR { continue }
+                        guard count > 0 else { throw VirtualDisplayOperationError.creationFailed }
+                        response.append(contentsOf: buffer.prefix(count))
+                        if let newline = response.firstIndex(of: 0x0A) {
+                            return try JSONDecoder().decode(VirtualDisplayHostResponse.self, from: response.prefix(upTo: newline))
+                        }
+                    }
+                })
+            }
         }
     }
 }
