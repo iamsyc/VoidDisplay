@@ -17,35 +17,18 @@ func editConfigDTO(
     serial: UInt32,
     desiredEnabled: Bool = true,
     physicalWidthMillimeters: UInt32 = 600,
-    physicalHeightMillimeters: UInt32 = 340,
-    modes: [DisplayRuntimeVirtualDisplayModeDTO] = [
-        .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
-    ]
+    physicalHeightMillimeters: UInt32 = 340
 ) -> DisplayRuntimeVirtualDisplayConfigEditDTO {
-    let maximumPixelDimensions = maximumPixelDimensions(for: modes)
-    return DisplayRuntimeVirtualDisplayConfigEditDTO(
+    DisplayRuntimeVirtualDisplayConfigEditDTO(
         id: id,
         displayName: displayName,
         serialNumber: serial,
         desiredEnabled: desiredEnabled,
         physicalWidthMillimeters: physicalWidthMillimeters,
         physicalHeightMillimeters: physicalHeightMillimeters,
-        modes: modes,
-        maximumPixelWidth: maximumPixelDimensions.width,
-        maximumPixelHeight: maximumPixelDimensions.height
-    )
-}
-
-func maximumPixelDimensions(
-    for modes: [DisplayRuntimeVirtualDisplayModeDTO]
-) -> (width: UInt32, height: UInt32) {
-    guard let maxMode = modes.max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) else {
-        return (0, 0)
-    }
-    let scale = modes.contains(where: \.enableHiDPI) ? 2 : 1
-    return (
-        UInt32(clamping: maxMode.width * scale),
-        UInt32(clamping: maxMode.height * scale)
+        modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+        maximumPixelWidth: 1920,
+        maximumPixelHeight: 1080
     )
 }
 

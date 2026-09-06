@@ -25,7 +25,9 @@ struct DisplayRuntimeSnapshotTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)]
+                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)],
+                            maximumPixelWidth: 3840,
+                            maximumPixelHeight: 2160
                         )
                     ],
                     restoreFailureConfigIDs: []
@@ -198,7 +200,9 @@ struct DisplayRuntimeSnapshotTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)]
+                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)],
+                            maximumPixelWidth: 3840,
+                            maximumPixelHeight: 2160
                         )
                     ],
                     restoreFailureConfigIDs: []
@@ -249,7 +253,9 @@ struct DisplayRuntimeSnapshotTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: []
+                            modes: [],
+                            maximumPixelWidth: 0,
+                            maximumPixelHeight: 0
                         ),
                         .init(
                             id: firstConfigID,
@@ -257,7 +263,9 @@ struct DisplayRuntimeSnapshotTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: []
+                            modes: [],
+                            maximumPixelWidth: 0,
+                            maximumPixelHeight: 0
                         )
                     ],
                     restoreFailureConfigIDs: []
@@ -275,7 +283,7 @@ struct DisplayRuntimeSnapshotTests {
     @Test func unavailableProvidersProduceEmptySnapshot() async {
         let snapshot = DisplayRuntime().makeSnapshot()
 
-        #expect(snapshot.schemaVersion == 4)
+        #expect(snapshot.schemaVersion == 5)
         #expect(snapshot.surfaces.isEmpty)
         #expect(snapshot.catalog == .empty)
         #expect(snapshot.capture == .empty)
@@ -317,8 +325,8 @@ struct DisplayRuntimeSnapshotTests {
             from: ObservabilityCodec.encode(snapshot)
         )
 
-        #expect(snapshot.schemaVersion == 4)
-        #expect(decoded.schemaVersion == 4)
+        #expect(snapshot.schemaVersion == 5)
+        #expect(decoded.schemaVersion == 5)
         #expect(snapshot.sharing.routes.first?.hasConcreteRoute == true)
         #expect(snapshot.sharing.sharingClientCount == 1)
         #expect(snapshot.consumerLeases.first?.ownerSource == .sharingService)
@@ -402,7 +410,9 @@ struct DisplayRuntimeSnapshotTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                            maximumPixelWidth: 1920,
+                            maximumPixelHeight: 1080
                         ),
                         .init(
                             id: configID,
@@ -410,7 +420,9 @@ struct DisplayRuntimeSnapshotTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                            maximumPixelWidth: 1920,
+                            maximumPixelHeight: 1080
                         )
                     ],
                     restoreFailureConfigIDs: []
@@ -472,7 +484,7 @@ struct DisplayRuntimeSnapshotTests {
         )
 
         #expect(applyResult.outcome == .applied)
-        #expect(snapshot.schemaVersion == 4)
+        #expect(snapshot.schemaVersion == 5)
         #expect(Set(snapshot.consumerLeases.map(\.id)) == Set([previewLease.id, lanLease.id]))
         #expect(Set(snapshot.consumerLeases.map(\.ownerSource)) == Set([.localUI, .sharingService]))
         #expect(snapshot.consumerLeases.map(\.state) == [.attached, .attached])

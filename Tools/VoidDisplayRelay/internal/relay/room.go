@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
+
+var publisherIDSequence atomic.Uint64
 
 func NewRoom(id string, logger *slog.Logger, newPeerConnection peerConnectionFactory) *Room {
 	if logger == nil {
@@ -124,8 +127,7 @@ func (r *Room) SetPublisherOffer(sdp string) (publisherOfferResult, error) {
 		_ = pc.Close()
 		return publisherOfferResult{}, errors.New("room_closed")
 	}
-	r.nextPublisherID++
-	publisherID := fmt.Sprintf("%d", r.nextPublisherID)
+	publisherID := fmt.Sprintf("%d", publisherIDSequence.Add(1))
 	r.mu.Unlock()
 	closePendingPublisher := func() {
 		_ = pc.Close()
@@ -483,23 +485,8 @@ func (r *Room) applyICECandidates(clientID string, pc peerConnection, candidates
 }
 
 func (r *Room) handlePublisherDisconnected(publisherID string, state webrtc.PeerConnectionState) {
-	r.mu.Lock()
-	isCurrent := r.publisher != nil && r.publisher.id == publisherID
-	r.mu.Unlock()
-	if !isCurrent {
-		r.logger.Debug(
-			"ignored stale publisher disconnect",
-			"room",
-			r.id,
-			"publisherID",
-			publisherID,
-			"state",
-			state.String(),
-		)
-		return
-	}
 	r.logger.Info("publisher disconnected", "room", r.id, "publisherID", publisherID, "state", state.String())
-	r.Close()
+	r.StopPublisher(publisherID)
 }
 
 func (r *Room) publisherTrackStarted(publisherID string, remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {

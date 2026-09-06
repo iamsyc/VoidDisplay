@@ -34,30 +34,8 @@ private final class CountingPreviewSink: @unchecked Sendable, DisplayPreviewSink
     }
 }
 
-private actor BlockingPreviewSinkEntrySignal {
-    private var hasEntered = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func markEntered() {
-        guard !hasEntered else { return }
-        hasEntered = true
-        let pendingWaiters = waiters
-        waiters.removeAll()
-        for waiter in pendingWaiters {
-            waiter.resume()
-        }
-    }
-
-    func waitForEntry() async {
-        guard !hasEntered else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-}
-
 private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink {
-    private let entrySignal = BlockingPreviewSinkEntrySignal()
+    private let entrySemaphore = DispatchSemaphore(value: 0)
     private let releaseSemaphore = DispatchSemaphore(value: 0)
     private let hasEntered = Mutex(false)
     private let completedSubmissions = Mutex(0)
@@ -69,16 +47,14 @@ private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink
             return true
         }
         if shouldSignal {
-            Task {
-                await entrySignal.markEntered()
-            }
+            entrySemaphore.signal()
             releaseSemaphore.wait()
         }
         completedSubmissions.withLock { $0 += 1 }
     }
 
-    nonisolated func waitForEntry() async {
-        await entrySignal.waitForEntry()
+    nonisolated func waitForEntry() -> Bool {
+        entrySemaphore.wait(timeout: .now() + .seconds(1)) == .success
     }
 
     nonisolated func release() {
@@ -90,59 +66,37 @@ private final class BlockingPreviewSink: @unchecked Sendable, DisplayPreviewSink
     }
 }
 
-private final class FanoutCompletionFlag: @unchecked Sendable {
-    private let isComplete = Mutex(false)
-
-    nonisolated func markComplete() {
-        isComplete.withLock { $0 = true }
-    }
-
-    nonisolated func snapshot() -> Bool {
-        isComplete.withLock { $0 }
-    }
-}
-
 @MainActor
 @Suite(.serialized)
 struct DisplaySampleFanoutTests {
     @Test func slowSinkDoesNotBlockPublishingNewFrame() async throws {
-        let first = try await makeSampleBuffer()
-        let second = try await makeSampleBuffer()
+        let first = TestSendableSampleBuffer(value: try await makeSampleBuffer())
+        let second = TestSendableSampleBuffer(value: try await makeSampleBuffer())
         let fanout = DisplaySampleFanout()
         let sink = BlockingPreviewSink()
-        let completionFlag = FanoutCompletionFlag()
-        let sendableSecond = TestSendableSampleBuffer(value: second)
         fanout.attachPreviewSink(sink)
 
-        fanout.publishPreviewFrame(first)
-        await sink.waitForEntry()
-
-        let publishTask = publishDetachedFrame(
-            fanout: fanout,
-            sampleBuffer: sendableSecond,
-            completionFlag: completionFlag
-        )
-
-        let publishedWithoutBlocking = await waitUntil(timeout: .milliseconds(150)) {
-            completionFlag.snapshot()
+        // The deliberately blocked sink must not depend on cooperative tasks to release it.
+        let result: (entered: Bool, published: Bool) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let publisher = DispatchQueue(label: "VoidDisplayTests.FanoutPublisher")
+                publisher.async { fanout.publishPreviewFrame(first.value) }
+                let entered = sink.waitForEntry()
+                let published = DispatchSemaphore(value: 0)
+                publisher.async {
+                    fanout.publishPreviewFrame(second.value)
+                    published.signal()
+                }
+                let publishedWithoutBlocking = published.wait(timeout: .now() + .milliseconds(150)) == .success
+                sink.release()
+                continuation.resume(returning: (entered, publishedWithoutBlocking))
+            }
         }
-        #expect(publishedWithoutBlocking)
+        #expect(result.entered)
+        #expect(result.published)
 
-        sink.release()
-        await publishTask.value
         let finishedBothFrames = await waitUntil { sink.completedFrameCount() == 2 }
         #expect(finishedBothFrames)
-    }
-
-    nonisolated private func publishDetachedFrame(
-        fanout: DisplaySampleFanout,
-        sampleBuffer: TestSendableSampleBuffer,
-        completionFlag: FanoutCompletionFlag
-    ) -> Task<Void, Never> {
-        Task.detached {
-            fanout.publishPreviewFrame(sampleBuffer.value)
-            completionFlag.markComplete()
-        }
     }
 
     private func makeSampleBuffer() async throws -> CMSampleBuffer {

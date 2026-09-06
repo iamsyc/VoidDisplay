@@ -72,7 +72,20 @@ jobs:
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"
 
-          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/unit.sh" --out-dir .ai-tmp/unit-gate
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/ci/unit.sh" --out-dir .ai-tmp/unit-gate &
+          unit_pid=$!
+          (
+            sleep 180
+            if kill -0 "$unit_pid" 2>/dev/null; then
+              while IFS= read -r test_pid; do
+                /usr/bin/sample "$test_pid" 3 -file ".ai-tmp/unit-gate/sample-$test_pid.txt" || true
+              done < <(pgrep -f "swiftpm-testing-helper.*$GITHUB_WORKSPACE/.build" || true)
+              kill -TERM "$unit_pid"
+            fi
+          ) &
+          diagnostic_pid=$!
+          trap 'kill "$diagnostic_pid" 2>/dev/null || true' EXIT
+          wait "$unit_pid"
 
       - name: Upload unit artifacts
         if: always()

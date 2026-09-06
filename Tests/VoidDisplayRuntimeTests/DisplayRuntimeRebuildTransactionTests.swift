@@ -504,7 +504,9 @@ struct DisplayRuntimeRebuildTransactionTests {
                             desiredEnabled: true,
                             physicalWidthMillimeters: 600,
                             physicalHeightMillimeters: 340,
-                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+                            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                            maximumPixelWidth: 1920,
+                            maximumPixelHeight: 1080
                         )
                     ],
                     restoreFailureConfigIDs: []
