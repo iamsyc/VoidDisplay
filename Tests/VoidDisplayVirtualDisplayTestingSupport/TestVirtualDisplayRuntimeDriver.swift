@@ -6,7 +6,7 @@ package final class TestVirtualDisplayRuntimeDriver: VirtualDisplayRuntimeDrivin
     package func createRuntimeDisplay(
         descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling {
+    ) async throws -> any VirtualDisplayRuntimeHandling {
         throw VirtualDisplayOperationError.creationFailed
     }
 }

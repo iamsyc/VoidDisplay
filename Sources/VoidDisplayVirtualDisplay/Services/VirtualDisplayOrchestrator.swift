@@ -244,10 +244,6 @@ package final class VirtualDisplayOrchestrator {
         try configManager.moveConfigToFirstEnabledPosition(configId)
     }
 
-    package func applyModes(configId: UUID, modes: [ResolutionSelection]) {
-        runtimeTracker.applyModes(configId: configId, modes: modes)
-    }
-
     package func rebuildVirtualDisplay(configId: UUID) async throws {
         try await rebuildCoordinator.rebuildVirtualDisplay(configId: configId)
     }

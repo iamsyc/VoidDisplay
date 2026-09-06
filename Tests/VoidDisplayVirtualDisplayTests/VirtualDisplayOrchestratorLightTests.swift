@@ -202,14 +202,14 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func createDisplayCommandSuccessReturnsCommandFacts() throws {
+    func createDisplayCommandSuccessReturnsCommandFacts() async throws {
         let store = FakeVirtualDisplayStore()
         let driver = FakeOrchestratorRuntimeDriver(
             scriptedResults: [.success(serialNum: 50, displayID: 950)]
         )
         let sut = makeOrchestrator(store: store, runtimeDriver: driver)
 
-        let result = try sut.createDisplayCommand(
+        let result = try await sut.createDisplayCommand(
             name: "Created",
             serialNum: 50,
             physicalSize: CGSize(width: 300, height: 200),
@@ -225,7 +225,7 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func createDisplayCommandRuntimeFailureRollsBackConfigAndReportsFacts() {
+    func createDisplayCommandRuntimeFailureRollsBackConfigAndReportsFacts() async {
         let store = FakeVirtualDisplayStore()
         let driver = FakeOrchestratorRuntimeDriver(
             scriptedResults: [.failure(VirtualDisplayOperationError.creationFailed)]
@@ -233,7 +233,7 @@ struct VirtualDisplayOrchestratorLightTests {
         let sut = makeOrchestrator(store: store, runtimeDriver: driver)
 
         do {
-            _ = try sut.createDisplayCommand(
+            _ = try await sut.createDisplayCommand(
                 name: "Rollback OK",
                 serialNum: 51,
                 physicalSize: CGSize(width: 300, height: 200),
@@ -355,7 +355,7 @@ struct VirtualDisplayOrchestratorLightTests {
     }
 
     @Test
-    func startupRestoreCommandRestoresSingleDesiredConfig() {
+    func startupRestoreCommandRestoresSingleDesiredConfig() async {
         let store = FakeVirtualDisplayStore()
         let config = makeConfig(serial: 64, displayName: "Desired")
         let driver = FakeOrchestratorRuntimeDriver(
@@ -367,7 +367,7 @@ struct VirtualDisplayOrchestratorLightTests {
             runtimeDriver: driver
         )
 
-        let result = sut.restoreVirtualDisplayForStartupCommand(
+        let result = await sut.restoreVirtualDisplayForStartupCommand(
             startupRestoreRequest(config: config)
         )
 
@@ -545,7 +545,7 @@ private final class FakeOrchestratorRuntimeDriver: VirtualDisplayRuntimeDriving 
     func createRuntimeDisplay(
         descriptor: VirtualDisplayRuntimeDescriptor,
         onTermination _: @escaping @MainActor () -> Void
-    ) throws -> any VirtualDisplayRuntimeHandling {
+    ) async throws -> any VirtualDisplayRuntimeHandling {
         createCallCount += 1
         let result: CreateResult
         if scriptedResults.indices.contains(nextIndex) {
@@ -577,7 +577,4 @@ private final class FakeOrchestratorRuntimeHandle: VirtualDisplayRuntimeHandling
         self.displayID = displayID
     }
 
-    func applyModes(_ modes: [VirtualDisplayRuntimeMode]) -> Bool {
-        !modes.isEmpty
-    }
 }

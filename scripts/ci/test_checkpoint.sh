@@ -44,6 +44,7 @@ write_fixture_executable() {
 for helper_name in common artifacts parallel checkpoint ui_test_session; do
 	ln -s "$real_tool_root/scripts/lib/$helper_name.sh" "$fixture_tool_root/scripts/lib/$helper_name.sh"
 done
+ln -s "$real_tool_root/scripts/lib/source_fingerprint.mjs" "$fixture_tool_root/scripts/lib/source_fingerprint.mjs"
 ln -s "$fixture_tool_root/scripts" "$split_tool_root/scripts"
 
 declare -F require_repository_tool_root >/dev/null ||
@@ -59,10 +60,11 @@ fi
 write_fixture_executable "$fixture_tool_root/scripts/lib/architecture.sh" \
 	'#!/usr/bin/env bash' \
 	'xcode_destination_for_arch() { printf '\''platform=macOS,arch=%s\n'\'' "$1"; }'
-write_fixture_executable "$fixture_tool_root/scripts/lib/xcode.sh" \
-	'#!/usr/bin/env bash' \
+cp "$real_tool_root/scripts/lib/xcode.sh" "$fixture_tool_root/scripts/lib/xcode.sh"
+printf '%s\n' \
 	'select_required_xcode() { :; }' \
-	'xcode_test_products_exist() { return 0; }'
+	'xcode_test_products_exist() { return 0; }' \
+	>>"$fixture_tool_root/scripts/lib/xcode.sh"
 write_fixture_executable "$fixture_tool_root/scripts/lib/xcresult.sh" \
 	'#!/usr/bin/env bash' \
 	'xcresult_test_evidence_valid() { return 0; }'
@@ -94,11 +96,13 @@ write_fixture_executable "$command_runner" \
 	'    for log_name in swift javascript go; do printf '\''passed\n'\'' >"$out_dir/$log_name.log"; done' \
 	'    jq -n --arg swift_log "$out_dir/swift.log" --arg javascript_log "$out_dir/javascript.log" --arg go_log "$out_dir/go.log" '\''{status: "passed", swift_test_count: 1, javascript_test_count: 1, go_package_count: 1, swift_log: $swift_log, javascript_log: $javascript_log, go_log: $go_log}'\'' >"$out_dir/unit-summary.json"' \
 	'    ;;' \
-	'  xcode.sh)' \
+	'  xcode.sh | ui_smoke.sh)' \
 	'    action=""; destination=""; derived_data=""; out_dir=""; selector=""' \
 	'    while [[ $# -gt 0 ]]; do' \
 	'      case "$1" in' \
 	'        --action) action="$2"; shift 2 ;;' \
+	'        --build-only) action="build-for-testing"; shift ;;' \
+	'        --rerun) bump_count ui-rerun; shift ;;' \
 	'        --destination) destination="$2"; shift 2 ;;' \
 	'        --derived-data-path) derived_data="$2"; shift 2 ;;' \
 	'        --out-dir) out_dir="$2"; shift 2 ;;' \
@@ -108,14 +112,16 @@ write_fixture_executable "$command_runner" \
 	'    done' \
 	'    mkdir -p "$out_dir"' \
 	'    printf '\''passed\n'\'' >"$out_dir/xcode.log"' \
+	'    derived_data="${derived_data:-$out_dir/DerivedData}"' \
 	'    if [[ "$action" == "build-for-testing" ]]; then' \
 	'      bump_count preflight-xcode' \
 	'      mkdir -p "$derived_data/Build/Products/Debug/VoidDisplay.app"' \
 	'      jq -n --arg action "$action" --arg destination "$destination" --arg log_path "$out_dir/xcode.log" '\''{status: "passed", action: $action, destination: $destination, log_path: $log_path}'\'' >"$out_dir/xcode-summary.json"' \
+	'      jq -n --arg derived_data "$derived_data" '\''{status: "passed", build_only: true, test_evidence_reused: false, derived_data_path: $derived_data}'\'' >"$out_dir/ui-smoke-summary.json"' \
 	'    else' \
 	'      bump_count ui' \
 	'      mkdir -p "$out_dir/Result.xcresult"' \
-	'      jq -n --arg destination "$destination" --arg selector "$selector" --arg result_bundle "$out_dir/Result.xcresult" '\''{status: "passed", action: "test-without-building", destination: $destination, only_testing: [$selector], result_status: "Passed", total_tests: 1, passed_tests: 1, skipped_tests: 0, failed_tests: 0, result_bundle: $result_bundle}'\'' >"$out_dir/xcode-summary.json"' \
+	'      jq -n --arg destination "$destination" --arg selector "$selector" --arg result_bundle "$out_dir/Result.xcresult" '\''{status: "passed", action: "test-without-building", build_only: false, destination: $destination, only_testing: [$selector], result_status: "Passed", total_tests: 1, passed_tests: 1, skipped_tests: 0, failed_tests: 0, result_bundle: $result_bundle}'\'' >"$out_dir/ui-smoke-summary.json"' \
 	'    fi' \
 	'    ;;' \
 	'  stability.sh)' \
@@ -132,7 +138,7 @@ write_fixture_executable "$command_runner" \
 	'    jq -n --argjson iterations "$iterations" --arg go_log "$out_dir/go.log" '\''{status: "passed", iterations: $iterations, swift_test_count: 1, go_package_count: 1, go_log: $go_log}'\'' >"$out_dir/stability-summary.json"' \
 	'    ;;' \
 	'esac'
-for script_name in static.sh unit.sh xcode.sh stability.sh; do
+for script_name in static.sh unit.sh xcode.sh ui_smoke.sh stability.sh; do
 	ln -s "$command_runner" "$fixture_tool_root/scripts/ci/$script_name"
 done
 
@@ -147,7 +153,7 @@ write_fixture_executable "$tool_runner" \
 	'  sw_vers) printf '\''15.6\n'\'' ;;' \
 	'  *) exit 0 ;;' \
 	'esac'
-for command_name in xcodebuild swift go node sw_vers codesign lipo xcrun; do
+for command_name in xcodebuild swift go sw_vers codesign lipo xcrun; do
 	ln -s "$tool_runner" "$fixture_bin/$command_name"
 done
 
@@ -185,6 +191,20 @@ jq -e '.status == "passed" and .resumed_stages == ["preflight", "ui"]' \
 	"$fixture_out/full-regression-summary.json" >/dev/null ||
 	die "Resume summary did not identify the reused preflight and UI stages."
 
+if "${run_env[@]}" XCODE_XCCONFIG_FILE="$fixture_root/external.xcconfig" \
+	"$full_regression_script" "${run_args[@]}" >"$fixture_root/xcconfig.log" 2>&1; then
+	die "Full regression resumed cached stages with an external xcconfig."
+fi
+jq -e '.status == "failed" and .phase == "build_input_rejected"' \
+	"$fixture_out/full-regression-summary.json" >/dev/null ||
+	die "External xcconfig rejection left stale full regression success evidence."
+[[ "$(<"$fixture_counts/ui.count")" == "1" ]] || die "Rejected xcconfig executed UI tests."
+"${run_env[@]}" "$full_regression_script" "${run_args[@]}" >"$fixture_root/after-rejection.log" 2>&1 ||
+	die "Normal full regression did not resume after rejecting the xcconfig."
+jq -e '.status == "passed" and .resumed_stages == ["preflight", "ui", "postflight"]' \
+	"$fixture_out/full-regression-summary.json" >/dev/null ||
+	die "External xcconfig rejection discarded valid full regression checkpoints."
+
 printf 'changed\n' >"$fixture_repository/tracked.txt"
 "${run_env[@]}" "$full_regression_script" "${run_args[@]}" >"$fixture_root/source-change.log" 2>&1 ||
 	die "Fixture failed after a source change."
@@ -195,6 +215,7 @@ printf 'changed\n' >"$fixture_repository/tracked.txt"
 	die "Fixture restart failed."
 [[ "$(<"$fixture_counts/ui.count")" == "3" ]] ||
 	die "Restart did not discard completed stage markers."
+[[ "$(<"$fixture_counts/ui-rerun.count")" == "1" ]] || die "Restart did not bypass cached UI evidence."
 
 printf 'invalid checkpoint\n' >"$fixture_out/full-regression-checkpoint.json"
 "${run_env[@]}" "$full_regression_script" "${run_args[@]}" >"$fixture_root/corrupt.log" 2>&1 ||

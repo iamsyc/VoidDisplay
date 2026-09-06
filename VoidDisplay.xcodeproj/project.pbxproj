@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CDAB90000000000000000007 /* VoidDisplayVirtualDisplayHost in Frameworks */ = {isa = PBXBuildFile; productRef = CDAB90000000000000000006 /* VoidDisplayVirtualDisplayHost */; };
+		CDAB90000000000000000008 /* VoidDisplayHost in Embed Display Host */ = {isa = PBXBuildFile; fileRef = CDAB90000000000000000002 /* VoidDisplayHost */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		FCEB55DC5EEF2BA376EA02FD /* VoidDisplayApp in Frameworks */ = {isa = PBXBuildFile; productRef = 9FED0F7AAD6710D42320E832 /* VoidDisplayApp */; };
 /* End PBXBuildFile section */
 
@@ -18,11 +20,31 @@
 			remoteGlobalIDString = BA0465CF2E90E53C00012958;
 			remoteInfo = VoidDisplay;
 		};
+		CDAB9000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BA0465C82E90E53C00012958 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CDAB90000000000000000001;
+			remoteInfo = VoidDisplayHost;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CDAB90000000000000000009 /* Embed Display Host */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = "";
+			dstSubfolder = Executables;
+			files = (
+				CDAB90000000000000000008 /* VoidDisplayHost in Embed Display Host */,
+			);
+			name = "Embed Display Host";
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		BA0465D02E90E53C00012958 /* VoidDisplay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoidDisplay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BA0465E72E90E53D00012958 /* VoidDisplayUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoidDisplayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CDAB90000000000000000002 /* VoidDisplayHost */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = VoidDisplayHost; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -48,6 +70,12 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		CDAB90000000000000000003 /* VoidDisplayHost */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = VoidDisplayHost;
+			path = Apps/VoidDisplayHost;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +90,12 @@
 			files = (
 			);
 		};
+		CDAB90000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				CDAB90000000000000000007 /* VoidDisplayVirtualDisplayHost in Frameworks */,
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -71,6 +105,7 @@
 				CDAA10012F01A00100000001 /* Sources */,
 				CDAA10022F01A00100000001 /* Tests */,
 				BA0465D22E90E53C00012958 /* VoidDisplay */,
+				CDAB90000000000000000003 /* VoidDisplayHost */,
 				BA0465EA2E90E53D00012958 /* VoidDisplayUITests */,
 				BA0465D12E90E53C00012958 /* Products */,
 			);
@@ -80,6 +115,7 @@
 			isa = PBXGroup;
 			children = (
 				BA0465D02E90E53C00012958 /* VoidDisplay.app */,
+				CDAB90000000000000000002 /* VoidDisplayHost */,
 				BA0465E72E90E53D00012958 /* VoidDisplayUITests.xctest */,
 			);
 			name = Products;
@@ -96,8 +132,12 @@
 				BA0465CD2E90E53C00012958 /* Frameworks */,
 				CDAA20012F05000100000001 /* Build Relay */,
 				BA0465CE2E90E53C00012958 /* Resources */,
+				CDAB90000000000000000009 /* Embed Display Host */,
 			);
 			buildRules = (
+			);
+			dependencies = (
+				CDAB9000000000000000000B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				BA0465D22E90E53C00012958 /* VoidDisplay */,
@@ -130,6 +170,26 @@
 			productName = VoidDisplayUITests;
 			productReference = BA0465E72E90E53D00012958 /* VoidDisplayUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		CDAB90000000000000000001 /* VoidDisplayHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CDAB9000000000000000000C /* Build configuration list for PBXNativeTarget "VoidDisplayHost" */;
+			buildPhases = (
+				CDAB90000000000000000004 /* Sources */,
+				CDAB90000000000000000005 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				CDAB90000000000000000003 /* VoidDisplayHost */,
+			);
+			name = VoidDisplayHost;
+			packageProductDependencies = (
+				CDAB90000000000000000006 /* VoidDisplayVirtualDisplayHost */,
+			);
+			productName = VoidDisplayHost;
+			productReference = CDAB90000000000000000002 /* VoidDisplayHost */;
+			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -168,6 +228,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				CDAB90000000000000000001 /* VoidDisplayHost */,
 				BA0465CF2E90E53C00012958 /* VoidDisplay */,
 				BA0465E62E90E53D00012958 /* VoidDisplayUITests */,
 			);
@@ -243,6 +304,11 @@
 			files = (
 			);
 		};
+		CDAB90000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -250,6 +316,11 @@
 			isa = PBXTargetDependency;
 			target = BA0465CF2E90E53C00012958 /* VoidDisplay */;
 			targetProxy = BA0465E82E90E53D00012958 /* PBXContainerItemProxy */;
+		};
+		CDAB9000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CDAB90000000000000000001 /* VoidDisplayHost */;
+			targetProxy = CDAB9000000000000000000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -590,6 +661,60 @@
 			};
 			name = Release;
 		};
+		CDAB9000000000000000000D /* Debug configuration for PBXNativeTarget "VoidDisplayHost" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 6HCGZ4HUVA;
+				ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					AppIntents,
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		CDAB9000000000000000000E /* Release configuration for PBXNativeTarget "VoidDisplayHost" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 6HCGZ4HUVA;
+				ENABLE_APP_INTENTS_METADATA_GENERATION = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					AppIntents,
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -617,6 +742,14 @@
 			);
 			defaultConfigurationName = Release;
 		};
+		CDAB9000000000000000000C /* Build configuration list for PBXNativeTarget "VoidDisplayHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CDAB9000000000000000000D /* Debug configuration for PBXNativeTarget "VoidDisplayHost" */,
+				CDAB9000000000000000000E /* Release configuration for PBXNativeTarget "VoidDisplayHost" */,
+			);
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -631,6 +764,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "." */;
 			productName = VoidDisplayApp;
+		};
+		CDAB90000000000000000006 /* VoidDisplayVirtualDisplayHost */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 837EFB7AC90CC3286DF0B571 /* XCLocalSwiftPackageReference "." */;
+			productName = VoidDisplayVirtualDisplayHost;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

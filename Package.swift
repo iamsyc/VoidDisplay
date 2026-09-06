@@ -9,7 +9,8 @@ let package = Package(
         .macOS("15.6")
     ],
     products: [
-        .library(name: "VoidDisplayApp", targets: ["VoidDisplayApp"])
+        .library(name: "VoidDisplayApp", targets: ["VoidDisplayApp"]),
+        .library(name: "VoidDisplayVirtualDisplayHost", targets: ["VoidDisplayVirtualDisplayHost"])
     ],
     dependencies: [
         .package(url: "https://github.com/stasel/WebRTC.git", exact: "150.0.0")
@@ -43,9 +44,13 @@ let package = Package(
             name: "VoidDisplayCGVirtualDisplay",
             dependencies: [
                 "VoidDisplayVirtualDisplay",
-                "VoidDisplayFoundation",
-                "CGVirtualDisplayPrivate"
+                "VoidDisplayObservability"
             ],
+            swiftSettings: sharedSwiftSettings
+        ),
+        .target(
+            name: "VoidDisplayVirtualDisplayHost",
+            dependencies: ["VoidDisplayVirtualDisplay", "CGVirtualDisplayPrivate"],
             swiftSettings: sharedSwiftSettings
         ),
         .target(
@@ -139,7 +144,9 @@ let package = Package(
         .testTarget(
             name: "VoidDisplayCGVirtualDisplayTests",
             dependencies: [
-                "VoidDisplayCGVirtualDisplay"
+                "VoidDisplayCGVirtualDisplay",
+                "VoidDisplayVirtualDisplayHost",
+                "VoidDisplayVirtualDisplay"
             ],
             swiftSettings: sharedSwiftSettings
         ),

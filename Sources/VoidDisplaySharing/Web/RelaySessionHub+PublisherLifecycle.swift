@@ -81,7 +81,13 @@ extension RelaySessionHub {
     }
 
     nonisolated func waitForPublisherStartup(roomID: String) async -> PublisherStartupWaitResult {
-        let clock = ContinuousClock()
+        await waitForPublisherStartup(roomID: roomID, clock: publisherStartupClock)
+    }
+
+    private nonisolated func waitForPublisherStartup<C: Clock>(
+        roomID: String,
+        clock: C
+    ) async -> PublisherStartupWaitResult where C.Duration == Duration {
         let deadline = clock.now.advanced(by: publisherStartupWaitTimeout)
         while true {
             let waitResult = state.withLock { state -> PublisherStartupWaitResult? in
@@ -104,7 +110,7 @@ extension RelaySessionHub {
                 return .failed
             }
             do {
-                try await Task.sleep(for: .milliseconds(25))
+                try await clock.sleep(until: min(deadline, clock.now.advanced(by: .milliseconds(25))), tolerance: nil)
             } catch {
                 return .failed
             }

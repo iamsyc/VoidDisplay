@@ -48,12 +48,10 @@ struct DisplayCaptureStreamActivityTests {
         let startTask = Task { try await activity.setActive(true) }
         await startGate.waitUntilSuspended()
         let stopTask = Task { try await activity.setActive(false) }
-        await Task.yield()
-        await startGate.resume()
-
         await #expect(throws: CancellationError.self) {
             try await startTask.value
         }
+        await startGate.resume()
         try await stopTask.value
 
         #expect(transitions.withLock { $0 } == ["start", "stop"])
@@ -74,16 +72,14 @@ struct DisplayCaptureStreamActivityTests {
         let firstStart = Task { try await activity.setActive(true) }
         await startGate.waitUntilSuspended()
         let intermediateStop = Task { try await activity.setActive(false) }
-        await Task.yield()
-        let finalStart = Task { try await activity.setActive(true) }
-        await startGate.resume()
-
         await #expect(throws: CancellationError.self) {
             try await firstStart.value
         }
+        let finalStart = Task { try await activity.setActive(true) }
         await #expect(throws: CancellationError.self) {
             try await intermediateStop.value
         }
+        await startGate.resume()
         try await finalStart.value
 
         #expect(transitions.withLock { $0 } == ["start"])

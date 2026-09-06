@@ -22,8 +22,15 @@ package enum AppBootstrap {
 
         return makeEnvironment(
             preview: false,
+            capturePreviewService: UITestRuntime.scenario == .menuBarQuickActions
+                ? MenuBarQuickActionsUITestFixture.capturePreviewService()
+                : nil,
             virtualDisplayFacade: UITestVirtualDisplayFacade(),
-            startupPlan: .init(shouldRestoreVirtualDisplays: true)
+            startupPlan: .init(
+                shouldRestoreVirtualDisplays: ![
+                    .menuBarQuickActions, .previewActive, .previewRecovery
+                ].contains(UITestRuntime.scenario)
+            )
         )
     }
 

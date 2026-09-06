@@ -247,7 +247,7 @@ elif [[ "$EVENT_NAME" == "pull_request" ]]; then
 	if [[ "$dependency_manifest_relevant" == "true" ]]; then
 		requires_dependency_review="true"
 	fi
-	if [[ "$ui_relevant" == "true" || "$unknown_relevant" == "true" ]]; then
+	if [[ "$ui_relevant" == "true" || "$unknown_relevant" == "true" || "$script_relevant" == "true" || "$dependency_manifest_relevant" == "true" ]]; then
 		requires_ui_smoke="true"
 	fi
 	if [[ "$release_relevant" == "true" && "$BASE_REF" == "main" ]]; then
@@ -281,6 +281,12 @@ summary_flags_json="$(
 	done | jq -s add
 )"
 
+ui_selectors_json='[]'
+if [[ "$requires_ui_smoke" == "true" ]]; then
+	ui_selectors_json="$(node "$TOOL_ROOT/scripts/lib/ui_test_selection.mjs" "$ROOT_DIR" "$changed_files_json")"
+fi
+append_github_output ui_selectors_json "$ui_selectors_json" "$GITHUB_OUTPUT_PATH"
+
 write_json_file "$SUMMARY_PATH" \
 	--arg base "$BASE_SHA" \
 	--arg head "$HEAD_SHA" \
@@ -289,13 +295,15 @@ write_json_file "$SUMMARY_PATH" \
 	--argjson flags "$summary_flags_json" \
 	--argjson changed_files "$changed_files_json" \
 	--argjson changed_entries "$changed_entries_json" \
+	--argjson ui_selectors "$ui_selectors_json" \
 	'{
 	  base: $base,
 	  head: $head,
 	  change_scope: $change_scope,
 	  reason: $reason,
 	  changed_files: $changed_files,
-	  changed_entries: $changed_entries
+	  changed_entries: $changed_entries,
+	  ui_selectors: $ui_selectors
 	} + $flags'
 
 info "Change scope: $change_scope code_relevant=$code_relevant ui_relevant=$ui_relevant requires_unit=$requires_unit requires_xcode_build=$requires_xcode_build"

@@ -139,8 +139,16 @@ validate_xcode_metadata_cache_contract() {
 
 	assert_no_match "UI Xcode metadata caches must not persist SwiftPM package checkouts." \
 		'DerivedData/SourcePackages' "${ui_workflow_files[@]}"
-	assert_no_match "UI Xcode metadata caches must not restore across dependency lock states." \
-		'^[[:space:]]*restore-keys:' "${ui_workflow_files[@]}"
+	local invalid
+	invalid="$(awk '
+		function check_step() {
+			if (step ~ /DerivedData\// && step ~ /restore-keys:/) print FILENAME ": UI build metadata has a restore prefix"
+		}
+		/^[[:space:]]*- name:/ { check_step(); step = "" }
+		{ step = step $0 "\n" }
+		END { check_step() }
+	' "${ui_workflow_files[@]}")"
+	fail_on_output "UI Xcode metadata caches must not restore across dependency lock states." "$invalid"
 }
 
 validate_ci_summary_comment_policy() {
@@ -205,27 +213,22 @@ validate_release_automation_contract() {
 }
 
 validate_ui_smoke_artifact_summary() {
-	local actual
-	local expected
+	local ui_job
 
-	expected="$(
-		awk '
-			/^  ui_smoke_tests:/ { in_job = 1; next }
-			in_job && /^  [[:alnum:]_]+:/ { exit }
-			in_job && /-[[:space:]]+case_name:/ { print "ui-smoke-" $3 }
-		' .github/workflows/ci.yml | sort
-	)"
-	actual="$(
-		rg 'Artifacts: ui-smoke-' .github/workflows/ci.yml |
-			rg -o 'ui-smoke-[[:alnum:]_-]+' |
-			sort
-	)"
-
-	if [[ "$actual" != "$expected" ]]; then
-		printf 'Expected UI smoke artifacts:\n%s\n' "$expected" >&2
-		printf 'Declared UI smoke artifacts:\n%s\n' "$actual" >&2
-		die "PR UI smoke matrix and artifact summary must stay synchronized."
+	ui_job="$(awk '
+		/^  ui_smoke_tests:/ { inside = 1 }
+		inside && /^  [[:alnum:]_]+:/ && $1 != "ui_smoke_tests:" { exit }
+		inside { print }
+	' .github/workflows/ci.yml)"
+	if rg -q '^[[:space:]]+(matrix:|strategy:)' <<<"$ui_job"; then
+		die "PR UI smoke must use one runner and one test build."
 	fi
+	assert_match "PR UI smoke artifact must use the stable pr name." \
+		'artifact_name_suffix:[[:space:]]*pr' .github/workflows/ci.yml
+	assert_match "CI summary must name the single PR UI artifact." \
+		'Artifact: ui-smoke-pr' .github/workflows/ci.yml
+	[[ "$(rg -c -- '--only-testing VoidDisplayUITests' .github/workflows/nightly.yml)" -eq 1 ]] ||
+		die "Nightly must run the full UI target exactly once."
 }
 
 validate_release_ci_gate_timeout() {

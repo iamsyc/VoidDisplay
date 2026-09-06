@@ -190,7 +190,8 @@ fixture_bin="$FIXTURE_ROOT/bin"
 signal_root="$FIXTURE_ROOT/signal"
 signal_out="$signal_root/out"
 signal_log="$signal_root/wrapper.log"
-/bin/mkdir -p "$fixture_bin" "$signal_out"
+/bin/mkdir -p "$fixture_bin" "$signal_out/DerivedData/Build/Products"
+printf 'previous valid build\n' >"$signal_out/DerivedData/Build/Products/voiddisplay-test-products.json"
 printf '%s\n' \
 	'#!/usr/bin/env bash' \
 	'exit 0' \
@@ -208,6 +209,26 @@ printf '%s\n' \
 	>"$fixture_bin/xcodebuild"
 /bin/chmod +x "$fixture_bin/go" "$fixture_bin/xcodebuild"
 
+# A preflight failure must preserve old artifacts without claiming they were produced now.
+preflight_out="$FIXTURE_ROOT/preflight"
+mkdir -p "$preflight_out/XcodeTests.xcresult"
+printf 'old result\n' >"$preflight_out/XcodeTests.xcresult/old-result"
+printf 'old launch\n' >"$preflight_out/xcode-test-Debug.log"
+preflight_ready="$FIXTURE_ROOT/preflight.ready"
+preflight_release="$FIXTURE_ROOT/preflight.release"
+start_holder "$preflight_ready" "$preflight_release"
+assert_command_fails "Xcode ran while the UI session was busy" \
+	env "${SESSION_ENV[@]}" PATH="$fixture_bin:$PATH" \
+	DEVELOPER_DIR="$(xcode-select -p)" VOIDDISPLAY_UI_SESSION_WAIT_SECONDS=0 SIGNAL_ROOT="$signal_root" \
+	"$TOOL_ROOT/scripts/ci/xcode.sh" --action test --destination platform=macOS \
+	--only-testing VoidDisplayUITests/SignalFixture --out-dir "$preflight_out"
+stop_holder "$preflight_release"
+[[ ! -e "$signal_root/xcodebuild.pid" ]] || fail "preflight failure invoked xcodebuild"
+jq -e '.status == "failed" and .reason == "ui_session_acquire_failed" and .log_path == "" and .result_bundle == ""' \
+	"$preflight_out/xcode-summary.json" >/dev/null || fail "preflight failure published previous run artifacts"
+[[ "$(cat "$preflight_out/XcodeTests.xcresult/old-result")" == "old result" ]] || fail "preflight removed a historical result"
+[[ "$(cat "$preflight_out/xcode-test-Debug.log")" == "old launch" ]] || fail "preflight replaced a historical log"
+
 env "${SESSION_ENV[@]}" \
 	PATH="$fixture_bin:$PATH" \
 	DEVELOPER_DIR="$(xcode-select -p)" \
@@ -224,6 +245,7 @@ SIGNAL_WRAPPER_PID=$!
 wait_for_file "$signal_root/xcodebuild.pid"
 wait_for_file "$TOKEN_FILE"
 SIGNAL_CHILD_PID="$(<"$signal_root/xcodebuild.pid")"
+[[ ! -e "$signal_out/DerivedData/Build/Products/voiddisplay-test-products.json" ]] || fail "a rebuild retained the previous source manifest"
 process_is_active "$SIGNAL_CHILD_PID" || fail "xcodebuild fixture child did not remain active"
 
 /bin/kill -TERM "$SIGNAL_WRAPPER_PID"

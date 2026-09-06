@@ -28,8 +28,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
     )
     var createDisplayCommandCallCount = 0
     var createDisplayCommandSerialNumbers: [UInt32] = []
-    var applyModesCallCount = 0
-    var applyModesConfigIds: [UUID] = []
     var rebuildVirtualDisplayCallCount = 0
     var rebuildVirtualDisplayConfigIds: [UUID] = []
     var rebuildVirtualDisplayError: Error?
@@ -111,7 +109,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
 
     func restoreVirtualDisplayForStartupCommand(
         _ request: VirtualDisplayStartupRestoreCommandRequest
-    ) -> VirtualDisplayStartupRestoreCommandResult {
+    ) async -> VirtualDisplayStartupRestoreCommandResult {
         startupRestoreCommandRequests.append(request)
         if let result = startupRestoreCommandResultsByConfigID[request.configID] {
             return result
@@ -175,7 +173,7 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         physicalSize: CGSize,
         maxPixels: (width: UInt32, height: UInt32),
         modes: [ResolutionSelection]
-    ) throws -> VirtualDisplayCreateCommandResult {
+    ) async throws -> VirtualDisplayCreateCommandResult {
         createDisplayCommandCallCount += 1
         createDisplayCommandSerialNumbers.append(serialNum)
         do {
@@ -391,11 +389,6 @@ final class MockVirtualDisplayFacade: VirtualDisplayFacade {
         currentDisplayConfigs.insert(config, at: firstEnabledIndex)
         refreshCachedStartupConfigLoadResult()
         return true
-    }
-
-    func applyModes(configId: UUID, modes: [ResolutionSelection]) {
-        applyModesCallCount += 1
-        applyModesConfigIds.append(configId)
     }
 
     func rebuildVirtualDisplay(configId: UUID) async throws {

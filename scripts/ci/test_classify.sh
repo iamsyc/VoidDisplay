@@ -148,7 +148,7 @@ run_file_case ui_tests pull_request main \
 	"test_code_relevant=true ui_relevant=true requires_unit=true requires_xcode_build=true requires_ui_smoke=true" \
 	UITests/VoidDisplayUITests/FooUITests.swift
 run_file_case foundation_source pull_request main \
-	"product_code_relevant=true ui_relevant=false release_relevant=false requires_unit=true requires_xcode_build=true" \
+	"product_code_relevant=true ui_relevant=true release_relevant=false requires_ui_smoke=true requires_unit=true requires_xcode_build=true" \
 	Sources/VoidDisplayFoundation/Foo.swift
 run_file_case app_source pull_request main \
 	"product_code_relevant=true ui_relevant=true requires_ui_smoke=true requires_unit=true" \
@@ -182,3 +182,8 @@ run_classify full_scan pull_request main 000000000000000000000000000000000000000
 	requires_xcode_build=true
 
 info "Classify fixtures passed."
+
+run_file_case runtime_requires_ui pull_request main \
+	"requires_ui_smoke=true" Sources/VoidDisplayRuntime/Runtime.swift
+run_file_case test_infrastructure_requires_ui pull_request main \
+	"requires_ui_smoke=true" scripts/ci/ui_smoke.sh

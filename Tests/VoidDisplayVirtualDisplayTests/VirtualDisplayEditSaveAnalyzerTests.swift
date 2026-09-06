@@ -12,8 +12,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: nil,
             configId: UUID(),
             draft: draft,
-            existingConfigs: [],
-            isRunning: false
+            existingConfigs: []
         )
 
         guard case .failure(.configNotFound) = result else {
@@ -35,8 +34,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: original,
             configId: configId,
             draft: draft,
-            existingConfigs: existing,
-            isRunning: false
+            existingConfigs: existing
         )
 
         guard case .failure(.duplicateSerialNumber(9)) = result else {
@@ -52,8 +50,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: original,
             configId: original.id,
             draft: makeDraft(serialNum: 0),
-            existingConfigs: [original],
-            isRunning: false
+            existingConfigs: [original]
         )
         guard case .failure(.invalidSerialNumber) = invalidSerial else {
             Issue.record("Expected invalid serial")
@@ -64,8 +61,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: original,
             configId: original.id,
             draft: makeDraft(screenDiagonal: 0),
-            existingConfigs: [original],
-            isRunning: false
+            existingConfigs: [original]
         )
         guard case .failure(.invalidScreenSize) = invalidScreen else {
             Issue.record("Expected invalid screen size")
@@ -73,7 +69,7 @@ struct VirtualDisplayEditSaveAnalyzerTests {
         }
     }
 
-    @Test func analyzeReturnsApplyImmediatelyWhenRunningWithoutRebuildChange() {
+    @Test func analyzePreservesUnchangedSavedConfiguration() {
         let original = makeConfig(serial: 7)
         let draft = makeDraft(
             displayName: original.displayName,
@@ -89,21 +85,18 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: original,
             configId: original.id,
             draft: draft,
-            existingConfigs: [original],
-            isRunning: true
+            existingConfigs: [original]
         )
 
-        guard case .success(let analysis) = result else {
+        guard case .success(let updatedConfig) = result else {
             Issue.record("Expected successful analysis")
             return
         }
 
-        #expect(analysis.requiresSaveAndRebuild == false)
-        #expect(analysis.shouldApplyModesImmediately)
-        #expect(analysis.updatedConfig.serialNum == original.serialNum)
+        #expect(updatedConfig == original)
     }
 
-    @Test func analyzeRequiresRebuildWhenMaxPixelsIncrease() {
+    @Test func analyzeIncludesLargerHiDPIModesInSavedConfiguration() {
         let original = makeConfig(
             modes: [
                 .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)
@@ -119,18 +112,15 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: original,
             configId: original.id,
             draft: draft,
-            existingConfigs: [original],
-            isRunning: true
+            existingConfigs: [original]
         )
 
-        guard case .success(let analysis) = result else {
+        guard case .success(let updatedConfig) = result else {
             Issue.record("Expected successful analysis")
             return
         }
 
-        #expect(analysis.requiresSaveAndRebuild)
-        #expect(analysis.shouldApplyModesImmediately == false)
-        #expect(analysis.updatedConfig.maxPixelDimensions.width == 5120)
+        #expect(updatedConfig.maxPixelDimensions.width == 5120)
     }
 
     @Test func analyzeUpdatesPhysicalSizeWhenInputChanges() {
@@ -146,17 +136,16 @@ struct VirtualDisplayEditSaveAnalyzerTests {
             original: original,
             configId: original.id,
             draft: draft,
-            existingConfigs: [original],
-            isRunning: false
+            existingConfigs: [original]
         )
 
-        guard case .success(let analysis) = result else {
+        guard case .success(let updatedConfig) = result else {
             Issue.record("Expected successful analysis")
             return
         }
 
-        #expect(analysis.updatedConfig.physicalWidth != original.physicalWidth)
-        #expect(analysis.updatedConfig.physicalHeight != original.physicalHeight)
+        #expect(updatedConfig.physicalWidth != original.physicalWidth)
+        #expect(updatedConfig.physicalHeight != original.physicalHeight)
     }
 
     @Test func inferPhysicalInputsAndDisplayedPhysicalSizeFollowDraftChanges() {

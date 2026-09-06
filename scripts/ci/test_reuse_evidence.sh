@@ -29,6 +29,17 @@ project="VoidDisplay.xcodeproj"
 scheme="VoidDisplay"
 configuration="Debug"
 destination="platform=macOS,arch=arm64"
+product_binaries=(
+	"VoidDisplay.app/Contents/MacOS/VoidDisplay"
+	"VoidDisplay.app/Contents/MacOS/VoidDisplayHost"
+	"VoidDisplayUITests-Runner.app/Contents/MacOS/VoidDisplayUITests-Runner"
+	"VoidDisplayUITests-Runner.app/Contents/PlugIns/VoidDisplayUITests.xctest/Contents/MacOS/VoidDisplayUITests"
+)
+for binary in "${product_binaries[@]}"; do
+	mkdir -p "$products_path/$configuration/${binary%/*}"
+	printf 'fixture executable\n' >"$products_path/$configuration/$binary"
+	chmod +x "$products_path/$configuration/$binary"
+done
 mkdir -p "$root_dir"
 printf 'fixture xctestrun\n' >"$xctestrun_path"
 write_json_file "$manifest_path" \
@@ -53,6 +64,13 @@ products_args=(
 )
 xcode_test_products_exist "${products_args[@]}" ||
 	die "Xcode product probe rejected matching build provenance."
+for binary in "${product_binaries[@]}"; do
+	mv "$products_path/$configuration/$binary" "$fixture_root/saved-binary"
+	if xcode_test_products_exist "${products_args[@]}"; then
+		die "Xcode product probe accepted a missing executable: $binary"
+	fi
+	mv "$fixture_root/saved-binary" "$products_path/$configuration/$binary"
+done
 if xcode_test_products_exist \
 	"$derived_data" Release "$destination" "$source_fingerprint" "$xcode_identity" "$root_dir" "$project" "$scheme"; then
 	die "Xcode product probe accepted the wrong configuration."
@@ -85,7 +103,7 @@ jq -n '{result: "Passed", totalTestCount: 3, passedTests: 3, skippedTests: 0, fa
 jq -n '{result: "Passed", totalTestCount: 0, passedTests: 0, skippedTests: 0, failedTests: 0}' >"$fixture_root/zero.json"
 jq -n '{result: "Failed", totalTestCount: 3, passedTests: 2, skippedTests: 0, failedTests: 1}' >"$fixture_root/failed.json"
 jq -n '{result: "Passed", totalTestCount: 3, passedTests: 0, skippedTests: 3, failedTests: 0}' >"$fixture_root/all-skipped.json"
-jq -n '{testNodes: [{nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"}]}' >"$fixture_root/tests.json"
+jq -n '{testNodes: [{nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests"}, {nodeIdentifierURL: "test://com.apple.xcode/VoidDisplay/VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"}]}' >"$fixture_root/tests.json"
 
 valid_evidence="$(
 	PATH="$fixture_bin:$PATH" XCRESULT_FIXTURE_ROOT="$fixture_root" XCRESULT_FIXTURE_MODE=valid \
@@ -93,7 +111,7 @@ valid_evidence="$(
 		"$result_bundle" \
 		"VoidDisplayUITests" \
 		"VoidDisplayUITests/HomeSmokeTests" \
-		"VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"
+		"VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"
 )" ||
 	die "xcresult evidence probe rejected a passing result."
 jq -e \
@@ -105,7 +123,7 @@ jq -e \
 	and .requested_selectors == [
 		"VoidDisplayUITests",
 		"VoidDisplayUITests/HomeSmokeTests",
-		"VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline"
+		"VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney"
 	]' \
 	<<<"$valid_evidence" >/dev/null ||
 	die "xcresult evidence probe returned unexpected normalized evidence."
@@ -128,7 +146,7 @@ fi
 if PATH="$fixture_bin:$PATH" XCRESULT_FIXTURE_ROOT="$fixture_root" \
 	xcresult_test_evidence_valid \
 	"$result_bundle" \
-	"VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline" \
+	"VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney" \
 	"VoidDisplayUITests/HomeSmokeTests/testSelectorThatDoesNotExist"; then
 	die "xcresult selector probe accepted one valid selector plus one missing selector."
 fi

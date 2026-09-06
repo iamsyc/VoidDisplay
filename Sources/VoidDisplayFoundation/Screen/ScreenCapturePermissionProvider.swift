@@ -28,7 +28,8 @@ package struct UITestScreenCapturePermissionProvider: ScreenCapturePermissionPro
              .diagnosticsTransactionTimeline,
              .previewActive,
              .previewRecovery,
-             .previewWindowPayload:
+             .previewWindowPayload,
+             .menuBarQuickActions:
             return true
         case .permissionDenied:
             return false

@@ -6,8 +6,10 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testHomeNavigationSmoke_baseline() throws {
-        let app = launchAppForSmoke()
+    func testHomeCoreJourney() throws {
+        let app = launchAppForSmoke(advanceFocus: true)
+
+        assertFirstFocusIsVisible(app)
 
         assertAllExist(
             app,
@@ -38,48 +40,17 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["home_header_screen_recording_permission_status"].exists)
 
         tapIdentifier(app, identifier: "sidebar_diagnostics")
-        assertAllExist(
-            app,
-            identifiers: [
-                "detail_diagnostics",
-                "diagnostics_intro_text",
-                "diagnostics_health_summary_panel",
-                "diagnostics_refresh_button",
-                "support_bundle_export_button",
-                "support_bundle_draft_panel",
-                "support_bundle_contents_summary",
-                "support_bundle_local_storage_notice",
-                "diagnostics_technical_disclosure"
-            ],
-            timeout: 3
-        )
+        assertExists(app, identifier: "detail_diagnostics", timeout: 3)
         assertHomePageActionsAreAbsent(app)
-
-        let healthPanel = smokeElement(app, identifier: "diagnostics_health_summary_panel")
-        let draftPanel = smokeElement(app, identifier: "support_bundle_draft_panel")
-        let technicalDisclosure = smokeElement(app, identifier: "diagnostics_technical_disclosure")
-        let reproductionField = smokeElement(app, identifier: "support_bundle_reproduction_field")
-        let expectedField = smokeElement(app, identifier: "support_bundle_expected_field")
-        XCTAssertTrue(
-            waitForCondition(timeout: 6) {
-                healthPanel.frame.minY < draftPanel.frame.minY &&
-                    draftPanel.frame.minY < technicalDisclosure.frame.minY &&
-                    abs(reproductionField.frame.minY - expectedField.frame.minY) <= 2
-            },
-            "Diagnostics layout did not settle after navigation."
-        )
-        XCTAssertLessThan(healthPanel.frame.minY, draftPanel.frame.minY)
-        XCTAssertLessThan(draftPanel.frame.minY, technicalDisclosure.frame.minY)
-        XCTAssertEqual(reproductionField.frame.minY, expectedField.frame.minY, accuracy: 2)
-        XCTAssertTrue(app.switches["support_bundle_include_log_toggle"].exists)
-        XCTAssertTrue(app.switches["support_bundle_include_crash_toggle"].exists)
-        XCTAssertTrue(app.switches["support_bundle_include_configs_toggle"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_copy_summary_button"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reveal_button"].exists)
 
         tapIdentifier(app, identifier: "sidebar_home")
         assertAllExist(app, identifiers: ["detail_home", "home_virtual_display_list_row"], timeout: 1.5)
         assertHomePageActionsAreInToolbar(app)
+
+        performSmokeStep("Display list and sharing controls") { assertVirtualDisplayListSurface(app) }
+        performSmokeStep("Popover dismissal and sidebar focus") { assertSharingPopoverDismissalJourney(app) }
+        resizeWindow(app.windows.firstMatch, to: CGSize(width: 760, height: 640))
+        assertListActionsRemainVisibleAcrossNarrowWindowSizes(app)
     }
 
     @MainActor
@@ -114,13 +85,21 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testDisplayRescanExplainsPurposeAndReportsResult() throws {
+    func testDisplayRescanJourney() throws {
         let app = launchAppForSmoke(
-            windowSize: (600, 640),
-            scenario: "display_catalog_loading"
+            scenario: "display_catalog_loading_missing_managed_display"
         )
+
+        performSmokeStep("Inline rescan preserves control geometry") { assertDisplayRescanControlsRemainStableWhileScanning(app) }
+        performSmokeStep("Toolbar rescan reports completion") { assertDisplayRescanExplainsPurposeAndReportsResult(app) }
+        try performSmokeStep("Rescan feedback remains visible after scrolling") { try assertDisplayRescanFeedbackRemainsVisibleAfterScrolling(app) }
+    }
+
+    @MainActor
+    private func assertDisplayRescanExplainsPurposeAndReportsResult(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
+        resizeWindow(window, to: CGSize(width: 600, height: 640))
         let rescanButton = assertExists(
             app,
             identifier: "home_rescan_displays_button",
@@ -214,11 +193,10 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testDisplayRescanControlsRemainStableWhileScanning() throws {
-        let app = launchAppForSmoke(
-            windowSize: (1180, 720),
-            scenario: "display_catalog_loading_missing_managed_display"
-        )
+    private func assertDisplayRescanControlsRemainStableWhileScanning(_ app: XCUIApplication) {
+        let window = app.windows.firstMatch
+        XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
+        resizeWindow(window, to: CGSize(width: 1180, height: 720))
         let toolbarRescanIdentifier = "home_rescan_displays_button"
         let inlineRescanIdentifier = "home_virtual_display_rescan_button"
         let toolbarRescanButton = assertExists(
@@ -327,13 +305,10 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testDisplayRescanFeedbackRemainsVisibleAfterScrolling() throws {
-        let app = launchAppForSmoke(
-            windowSize: (600, 300),
-            scenario: "display_catalog_loading"
-        )
+    private func assertDisplayRescanFeedbackRemainsVisibleAfterScrolling(_ app: XCUIApplication) throws {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
+        resizeWindow(window, to: CGSize(width: 600, height: 300))
         let rescanButton = assertExists(
             app,
             identifier: "home_rescan_displays_button",
@@ -377,9 +352,7 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testVirtualDisplayListSurfaceSmoke_baseline() throws {
-        let app = launchAppForSmoke()
-
+    private func assertVirtualDisplayListSurface(_ app: XCUIApplication) {
         assertAllExist(
             app,
             identifiers: [
@@ -425,11 +398,14 @@ final class HomeSmokeTests: XCTestCase {
             ],
             timeout: 2
         )
+        tapIdentifier(app, identifier: "home_sharing_settings_popover_button")
+        XCTAssertTrue(
+            waitForAbsence(smokeElement(app, identifier: "home_sharing_settings_panel"), timeout: 1)
+        )
     }
 
     @MainActor
-    func testListActionsRemainVisibleAcrossNarrowWindowSizes() throws {
-        let app = launchAppForSmoke(windowSize: (760, 640))
+    private func assertListActionsRemainVisibleAcrossNarrowWindowSizes(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
         assertSelectedSidebarHasKeyboardFocus(app)
@@ -460,245 +436,7 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testDiagnosticsRecoveredHistoricalWarningRemainsHealthy() throws {
-        let app = launchAppForSmoke(scenario: "diagnostics_recovered_warning")
-        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
-
-        let statusTitle = assertExists(
-            app,
-            identifier: "diagnostics_health_status_title",
-            timeout: 6
-        )
-        let healthyStatusTitles = ["Looks Good", "状态正常"]
-        let statusIsHealthy = waitForCondition(timeout: 6) {
-            healthyStatusTitles.contains(statusTitle.value as? String ?? statusTitle.label)
-        }
-        let statusText = statusTitle.value as? String ?? statusTitle.label
-
-        XCTAssertTrue(
-            statusIsHealthy,
-            "Recovered historical warning still appears unhealthy: \(statusText)"
-        )
-
-        let scrollView = try expandDiagnosticsTechnicalInformation(app)
-        let warningTag = app.staticTexts
-            .matching(identifier: "diagnostics_event_severity_warning")
-            .firstMatch
-        for _ in 0..<8 where warningTag.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        XCTAssertTrue(
-            waitForExistenceIfNeeded(warningTag, timeout: 5),
-            "Recovered warning scenario did not inject warning evidence."
-        )
-        XCTAssertTrue(warningTag.isHittable)
-    }
-
-    @MainActor
-    func testDiagnosticsRecentEventsAndTransactionTimeline() throws {
-        let app = launchAppForSmoke(scenario: "diagnostics_transaction_timeline")
-        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
-
-        let scrollView = try expandDiagnosticsTechnicalInformation(app)
-        let severityTag = app.staticTexts
-            .matching(identifier: "diagnostics_event_severity_info")
-            .firstMatch
-        for _ in 0..<8 where severityTag.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        assertExists(
-            app,
-            identifier: "diagnostics_recent_events",
-            timeout: 5
-        )
-        XCTAssertTrue(waitForExistenceIfNeeded(severityTag, timeout: 5))
-        XCTAssertTrue(severityTag.isHittable)
-        XCTAssertTrue(
-            ["Info", "信息"].contains(severityTag.value as? String ?? ""),
-            "Unexpected severity text: \(String(describing: severityTag.value))"
-        )
-
-        let transactionDetails = app.descendants(matching: .any)
-            .matching(identifier: "diagnostics_transaction_details")
-            .firstMatch
-        for _ in 0..<10 where transactionDetails.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        XCTAssertTrue(waitForExistenceIfNeeded(transactionDetails, timeout: 5))
-        XCTAssertTrue(transactionDetails.isHittable)
-        transactionDetails.click()
-        XCTAssertTrue(
-            ["Expanded", "已展开"].contains(transactionDetails.value as? String ?? ""),
-            "Details button does not expose its expanded state."
-        )
-
-        let phaseQuery = app.descendants(matching: .any)
-            .matching(identifier: "diagnostics_transaction_phase")
-        let phase = phaseQuery.firstMatch
-        for _ in 0..<8 where phase.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -240)
-        }
-        let timestampQuery = app.descendants(matching: .any)
-            .matching(identifier: "diagnostics_event_timestamp_milliseconds")
-        let eventIDQuery = app.descendants(matching: .any)
-            .matching(identifier: "diagnostics_event_id")
-        let transactionID = app.descendants(matching: .any)
-            .matching(identifier: "diagnostics_transaction_id")
-            .firstMatch
-
-        XCTAssertTrue(waitForExistenceIfNeeded(phase, timeout: 5))
-        XCTAssertTrue(waitForExistenceIfNeeded(transactionID, timeout: 5))
-        XCTAssertEqual(
-            transactionID.value as? String,
-            "00000000-0000-0000-0000-00000000D1A6"
-        )
-
-        let phases = phaseQuery.allElementsBoundByIndex
-        let timestamps = timestampQuery.allElementsBoundByIndex
-        let eventIDs = eventIDQuery.allElementsBoundByIndex
-        XCTAssertGreaterThanOrEqual(phases.count, 2)
-        XCTAssertGreaterThanOrEqual(timestamps.count, 2)
-        XCTAssertGreaterThanOrEqual(eventIDs.count, 2)
-        let phaseValues = phases.prefix(2).map { $0.value as? String ?? "" }
-        XCTAssertTrue(
-            phaseValues.allSatisfy { $0.isEmpty == false },
-            "Timeline phase labels are empty: \(phaseValues)"
-        )
-        XCTAssertLessThan(phases[0].frame.minY, phases[1].frame.minY)
-        for timestamp in timestamps.prefix(2) {
-            let timestampText = timestamp.value as? String ?? ""
-            XCTAssertNotNil(
-                timestampText.range(
-                    of: #"\d{1,2}:\d{2}:\d{2}[\.,]\d{3}"#,
-                    options: .regularExpression
-                ),
-                "Timestamp does not include milliseconds: \(timestampText)"
-            )
-        }
-        for eventID in eventIDs.prefix(2) {
-            XCTAssertNotNil(UUID(uuidString: eventID.value as? String ?? ""))
-        }
-
-        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        screenshot.name = "Diagnostics transaction timeline"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
-    }
-
-    @MainActor
-    func testDiagnosticsActionsRemainVisibleAtNarrowWindowSize() throws {
-        let app = launchAppForSmoke(windowSize: (760, 640))
-        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
-        let reproductionField = smokeElement(app, identifier: "support_bundle_reproduction_field")
-        let expectedField = smokeElement(app, identifier: "support_bundle_expected_field")
-        XCTAssertTrue(
-            waitForCondition(timeout: 6) {
-                reproductionField.exists &&
-                    expectedField.exists &&
-                    reproductionField.frame.maxY < expectedField.frame.minY
-            },
-            "Diagnostics fields did not settle into narrow-window vertical order."
-        )
-        _ = try expandDiagnosticsTechnicalInformation(app)
-
-        let window = app.windows.firstMatch
-        let openDirectoryButton = assertExists(
-            app,
-            identifier: "diagnostics_open_data_directory_button",
-            timeout: 5
-        )
-        XCTAssertTrue(
-            window.frame.contains(openDirectoryButton.frame),
-            "Open directory button \(openDirectoryButton.frame) is outside window \(window.frame)"
-        )
-    }
-
-    @MainActor
-    func testDiagnosticsEmptyExportFocusesVisibleValidation() throws {
-        let app = launchAppForSmoke(windowSize: (760, 640))
-        tapIdentifier(app, identifier: "sidebar_diagnostics", timeout: 6)
-        let exportButton = assertExists(app, identifier: "support_bundle_export_button", timeout: 3)
-        let scrollView = try XCTUnwrap(
-            app.scrollViews.allElementsBoundByIndex.max { lhs, rhs in
-                lhs.frame.width < rhs.frame.width
-            }
-        )
-        for _ in 0..<5 where exportButton.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        XCTAssertTrue(exportButton.isHittable)
-
-        exportButton.click()
-
-        let validation = assertExists(app, identifier: "support_bundle_validation_message", timeout: 3)
-        let happenedField = assertExists(app, identifier: "support_bundle_happened_field", timeout: 3)
-        let window = app.windows.firstMatch
-        let validationIsVisible = {
-            window.frame.contains(validation.frame) && happenedField.isHittable
-        }
-        XCTAssertTrue(
-            waitForCondition(timeout: 3, validationIsVisible),
-            "Validation feedback did not settle into the visible window."
-        )
-        XCTAssertTrue(window.frame.contains(validation.frame))
-        XCTAssertTrue(happenedField.isHittable)
-        let focusedControl = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(focusedControl, timeout: 2))
-        XCTAssertEqual(focusedControl.identifier, "support_bundle_happened_field")
-
-        for _ in 0..<5 where exportButton.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        XCTAssertTrue(exportButton.isHittable)
-
-        exportButton.click()
-
-        XCTAssertTrue(waitForExistenceIfNeeded(validation, timeout: 3))
-        XCTAssertTrue(
-            waitForCondition(timeout: 3, validationIsVisible),
-            "Repeated validation feedback did not settle into the visible window."
-        )
-        XCTAssertTrue(window.frame.contains(validation.frame))
-        let refocusedControl = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(refocusedControl, timeout: 2))
-        XCTAssertEqual(refocusedControl.identifier, "support_bundle_happened_field")
-    }
-
-    @MainActor
-    func testCreateAndEditSheetsOpenAndCancel() throws {
-        let app = launchAppForSmoke()
-
-        tapIdentifier(app, identifier: "home_add_virtual_display_button", timeout: 6)
-        assertAllExist(
-            app,
-            identifiers: ["virtual_display_create_form", "virtual_display_create_cancel_button"],
-            timeout: 3
-        )
-        assertSingleFormLabel(app, english: "Screen Size", chinese: "屏幕尺寸")
-        tapIdentifier(app, identifier: "virtual_display_create_custom_serial_toggle")
-        assertSingleFormLabel(app, english: "Serial Number", chinese: "序列号")
-        tapIdentifier(app, identifier: "virtual_display_create_cancel_button")
-        XCTAssertFalse(smokeElement(app, identifier: "virtual_display_create_form").waitForExistence(timeout: 1))
-
-        tapIdentifier(app, identifier: "virtual_display_edit_button", timeout: 3)
-        assertAllExist(
-            app,
-            identifiers: ["edit_virtual_display_form", "virtual_display_edit_cancel_button"],
-            timeout: 3
-        )
-        assertSingleFormLabel(app, english: "Screen Size", chinese: "屏幕尺寸")
-        assertSingleFormLabel(app, english: "Serial Number", chinese: "序列号")
-        tapIdentifier(app, identifier: "virtual_display_edit_cancel_button")
-        XCTAssertFalse(smokeElement(app, identifier: "edit_virtual_display_form").waitForExistence(timeout: 1))
-    }
-
-    @MainActor
-    func testFirstTabFocusesAVisibleControl() throws {
-        let app = launchAppForSmoke(windowSize: (760, 640), advanceFocus: true)
+    private func assertFirstFocusIsVisible(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
 
@@ -712,8 +450,7 @@ final class HomeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testDismissingSharingSettingsByClickingToolbarBlankClosesPopover() throws {
-        let app = launchAppForSmoke()
+    private func assertSharingPopoverDismissalJourney(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
         let toolbar = app.toolbars.firstMatch
@@ -749,8 +486,8 @@ final class HomeSmokeTests: XCTestCase {
 
         toolbar.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).click()
 
-        XCTAssertFalse(
-            sharingSettingsPanel.waitForExistence(timeout: 1),
+        XCTAssertTrue(
+            waitForAbsence(sharingSettingsPanel, timeout: 1),
             "Clicking the toolbar background should dismiss Sharing Settings."
         )
         assertSelectedSidebarHasKeyboardFocus(app)
@@ -759,8 +496,8 @@ final class HomeSmokeTests: XCTestCase {
         XCTAssertTrue(waitForExistenceIfNeeded(sidebar, timeout: 1))
 
         systemSidebarToggle.click()
-        XCTAssertFalse(
-            sidebar.waitForExistence(timeout: 1),
+        XCTAssertTrue(
+            waitForAbsence(sidebar, timeout: 1),
             "The system sidebar toggle should still collapse the sidebar after dismissing the popover."
         )
 
@@ -771,12 +508,12 @@ final class HomeSmokeTests: XCTestCase {
             timeout: 2
         )
         toolbar.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).click()
-        XCTAssertFalse(
-            collapsedSidebarPanel.waitForExistence(timeout: 1),
+        XCTAssertTrue(
+            waitForAbsence(collapsedSidebarPanel, timeout: 1),
             "Clicking the toolbar background should dismiss Sharing Settings with the sidebar collapsed."
         )
-        XCTAssertFalse(
-            sidebar.waitForExistence(timeout: 1),
+        XCTAssertTrue(
+            waitForAbsence(sidebar, timeout: 1),
             "Dismissing Sharing Settings must not restore a collapsed sidebar."
         )
 
@@ -785,262 +522,5 @@ final class HomeSmokeTests: XCTestCase {
             waitForExistenceIfNeeded(sidebar, timeout: 2),
             "The system sidebar toggle should restore the sidebar."
         )
-    }
-
-    @MainActor
-    func testPreviewRecoveryRetryShowsRestartingState() throws {
-        let app = launchAppForSmoke(scenario: "preview_recovery")
-        assertAllExist(
-            app,
-            identifiers: [
-                "capture_preview_failed_state",
-                "capture_preview_retry_button",
-                "capture_preview_close_button"
-            ],
-            timeout: 6
-        )
-
-        tapIdentifier(app, identifier: "capture_preview_retry_button")
-
-        assertExists(app, identifier: "capture_preview_restarting_state", timeout: 2)
-    }
-
-    @MainActor
-    func testPreviewRecoveryCloseReleasesWindowState() throws {
-        let app = launchAppForSmoke(scenario: "preview_recovery")
-        tapIdentifier(app, identifier: "capture_preview_close_button", timeout: 6)
-
-        assertExists(app, identifier: "capture_preview_closed_state", timeout: 2)
-    }
-
-    @MainActor
-    func testPreviewWindowWaitsForIdentityWithoutClosing() throws {
-        let app = launchAppForSmoke(scenario: "preview_window_payload")
-        let window = app.windows.firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
-
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-
-        XCTAssertTrue(window.exists)
-        let waitingContent = app.descendants(matching: .any)
-            .matching(identifier: "capture_preview_waiting_for_identity")
-            .matching(NSPredicate(format: "label == %@ OR label == %@", "Preview", "预览"))
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(waitingContent, timeout: 2))
-    }
-
-    @MainActor
-    func testPreviewActiveWindowUsesDisplayIdentityAndToolbar() throws {
-        let app = launchAppForSmoke(scenario: "preview_active")
-        let window = app.windows.firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
-
-        let picker = assertExists(app, identifier: "capture_preview_scale_mode_picker", timeout: 3)
-        let cursorToggle = assertExists(app, identifier: "capture_preview_cursor_toggle", timeout: 3)
-        XCTAssertTrue(picker.isHittable)
-        XCTAssertTrue(cursorToggle.isHittable)
-
-        let previewContent = app.descendants(matching: .any)
-            .matching(identifier: "capture_preview_content")
-            .matching(
-                NSPredicate(
-                    format: "label CONTAINS %@ AND label CONTAINS %@",
-                    "Studio Display",
-                    "2560 × 1440"
-                )
-            )
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(previewContent, timeout: 3))
-        XCTAssertTrue(previewContent.label.contains("Studio Display"))
-        XCTAssertTrue(previewContent.label.contains("2560 × 1440"))
-        XCTAssertTrue(["Preview", "预览"].contains { previewContent.label.contains($0) })
-
-        let nativeScale = picker.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", "1:1"))
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(nativeScale, timeout: 2))
-        nativeScale.click()
-        XCTAssertEqual(picker.value as? String, "1:1")
-
-        cursorToggle.click()
-        XCTAssertEqual((cursorToggle.value as? NSNumber)?.boolValue, true)
-
-        let closeButton = window.buttons[XCUIIdentifierCloseWindow]
-        XCTAssertTrue(waitForExistenceIfNeeded(closeButton, timeout: 2))
-        closeButton.click()
-        XCTAssertFalse(window.waitForExistence(timeout: 3))
-
-        app.activate()
-        let englishNewWindowItem = app.menuItems["New Window"]
-        let localizedNewWindowItem = app.menuItems["新建窗口"]
-        let newWindowItem = waitForExistenceIfNeeded(englishNewWindowItem, timeout: 2)
-            ? englishNewWindowItem
-            : localizedNewWindowItem
-        XCTAssertTrue(waitForExistenceIfNeeded(newWindowItem, timeout: 2))
-        newWindowItem.click()
-        assertAllExist(
-            app,
-            identifiers: ["detail_home", "home_virtual_display_preview_toggle"],
-            timeout: 4
-        )
-        let previewToggle = app.switches
-            .matching(identifier: "home_virtual_display_preview_toggle")
-            .firstMatch
-        XCTAssertEqual((previewToggle.value as? NSNumber)?.boolValue, false)
-    }
-
-    @MainActor
-    private func assertHomePageActionsAreInToolbar(
-        _ app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let toolbar = app.toolbars.firstMatch
-        XCTAssertTrue(
-            waitForExistenceIfNeeded(toolbar, timeout: 2),
-            "Missing window toolbar",
-            file: file,
-            line: line
-        )
-
-        XCTAssertTrue(
-            waitForCondition(timeout: 6) {
-                homePageActionIdentifiers.allSatisfy { identifier in
-                    toolbar.descendants(matching: .any)
-                        .matching(identifier: identifier)
-                        .firstMatch
-                        .exists
-                }
-            },
-            "Home page actions did not finish entering the toolbar.",
-            file: file,
-            line: line
-        )
-
-        for identifier in homePageActionIdentifiers {
-            let element = toolbar.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-            XCTAssertTrue(
-                element.exists,
-                "Page action is outside the toolbar: \(identifier)",
-                file: file,
-                line: line
-            )
-        }
-    }
-
-    @MainActor
-    private func assertHomePageActionsAreAbsent(
-        _ app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        for identifier in homePageActionIdentifiers {
-            let element = app.descendants(matching: .any)
-                .matching(identifier: identifier)
-                .firstMatch
-            XCTAssertFalse(
-                element.waitForExistence(timeout: 0.5),
-                "Home page action remained visible outside Home: \(identifier)",
-                file: file,
-                line: line
-            )
-        }
-    }
-
-    private var homePageActionIdentifiers: [String] {
-        [
-            "home_rescan_displays_button",
-            "home_sharing_settings_popover_button",
-            "home_add_virtual_display_button"
-        ]
-    }
-
-    @MainActor
-    private func assertSelectedSidebarHasKeyboardFocus(
-        _ app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        assertExists(
-            app,
-            identifier: "sidebar_home",
-            timeout: 2,
-            file: file,
-            line: line
-        )
-        assertExists(
-            app,
-            identifier: "detail_home",
-            timeout: 2,
-            file: file,
-            line: line
-        )
-
-        let focusedSidebar = app.outlines
-            .matching(identifier: "home_sidebar")
-            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
-            .firstMatch
-        XCTAssertTrue(
-            waitForExistenceIfNeeded(focusedSidebar, timeout: 2),
-            "Selected sidebar did not receive keyboard focus.",
-            file: file,
-            line: line
-        )
-    }
-
-    @MainActor
-    private func expandDiagnosticsTechnicalInformation(
-        _ app: XCUIApplication
-    ) throws -> XCUIElement {
-        let disclosure = app.descendants(matching: .disclosureTriangle)
-            .matching(identifier: "diagnostics_technical_disclosure")
-            .firstMatch
-        XCTAssertTrue(
-            waitForExistenceIfNeeded(disclosure, timeout: 3),
-            "Missing diagnostics technical information disclosure."
-        )
-        let scrollView = try XCTUnwrap(
-            app.scrollViews.allElementsBoundByIndex.max { lhs, rhs in
-                lhs.frame.width < rhs.frame.width
-            }
-        )
-        for _ in 0..<4 where disclosure.isHittable == false {
-            scrollView.scroll(byDeltaX: 0, deltaY: -320)
-        }
-        XCTAssertTrue(disclosure.isHittable)
-        let expandedContent = smokeElement(
-            app,
-            identifier: "diagnostics_open_data_directory_button"
-        )
-        if expandedContent.exists == false {
-            let indicatorOffset = min(24, disclosure.frame.width / 2)
-            disclosure.coordinate(
-                withNormalizedOffset: CGVector(
-                    dx: indicatorOffset / disclosure.frame.width,
-                    dy: 0.5
-                )
-            ).click()
-        }
-        XCTAssertTrue(
-            waitForExistenceIfNeeded(expandedContent, timeout: 5),
-            "Diagnostics technical information did not finish expanding."
-        )
-        return scrollView
-    }
-
-    @MainActor
-    private func assertSingleFormLabel(
-        _ app: XCUIApplication,
-        english: String,
-        chinese: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let labels = app.staticTexts.matching(
-            NSPredicate(format: "value == %@ OR value == %@", english, chinese)
-        )
-        XCTAssertEqual(labels.count, 1, "Duplicate form label: \(english)", file: file, line: line)
     }
 }

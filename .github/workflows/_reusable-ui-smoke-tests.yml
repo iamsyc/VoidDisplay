@@ -7,7 +7,7 @@ on:
         description: Single xcodebuild -only-testing target used when only_testing_json is empty.
         required: false
         type: string
-        default: VoidDisplayUITests/HomeSmokeTests/testHomeNavigationSmoke_baseline
+        default: VoidDisplayUITests/HomeSmokeTests/testHomeCoreJourney
       only_testing_json:
         description: JSON array of xcodebuild -only-testing targets executed together on one runner.
         required: false
@@ -78,11 +78,13 @@ jobs:
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile ui-smoke
 
-      - name: Cache Xcode module metadata
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: .ai-tmp/ci-ui-smoke/DerivedData/ModuleCache.noindex
-          key: xcode-meta-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
+      - name: Prepare UI desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$GITHUB_WORKSPACE"
+          mkdir -p "$tool_root/.ai-tmp/ui-display/ModuleCache"
+          ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" xcrun swift -swift-version 6 -module-cache-path "$tool_root/.ai-tmp/ui-display/ModuleCache" "$tool_root/scripts/dev/prepare_ui_display.swift"
 
       - name: Run UI smoke
         id: run_ui
@@ -93,6 +95,7 @@ jobs:
           UI_SELECTORS_JSON: ${{ inputs.only_testing_json }}
           MAX_ATTEMPTS: ${{ inputs.max_attempts }}
           ENFORCE_FAILURE: ${{ inputs.enforce_failure }}
+          UI_TEST_EVIDENCE_ROOT: ${{ github.workspace }}/.ai-tmp/ci-ui-smoke/evidence
         run: |
           set -euo pipefail
           tool_root="$GITHUB_WORKSPACE"

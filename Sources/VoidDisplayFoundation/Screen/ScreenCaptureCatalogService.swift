@@ -331,7 +331,6 @@ package final class ScreenCaptureCatalogService {
         intent: ScreenCaptureCatalogRefreshIntent
     ) async -> ScreenCaptureCatalogRefreshResult {
         var staleCommitRetryCount = 0
-        var clearedSnapshotForCurrentRequest = false
 
         while true {
             let permissionGranted = refreshPermission()
@@ -368,15 +367,10 @@ package final class ScreenCaptureCatalogService {
                 case .retry:
                     continue
                 }
-            case .execute(let loadID, let clearsSnapshotFirst):
+            case .execute(let loadID):
                 store.isLoadingDisplays = true
                 store.loadErrorMessage = nil
                 store.lastLoadError = nil
-                if clearsSnapshotFirst, !clearedSnapshotForCurrentRequest {
-                    store.displays = nil
-                    clearedSnapshotForCurrentRequest = true
-                }
-
                 let execution = await coordinator.executeLoad(loadID: loadID)
                 switch resolveCommit(
                     execution: execution,
@@ -557,7 +551,7 @@ package actor CatalogRefreshCoordinator {
         let hasCachedDisplays: Bool
     }
     package enum PrepareResult: Sendable, Equatable {
-        case execute(loadID: UInt64, clearsSnapshotFirst: Bool)
+        case execute(loadID: UInt64)
         case awaitInFlight(loadID: UInt64)
         case reusedSnapshot
         case clearedSnapshot
@@ -622,7 +616,7 @@ package actor CatalogRefreshCoordinator {
         let loadID = nextLoadID
         activeLoadID = loadID
         startLoad(loadID: loadID)
-        return .execute(loadID: loadID, clearsSnapshotFirst: !request.hasCachedDisplays)
+        return .execute(loadID: loadID)
     }
 
     package func executeLoad(loadID: UInt64) async -> ExecutionResult {

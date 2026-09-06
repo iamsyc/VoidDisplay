@@ -112,7 +112,7 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
         request: DisplayRuntimeVirtualDisplayCreateRequest
     ) async throws -> DisplayRuntimeVirtualDisplayCreateCommandResult {
         do {
-            let result = try commandFacade.createDisplayCommand(
+            let result = try await commandFacade.createDisplayCommand(
                 name: request.displayName,
                 serialNum: request.serialNumber,
                 physicalSize: CGSize(
@@ -173,7 +173,7 @@ package final class DisplayRuntimeVirtualDisplayAdapter: DisplayRuntimeVirtualDi
         request: DisplayRuntimeStartupRestoreCommandRequest
     ) async throws -> DisplayRuntimeStartupRestoreCommandResult {
         let lowerRequest = VirtualDisplayStartupRestoreCommandRequest(runtimeRequest: request)
-        let result = commandFacade.restoreVirtualDisplayForStartupCommand(lowerRequest)
+        let result = await commandFacade.restoreVirtualDisplayForStartupCommand(lowerRequest)
         return DisplayRuntimeStartupRestoreCommandResult(
             runtimeRequest: request,
             lowerResult: result

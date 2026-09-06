@@ -25,6 +25,7 @@
         let state = "idle";
 
         function transition(nextState) {
+            if (terminalStop && nextState !== "closed") return;
             state = nextState;
         }
 
@@ -66,10 +67,35 @@
             reconnectIndex += 1;
             ui.setProgressOverlay(overlayTitle, overlayBody);
             transition("handshaking");
-            reconnectTimer = windowObject.setTimeout(() => {
+            reconnectTimer = windowObject.setTimeout(async () => {
                 reconnectTimer = null;
-                connect();
+                await reconnect();
             }, delay);
+        }
+
+        async function reconnect() {
+            if (terminalStop) return;
+            try {
+                // WebSocket errors do not expose the HTTP status of a rejected upgrade.
+                // Reuse the protected page route to distinguish revocation from network loss.
+                const response = await windowObject.fetch(windowObject.location.pathname, {
+                    cache: "no-store",
+                    signal: windowObject.AbortSignal.timeout(5000)
+                });
+                if (terminalStop) return;
+                if (response.status === 404) {
+                    finishSharing();
+                    return;
+                }
+                if (response.status !== 200) {
+                    scheduleReconnect();
+                    return;
+                }
+            } catch {
+                scheduleReconnect();
+                return;
+            }
+            connect();
         }
 
         function schedulePeerRetry(overlayTitle, overlayBody) {
@@ -92,8 +118,10 @@
                     scheduleReconnect(overlayTitle, overlayBody);
                     return;
                 }
+                const activeSocket = socket;
                 try {
                     await peerController.start();
+                    if (socket !== activeSocket || terminalStop) return;
                     ui.setProgressOverlay(ui.t("overlayNegotiatingTitle"), ui.t("overlayNegotiatingBody"));
                 } catch (error) {
                     handlePeerStartupError(error);
@@ -107,6 +135,7 @@
         }
 
         function failCodecRequirement(error) {
+            if (terminalStop) return;
             terminalStop = true;
             ui.setConnectionStatus(
                 ui.t("overlayCodecRequiredTitle"),
@@ -120,6 +149,7 @@
         }
 
         function handlePeerStartupError(error) {
+            if (terminalStop) return;
             if (codec.isCodecRequirementError(error)) {
                 failCodecRequirement(error);
                 return;
@@ -133,11 +163,20 @@
         }
 
         function handlePeerConnectionLost() {
+            if (terminalStop) return;
             ui.setProgressOverlay(ui.t("overlayConnectionLostTitle"), ui.t("overlayConnectionLostBody"));
-            if (!terminalStop) {
-                closeSocketAndClearReference();
-                scheduleReconnect();
-            }
+            closeSocketAndClearReference();
+            scheduleReconnect();
+        }
+
+        function finishSharing() {
+            terminalStop = true;
+            transition("closed");
+            clearReconnectTimer();
+            peerController.close();
+            closeSocketAndClearReference();
+            ui.setConnectionStatus(ui.t("overlaySharingStoppedTitle"), ui.t("overlaySharingStoppedBody"));
+            ui.setLoadingOverlayVisible(false);
         }
 
         function isCodecErrorReason(reason) {
@@ -191,8 +230,10 @@
                 transition("signalingReady");
                 ui.setConnectionStatus(ui.t("statusSignalingConnected"), ui.t("overlayConnectingBody"));
                 await sendSignal({ type: "viewer_ready" });
+                if (socket !== webSocket || terminalStop) return;
                 try {
                     await peerController.start();
+                    if (socket !== webSocket || terminalStop) return;
                     ui.setProgressOverlay(ui.t("overlayNegotiatingTitle"), ui.t("overlayNegotiatingBody"));
                 } catch (error) {
                     handlePeerStartupError(error);
@@ -213,7 +254,7 @@
                 switch (payload.type) {
                     case "answer":
                         try {
-                            if (await peerController.applyAnswer(payload)) {
+                            if (await peerController.applyAnswer(payload) && socket === webSocket && !terminalStop) {
                                 ui.setConnectionStatus(ui.t("statusConnected"), ui.t("overlayLiveBody"));
                             }
                         } catch (error) {
@@ -224,14 +265,7 @@
                         await peerController.addIceCandidate(payload);
                         break;
                     case "stopped":
-                        terminalStop = true;
-                        transition("stopping");
-                        ui.setConnectionStatus(ui.t("overlaySharingStoppedTitle"), ui.t("overlaySharingStoppedBody"));
-                        ui.setLoadingOverlayVisible(false);
-                        peerController.close();
-                        clearReconnectTimer();
-                        closeSocketAndClearReference();
-                        transition("closed");
+                        finishSharing();
                         break;
                     case "codec_pending":
                         ui.setProgressOverlay(ui.t("overlayCodecPendingTitle"), ui.t("overlayCodecPendingBody"));

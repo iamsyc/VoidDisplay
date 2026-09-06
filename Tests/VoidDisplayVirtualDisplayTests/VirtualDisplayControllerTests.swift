@@ -63,7 +63,6 @@ struct VirtualDisplayControllerTests {
         #expect(rebuildTriggered)
         #expect(rebuildPresentationSettled)
         #expect(virtualDisplay.rebuildVirtualDisplayConfigIds == [config.id])
-        #expect(virtualDisplay.applyModesCallCount == 0)
     }
 
     @Test func startRebuildForwardsConcurrentDuplicateRequestsToExecutor() async {
@@ -248,6 +247,41 @@ struct VirtualDisplayControllerTests {
         #expect(sut.virtualDisplay.displayConfigs.map(\.id) == [config.id])
         #expect(sut.virtualDisplay.persistenceAlert != nil)
         #expect(sut.virtualDisplay.persistenceAlert?.message.isEmpty == false)
+    }
+
+    @Test(arguments: [false, true])
+    func updateConfigPreservesEnabledIntentChangedAfterEditingStarted(latestEnabled: Bool) throws {
+        let facade = MockVirtualDisplayFacade()
+        var draft = VirtualDisplayConfig(
+            displayName: "Original",
+            serialNum: 125,
+            physicalWidth: 300,
+            physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+            desiredEnabled: !latestEnabled
+        )
+        facade.currentDisplayConfigs = [draft]
+        let sut = makeControllerEnvironment(virtualDisplayFacade: facade)
+
+        try facade.setDesiredEnabled(draft.id, enabled: latestEnabled)
+        facade.currentRunningConfigIds = latestEnabled ? [draft.id] : []
+        draft.displayName = "Edited"
+        draft.serialNum = 126
+        draft.physicalWidth = 310
+        draft.physicalHeight = 210
+        draft.modes = [.init(width: 2560, height: 1440, refreshRate: 60, enableHiDPI: true)]
+
+        try sut.virtualDisplay.updateConfig(draft)
+
+        var expected = draft
+        expected.desiredEnabled = latestEnabled
+        #expect(facade.currentDisplayConfigs == [expected])
+        #expect(sut.virtualDisplay.displayConfigs == [expected])
+        #expect(sut.virtualDisplay.isVirtualDisplayRunning(configId: draft.id) == latestEnabled)
+        #expect(facade.setDesiredEnabledCallCount == 1)
+        #expect(facade.enableRuntimeDisplayCallCount == 0)
+        #expect(facade.disableRuntimeDisplayByConfigCallCount == 0)
+        #expect(facade.rebuildVirtualDisplayCallCount == 0)
     }
 
     @Test func updateConfigPropagatesFacadeFailureWithoutMutatingControllerState() {

@@ -101,6 +101,10 @@ trap cleanup_full_regression EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+failure_phase="build_input_rejected"
+require_xcode_build_environment
+failure_phase="initialization"
+
 require_command codesign git go jq lipo node rg shasum swift sw_vers tr wc xcodebuild xcrun
 select_required_xcode
 shared_derived_data="$OUT_DIR/xcode-shared/DerivedData"
@@ -200,20 +204,22 @@ unit_evidence_valid() {
 
 xcode_preflight_evidence_valid() {
 	local xcode_summary="$OUT_DIR/xcode-build/xcode-summary.json"
+	local ui_summary="$OUT_DIR/xcode-build/ui-smoke-summary.json"
+	local products
 
-	summary_passed_for_action "$xcode_summary" "$xcode_preflight_action" "$DESTINATION" || return 1
-	summary_referenced_file_exists "$xcode_summary" log_path || return 1
-	[[ -d "$shared_derived_data/Build/Products/Debug/VoidDisplay.app" ]] || return 1
 	if [[ "$RUN_UI_TESTS" == "true" ]]; then
-		xcode_test_products_exist \
-			"$shared_derived_data" \
-			Debug \
-			"$DESTINATION" \
-			"$source_fingerprint" \
-			"$xcode_identity" \
-			"$ROOT_DIR" \
-			VoidDisplay.xcodeproj \
-			VoidDisplay || return 1
+		jq -e '.status == "passed" and .build_only == true' "$ui_summary" >/dev/null 2>&1 || return 1
+		if [[ "$(jq -r '.test_evidence_reused' "$ui_summary")" == "true" ]]; then
+			xcresult_test_evidence_valid "$(jq -r '.result_bundle' "$ui_summary")" "$UI_SELECTOR"
+			return
+		fi
+		products="$(jq -er '.derived_data_path' "$ui_summary")" || return 1
+		xcode_test_products_exist "$products" Debug "$DESTINATION" \
+			"$(source_tree_fingerprint xcode)" "$xcode_identity" "$ROOT_DIR" VoidDisplay.xcodeproj VoidDisplay
+	else
+		summary_passed_for_action "$xcode_summary" "$xcode_preflight_action" "$DESTINATION" || return 1
+		summary_referenced_file_exists "$xcode_summary" log_path || return 1
+		[[ -d "$shared_derived_data/Build/Products/Debug/VoidDisplay.app" ]]
 	fi
 }
 
@@ -231,9 +237,9 @@ ui_can_resume() {
 
 	checkpoint_stage_passed "$checkpoint_path" ui "$ui_fingerprint" || return 1
 	jq -e --arg selector "$UI_SELECTOR" \
-		'.status == "passed" and .action == "test-without-building" and .only_testing == [$selector]' \
-		"$OUT_DIR/xcode-test/xcode-summary.json" >/dev/null 2>&1 || return 1
-	result_bundle="$(jq -er '.result_bundle | select(type == "string" and length > 0)' "$OUT_DIR/xcode-test/xcode-summary.json")" || return 1
+		'.status == "passed" and .build_only == false and .only_testing == [$selector]' \
+		"$OUT_DIR/xcode-test/ui-smoke-summary.json" >/dev/null 2>&1 || return 1
+	result_bundle="$(jq -er '.result_bundle | select(type == "string" and length > 0)' "$OUT_DIR/xcode-test/ui-smoke-summary.json")" || return 1
 	xcresult_test_evidence_valid "$result_bundle" "$UI_SELECTOR"
 }
 
@@ -291,14 +297,13 @@ else
 		env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" \
 		"$TOOL_ROOT/scripts/ci/unit.sh" --out-dir "$OUT_DIR/unit"
 	if [[ "$RUN_XCODE_PREFLIGHT" == "true" ]]; then
+		xcode_preflight=("$TOOL_ROOT/scripts/ci/xcode.sh" --action build --configuration Debug --derived-data-path "$shared_derived_data")
+		if [[ "$RUN_UI_TESTS" == "true" ]]; then
+			xcode_preflight=("$TOOL_ROOT/scripts/ci/ui_smoke.sh" --build-only --only-testing "$UI_SELECTOR")
+		fi
 		parallel_group_start xcode-preflight "$OUT_DIR/lanes/xcode-preflight.log" \
 			env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" \
-			"$TOOL_ROOT/scripts/ci/xcode.sh" \
-			--action "$xcode_preflight_action" \
-			--configuration Debug \
-			--destination "$DESTINATION" \
-			--derived-data-path "$shared_derived_data" \
-			--out-dir "$OUT_DIR/xcode-build"
+			"${xcode_preflight[@]}" --destination "$DESTINATION" --out-dir "$OUT_DIR/xcode-build"
 	fi
 	parallel_group_wait "full regression preflight"
 	preflight_duration_seconds="$(($(date +%s) - preflight_started_at))"
@@ -319,13 +324,12 @@ if [[ "$RUN_UI_TESTS" == "true" ]]; then
 	else
 		checkpoint_invalidate_stage "$checkpoint_path" ui
 		ui_started_at="$(date +%s)"
+		ui_command=("$TOOL_ROOT/scripts/ci/ui_smoke.sh")
+		if [[ "$RESTART" == "true" ]]; then ui_command+=(--rerun); fi
 		parallel_group_begin
 		parallel_group_start_streamed ui "$OUT_DIR/lanes/ui.log" \
-			env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "$TOOL_ROOT/scripts/ci/xcode.sh" \
-			--action test-without-building \
-			--configuration Debug \
+			env ROOT_DIR="$ROOT_DIR" TOOL_ROOT="$TOOL_ROOT" "${ui_command[@]}" \
 			--destination "$DESTINATION" \
-			--derived-data-path "$shared_derived_data" \
 			--only-testing "$UI_SELECTOR" \
 			--out-dir "$OUT_DIR/xcode-test"
 		parallel_group_wait "full regression UI"

@@ -298,23 +298,26 @@ validate_xcode_runner_signing_modes() {
 	printf '#!/bin/bash\nprintf "  1) TESTHASH \\"Apple Development: Developer (TEAM)\\"\n"\n' >"$runner_xcconfig_bin/security"
 	ln -sf /usr/bin/true "$runner_xcconfig_bin/codesign"
 	chmod +x "$runner_xcconfig_bin/xcodebuild" "$runner_xcconfig_bin/security"
-	if env \
-		PATH="$runner_xcconfig_bin:$PATH" \
-		DEVELOPER_DIR="$TOOL_ROOT" \
-		XCODE_XCCONFIG_FILE="$runner_xcconfig_fixture/ambient.xcconfig" \
-		XCODEBUILD_SENTINEL="$runner_xcconfig_sentinel" \
-		"$runner" \
-		--out-dir "$runner_xcconfig_fixture" \
-		--signing development \
-		--development-identifier com.developerchen.voiddisplay \
-		--development-team-identifier 6HCGZ4HUVA >/dev/null 2>&1; then
-		die "Xcode runner accepted an ambient development xcconfig."
-	fi
-	[[ ! -e "$runner_xcconfig_sentinel" ]] ||
-		die "Xcode runner started a development build with an ambient xcconfig."
-	jq -e '.status == "failed" and .reason == "signing_input_rejected"' \
-		"$runner_xcconfig_fixture/xcode-summary.json" >/dev/null ||
-		die "Xcode runner did not record the rejected ambient xcconfig."
+	local signing_mode
+	for signing_mode in disabled development; do
+		if env \
+			PATH="$runner_xcconfig_bin:$PATH" \
+			DEVELOPER_DIR="$TOOL_ROOT" \
+			XCODE_XCCONFIG_FILE="$runner_xcconfig_fixture/ambient.xcconfig" \
+			XCODEBUILD_SENTINEL="$runner_xcconfig_sentinel" \
+			"$runner" \
+			--out-dir "$runner_xcconfig_fixture" \
+			--signing "$signing_mode" \
+			--development-identifier com.developerchen.voiddisplay \
+			--development-team-identifier 6HCGZ4HUVA >/dev/null 2>&1; then
+			die "Xcode runner accepted an ambient xcconfig."
+		fi
+		[[ ! -e "$runner_xcconfig_sentinel" ]] ||
+			die "Xcode runner started a development build with an ambient xcconfig."
+		jq -e '.status == "failed" and .reason == "build_input_rejected"' \
+			"$runner_xcconfig_fixture/xcode-summary.json" >/dev/null ||
+			die "Xcode runner did not record the rejected ambient xcconfig."
+	done
 
 	positive_metadata=$'Identifier=com.developerchen.voiddisplay\nCodeDirectory v=20500 size=457 flags=0x10000(runtime)\nSignature size=4798\nAuthority=Apple Development: Developer (TEAM)\nInfo.plist entries=26\nTeamIdentifier=6HCGZ4HUVA\nSealed Resources version=2 rules=13 files=20'
 	positive_requirement='designated => identifier "com.developerchen.voiddisplay" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: Developer (TEAM)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */'

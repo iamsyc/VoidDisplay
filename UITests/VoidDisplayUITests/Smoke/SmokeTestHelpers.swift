@@ -3,6 +3,18 @@ import XCTest
 
 extension XCTestCase {
     @MainActor
+    func performSmokeStep<Result>(_ title: String, _ body: () throws -> Result) rethrows -> Result {
+        print("[UI_STEP] \(title)")
+        defer { print("[UI_STEP_END] \(title)") }
+        return try XCTContext.runActivity(named: title) { _ in try body() }
+    }
+
+    @MainActor
+    func waitForAbsence(_ element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
+        waitForCondition(timeout: timeout) { !element.exists }
+    }
+
+    @MainActor
     func configureAppForWindowRestorationIsolatedLaunch(_ app: XCUIApplication) {
         app.launchArguments = [
             "-ApplePersistenceIgnoreState",

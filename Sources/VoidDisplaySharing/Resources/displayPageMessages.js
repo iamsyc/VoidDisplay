@@ -41,7 +41,7 @@ const messages = {
         overlayNegotiationFailedTitle: "Negotiation failed",
         overlayNegotiationFailedFallback: "Failed to create WebRTC offer.",
         overlaySharingStoppedTitle: "Sharing stopped",
-        overlaySharingStoppedBody: "The source stream is no longer available.",
+        overlaySharingStoppedBody: "This sharing session has ended. Ask the host for a new access link.",
         overlayStreamErrorTitle: "Stream error",
         overlayStreamErrorFallback: "Unknown signaling error.",
         footnote: "Use `1:1` for original size and `Fullscreen` for immersive view."
@@ -88,7 +88,7 @@ const messages = {
         overlayNegotiationFailedTitle: "协商失败",
         overlayNegotiationFailedFallback: "创建 WebRTC offer 失败。",
         overlaySharingStoppedTitle: "共享已停止",
-        overlaySharingStoppedBody: "源端画面已不可用。",
+        overlaySharingStoppedBody: "本次共享已结束，请向共享者获取新的访问链接。",
         overlayStreamErrorTitle: "画面错误",
         overlayStreamErrorFallback: "发生未知信令错误。",
         footnote: "使用“1:1”查看原始尺寸，使用“全屏”进入沉浸式观看。"

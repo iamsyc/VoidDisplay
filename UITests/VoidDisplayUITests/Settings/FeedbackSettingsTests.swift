@@ -6,7 +6,7 @@ final class FeedbackSettingsTests: XCTestCase {
     }
 
     @MainActor
-    func testFeedbackSettingsShowsDiagnosticsEntryOnly() throws {
+    func testSettingsOpensDiagnosticsAndClosesSettingsWindow() throws {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = "settings_feedback"
@@ -16,6 +16,15 @@ final class FeedbackSettingsTests: XCTestCase {
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_EXPECTED"] = "The saved display should come back."
         app.launchEnvironment["VOIDDISPLAY_FEEDBACK_INCLUDE_CONFIGS"] = "1"
         app.launch()
+
+        assertExists(app, identifier: "detail_home", timeout: 6)
+        performSmokeStep("Open the Settings scene from the app menu") {
+            let settingsItem = app.menuItems.matching(
+                NSPredicate(format: "title IN %@", ["Settings…", "Settings...", "设置…", "设置..."])
+            ).firstMatch
+            XCTAssertTrue(waitForExistenceIfNeeded(settingsItem, timeout: 3))
+            settingsItem.click()
+        }
 
         assertAllExist(
             app,
@@ -36,5 +45,13 @@ final class FeedbackSettingsTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_reproduction_field"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_expected_field"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["support_bundle_include_configs_toggle"].exists)
+        performSmokeStep("Open diagnostics and close only the Settings window") {
+            let settingsWindow = app.windows.containing(.button, identifier: "settings_open_diagnostics_button").firstMatch
+            XCTAssertTrue(settingsWindow.exists)
+            tapIdentifier(app, identifier: "settings_open_diagnostics_button")
+            XCTAssertTrue(waitForAbsence(settingsWindow))
+            assertExists(app, identifier: "detail_diagnostics", timeout: 3)
+            XCTAssertEqual(app.windows.count, 1)
+        }
     }
 }

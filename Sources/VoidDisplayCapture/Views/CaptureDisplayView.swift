@@ -81,7 +81,7 @@ package struct CaptureDisplayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(window?.title ?? String(localized: "Preview")))
+        .accessibilityLabel(Text(windowTitle))
         .accessibilityIdentifier("capture_preview_content")
         .navigationTitle(windowTitle)
         .toolbar {

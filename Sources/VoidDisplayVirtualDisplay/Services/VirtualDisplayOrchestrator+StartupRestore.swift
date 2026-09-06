@@ -16,7 +16,7 @@ extension VirtualDisplayOrchestrator {
 
     package func restoreVirtualDisplayForStartupCommand(
         _ request: VirtualDisplayStartupRestoreCommandRequest
-    ) -> VirtualDisplayStartupRestoreCommandResult {
+    ) async -> VirtualDisplayStartupRestoreCommandResult {
         guard case .ready = configManager.configStoreState else {
             AppLog.virtualDisplay.error(
                 "Skip startup virtual display restore because config store is in load-failed state."
@@ -55,7 +55,7 @@ extension VirtualDisplayOrchestrator {
 
         let preDisplayID = runtimeTracker.runtimeDisplayID(for: request.configID)
         do {
-            let record = try runtimeTracker.createRuntimeDisplay(from: config)
+            let record = try await runtimeTracker.createRuntimeDisplay(from: config)
             return startupRestoreCommandResult(
                 request: request,
                 preDisplayID: preDisplayID,
