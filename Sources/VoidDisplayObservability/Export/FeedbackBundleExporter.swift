@@ -360,7 +360,8 @@ package nonisolated struct FeedbackBundleExporter {
             let output = Mutex<Data?>(nil)
             let reader = DispatchGroup()
             reader.enter()
-            DispatchQueue.global(qos: .utility).async {
+            // Callers wait synchronously, so the reader must have its own thread.
+            Thread.detachNewThread {
                 defer { reader.leave() }
                 do {
                     var tail = Data()

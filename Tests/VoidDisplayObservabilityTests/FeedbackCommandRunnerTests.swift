@@ -3,6 +3,26 @@ import Foundation
 import Testing
 
 struct FeedbackCommandRunnerTests {
+    @Test func concurrentCommandsDrainWithoutExhaustingWorkers() async {
+        let commandCount = max(2, ProcessInfo.processInfo.activeProcessorCount)
+        let start = CommandStartBarrier(participants: commandCount)
+        let outputSizes = await withTaskGroup(of: Int?.self, returning: [Int?].self) { group in
+            for _ in 0..<commandCount {
+                group.addTask {
+                    await start.wait()
+                    return FeedbackBundleExporter.runCommand(
+                        "/bin/dd", arguments: ["if=/dev/zero", "bs=131072", "count=1"], timeout: 2
+                    )?.utf8.count
+                }
+            }
+            var sizes: [Int?] = []
+            for await size in group { sizes.append(size) }
+            return sizes
+        }
+        #expect(outputSizes.count == commandCount)
+        #expect(outputSizes.allSatisfy { $0 == 131_072 })
+    }
+
     @Test(arguments: [16 * 1024, 256 * 1024])
     func drainsOutputWhileCommandRuns(byteCount: Int) throws {
         let output = try #require(FeedbackBundleExporter.runCommand(
@@ -47,5 +67,24 @@ struct FeedbackCommandRunnerTests {
         #expect(FeedbackBundleExporter.runCommand("/usr/bin/false", arguments: [], timeout: 2) == nil)
         #expect(FeedbackBundleExporter.runCommand("/usr/bin/true", arguments: [], timeout: 2) == nil)
         #expect(FeedbackBundleExporter.runCommand("/voiddisplay-missing-test-executable", arguments: [], timeout: 2) == nil)
+    }
+}
+
+private actor CommandStartBarrier {
+    private var remaining: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(participants: Int) {
+        remaining = participants
+    }
+
+    func wait() async {
+        remaining -= 1
+        guard remaining > 0 else {
+            for waiter in waiters { waiter.resume() }
+            waiters.removeAll()
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
     }
 }
