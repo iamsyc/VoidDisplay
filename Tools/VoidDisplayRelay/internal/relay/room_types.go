@@ -20,7 +20,6 @@ type Room struct {
 	closed                  bool
 	publisherOffersInFlight int
 	publisher               *publisherSession
-	nextPublisherID         uint64
 	viewers                 map[string]*viewerSession
 	viewerAdmissions        map[string]*viewerAdmission
 	subscribers             map[string]*viewerRTPWriter

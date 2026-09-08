@@ -5,6 +5,7 @@
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayVirtualDisplayTestingSupport
 import Foundation
+import Observation
 import Testing
 
 @MainActor
@@ -58,7 +59,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         #expect(environment.displayRuntime.currentConsumerLeaseSnapshot().isEmpty)
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func serviceStartFailureSurfacesErrorWithoutCreatingSharingLease() async throws {
         let service = MockSharingService()
         let failure = WebServiceStartFailure.listenerFailed(port: 18_085, message: "injected bind failure")
@@ -66,11 +67,20 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let (controller, environment) = makeController(sharingService: service, virtualDisplayFacade: makeFacade())
         let item = try #require(controller.presentation.items.first)
         controller.updateSharingPortDraft("18085")
+        let alertChanges = AsyncStream<Void> { continuation in
+            withObservationTracking {
+                _ = controller.actionAlert
+            } onChange: {
+                continuation.yield(())
+                continuation.finish()
+            }
+        }
 
         controller.perform(.webView, for: item, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
 
-        #expect(await waitUntil { controller.actionAlert != nil })
-        #expect(controller.actionAlert?.message == failure.userMessage)
+        for await _ in alertChanges { break }
+        let alert = try #require(controller.actionAlert)
+        #expect(alert.message == failure.userMessage)
         #expect(service.startWebServiceCallCount == 1)
         #expect(service.startSharingCallCount == 0)
         #expect(environment.displayRuntime.currentConsumerLeaseSnapshot().isEmpty)

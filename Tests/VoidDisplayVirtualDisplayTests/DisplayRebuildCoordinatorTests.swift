@@ -8,6 +8,131 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRebuildCoordinatorTests {
+    @Test(arguments: [UInt32(0), 1, 2, 3])
+    func fleetRestoresPeersAfterCreationFailure(failedSerial: UInt32) async throws {
+        let configs = (1...3).map { makeConfig(serial: UInt32($0), desiredEnabled: true) }
+        let driver = FleetRuntimeDriver()
+        driver.beforeCreate = { descriptor in
+            if descriptor.serialNumber == failedSerial { throw VirtualDisplayOperationError.creationFailed }
+        }
+        let survivors = configs.filter { $0.serialNum != failedSerial }
+        let snapshot = makeSnapshot(main: 2000 + survivors[0].serialNum, displays: survivors.enumerated().map { index, config in
+            makeDisplayInfo(id: 2000 + config.serialNum, serial: config.serialNum, managed: true,
+                            bounds: CGRect(x: index * 1920, y: 0, width: 1920, height: 1080))
+        })
+        let harness = makeHarness(configs: configs, snapshots: [snapshot], runtimeDriver: driver)
+        for config in configs {
+            harness.runtimeTracker.markConfigRunning(configId: config.id, generation: 1, runtimeDisplayID: 1000 + config.serialNum)
+        }
+
+        do {
+            try await harness.coordinator.rebuildManagedDisplayFleet(
+                prioritizing: configs[0].id, fallbackPreferredMainDisplayID: nil, teardownStrategy: .fleetOfflineOnly
+            )
+            #expect(failedSerial == 0)
+        } catch let error as VirtualDisplayOperationError {
+            #expect(failedSerial != 0)
+            // The existing unconfirmed-termination retry policy reports exhausted creation as teardownTimedOut.
+            guard case .teardownTimedOut = error else { Issue.record("Unexpected error: \(error)"); return }
+        }
+        #expect(harness.runtimeTracker.runningConfigIDs() == Set(survivors.map(\.id)))
+        #expect(Set(driver.createdSerials) == Set(configs.map(\.serialNum)))
+        if failedSerial != 0 {
+            #expect(driver.createdSerials.filter { $0 == failedSerial }.count == 10)
+        }
+        #expect(harness.snapshotProvider.readCount > 1, "Topology must converge even after a creation failure")
+    }
+
+    @Test func fleetPropagatesFirstCreationErrorAfterAttemptingAllPeers() async {
+        let configs = (1...3).map { makeConfig(serial: UInt32($0), desiredEnabled: true) }
+        var attempted: [UUID] = []
+        let harness = makeHarness(configs: configs, snapshots: []) { config, _, _ in
+            attempted.append(config.id)
+            throw NSError(domain: "FleetCreate", code: Int(config.serialNum))
+        }
+        for config in configs {
+            harness.runtimeTracker.markConfigRunning(configId: config.id, generation: 1, runtimeDisplayID: 1000 + config.serialNum)
+        }
+        do {
+            try await harness.coordinator.rebuildManagedDisplayFleet(
+                prioritizing: configs[0].id, fallbackPreferredMainDisplayID: nil, teardownStrategy: .fleetOfflineOnly
+            )
+            Issue.record("Expected the first creation failure")
+        } catch {
+            #expect((error as NSError).domain == "FleetCreate")
+            #expect((error as NSError).code == 1)
+        }
+        #expect(attempted == configs.map(\.id))
+        #expect(harness.snapshotProvider.readCount > 1)
+    }
+
+    @Test(arguments: ["reset", "deleteCurrent", "deletePending"])
+    func fleetDoesNotRecreateRemovedConfigurations(action: String) async throws {
+        let configs = (1...3).map { makeConfig(serial: UInt32($0), desiredEnabled: true) }
+        let driver = FleetRuntimeDriver()
+        let snapshot = makeSnapshot(main: 2001, displays: [makeDisplayInfo(id: 2001, serial: 1, managed: true)])
+        let harness = makeHarness(configs: configs, snapshots: [snapshot], runtimeDriver: driver)
+        for config in configs {
+            harness.runtimeTracker.markConfigRunning(configId: config.id, generation: 1, runtimeDisplayID: 1000 + config.serialNum)
+        }
+        driver.beforeCreate = { descriptor in
+            guard descriptor.serialNumber == 1 else { return }
+            switch action {
+            case "reset":
+                try harness.configManager.resetAll()
+                harness.runtimeTracker.resetAll()
+            case "deleteCurrent":
+                try harness.configManager.removeConfig(configs[0].id)
+            default:
+                try harness.configManager.removeConfig(configs[1].id)
+            }
+        }
+        do {
+            try await harness.coordinator.rebuildManagedDisplayFleet(
+                prioritizing: configs[0].id, fallbackPreferredMainDisplayID: nil, teardownStrategy: .fleetOfflineOnly
+            )
+            #expect(action == "deletePending")
+        } catch {
+            #expect(action != "deletePending")
+            if !(error is CancellationError) {
+                guard let operationError = error as? VirtualDisplayOperationError,
+                      case .configNotFound = operationError else { Issue.record("Unexpected error: \(error)"); return }
+            }
+        }
+        if action == "deletePending" {
+            #expect(driver.createdSerials == [1, 3])
+            #expect(!harness.runtimeTracker.isVirtualDisplayRunning(configId: configs[1].id))
+        } else {
+            #expect(driver.createdSerials == [1])
+            #expect(harness.runtimeTracker.runningConfigIDs().isEmpty)
+        }
+    }
+
+    @Test func fleetCancellationStopsPeerRestoration() async {
+        let configs = (1...3).map { makeConfig(serial: UInt32($0), desiredEnabled: true) }
+        let driver = FleetRuntimeDriver()
+        var resumeCreation: CheckedContinuation<Void, Never>?
+        driver.beforeCreate = { _ in
+            await withCheckedContinuation { resumeCreation = $0 }
+            try Task.checkCancellation()
+        }
+        let harness = makeHarness(configs: configs, snapshots: [], runtimeDriver: driver)
+        for config in configs {
+            harness.runtimeTracker.markConfigRunning(configId: config.id, generation: 1, runtimeDisplayID: 1000 + config.serialNum)
+        }
+        let task = Task {
+            try await harness.coordinator.rebuildManagedDisplayFleet(
+                prioritizing: configs[0].id, fallbackPreferredMainDisplayID: nil, teardownStrategy: .fleetOfflineOnly
+            )
+        }
+        while resumeCreation == nil { await Task.yield() }
+        task.cancel()
+        resumeCreation?.resume()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(driver.createdSerials == [1])
+        #expect(harness.runtimeTracker.runningConfigIDs().isEmpty)
+    }
+
     @Test
     func ensureHealthyTopologyMirrorCollapseTriggersRepairAndKeepsCurrentMainAsAnchor() async throws {
         let displayA: CGDirectDisplayID = 201
@@ -330,6 +455,8 @@ private extension DisplayRebuildCoordinatorTests {
         let coordinator: DisplayRebuildCoordinator
         let runtimeTracker: VirtualDisplayRuntimeTracker
         let repairer: FakeDisplayTopologyRepairer
+        let configManager: VirtualDisplayConfigManager
+        let snapshotProvider: FakeSnapshotProvider
     }
 
     @MainActor
@@ -340,6 +467,7 @@ private extension DisplayRebuildCoordinatorTests {
         repairerShouldSucceed: Bool = true,
         topologyStabilityTimeout: TimeInterval = 0.2,
         topologyStabilityPollInterval: TimeInterval = 0.001,
+        runtimeDriver: (any VirtualDisplayRuntimeDriving)? = nil,
         hook: (@MainActor (VirtualDisplayConfig, Bool, VirtualDisplayRuntimeTracker) async throws -> Void)? = nil
     ) -> Harness {
         let store = FakeVirtualDisplayStore()
@@ -360,7 +488,7 @@ private extension DisplayRebuildCoordinatorTests {
         )
         let runtimeTracker = VirtualDisplayRuntimeTracker(
             teardownCoordinator: teardownCoordinator,
-            runtimeDriver: NoopRuntimeDriver(),
+            runtimeDriver: runtimeDriver ?? NoopRuntimeDriver(),
             clock: clock
         )
         let policyResolver = MainDisplayPolicyResolver(
@@ -371,6 +499,14 @@ private extension DisplayRebuildCoordinatorTests {
 
         let snapshotProvider = FakeSnapshotProvider(snapshots: snapshots, sequenceMode: sequenceMode)
         let repairer = FakeDisplayTopologyRepairer(shouldSucceed: repairerShouldSucceed)
+        let rebuildHook: (@MainActor (VirtualDisplayConfig, Bool) async throws -> Void)?
+        if let hook {
+            rebuildHook = { config, terminationConfirmed in
+                try await hook(config, terminationConfirmed, runtimeTracker)
+            }
+        } else {
+            rebuildHook = nil
+        }
 
         let coordinator = DisplayRebuildCoordinator(
             dependencies: .init(
@@ -382,9 +518,7 @@ private extension DisplayRebuildCoordinatorTests {
                 clock: clock,
                 topologyStabilityTimeout: topologyStabilityTimeout,
                 topologyStabilityPollInterval: topologyStabilityPollInterval,
-                rebuildRuntimeDisplayHook: { config, terminationConfirmed in
-                    try await hook?(config, terminationConfirmed, runtimeTracker)
-                },
+                rebuildRuntimeDisplayHook: rebuildHook,
                 currentTopologySnapshot: {
                     snapshotProvider.next()
                 },
@@ -398,7 +532,9 @@ private extension DisplayRebuildCoordinatorTests {
         return Harness(
             coordinator: coordinator,
             runtimeTracker: runtimeTracker,
-            repairer: repairer
+            repairer: repairer,
+            configManager: configManager,
+            snapshotProvider: snapshotProvider
         )
     }
 
@@ -453,6 +589,7 @@ private final class FakeSnapshotProvider {
     private let snapshots: [DisplayTopologySnapshot]
     private let sequenceMode: SequenceMode
     private var index = 0
+    private(set) var readCount = 0
 
     init(snapshots: [DisplayTopologySnapshot], sequenceMode: SequenceMode) {
         self.snapshots = snapshots
@@ -460,6 +597,7 @@ private final class FakeSnapshotProvider {
     }
 
     func next() -> DisplayTopologySnapshot? {
+        readCount += 1
         guard !snapshots.isEmpty else { return nil }
         let resolvedIndex: Int
         switch sequenceMode {
@@ -471,6 +609,28 @@ private final class FakeSnapshotProvider {
         index += 1
         return snapshots[resolvedIndex]
     }
+}
+
+@MainActor
+private final class FleetRuntimeDriver: VirtualDisplayRuntimeDriving {
+    var beforeCreate: ((VirtualDisplayRuntimeDescriptor) async throws -> Void)?
+    private(set) var createdSerials: [UInt32] = []
+
+    func createRuntimeDisplay(
+        descriptor: VirtualDisplayRuntimeDescriptor,
+        onTermination: @escaping @MainActor () -> Void
+    ) async throws -> any VirtualDisplayRuntimeHandling {
+        createdSerials.append(descriptor.serialNumber)
+        try await beforeCreate?(descriptor)
+        return FleetRuntimeHandle(serialNum: descriptor.serialNumber)
+    }
+}
+
+@MainActor
+private final class FleetRuntimeHandle: VirtualDisplayRuntimeHandling {
+    let serialNum: UInt32
+    var displayID: CGDirectDisplayID { 2000 + serialNum }
+    init(serialNum: UInt32) { self.serialNum = serialNum }
 }
 
 private final class FakeDisplayTopologyRepairer: DisplayTopologyRepairing {

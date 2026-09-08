@@ -409,6 +409,34 @@ struct VirtualDisplayControllerTests {
         #expect(virtualDisplay.rebuildVirtualDisplayCallCount == 0)
     }
 
+    @Test func editRebuildRejectsInvalidModesBeforeBuildingRuntimeRequest() async {
+        let facade = MockVirtualDisplayFacade()
+        let original = VirtualDisplayConfig(
+            displayName: "Edit Bounds", serialNum: 135, physicalWidth: 300, physicalHeight: 200,
+            modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)]
+        )
+        facade.currentDisplayConfigs = [original]
+        var requestCount = 0
+        let controller = makeControllerEnvironment(virtualDisplayFacade: facade, editAndRebuild: { _, _, _ in
+            requestCount += 1
+            return editRebuildOperation()
+        }).virtualDisplay
+        for mode in [
+            VirtualDisplayConfig.ModeConfig(width: 5000, height: 3000, refreshRate: 60, enableHiDPI: true),
+            .init(width: 8193, height: 1, refreshRate: 60, enableHiDPI: false),
+            .init(width: -1, height: 1080, refreshRate: 60, enableHiDPI: false),
+            .init(width: 1920, height: 1080, refreshRate: .nan, enableHiDPI: false)
+        ] {
+            var edited = original
+            edited.modes.append(mode)
+            await #expect(throws: VirtualDisplayOperationError.self) {
+                _ = try await controller.saveConfigAndRebuild(edited, expectedConfigFingerprint: original.editRebuildFingerprint)
+            }
+        }
+        #expect(requestCount == 0)
+        #expect(controller.getConfig(original.id) == original)
+    }
+
     @Test func saveConfigAndRebuildRefreshesControllerAtSaveGate() async throws {
         let virtualDisplay = MockVirtualDisplayFacade()
         let original = VirtualDisplayConfig(

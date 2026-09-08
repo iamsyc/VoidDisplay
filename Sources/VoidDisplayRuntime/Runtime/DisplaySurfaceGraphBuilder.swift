@@ -47,7 +47,6 @@ nonisolated enum DisplaySurfaceGraphBuilder {
             let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
             let config = configsByID[configID]
             let managed = managedByConfigID[configID]
-            let maximumPixelDimensions = config.flatMap(maximumPixelDimensions)
             surfaces[identity] = MutableSurface(
                 identity: identity,
                 kind: .managedVirtualDisplay,
@@ -64,8 +63,8 @@ nonisolated enum DisplaySurfaceGraphBuilder {
                     isLiveRuntime: managed?.isLiveRuntime ?? false,
                     hasRestoreFailure: restoreFailureConfigIDs.contains(configID),
                     modeCount: config?.modes.count,
-                    maximumPixelWidth: maximumPixelDimensions?.width,
-                    maximumPixelHeight: maximumPixelDimensions?.height
+                    maximumPixelWidth: config.map { Int($0.maximumPixelWidth) },
+                    maximumPixelHeight: config.map { Int($0.maximumPixelHeight) }
                 )
             )
         }
@@ -214,24 +213,5 @@ nonisolated enum DisplaySurfaceGraphBuilder {
             return lhs.identity.stableID < rhs.identity.stableID
         }
         return (lhs.currentDisplayID ?? 0) < (rhs.currentDisplayID ?? 0)
-    }
-
-    private static func maximumPixelDimensions(
-        for config: DisplayRuntimeVirtualDisplayConfig
-    ) -> (width: Int, height: Int)? {
-        guard let maxMode = config.modes.max(by: { pixelArea($0) < pixelArea($1) }) else {
-            return nil
-        }
-        let scale = config.modes.contains(where: \.enableHiDPI) ? 2 : 1
-        let (width, widthOverflow) = maxMode.width.multipliedReportingOverflow(by: scale)
-        let (height, heightOverflow) = maxMode.height.multipliedReportingOverflow(by: scale)
-        guard !widthOverflow, !heightOverflow else { return nil }
-        return (width, height)
-    }
-
-    private static func pixelArea(_ mode: DisplayRuntimeVirtualDisplayMode) -> Int {
-        let (area, overflow) = mode.width.multipliedReportingOverflow(by: mode.height)
-        guard !overflow else { return Int.max }
-        return max(0, area)
     }
 }

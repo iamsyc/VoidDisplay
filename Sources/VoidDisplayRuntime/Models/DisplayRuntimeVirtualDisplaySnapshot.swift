@@ -60,6 +60,8 @@ package nonisolated struct DisplayRuntimeVirtualDisplayConfig: Codable, Equatabl
     package let physicalWidthMillimeters: Int
     package let physicalHeightMillimeters: Int
     package let modes: [DisplayRuntimeVirtualDisplayMode]
+    package let maximumPixelWidth: UInt32
+    package let maximumPixelHeight: UInt32
 
     package init(
         id: UUID,
@@ -67,7 +69,9 @@ package nonisolated struct DisplayRuntimeVirtualDisplayConfig: Codable, Equatabl
         desiredEnabled: Bool,
         physicalWidthMillimeters: Int,
         physicalHeightMillimeters: Int,
-        modes: [DisplayRuntimeVirtualDisplayMode]
+        modes: [DisplayRuntimeVirtualDisplayMode],
+        maximumPixelWidth: UInt32,
+        maximumPixelHeight: UInt32
     ) {
         self.id = id
         self.serialNumber = serialNumber
@@ -78,23 +82,8 @@ package nonisolated struct DisplayRuntimeVirtualDisplayConfig: Codable, Equatabl
             ($0.width, $0.height, $0.refreshRate, $0.enableHiDPI ? 1 : 0)
                 < ($1.width, $1.height, $1.refreshRate, $1.enableHiDPI ? 1 : 0)
         }
-    }
-
-    package var maximumPixelDimensions: (width: UInt32, height: UInt32) {
-        guard let maxMode = modes.max(by: { pixelArea($0) < pixelArea($1) }) else {
-            return (0, 0)
-        }
-        let scale: Int = modes.contains(where: \.enableHiDPI) ? 2 : 1
-        let (width, widthOverflow) = maxMode.width.multipliedReportingOverflow(by: scale)
-        let (height, heightOverflow) = maxMode.height.multipliedReportingOverflow(by: scale)
-        guard !widthOverflow, !heightOverflow else { return (UInt32.max, UInt32.max) }
-        return (UInt32(clamping: width), UInt32(clamping: height))
-    }
-
-    private func pixelArea(_ mode: DisplayRuntimeVirtualDisplayMode) -> Int {
-        let (area, overflow) = mode.width.multipliedReportingOverflow(by: mode.height)
-        guard !overflow else { return Int.max }
-        return max(0, area)
+        self.maximumPixelWidth = maximumPixelWidth
+        self.maximumPixelHeight = maximumPixelHeight
     }
 }
 

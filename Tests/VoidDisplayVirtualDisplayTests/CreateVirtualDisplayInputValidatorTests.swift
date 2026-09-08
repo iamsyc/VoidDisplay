@@ -125,4 +125,35 @@ struct CreateVirtualDisplayInputValidatorTests {
         #expect(customized.serialNum == 8)
         #expect(customized.name == "Custom Name")
     }
+
+    @Test func maxPixelDimensionsRejectsEveryInvalidMode() {
+        let valid = ResolutionSelection(width: 1920, height: 1080, enableHiDPI: false)
+        let invalidModes: [ResolutionSelection] = [
+            .init(width: 0, height: 1080),
+            .init(width: -1, height: 1080),
+            .init(width: 1920, height: 0),
+            .init(width: Int.max, height: Int.max),
+            .init(width: 8193, height: 1, enableHiDPI: false),
+            .init(width: 1, height: 4097, enableHiDPI: true),
+            .init(width: 1920, height: 1080, refreshRate: 0),
+            .init(width: 1920, height: 1080, refreshRate: -.infinity),
+            .init(width: 1920, height: 1080, refreshRate: .nan)
+        ]
+        for invalid in invalidModes {
+            #expect(CreateVirtualDisplayInputValidator.maxPixelDimensions(for: [valid, invalid]) == .invalidValues)
+        }
+    }
+
+    @Test func customModeCanBeAddedBeforeTurningOffHiDPI() {
+        let result = CreateVirtualDisplayInputValidator.addCustomMode(
+            width: 8192, height: 8192, refreshRate: 60, to: []
+        )
+        guard case .appended(var modes) = result else {
+            Issue.record("Expected a logical size within the limit to be editable")
+            return
+        }
+        #expect(CreateVirtualDisplayInputValidator.maxPixelDimensions(for: modes) == .invalidValues)
+        modes[0].enableHiDPI = false
+        #expect(CreateVirtualDisplayInputValidator.maxPixelDimensions(for: modes) == .resolved(width: 8192, height: 8192))
+    }
 }

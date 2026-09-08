@@ -179,6 +179,12 @@ package final class VirtualDisplayController {
         expectedConfigFingerprint: String,
         source: VirtualDisplayRebuildRequestSource = .unknown
     ) async throws -> VirtualDisplayEditRebuildOperation {
+        // The runtime request reads the pixel bounds before persistence validates the edit.
+        guard (try? VirtualDisplayModeBounds.resolve(updated.resolutionModes)) != nil else {
+            throw VirtualDisplayOperationError.invalidConfiguration(
+                String(localized: "Please enter valid resolution values.")
+            )
+        }
         let runtimeOperation = try await runtimeExecutors.editAndRebuild(
             updated,
             expectedConfigFingerprint,

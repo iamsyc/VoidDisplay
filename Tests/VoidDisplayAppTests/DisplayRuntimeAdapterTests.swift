@@ -3,6 +3,7 @@
 @testable import VoidDisplayRuntime
 @testable import VoidDisplaySharing
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayObservability
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplay
 @testable import VoidDisplayVirtualDisplayTestingSupport
@@ -14,6 +15,68 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeAdapterTests {
+    @Test(arguments: [false, true])
+    func virtualDisplayPixelBoundsRemainConsistentInRuntimeDiagnostics(reverseModes: Bool) async throws {
+        let scenarios: [([VirtualDisplayConfig.ModeConfig], UInt32, UInt32)] = [
+            ([.init(width: 5120, height: 2880, refreshRate: 60, enableHiDPI: false),
+              .init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: true)], 5120, 2880),
+            ([.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false),
+              .init(width: 1080, height: 1920, refreshRate: 60, enableHiDPI: false)], 1920, 1920),
+            ([.init(width: 3000, height: 1000, refreshRate: 60, enableHiDPI: false),
+              .init(width: 1000, height: 2000, refreshRate: 60, enableHiDPI: true)], 3000, 4000),
+            ([.init(width: 4096, height: 4096, refreshRate: 60, enableHiDPI: true)], 8192, 8192)
+        ]
+        for (modes, width, height) in scenarios {
+            let config = VirtualDisplayConfig(
+                displayName: "Diagnostic Bounds", serialNum: 9401, physicalWidth: 600, physicalHeight: 340,
+                modes: reverseModes ? Array(modes.reversed()) : modes
+            )
+            let facade = MockVirtualDisplayFacade()
+            facade.currentDisplayConfigs = [config]
+            let adapter = DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade)
+            let runtime = DisplayRuntime(
+                virtualDisplayProvider: adapter,
+                virtualDisplayCommander: adapter,
+                topologyWaitPolicy: .init(maximumSampleCount: 1, sampleIntervalNanoseconds: 0)
+            )
+            var edited = config
+            edited.displayName = "Renamed Diagnostic Bounds"
+            let handle = try await runtime.saveVirtualDisplayConfigAndRebuild(
+                request: .init(
+                    editedConfig: DisplayRuntimeVirtualDisplayConfigEditDTO(adapterConfig: edited),
+                    expectedConfigFingerprint: config.editRebuildFingerprint,
+                    source: .editSaveAndRebuild
+                ),
+                source: .editSaveAndRebuild
+            )
+            let saveGate = try await handle.waitForSaveGate()
+            _ = try await handle.waitForTerminalResult()
+            // Exercise the same provider and JSON representation exported in support bundles.
+            let data = try ObservabilityCodec.encode(DisplayRuntimeSnapshotProvider(runtime: runtime).makeSnapshot())
+            let snapshot = try ObservabilityCodec.decode(DisplayRuntimeSnapshot.self, from: data)
+            let surface = try #require(snapshot.surfaces.first?.managedVirtualDisplay)
+            let trace = try #require(snapshot.transactions.recentTransactions.first)
+            let oldEvidence = try #require(trace.oldConfigEvidence)
+            let editedEvidence = try #require(trace.editedConfigEvidence)
+            let savedEvidence = try #require(trace.savedConfigEvidence)
+            let snapshotEvidence = DisplayRuntimeVirtualDisplayConfigEvidence(
+                snapshotConfig: try #require(snapshot.virtualDisplay.configs.first)
+            )
+
+            #expect(config.maxPixelDimensions.width == width)
+            #expect(config.maxPixelDimensions.height == height)
+            #expect(surface.maximumPixelWidth == Int(width))
+            #expect(surface.maximumPixelHeight == Int(height))
+            #expect(oldEvidence == editedEvidence)
+            #expect(snapshotEvidence == savedEvidence)
+            #expect(savedEvidence == saveGate.savedConfigEvidence)
+            #expect(savedEvidence.maximumPixelWidth == width)
+            #expect(savedEvidence.maximumPixelHeight == height)
+            #expect(facade.saveConfigForRebuildCallCount == 1)
+            #expect(facade.rebuildVirtualDisplayCallCount == 1)
+        }
+    }
+
     @Test func catalogAdapterReturnsOnlyCurrentVisibleDisplayDTOsInRefreshSettlement() async {
         let hiddenDisplay = SharedMockSCDisplay.make(displayID: 8101, width: 1920, height: 1080)
         let visibleDisplay = SharedMockSCDisplay.make(displayID: 8102, width: 2560, height: 1440)
@@ -531,7 +594,9 @@ private func managedVirtualDisplaySnapshot(
                 desiredEnabled: true,
                 physicalWidthMillimeters: 600,
                 physicalHeightMillimeters: 340,
-                modes: [.init(width: 1504, height: 846, refreshRate: 60, enableHiDPI: true)]
+                modes: [.init(width: 1504, height: 846, refreshRate: 60, enableHiDPI: true)],
+                maximumPixelWidth: 3008,
+                maximumPixelHeight: 1692
             )
         ],
         restoreFailureConfigIDs: []

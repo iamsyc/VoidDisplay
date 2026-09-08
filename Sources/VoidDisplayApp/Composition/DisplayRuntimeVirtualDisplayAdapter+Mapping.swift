@@ -208,13 +208,16 @@ private extension DisplayRuntimeManagedVirtualDisplay {
 
 private extension DisplayRuntimeVirtualDisplayConfig {
     init(adapterConfig config: VirtualDisplayConfig) {
+        let maxPixels = config.maxPixelDimensions
         self.init(
             id: config.id,
             serialNumber: config.serialNum,
             desiredEnabled: config.desiredEnabled,
             physicalWidthMillimeters: config.physicalWidth,
             physicalHeightMillimeters: config.physicalHeight,
-            modes: config.modes.displayRuntimeModes
+            modes: config.modes.displayRuntimeModes,
+            maximumPixelWidth: maxPixels.width,
+            maximumPixelHeight: maxPixels.height
         )
     }
 }

@@ -189,59 +189,14 @@ package struct VirtualDisplayStore {
             guard config.physicalWidth > 0, config.physicalHeight > 0 else {
                 throw invalidConfig(index, "physical size must be greater than 0")
             }
-            guard !config.modes.isEmpty else {
-                throw invalidConfig(index, "at least one resolution mode is required")
+            do {
+                _ = try VirtualDisplayModeBounds.resolve(config.resolutionModes)
+            } catch {
+                throw invalidConfig(index, error.rawValue)
             }
-
-            try validateModes(config.modes, configIndex: index)
         }
 
         return configs
-    }
-
-    private func validateModes(_ modes: [VirtualDisplayConfig.ModeConfig], configIndex: Int) throws {
-        for mode in modes {
-            guard mode.width > 0, mode.height > 0 else {
-                throw invalidConfig(configIndex, "resolution dimensions must be greater than 0")
-            }
-            guard mode.refreshRate.isFinite, mode.refreshRate > 0 else {
-                throw invalidConfig(configIndex, "refresh rate must be finite and greater than 0")
-            }
-        }
-
-        let maxPixels = try maxPixelDimensions(for: modes, configIndex: configIndex)
-
-        guard maxPixels.width <= CreateVirtualDisplayInputValidator.maxPixelWidthLimit,
-              maxPixels.height <= CreateVirtualDisplayInputValidator.maxPixelHeightLimit else {
-            throw invalidConfig(configIndex, "maximum pixel dimensions exceed the supported limit")
-        }
-        let pixelCount = UInt64(maxPixels.width) * UInt64(maxPixels.height)
-        guard pixelCount <= CreateVirtualDisplayInputValidator.maxPixelCountLimit else {
-            throw invalidConfig(configIndex, "maximum pixel count exceeds the supported limit")
-        }
-    }
-
-    private func maxPixelDimensions(
-        for modes: [VirtualDisplayConfig.ModeConfig],
-        configIndex: Int
-    ) throws -> (width: UInt32, height: UInt32) {
-        let maxMode = modes.max { lhs, rhs in
-            pixelArea(of: lhs) < pixelArea(of: rhs)
-        }!
-        let scale: UInt64 = modes.contains { $0.enableHiDPI } ? 2 : 1
-        let (scaledWidth, widthOverflow) = UInt64(maxMode.width).multipliedReportingOverflow(by: scale)
-        let (scaledHeight, heightOverflow) = UInt64(maxMode.height).multipliedReportingOverflow(by: scale)
-        guard !widthOverflow, !heightOverflow,
-              let width = UInt32(exactly: scaledWidth),
-              let height = UInt32(exactly: scaledHeight) else {
-            throw invalidConfig(configIndex, "maximum pixel dimensions exceed the supported limit")
-        }
-        return (width, height)
-    }
-
-    private func pixelArea(of mode: VirtualDisplayConfig.ModeConfig) -> UInt64 {
-        let (area, overflow) = UInt64(mode.width).multipliedReportingOverflow(by: UInt64(mode.height))
-        return overflow ? UInt64.max : area
     }
 
     private func invalidConfig(_ index: Int, _ reason: String) -> VirtualDisplayConfigStoreError {

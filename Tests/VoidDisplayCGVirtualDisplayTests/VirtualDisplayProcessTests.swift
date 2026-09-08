@@ -8,9 +8,12 @@ import VoidDisplayVirtualDisplay
 @MainActor
 @Suite("Virtual display process lifecycle", .serialized)
 struct VirtualDisplayProcessTests {
-    @Test func releasingHandleClosesHostInputAndReportsTermination() async throws {
+    @Test(arguments: [0, 8192])
+    func releasingHandleClosesHostInputAndReportsTermination(leadingWhitespace: Int) async throws {
         var terminated = false
-        var handle: (any VirtualDisplayRuntimeHandling)? = try await driver(script: try readyScript()).createRuntimeDisplay(
+        var handle: (any VirtualDisplayRuntimeHandling)? = try await driver(
+            script: try readyScript(leadingWhitespace: leadingWhitespace)
+        ).createRuntimeDisplay(
             descriptor: descriptor, onTermination: { terminated = true }
         )
         #expect(handle?.displayID == 9001)
@@ -126,11 +129,12 @@ struct VirtualDisplayProcessTests {
         CGVirtualDisplayRuntimeDriver(executableURL: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script], readyTimeout: timeout)
     }
 
-    private func readyScript() throws -> String {
+    private func readyScript(leadingWhitespace: Int = 0) throws -> String {
         let response = VirtualDisplayHostResponse.ready(displayID: 9001, mode: .init(
             id: 1, width: 1920, height: 1080, pixelWidth: 1920, pixelHeight: 1080, refreshRate: 60
         ))
-        let json = String(decoding: try JSONEncoder().encode(response), as: UTF8.self)
+        let json = String(repeating: " ", count: leadingWhitespace)
+            + String(decoding: try JSONEncoder().encode(response), as: UTF8.self)
         return "read request; printf '%s\\n' '\(json)'; while IFS= read -r line; do :; done"
     }
 
