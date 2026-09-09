@@ -7,6 +7,189 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeConsumerLeaseTests {
+    @Test func catalogClearDuringInitialAttachEndsInFailure() async throws {
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
+        let commander = FakeCaptureIntentCommander()
+        commander.shouldGateApply = true
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 42, isMain: true)),
+            captureIntentCommander: commander
+        )
+        let attachment = Task {
+            await runtime.attachPreviewConsumer(
+                surfaceIdentity: identity, owner: .init(source: .localUI), demand: sourceDemand()
+            )
+        }
+        await commander.waitForApplyCalls(1)
+        let leaseID = try #require(runtime.currentConsumerLeaseSnapshot().first?.id)
+        await runtime.handleRefreshOutcomeForConvergence(
+            .init(settlementID: 1, result: .clearedSnapshot, catalog: .empty)
+        )
+        commander.shouldGateApply = false
+        commander.releaseApply(call: 1)
+
+        guard case let .attached(_, result) = await attachment.value else {
+            Issue.record("Expected the initial attachment result.")
+            return
+        }
+        #expect(result.outcome == .ignored)
+        #expect(runtime.consumerLease(leaseID: leaseID)?.state == .failed)
+        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(commander.intents.map(\.kind) == [.capture, .drain])
+    }
+
+    @Test func latePreviewAttachCannotFailRetryOfTheSameLease() async throws {
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
+        let commander = FakeCaptureIntentCommander()
+        commander.shouldGateApply = true
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 42, isMain: true)),
+            captureIntentCommander: commander
+        )
+        let original = Task {
+            await runtime.attachPreviewConsumer(
+                surfaceIdentity: identity, owner: .init(source: .localUI), demand: sourceDemand()
+            )
+        }
+        await commander.waitForApplyCalls(1)
+        let lease = try #require(runtime.currentConsumerLeaseSnapshot().first)
+        runtime.captureSessionDidTerminate(displayID: 42)
+        let retry = Task { await runtime.retryPreviewConsumer(leaseID: lease.id) }
+        for _ in 0..<1_000 where runtime.consumerLease(leaseID: lease.id)?.state != .attaching {
+            await Task.yield()
+        }
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attaching)
+        commander.shouldGateApply = false
+        commander.releaseApply(call: 1)
+
+        guard case let .attached(_, result) = await original.value else {
+            Issue.record("Expected the original attachment result.")
+            return
+        }
+        #expect(result.outcome == .ignored)
+        #expect(await retry.value?.state == .attached)
+        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .attached)
+        #expect(commander.intents.map(\.reason) == [.attach, .retry])
+        #expect(runtime.currentAggregatedDemandSnapshot().first?.consumerKinds == [.preview])
+    }
+
+    @Test func clearedCatalogDuringPreviewRetryEndsInFailure() async {
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
+        let catalog = FakeCatalogCommander(
+            snapshot: catalogSnapshot(displayID: 42, isMain: true), refreshResults: [.clearedSnapshot]
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: catalog, catalogCommander: catalog, captureIntentCommander: FakeCaptureIntentCommander()
+        )
+        let preview = await attachConsumerForTesting(
+            runtime, surfaceIdentity: identity, kind: .preview,
+            owner: .init(source: .localUI), demand: sourceDemand()
+        )
+        runtime.captureSessionDidTerminate(displayID: 42)
+
+        let retried = await runtime.retryPreviewConsumer(leaseID: preview.id)
+
+        #expect(retried?.state == .failed)
+        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
+    }
+
+    @Test func terminationDuringPreviewRetryRejectsLateCatalogCompletion() async throws {
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
+        let catalog = FakeCatalogCommander(snapshot: catalogSnapshot(displayID: 42, isMain: true))
+        let commander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(catalogProvider: catalog, catalogCommander: catalog, captureIntentCommander: commander)
+        let preview = await attachConsumerForTesting(
+            runtime, surfaceIdentity: identity, kind: .preview,
+            owner: .init(source: .localUI), demand: sourceDemand()
+        )
+        runtime.captureSessionDidTerminate(displayID: 42)
+        _ = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: identity, owner: .init(source: .sharingService), demand: sourceDemand()
+        )
+        catalog.shouldGateSubmitRefresh = true
+        let retry = Task { await runtime.retryPreviewConsumer(leaseID: preview.id) }
+        await catalog.waitForSubmitCalls(1)
+        #expect(runtime.consumerLease(leaseID: preview.id)?.state == .restarting)
+        let applyCount = commander.intents.count
+
+        runtime.captureSessionDidTerminate(displayID: 42)
+        #expect(runtime.consumerLease(leaseID: preview.id)?.state == .failed)
+        catalog.releaseSubmitRefresh(call: 1)
+        let lateResult = await retry.value
+
+        #expect(lateResult?.state == .failed)
+        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(commander.intents.count == applyCount)
+    }
+
+    @Test func previewRetryPreservesLANThatWasRestartedFirst() async throws {
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
+        let commander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 42, isMain: true)),
+            captureIntentCommander: commander
+        )
+        let preview = await attachConsumerForTesting(
+            runtime, surfaceIdentity: identity, kind: .preview,
+            owner: .init(source: .localUI), demand: sourceDemand()
+        )
+        runtime.captureSessionDidTerminate(displayID: 42)
+        _ = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: identity, owner: .init(source: .sharingService), demand: sourceDemand()
+        )
+
+        let retried = await runtime.retryPreviewConsumer(leaseID: preview.id)
+        #expect(retried?.state == .attached)
+        _ = await runtime.updateLANWebViewConsumerDemand(
+            surfaceIdentity: identity, demand: sourceDemand(powerProfile: .smooth, activeViewerCount: 1)
+        )
+        let demand = try #require(runtime.currentAggregatedDemandSnapshot().first)
+        #expect(Set(demand.consumerKinds) == [.preview, .lanWebView])
+        #expect(commander.intents.last?.aggregateDemand?.consumerKinds.contains(.lanWebView) == true)
+    }
+
+    @Test func streamTerminationFailsConsumersAndRequiresExplicitRetry() async throws {
+        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
+        let commander = FakeCaptureIntentCommander()
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalogSnapshot(displayID: 42, isMain: true)),
+            captureIntentCommander: commander
+        )
+        let preview = await attachConsumerForTesting(
+            runtime, surfaceIdentity: identity, kind: .preview,
+            owner: .init(source: .localUI), demand: sourceDemand()
+        )
+        _ = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: identity, owner: .init(source: .sharingService), demand: sourceDemand()
+        )
+        let oldIntent = try #require(runtime.currentEffectiveCaptureIntentSnapshot().first?.intent)
+        let oldCallCount = commander.intents.count
+        #expect(runtime.currentConsumerLeaseSnapshot().allSatisfy { $0.state == .attached })
+
+        runtime.captureSessionDidTerminate(displayID: 42)
+
+        #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .preview }?.state == .failed)
+        #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .preview }?.lastFailureCode
+            == DisplayRuntimeCaptureIntentFailureCode.streamStopped)
+        #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .lanWebView }?.state == .released)
+        #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(runtime.currentEffectiveCaptureIntentSnapshot().first?.intent.kind == .drain)
+        #expect(commander.intents.count == oldCallCount, "Termination must never restart capture automatically.")
+        #expect(runtime.recordCaptureIntentApplyResult(.applied(revision: oldIntent.revision)).outcome == .ignored)
+
+        let retried = await runtime.retryPreviewConsumer(leaseID: preview.id)
+        #expect(retried?.state == .attached)
+        #expect(commander.intents.count == oldCallCount + 1)
+        let restartedShare = await runtime.attachLANWebViewConsumer(
+            surfaceIdentity: identity, owner: .init(source: .sharingService), demand: sourceDemand()
+        )
+        guard case let .attached(_, result) = restartedShare else {
+            Issue.record("The first explicit LAN restart must succeed after stream termination.")
+            return
+        }
+        #expect(result.outcome == .applied)
+    }
+
     @Test func attachCreatesLeaseSnapshotAndCaptureIntent() async {
         let surfaceIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 42)
         let captureIntentCommander = FakeCaptureIntentCommander()

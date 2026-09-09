@@ -20,6 +20,29 @@ private final class IsolationPortPreferences: SharingPortPreferencesProtocol {
 @Suite(.serialized)
 @MainActor
 struct CaptureSharingIsolationTests {
+    @Test func terminatedCaptureRemovesOnlyAffectedPreviewAndShare() async {
+        let captureService = MockCapturePreviewService()
+        captureService.currentSessions = [
+            makeSession(id: UUID(), displayID: 1001),
+            makeSession(id: UUID(), displayID: 1002)
+        ]
+        let capture = CaptureController(capturePreviewService: captureService)
+        let sharingService = MockSharingService()
+        sharingService.activeSharingDisplayIDs = [1001, 1002]
+        sharingService.hasAnyActiveSharing = true
+        let sharing = SharingController(sharingService: sharingService, portPreferences: IsolationPortPreferences())
+        let adapter = DisplayRuntimeCaptureAdapter(controller: capture, sharingController: sharing)
+        #expect(capture.screenPreviewSessions.count == 2)
+        #expect(sharing.activeSharingDisplayIDs == [1001, 1002])
+
+        adapter.captureSessionDidTerminate(displayID: 1001)
+
+        #expect(capture.screenPreviewSessions.map(\.displayID) == [1002])
+        #expect(sharing.activeSharingDisplayIDs == [1002])
+        #expect(captureService.removedDisplayIDs == [1001])
+        #expect(sharingService.stopSharingCallCount == 1)
+    }
+
     @Test func captureMutationsDoNotRewriteSharingSnapshot() async throws {
         let sharingService = MockSharingService()
         let sharedDisplay: CGDirectDisplayID = 901

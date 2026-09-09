@@ -24,6 +24,7 @@ final class TestAppDisplayShareFrameConsumer: DisplayShareFrameConsumer {
 }
 
 final class TestAppDisplayCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestAppDisplayShareFrameConsumer()
 
     nonisolated(unsafe) var attachedSinkCount = 0

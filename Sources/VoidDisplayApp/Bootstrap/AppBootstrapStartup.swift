@@ -24,9 +24,11 @@ extension AppBootstrap {
                     PersistenceSnapshotProvider(context: persistence.context)
                 )
             )
+            guard !Task.isCancelled else { return }
             if configuration.preview == false,
                configuration.startupPlan.shouldRestoreVirtualDisplays {
                 _ = await runtime.displayRuntime.restoreStartupVirtualDisplays(source: .startup)
+                guard !Task.isCancelled else { return }
                 controllers.virtualDisplay.refreshVirtualDisplayState()
             }
             await persistence.observability.refreshSnapshot(reason: .startup)

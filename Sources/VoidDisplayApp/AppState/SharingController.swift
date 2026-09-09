@@ -150,6 +150,7 @@ package final class SharingController {
             correlationID: correlationID,
             deduplicationKey: "sharing.start.\(displayID)"
         )
+        guard startTracker.contains(displayID: displayID, token: startToken) else { return .invalidated }
         do {
             let result = try await sharingService.startSharing(display: display)
             await recordEvent(
@@ -160,6 +161,7 @@ package final class SharingController {
                 correlationID: correlationID,
                 deduplicationKey: "sharing.start.\(displayID)"
             )
+            guard startTracker.contains(displayID: displayID, token: startToken) else { return .invalidated }
             return result
         } catch {
             await observability?.record(

@@ -45,6 +45,11 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
         )
     }
 
+    package func captureSessionDidTerminate(displayID: DisplayRuntimeDisplayID) {
+        controller?.removePreviewSessions(displayID: displayID)
+        sharingController?.stopSharing(displayID: displayID)
+    }
+
     package func applyPreviewCaptureIntent(
         _ intent: DisplayRuntimeCaptureIntent
     ) async -> DisplayRuntimeCaptureIntentApplyResult {

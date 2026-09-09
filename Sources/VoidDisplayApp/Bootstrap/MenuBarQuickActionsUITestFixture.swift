@@ -40,6 +40,7 @@ private final class MenuBarQuickActionsShareConsumer: DisplayShareFrameConsumer,
 }
 
 private final class MenuBarQuickActionsCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer =
         MenuBarQuickActionsShareConsumer()
 

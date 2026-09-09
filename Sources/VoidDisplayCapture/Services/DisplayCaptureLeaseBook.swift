@@ -151,6 +151,11 @@ package struct DisplayCaptureLeaseBook {
         )
     }
 
+    mutating func invalidateTokens(for displayID: CGDirectDisplayID) {
+        statesByDisplayID.removeValue(forKey: displayID)
+        tokenOwnership = tokenOwnership.filter { $0.value.displayID != displayID }
+    }
+
     mutating func recordAttachedPreviewSinkDelta(_ delta: Int, for tokenID: UUID) -> CGDirectDisplayID? {
         guard let ownership = tokenOwnership[tokenID],
               ownership.kind == .preview,

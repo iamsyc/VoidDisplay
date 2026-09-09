@@ -23,16 +23,16 @@ package final class WebServer {
         case listenerMissingBoundPort
     }
 
-    nonisolated private static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
-    nonisolated private static let maxRequestBytes = 32 * 1024
-    nonisolated private static let receiveChunkSize = 4096
+    nonisolated static let requestHeaderTerminator = Data("\r\n\r\n".utf8)
+    nonisolated static let maxRequestBytes = 32 * 1024
+    nonisolated static let receiveChunkSize = 4096
     nonisolated private static let maxSignalBufferBytes = 256 * 1024
 
     nonisolated private static func endpointDescription(for connection: NWConnection) -> String {
         String(describing: connection.endpoint)
     }
 
-    private static func logConnectionIssue(_ operation: String, error: Error) {
+    static func logConnectionIssue(_ operation: String, error: Error) {
         if shouldTreatAsExpectedClientDisconnect(error) {
             AppLog.web.debug(
                 "\(operation, privacy: .public) ended by client disconnect: \(String(describing: error), privacy: .public)"
@@ -84,7 +84,8 @@ package final class WebServer {
         let sessionHub: any SignalSessionHub
     }
 
-    private var listener: NWListener?
+    var listener: NWListener?
+    var pendingHTTPRequests: [ObjectIdentifier: PendingHTTPRequest] = [:]
     private let displayPageResources: DisplayPageResources
     private let requestHandler = WebRequestHandler()
     private var activeConnections: [ObjectIdentifier: ActiveConnection] = [:]
@@ -98,7 +99,7 @@ package final class WebServer {
     private var didNotifyListenerStopped = false
     private var startupWaiter: CheckedContinuation<ListenerStartResult, Never>?
     private var startupTimeoutTask: Task<Void, Never>?
-    nonisolated private let networkQueue = DispatchQueue(
+    nonisolated let networkQueue = DispatchQueue(
         label: "com.developerchen.voiddisplay.web.network",
         qos: .userInitiated
     )
@@ -129,16 +130,12 @@ package final class WebServer {
             }
         }
         listener?.newConnectionHandler = { [weak self] connection in
-            guard let self else { return }
-            connection.stateUpdateHandler = { [weak self] state in
-                Task { @MainActor [weak self] in
-                    self?.handleConnectionState(state, for: connection)
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    connection.cancel()
+                    return
                 }
-            }
-            connection.start(queue: self.networkQueue)
-            self.receiveHTTPRequest(on: connection) { [weak self] content in
-                guard let self else { return }
-                self.processRequest(content, on: connection)
+                self.acceptHTTPRequest(on: connection)
             }
         }
     }
@@ -146,6 +143,10 @@ package final class WebServer {
     deinit {
         startupTimeoutTask?.cancel()
         startupWaiter?.resume(returning: .failed(error: LifecycleError.listenerCancelled))
+        for pending in pendingHTTPRequests.values {
+            pending.deadlineTask.cancel()
+            pending.connection.cancel()
+        }
         for activeConnection in activeConnections.values {
             activeConnection.sessionHub.removeClient(activeConnection.connection)
             activeConnection.connection.cancel()
@@ -219,6 +220,11 @@ package final class WebServer {
     }
 
     private func teardownListener() {
+        for pending in pendingHTTPRequests.values {
+            pending.deadlineTask.cancel()
+            pending.connection.cancel()
+        }
+        pendingHTTPRequests.removeAll()
         disconnectAllStreamClients()
         listener?.cancel()
         listener = nil
@@ -266,7 +272,7 @@ package final class WebServer {
         startupWaiter.resume(returning: result)
     }
 
-    private func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
+    func handleConnectionState(_ state: NWConnection.State, for connection: NWConnection) {
         switch state {
         case .failed(let error):
             Self.logConnectionIssue("Connection failed", error: error)
@@ -281,6 +287,7 @@ package final class WebServer {
     }
 
     private func removeSignalClient(_ connection: NWConnection, cancelConnection: Bool) {
+        finishHTTPRequest(on: connection)
         let key = connectionKey(for: connection)
         disconnectActiveConnection(forKey: key, cancelConnection: cancelConnection, fallbackConnection: connection)
     }
@@ -341,7 +348,7 @@ package final class WebServer {
             .replacingOccurrences(of: ">", with: "\\u003E")
     }
 
-    private func processRequest(_ content: Data?, on connection: NWConnection) {
+    func processRequest(_ content: Data?, on connection: NWConnection) {
         let endpoint = Self.endpointDescription(for: connection)
         guard let content else {
             AppLog.web.debug(
@@ -470,7 +477,8 @@ package final class WebServer {
                     connection.cancel()
                     return
                 }
-                guard let currentSession = self.authorizationResolver(target, capability),
+                guard self.pendingHTTPRequests[ObjectIdentifier(connection)] != nil,
+                      let currentSession = self.authorizationResolver(target, capability),
                       currentSession.sessionHub === hub else {
                     connection.cancel()
                     return
@@ -495,6 +503,7 @@ package final class WebServer {
                     return
                 }
                 let key = self.connectionKey(for: connection)
+                self.finishHTTPRequest(on: connection)
                 self.activeConnections[key] = ActiveConnection(
                     target: target,
                     clientID: clientID,
@@ -651,44 +660,4 @@ package final class WebServer {
         return Data(digest).base64EncodedString()
     }
 
-    nonisolated private func receiveHTTPRequest(
-        on connection: NWConnection,
-        completion: @escaping @MainActor (Data?) -> Void
-    ) {
-        let accumulator = HTTPRequestAccumulator(
-            headerTerminator: Self.requestHeaderTerminator,
-            maxBytes: Self.maxRequestBytes
-        )
-        Self.receiveHTTPRequestChunk(on: connection, accumulator: accumulator, completion: completion)
-    }
-
-    nonisolated private static func receiveHTTPRequestChunk(
-        on connection: NWConnection,
-        accumulator: HTTPRequestAccumulator,
-        completion: @escaping @MainActor (Data?) -> Void
-    ) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: Self.receiveChunkSize) { content, _, isComplete, error in
-            if let error {
-                Task { @MainActor in
-                    Self.logConnectionIssue("Receive HTTP request", error: error)
-                    completion(nil)
-                }
-                return
-            }
-
-            var nextAccumulator = accumulator
-            switch nextAccumulator.ingest(chunk: content, isComplete: isComplete) {
-            case .waiting:
-                Self.receiveHTTPRequestChunk(on: connection, accumulator: nextAccumulator, completion: completion)
-            case .complete(let completedData):
-                Task { @MainActor in
-                    completion(completedData)
-                }
-            case .invalidTooLarge:
-                Task { @MainActor in
-                    completion(nil)
-                }
-            }
-        }
-    }
 }

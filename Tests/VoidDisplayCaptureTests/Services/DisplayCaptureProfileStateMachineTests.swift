@@ -1,6 +1,7 @@
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
 import CoreVideo
+import Synchronization
 import Testing
 
 private func makeTestStreamConfigurationState(
@@ -366,6 +367,51 @@ struct DisplayCaptureProfileStateMachineTests {
                 makeTestStreamConfigurationState(frameRateTier: .fps30, previewShowsCursor: true)
             ]
         )
+    }
+
+    @Test func cancellationWaitsForInFlightConfigurationUpdate() async {
+        let gate = StreamConfigurationApplyGate()
+        let drainFinished = Mutex(false)
+        let initialState = makeTestStreamConfigurationState()
+        let coordinator = DisplayCaptureStreamConfigurationCoordinator(
+            initialState: initialState,
+            applier: { _ in await gate.enter() }
+        )
+        let applyTask = Task {
+            try await coordinator.applyImmediateDemand(makeDemand(previewShowsCursor: true))
+        }
+        await gate.waitForFirstEntry()
+
+        let cancelTask = Task {
+            await coordinator.cancelPending()
+            drainFinished.withLock { $0 = true }
+        }
+        await #expect(throws: CancellationError.self) { try await applyTask.value }
+        #expect(await staysTrue(timeoutNanoseconds: 50_000_000) {
+            !drainFinished.withLock { $0 }
+        })
+
+        await gate.open()
+        await cancelTask.value
+        #expect(drainFinished.withLock { $0 })
+        #expect(await coordinator.committedStateSnapshot() == initialState)
+    }
+
+    @Test func cancelledCoordinatorRejectsLaterDemands() async {
+        let recorder = StreamConfigurationRecorder()
+        let coordinator = DisplayCaptureStreamConfigurationCoordinator(
+            initialState: makeTestStreamConfigurationState(),
+            applier: { state in await recorder.record(state) }
+        )
+        await coordinator.cancelPending()
+
+        await #expect(throws: CancellationError.self) {
+            try await coordinator.applyImmediateDemand(makeDemand(previewShowsCursor: true))
+        }
+        await #expect(throws: CancellationError.self) {
+            try await coordinator.applyImmediateDemand(makeDemand())
+        }
+        #expect(await recorder.snapshot().isEmpty)
     }
 
     @Test func streamConfigurationCoordinatorRecoversFromFailedApplyUsingCommittedState() async throws {

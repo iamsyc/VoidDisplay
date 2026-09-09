@@ -423,7 +423,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
     var onDisable: ((UUID) -> Void)?
     var onCreate: ((DisplayRuntimeVirtualDisplayCreateRequest) -> Void)?
     var onDelete: ((DisplayRuntimeVirtualDisplayDeleteCommandRequest) -> Void)?
-    var onStartupRestore: ((DisplayRuntimeStartupRestoreCommandRequest) -> Void)?
+    var onStartupRestore: ((DisplayRuntimeStartupRestoreCommandRequest) async -> Void)?
     var error: Error?
     var scriptedRebuildErrors: [Error?] = []
 
@@ -630,7 +630,7 @@ final class FakeVirtualDisplayCommander: DisplayRuntimeVirtualDisplayCommanding,
         if let startupRestoreError {
             throw startupRestoreError
         }
-        onStartupRestore?(request)
+        await onStartupRestore?(request)
         if !startupRestoreResults.isEmpty {
             var result = startupRestoreResults.removeFirst()
             if result.transactionID != request.transactionID {

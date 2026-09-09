@@ -7,6 +7,75 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeStartupRestoreTests {
+    @Test func cancelledStartupRestoreWaitsForCurrentCommandAndSkipsRemainingConfigs() async throws {
+        let firstID = UUID()
+        let secondID = UUID()
+        let catalog = catalogSnapshot(displayIDs: [307, 308], mainDisplayID: nil)
+        let configs = disabledVirtualDisplaySnapshot(configID: firstID, serial: 3071, desiredEnabled: true).configs
+            + disabledVirtualDisplaySnapshot(configID: secondID, serial: 3081, desiredEnabled: true).configs
+        let provider = FakeVirtualDisplayProvider(snapshot: .init(
+            runningConfigIDs: [], configStoreHasLoadFailure: false, configStoreHasDiagnostics: false,
+            managedDisplays: [], configs: configs, restoreFailureConfigIDs: []
+        ))
+        let commander = FakeVirtualDisplayCommander()
+        commander.startupConfigLoadResult = .succeeded(configs: [
+            startupRestoreConfig(id: firstID, serial: 3071), startupRestoreConfig(id: secondID, serial: 3081)
+        ])
+        var releaseFirst: CheckedContinuation<Void, Never>?
+        var restoreCompleted = false
+        commander.onStartupRestore = { request in
+            if request.configID == firstID {
+                await withCheckedContinuation { releaseFirst = $0 }
+            }
+        }
+        let runtime = DisplayRuntime(
+            catalogProvider: FakeCatalogProvider(snapshot: catalog), virtualDisplayProvider: provider,
+            catalogCommander: FakeCatalogCommander(snapshot: catalog), startupRestoreCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+        let outer = Task {
+            let result = await runtime.restoreStartupVirtualDisplays()
+            restoreCompleted = true
+            return result
+        }
+        for _ in 0..<10_000 where releaseFirst == nil { await Task.yield() }
+        let release = try #require(releaseFirst)
+        let owner = try #require(runtime.activeStartupRestoreTask)
+        owner.cancel()
+        #expect(!restoreCompleted)
+        #expect(commander.startupRestoreRequests.map(\.configID) == [firstID])
+        release.resume()
+        _ = await outer.value
+        #expect(restoreCompleted)
+        #expect(commander.startupRestoreRequests.map(\.configID) == [firstID])
+        #expect(runtime.activeStartupRestoreTask == nil)
+    }
+
+    @Test func cancelledStartupRestoreDoesNotStartCommandAfterCatalogWait() async throws {
+        let configID = UUID()
+        let catalog = FakeCatalogCommander(snapshot: catalogSnapshot(displayID: 307, isMain: false))
+        catalog.shouldGateSubmitRefresh = true
+        let commander = FakeVirtualDisplayCommander()
+        commander.startupConfigLoadResult = .succeeded(configs: [startupRestoreConfig(id: configID, serial: 3071)])
+        let runtime = DisplayRuntime(
+            catalogProvider: catalog,
+            virtualDisplayProvider: FakeVirtualDisplayProvider(snapshot: disabledVirtualDisplaySnapshot(
+                configID: configID, serial: 3071, desiredEnabled: true
+            )),
+            catalogCommander: catalog, startupRestoreCommander: commander,
+            topologyWaitPolicy: fastTopologyWaitPolicy(maximumSampleCount: 1)
+        )
+        let outer = Task { await runtime.restoreStartupVirtualDisplays() }
+        await catalog.waitForSubmitCalls(1)
+        let owner = try #require(runtime.activeStartupRestoreTask)
+        owner.cancel()
+        catalog.shouldGateSubmitRefresh = false
+        catalog.releaseSubmitRefresh(call: 1)
+        _ = await outer.value
+        #expect(commander.startupRestoreCallCount == 0)
+        #expect(runtime.activeStartupRestoreTask == nil)
+    }
+
     @Test func startupRestoreRestoresDesiredConfigAndRecordsTraceEvidence() async throws {
         let configID = UUID(uuidString: "A0010000-0000-0000-0000-000000000001")!
         let catalog = catalogSnapshot(displayID: 301, isMain: false)

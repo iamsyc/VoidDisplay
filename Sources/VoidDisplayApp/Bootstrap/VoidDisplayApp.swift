@@ -44,8 +44,8 @@ public struct VoidDisplayApplication: App {
         displayRuntime = env.displayRuntime
         sharingAdapter = env.sharingAdapter
         openScreenCapturePrivacySettings = env.openScreenCapturePrivacySettings
-        AppTerminationCleanup.install {
-            env.sharing.stopWebService()
+        AppTerminationCleanup.shared.install {
+            await env.prepareForTermination()
         }
     }
 
@@ -222,24 +222,34 @@ private final class UITestFocusTraversalView: NSView {
 }
 
 @MainActor
-private enum AppTerminationCleanup {
-    private static var handler: (() -> Void)?
+package final class AppTerminationCleanup {
+    static let shared = AppTerminationCleanup()
+    private var handler: (@MainActor () async -> Void)?
+    private var task: Task<Void, Never>?
 
-    static func install(_ handler: @escaping () -> Void) {
+    package func install(_ handler: @escaping @MainActor () async -> Void) {
         self.handler = handler
     }
 
-    static func run() {
-        guard let handler else { return }
+    package func requestTermination(reply: @escaping @MainActor () -> Void) -> NSApplication.TerminateReply {
+        guard task == nil else { return .terminateLater }
+        guard let handler else { return .terminateNow }
         self.handler = nil
-        handler()
+        task = Task {
+            await handler()
+            self.task = nil
+            reply()
+        }
+        return .terminateLater
     }
 }
 
 @MainActor
 private final class VoidDisplayApplicationDelegate: NSObject, NSApplicationDelegate {
-    func applicationWillTerminate(_: Notification) {
-        AppTerminationCleanup.run()
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        AppTerminationCleanup.shared.requestTermination {
+            sender.reply(toApplicationShouldTerminate: true)
+        }
     }
 }
 

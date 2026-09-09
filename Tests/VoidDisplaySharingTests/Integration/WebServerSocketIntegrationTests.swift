@@ -24,6 +24,48 @@ struct WebServerSocketIntegrationTests {
         accessCapability: socketTestAccessCapability
     )
 
+    @Test func incompleteHTTPRequestExpiresWithoutClientEOF() async throws {
+        let setup = try await startMainSignalServer(sessionHub: TestSignalSessionHub())
+        defer { setup.server.stopListener() }
+        let socket = try await connectLoopbackSocket(port: setup.port)
+        defer { close(socket) }
+        try sendAll(socket, data: Data("GET / HTTP/1.1\r\n".utf8))
+
+        let closed = try await Task.detached {
+            try waitForCloseOrEOF(from: socket, deadlineSeconds: 7)
+        }.value
+        #expect(closed, "Incomplete headers must expire without a client closing its write side.")
+    }
+
+    @Test func pendingHTTPRequestLimitReleasesCapacityAfterDisconnect() async throws {
+        let setup = try await startMainSignalServer(sessionHub: TestSignalSessionHub())
+        defer { setup.server.stopListener() }
+        var pendingSockets: [Int32] = []
+        defer { pendingSockets.forEach { close($0) } }
+        for _ in 0..<32 {
+            pendingSockets.append(try await connectLoopbackSocket(port: setup.port))
+        }
+        let rejectedSocket = try await connectLoopbackSocket(port: setup.port)
+        defer { close(rejectedSocket) }
+        #expect(try await waitForSocketClose(rejectedSocket))
+
+        close(pendingSockets.removeFirst())
+        let capacityReleased = await waitUntilAsync(timeout: .seconds(2)) {
+            setup.server.pendingHTTPRequests.count == 31
+        }
+        try #require(capacityReleased)
+        let socket = try await connectLoopbackSocket(port: setup.port)
+        defer { close(socket) }
+        try sendAll(socket, data: Data("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8))
+        let response = try await Task.detached {
+            try readUntilHeaderTerminator(from: socket, deadlineSeconds: 2)
+        }.value
+        #expect(String(decoding: response, as: UTF8.self).contains("HTTP/1.1 404 Not Found"))
+        setup.server.stopListener()
+        let remainingSocket = try #require(pendingSockets.first)
+        #expect(try await waitForSocketClose(remainingSocket))
+    }
+
     @Test func stoppedListenerAllowsImmediateSamePortRestartAfterActiveWebSocketTraffic() async throws {
         let sessionHub = TestSignalSessionHub()
         let setup = try await startMainSignalServer(sessionHub: sessionHub)

@@ -13,6 +13,10 @@ package final class DisplayStartTracker {
         tokensByDisplayID[displayID]?.isEmpty == false
     }
 
+    package func contains(displayID: CGDirectDisplayID, token: UUID) -> Bool {
+        tokensByDisplayID[displayID]?.contains(token) == true
+    }
+
     @discardableResult
     package func begin(displayID: CGDirectDisplayID) -> UUID {
         let token = UUID()

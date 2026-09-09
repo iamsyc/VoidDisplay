@@ -56,8 +56,10 @@ package actor DisplayCaptureRegistry {
     private var performanceMode: CapturePerformanceMode
     private var sessionStore = DisplayCaptureSessionStore()
     private var leaseBook = DisplayCaptureLeaseBook()
+    private var isShuttingDown = false
+    private nonisolated let sessionTerminationHandler = Mutex<(@MainActor @Sendable (CGDirectDisplayID) -> Void)?>(nil)
     private var sessionEnsureTasksByDisplayID: [
-        CGDirectDisplayID: Task<DisplayCaptureSessionStore.Record, Error>
+        CGDirectDisplayID: Task<Void, Error>
     ] = [:]
 
     package static let shared = DisplayCaptureRegistry()
@@ -85,6 +87,12 @@ package actor DisplayCaptureRegistry {
         for displayID in displayIDs {
             try? await applyDemand(for: displayID)
         }
+    }
+
+    package nonisolated func setSessionTerminationHandler(
+        _ handler: @escaping @MainActor @Sendable (CGDirectDisplayID) -> Void
+    ) {
+        sessionTerminationHandler.withLock { $0 = handler }
     }
 
     package func acquirePreview(display: SendableDisplay) async throws -> DisplayPreviewSubscription {
@@ -164,6 +172,21 @@ package actor DisplayCaptureRegistry {
         sessionStore.sessionState(for: displayID)
     }
 
+    package func shutdown() async {
+        isShuttingDown = true
+        let creationTasks = Array(sessionEnsureTasksByDisplayID.values)
+        for task in creationTasks { task.cancel() }
+        for displayID in sessionStore.activeDisplayIDs {
+            leaseBook.invalidateTokens(for: displayID)
+            sessionStore.beginDraining(displayID: displayID) { [weak self] displayID in
+                await self?.finishDrainingSession(displayID: displayID)
+            }
+        }
+        let drainTasks = sessionStore.drainTasks
+        for task in creationTasks { _ = await task.result }
+        for task in drainTasks { await task.value }
+    }
+
     private func acquireToken(
         display: SendableDisplay,
         kind: DisplayCaptureLeaseBook.TokenKind
@@ -190,6 +213,7 @@ package actor DisplayCaptureRegistry {
             resolutionText: resolutionText,
             session: session
         )
+        configureSessionTermination(for: displayID, session: session)
         configureShareFrameDemand(for: displayID, consumer: session.shareFrameConsumer)
     }
 
@@ -255,39 +279,43 @@ package actor DisplayCaptureRegistry {
             }
         }
 
-        if let existingTask = sessionEnsureTasksByDisplayID[display.displayID] {
-            let record = try await existingTask.value
-            sessionStore.storeInitializedSessionIfAbsent(record, for: displayID)
+        guard !isShuttingDown else { throw RegistryError.sessionUnavailable }
+        if let existingTask = sessionEnsureTasksByDisplayID[displayID] {
+            try await existingTask.value
             return
         }
 
-        let task = Task<DisplayCaptureSessionStore.Record, Error> {
+        let task = Task<Void, Error> {
             [self, captureSessionFactory, makeShareFrameConsumer, performanceMode] in
+            defer {
+                sessionEnsureTasksByDisplayID[displayID] = nil
+                sessionStore.cancelInitializing(displayID: displayID)
+            }
             await Task.yield()
-            let initialProfile = await initialProfile(for: displayID, fallbackKind: fallbackKind)
+            try Task.checkCancellation()
+            let initialProfile = leaseBook.initialProfile(for: displayID, fallbackKind: fallbackKind)
             let session = try await captureSessionFactory(
                 display,
                 initialProfile,
                 performanceMode,
                 makeShareFrameConsumer
             )
-            return DisplayCaptureSessionStore.Record(
+            guard !isShuttingDown else {
+                await session.stop()
+                throw RegistryError.sessionUnavailable
+            }
+            let record = DisplayCaptureSessionStore.Record(
                 session: session,
                 resolutionText: "\(display.width) × \(display.height)",
                 state: .active
             )
+            sessionStore.storeInitializedSessionIfAbsent(record, for: displayID)
+            configureSessionTermination(for: displayID, session: record.session)
+            configureShareFrameDemand(for: displayID, consumer: record.session.shareFrameConsumer)
         }
         sessionStore.markInitializing(displayID: displayID)
         sessionEnsureTasksByDisplayID[displayID] = task
-        defer { sessionEnsureTasksByDisplayID[displayID] = nil }
-        do {
-            let record = try await task.value
-            sessionStore.storeInitializedSessionIfAbsent(record, for: displayID)
-            configureShareFrameDemand(for: displayID, consumer: record.session.shareFrameConsumer)
-        } catch {
-            sessionStore.cancelInitializing(displayID: displayID)
-            throw error
-        }
+        try await task.value
     }
 
     private func releaseToken(
@@ -318,6 +346,31 @@ package actor DisplayCaptureRegistry {
             return
         }
         try? await applyDemand(for: displayID)
+    }
+
+    private func configureSessionTermination(
+        for displayID: CGDirectDisplayID,
+        session: any DisplayCaptureSessioning
+    ) {
+        let sessionID = ObjectIdentifier(session)
+        session.setTerminationHandler { [weak self] in
+            Task { await self?.sessionDidTerminate(displayID: displayID, sessionID: sessionID) }
+        }
+    }
+
+    private func sessionDidTerminate(displayID: CGDirectDisplayID, sessionID: ObjectIdentifier) {
+        guard let record = sessionStore.record(for: displayID),
+              record.state != .draining,
+              ObjectIdentifier(record.session) == sessionID else { return }
+        leaseBook.invalidateTokens(for: displayID)
+        let handler = sessionTerminationHandler.withLock { $0 }
+        sessionStore.beginDraining(
+            displayID: displayID,
+            beforeStop: { await handler?(displayID) },
+            onStopCompleted: { [weak self] displayID in
+                await self?.finishDrainingSession(displayID: displayID)
+            }
+        )
     }
 
     private func configureShareFrameDemand(
@@ -400,7 +453,19 @@ package actor DisplayCaptureRegistry {
         }
         var demand = leaseBook.demandSnapshot(for: displayID, performanceMode: performanceMode)
         while true {
-            try await record.session.setDemand(demand)
+            do {
+                try await record.session.setDemand(demand)
+            } catch {
+                if !(error is CancellationError) {
+                    sessionDidTerminate(displayID: displayID, sessionID: ObjectIdentifier(record.session))
+                    await MainActor.run {
+                        AppErrorMapper.logFailure(
+                            "Apply screen capture demand", error: error, logger: AppLog.capture, subsystem: .capture
+                        )
+                    }
+                }
+                throw error
+            }
             guard let currentRecord = sessionStore.record(for: displayID),
                   currentRecord.state != .draining,
                   ObjectIdentifier(currentRecord.session) == ObjectIdentifier(record.session)
@@ -420,10 +485,4 @@ package actor DisplayCaptureRegistry {
         sessionStore.finishDraining(displayID: displayID)
     }
 
-    private func initialProfile(
-        for displayID: CGDirectDisplayID,
-        fallbackKind: DisplayCaptureLeaseBook.TokenKind
-    ) async -> DisplayCaptureProfile {
-        leaseBook.initialProfile(for: displayID, fallbackKind: fallbackKind)
-    }
 }

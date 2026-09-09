@@ -101,7 +101,8 @@ package enum AppBootstrap {
             openScreenCapturePrivacySettings: { openURL in
                 captureSharing.catalogService.openScreenCapturePrivacySettings(openURL: openURL)
             },
-            startupTask: startupTask
+            startupTask: startupTask,
+            captureRegistry: captureSharing.captureRegistry
         )
     }
 

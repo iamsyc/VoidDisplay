@@ -1,11 +1,24 @@
 @testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
 import CoreGraphics
+import CoreMedia
 import ScreenCaptureKit
 import Synchronization
 import Testing
 
 private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    private let onSetDemand: @Sendable (DisplayCaptureDemandSnapshot) async throws -> Void
+
+    nonisolated init(onSetDemand: @escaping @Sendable (DisplayCaptureDemandSnapshot) async throws -> Void = { _ in }) {
+        self.onSetDemand = onSetDemand
+    }
+
+    private let terminationHandler = Mutex<(@Sendable () -> Void)?>(nil)
+    nonisolated func setTerminationHandler(_ handler: @escaping @Sendable () -> Void) {
+        terminationHandler.withLock { $0 = handler }
+    }
+    func terminate() { terminationHandler.withLock { $0 }?() }
+
     private struct Counters {
         var stopSharingCalls = 0
         var stopCalls = 0
@@ -27,6 +40,7 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {
         shareFrameConsumer.updatePerformanceMode(demand.performanceMode)
         counters.withLock { $0.setDemandCalls.append(demand) }
+        try await onSetDemand(demand)
     }
 
     nonisolated func stop() async {
@@ -44,6 +58,12 @@ private final class FakeCaptureSession: DisplayCaptureSessioning, @unchecked Sen
     var setDemandCalls: [DisplayCaptureDemandSnapshot] {
         counters.withLock { $0.setDemandCalls }
     }
+}
+
+private struct CaptureStartFailure: Error {}
+
+private final class RegistryPreviewSink: DisplayPreviewSink, @unchecked Sendable {
+    nonisolated func submitFrame(_: CMSampleBuffer) {}
 }
 
 private actor SharingStateGate {
@@ -88,6 +108,7 @@ private actor SharingStateGate {
 }
 
 private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     private struct Counters {
         var stopSharingCalls = 0
         var stopCalls = 0
@@ -143,6 +164,7 @@ private final class BlockingSetSharingActiveSession: DisplayCaptureSessioning, @
 }
 
 private final class BlockingStopCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
     private let gate: SharingStateGate
     private let stopCallCountValue = Mutex(0)
@@ -171,6 +193,160 @@ private final class BlockingStopCaptureSession: DisplayCaptureSessioning, @unche
 }
 
 struct DisplayCaptureRegistryTests {
+    @Test(arguments: [false, true])
+    func demandFailureInvalidatesPreviewAndSharing(sharing: Bool) async throws {
+        let displayID = CGDirectDisplayID(4043)
+        let session = FakeCaptureSession { demand in
+            if !demand.isEmpty { throw CaptureStartFailure() }
+        }
+        let registry = DisplayCaptureRegistry()
+        let notifications = Mutex<[CGDirectDisplayID]>([])
+        registry.setSessionTerminationHandler { id in notifications.withLock { $0.append(id) } }
+        await registry.installSessionForTesting(displayID: displayID, resolutionText: "1920 × 1080", session: session)
+
+        if sharing {
+            let token = try await registry.acquireShareTokenForTesting(displayID: displayID)
+            session.testShareFrameConsumer.setHasDemand(true)
+            #expect(await waitUntil { await registry.sessionState(for: displayID) == .stopped })
+            await registry.release(token)
+        } else {
+            let display = SendableDisplay(SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080))
+            let preview = try await registry.acquirePreview(display: display)
+            let sink = RegistryPreviewSink()
+            preview.attachPreviewSink(sink)
+            #expect(await waitUntil { await registry.sessionState(for: displayID) == .stopped })
+            preview.cancel()
+        }
+        #expect(session.setDemandCalls.contains { !$0.isEmpty })
+        #expect(session.stopCalls == 1)
+        #expect(notifications.withLock { $0 } == [displayID])
+    }
+
+    @Test func demandCancellationKeepsSessionAvailable() async throws {
+        let displayID = CGDirectDisplayID(4044)
+        let session = FakeCaptureSession { demand in
+            if !demand.isEmpty { throw CancellationError() }
+        }
+        let registry = DisplayCaptureRegistry()
+        let notifications = Mutex(0)
+        registry.setSessionTerminationHandler { _ in notifications.withLock { $0 += 1 } }
+        await registry.installSessionForTesting(displayID: displayID, resolutionText: "1920 × 1080", session: session)
+        let token = try await registry.acquireShareTokenForTesting(displayID: displayID)
+        session.testShareFrameConsumer.setHasDemand(true)
+        #expect(await waitUntil { session.setDemandCalls.contains { !$0.isEmpty } })
+        #expect(await staysTrue(timeoutNanoseconds: 50_000_000) {
+            await registry.sessionState(for: displayID) == .active
+                && notifications.withLock { $0 } == 0
+        })
+        #expect(session.stopCalls == 0)
+        await registry.release(token)
+        #expect(await waitUntil { await registry.sessionState(for: displayID) == .stopped })
+    }
+
+    @Test(arguments: [false, true])
+    func shutdownWaitsForActiveAndDrainingSessions(alreadyDraining: Bool) async throws {
+        let displayID = CGDirectDisplayID(4040)
+        let display = SendableDisplay(SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080))
+        let gate = SharingStateGate()
+        let session = BlockingStopCaptureSession(gate: gate)
+        let factoryCalls = Mutex(0)
+        let shutdownFinished = Mutex(false)
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _, _ in
+            factoryCalls.withLock { $0 += 1 }
+            return FakeCaptureSession()
+        })
+        await registry.installSessionForTesting(displayID: displayID, resolutionText: "1920 × 1080", session: session)
+        let token = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
+        if alreadyDraining { await registry.release(token) }
+
+        let shutdownTask = Task {
+            await registry.shutdown()
+            shutdownFinished.withLock { $0 = true }
+        }
+        await gate.waitForFalseEntry()
+        let repeatedShutdown = Task { await registry.shutdown() }
+        let lateAcquire = Task { try await registry.acquirePreview(display: display) }
+        #expect(await staysTrue(timeoutNanoseconds: 50_000_000) {
+            !shutdownFinished.withLock { $0 }
+        })
+        #expect(await registry.sessionState(for: displayID) == .draining)
+        await registry.release(token)
+
+        await gate.open()
+        await shutdownTask.value
+        await repeatedShutdown.value
+        await #expect(throws: Error.self) { try await lateAcquire.value }
+        #expect(await registry.sessionState(for: displayID) == .stopped)
+        #expect(session.stopCallCount == 1)
+        #expect(factoryCalls.withLock { $0 } == 0)
+    }
+
+    @Test func shutdownStopsSessionCreatedByNonCooperativeFactory() async {
+        let displayID = CGDirectDisplayID(4042)
+        let display = SendableDisplay(SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080))
+        let gate = SharingStateGate()
+        let session = FakeCaptureSession()
+        let shutdownFinished = Mutex(false)
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _, _ in
+            await gate.markFalseEntered()
+            await gate.waitUntilOpen()
+            return session
+        })
+        let acquireTask = Task { try await registry.acquirePreview(display: display) }
+        await gate.waitForFalseEntry()
+        let shutdownTask = Task {
+            await registry.shutdown()
+            shutdownFinished.withLock { $0 = true }
+        }
+        #expect(await staysTrue(timeoutNanoseconds: 50_000_000) {
+            !shutdownFinished.withLock { $0 }
+        })
+        await #expect(throws: Error.self) { try await registry.acquireShare(display: display) }
+
+        await gate.open()
+        await shutdownTask.value
+        await #expect(throws: Error.self) { try await acquireTask.value }
+        #expect(session.stopCalls == 1)
+        #expect(session.setDemandCalls.isEmpty)
+        #expect(await registry.sessionState(for: displayID) == .stopped)
+    }
+
+    @Test func terminatedSessionReleasesOldTokensAndCannotInvalidateReplacement() async throws {
+        let displayID = CGDirectDisplayID(4041)
+        let display = SendableDisplay(SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080))
+        let stoppedSession = FakeCaptureSession()
+        let replacementSession = FakeCaptureSession()
+        let notifications = Mutex<[CGDirectDisplayID]>([])
+        let registry = DisplayCaptureRegistry(captureSessionFactory: { _, _, _, _ in replacementSession })
+        registry.setSessionTerminationHandler { id in
+            #expect(stoppedSession.stopCalls == 0, "Consumers must be invalidated before replacement is allowed.")
+            notifications.withLock { $0.append(id) }
+        }
+        await registry.installSessionForTesting(displayID: displayID, resolutionText: "1920 × 1080", session: stoppedSession)
+        let preview = try await registry.acquirePreviewTokenForTesting(displayID: displayID)
+        let share = try await registry.acquireShareTokenForTesting(displayID: displayID)
+        #expect(await registry.sessionState(for: displayID) == .active)
+
+        stoppedSession.terminate()
+        let drained = await waitUntil { await registry.sessionState(for: displayID) == .stopped }
+        try #require(drained)
+        #expect(stoppedSession.stopCalls == 1)
+        #expect(notifications.withLock { $0 } == [displayID])
+
+        let replacement = try await registry.acquirePreview(display: display)
+        await registry.release(preview)
+        await registry.release(share)
+        stoppedSession.terminate()
+        #expect(await staysTrue(timeoutNanoseconds: 50_000_000) {
+            await registry.sessionState(for: displayID) == .active
+                && notifications.withLock { $0.count } == 1
+        })
+        #expect(replacementSession.stopCalls == 0)
+        replacement.cancel()
+        #expect(await waitUntil { await registry.sessionState(for: displayID) == .stopped })
+        #expect(replacementSession.stopCalls == 1, "Old tokens must not keep the replacement alive.")
+    }
+
     @Test func releasingShareKeepsPreviewSessionAliveUntilLastToken() async throws {
         let registry = DisplayCaptureRegistry()
         let fakeSession = FakeCaptureSession()
@@ -495,6 +671,7 @@ struct DisplayCaptureRegistryTests {
 }
 
 private final class SessionStoreFakeSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
     private let stopCallCountValue = Mutex(0)
 

@@ -4,6 +4,65 @@ import Foundation
 import Testing
 
 struct ObservabilitySanitizerTests {
+    @Test(arguments: ["token", "secret", "password", "capability"])
+    func zeroWidthSpaceRemainsInsideCredential(key: String) throws {
+        let credential = "synthetic-head\u{200B}private-suffix"
+        let input = "\(key)=\(credential) state=ready"
+        #expect(input.contains("private-suffix"))
+        let sanitizer = ObservabilitySanitizer()
+        let output = try #require(sanitizer.sanitize(text: input))
+
+        #expect(output == "\(key)=\"<redacted-token>\" state=ready")
+        #expect(output.contains("private-suffix") == false)
+        #expect(sanitizer.sanitize(text: output) == output)
+    }
+
+    @Test(arguments: [
+        "{\"password\":\"\u{0301}synthetic secret\",\"state\":\"ready\"}",
+        #"{"password":"synthetic 😀 \\\" value","state":"ready"}"#,
+        #"{"password":{"nested":"synthetic value"},"state":"ready"}"#,
+        #"{"password":["synthetic",{"nested":"value"}],"state":"ready"}"#
+    ])
+    func JSONCredentialsPreserveAdjacentStructure(_ input: String) throws {
+        #expect(input.contains("synthetic"))
+        _ = try JSONSerialization.jsonObject(with: Data(input.utf8))
+        let sanitizer = ObservabilitySanitizer()
+        let output = try #require(sanitizer.sanitize(text: input))
+        let fields = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: String])
+        #expect(fields == ["password": "<redacted-token>", "state": "ready"])
+        #expect(sanitizer.sanitize(text: output) == output)
+    }
+
+    @Test(arguments: ["password=synthetic-head}tail", "token=synthetic-head]tail",
+                      #"password="synthetic"tail"#, "token='synthetic'tail",
+                      #"password="synthetic"}tail"#, "token='synthetic']tail",
+                      #"password="synthetic with spaces"tail"#])
+    func bareCredentialBracketsDoNotLeakSuffixes(_ input: String) throws {
+        #expect(input.contains("tail"))
+        let output = try #require(ObservabilitySanitizer().sanitize(text: input + " state=ready"))
+        #expect(output.contains("synthetic-head") == false)
+        #expect(output.contains("tail") == false)
+        #expect(output.contains("<redacted-token>"))
+        #expect(output.contains("state=ready"))
+    }
+
+    @Test(arguments: [
+        #"{"password":"synthetic-value","state":"ready"}"#,
+        #"Failed request: {"nested":{"secret":"synthetic-value with spaces"},"state":"ready"}"#,
+        #"{"token":"synthetic-value\"quoted\\suffix","state":"ready"}"#,
+        #"{'capability': 'synthetic-value with spaces', 'state': 'ready'}"#,
+        #"password="synthetic-value with spaces" state=ready"#
+    ])
+    func quotedCredentialsAreRedactedWithoutRemovingAdjacentText(_ input: String) throws {
+        #expect(input.contains("synthetic-value"))
+        let output = try #require(ObservabilitySanitizer().sanitize(text: input))
+        #expect(output.contains("synthetic-value") == false)
+        #expect(output.contains("with spaces") == false)
+        #expect(output.contains("quoted") == false)
+        #expect(output.contains("<redacted-token>"))
+        #expect(output.contains("ready"))
+    }
+
     @Test func sanitizeTextRedactsHomePathsAndLocalIPs() {
         let sanitizer = ObservabilitySanitizer(homePath: "/Users/tester")
         let input = "Open /Users/tester/Library/Logs via http://192.168.1.11:8080/display."

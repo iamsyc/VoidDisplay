@@ -46,6 +46,38 @@ private actor SharingControllerOutcomeBox {
 
 @MainActor
 struct SharingControllerTests {
+    @Test(arguments: [1, 2])
+    func terminationDuringRecordingInvalidatesSharingStart(recordingCall: Int) async throws {
+        let recording = try await makeControllerRecordingFixture()
+        defer { try? FileManager.default.removeItem(at: recording.directory) }
+        let service = MockSharingService()
+        let display = SharedMockSCDisplay.make(displayID: 38, width: 1920, height: 1080)
+        let controller = SharingController(
+            sharingService: service,
+            portPreferences: MockSharingPortPreferences(),
+            observability: recording.center
+        )
+        var observedStartCounts: [Int] = []
+        recording.hook.onSnapshot = { _ in
+            guard observedStartCounts.isEmpty,
+                  controller.isStarting(displayID: display.displayID),
+                  service.startSharingCallCount == recordingCall - 1 else { return }
+            observedStartCounts.append(service.startSharingCallCount)
+            controller.stopSharing(displayID: display.displayID)
+        }
+
+        let outcome = try await controller.beginSharing(display: display)
+
+        #expect(observedStartCounts == [recordingCall - 1])
+        #expect(service.startSharingCallCount == recordingCall - 1)
+        #expect(service.activeSharingDisplayIDs.isEmpty)
+        #expect(controller.startingDisplayIDs.isEmpty)
+        guard case .invalidated = outcome else {
+            Issue.record("A sharing start terminated during recording must return invalidated.")
+            return
+        }
+    }
+
     @Test func startWebServiceSyncsState() async {
         let requestedPort = TestPortAllocator.randomUnprivilegedPort()
         let service = MockSharingService()

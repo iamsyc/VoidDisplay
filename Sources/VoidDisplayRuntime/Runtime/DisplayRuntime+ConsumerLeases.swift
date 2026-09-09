@@ -83,8 +83,12 @@ extension DisplayRuntime {
         }
 
         let intent = submitCaptureIntent(surfaceIdentity: surfaceIdentity, reason: .attach)
-        let applyResult = await applyCaptureIntent(intent, consumerKind: kind)
-        if let currentLease = consumerLeasesByID[lease.id], currentLease.state == .attaching {
+        let rawApplyResult = await applyCaptureIntent(intent, consumerKind: kind)
+        let applyResult = currentSurfaceEpoch(for: surfaceIdentity) == intent.surfaceEpoch
+            ? rawApplyResult : rawApplyResult.ignored()
+        if let currentLease = consumerLeasesByID[lease.id],
+           currentLease.state == .attaching,
+           currentLease.surfaceEpoch == intent.surfaceEpoch {
             if applyResult.outcome == .applied {
                 _ = replaceLease(
                     currentLease,
@@ -264,6 +268,19 @@ extension DisplayRuntime {
                 applyResult: nil
             )
         }
+        return await detachLANWebViewConsumer(leaseID: lease.id)
+    }
+
+    @discardableResult
+    package func detachLANWebViewConsumer(
+        leaseID: DisplayRuntimeConsumerLeaseID
+    ) async -> DisplayRuntimeLANWebViewConsumerDetachResult {
+        guard let lease = consumerLeasesByID[leaseID], lease.kind == .lanWebView else {
+            return DisplayRuntimeLANWebViewConsumerDetachResult(
+                releasedLease: nil,
+                applyResult: nil
+            )
+        }
         if lease.state == .released {
             return DisplayRuntimeLANWebViewConsumerDetachResult(
                 releasedLease: lease,
@@ -301,18 +318,27 @@ extension DisplayRuntime {
 
         consumerTransitionBusySurfaces.insert(lease.surfaceIdentity)
         defer { consumerTransitionBusySurfaces.remove(lease.surfaceIdentity) }
-        let nextEpoch = currentSurfaceEpoch(for: lease.surfaceIdentity).advanced()
-        surfaceEpochs[lease.surfaceIdentity] = nextEpoch
+        // Retrying one consumer keeps the surface and its other consumers in the same epoch.
+        let retryEpoch = currentSurfaceEpoch(for: lease.surfaceIdentity)
         _ = replaceLease(
             lease,
             state: .restarting,
-            surfaceEpoch: nextEpoch,
+            surfaceEpoch: retryEpoch,
             demand: nil,
             lastFailureCode: nil
         )
         await refreshCatalogTopologyForTransaction()
         let snapshot = makeSnapshot()
-        guard consumerLeasesByID[leaseID]?.state != .released else {
+        guard currentSurfaceEpoch(for: lease.surfaceIdentity) == retryEpoch,
+              consumerLeasesByID[leaseID]?.state == .restarting else {
+            if let currentLease = consumerLeasesByID[leaseID],
+               currentLease.state == .restarting,
+               currentLease.surfaceEpoch == retryEpoch {
+                _ = markConsumerLeaseFailed(
+                    leaseID: leaseID,
+                    failureCode: DisplayRuntimeCaptureIntentFailureCode.epochMismatch
+                )
+            }
             notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
             return consumerLeasesByID[leaseID]
         }
@@ -324,7 +350,7 @@ extension DisplayRuntime {
             _ = replaceLease(
                 consumerLeasesByID[leaseID] ?? lease,
                 state: .failed,
-                surfaceEpoch: nextEpoch,
+                surfaceEpoch: retryEpoch,
                 resolvedDisplayID: .some(nil),
                 demand: nil,
                 lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
@@ -337,7 +363,7 @@ extension DisplayRuntime {
         _ = replaceLease(
             consumerLeasesByID[leaseID] ?? lease,
             state: .attaching,
-            surfaceEpoch: nextEpoch,
+            surfaceEpoch: retryEpoch,
             resolvedDisplayID: .some(displayID),
             demand: nil,
             lastFailureCode: nil

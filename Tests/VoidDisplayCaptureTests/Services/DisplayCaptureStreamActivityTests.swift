@@ -3,6 +3,49 @@ import Synchronization
 import Testing
 
 struct DisplayCaptureStreamActivityTests {
+    @Test func finalStopRejectsLateDemandWhileWaitingForCaptureToStop() async throws {
+        let stopGate = SuspendedTransition()
+        let activity = DisplayCaptureStreamActivity(start: {}, stop: { await stopGate.suspend() })
+        try await activity.setActive(true)
+        let stopTask = Task { try await activity.stop() }
+        await stopGate.waitUntilSuspended()
+
+        let lateStart = Task { try await activity.setActive(true) }
+        await stopGate.resume()
+        await #expect(throws: CancellationError.self) { try await lateStart.value }
+        try await stopTask.value
+        #expect(await activity.activeForTesting() == false)
+        await #expect(throws: CancellationError.self) { try await activity.setActive(true) }
+    }
+
+    @Test func unexpectedStopInvalidatesActiveStateAndPreventsReuse() async throws {
+        struct StreamFailure: Error {}
+        let transitions = Mutex<[String]>([])
+        let activity = DisplayCaptureStreamActivity(
+            start: { transitions.withLock { $0.append("start") } },
+            stop: { transitions.withLock { $0.append("stop") } }
+        )
+        try await activity.setActive(true)
+        #expect(await activity.activeForTesting())
+        await activity.didStop(error: StreamFailure())
+        #expect(await activity.activeForTesting() == false)
+        await #expect(throws: StreamFailure.self) { try await activity.setActive(true) }
+        try await activity.stop()
+        #expect(transitions.withLock { $0 } == ["start"])
+    }
+
+    @Test func unexpectedStopDuringStartCannotBeOverwrittenByLateCompletion() async throws {
+        struct StreamFailure: Error {}
+        let gate = SuspendedTransition()
+        let activity = DisplayCaptureStreamActivity(start: { await gate.suspend() }, stop: {})
+        let start = Task { try await activity.setActive(true) }
+        await gate.waitUntilSuspended()
+        await activity.didStop(error: StreamFailure())
+        await gate.resume()
+        await #expect(throws: StreamFailure.self) { try await start.value }
+        #expect(await activity.activeForTesting() == false)
+    }
+
     @Test func startsAndStopsOnlyAcrossDemandBoundaries() async throws {
         let transitions = Mutex<[String]>([])
         let activity = DisplayCaptureStreamActivity(
