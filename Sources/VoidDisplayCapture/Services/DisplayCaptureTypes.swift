@@ -312,6 +312,7 @@ package struct DisplayCaptureMetricsSnapshot: Sendable {
 }
 package protocol DisplayCaptureSessioning: AnyObject, Sendable {
     nonisolated var shareFrameConsumer: any DisplayShareFrameConsumer { get }
+    nonisolated func setTerminationHandler(_ handler: @escaping @Sendable () -> Void)
     nonisolated func attachPreviewSink(_ sink: any DisplayPreviewSink)
     nonisolated func detachPreviewSink(_ sink: any DisplayPreviewSink)
     nonisolated func stopSharing()

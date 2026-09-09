@@ -388,6 +388,9 @@ struct FeedbackBundleExporterTests {
         let privatePath = "/Users/tester/Desktop/private.log"
         let privateIP = "192.168.40.8"
         let displayName = "Executive Presentation"
+        let quotedCredential = "synthetic-quoted-credential"
+        let bareCredential = "synthetic-raw}tail]value"
+        let zeroWidthCredential = "synthetic-head\u{200B}zero-width-private-suffix"
         let exporter = FeedbackBundleExporter(
             exportsDirectoryURL: tempURL.appendingPathComponent("exports", isDirectory: true),
             virtualDisplayConfigsURL: tempURL.appendingPathComponent("virtual-displays.json"),
@@ -440,7 +443,10 @@ struct FeedbackBundleExporterTests {
         )
 
         let bundleURL = try exporter.exportBundle(
-            draft: FeedbackDraft(happened: "Failed at http://\(privateIP)/display/\(accessToken)"),
+            draft: FeedbackDraft(
+                happened: "Failed at http://\(privateIP)/display/\(accessToken) password=\(zeroWidthCredential) state=ready",
+                reproductionSteps: #"Request: {"password":"\#(quotedCredential)","state":"reproducible"} token=\#(bareCredential) secret="synthetic with spaces"private-tail"#
+            ),
             consent: FeedbackConsent(),
             state: state,
             health: health,
@@ -458,12 +464,15 @@ struct FeedbackBundleExporterTests {
             try archiveEntryString(relativePathSuffix: $0, archiveURL: bundleURL)
         }.joined(separator: "\n")
 
-        for sensitiveValue in [accessToken, privatePath, privateIP, displayName] {
+        #expect(bareCredential.contains("tail]value"))
+        #expect(zeroWidthCredential.contains("zero-width-private-suffix"))
+        for sensitiveValue in [accessToken, privatePath, privateIP, displayName, quotedCredential, "tail]value", "private-tail", "zero-width-private-suffix"] {
             #expect(coreArtifacts.contains(sensitiveValue) == false)
         }
         #expect(coreArtifacts.contains("<redacted-token>") || coreArtifacts.contains("<redacted>"))
         #expect(coreArtifacts.contains("<redacted-ip>"))
         #expect(coreArtifacts.contains("~/Desktop/private.log"))
+        #expect(coreArtifacts.contains("reproducible"))
     }
 
     @Test func exportBundleRollsBackStagingAndPartialArchiveWhenArchiveCreationFails() throws {

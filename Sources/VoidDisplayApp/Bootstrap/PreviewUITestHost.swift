@@ -76,6 +76,7 @@ private final class UITestPreviewShareConsumer: DisplayShareFrameConsumer, @unch
 }
 
 private final class UITestPreviewCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = UITestPreviewShareConsumer()
     nonisolated func attachPreviewSink(_: any DisplayPreviewSink) {}
     nonisolated func detachPreviewSink(_: any DisplayPreviewSink) {}

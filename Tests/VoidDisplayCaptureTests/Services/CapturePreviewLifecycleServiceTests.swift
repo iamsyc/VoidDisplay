@@ -6,6 +6,7 @@ import ScreenCaptureKit
 import Testing
 
 private final class CapturePreviewLifecycleDummySession: DisplayCaptureSessioning, @unchecked Sendable {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = TestDisplayShareFrameConsumer()
 
     nonisolated(unsafe) var attachedSinkCount = 0

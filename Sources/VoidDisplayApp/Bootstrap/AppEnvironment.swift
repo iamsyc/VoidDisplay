@@ -18,6 +18,7 @@ package struct AppEnvironment {
     package let feedbackController: AppSettingsFeedbackController
     package let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
     private let startupTask: Task<Void, Never>
+    private let captureRegistry: DisplayCaptureRegistry
 
     package init(
         capture: CaptureController,
@@ -29,7 +30,8 @@ package struct AppEnvironment {
         capturePerformancePreferences: CapturePerformancePreferences,
         feedbackController: AppSettingsFeedbackController,
         openScreenCapturePrivacySettings: @escaping @MainActor (@escaping (URL) -> Void) -> Void,
-        startupTask: Task<Void, Never>
+        startupTask: Task<Void, Never>,
+        captureRegistry: DisplayCaptureRegistry
     ) {
         self.capture = capture
         self.observability = observability
@@ -41,9 +43,20 @@ package struct AppEnvironment {
         self.feedbackController = feedbackController
         self.openScreenCapturePrivacySettings = openScreenCapturePrivacySettings
         self.startupTask = startupTask
+        self.captureRegistry = captureRegistry
     }
 
     package func waitForStartupTasks() async {
         await startupTask.value
+    }
+
+    package func prepareForTermination() async {
+        AppLog.general.notice("Stopping capture before application termination.")
+        startupTask.cancel()
+        displayRuntime.cancelStartupRestore()
+        sharing.stopWebService()
+        await captureRegistry.shutdown()
+        await startupTask.value
+        AppLog.general.notice("Capture stopped; application may terminate.")
     }
 }

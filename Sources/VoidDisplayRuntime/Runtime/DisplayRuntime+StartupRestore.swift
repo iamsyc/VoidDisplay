@@ -2,6 +2,10 @@ import Foundation
 
 @MainActor
 extension DisplayRuntime {
+    package func cancelStartupRestore() {
+        activeStartupRestoreTask?.cancel()
+    }
+
     @discardableResult
     package func restoreStartupVirtualDisplays(
         source: DisplayRuntimeTransactionSource = .startup
@@ -122,6 +126,7 @@ extension DisplayRuntime {
 
         var configResults: [DisplayRuntimeStartupRestoreConfigResult] = []
         for config in desiredEnabledConfigs {
+            guard !Task.isCancelled else { break }
             let result = await restoreStartupConfig(
                 runID: runID,
                 source: source,
@@ -226,7 +231,7 @@ extension DisplayRuntime {
         config: DisplayRuntimeStartupRestoreConfig
     ) async -> DisplayRuntimeStartupRestoreConfigResult {
         do {
-            try Task.checkCancellation()
+            try checkStartupRestoreCancellation()
         } catch {
             _ = await finalizeTransaction(
                 transactionID: context.transactionID,
@@ -344,6 +349,7 @@ extension DisplayRuntime {
 
         let commandResult: DisplayRuntimeStartupRestoreCommandResult
         do {
+            try checkStartupRestoreCancellation()
             commandResult = try await startupRestoreCommander.restoreVirtualDisplayForStartup(
                 request: .init(
                     transactionID: context.transactionID,
@@ -599,9 +605,15 @@ extension DisplayRuntime {
         return "topology_\(topologyResult.status.rawValue)"
     }
 
+    private func checkStartupRestoreCancellation() throws {
+        try Task.checkCancellation()
+        if activeStartupRestoreTask?.isCancelled == true { throw CancellationError() }
+    }
+
     private func startupRestoreStatus(
         configResults: [DisplayRuntimeStartupRestoreConfigResult]
     ) -> DisplayRuntimeStartupRestoreStatus {
+        if Task.isCancelled { return configResults.isEmpty ? .failed : .completedWithFailures }
         guard !configResults.isEmpty else { return .succeededNoOp }
         return configResults.allSatisfy { $0.status == .restored } ? .succeeded : .completedWithFailures
     }

@@ -1,4 +1,5 @@
 import Foundation
+import VoidDisplayObservability
 
 package actor DisplayCaptureStreamActivity {
     package typealias Transition = @Sendable () async throws -> Void
@@ -13,6 +14,8 @@ package actor DisplayCaptureStreamActivity {
     private var isActive = false
     private var desiredActive = false
     private var isDrivingTransitions = false
+    private var isStopping = false
+    private var terminationError: (any Error)?
     private var waiters: [UUID: Waiter] = [:]
 
     package init(
@@ -24,6 +27,11 @@ package actor DisplayCaptureStreamActivity {
     }
 
     package func setActive(_ shouldBeActive: Bool) async throws {
+        if let terminationError {
+            if shouldBeActive { throw terminationError }
+            return
+        }
+        if shouldBeActive && isStopping { throw CancellationError() }
         desiredActive = shouldBeActive
         supersedeWaiters(for: !shouldBeActive)
         guard shouldBeActive != isActive || isDrivingTransitions else { return }
@@ -41,7 +49,21 @@ package actor DisplayCaptureStreamActivity {
     }
 
     package func stop() async throws {
+        isStopping = true
         try await setActive(false)
+    }
+
+    @discardableResult
+    package func didStop(error: any Error) async -> Bool {
+        guard terminationError == nil else { return false }
+        terminationError = error
+        isActive = false
+        desiredActive = false
+        resolveWaitersAfterFailure(error)
+        await MainActor.run {
+            AppErrorMapper.logFailure("Screen capture stream stopped", error: error, logger: AppLog.capture)
+        }
+        return true
     }
 
     package func activeForTesting() -> Bool {
@@ -56,6 +78,10 @@ package actor DisplayCaptureStreamActivity {
                     try await startTransition()
                 } else {
                     try await stopTransition()
+                }
+                guard terminationError == nil else {
+                    isDrivingTransitions = false
+                    return
                 }
                 isActive = target
                 resumeWaiters(matching: target)

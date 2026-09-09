@@ -73,6 +73,8 @@ package final class CaptureController {
             correlationID: correlationID
         )
 
+        guard startTracker.contains(displayID: displayID, token: startToken) else { return .invalidated }
+
         do {
             let outcome = try await capturePreviewLifecycleService.startPreview(
                 display: display,
@@ -85,6 +87,7 @@ package final class CaptureController {
                 metadata: ["displayID": "\(displayID)"],
                 correlationID: correlationID
             )
+            guard startTracker.contains(displayID: displayID, token: startToken) else { return .invalidated }
             return outcome
         } catch {
             await observability?.record(

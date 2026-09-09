@@ -12,7 +12,8 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
 cd "$ROOT_DIR"
 
-OUT_DIR="${OUT_DIR:-$(make_artifact_dir signed-runtime)}"
+# Keep the same app location across local permission-sensitive rebuilds.
+OUT_DIR="${OUT_DIR:-$AI_TMP_DIR/signed-runtime/current}"
 DEVELOPMENT_IDENTIFIER="${VOIDDISPLAY_DEVELOPMENT_IDENTIFIER:-com.developerchen.voiddisplay}"
 DEVELOPMENT_TEAM_IDENTIFIER="${VOIDDISPLAY_DEVELOPMENT_TEAM_IDENTIFIER:-6HCGZ4HUVA}"
 DESTINATION=""

@@ -33,9 +33,7 @@ private final class DisplayStreamOutput: NSObject, SCStreamOutput, SCStreamDeleg
     }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
-        Task { @MainActor in
-            AppErrorMapper.logFailure("Screen capture stream stopped", error: error, logger: AppLog.capture)
-        }
+        session?.didStop(error: error)
     }
 }
 
@@ -112,6 +110,7 @@ package actor DisplayCaptureStreamConfigurationCoordinator {
     private var pendingRevision: UInt64?
     private var failedThroughRevision: UInt64?
     private var lastFailure: (any Error)?
+    private var terminationError: (any Error)?
     private var flushTask: Task<Void, Never>?
     private var waiters: [UUID: Waiter] = [:]
 
@@ -155,24 +154,27 @@ package actor DisplayCaptureStreamConfigurationCoordinator {
         committedState
     }
 
-    package func cancelPending(error: any Error = CancellationError()) {
-        flushTask?.cancel()
-        flushTask = nil
+    package func cancelPending(error: any Error = CancellationError()) async {
+        let terminationError = self.terminationError ?? error
+        self.terminationError = terminationError
+        let task = flushTask
+        task?.cancel()
 
-        guard let pendingRevision else { return }
-        desiredState = committedState
-        self.pendingRevision = nil
-        failedThroughRevision = pendingRevision
-        lastFailure = error
-        failWaiters(
-            upTo: pendingRevision,
-            error: error
-        )
+        if let pendingRevision {
+            desiredState = committedState
+            self.pendingRevision = nil
+            failedThroughRevision = pendingRevision
+            lastFailure = terminationError
+            failWaiters(upTo: pendingRevision, error: terminationError)
+        }
+        // ScreenCaptureKit may finish an update after its Swift task is cancelled.
+        await task?.value
     }
 
     private func applyMutation(
         _ mutation: (inout DisplayCaptureStreamConfigurationState) -> Void
     ) async throws -> Bool {
+        if let terminationError { throw terminationError }
         var nextState = desiredState
         mutation(&nextState)
 
@@ -239,6 +241,7 @@ package actor DisplayCaptureStreamConfigurationCoordinator {
             do {
                 try Task.checkCancellation()
                 try await applyState(stateToApply)
+                try Task.checkCancellation()
             } catch {
                 let failedThrough = self.pendingRevision ?? revisionToApply
                 desiredState = committedState
@@ -321,6 +324,7 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
     nonisolated private let demandDriver: DisplayCaptureDemandDriver
     nonisolated private let streamActivity: DisplayCaptureStreamActivity
     nonisolated private let sourceVideoSpec: SourceVideoSpec
+    nonisolated private let terminationHandler = Mutex<(@Sendable () -> Void)?>(nil)
 
     nonisolated init(
         display: SCDisplay,
@@ -417,6 +421,19 @@ package final class DisplayCaptureSession: @unchecked Sendable, DisplayCaptureSe
 
     package nonisolated func stopSharing() {
         shareFrameConsumer.stopSharing()
+    }
+
+    nonisolated func didStop(error: any Error) {
+        Task {
+            guard await streamActivity.didStop(error: error) else { return }
+            demandDriver.cancelAll()
+            await streamConfigurationCoordinator.cancelPending(error: error)
+            terminationHandler.withLock { $0 }?()
+        }
+    }
+
+    package nonisolated func setTerminationHandler(_ handler: @escaping @Sendable () -> Void) {
+        terminationHandler.withLock { $0 = handler }
     }
 
     package nonisolated func setDemand(_ demand: DisplayCaptureDemandSnapshot) async throws {

@@ -32,6 +32,7 @@ package nonisolated enum DisplayRuntimeCaptureIntentFailureCode {
     package static let epochMismatch = "capture_intent_epoch_mismatch"
     package static let permissionUnavailable = "capture_intent_permission_unavailable"
     package static let applyFailed = "capture_intent_apply_failed"
+    package static let streamStopped = "capture_stream_stopped"
     package static let applyInvalidated = "capture_intent_apply_invalidated"
     package static let consumerLeaseRestarting = "consumer_lease_restarting"
     package static let consumerLeaseUnavailable = "consumer_lease_unavailable"

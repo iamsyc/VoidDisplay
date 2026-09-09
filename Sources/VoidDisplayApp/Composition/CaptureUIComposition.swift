@@ -128,20 +128,21 @@ package enum CaptureUIComposition {
                 failureCode: failureCode
             )
         }
-        guard applyResult.outcome == .applied else {
-            _ = await displayRuntime.detachPreviewConsumer(leaseID: lease.id)
-            throw DisplayRuntimePreviewCaptureError(
-                failureCode: applyResult.failureCode
-                    ?? DisplayRuntimeCaptureIntentFailureCode.applyFailed
-            )
+        let previewID = CapturePreviewID(rawValue: lease.id.rawValue)
+        if let currentLease = displayRuntime.consumerLease(leaseID: lease.id),
+           currentLease.state != .released,
+           applyResult.outcome == .ignored || currentLease.state == .attaching || currentLease.state == .restarting {
+            return .started(previewID)
         }
-        guard capture.screenPreviewSessions.contains(where: { $0.displayID == display.displayID }) else {
-            _ = await displayRuntime.detachPreviewConsumer(leaseID: lease.id)
-            throw DisplayRuntimePreviewCaptureError(
-                failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
-            )
+        if applyResult.outcome == .applied,
+           previewSession(previewID: previewID, capture: capture, displayRuntime: displayRuntime) != nil {
+            return .started(previewID)
         }
-        return .started(CapturePreviewID(rawValue: lease.id.rawValue))
+        _ = await displayRuntime.detachPreviewConsumer(leaseID: lease.id)
+        guard applyResult.outcome != .ignored else { return .invalidated }
+        throw DisplayRuntimePreviewCaptureError(
+            failureCode: applyResult.failureCode ?? DisplayRuntimeCaptureIntentFailureCode.applyFailed
+        )
     }
 
     private static func previewSession(

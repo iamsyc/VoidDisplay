@@ -1,5 +1,6 @@
 @testable import VoidDisplayApp
 @testable import VoidDisplayFoundation
+@testable import VoidDisplayRuntime
 @testable import VoidDisplaySharing
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplay
@@ -10,6 +11,64 @@ import Testing
 
 @MainActor
 struct HomeVirtualDisplaySurfaceControllerTests {
+    @Test func oldSharingFailureDoesNotStopNewHomeRequest() async throws {
+        let service = MockSharingService()
+        service.isWebServiceRunning = true
+        let facade = makeFacade()
+        let (_, environment) = makeController(sharingService: service, virtualDisplayFacade: facade)
+        environment.sharing.configureObservability(nil)
+        let captureAdapter = DisplayRuntimeCaptureAdapter(controller: environment.capture, sharingController: environment.sharing)
+        // Keep catalog refresh outside this lifecycle test so it never consults real permissions.
+        let runtime = DisplayRuntime(
+            catalogProvider: DisplayRuntimeCatalogAdapter(service: environment.capture.catalogService),
+            captureProvider: captureAdapter,
+            sharingProvider: environment.sharingAdapter,
+            virtualDisplayProvider: DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade),
+            sharingCommander: environment.sharingAdapter,
+            captureIntentCommander: captureAdapter
+        )
+        let controller = HomeVirtualDisplaySurfaceController(
+            capture: environment.capture, sharing: environment.sharing, virtualDisplay: environment.virtualDisplay,
+            capturePerformancePreferences: environment.capturePerformancePreferences,
+            displayRuntime: runtime, sharingAdapter: environment.sharingAdapter
+        )
+        let item = try #require(controller.presentation.items.first)
+        let displayID = try #require(item.displayID)
+        let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
+        let catalog = environment.capture.displayCatalogState
+        catalog.displays = [display]
+        catalog.hasScreenCapturePermission = true
+        catalog.lastPreflightPermission = true
+        catalog.lastLoadedActiveDisplayTopologySignature = [.init(displayID: displayID)]
+        var firstStart: CheckedContinuation<Void, Never>?
+        service.startSharingHandler = { _ in
+            if service.startSharingCallCount == 1 {
+                await withCheckedContinuation { firstStart = $0 }
+                return .invalidated
+            }
+            service.activeSharingDisplayIDs.insert(displayID)
+            service.hasAnyActiveSharing = true
+            return .started(())
+        }
+        controller.perform(.webView, for: item, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
+        #expect(await waitUntil { firstStart != nil }, "Start did not reach the service: \(String(describing: controller.actionAlert))")
+        let oldLease = try #require(runtime.currentConsumerLeaseSnapshot().first)
+        environment.sharing.stopSharing(displayID: displayID)
+        runtime.captureSessionDidTerminate(displayID: displayID)
+        let retryItem = try #require(controller.presentation.items.first)
+        controller.perform(.webView, for: retryItem, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
+        #expect(await waitUntil { runtime.currentConsumerLeaseSnapshot().count == 2 })
+        let newLease = try #require(runtime.currentConsumerLeaseSnapshot().first { $0.id != oldLease.id })
+        #expect(newLease.state == .attaching)
+
+        firstStart?.resume()
+        #expect(await waitUntil { controller.actionAlert != nil })
+        #expect(await waitUntil { runtime.consumerLease(leaseID: newLease.id)?.state == .attached })
+        #expect(service.activeSharingDisplayIDs == [displayID])
+        await environment.sharingAdapter.stopLANWebViewSharing(displayID: displayID, runtime: runtime)
+        #expect(service.activeSharingDisplayIDs.isEmpty)
+    }
+
     @Test
     func sharingPortDraftValidatesBeforePersisting() {
         let (controller, environment) = makeController()

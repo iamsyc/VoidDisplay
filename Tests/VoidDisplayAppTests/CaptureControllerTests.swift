@@ -96,6 +96,46 @@ private final class CaptureControllerLifecycleSpy: CapturePreviewLifecycleServic
 @Suite(.serialized)
 @MainActor
 struct CaptureControllerTests {
+    @Test(arguments: [1, 2])
+    func terminationDuringRecordingInvalidatesPreviewStart(recordingCall: Int) async throws {
+        let recording = try await makeControllerRecordingFixture()
+        defer { try? FileManager.default.removeItem(at: recording.directory) }
+        let service = MockCapturePreviewService()
+        let display = SharedMockSCDisplay.make(displayID: 783, width: 1920, height: 1080)
+        let subscription = makeSession(id: UUID(), displayID: display.displayID).session.previewSubscription
+        let lifecycle = CapturePreviewLifecycleService(
+            capturePreviewService: service,
+            acquirePreview: { _, _ in .started(subscription) }
+        )
+        let controller = CaptureController(
+            capturePreviewService: service,
+            capturePreviewLifecycleService: lifecycle,
+            observability: recording.center
+        )
+        var observedStartCounts: [Int] = []
+        recording.hook.onSnapshot = { _ in
+            guard observedStartCounts.isEmpty,
+                  controller.isStarting(displayID: display.displayID),
+                  service.addCallCount == recordingCall - 1 else { return }
+            observedStartCounts.append(service.addCallCount)
+            controller.removePreviewSessions(displayID: display.displayID)
+        }
+
+        let outcome = try await controller.startPreview(
+            display: display,
+            metadata: .init(displayName: "Preview", resolutionText: "1920 x 1080", isVirtualDisplay: false)
+        )
+
+        #expect(observedStartCounts == [recordingCall - 1])
+        #expect(service.addCallCount == recordingCall - 1)
+        #expect(controller.screenPreviewSessions.isEmpty)
+        #expect(controller.startingDisplayIDs.isEmpty)
+        guard case .invalidated = outcome else {
+            Issue.record("A preview start terminated during recording must return invalidated.")
+            return
+        }
+    }
+
     private struct SessionSnapshot: Equatable {
         let id: UUID
         let displayID: CGDirectDisplayID

@@ -80,6 +80,12 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
             )
         }
 
+        if let failedLease = runtime.currentConsumerLeaseSnapshot().first(where: {
+            $0.surfaceIdentity == surfaceIdentity && $0.kind == .lanWebView && $0.state == .failed
+        }) {
+            _ = await runtime.detachLANWebViewConsumer(leaseID: failedLease.id)
+        }
+
         let outcome = await runtime.attachLANWebViewConsumer(
             surfaceIdentity: surfaceIdentity,
             owner: .init(source: .sharingService, redactedLabel: "lan"),
@@ -89,7 +95,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
             )
         )
 
-        guard case let .attached(_, applyResult) = outcome else {
+        guard case let .attached(lease, applyResult) = outcome else {
             guard case let .rejected(failureCode) = outcome else {
                 throw DisplayRuntimeLANWebViewCaptureError(
                     failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
@@ -100,7 +106,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
 
         guard applyResult.outcome == .applied else {
             _ = await runtime.detachLANWebViewConsumer(
-                surfaceIdentity: surfaceIdentity
+                leaseID: lease.id
             )
             throw DisplayRuntimeLANWebViewCaptureError(
                 failureCode: applyResult.failureCode

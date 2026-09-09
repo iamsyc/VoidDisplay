@@ -43,6 +43,10 @@ extension AppBootstrap {
             startupRestoreCommander: virtualDisplayAdapter,
             observabilityRecorder: observabilityAdapter
         )
+        captureSharing.captureRegistry.setSessionTerminationHandler { [weak captureAdapter, weak displayRuntime] displayID in
+            captureAdapter?.captureSessionDidTerminate(displayID: displayID)
+            displayRuntime?.captureSessionDidTerminate(displayID: displayID)
+        }
         return AppBootstrapRuntimeBundle(
             displayRuntime: displayRuntime,
             sharingAdapter: sharingAdapter

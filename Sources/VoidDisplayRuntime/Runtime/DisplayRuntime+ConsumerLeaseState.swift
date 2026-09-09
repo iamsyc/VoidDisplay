@@ -2,6 +2,29 @@ import Foundation
 
 @MainActor
 extension DisplayRuntime {
+    package func captureSessionDidTerminate(displayID: DisplayRuntimeDisplayID) {
+        let affectedLeases = consumerLeasesByID.values.filter {
+            $0.resolvedDisplayID == displayID && ($0.state.contributesDemand || $0.state == .restarting)
+        }
+        for identity in Set(affectedLeases.map(\.surfaceIdentity)) {
+            let nextEpoch = currentSurfaceEpoch(for: identity).advanced()
+            surfaceEpochs[identity] = nextEpoch
+            for lease in affectedLeases where lease.surfaceIdentity == identity {
+                _ = replaceLease(
+                    lease,
+                    state: lease.kind == .preview ? .failed : .released,
+                    surfaceEpoch: nextEpoch,
+                    demand: nil,
+                    lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.streamStopped
+                )
+                notifyPreviewLeaseWaitersIfTerminal(leaseID: lease.id)
+            }
+            // The capture adapter has already removed the stopped resources.
+            let intent = submitCaptureIntent(surfaceIdentity: identity, reason: .detach)
+            recordCaptureIntentApplyResult(.applied(revision: intent.revision))
+        }
+    }
+
     func currentDemandLeases(
         for surfaceIdentity: DisplaySurfaceIdentity
     ) -> [DisplayRuntimeConsumerLease] {

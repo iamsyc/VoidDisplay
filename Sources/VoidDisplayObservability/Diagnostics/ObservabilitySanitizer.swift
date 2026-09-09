@@ -9,7 +9,7 @@ package nonisolated struct ObservabilitySanitizer: Sendable {
     private let ipv6CandidatePattern = #"(?i)(?<![0-9a-f:])\[?[0-9a-f]*:[0-9a-f:]*\]?(?![0-9a-f:])"#
     private let accessTokenPattern = #"(?i)\b[0-9a-f]{64}\b"#
     private let bearerTokenPattern = #"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}"#
-    private let namedSecretPattern = #"(?i)\b(token|secret|password|capability)\s*[:=]\s*([^\s&,;]+)"#
+    private let namedSecretPrefixPattern = #"(?i)(["']?)\b(token|secret|password|capability)\1(\s*[:=]\s*)"#
     private let authorizationHeaderPattern = #"(?i)\b(Authorization\s*:\s*)(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]{4,}"#
     private let cookieHeaderPattern = #"(?i)\b((?:Set-)?Cookie\s*:\s*)[^\r\n]+"#
 
@@ -92,11 +92,7 @@ package nonisolated struct ObservabilitySanitizer: Sendable {
             pattern: bearerTokenPattern,
             template: "$1<redacted-token>"
         )
-        redacted = replacingMatches(
-            in: redacted,
-            pattern: namedSecretPattern,
-            template: "$1=<redacted-token>"
-        )
+        redacted = redactNamedSecrets(in: redacted)
         redacted = replacingMatches(
             in: redacted,
             pattern: authorizationHeaderPattern,
@@ -154,6 +150,59 @@ package nonisolated struct ObservabilitySanitizer: Sendable {
         }
         let range = NSRange(value.startIndex..<value.endIndex, in: value)
         return regex.stringByReplacingMatches(in: value, range: range, withTemplate: template)
+    }
+
+    private func redactNamedSecrets(in value: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: namedSecretPrefixPattern) else { return value }
+        // Match and scan in UTF-16 so combining marks cannot hide ASCII delimiters.
+        let source = value as NSString
+        let fullRange = NSRange(location: 0, length: source.length)
+        var ranges: [NSRange] = []
+        var previousEnd = 0
+        for match in regex.matches(in: value, range: fullRange) {
+            guard match.range.location >= previousEnd else { continue }
+            let start = NSMaxRange(match.range)
+            guard start < source.length else { continue }
+            let isJSON = match.range(at: 1).length > 0 && source.substring(with: match.range(at: 3)).contains(":")
+            let firstCharacter = Unicode.Scalar(source.character(at: start))
+            let isJSONString = isJSON && (firstCharacter == "\"" || firstCharacter == "'")
+            var end = start
+            var quote: Unicode.Scalar?
+            var nestingDepth = 0
+            while end < source.length {
+                let next = end + 1
+                guard let character = Unicode.Scalar(source.character(at: end)) else { end = next; continue }
+                if character == "\\", next < source.length {
+                    end = next + 1
+                    continue
+                }
+                if let currentQuote = quote {
+                    if character == currentQuote {
+                        quote = nil
+                        if isJSONString { end = next; break }
+                    }
+                } else if character == "\"" || character == "'" {
+                    quote = character
+                } else if isJSON && (character == "{" || character == "[") {
+                    nestingDepth += 1
+                } else if isJSON && (character == "}" || character == "]") {
+                    guard nestingDepth > 0 else { break }
+                    nestingDepth -= 1
+                    if nestingDepth == 0 { end = next; break }
+                } else if nestingDepth == 0 && (character.properties.isWhitespace || character == "&" || character == "," || character == ";") {
+                    break
+                }
+                end = next
+            }
+            let range = NSRange(location: start, length: end - start)
+            ranges.append(range)
+            previousEnd = NSMaxRange(range)
+        }
+        let result = NSMutableString(string: value)
+        for range in ranges.reversed() {
+            result.replaceCharacters(in: range, with: "\"<redacted-token>\"")
+        }
+        return result as String
     }
 
     private static let maximumSanitizedTextCharacterCount = 16_384

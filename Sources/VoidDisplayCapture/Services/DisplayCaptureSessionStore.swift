@@ -71,17 +71,22 @@ package struct DisplayCaptureSessionStore {
         sessionDrainTasksByDisplayID[displayID]
     }
 
+    package var drainTasks: [Task<Void, Never>] {
+        Array(sessionDrainTasksByDisplayID.values)
+    }
+
     package mutating func beginDraining(
         displayID: CGDirectDisplayID,
+        beforeStop: @escaping @Sendable () async -> Void = {},
         onStopCompleted: @escaping @Sendable (CGDirectDisplayID) async -> Void
     ) {
-        guard var record = recordsByDisplayID[displayID] else { return }
+        guard var record = recordsByDisplayID[displayID], record.state != .draining else { return }
         record.state = .draining
         recordsByDisplayID[displayID] = record
 
         let session = record.session
-        sessionDrainTasksByDisplayID[displayID]?.cancel()
         sessionDrainTasksByDisplayID[displayID] = Task { [displayID] in
+            await beforeStop()
             await session.stop()
             await onStopCompleted(displayID)
         }

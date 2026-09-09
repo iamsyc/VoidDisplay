@@ -8,12 +8,75 @@
 @testable import VoidDisplayTestingSupport
 @testable import VoidDisplayVirtualDisplayTestingSupport
 import Darwin
+import AppKit
 import Foundation
 import Testing
 
 @MainActor
 @Suite(.serialized)
 struct AppBootstrapTests {
+    @Test func terminationCancelsRuntimeStartupRestoreOwner() async {
+        let environment = AppBootstrap.makeEnvironment(
+            preview: true, capturePreviewService: MockCapturePreviewService(),
+            sharingService: MockSharingService(), virtualDisplayFacade: MockVirtualDisplayFacade(),
+            isRunningUnderXCTestOverride: true
+        )
+        await environment.waitForStartupTasks()
+        var release: CheckedContinuation<Void, Never>?
+        let owner = Task {
+            await withCheckedContinuation { release = $0 }
+            return DisplayRuntimeStartupRestoreResult(
+                runID: .init(), status: .succeededNoOp, source: .startup, duplicateBehavior: .started,
+                configLoadTrace: .init(loadResult: .succeeded(configs: [])),
+                configResults: [], traceIDs: [], coalescedRequestCount: 0
+            )
+        }
+        environment.displayRuntime.activeStartupRestoreTask = owner
+        #expect(await waitUntil { release != nil })
+        await environment.prepareForTermination()
+        #expect(owner.isCancelled)
+        release?.resume()
+        _ = await owner.value
+    }
+
+    @Test func terminationWaitsForCleanupAndRepliesOnce() async throws {
+        let cleanup = AppTerminationCleanup()
+        var finishCleanup: CheckedContinuation<Void, Never>?
+        var terminationReplied: CheckedContinuation<Void, Never>?
+        var cleanupCalls = 0
+        var replies = 0
+        await withCheckedContinuation { started in
+            cleanup.install {
+                cleanupCalls += 1
+                await withCheckedContinuation { continuation in
+                    finishCleanup = continuation
+                    started.resume()
+                }
+            }
+            #expect(cleanup.requestTermination {
+                replies += 1
+                terminationReplied?.resume()
+            } == .terminateLater)
+            #expect(cleanup.requestTermination { replies += 1 } == .terminateLater)
+        }
+        #expect(cleanupCalls == 1)
+        #expect(replies == 0)
+        let finish = try #require(finishCleanup)
+        await withCheckedContinuation { continuation in
+            terminationReplied = continuation
+            finish.resume()
+        }
+        #expect(replies == 1)
+        #expect(cleanup.requestTermination { replies += 1 } == .terminateNow)
+        #expect(replies == 1)
+    }
+
+    @Test func terminationWithoutCleanupCanProceedImmediately() {
+        #expect(AppTerminationCleanup().requestTermination {
+            Issue.record("Immediate termination must not send a delayed reply.")
+        } == .terminateNow)
+    }
+
     @Test func runtimeExecutorValidationAcceptsSuccessfulTerminalResults() throws {
         try AppBootstrap.requireSuccessfulRuntimeResult(
             status: .completed,

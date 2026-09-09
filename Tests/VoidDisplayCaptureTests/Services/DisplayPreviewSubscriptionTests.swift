@@ -10,6 +10,7 @@ private final class TestPreviewSink: @unchecked Sendable, DisplayPreviewSink {
 }
 
 private final class MockDisplayCaptureSession: @unchecked Sendable, DisplayCaptureSessioning {
+    nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
     private struct State: Sendable {
         var attachedSinks: Set<ObjectIdentifier> = []
         var attachCallCount = 0

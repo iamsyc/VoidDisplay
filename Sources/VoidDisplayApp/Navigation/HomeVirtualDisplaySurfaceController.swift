@@ -419,10 +419,6 @@ package final class HomeVirtualDisplaySurfaceController {
                 )
             } catch is CancellationError {
             } catch {
-                await sharingAdapter.stopLANWebViewSharing(
-                    displayID: displayID,
-                    runtime: displayRuntime
-                )
                 presentActionError(
                     title: String(localized: "Share Failed"),
                     message: AppErrorMapper.userMessage(
