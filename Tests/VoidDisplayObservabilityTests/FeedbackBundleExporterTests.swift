@@ -95,7 +95,9 @@ struct FeedbackBundleExporterTests {
         #expect(manifest.consent.includeCrashReportExcerpt == false)
         #expect(manifest.consent.includeRelatedConfigSnapshots == false)
         #expect(state.sections["runtime"] != nil)
-        #expect(state.sections["runtime"]?.objectValue?["schemaVersion"]?.intValue == 3)
+        #expect(state.sections["runtime"]?.objectValue?["schemaVersion"]?.intValue == 6)
+        #expect(state.sections["runtime"]?.objectValue?["latestFailure"]?.objectValue?["code"]?.stringValue == "fixture_failure")
+        #expect(state.sections["runtime"]?.objectValue?["latestFailure"]?.objectValue?["sequence"]?.intValue == 7)
         #expect(commandInvocationCount == 0)
     }
 
@@ -411,7 +413,11 @@ struct FeedbackBundleExporterTests {
                 "runtime": .object([
                     "displayName": .string(displayName),
                     "accessCapability": .string(accessToken),
-                    "address": .string("http://\(privateIP):8080/display/\(accessToken)")
+                    "address": .string("http://\(privateIP):8080/display/\(accessToken)"),
+                    "latestFailure": .object([
+                        "code": .string("failed http://\(privateIP):8080/display/\(accessToken)"),
+                        "sequence": .number(7)
+                    ])
                 ])
             ]
         )
@@ -571,8 +577,9 @@ private func makeStateSnapshot() -> ObservabilityStateSnapshot {
         sections: [
             "capture": .object(["sessions": .array([])]),
             "runtime": .object([
-                "schemaVersion": .number(3),
-                "surfaces": .array([])
+                "schemaVersion": .number(6),
+                "surfaces": .array([]),
+                "latestFailure": .object(["code": .string("fixture_failure"), "sequence": .number(7)])
             ])
         ]
     )

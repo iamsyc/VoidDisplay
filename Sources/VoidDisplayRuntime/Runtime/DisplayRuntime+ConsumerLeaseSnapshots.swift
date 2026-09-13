@@ -91,9 +91,15 @@ extension DisplayRuntime {
             return result.ignored()
         }
 
+        guard result.outcome != .ignored else { return result.ignored() }
         let intent = currentEffectiveIntent.intent
-        let acceptedResult = result.outcome == .ignored ? result.ignored() : result
-        let failureCode = acceptedResult.outcome == .failed ? acceptedResult.failureCode : nil
+        let acceptedResult = result
+        let failureCode = acceptedResult.outcome == .failed
+            ? captureIntentFailureCode(for: acceptedResult) : nil
+        if let failureCode,
+           recordedCaptureFailureCodesBySurface[intent.surfaceIdentity, default: []].insert(failureCode).inserted {
+            recordFailure(code: failureCode)
+        }
         effectiveCaptureIntentsBySurface[intent.surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(
             intent: intent,
             lastApplyResult: acceptedResult,

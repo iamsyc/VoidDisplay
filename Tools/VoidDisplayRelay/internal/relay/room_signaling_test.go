@@ -13,7 +13,7 @@ import (
 func TestRoomConcurrentRemoveAndForwardDoesNotRace(t *testing.T) {
 	room := newRoomForTest("2", nil)
 	sink := &recordingSink{}
-	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", videoCodecAV1, sink, nil)
+	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", videoCodecH264, sink, nil)
 	room.viewers["viewer"] = &viewerSession{pc: &fakePeerConnection{}, writer: room.subscribers["viewer"]}
 
 	var wg sync.WaitGroup
@@ -58,8 +58,8 @@ func TestRoomInvalidPublisherOfferPreservesCurrentPublisher(t *testing.T) {
 	room := NewRoom("2", nil, server.newPeerConnection)
 	current := &fakePeerConnection{}
 	room.publisher = &publisherSession{id: "current", pc: current}
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
 
 	if _, err := room.SetPublisherOffer("invalid-sdp"); err == nil {
 		t.Fatal("SetPublisherOffer succeeded for invalid SDP")
@@ -68,8 +68,8 @@ func TestRoomInvalidPublisherOfferPreservesCurrentPublisher(t *testing.T) {
 	if room.publisher == nil || room.publisher.id != "current" {
 		t.Fatalf("current publisher was not preserved: %#v", room.publisher)
 	}
-	if room.publisherSSRCs[videoCodecAV1] != 1234 {
-		t.Fatalf("publisher AV1 SSRC = %d, want 1234", room.publisherSSRCs[videoCodecAV1])
+	if room.publisherSSRCs[videoCodecH264] != 1234 {
+		t.Fatalf("publisher H264 SSRC = %d, want 1234", room.publisherSSRCs[videoCodecH264])
 	}
 	if current.isClosed() {
 		t.Fatal("current publisher was closed")
@@ -85,10 +85,10 @@ func TestRoomSuccessfulPublisherOfferAtomicallyReplacesCurrentPublisher(t *testi
 	room := NewRoom("2", nil, server.newPeerConnection)
 	current := &fakePeerConnection{}
 	room.publisher = &publisherSession{id: "current", pc: current}
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
 
-	result, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1))
+	result, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeH264))
 	if err != nil {
 		t.Fatalf("SetPublisherOffer returned error: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRoomSuccessfulPublisherOfferAtomicallyReplacesCurrentPublisher(t *testi
 	if !current.isClosed() {
 		t.Fatal("replaced publisher remained open")
 	}
-	if _, exists := room.publisherSSRCs[videoCodecAV1]; exists {
+	if _, exists := room.publisherSSRCs[videoCodecH264]; exists {
 		t.Fatal("replacement inherited previous publisher SSRC")
 	}
 }
@@ -116,7 +116,7 @@ func TestRoomDoesNotCloseWhilePublisherOfferIsInFlight(t *testing.T) {
 
 	factoryEntered := make(chan struct{})
 	releaseFactory := make(chan struct{})
-	offer := createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1)
+	offer := createPublisherOfferWithCodec(t, webrtc.MimeTypeH264)
 	room := NewRoom("2", nil, func() (*webrtc.PeerConnection, error) {
 		close(factoryEntered)
 		<-releaseFactory
@@ -151,6 +151,19 @@ func TestRoomPublisherRejectsVP8OnlyOffer(t *testing.T) {
 	}
 }
 
+func TestRoomPublisherRejectsAV1OnlyOffer(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("2", nil, server.newPeerConnection)
+
+	if _, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1)); err == nil {
+		t.Fatal("SetPublisherOffer accepted AV1-only SDP")
+	}
+}
+
 func TestRoomPublisherRejectsH265OnlyOffer(t *testing.T) {
 	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
 	if err := server.startWebRTC(); err != nil {
@@ -172,7 +185,7 @@ func TestRoomPublisherRejectsMixedSupportedAndUnsupportedVideoOffer(t *testing.T
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
 	offer := appendUnsupportedVideoCodecForTest(
-		createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1),
+		createPublisherOfferWithCodec(t, webrtc.MimeTypeH264),
 		"96",
 		"VP8",
 	)
@@ -184,7 +197,7 @@ func TestRoomPublisherRejectsMixedSupportedAndUnsupportedVideoOffer(t *testing.T
 	}
 }
 
-func TestRoomPublisherAcceptsAV1Offer(t *testing.T) {
+func TestRoomPublisherAcceptsH264Offer(t *testing.T) {
 	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
 	if err := server.startWebRTC(); err != nil {
 		t.Fatal(err)
@@ -192,14 +205,17 @@ func TestRoomPublisherAcceptsAV1Offer(t *testing.T) {
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
 
-	result, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeAV1))
+	result, err := room.SetPublisherOffer(createPublisherOfferWithCodec(t, webrtc.MimeTypeH264))
 	if err != nil {
 		t.Fatalf("SetPublisherOffer returned error: %v", err)
 	}
-	assertVideoSDPOnlyCodec(t, result.SDP, videoCodecAV1)
+	assertVideoSDPOnlyCodec(t, result.SDP, videoCodecH264)
+	if !strings.Contains(result.SDP, "profile-level-id=640034") {
+		t.Fatal("publisher answer did not retain the 4K60 H264 level")
+	}
 	snapshot := room.Snapshot()
-	if strings.Join(snapshot.PublisherCodecs, ",") != "av1" {
-		t.Fatalf("publisher codecs = %v, want [av1]", snapshot.PublisherCodecs)
+	if strings.Join(snapshot.PublisherCodecs, ",") != "h264" {
+		t.Fatalf("publisher codecs = %v, want [h264]", snapshot.PublisherCodecs)
 	}
 }
 
@@ -211,73 +227,73 @@ func TestRoomPublisherRejectsDuplicateCodecVideoMLine(t *testing.T) {
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
 
-	_, err := room.SetPublisherOffer(createPublisherOfferWithCodecs(t, []videoCodec{videoCodecAV1, videoCodecAV1}))
+	_, err := room.SetPublisherOffer(createPublisherOfferWithCodecs(t, []videoCodec{videoCodecH264, videoCodecH264}))
 
 	if !errors.Is(err, errPublisherCodecDuplicate) {
 		t.Fatalf("SetPublisherOffer error = %v, want duplicate codec", err)
 	}
 }
 
-func TestRoomViewerAnswerUsesOnlyAV1(t *testing.T) {
+func TestRoomViewerAnswerUsesOnlyH264(t *testing.T) {
 	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
 	if err := server.startWebRTC(); err != nil {
 		t.Fatal(err)
 	}
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
 
-	answer, err := room.SetViewerOffer("viewer", createViewerOfferWithCodec(t, videoCodecAV1))
+	answer, err := room.SetViewerOffer("viewer", createViewerOfferWithCodec(t, videoCodecH264))
 	if err != nil {
 		t.Fatalf("SetViewerOffer returned error: %v", err)
 	}
-	assertVideoSDPOnlyCodec(t, answer.SDP, videoCodecAV1)
-	if answer.Codec != videoCodecAV1 {
-		t.Fatalf("viewer answer codec = %s, want av1", answer.Codec)
+	assertVideoSDPOnlyCodec(t, answer.SDP, videoCodecH264)
+	if answer.Codec != videoCodecH264 {
+		t.Fatalf("viewer answer codec = %s, want h264", answer.Codec)
 	}
-	if room.viewers["viewer"].codec != videoCodecAV1 {
-		t.Fatalf("viewer codec = %s, want av1", room.viewers["viewer"].codec)
+	if room.viewers["viewer"].codec != videoCodecH264 {
+		t.Fatalf("viewer codec = %s, want h264", room.viewers["viewer"].codec)
 	}
 }
 
-func TestRoomViewerRejectsOfferWhenViewerLacksAV1(t *testing.T) {
+func TestRoomViewerRejectsOfferWhenViewerLacksH264(t *testing.T) {
 	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
 	if err := server.startWebRTC(); err != nil {
 		t.Fatal(err)
 	}
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
 
-	_, err := room.SetViewerOffer("viewer", createViewerOfferWithMimeType(t, webrtc.MimeTypeH264))
+	_, err := room.SetViewerOffer("viewer", createViewerOfferWithMimeType(t, webrtc.MimeTypeAV1))
 
 	if !errors.Is(err, errUnsupportedVideoCodecOffered) && !errors.Is(err, errSupportedVideoCodecMissing) {
 		t.Fatalf("SetViewerOffer error = %v, want unsupported or missing codec", err)
 	}
 }
 
-func TestRoomViewerUsesNegotiatedAV1BeforeAV1RTPStarts(t *testing.T) {
+func TestRoomViewerUsesNegotiatedH264BeforeH264RTPStarts(t *testing.T) {
 	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
 	if err := server.startWebRTC(); err != nil {
 		t.Fatal(err)
 	}
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 5678
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 5678
 
-	answer, err := room.SetViewerOffer("viewer", createViewerOfferWithCodec(t, videoCodecAV1))
+	answer, err := room.SetViewerOffer("viewer", createViewerOfferWithCodec(t, videoCodecH264))
 	if err != nil {
 		t.Fatalf("SetViewerOffer returned error: %v", err)
 	}
-	assertVideoSDPOnlyCodec(t, answer.SDP, videoCodecAV1)
-	if answer.Codec != videoCodecAV1 {
-		t.Fatalf("viewer answer codec = %s, want av1", answer.Codec)
+	assertVideoSDPOnlyCodec(t, answer.SDP, videoCodecH264)
+	if answer.Codec != videoCodecH264 {
+		t.Fatalf("viewer answer codec = %s, want h264", answer.Codec)
 	}
-	if room.viewers["viewer"].codec != videoCodecAV1 {
-		t.Fatalf("viewer codec = %s, want av1", room.viewers["viewer"].codec)
+	if room.viewers["viewer"].codec != videoCodecH264 {
+		t.Fatalf("viewer codec = %s, want h264", room.viewers["viewer"].codec)
 	}
 }
 
@@ -288,18 +304,18 @@ func TestRoomViewerUsesNegotiatedCodecsBeforePublisherRTPStarts(t *testing.T) {
 	}
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
+	room.publisherCodecs[videoCodecH264] = struct{}{}
 
-	answer, err := room.SetViewerOffer("viewer", createViewerOfferWithCodec(t, videoCodecAV1))
+	answer, err := room.SetViewerOffer("viewer", createViewerOfferWithCodec(t, videoCodecH264))
 	if err != nil {
 		t.Fatalf("SetViewerOffer returned error: %v", err)
 	}
-	assertVideoSDPOnlyCodec(t, answer.SDP, videoCodecAV1)
-	if answer.Codec != videoCodecAV1 {
-		t.Fatalf("viewer answer codec = %s, want av1", answer.Codec)
+	assertVideoSDPOnlyCodec(t, answer.SDP, videoCodecH264)
+	if answer.Codec != videoCodecH264 {
+		t.Fatalf("viewer answer codec = %s, want h264", answer.Codec)
 	}
-	if room.viewers["viewer"].codec != videoCodecAV1 {
-		t.Fatalf("viewer codec = %s, want av1", room.viewers["viewer"].codec)
+	if room.viewers["viewer"].codec != videoCodecH264 {
+		t.Fatalf("viewer codec = %s, want h264", room.viewers["viewer"].codec)
 	}
 }
 
@@ -311,7 +327,7 @@ func TestRoomViewerReturnsCodecPendingUntilPublisherCodecsAreNegotiated(t *testi
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
 
-	_, err := room.SetViewerOffer("viewer", createViewerOfferWithCodecs(t, []videoCodec{videoCodecAV1, videoCodecAV1}))
+	_, err := room.SetViewerOffer("viewer", createViewerOfferWithCodecs(t, []videoCodec{videoCodecH264, videoCodecH264}))
 
 	if !errors.Is(err, errPublisherCodecPending) {
 		t.Fatalf("SetViewerOffer error = %v, want codec pending", err)
@@ -325,8 +341,8 @@ func TestRoomViewerRejectsUnsupportedVideoCodecOffer(t *testing.T) {
 	}
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
 
 	if _, err := room.SetViewerOffer("viewer-vp8", createViewerOfferWithMimeType(t, webrtc.MimeTypeVP8)); err == nil {
 		t.Fatal("SetViewerOffer accepted VP8-only SDP")
@@ -343,10 +359,10 @@ func TestRoomViewerRejectsMixedSupportedAndUnsupportedVideoOffer(t *testing.T) {
 	}
 	defer server.Close()
 	room := NewRoom("2", nil, server.newPeerConnection)
-	room.publisherCodecs[videoCodecAV1] = struct{}{}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
 	offer := appendUnsupportedVideoCodecForTest(
-		createViewerOfferWithCodec(t, videoCodecAV1),
+		createViewerOfferWithCodec(t, videoCodecH264),
 		"116",
 		"H265",
 	)
@@ -358,16 +374,16 @@ func TestRoomViewerRejectsMixedSupportedAndUnsupportedVideoOffer(t *testing.T) {
 	}
 }
 
-func TestRoomForwardRTPRewritesViewerPayloadTypeFromNegotiatedAV1Binding(t *testing.T) {
+func TestRoomForwardRTPRewritesViewerPayloadTypeFromNegotiatedH264Binding(t *testing.T) {
 	room := newRoomForTest("2", nil)
-	track, err := webrtc.NewTrackLocalStaticRTP(mustTrackCapability(t, videoCodecAV1), "screen", "voiddisplay")
+	track, err := webrtc.NewTrackLocalStaticRTP(mustTrackCapability(t, videoCodecH264), "screen", "voiddisplay")
 	if err != nil {
 		t.Fatal(err)
 	}
 	stream := &capturingTrackLocalWriter{}
 	_, err = track.Bind(fakeTrackLocalContext{
 		codecs: []webrtc.RTPCodecParameters{{
-			RTPCodecCapability: mustTrackCapability(t, videoCodecAV1),
+			RTPCodecCapability: mustTrackCapability(t, videoCodecH264),
 			PayloadType:        124,
 		}},
 		ssrc:        5678,
@@ -376,10 +392,10 @@ func TestRoomForwardRTPRewritesViewerPayloadTypeFromNegotiatedAV1Binding(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", videoCodecAV1, track, nil)
+	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", videoCodecH264, track, nil)
 	defer room.Close()
 
-	room.ForwardRTPForCodec(videoCodecAV1, &rtp.Packet{
+	room.ForwardRTPForCodec(videoCodecH264, &rtp.Packet{
 		Header: rtp.Header{
 			PayloadType:    102,
 			SSRC:           1234,
@@ -399,15 +415,15 @@ func TestRoomForwardRTPRewritesViewerPayloadTypeFromNegotiatedAV1Binding(t *test
 	}
 }
 
-func TestRoomForwardRTPForCodecSendsAV1PacketsToAV1Viewers(t *testing.T) {
+func TestRoomForwardRTPForCodecSendsH264PacketsToH264Viewers(t *testing.T) {
 	room := newRoomForTest("2", nil)
 	first := &recordingSink{}
 	second := &recordingSink{}
-	room.subscribers["first"] = newViewerRTPWriter("2", "first", videoCodecAV1, first, nil)
-	room.subscribers["second"] = newViewerRTPWriter("2", "second", videoCodecAV1, second, nil)
+	room.subscribers["first"] = newViewerRTPWriter("2", "first", videoCodecH264, first, nil)
+	room.subscribers["second"] = newViewerRTPWriter("2", "second", videoCodecH264, second, nil)
 	defer room.Close()
 
-	room.ForwardRTPForCodec(videoCodecAV1, &rtp.Packet{
+	room.ForwardRTPForCodec(videoCodecH264, &rtp.Packet{
 		Header:  rtp.Header{Timestamp: 11},
 		Payload: []byte{1},
 	})
@@ -418,5 +434,35 @@ func TestRoomForwardRTPForCodecSendsAV1PacketsToAV1Viewers(t *testing.T) {
 	}
 	if got := second.onlyPacket(t).Timestamp; got != 11 {
 		t.Fatalf("second viewer timestamp = %d, want 11", got)
+	}
+}
+
+const testPlayoutDelayURI = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+
+func TestViewerAnswerNegotiatesImmediatePlayout(t *testing.T) {
+	server := NewServer(Config{ListenUDP: "127.0.0.1:0"})
+	if err := server.startWebRTC(); err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	room := NewRoom("playout", nil, server.newPeerConnection)
+	defer room.Close()
+	room.publisherCodecs[videoCodecH264] = struct{}{}
+	room.publisherSSRCs[videoCodecH264] = 1234
+
+	offer := createViewerOfferWithCodec(t, videoCodecH264)
+	offer = strings.Replace(offer, "a=recvonly", "a=recvonly\r\na=extmap:5 "+testPlayoutDelayURI, 1)
+	if !strings.Contains(offer, "a=extmap:5 "+testPlayoutDelayURI) {
+		t.Fatal("test offer did not include the browser's playout-delay extension")
+	}
+	answer, err := room.SetViewerOffer("viewer", offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answer.SDP, "a=extmap:5 "+testPlayoutDelayURI) {
+		t.Fatal("relay answer omitted the offered playout-delay extension")
+	}
+	if got := room.viewers["viewer"].writer.viewerExtensions[testPlayoutDelayURI]; got != 5 {
+		t.Fatalf("writer playout-delay ID = %d, want negotiated ID 5", got)
 	}
 }

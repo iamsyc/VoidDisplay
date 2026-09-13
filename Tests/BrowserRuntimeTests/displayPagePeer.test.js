@@ -7,7 +7,7 @@ const { loadBrowserRuntimeModules } = require("./runtimeTestSupport");
 function makeHarness({ includeCodecPreferenceAPI = true } = {}) {
     const signals = [];
     const transitions = [];
-    const codecPreferences = [{ mimeType: "video/AV1", payloadType: 96 }];
+    const codecPreferences = [{ mimeType: "video/H264", payloadType: 96 }];
     const selectedAnswers = [];
     const monitors = [];
     let peerInstance;
@@ -78,7 +78,7 @@ function makeHarness({ includeCodecPreferenceAPI = true } = {}) {
         receiverCodecPreferences: () => codecPreferences,
         selectedCodecFromAnswerSDP: (sdp) => {
             selectedAnswers.push(sdp);
-            return "av1";
+            return "h264";
         }
     };
     const statsAPI = {
@@ -132,7 +132,7 @@ function makeHarness({ includeCodecPreferenceAPI = true } = {}) {
     };
 }
 
-test("peer start applies AV1 preferences and sends an ICE-complete offer", async () => {
+test("peer start applies H264 preferences and sends an ICE-complete offer", async () => {
     const harness = makeHarness();
 
     await harness.controller.start();
@@ -157,10 +157,10 @@ test("peer start rejects browsers without codec preference support", async () =>
     );
 });
 
-test("applyAnswer validates AV1 and installs the remote description", async () => {
+test("applyAnswer validates H264 and installs the remote description", async () => {
     const harness = makeHarness();
     await harness.controller.start();
-    const answerSDP = "m=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 AV1/90000\r\n";
+    const answerSDP = "m=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 H264/90000\r\n";
 
     const applied = await harness.controller.applyAnswer({
         sdp: answerSDP,

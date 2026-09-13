@@ -171,7 +171,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .preview }?.state == .failed)
         #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .preview }?.lastFailureCode
             == DisplayRuntimeCaptureIntentFailureCode.streamStopped)
-        #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .lanWebView }?.state == .released)
+        #expect(runtime.currentConsumerLeaseSnapshot().first { $0.kind == .lanWebView } == nil)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(runtime.currentEffectiveCaptureIntentSnapshot().first?.intent.kind == .drain)
         #expect(commander.intents.count == oldCallCount, "Termination must never restart capture automatically.")
@@ -241,7 +241,7 @@ struct DisplayRuntimeConsumerLeaseTests {
 
         #expect(detachResult.releasedLease?.state == .released)
         #expect(detachResult.applyResult?.outcome == .applied)
-        #expect(runtime.currentConsumerLeaseSnapshot().first?.state == .released)
+        #expect(runtime.currentConsumerLeaseSnapshot().isEmpty)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(captureIntentCommander.intents.count == 2)
         #expect(captureIntentCommander.intents.last?.kind == .drain)
@@ -288,8 +288,8 @@ struct DisplayRuntimeConsumerLeaseTests {
         #expect(detachResult.applyResult?.outcome == .applied)
         #expect(captureIntentCommander.intents.map(\.reason) == [.attach, .detach])
         #expect(captureIntentCommander.intents.map(\.revision.rawValue) == [1, 2])
-        #expect(runtime.currentConsumerLeaseSnapshot().first?.state == .released)
-        #expect(runtime.currentConsumerLeaseSnapshot().first?.demand.activeViewerCount == 4)
+        #expect(runtime.currentConsumerLeaseSnapshot().isEmpty)
+        #expect(detachResult.releasedLease?.demand.activeViewerCount == 4)
     }
 
     @Test func lanWebViewMetadataUpdateDoesNotMaskInFlightCaptureFailure() async {
@@ -457,7 +457,7 @@ struct DisplayRuntimeConsumerLeaseTests {
 
         _ = await runtime.detachPreviewConsumer(leaseID: previewLease.id)
 
-        #expect(runtime.consumerLease(leaseID: previewLease.id)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: previewLease.id) == nil)
         #expect(runtime.consumerLease(leaseID: lanLease.id)?.state == .attached)
         #expect(runtime.currentAggregatedDemandSnapshot().first?.consumerKinds == [.lanWebView])
         #expect(captureIntentCommander.intents.last?.kind == .capture)
@@ -914,14 +914,14 @@ struct DisplayRuntimeConsumerLeaseTests {
         }
         await Task.yield()
 
-        #expect(runtime.consumerLease(leaseID: leaseID)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: leaseID) == nil)
         captureIntentCommander.releaseApply(call: 1)
         await captureIntentCommander.waitForApplyCalls(2)
         captureIntentCommander.releaseApply(call: 2)
         _ = await attachTask.value
         _ = await detachTask.value
 
-        #expect(runtime.consumerLease(leaseID: leaseID)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: leaseID) == nil)
         #expect(runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(captureIntentCommander.intents.map(\.kind) == [.capture, .drain])
     }
@@ -958,7 +958,7 @@ struct DisplayRuntimeConsumerLeaseTests {
         }
         await Task.yield()
 
-        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: lease.id) == nil)
         captureIntentCommander.releaseApply(call: 3)
         await captureIntentCommander.waitForApplyCalls(4)
         captureIntentCommander.releaseApply(call: 4)
@@ -967,7 +967,7 @@ struct DisplayRuntimeConsumerLeaseTests {
 
         #expect(results.first?.status == .skipped)
         #expect(results.first?.failureReason == "consumer_lease_released")
-        #expect(runtime.consumerLease(leaseID: lease.id)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: lease.id) == nil)
         #expect(runtime.isConsumerTransitionBusy(surfaceIdentity: surfaceIdentity) == false)
     }
 }

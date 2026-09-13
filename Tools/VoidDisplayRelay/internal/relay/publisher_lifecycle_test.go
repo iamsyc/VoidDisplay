@@ -106,7 +106,7 @@ func TestPublisherDisconnectOnlyClosesCurrentSession(t *testing.T) {
 			if err := room.AddPublisherCandidate("previous", webrtc.ICECandidateInit{Candidate: "stale"}); err != nil {
 				t.Fatal(err)
 			}
-			if room.ForwardRTPFromPublisher("previous", videoCodecAV1, &rtp.Packet{}) {
+			if room.ForwardRTPFromPublisher("previous", videoCodecH264, &rtp.Packet{}) {
 				t.Fatal("stale RTP was forwarded")
 			}
 			if room.isClosed() || current.isClosed() || viewer.isClosed() || len(current.addedCandidates()) != 0 {

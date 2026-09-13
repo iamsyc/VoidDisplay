@@ -9,19 +9,19 @@ import VoidDisplayObservability
 @preconcurrency import WebRTC
 #endif
 package enum WebRTCVideoCodec: String, CaseIterable, Sendable {
-    case av1
+    case h264
 
     package var logName: String {
         switch self {
-        case .av1:
-            "AV1"
+        case .h264:
+            "H264"
         }
     }
 }
 
 package struct WebRTCStreamingProfile: Sendable, Equatable {
-    private static let av1SourceBitsPerPixel: Double = 0.10
-    private static let av1PowerEfficientBitsPerPixel: Double = 0.05
+    private static let h264SourceBitsPerPixel: Double = 0.10
+    private static let h264PowerEfficientBitsPerPixel: Double = 0.05
 
     package let performanceMode: CapturePerformanceMode
     package let sourceVideoSpec: SourceVideoSpec
@@ -42,7 +42,7 @@ package struct WebRTCStreamingProfile: Sendable, Equatable {
         self.pixelBudgetPerSecond = pixelBudgetPerSecond
         let sourceDimensions = sourceVideoSpec.dimensions
         let maxBitrateBps = Self.targetMaxBitrateBps(
-            for: .av1,
+            for: .h264,
             dimensions: sourceDimensions,
             framesPerSecond: self.framesPerSecond,
             performanceMode: performanceMode
@@ -174,10 +174,10 @@ package struct WebRTCStreamingProfile: Sendable, Equatable {
     ) -> Int {
         let pixelRate = Double(dimensions.pixelCount) * Double(max(1, framesPerSecond))
         let bitsPerPixel: Double = switch (codec, performanceMode) {
-        case (.av1, .powerEfficient):
-            av1PowerEfficientBitsPerPixel
-        case (.av1, _):
-            av1SourceBitsPerPixel
+        case (.h264, .powerEfficient):
+            h264PowerEfficientBitsPerPixel
+        case (.h264, _):
+            h264SourceBitsPerPixel
         }
         let target = Int((pixelRate * bitsPerPixel).rounded())
         return max(2_000_000, target)

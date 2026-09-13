@@ -11,7 +11,8 @@ import (
 type videoCodec string
 
 const (
-	videoCodecAV1 videoCodec = "av1"
+	videoCodecH264  videoCodec = "h264"
+	playoutDelayURI            = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
 )
 
 var errSupportedVideoCodecMissing = errors.New("supported_video_codec_missing")
@@ -19,19 +20,22 @@ var errUnsupportedVideoCodecOffered = errors.New("unsupported_video_codec_offere
 var errPublisherCodecPending = errors.New("publisher_codec_pending")
 var errPublisherCodecDuplicate = errors.New("publisher_video_codec_duplicate")
 
-var av1RTCPFeedback = []webrtc.RTCPFeedback{
+var h264RTCPFeedback = []webrtc.RTCPFeedback{
 	{Type: "goog-remb"},
 	{Type: "ccm", Parameter: "fir"},
 	{Type: "nack"},
 	{Type: "nack", Parameter: "pli"},
 }
 
-var av1CodecParameters = []webrtc.RTPCodecParameters{
+// Match the native screen encoder: high profile, non-interleaved RTP,
+// and level 5.2 so a 4K60 publisher is not constrained by level 3.1.
+var h264CodecParameters = []webrtc.RTPCodecParameters{
 	{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeAV1,
+			MimeType:     webrtc.MimeTypeH264,
 			ClockRate:    90000,
-			RTCPFeedback: av1RTCPFeedback,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640034",
+			RTCPFeedback: h264RTCPFeedback,
 		},
 		PayloadType: 45,
 	},
@@ -46,36 +50,36 @@ var av1CodecParameters = []webrtc.RTPCodecParameters{
 }
 
 func registerVideoCodecs(mediaEngine *webrtc.MediaEngine) error {
-	for _, codec := range av1CodecParameters {
+	for _, codec := range h264CodecParameters {
 		if err := mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
 			return err
 		}
 	}
-	return nil
+	return mediaEngine.RegisterHeaderExtension(
+		webrtc.RTPHeaderExtensionCapability{URI: playoutDelayURI},
+		webrtc.RTPCodecTypeVideo,
+		webrtc.RTPTransceiverDirectionSendonly,
+	)
 }
 
 func trackCapability(codec videoCodec) (webrtc.RTPCodecCapability, error) {
-	if codec != videoCodecAV1 {
+	if codec != videoCodecH264 {
 		return webrtc.RTPCodecCapability{}, errUnsupportedVideoCodecOffered
 	}
-	return webrtc.RTPCodecCapability{
-		MimeType:     webrtc.MimeTypeAV1,
-		ClockRate:    90000,
-		RTCPFeedback: av1RTCPFeedback,
-	}, nil
+	return h264CodecParameters[0].RTPCodecCapability, nil
 }
 
 func codecParametersForVideoCodec(codec videoCodec) ([]webrtc.RTPCodecParameters, error) {
-	if codec != videoCodecAV1 {
+	if codec != videoCodecH264 {
 		return nil, errUnsupportedVideoCodecOffered
 	}
-	return append([]webrtc.RTPCodecParameters(nil), av1CodecParameters...), nil
+	return append([]webrtc.RTPCodecParameters(nil), h264CodecParameters...), nil
 }
 
 func codecFromName(name string) (videoCodec, bool) {
 	switch {
-	case strings.EqualFold(name, "AV1"), strings.EqualFold(name, webrtc.MimeTypeAV1):
-		return videoCodecAV1, true
+	case strings.EqualFold(name, "H264"), strings.EqualFold(name, webrtc.MimeTypeH264):
+		return videoCodecH264, true
 	default:
 		return "", false
 	}
@@ -159,12 +163,12 @@ func publisherVideoCodecs(sdp string) ([]videoCodec, error) {
 		if len(mediaCodecSet.codecs) == 0 {
 			return nil, errSupportedVideoCodecMissing
 		}
-		if _, ok := mediaCodecSet.codecs[videoCodecAV1]; ok && len(mediaCodecSet.codecs) == 1 {
-			if _, duplicate := seen[videoCodecAV1]; duplicate {
+		if _, ok := mediaCodecSet.codecs[videoCodecH264]; ok && len(mediaCodecSet.codecs) == 1 {
+			if _, duplicate := seen[videoCodecH264]; duplicate {
 				return nil, errPublisherCodecDuplicate
 			}
-			seen[videoCodecAV1] = struct{}{}
-			codecs = append(codecs, videoCodecAV1)
+			seen[videoCodecH264] = struct{}{}
+			codecs = append(codecs, videoCodecH264)
 			continue
 		}
 		return nil, errUnsupportedVideoCodecOffered
@@ -185,8 +189,8 @@ func codecSetFromList(codecs []videoCodec) map[videoCodec]struct{} {
 
 func codecListFromSet(codecSet map[videoCodec]struct{}) []videoCodec {
 	codecs := make([]videoCodec, 0, len(codecSet))
-	if _, ok := codecSet[videoCodecAV1]; ok {
-		codecs = append(codecs, videoCodecAV1)
+	if _, ok := codecSet[videoCodecH264]; ok {
+		codecs = append(codecs, videoCodecH264)
 	}
 	return codecs
 }
@@ -262,9 +266,9 @@ func selectViewerCodec(sdp string, available map[videoCodec]struct{}) (videoCode
 			offered[codec] = struct{}{}
 		}
 	}
-	if _, publisherHasAV1 := available[videoCodecAV1]; publisherHasAV1 {
-		if _, viewerHasAV1 := offered[videoCodecAV1]; viewerHasAV1 {
-			return videoCodecAV1, nil
+	if _, publisherHasH264 := available[videoCodecH264]; publisherHasH264 {
+		if _, viewerHasH264 := offered[videoCodecH264]; viewerHasH264 {
+			return videoCodecH264, nil
 		}
 	}
 	return "", errSupportedVideoCodecMissing

@@ -2,6 +2,7 @@ import Foundation
 
 package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable {
     package let schemaVersion: Int
+    package let latestFailure: DisplayRuntimeFailure?
     package let surfaces: [DisplaySurface]
     package let catalog: DisplayRuntimeCatalogSnapshot
     package let capture: DisplayRuntimeCaptureSnapshot
@@ -14,7 +15,7 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
     package let consumerSummary: DisplayRuntimeConsumerSummarySnapshot
 
     package init(
-        schemaVersion: Int = 5,
+        schemaVersion: Int = 6,
         surfaces: [DisplaySurface],
         catalog: DisplayRuntimeCatalogSnapshot,
         capture: DisplayRuntimeCaptureSnapshot,
@@ -25,9 +26,11 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
         aggregatedDemands: [DisplayRuntimeAggregatedDemand] = [],
         effectiveCaptureIntents: [DisplayRuntimeEffectiveCaptureIntent] = [],
         surfaceEpochs: [DisplayRuntimeSurfaceEpochSnapshot] = [],
-        latestCaptureIntentRevision: DisplayRuntimeCaptureIntentRevision? = nil
+        latestCaptureIntentRevision: DisplayRuntimeCaptureIntentRevision? = nil,
+        latestFailure: DisplayRuntimeFailure? = nil
     ) {
         self.schemaVersion = schemaVersion
+        self.latestFailure = latestFailure
         self.surfaces = surfaces.sorted {
             ($0.kind.rawValue, $0.identity.stableID) < ($1.kind.rawValue, $1.identity.stableID)
         }
@@ -192,5 +195,15 @@ package nonisolated struct DisplayRuntimeConsumerSummarySnapshot: Codable, Equat
                 )
             }
             .sorted { $0.kind.rawValue < $1.kind.rawValue }
+    }
+}
+
+package nonisolated struct DisplayRuntimeFailure: Codable, Equatable, Sendable {
+    package let code: String
+    package let sequence: UInt64
+
+    package init(code: String, sequence: UInt64) {
+        self.code = code
+        self.sequence = sequence
     }
 }

@@ -34,7 +34,8 @@ extension DisplayRuntime {
             aggregatedDemands: aggregatedDemands,
             effectiveCaptureIntents: effectiveCaptureIntents,
             surfaceEpochs: currentSurfaceEpochSnapshot(),
-            latestCaptureIntentRevision: currentLatestCaptureIntentRevision()
+            latestCaptureIntentRevision: currentLatestCaptureIntentRevision(),
+            latestFailure: latestFailure
         )
     }
 

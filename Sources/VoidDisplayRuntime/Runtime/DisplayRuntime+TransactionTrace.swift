@@ -89,6 +89,15 @@ extension DisplayRuntime {
             )
         }
         if let trace = activeTransactionTracesByID.removeValue(forKey: transactionID) {
+            if status != .cancelled, failure?.reason != "edit_request_stale" {
+                // Quiesce failures have already been accepted at the capture boundary.
+                if let failure, failure.phase != .quiescingSessions {
+                    recordFailure(code: failure.reason)
+                }
+                if let code = compensation?.failureReason, code != failure?.reason {
+                    recordFailure(code: code)
+                }
+            }
             recentTransactionTraces.insert(trace, at: 0)
             if recentTransactionTraces.count > 20 {
                 recentTransactionTraces = Array(recentTransactionTraces.prefix(20))
@@ -104,6 +113,10 @@ extension DisplayRuntime {
             hasSessionRecoveryFailures: status == .completedWithRecoveryFailures,
             desiredEnabled: desiredEnabled
         )
+    }
+
+    func recordFailure(code: String) {
+        latestFailure = DisplayRuntimeFailure(code: code, sequence: (latestFailure?.sequence ?? 0) + 1)
     }
 
     func setActiveTrace(_ trace: DisplayRuntimeTransactionTrace) {

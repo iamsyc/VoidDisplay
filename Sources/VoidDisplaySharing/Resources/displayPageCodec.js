@@ -8,8 +8,8 @@
         return String(codec?.mimeType || "").toLowerCase();
     }
 
-    function isAV1Codec(codec) {
-        return normalizedVideoCodecName(codec) === "video/av1";
+    function isH264Codec(codec) {
+        return normalizedVideoCodecName(codec) === "video/h264";
     }
 
     function isRetransmissionCodec(codec) {
@@ -61,11 +61,11 @@
         }
         const capabilities = receiverConstructor.getCapabilities("video");
         const allCodecs = Array.isArray(capabilities?.codecs) ? capabilities.codecs : [];
-        const av1Codecs = allCodecs.filter(isAV1Codec);
-        if (av1Codecs.length === 0) {
+        const h264Codecs = allCodecs.filter(isH264Codec);
+        if (h264Codecs.length === 0) {
             throw codecRequirementError(requiredMessage);
         }
-        return av1Codecs.concat(rtxCodecsForPrimaryCodecs(allCodecs, av1Codecs));
+        return h264Codecs.concat(rtxCodecsForPrimaryCodecs(allCodecs, h264Codecs));
     }
 
     function videoCodecNamesFromSDP(sdp) {
@@ -111,8 +111,8 @@
     function selectedCodecFromAnswerSDP(sdp, requiredMessage) {
         const codecNames = videoCodecNamesFromSDP(sdp);
         const primaryCodecs = codecNames.filter((name) => name !== "rtx");
-        const supportedPrimaryCodecs = [...new Set(primaryCodecs.filter((name) => name === "av1"))];
-        const hasUnexpectedVideoCodec = primaryCodecs.some((name) => name !== "av1");
+        const supportedPrimaryCodecs = [...new Set(primaryCodecs.filter((name) => name === "h264"))];
+        const hasUnexpectedVideoCodec = primaryCodecs.some((name) => name !== "h264");
         if (supportedPrimaryCodecs.length !== 1 || hasUnexpectedVideoCodec) {
             throw new Error(requiredMessage);
         }
@@ -122,7 +122,7 @@
     namespace.codec = Object.freeze({
         codecPayloadType,
         codecRequirementError,
-        isAV1Codec,
+        isH264Codec,
         isCodecRequirementError,
         isRetransmissionCodec,
         normalizedVideoCodecName,

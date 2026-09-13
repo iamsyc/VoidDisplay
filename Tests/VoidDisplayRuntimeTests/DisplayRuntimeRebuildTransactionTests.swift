@@ -641,7 +641,7 @@ struct DisplayRuntimeRebuildTransactionTests {
         _ = await runtime.detachLANWebViewConsumer(surfaceIdentity: surface)
 
         #expect(runtime.consumerLease(leaseID: previewLease.id)?.state == .attached)
-        #expect(runtime.consumerLease(leaseID: lanLease.id)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: lanLease.id) == nil)
         #expect(runtime.currentAggregatedDemandSnapshot().first?.consumerKinds == [.preview])
         #expect(captureIntentCommander.intents.last?.kind == .capture)
         #expect(captureIntentCommander.intents.last?.aggregateDemand?.consumerKinds == [.preview])

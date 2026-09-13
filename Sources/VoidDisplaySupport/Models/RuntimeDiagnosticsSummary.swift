@@ -81,7 +81,7 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         activeTransactionCount = runtime.transactions.activeTransactions.count
         recentTransactionCount = runtime.transactions.recentTransactions.count
         recentFailureCount = Self.recentFailureCount(from: runtime)
-        lastFailureCode = Self.latestFailureCode(from: runtime)
+        lastFailureCode = runtime.latestFailure?.code
         hasCurrentWarning = Self.hasCurrentWarning(in: runtime)
     }
 
@@ -130,27 +130,5 @@ package nonisolated struct RuntimeDiagnosticsSummary: Equatable, Sendable {
         }
         let leaseFailures = runtime.consumerLeases.count { $0.lastFailureCode != nil }
         return transactionFailures + intentFailures + leaseFailures
-    }
-
-    private static func latestFailureCode(from runtime: DisplayRuntimeSnapshot) -> String? {
-        let transactionsByRecency =
-            runtime.transactions.recentTransactions +
-            Array(runtime.transactions.activeTransactions.reversed())
-        for transaction in transactionsByRecency {
-            if let reason = transaction.failure?.reason {
-                return reason
-            }
-            if let reason = transaction.compensation.failureReason {
-                return reason
-            }
-        }
-
-        for intent in runtime.effectiveCaptureIntents.reversed() {
-            if let code = intent.lastFailureCode ?? intent.lastApplyResult?.failureCode ?? intent.intent.lastFailureCode {
-                return code
-            }
-        }
-
-        return runtime.consumerLeases.reversed().compactMap(\.lastFailureCode).first
     }
 }

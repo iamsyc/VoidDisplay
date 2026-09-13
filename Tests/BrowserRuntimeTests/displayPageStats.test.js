@@ -14,27 +14,27 @@ test("sourceSpecFromSignal validates and normalizes the source dimensions", () =
     assert.equal(stats.sourceSpecFromSignal({ width: 1920, height: 0, framesPerSecond: 60 }), null);
 });
 
-test("videoInboundStatsFromReport selects the AV1 inbound video report", () => {
+test("videoInboundStatsFromReport selects the H264 inbound video report", () => {
     const reports = new Map([
+        ["codec-vp8", { id: "codec-vp8", type: "codec", mimeType: "video/VP8" }],
+        ["inbound-vp8", {
+            id: "inbound-vp8",
+            type: "inbound-rtp",
+            kind: "video",
+            codecId: "codec-vp8"
+        }],
         ["codec-h264", { id: "codec-h264", type: "codec", mimeType: "video/H264" }],
         ["inbound-h264", {
             id: "inbound-h264",
             type: "inbound-rtp",
-            kind: "video",
-            codecId: "codec-h264"
-        }],
-        ["codec-av1", { id: "codec-av1", type: "codec", mimeType: "video/AV1" }],
-        ["inbound-av1", {
-            id: "inbound-av1",
-            type: "inbound-rtp",
             mediaType: "video",
-            codecId: "codec-av1"
+            codecId: "codec-h264"
         }]
     ]);
 
     const selected = stats.videoInboundStatsFromReport(reports);
-    assert.equal(selected.report.id, "inbound-av1");
-    assert.equal(selected.codec.id, "codec-av1");
+    assert.equal(selected.report.id, "inbound-h264");
+    assert.equal(selected.codec.id, "codec-h264");
 });
 
 test("deriveBrowserStatsSample computes bitrate and decoded frame rate", () => {

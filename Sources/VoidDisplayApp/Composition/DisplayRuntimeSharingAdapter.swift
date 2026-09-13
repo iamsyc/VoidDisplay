@@ -96,11 +96,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
         )
 
         guard case let .attached(lease, applyResult) = outcome else {
-            guard case let .rejected(failureCode) = outcome else {
-                throw DisplayRuntimeLANWebViewCaptureError(
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
-                )
-            }
+            guard case let .rejected(failureCode) = outcome else { return .invalidated }
             throw DisplayRuntimeLANWebViewCaptureError(failureCode: failureCode)
         }
 
@@ -130,7 +126,7 @@ package final class DisplayRuntimeSharingAdapter: DisplayRuntimeSharingProviding
 
     package func stopAllLANWebViewSharing(runtime: DisplayRuntime) async {
         let activeSurfaceIdentities = runtime.currentConsumerLeaseSnapshot()
-            .filter { $0.kind == .lanWebView && $0.state != .released }
+            .filter { $0.kind == .lanWebView }
             .map(\.surfaceIdentity)
         for surfaceIdentity in activeSurfaceIdentities {
             _ = await runtime.detachLANWebViewConsumer(surfaceIdentity: surfaceIdentity)

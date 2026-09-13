@@ -55,6 +55,10 @@ App 为每块运行中的虚拟屏启动 `Contents/MacOS/VoidDisplayHost`。该�
 
 LAN Web View 的分享路由生命周期与帧需求分开管理。启用分享会建立受 capability 保护的页面与信令入口。零 viewer 时路由可以继续有效，采集流只在 Preview 或实际 viewer 产生帧需求时运行。
 
+共享链路统一使用 H.264。原生发送端通过 VideoToolbox 创建硬件编码器，使用实时编码、禁止帧重排并将帧等待上限设为 0，异步提交帧。在途帧最多两个，硬件忙时丢弃新的输入，避免积累旧画面。编码器使用自身缓冲池并批量复制像素平面，避免硬件参考帧占满 ScreenCaptureKit 的采集缓冲区；关键帧间隔沿用 WebRTC 的 7,200 帧或 240 秒上限，并响应即时关键帧请求。发送工厂声明 High Level 5.2 与 packetization-mode 1；relay 使用相同参数，浏览器只协商 H.264 及对应 RTX。Level 5.2 覆盖 4K 60 fps，不能沿用默认工厂的 Level 3.1。发送 peer 不配置接收解码器，避免默认接收能力将 offer 降至 Level 3.1。发送端诊断保留实际编码器、是否节能、帧率及限速原因，本机硬件路径与性能须以真实运行结果验证。
+
+LAN Web View 当前传输无音频的交互式桌面画面。Relay 在 viewer 的 SDP 中协商 `playout-delay` RTP 扩展，并按每个 viewer 协商的扩展 ID 写入最小与最大播放延迟 `0/0 ms`，请求接收端即时解码。浏览器继续决定解码后的合成与实际呈现时间，该参数不等于端到端延迟。未协商该扩展的 viewer 不接收它；写入只修改转发副本，保留原始媒体时间戳和 payload。
+
 完整访问和资源边界见 [LAN Web View 安全契约](./security/lan-web-view.md)。
 
 ## 依赖边界
@@ -72,6 +76,12 @@ LAN Web View 的分享路由生命周期与帧需求分开管理。启用分享�
 ## 诊断与隐私
 
 Diagnostics 以 runtime snapshot 作为主要结构化状态来源。支持包在落盘前经过最终脱敏边界，调用方提供的内容不会被默认视为已清洗。新增诊断字段或附件时，需要同时扩展脱敏测试和支持包测试。
+
+Runtime 的 lease 集合只保存仍受管理的 consumer。释放时先生成终态结果并解除等待，再移除条目；失败且可重试的 Preview 保留到用户重试或关闭。只有 attach 可以创建 lease，其他状态更新只能修改现存 ID。关闭后返回的异步结果使用 `invalidated`，不能恢复旧窗口或采集需求。历史排障信息由现有事件与事务诊断记录承担。
+
+Runtime snapshot 使用 schema 6，`latestFailure` 保存最近一次有效失败的代码与进程内递增序号。Runtime 在接受采集结果、独立 consumer 失败和事务终态时记录该值；过期结果、正常取消及同一失败的重复传播不推进序号，成功操作不清除最近失败。Diagnostics 直接读取该字段，禁止从显示器顺序或不同诊断集合的排列推断失败先后。
+
+采集失败按当前 intent 内的失败码去重，其他 consumer 的成功或失败结果不会使旧通知重新计数。新 intent 替换旧 intent 时回收该显示源的去重记录，避免保存跨请求历史。
 
 ## 验证入口
 

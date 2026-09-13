@@ -93,8 +93,8 @@ package struct WebRTCFrameTimestampSequencer: Sendable, Equatable {
 package nonisolated final class WebRTCMediaPipeline: Sendable {
     private let core: WebRTCMediaPipelineCore
 
-    package var av1VideoTrack: RTCVideoTrack {
-        core.av1VideoTrack
+    package var h264VideoTrack: RTCVideoTrack {
+        core.h264VideoTrack
     }
 
     package init() {
@@ -126,6 +126,22 @@ package nonisolated final class WebRTCMediaPipeline: Sendable {
     }
 }
 
+private nonisolated final class ScreenVideoEncoderFactory: NSObject, RTCVideoEncoderFactory {
+    func supportedCodecs() -> [RTCVideoCodecInfo] {
+        // The default factory advertises level 3.1. Level 5.2 allows the native
+        // VideoToolbox encoder to keep a 3840 x 2160 source at 60 fps.
+        [RTCVideoCodecInfo(name: kRTCVideoCodecH264Name, parameters: [
+            "profile-level-id": "640034",
+            "level-asymmetry-allowed": "1",
+            "packetization-mode": "1",
+        ])]
+    }
+
+    func createEncoder(_ info: RTCVideoCodecInfo) -> (any RTCVideoEncoder)? {
+        ScreenVideoEncoder()
+    }
+}
+
 private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
     private nonisolated struct PendingFrame: @unchecked Sendable {
         nonisolated(unsafe) let pixelBuffer: CVPixelBuffer
@@ -139,7 +155,7 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
 
     private struct RuntimeDiagnostics {
         var submittedFrameCount = 0
-        var forwardedAV1FrameCount = 0
+        var forwardedH264FrameCount = 0
     }
 
     private struct CodecOutputState: Sendable, Equatable {
@@ -155,9 +171,9 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
     }()
 
     private let factory: RTCPeerConnectionFactory
-    nonisolated(unsafe) private let av1VideoSource: RTCVideoSource
-    nonisolated(unsafe) fileprivate let av1VideoTrack: RTCVideoTrack
-    nonisolated(unsafe) private let av1Capturer: RTCVideoCapturer
+    nonisolated(unsafe) private let h264VideoSource: RTCVideoSource
+    nonisolated(unsafe) fileprivate let h264VideoTrack: RTCVideoTrack
+    nonisolated(unsafe) private let h264Capturer: RTCVideoCapturer
     private let queue = DispatchQueue(
         label: "com.developerchen.voiddisplay.webrtc.media",
         qos: .userInitiated
@@ -166,18 +182,20 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
     private let activeCodecs = Mutex<Set<WebRTCVideoCodec>>([])
     private let runtimeDiagnostics = Mutex(RuntimeDiagnostics())
     nonisolated(unsafe) private var frameMailbox: WebRTCFrameMailbox<PendingFrame>!
-    nonisolated(unsafe) private var av1OutputState: CodecOutputState?
-    nonisolated(unsafe) private var av1TimestampSequencer = WebRTCFrameTimestampSequencer()
+    nonisolated(unsafe) private var h264OutputState: CodecOutputState?
+    nonisolated(unsafe) private var h264TimestampSequencer = WebRTCFrameTimestampSequencer()
 
     fileprivate init() {
         _ = Self.sslInitialized
         self.factory = RTCPeerConnectionFactory(
-            encoderFactory: RTCDefaultVideoEncoderFactory(),
-            decoderFactory: RTCDefaultVideoDecoderFactory()
+            encoderFactory: ScreenVideoEncoderFactory(),
+            // This peer only publishes. A receive factory would intersect the
+            // offer with its default level 3.1 and limit the screen encoder.
+            decoderFactory: nil
         )
-        self.av1VideoSource = factory.videoSource()
-        self.av1VideoTrack = factory.videoTrack(with: av1VideoSource, trackId: "screen-video-av1")
-        self.av1Capturer = RTCVideoCapturer(delegate: av1VideoSource)
+        self.h264VideoSource = factory.videoSource()
+        self.h264VideoTrack = factory.videoTrack(with: h264VideoSource, trackId: "screen-video-h264")
+        self.h264Capturer = RTCVideoCapturer(delegate: h264VideoSource)
         self.frameMailbox = WebRTCFrameMailbox(
             scheduler: { [weak self] operation in
                 self?.queue.async(execute: operation)
@@ -214,7 +232,7 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
         activeCodecs.withLock { $0 = codecs }
         queue.async { [weak self] in
             guard let self,
-                  let currentState = self.av1OutputState else {
+                  let currentState = self.h264OutputState else {
                 return
             }
             self.adaptOutputFormats(
@@ -230,7 +248,7 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
         self.profile.withLock { $0 = profile }
         queue.async { [weak self] in
             guard let self,
-                  let currentState = self.av1OutputState else {
+                  let currentState = self.h264OutputState else {
                 return
             }
             self.adaptOutputFormats(
@@ -310,7 +328,7 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
             framesPerSecond: profile.framesPerSecond(for: codec)
         )
         switch codec {
-        case .av1 where av1OutputState == nextState:
+        case .h264 where h264OutputState == nextState:
             return
         default:
             break
@@ -321,8 +339,8 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
             fps: Int32(profile.framesPerSecond(for: codec))
         )
         switch codec {
-        case .av1:
-            av1OutputState = nextState
+        case .h264:
+            h264OutputState = nextState
         }
     }
 
@@ -357,8 +375,8 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
         framesPerSecond: Int
     ) -> Int64 {
         switch codec {
-        case .av1:
-            av1TimestampSequencer.nextTimestampNs(
+        case .h264:
+            h264TimestampSequencer.nextTimestampNs(
                 ptsUs: ptsUs,
                 framesPerSecond: framesPerSecond
             )
@@ -368,24 +386,24 @@ private nonisolated final class WebRTCMediaPipelineCore: @unchecked Sendable {
     private func shouldLogFirstForwardedFrame(for codec: WebRTCVideoCodec) -> Bool {
         runtimeDiagnostics.withLock { diagnostics -> Bool in
             switch codec {
-            case .av1:
-                diagnostics.forwardedAV1FrameCount += 1
-                return diagnostics.forwardedAV1FrameCount == 1
+            case .h264:
+                diagnostics.forwardedH264FrameCount += 1
+                return diagnostics.forwardedH264FrameCount == 1
             }
         }
     }
 
     private func videoSource(for codec: WebRTCVideoCodec) -> RTCVideoSource {
         switch codec {
-        case .av1:
-            av1VideoSource
+        case .h264:
+            h264VideoSource
         }
     }
 
     private func capturer(for codec: WebRTCVideoCodec) -> RTCVideoCapturer {
         switch codec {
-        case .av1:
-            av1Capturer
+        case .h264:
+            h264Capturer
         }
     }
 }

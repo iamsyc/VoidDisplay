@@ -140,7 +140,6 @@ extension DisplayRuntime {
                         demand: nil,
                         lastFailureCode: nil
                     )
-                    notifyPreviewLeaseWaitersIfTerminal(leaseID: transition.leaseID)
                 }
                 for transition in uniqueTransitionsByKind(surfaceTransitions) {
                     results.append(
@@ -156,7 +155,7 @@ extension DisplayRuntime {
             }
 
             let userReleasedTransitions = surfaceTransitions.filter {
-                consumerLeasesByID[$0.leaseID]?.state == .released
+                consumerLeasesByID[$0.leaseID] == nil
             }
             for transition in uniqueTransitionsByKind(userReleasedTransitions) {
                 results.append(
@@ -169,7 +168,7 @@ extension DisplayRuntime {
                 )
             }
             surfaceTransitions.removeAll {
-                consumerLeasesByID[$0.leaseID]?.state == .released
+                consumerLeasesByID[$0.leaseID] == nil
             }
             guard !surfaceTransitions.isEmpty else { continue }
             let currentSurfaceResultStartIndex = results.endIndex
@@ -208,6 +207,7 @@ extension DisplayRuntime {
             ) else {
                 let failureCode = topologyFailureCode
                     ?? DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
+                recordFailure(code: failureCode)
                 surfaceResolvedDisplayIDs.removeValue(forKey: surfaceIdentity)
                 for transition in surfaceTransitions {
                     guard let lease = consumerLeasesByID[transition.leaseID] else { continue }
@@ -219,7 +219,6 @@ extension DisplayRuntime {
                         demand: nil,
                         lastFailureCode: failureCode
                     )
-                    notifyPreviewLeaseWaitersIfTerminal(leaseID: transition.leaseID)
                 }
                 for transition in uniqueTransitionsByKind(surfaceTransitions) {
                     results.append(
@@ -290,7 +289,6 @@ extension DisplayRuntime {
                             demand: lease.demand,
                             lastFailureCode: nil
                         )
-                        notifyPreviewLeaseWaitersIfTerminal(leaseID: restoredTransition.leaseID)
                     }
                     results.append(
                         restoreResult(
@@ -306,7 +304,7 @@ extension DisplayRuntime {
                 let failureCode = captureIntentFailureCode(for: applyResult)
                 let failedTransitions = surfaceTransitions.filter {
                     $0.consumerKind == transition.consumerKind
-                        && consumerLeasesByID[$0.leaseID]?.state != .released
+                        && consumerLeasesByID[$0.leaseID] != nil
                 }
                 guard !failedTransitions.isEmpty else {
                     results.append(
@@ -360,9 +358,7 @@ extension DisplayRuntime {
         surfaceResolvedDisplayIDs.removeValue(forKey: surfaceIdentity)
 
         for transition in transitions {
-            guard let lease = consumerLeasesByID[transition.leaseID],
-                  lease.state != .released
-            else {
+            guard let lease = consumerLeasesByID[transition.leaseID] else {
                 continue
             }
             _ = replaceLease(
@@ -373,7 +369,6 @@ extension DisplayRuntime {
                 demand: nil,
                 lastFailureCode: failureCode
             )
-            notifyPreviewLeaseWaitersIfTerminal(leaseID: transition.leaseID)
         }
 
         let drainIntent = submitCaptureIntent(

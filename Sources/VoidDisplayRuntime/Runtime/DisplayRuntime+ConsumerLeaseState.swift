@@ -6,6 +6,8 @@ extension DisplayRuntime {
         let affectedLeases = consumerLeasesByID.values.filter {
             $0.resolvedDisplayID == displayID && ($0.state.contributesDemand || $0.state == .restarting)
         }
+        guard !affectedLeases.isEmpty else { return }
+        recordFailure(code: DisplayRuntimeCaptureIntentFailureCode.streamStopped)
         for identity in Set(affectedLeases.map(\.surfaceIdentity)) {
             let nextEpoch = currentSurfaceEpoch(for: identity).advanced()
             surfaceEpochs[identity] = nextEpoch
@@ -17,7 +19,6 @@ extension DisplayRuntime {
                     demand: nil,
                     lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.streamStopped
                 )
-                notifyPreviewLeaseWaitersIfTerminal(leaseID: lease.id)
             }
             // The capture adapter has already removed the stopped resources.
             let intent = submitCaptureIntent(surfaceIdentity: identity, reason: .detach)
@@ -39,7 +40,6 @@ extension DisplayRuntime {
     ) -> [DisplayRuntimeConsumerLease] {
         consumerLeasesByID.values
             .filter { $0.surfaceIdentity == surfaceIdentity }
-            .filter { $0.state != .released }
             .sorted(by: leaseSort)
     }
 
@@ -83,7 +83,8 @@ extension DisplayRuntime {
         resolvedDisplayID: DisplayRuntimeDisplayID?? = nil,
         demand: DisplayRuntimeConsumerDemand?,
         lastFailureCode: String?
-    ) -> DisplayRuntimeConsumerLease {
+    ) -> DisplayRuntimeConsumerLease? {
+        guard let lease = consumerLeasesByID[lease.id] else { return nil }
         let now = Date.now
         let updatedAt = now > lease.updatedAt
             ? now
@@ -102,6 +103,10 @@ extension DisplayRuntime {
             lastFailureCode: lastFailureCode
         )
         consumerLeasesByID[lease.id] = updatedLease
+        notifyPreviewLeaseWaitersIfTerminal(leaseID: lease.id)
+        if state == .released {
+            consumerLeasesByID.removeValue(forKey: lease.id)
+        }
         return updatedLease
     }
 
@@ -110,14 +115,13 @@ extension DisplayRuntime {
         leaseID: DisplayRuntimeConsumerLeaseID,
         failureCode: String
     ) -> DisplayRuntimeConsumerLease? {
-        guard let lease = consumerLeasesByID[leaseID], lease.state != .released else { return nil }
+        guard let lease = consumerLeasesByID[leaseID] else { return nil }
         let failedLease = replaceLease(
             lease,
             state: .failed,
             demand: nil,
             lastFailureCode: failureCode
         )
-        notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
         return failedLease
     }
 

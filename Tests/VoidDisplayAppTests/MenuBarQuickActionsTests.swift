@@ -188,8 +188,7 @@ struct MenuBarQuickActionsTests {
         )
 
         let didReleaseLease = await waitUntil {
-            environment.displayRuntime.consumerLeasesByID[leaseID]?.state == .released
-                || environment.displayRuntime.consumerLeasesByID[leaseID] == nil
+            environment.displayRuntime.consumerLeasesByID[leaseID] == nil
         }
 
         #expect(didReleaseLease)

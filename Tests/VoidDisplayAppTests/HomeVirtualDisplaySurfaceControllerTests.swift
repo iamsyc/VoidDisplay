@@ -11,7 +11,7 @@ import Testing
 
 @MainActor
 struct HomeVirtualDisplaySurfaceControllerTests {
-    @Test func oldSharingFailureDoesNotStopNewHomeRequest() async throws {
+    @Test func oldSharingInvalidationDoesNotAlertOrStopNewHomeRequest() async throws {
         let service = MockSharingService()
         service.isWebServiceRunning = true
         let facade = makeFacade()
@@ -57,13 +57,14 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         runtime.captureSessionDidTerminate(displayID: displayID)
         let retryItem = try #require(controller.presentation.items.first)
         controller.perform(.webView, for: retryItem, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
-        #expect(await waitUntil { runtime.currentConsumerLeaseSnapshot().count == 2 })
+        #expect(await waitUntil { runtime.currentConsumerLeaseSnapshot().contains { $0.id != oldLease.id } })
+        #expect(runtime.consumerLease(leaseID: oldLease.id) == nil)
         let newLease = try #require(runtime.currentConsumerLeaseSnapshot().first { $0.id != oldLease.id })
         #expect(newLease.state == .attaching)
 
         firstStart?.resume()
-        #expect(await waitUntil { controller.actionAlert != nil })
         #expect(await waitUntil { runtime.consumerLease(leaseID: newLease.id)?.state == .attached })
+        #expect(controller.actionAlert == nil)
         #expect(service.activeSharingDisplayIDs == [displayID])
         await environment.sharingAdapter.stopLANWebViewSharing(displayID: displayID, runtime: runtime)
         #expect(service.activeSharingDisplayIDs.isEmpty)

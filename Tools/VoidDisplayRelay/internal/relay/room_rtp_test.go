@@ -13,8 +13,8 @@ func TestRoomForwardRTPFansOutOnePublisherPacketToViewers(t *testing.T) {
 	room := newRoomForTest("2", nil)
 	first := &recordingSink{}
 	second := &recordingSink{}
-	room.subscribers["first"] = newViewerRTPWriter("2", "first", videoCodecAV1, first, nil)
-	room.subscribers["second"] = newViewerRTPWriter("2", "second", videoCodecAV1, second, nil)
+	room.subscribers["first"] = newViewerRTPWriter("2", "first", videoCodecH264, first, nil)
+	room.subscribers["second"] = newViewerRTPWriter("2", "second", videoCodecH264, second, nil)
 	defer room.Close()
 
 	packet := &rtp.Packet{
@@ -42,8 +42,8 @@ func TestRoomRemoveViewerStopsFutureRTPForThatViewer(t *testing.T) {
 	room := newRoomForTest("2", nil)
 	removed := &recordingSink{}
 	active := &recordingSink{}
-	room.subscribers["removed"] = newViewerRTPWriter("2", "removed", videoCodecAV1, removed, nil)
-	room.subscribers["active"] = newViewerRTPWriter("2", "active", videoCodecAV1, active, nil)
+	room.subscribers["removed"] = newViewerRTPWriter("2", "removed", videoCodecH264, removed, nil)
+	room.subscribers["active"] = newViewerRTPWriter("2", "active", videoCodecH264, active, nil)
 	room.viewers["removed"] = &viewerSession{pc: &fakePeerConnection{}}
 	room.pendingViewerICE["removed"] = []webrtc.ICECandidateInit{{Candidate: "candidate:removed"}}
 	defer room.Close()
@@ -65,15 +65,15 @@ func TestRoomRemoveViewerStopsFutureRTPForThatViewer(t *testing.T) {
 
 func TestRoomSnapshotCountsSubscriberCodecs(t *testing.T) {
 	room := newRoomForTest("2", nil)
-	room.subscribers["av1-a"] = newViewerRTPWriter("2", "av1-a", videoCodecAV1, &recordingSink{}, nil)
-	room.subscribers["av1-b"] = newViewerRTPWriter("2", "av1-b", videoCodecAV1, &recordingSink{}, nil)
-	room.subscribers["av1-c"] = newViewerRTPWriter("2", "av1-c", videoCodecAV1, &recordingSink{}, nil)
+	room.subscribers["h264-a"] = newViewerRTPWriter("2", "h264-a", videoCodecH264, &recordingSink{}, nil)
+	room.subscribers["h264-b"] = newViewerRTPWriter("2", "h264-b", videoCodecH264, &recordingSink{}, nil)
+	room.subscribers["h264-c"] = newViewerRTPWriter("2", "h264-c", videoCodecH264, &recordingSink{}, nil)
 	defer room.Close()
 
 	snapshot := room.Snapshot()
 
-	if snapshot.SubscriberCodecCounts["av1"] != 3 {
-		t.Fatalf("AV1 subscriber count = %d, want 3", snapshot.SubscriberCodecCounts["av1"])
+	if snapshot.SubscriberCodecCounts["h264"] != 3 {
+		t.Fatalf("H264 subscriber count = %d, want 3", snapshot.SubscriberCodecCounts["h264"])
 	}
 }
 
@@ -94,20 +94,20 @@ func TestRoomIgnoresStalePublisherCandidate(t *testing.T) {
 func TestRoomPublisherTrackStoppedClearsOnlyMatchingActiveCodec(t *testing.T) {
 	room := newRoomForTest("2", nil)
 	room.publisher = &publisherSession{id: "publisher-1", pc: &fakePeerConnection{}}
-	room.publisherSSRCs[videoCodecAV1] = 1234
-	room.publisherExtensions[videoCodecAV1] = map[string]uint8{"av1-extension": 3}
+	room.publisherSSRCs[videoCodecH264] = 1234
+	room.publisherExtensions[videoCodecH264] = map[string]uint8{"h264-extension": 3}
 
-	room.publisherTrackStopped("publisher-1", videoCodecAV1, 9999)
-	if room.publisherSSRCs[videoCodecAV1] != 1234 {
-		t.Fatalf("AV1 SSRC cleared for nonmatching SSRC")
+	room.publisherTrackStopped("publisher-1", videoCodecH264, 9999)
+	if room.publisherSSRCs[videoCodecH264] != 1234 {
+		t.Fatalf("H264 SSRC cleared for nonmatching SSRC")
 	}
 
-	room.publisherTrackStopped("publisher-1", videoCodecAV1, 1234)
-	if _, ok := room.publisherSSRCs[videoCodecAV1]; ok {
-		t.Fatal("AV1 SSRC kept after matching track stopped")
+	room.publisherTrackStopped("publisher-1", videoCodecH264, 1234)
+	if _, ok := room.publisherSSRCs[videoCodecH264]; ok {
+		t.Fatal("H264 SSRC kept after matching track stopped")
 	}
-	if _, ok := room.publisherExtensions[videoCodecAV1]; ok {
-		t.Fatal("AV1 extensions kept after matching track stopped")
+	if _, ok := room.publisherExtensions[videoCodecH264]; ok {
+		t.Fatal("H264 extensions kept after matching track stopped")
 	}
 }
 
@@ -159,9 +159,9 @@ func TestRoomForwardFeedbackRetargetsPLIAndFIRAndNACKToPublisherSSRC(t *testing.
 	pc := &fakePeerConnection{}
 	room := newRoomForTest("2", nil)
 	room.publisher = &publisherSession{id: "publisher-1", pc: pc}
-	room.publisherSSRCs[videoCodecAV1] = 1234
+	room.publisherSSRCs[videoCodecH264] = 1234
 
-	room.forwardFeedback(videoCodecAV1, []rtcp.Packet{
+	room.forwardFeedback(videoCodecH264, []rtcp.Packet{
 		&rtcp.PictureLossIndication{SenderSSRC: 1, MediaSSRC: 55},
 		&rtcp.FullIntraRequest{
 			SenderSSRC: 2,
@@ -207,11 +207,11 @@ func TestRoomStalePublisherStopAndRTPDoNotAffectCurrentPublisher(t *testing.T) {
 	pc := &fakePeerConnection{}
 	sink := &recordingSink{}
 	room.publisher = &publisherSession{id: "current", pc: pc}
-	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", videoCodecAV1, sink, nil)
+	room.subscribers["viewer"] = newViewerRTPWriter("2", "viewer", videoCodecH264, sink, nil)
 	defer room.Close()
 
 	room.StopPublisher("stale")
-	forwarded := room.ForwardRTPFromPublisher("stale", videoCodecAV1, &rtp.Packet{
+	forwarded := room.ForwardRTPFromPublisher("stale", videoCodecH264, &rtp.Packet{
 		Header:  rtp.Header{Timestamp: 77},
 		Payload: []byte{1},
 	})
@@ -232,8 +232,8 @@ func TestRoomSlowViewerDropsOnlyThatViewer(t *testing.T) {
 	slow := newBlockingSink()
 	defer slow.release()
 	active := &recordingSink{}
-	room.subscribers["slow"] = newViewerRTPWriter("2", "slow", videoCodecAV1, slow, nil)
-	room.subscribers["active"] = newViewerRTPWriter("2", "active", videoCodecAV1, active, nil)
+	room.subscribers["slow"] = newViewerRTPWriter("2", "slow", videoCodecH264, slow, nil)
+	room.subscribers["active"] = newViewerRTPWriter("2", "active", videoCodecH264, active, nil)
 	defer room.Close()
 
 	for index := 0; index < subscriberRTPQueueSize+20; index++ {
