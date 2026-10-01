@@ -357,6 +357,8 @@ func attachConsumerForTesting(
         return lease
     case let .rejected(failureCode):
         fatalError("Consumer attach rejected in test setup: \(failureCode)")
+    case .invalidated:
+        fatalError("Consumer attach invalidated in test setup.")
     }
 }
 

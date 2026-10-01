@@ -129,6 +129,7 @@ package nonisolated enum DisplayRuntimeConsumerAttachOutcome: Equatable, Sendabl
         applyResult: DisplayRuntimeCaptureIntentApplyResult
     )
     case rejected(failureCode: String)
+    case invalidated
 }
 
 package nonisolated struct DisplayRuntimePreviewConsumerDetachResult: Equatable, Sendable {

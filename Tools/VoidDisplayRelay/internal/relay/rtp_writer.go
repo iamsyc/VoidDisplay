@@ -104,6 +104,15 @@ func (w *viewerRTPWriter) rewriteHeaderExtensions(packet *rtp.Packet) {
 	for _, rewrite := range pendingRewrites {
 		_ = packet.SetExtension(rewrite.viewerID, rewrite.payload)
 	}
+	if id := w.viewerExtensions[playoutDelayURI]; id != 0 {
+		// Request immediate decoding for interactive screen content. Browser
+		// presentation scheduling still determines the final display time.
+		if id > 14 {
+			packet.Extension = true
+			packet.ExtensionProfile = rtp.ExtensionProfileTwoByte
+		}
+		_ = packet.SetExtension(id, []byte{0, 0, 0})
+	}
 }
 
 func (w *viewerRTPWriter) run() {

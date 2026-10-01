@@ -5,6 +5,20 @@ import Foundation
 import Testing
 
 struct RuntimeDiagnosticsSummaryTests {
+    @MainActor
+    @Test func diagnosticsUsesNewestFailureAcrossTransactionsAndDisplays() async throws {
+        let runtime = DisplayRuntime()
+        _ = try await runtime.rebuildVirtualDisplay(configID: UUID(), source: .diagnostics)
+        let olderIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 200)
+        let newerIdentity = DisplaySurfaceIdentity.physicalDisplay(displayID: 100)
+        for (identity, code) in [(olderIdentity, "older_capture_failure"), (newerIdentity, "newest_capture_failure")] {
+            runtime.advanceSurfaceEpoch(surfaceIdentity: identity)
+            let revision = try #require(runtime.currentLatestCaptureIntentRevision())
+            runtime.recordCaptureIntentApplyResult(.failed(revision: revision, failureCode: code))
+        }
+        let state = try makeState(sections: ["runtime": runtimeSection(runtime.makeSnapshot())])
+        #expect(RuntimeDiagnosticsSummary(state: state).lastFailureCode == "newest_capture_failure")
+    }
     @Test func summaryConsumesRuntimeSectionAsPrimaryDiagnosticsState() throws {
         let sensitiveFixtures = [
             "raw-share-id-fixture-5",
@@ -30,7 +44,7 @@ struct RuntimeDiagnosticsSummaryTests {
 
         #expect(summary.availability == .available)
         #expect(summary.isAvailable)
-        #expect(summary.schemaVersion == 5)
+        #expect(summary.schemaVersion == 6)
         #expect(summary.surfaceCount == 1)
         #expect(summary.virtualDisplayCount == 0)
         #expect(summary.runningVirtualDisplayCount == 0)
@@ -169,7 +183,8 @@ struct RuntimeDiagnosticsSummaryTests {
                 capture: .empty,
                 sharing: .empty,
                 virtualDisplay: .empty,
-                transactions: .init(activeTransactions: [], recentTransactions: [trace])
+                transactions: .init(activeTransactions: [], recentTransactions: [trace]),
+                latestFailure: .init(code: "startup_restore_lower_command_failed", sequence: 1)
             ))
         ])
 
@@ -315,7 +330,8 @@ struct RuntimeDiagnosticsSummaryTests {
                 capture: .empty,
                 sharing: .empty,
                 virtualDisplay: .empty,
-                transactions: .init(activeTransactions: [], recentTransactions: [newerTrace, olderTrace])
+                transactions: .init(activeTransactions: [], recentTransactions: [newerTrace, olderTrace]),
+                latestFailure: .init(code: "newer_startup_failure", sequence: 2)
             ))
         ])
 
@@ -465,7 +481,8 @@ private func makeRuntimeSnapshot() -> DisplayRuntimeSnapshot {
                 lastFailureCode: nil
             )
         ],
-        latestCaptureIntentRevision: revision
+        latestCaptureIntentRevision: revision,
+        latestFailure: .init(code: "runtime_rebuild_failed", sequence: 1)
     )
 }
 

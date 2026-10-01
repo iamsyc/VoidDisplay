@@ -143,7 +143,11 @@ struct ObservabilitySanitizerTests {
             "runtime": .object([
                 "accessCapability": .string("short-secret"),
                 "displayName": .string("Private Screen"),
-                "route-\(accessToken)": .string("http://[fd00::1]:8080")
+                "route-\(accessToken)": .string("http://[fd00::1]:8080"),
+                "latestFailure": .object([
+                    "code": .string("failed http://[fd00::1]:8080/display/\(accessToken)"),
+                    "sequence": .number(7)
+                ])
             ])
         ]
 
@@ -156,6 +160,10 @@ struct ObservabilitySanitizerTests {
         let routeValue = runtime?.first(where: { $0.key.hasPrefix("route-") })?.value.stringValue
         #expect(routeValue?.contains("fd00::1") == false)
         #expect(routeValue?.contains("<redacted-ip>") == true)
+        let latestFailure = runtime?["latestFailure"]?.objectValue
+        #expect(latestFailure?["sequence"]?.intValue == 7)
+        #expect(latestFailure?["code"]?.stringValue?.contains(accessToken) == false)
+        #expect(latestFailure?["code"]?.stringValue?.contains("fd00::1") == false)
     }
 
     @Test func sanitizeTextAppliesBoundedOutputAfterRedaction() {

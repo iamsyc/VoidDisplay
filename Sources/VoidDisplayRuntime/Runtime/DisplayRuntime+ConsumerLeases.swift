@@ -52,20 +52,21 @@ extension DisplayRuntime {
             }
             if existingLease.demand.hasSameCaptureRequirements(as: demand),
                let applyResult = metadataOnlyCaptureIntentApplyResult(for: surfaceIdentity) {
-                let updatedLease = replaceLease(
+                guard let updatedLease = replaceLease(
                     existingLease,
                     state: .attached,
                     demand: demand,
                     lastFailureCode: nil
-                )
+                ) else { return .invalidated }
                 return .attached(lease: updatedLease, applyResult: applyResult)
             }
-            lease = replaceLease(
+            guard let updatedLease = replaceLease(
                 existingLease,
                 state: .attaching,
                 demand: demand,
                 lastFailureCode: nil
-            )
+            ) else { return .invalidated }
+            lease = updatedLease
         } else {
             let now = Date.now
             lease = DisplayRuntimeConsumerLease(
@@ -108,10 +109,8 @@ extension DisplayRuntime {
                 _ = await applyCaptureIntent(correctiveIntent, consumerKind: kind)
             }
         }
-        return .attached(
-            lease: consumerLeasesByID[lease.id] ?? lease,
-            applyResult: applyResult
-        )
+        guard let currentLease = consumerLeasesByID[lease.id] else { return .invalidated }
+        return .attached(lease: currentLease, applyResult: applyResult)
     }
 
     @discardableResult
@@ -132,7 +131,7 @@ extension DisplayRuntime {
         if shouldCompensateCaptureIntent(intent, after: applyResult),
            consumerLeasesByID[leaseID]?.demand == demand {
             _ = replaceLease(
-                consumerLeasesByID[leaseID] ?? lease,
+                lease,
                 state: .attached,
                 demand: lease.demand,
                 lastFailureCode: captureIntentFailureCode(for: applyResult)
@@ -175,7 +174,7 @@ extension DisplayRuntime {
         if shouldCompensateCaptureIntent(intent, after: applyResult),
            consumerLeasesByID[lease.id]?.demand == demand {
             _ = replaceLease(
-                consumerLeasesByID[lease.id] ?? lease,
+                lease,
                 state: .attached,
                 demand: lease.demand,
                 lastFailureCode: captureIntentFailureCode(for: applyResult)
@@ -198,7 +197,7 @@ extension DisplayRuntime {
     package func updateConsumerPowerProfile(
         _ powerProfile: DisplayRuntimeCapturePowerProfile
     ) async {
-        let unreleasedLeases = consumerLeasesByID.values.filter { $0.state != .released }
+        let unreleasedLeases = Array(consumerLeasesByID.values)
         for lease in unreleasedLeases {
             _ = replaceLease(
                 lease,
@@ -231,22 +230,14 @@ extension DisplayRuntime {
                 applyResult: nil
             )
         }
-        if lease.state == .released {
-            return DisplayRuntimePreviewConsumerDetachResult(
-                releasedLease: lease,
-                applyResult: nil
-            )
-        }
-
         let releasedLease = replaceLease(
             lease,
             state: .released,
             demand: nil,
             lastFailureCode: nil
         )
-        notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
         let intent = submitCaptureIntent(
-            surfaceIdentity: releasedLease.surfaceIdentity,
+            surfaceIdentity: lease.surfaceIdentity,
             reason: .detach
         )
         let applyResult = await applyCaptureIntent(intent, consumerKind: .preview)
@@ -281,13 +272,6 @@ extension DisplayRuntime {
                 applyResult: nil
             )
         }
-        if lease.state == .released {
-            return DisplayRuntimeLANWebViewConsumerDetachResult(
-                releasedLease: lease,
-                applyResult: nil
-            )
-        }
-
         let releasedLease = replaceLease(
             lease,
             state: .released,
@@ -295,7 +279,7 @@ extension DisplayRuntime {
             lastFailureCode: nil
         )
         let intent = submitCaptureIntent(
-            surfaceIdentity: releasedLease.surfaceIdentity,
+            surfaceIdentity: lease.surfaceIdentity,
             reason: .detach
         )
         let applyResult = await applyCaptureIntent(intent, consumerKind: .lanWebView)
@@ -310,7 +294,6 @@ extension DisplayRuntime {
     ) async -> DisplayRuntimeConsumerLease? {
         guard let lease = consumerLeasesByID[leaseID],
               lease.kind == .preview,
-              lease.state != .released,
               !consumerTransitionBusySurfaces.contains(lease.surfaceIdentity)
         else {
             return consumerLeasesByID[leaseID]
@@ -339,7 +322,6 @@ extension DisplayRuntime {
                     failureCode: DisplayRuntimeCaptureIntentFailureCode.epochMismatch
                 )
             }
-            notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
             return consumerLeasesByID[leaseID]
         }
         let displayID = resolvedVisibleDisplayID(
@@ -347,21 +329,21 @@ extension DisplayRuntime {
             snapshot: snapshot
         )
         guard let displayID else {
+            recordFailure(code: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable)
             _ = replaceLease(
-                consumerLeasesByID[leaseID] ?? lease,
+                lease,
                 state: .failed,
                 surfaceEpoch: retryEpoch,
                 resolvedDisplayID: .some(nil),
                 demand: nil,
                 lastFailureCode: DisplayRuntimeCaptureIntentFailureCode.displayUnavailable
             )
-            notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
             return consumerLeasesByID[leaseID]
         }
 
         surfaceResolvedDisplayIDs[lease.surfaceIdentity] = displayID
         _ = replaceLease(
-            consumerLeasesByID[leaseID] ?? lease,
+            lease,
             state: .attaching,
             surfaceEpoch: retryEpoch,
             resolvedDisplayID: .some(displayID),
@@ -390,7 +372,6 @@ extension DisplayRuntime {
                 _ = await applyCaptureIntent(correctiveIntent, consumerKind: .preview)
             }
         }
-        notifyPreviewLeaseWaitersIfTerminal(leaseID: leaseID)
         return consumerLeasesByID[leaseID]
     }
 

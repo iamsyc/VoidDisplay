@@ -15,6 +15,72 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeAdapterTests {
+    @Test func previewCancellationDoesNotRecordRuntimeFailure() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8431, width: 1920, height: 1080)
+        let harness = previewHarness(display: display, beforeAcquirePreview: {
+            throw CancellationError()
+        })
+        let outcome = await harness.runtime.attachPreviewConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: display.displayID),
+            owner: .init(source: .localUI), demand: .init(preferredFramesPerSecond: 30, capturesCursor: false, powerProfile: .automatic, latencyPreference: .realtime)
+        )
+        guard case let .attached(lease, result) = outcome else {
+            Issue.record("Expected the runtime attachment result.")
+            return
+        }
+        #expect(result.outcome == .ignored)
+        #expect(harness.runtime.makeSnapshot().latestFailure == nil)
+        _ = await harness.runtime.detachPreviewConsumer(leaseID: lease.id)
+    }
+
+    @Test(arguments: [false, true])
+    func sharingCancellationAndInvalidationDoNotRecordRuntimeFailure(cancel: Bool) async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8432, width: 1920, height: 1080)
+        let harness = lanWebViewHarness(display: display, capturePerformancePreferences: adapterTestPerformancePreferences())
+        harness.sharingService.startSharingHandler = { _ in
+            if cancel { throw CancellationError() }
+            return .invalidated
+        }
+        let outcome = await harness.runtime.attachLANWebViewConsumer(
+            surfaceIdentity: .physicalDisplay(displayID: display.displayID),
+            owner: .init(source: .sharingService), demand: .init(preferredFramesPerSecond: 30, capturesCursor: false, powerProfile: .automatic, latencyPreference: .realtime)
+        )
+        guard case let .attached(lease, result) = outcome else {
+            Issue.record("Expected the runtime attachment result.")
+            return
+        }
+        #expect(result.outcome == .ignored)
+        #expect(harness.runtime.makeSnapshot().latestFailure == nil)
+        _ = await harness.runtime.detachLANWebViewConsumer(leaseID: lease.id)
+    }
+
+    @Test func previewClosedDuringInitialAcquireReturnsInvalidated() async throws {
+        let display = SharedMockSCDisplay.make(displayID: 8433, width: 1920, height: 1080)
+        var acquisition: CheckedContinuation<Void, Never>?
+        let harness = previewHarness(display: display, beforeAcquirePreview: {
+            await withCheckedContinuation { acquisition = $0 }
+        })
+        let actions = CaptureUIComposition.previewActions(
+            capture: harness.controller, displayRuntime: harness.runtime,
+            capturePerformancePreferences: adapterTestPerformancePreferences()
+        )
+        let start = Task {
+            try await actions.startPreview(display, .init(displayName: "Closing Preview", resolutionText: "1920 × 1080", isVirtualDisplay: false))
+        }
+        #expect(await waitUntil { acquisition != nil })
+        let previewID = try #require(actions.previewIDForDisplayID(display.displayID))
+        let close = Task { await actions.closePreview(previewID) }
+        #expect(await waitUntil { harness.runtime.currentConsumerLeaseSnapshot().isEmpty })
+        acquisition?.resume()
+        if case .started = try await start.value {
+            Issue.record("Closing during acquisition must invalidate the preview request.")
+        }
+        await close.value
+        #expect(actions.previewIDForDisplayID(display.displayID) == nil)
+        #expect(harness.controller.screenPreviewSessions.isEmpty)
+        #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
+        #expect(harness.runtime.makeSnapshot().latestFailure == nil)
+    }
     @Test func terminatedInitialPreviewOpensRecoveryWindowAndAllowsFreshStart() async throws {
         let display = SharedMockSCDisplay.make(displayID: 8426, width: 1920, height: 1080)
         var firstAcquisition: CheckedContinuation<Void, Never>?
@@ -52,7 +118,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.runtime.consumerLease(leaseID: leaseID)?.state == .failed)
         #expect(actions.previewSession(previewID) == nil)
         await actions.closePreview(previewID)
-        #expect(harness.runtime.consumerLease(leaseID: leaseID)?.state == .released)
+        #expect(harness.runtime.consumerLease(leaseID: leaseID) == nil)
         #expect(actions.previewIDForDisplayID(display.displayID) == nil)
         let restarted = try await actions.startPreview(
             display, .init(displayName: "Preview Retry", resolutionText: "1920 × 1080", isVirtualDisplay: true)
@@ -93,8 +159,7 @@ struct DisplayRuntimeAdapterTests {
         } catch {}
         #expect(harness.controller.screenPreviewSessions.isEmpty)
         #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
-        let failedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
-        #expect(failedLease.state == .released)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().isEmpty)
         #expect(actions.previewIDForDisplayID(display.displayID) == nil)
         let surface = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
         let transition = await harness.runtime.beginConsumerTransition(
@@ -166,7 +231,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(actions.previewSession(previewID) != nil)
         #expect(acquisitionCount == 2)
         await actions.closePreview(previewID)
-        #expect(harness.runtime.consumerLease(leaseID: lease.id)?.state == .released)
+        #expect(harness.runtime.consumerLease(leaseID: lease.id) == nil)
         #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(harness.controller.screenPreviewSessions.isEmpty)
     }
@@ -254,7 +319,7 @@ struct DisplayRuntimeAdapterTests {
             Issue.record("An explicit sharing request must recover after the catalog returns.")
             return
         }
-        #expect(harness.runtime.consumerLease(leaseID: oldLease.id)?.state == .released)
+        #expect(harness.runtime.consumerLease(leaseID: oldLease.id) == nil)
         #expect(harness.runtime.currentConsumerLeaseSnapshot().filter { $0.state == .attached }.count == 1)
         #expect(harness.sharingService.activeSharingDisplayIDs == [display.displayID])
         await harness.sharingAdapter.stopLANWebViewSharing(displayID: display.displayID, runtime: harness.runtime)
@@ -272,8 +337,7 @@ struct DisplayRuntimeAdapterTests {
             _ = try await harness.sharingAdapter.beginLANWebViewSharing(display: display, runtime: harness.runtime)
             Issue.record("Expected the injected sharing failure.")
         } catch {}
-        let failedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
-        #expect(failedLease.state == .released)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().isEmpty)
         #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
 
         harness.sharingService.startSharingHandler = nil
@@ -310,14 +374,14 @@ struct DisplayRuntimeAdapterTests {
         let replacement = Task {
             try await harness.sharingAdapter.beginLANWebViewSharing(display: display, runtime: harness.runtime)
         }
-        #expect(await waitUntil { harness.runtime.currentConsumerLeaseSnapshot().count == 2 })
+        #expect(await waitUntil { harness.runtime.currentConsumerLeaseSnapshot().contains { $0.id != oldLease.id } })
         let newLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first { $0.id != oldLease.id })
         #expect(newLease.state == .attaching)
-        #expect(harness.runtime.consumerLease(leaseID: oldLease.id)?.state == .released)
+        #expect(harness.runtime.consumerLease(leaseID: oldLease.id) == nil)
 
         firstStart?.resume()
-        if case .success = await first.result {
-            Issue.record("The terminated request must fail.")
+        if case .started = try await first.value {
+            Issue.record("The terminated request must be invalidated.")
         }
         if case .failure(let error) = await replacement.result {
             Issue.record("The replacement request must succeed: \(error)")
@@ -326,7 +390,7 @@ struct DisplayRuntimeAdapterTests {
         #expect(harness.runtime.consumerLease(leaseID: newLease.id)?.state == .attached)
         #expect(harness.sharingService.activeSharingDisplayIDs == [display.displayID])
         await harness.sharingAdapter.stopLANWebViewSharing(displayID: display.displayID, runtime: harness.runtime)
-        #expect(harness.runtime.consumerLease(leaseID: newLease.id)?.state == .released)
+        #expect(harness.runtime.consumerLease(leaseID: newLease.id) == nil)
         #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
     }
 
@@ -476,10 +540,8 @@ struct DisplayRuntimeAdapterTests {
 
         await actions.closePreview(previewID)
 
-        let releasedLease = try #require(harness.runtime.currentConsumerLeaseSnapshot().first)
         let drainIntent = try #require(harness.runtime.currentEffectiveCaptureIntentSnapshot().first)
-        #expect(releasedLease.surfaceIdentity == surfaceIdentity)
-        #expect(releasedLease.state == .released)
+        #expect(harness.runtime.currentConsumerLeaseSnapshot().isEmpty)
         #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(drainIntent.intent.surfaceIdentity == surfaceIdentity)
         #expect(drainIntent.intent.kind == .drain)
@@ -620,7 +682,7 @@ struct DisplayRuntimeAdapterTests {
 
         await adapter.stopAllLANWebViewSharing(runtime: harness.runtime)
 
-        #expect(harness.runtime.consumerLease(leaseID: lease.id)?.state == .released)
+        #expect(harness.runtime.consumerLease(leaseID: lease.id) == nil)
         #expect(harness.runtime.currentAggregatedDemandSnapshot().isEmpty)
         #expect(harness.sharingService.activeSharingDisplayIDs.isEmpty)
     }

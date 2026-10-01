@@ -49,6 +49,7 @@ extension DisplayRuntime {
             reason: reason,
             revision: DisplayRuntimeCaptureIntentRevision(rawValue: captureIntentRevisionCounter)
         )
+        recordedCaptureFailureCodesBySurface.removeValue(forKey: surfaceIdentity)
         effectiveCaptureIntentsBySurface[surfaceIdentity] = DisplayRuntimeEffectiveCaptureIntent(intent: intent)
         return intent
     }

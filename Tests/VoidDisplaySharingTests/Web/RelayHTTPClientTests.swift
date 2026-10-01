@@ -133,7 +133,7 @@ struct RelayHTTPClientTests {
             responses: [
                 MockHTTPResponse(
                     statusCode: 200,
-                    body: #"{"type":"answer","sdp":"viewer-answer","codec":"av1"}"#
+                    body: #"{"type":"answer","sdp":"viewer-answer","codec":"h265"}"#
                 )
             ]
         )
@@ -145,7 +145,7 @@ struct RelayHTTPClientTests {
 
         let response = try await client.viewerOffer(roomID: "2", clientID: "viewer-1", sdp: "viewer-offer")
 
-        #expect(response == RelayViewerOfferResponse(sdp: "viewer-answer", codec: .av1))
+        #expect(response == RelayViewerOfferResponse(sdp: "viewer-answer", codec: .h265))
         let request = try #require(transport.requests().first)
         #expect(request.path == "/room/2/viewer/viewer-1")
         #expect(request.body.contains(#""sdp":"viewer-offer""#))

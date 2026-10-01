@@ -47,6 +47,8 @@ package final class DisplayRuntime {
     var consumerLeasesByID: [DisplayRuntimeConsumerLeaseID: DisplayRuntimeConsumerLease] = [:]
     var surfaceEpochs: [DisplaySurfaceIdentity: DisplaySurfaceEpoch] = [:]
     var surfaceResolvedDisplayIDs: [DisplaySurfaceIdentity: DisplayRuntimeDisplayID] = [:]
+    var latestFailure: DisplayRuntimeFailure?
+    @ObservationIgnored var recordedCaptureFailureCodesBySurface: [DisplaySurfaceIdentity: Set<String>] = [:]
     var captureIntentRevisionCounter: UInt64 = 0
     var effectiveCaptureIntentsBySurface: [DisplaySurfaceIdentity: DisplayRuntimeEffectiveCaptureIntent] = [:]
     var consumerTransitionBusySurfaces: Set<DisplaySurfaceIdentity> = []

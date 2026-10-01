@@ -361,8 +361,8 @@ struct DisplayRuntimeLifecycleTransactionTests {
 
         #expect(recorder.events.contains("applyLAN:drain"))
         #expect(recorder.events.contains("applyPreview:drain"))
-        #expect(runtime.consumerLease(leaseID: previewLease.id)?.state == .released)
-        #expect(runtime.consumerLease(leaseID: lanLease.id)?.state == .released)
+        #expect(runtime.consumerLease(leaseID: previewLease.id) == nil)
+        #expect(runtime.consumerLease(leaseID: lanLease.id) == nil)
         #expect(trace.restoreResults.contains {
             $0.kind == .sharing && $0.failureReason == "target_disabled"
         })

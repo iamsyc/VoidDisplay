@@ -167,11 +167,10 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
                 }
                 return .applied(revision: intent.revision)
             case .invalidated:
-                return .failed(
-                    revision: intent.revision,
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
-                )
+                return invalidatedApplyResult(for: intent)
             }
+        } catch is CancellationError {
+            return invalidatedApplyResult(for: intent)
         } catch {
             return .failed(
                 revision: intent.revision,
@@ -194,17 +193,26 @@ package final class DisplayRuntimeCaptureAdapter: DisplayRuntimeCaptureProviding
             case .started:
                 return .applied(revision: intent.revision)
             case .invalidated:
-                return .failed(
-                    revision: intent.revision,
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
-                )
+                return invalidatedApplyResult(for: intent)
             }
+        } catch is CancellationError {
+            return invalidatedApplyResult(for: intent)
         } catch {
             return .failed(
                 revision: intent.revision,
                 failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
             )
         }
+    }
+
+    private func invalidatedApplyResult(
+        for intent: DisplayRuntimeCaptureIntent
+    ) -> DisplayRuntimeCaptureIntentApplyResult {
+        .init(
+            revision: intent.revision,
+            outcome: .ignored,
+            failureCode: DisplayRuntimeCaptureIntentFailureCode.applyInvalidated
+        )
     }
 
     private func previewMetadata(for display: SCDisplay) -> CapturePreviewDisplayMetadata {

@@ -173,7 +173,7 @@ func startTestServer(t *testing.T) (string, func()) {
 
 func createPublisherOffer(t *testing.T) string {
 	t.Helper()
-	pc, _ := createPublisherPeerWithCodec(t, webrtc.MimeTypeAV1)
+	pc, _ := createPublisherPeerWithCodec(t, webrtc.MimeTypeH265)
 	defer pc.Close()
 	return pc.LocalDescription().SDP
 }
@@ -260,18 +260,18 @@ func createPublisherPeerWithCodec(t *testing.T, mimeType string) (*webrtc.PeerCo
 	var codec webrtc.RTPCodecCapability
 	var err error
 	switch mimeType {
-	case webrtc.MimeTypeH264:
-		err = registerH264CodecsForRejectedOfferTest(mediaEngine)
-		codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}
 	case webrtc.MimeTypeAV1:
-		err = registerCodecParametersForTest(mediaEngine, av1CodecParameters)
-		codec = mustTrackCapability(t, videoCodecAV1)
+		err = registerAV1CodecsForRejectedOfferTest(mediaEngine)
+		codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1, ClockRate: 90000}
+	case webrtc.MimeTypeH265:
+		err = registerCodecParametersForTest(mediaEngine, h265CodecParameters)
+		codec = mustTrackCapability(t, videoCodecH265)
 	case webrtc.MimeTypeVP8:
 		err = registerVP8CodecsForTest(mediaEngine)
 		codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000}
-	case webrtc.MimeTypeH265:
-		err = registerH265CodecsForTest(mediaEngine)
-		codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH265, ClockRate: 90000}
+	case webrtc.MimeTypeH264:
+		err = registerH264CodecsForTest(mediaEngine)
+		codec = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000}
 	default:
 		t.Fatalf("unsupported test codec: %s", mimeType)
 	}
@@ -335,15 +335,15 @@ func createViewerOfferWithMimeType(t *testing.T, mimeType string) string {
 	mediaEngine := &webrtc.MediaEngine{}
 	var codecParams []webrtc.RTPCodecParameters
 	switch mimeType {
+	case webrtc.MimeTypeH265:
+		codecParams = mustCodecParameters(t, videoCodecH265)
 	case webrtc.MimeTypeAV1:
-		codecParams = mustCodecParameters(t, videoCodecAV1)
-	case webrtc.MimeTypeH264:
-		if err := registerH264CodecsForRejectedOfferTest(mediaEngine); err != nil {
+		if err := registerAV1CodecsForRejectedOfferTest(mediaEngine); err != nil {
 			t.Fatal(err)
 		}
 		codecParams = []webrtc.RTPCodecParameters{{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:  webrtc.MimeTypeH264,
+				MimeType:  webrtc.MimeTypeAV1,
 				ClockRate: 90000,
 			},
 			PayloadType: 96,
@@ -359,13 +359,13 @@ func createViewerOfferWithMimeType(t *testing.T, mimeType string) string {
 			},
 			PayloadType: 96,
 		}}
-	case webrtc.MimeTypeH265:
-		if err := registerH265CodecsForTest(mediaEngine); err != nil {
+	case webrtc.MimeTypeH264:
+		if err := registerH264CodecsForTest(mediaEngine); err != nil {
 			t.Fatal(err)
 		}
 		codecParams = []webrtc.RTPCodecParameters{{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:  webrtc.MimeTypeH265,
+				MimeType:  webrtc.MimeTypeH264,
 				ClockRate: 90000,
 			},
 			PayloadType: 116,
@@ -558,7 +558,7 @@ func registerCodecParametersForTest(mediaEngine *webrtc.MediaEngine, codecs []we
 	return nil
 }
 
-func registerH264CodecsForRejectedOfferTest(mediaEngine *webrtc.MediaEngine) error {
+func registerAV1CodecsForRejectedOfferTest(mediaEngine *webrtc.MediaEngine) error {
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
 		{Type: "goog-remb"},
 		{Type: "ccm", Parameter: "fir"},
@@ -568,7 +568,7 @@ func registerH264CodecsForRejectedOfferTest(mediaEngine *webrtc.MediaEngine) err
 	for _, codec := range []webrtc.RTPCodecParameters{
 		{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:     webrtc.MimeTypeH264,
+				MimeType:     webrtc.MimeTypeAV1,
 				ClockRate:    90000,
 				RTCPFeedback: videoRTCPFeedback,
 			},
@@ -590,7 +590,7 @@ func registerH264CodecsForRejectedOfferTest(mediaEngine *webrtc.MediaEngine) err
 	return nil
 }
 
-func registerH265CodecsForTest(mediaEngine *webrtc.MediaEngine) error {
+func registerH264CodecsForTest(mediaEngine *webrtc.MediaEngine) error {
 	videoRTCPFeedback := []webrtc.RTCPFeedback{
 		{Type: "goog-remb"},
 		{Type: "ccm", Parameter: "fir"},
@@ -600,7 +600,7 @@ func registerH265CodecsForTest(mediaEngine *webrtc.MediaEngine) error {
 	for _, codec := range []webrtc.RTPCodecParameters{
 		{
 			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:     webrtc.MimeTypeH265,
+				MimeType:     webrtc.MimeTypeH264,
 				ClockRate:    90000,
 				RTCPFeedback: videoRTCPFeedback,
 			},

@@ -119,18 +119,13 @@ package enum CaptureUIComposition {
         )
 
         guard case let .attached(lease, applyResult) = outcome else {
-            guard case let .rejected(failureCode) = outcome else {
-                throw DisplayRuntimePreviewCaptureError(
-                    failureCode: DisplayRuntimeCaptureIntentFailureCode.applyFailed
-                )
-            }
+            guard case let .rejected(failureCode) = outcome else { return .invalidated }
             throw DisplayRuntimePreviewCaptureError(
                 failureCode: failureCode
             )
         }
         let previewID = CapturePreviewID(rawValue: lease.id.rawValue)
         if let currentLease = displayRuntime.consumerLease(leaseID: lease.id),
-           currentLease.state != .released,
            applyResult.outcome == .ignored || currentLease.state == .attaching || currentLease.state == .restarting {
             return .started(previewID)
         }
@@ -166,7 +161,6 @@ package enum CaptureUIComposition {
               let lease = displayRuntime.currentConsumerLeaseSnapshot().first(where: {
                   $0.surfaceIdentity == surfaceIdentity
                       && $0.kind == .preview
-                      && $0.state != .released
               }) else {
             return nil
         }
