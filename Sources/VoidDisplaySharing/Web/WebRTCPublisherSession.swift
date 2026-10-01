@@ -150,16 +150,16 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
     private nonisolated func startInternal() async throws {
         let capabilitySummary = mediaPipeline.senderVideoCodecCapabilitySummary()
         AppLog.web.info("WebRTC sender video capabilities \(capabilitySummary, privacy: .public).")
-        guard let h264Codecs = mediaPipeline.requiredCodecs(for: .h264) else {
-            throw PublisherSessionError.h264Unavailable
+        guard let h265Codecs = mediaPipeline.requiredCodecs(for: .h265) else {
+            throw PublisherSessionError.h265Unavailable
         }
-        let h264Transceiver = try addVideoTransceiver(
-            codec: .h264,
-            track: mediaPipeline.h264VideoTrack,
-            codecs: h264Codecs
+        let h265Transceiver = try addVideoTransceiver(
+            codec: .h265,
+            track: mediaPipeline.h265VideoTrack,
+            codecs: h265Codecs
         )
-        let configuredTransceivers = [VideoTransceiverBinding(codec: .h264, transceiver: h264Transceiver)]
-        let configuredCodecs: Set<WebRTCVideoCodec> = [.h264]
+        let configuredTransceivers = [VideoTransceiverBinding(codec: .h265, transceiver: h265Transceiver)]
+        let configuredCodecs: Set<WebRTCVideoCodec> = [.h265]
         videoTransceivers = configuredTransceivers
         let initialActiveCodecs = activeCodecsState.withLock { $0.intersection(configuredCodecs) }
         mediaPipeline.updateActiveCodecs(initialActiveCodecs)
@@ -173,7 +173,7 @@ package final class WebRTCPublisherSession: NSObject, @unchecked Sendable {
             )
         }
         updateBandwidthEstimate(profile: initialProfile, activeCodecs: initialActiveCodecs)
-        AppLog.web.info("WebRTC publisher transceiver configured H264 codecs=\(h264Codecs.count, privacy: .public).")
+        AppLog.web.info("WebRTC publisher transceiver configured H265 codecs=\(h265Codecs.count, privacy: .public).")
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let offer = try await createOffer(constraints: constraints)
@@ -450,7 +450,7 @@ extension WebRTCPublisherSession: RTCPeerConnectionDelegate {
 
 package enum PublisherSessionError: Error, LocalizedError, Equatable {
     case closed
-    case h264Unavailable
+    case h265Unavailable
     case videoTransceiverUnavailable(WebRTCVideoCodec)
     case codecPreferencesFailed(String)
     case offerMissing
@@ -459,8 +459,8 @@ package enum PublisherSessionError: Error, LocalizedError, Equatable {
         switch self {
         case .closed:
             "Publisher session is closed."
-        case .h264Unavailable:
-            String(localized: "This Mac's WebRTC stack did not expose H.264 video encoding.")
+        case .h265Unavailable:
+            String(localized: "This Mac's WebRTC stack did not expose H.265 video encoding.")
         case .videoTransceiverUnavailable(let codec):
             "WebRTC publisher \(codec.logName) video transceiver is unavailable."
         case .codecPreferencesFailed(let reason):

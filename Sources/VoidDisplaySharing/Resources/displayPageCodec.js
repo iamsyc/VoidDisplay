@@ -8,8 +8,23 @@
         return String(codec?.mimeType || "").toLowerCase();
     }
 
-    function isH264Codec(codec) {
-        return normalizedVideoCodecName(codec) === "video/h264";
+    function isH265Codec(codec) {
+        return normalizedVideoCodecName(codec) === "video/h265";
+    }
+
+    function supportsSharedH265Format(codec) {
+        if (!isH265Codec(codec)) return false;
+        const parameters = new Map(String(codec.sdpFmtpLine || "").split(";").map((part) => {
+            const [key, value] = part.split("=");
+            return [key.trim().toLowerCase(), value?.trim()];
+        }));
+        // RFC 7798 defaults: Main profile, main tier, Level 3.1, single stream.
+        const level = Number(parameters.get("level-id") ?? 93);
+        return (parameters.get("profile-space") ?? "0") === "0"
+            && (parameters.get("profile-id") ?? "1") === "1"
+            && (parameters.get("tier-flag") ?? "0") === "0"
+            && (parameters.get("tx-mode") ?? "SRST").toUpperCase() === "SRST"
+            && Number.isInteger(level) && level >= 180 && level <= 255;
     }
 
     function isRetransmissionCodec(codec) {
@@ -61,26 +76,27 @@
         }
         const capabilities = receiverConstructor.getCapabilities("video");
         const allCodecs = Array.isArray(capabilities?.codecs) ? capabilities.codecs : [];
-        const h264Codecs = allCodecs.filter(isH264Codec);
-        if (h264Codecs.length === 0) {
+        const h265Codecs = allCodecs.filter(supportsSharedH265Format);
+        if (h265Codecs.length === 0) {
             throw codecRequirementError(requiredMessage);
         }
-        return h264Codecs.concat(rtxCodecsForPrimaryCodecs(allCodecs, h264Codecs));
+        return h265Codecs.concat(rtxCodecsForPrimaryCodecs(allCodecs, h265Codecs));
     }
 
-    function videoCodecNamesFromSDP(sdp) {
+    function videoCodecsFromSDP(sdp) {
         const lines = String(sdp || "").split(/\r?\n/u);
         let payloadTypes = [];
         let namesByPayloadType = new Map();
+        let fmtpByPayloadType = new Map();
         let inVideo = false;
-        const codecNames = [];
+        const codecs = [];
 
         function flushVideoMedia() {
             if (!inVideo) return;
             for (const payloadType of payloadTypes) {
                 const codecName = namesByPayloadType.get(payloadType);
                 if (codecName) {
-                    codecNames.push(codecName);
+                    codecs.push({ mimeType: `video/${codecName}`, sdpFmtpLine: fmtpByPayloadType.get(payloadType) });
                 }
             }
         }
@@ -91,13 +107,19 @@
                 inVideo = line.startsWith("m=video ");
                 payloadTypes = [];
                 namesByPayloadType = new Map();
+                fmtpByPayloadType = new Map();
                 if (inVideo) {
                     const parts = line.trim().split(/\s+/u);
                     payloadTypes.push(...parts.slice(3));
                 }
                 continue;
             }
-            if (!inVideo || !line.startsWith("a=rtpmap:")) continue;
+            if (!inVideo) continue;
+            const fmtp = /^a=fmtp:(\d+)\s+(.*)/iu.exec(line);
+            if (fmtp) {
+                fmtpByPayloadType.set(fmtp[1], fmtp[2]);
+                continue;
+            }
             const match = /^a=rtpmap:(\d+)\s+([^/\s]+)/iu.exec(line);
             if (match) {
                 namesByPayloadType.set(match[1], match[2].toLowerCase());
@@ -105,24 +127,25 @@
         }
         flushVideoMedia();
 
-        return codecNames;
+        return codecs;
+    }
+
+    function videoCodecNamesFromSDP(sdp) {
+        return videoCodecsFromSDP(sdp).map((codec) => normalizedVideoCodecName(codec).slice("video/".length));
     }
 
     function selectedCodecFromAnswerSDP(sdp, requiredMessage) {
-        const codecNames = videoCodecNamesFromSDP(sdp);
-        const primaryCodecs = codecNames.filter((name) => name !== "rtx");
-        const supportedPrimaryCodecs = [...new Set(primaryCodecs.filter((name) => name === "h264"))];
-        const hasUnexpectedVideoCodec = primaryCodecs.some((name) => name !== "h264");
-        if (supportedPrimaryCodecs.length !== 1 || hasUnexpectedVideoCodec) {
-            throw new Error(requiredMessage);
+        const primaryCodecs = videoCodecsFromSDP(sdp).filter((codec) => !isRetransmissionCodec(codec));
+        if (primaryCodecs.length === 0 || primaryCodecs.some((codec) => !supportsSharedH265Format(codec))) {
+            throw codecRequirementError(requiredMessage);
         }
-        return supportedPrimaryCodecs[0];
+        return "h265";
     }
 
     namespace.codec = Object.freeze({
         codecPayloadType,
         codecRequirementError,
-        isH264Codec,
+        isH265Codec,
         isCodecRequirementError,
         isRetransmissionCodec,
         normalizedVideoCodecName,

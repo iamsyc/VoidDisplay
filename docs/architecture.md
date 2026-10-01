@@ -55,7 +55,15 @@ App 为每块运行中的虚拟屏启动 `Contents/MacOS/VoidDisplayHost`。该�
 
 LAN Web View 的分享路由生命周期与帧需求分开管理。启用分享会建立受 capability 保护的页面与信令入口。零 viewer 时路由可以继续有效，采集流只在 Preview 或实际 viewer 产生帧需求时运行。
 
-共享链路统一使用 H.264。原生发送端通过 VideoToolbox 创建硬件编码器，使用实时编码、禁止帧重排并将帧等待上限设为 0，异步提交帧。在途帧最多两个，硬件忙时丢弃新的输入，避免积累旧画面。编码器使用自身缓冲池并批量复制像素平面，避免硬件参考帧占满 ScreenCaptureKit 的采集缓冲区；关键帧间隔沿用 WebRTC 的 7,200 帧或 240 秒上限，并响应即时关键帧请求。发送工厂声明 High Level 5.2 与 packetization-mode 1；relay 使用相同参数，浏览器只协商 H.264 及对应 RTX。Level 5.2 覆盖 4K 60 fps，不能沿用默认工厂的 Level 3.1。发送 peer 不配置接收解码器，避免默认接收能力将 offer 降至 Level 3.1。发送端诊断保留实际编码器、是否节能、帧率及限速原因，本机硬件路径与性能须以真实运行结果验证。
+共享链路统一使用 H.265（HEVC）。应用通过公开的 RTCVideoEncoderFactory 与 RTCVideoEncoder 接口接入 VideoToolbox 硬件编码器，沿用原版 WebRTC SDK 负责协商和传输。编码器使用实时编码、禁止帧重排并将帧等待上限设为 0，异步提交帧。在途帧最多两个，硬件忙时丢弃新的输入，避免积累旧画面。编码器使用自身缓冲池并批量复制像素平面，避免硬件参考帧占满 ScreenCaptureKit 的采集缓冲区；关键帧携带 VPS、SPS、PPS，转换为 Annex B 后交给 WebRTC，关键帧间隔沿用 7,200 帧或 240 秒上限，并响应即时关键帧请求。
+
+发送工厂声明 HEVC Main Level 6（profile-id=1、tier-flag=0、level-id=180、tx-mode=SRST），覆盖 3840×2400 的 HiDPI 预设及 5K60；relay 使用相同参数，浏览器只协商符合该格式的 H.265 及对应 RTX。观看端须声明 Main profile、main tier、SRST 与至少 Level 6，浏览器能力和 answer 校验、relay offer 校验共同执行该约束。仅有 H.265 名称不足以证明能够接收源端码流；不支持时显示明确提示。发送 peer 不配置接收解码器，观看端负责解码。
+
+VideoToolbox 使用 HEVC Main AutoLevel。共享输出统一限制为每帧 35,651,584 个亮度像素、每秒 1,069,547,520 个亮度样本，并计入编码器按 16 像素对齐的尺寸填充。自动与流畅模式在该范围内保持源分辨率和帧率，超出时缩放画面；节能模式额外沿用 1080p30 像素预算。发送参数和带宽估计均按最终输出像素率乘以 0.05 计算码率，上限预算最低为 2 Mbps，下限为上限预算的四分之一且最低为 1.5 Mbps。更改输出边界须同步检查实际码流等级与 SDP 声明。发送端诊断保留实际编码器、是否节能、帧率及限速原因，本机硬件路径与性能须以真实运行结果验证。
+
+VideoToolbox 的 AutoLevel 硬件输出会声明 High tier，公开配置未提供 tier 选择，而所测 Chrome 的 WebRTC 接收能力声明 Main tier。编码器通过 DataRateLimits 约束每秒最多 60 Mbps，并在已有 Annex B 输出边界将单时间层 Main profile 的 VPS/SPS 声明统一为 Main tier、Level 6；保留其余参数、图像载荷与防竞争字节。高于 Level 6 或不符合该编码配置的参数集禁止进入发送链路。该声明转换依赖前述尺寸、样本率及硬码率约束；若硬件 API 能直接生成所需声明，可移除转换，保留码流一致性回归。
+
+交互式共享优先降低整链路延迟，持续帧率与呈现掉帧作为约束。更换编码格式须同时比较延迟 P50、P95、画面质量、实际码率及 App、relay、helper 的资源占用；硬件编码器单独耗时更短不能证明整链路更快。实验通路与未通过筛选的参数保存在验收资料中，不进入产品默认配置。
 
 LAN Web View 当前传输无音频的交互式桌面画面。Relay 在 viewer 的 SDP 中协商 `playout-delay` RTP 扩展，并按每个 viewer 协商的扩展 ID 写入最小与最大播放延迟 `0/0 ms`，请求接收端即时解码。浏览器继续决定解码后的合成与实际呈现时间，该参数不等于端到端延迟。未协商该扩展的 viewer 不接收它；写入只修改转发副本，保留原始媒体时间戳和 payload。
 

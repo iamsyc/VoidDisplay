@@ -6,7 +6,7 @@
 
     function browserStatsCodecName(codec) {
         const mimeType = String(codec?.mimeType || "").toLowerCase();
-        if (mimeType === "video/h264") return "H.264";
+        if (mimeType === "video/h265") return "H.265";
         return mimeType || "unknown";
     }
 
@@ -38,7 +38,7 @@
             }
             const codec = reports.get(report.codecId);
             if (!codec?.mimeType) continue;
-            if (String(codec.mimeType).toLowerCase() !== "video/h264") continue;
+            if (String(codec.mimeType).toLowerCase() !== "video/h265") continue;
             return { report, codec };
         }
         return null;

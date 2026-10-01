@@ -4041,13 +4041,13 @@
         }
       }
     },
-    "This Mac's WebRTC stack did not expose H.264 video encoding." : {
-      "extractionState" : "stale",
+    "This Mac's WebRTC stack did not expose H.265 video encoding." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本机 WebRTC 链路未暴露 H.264 视频编码能力。"
+            "value" : "本机 WebRTC 链路未暴露 H.265 视频编码能力。"
           }
         }
       }

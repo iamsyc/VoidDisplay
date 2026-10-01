@@ -62,8 +62,8 @@ package struct WebRTCCodecPreferenceDescriptor: Sendable, Equatable {
 extension WebRTCVideoCodec {
     package var codecName: String {
         switch self {
-        case .h264:
-            "H264"
+        case .h265:
+            "H265"
         }
     }
 }
@@ -123,12 +123,12 @@ package enum WebRTCCodecPreference {
     package nonisolated static func capabilitySummary(
         from descriptors: [WebRTCCodecPreferenceDescriptor]
     ) -> String {
-        let h264Descriptors = descriptors.filter {
-            $0.name.caseInsensitiveCompare(WebRTCVideoCodec.h264.codecName) == .orderedSame
+        let h265Descriptors = descriptors.filter {
+            $0.name.caseInsensitiveCompare(WebRTCVideoCodec.h265.codecName) == .orderedSame
         }
-        let otherCodecCount = descriptors.count - h264Descriptors.count
+        let otherCodecCount = descriptors.count - h265Descriptors.count
         return [
-            "H264=\(capabilityProbeSummary(from: h264Descriptors))",
+            "H265=\(capabilityProbeSummary(from: h265Descriptors))",
             "unsupportedVideoCodecCount=\(otherCodecCount)",
         ].joined(separator: "; ")
     }
@@ -161,7 +161,7 @@ package enum WebRTCCodecPreference {
             for payloadType in currentVideoPayloadTypes {
                 guard let name = currentPayloadNames[payloadType] else { continue }
                 let normalizedName = name.lowercased()
-                guard normalizedName == "h264" || normalizedName == "rtx" else {
+                guard normalizedName == "h265" || normalizedName == "rtx" else {
                     unexpectedCodecCount += 1
                     continue
                 }

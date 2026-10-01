@@ -83,7 +83,7 @@ private final class FakeRelayClient: RelayHTTPClienting, @unchecked Sendable {
     nonisolated func viewerOffer(roomID: String, clientID: String, sdp: String) async throws -> RelayViewerOfferResponse {
         state.withLock { $0.viewerOffers.append((roomID, clientID, sdp)) }
         try await onViewerOffer?()
-        return RelayViewerOfferResponse(sdp: "relay-viewer-answer-\(clientID)", codec: .h264)
+        return RelayViewerOfferResponse(sdp: "relay-viewer-answer-\(clientID)", codec: .h265)
     }
 
     nonisolated func viewerCandidate(
@@ -306,7 +306,7 @@ struct RelaySessionHubTests {
         #expect(answer.contains(#""width":1920"#))
         #expect(answer.contains(#""height":1080"#))
         #expect(answer.contains(#""framesPerSecond":60"#))
-        #expect(await waitUntil { factory.records().first?.publisher.activeCodecs().contains(Set([.h264])) == true })
+        #expect(await waitUntil { factory.records().first?.publisher.activeCodecs().contains(Set([.h265])) == true })
     }
 
     @MainActor @Test func viewerOfferWaitsForPublisherStartupBeforeForwardingToRelay() async throws {

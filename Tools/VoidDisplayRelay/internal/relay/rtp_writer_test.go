@@ -10,7 +10,7 @@ import (
 
 func TestViewerWriterRejectsEnqueueAfterClose(t *testing.T) {
 	sink := &recordingSink{}
-	writer := newViewerRTPWriter("2", "viewer", videoCodecH264, sink, nil)
+	writer := newViewerRTPWriter("2", "viewer", videoCodecH265, sink, nil)
 	writer.close()
 
 	if writer.enqueue(&rtp.Packet{Header: rtp.Header{Timestamp: 10}, Payload: []byte{1}}) {
@@ -23,7 +23,7 @@ func TestViewerWriterRejectsEnqueueAfterClose(t *testing.T) {
 
 func TestViewerWriterRewritesHeaderExtensionIDs(t *testing.T) {
 	sink := &recordingSink{}
-	writer := newViewerRTPWriter("2", "viewer", videoCodecH264, sink, nil)
+	writer := newViewerRTPWriter("2", "viewer", videoCodecH265, sink, nil)
 	defer writer.close()
 	writer.setExtensionRewrites(map[uint8]uint8{3: 4, 4: 0})
 	packet := &rtp.Packet{
@@ -60,7 +60,7 @@ func TestViewerWriterUsesNegotiatedPlayoutDelayID(t *testing.T) {
 		t.Run(strconv.Itoa(int(test.id))+"/existing="+strconv.FormatBool(test.existing), func(t *testing.T) {
 			id := test.id
 			sink := &recordingSink{}
-			writer := newViewerRTPWriter("playout", "viewer", videoCodecH264, sink, nil)
+			writer := newViewerRTPWriter("playout", "viewer", videoCodecH265, sink, nil)
 			defer writer.close()
 			writer.setViewerExtensions(map[string]uint8{testPlayoutDelayURI: id})
 			packet := &rtp.Packet{Header: rtp.Header{Timestamp: 100}, Payload: []byte{1, 2}}
@@ -103,7 +103,7 @@ func TestViewerWriterUsesNegotiatedPlayoutDelayID(t *testing.T) {
 
 func TestViewerWriterOmitsUnnegotiatedPlayoutDelay(t *testing.T) {
 	sink := &recordingSink{}
-	writer := newViewerRTPWriter("playout", "viewer", videoCodecH264, sink, nil)
+	writer := newViewerRTPWriter("playout", "viewer", videoCodecH265, sink, nil)
 	defer writer.close()
 	packet := &rtp.Packet{Header: rtp.Header{Timestamp: 100}, Payload: []byte{1}}
 	if !writer.enqueue(packet) {

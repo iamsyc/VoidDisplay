@@ -58,7 +58,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
         ]
         let status = VTCompressionSessionCreate(
             allocator: kCFAllocatorDefault, width: width, height: height,
-            codecType: kCMVideoCodecType_H264,
+            codecType: kCMVideoCodecType_HEVC,
             encoderSpecification: specification as CFDictionary,
             imageBufferAttributes: attributes as CFDictionary,
             compressedDataAllocator: nil,
@@ -71,13 +71,13 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
             compressionSessionOut: &session
         )
         guard status == noErr, let session else {
-            AppLog.web.error("H264 low-latency hardware encoder creation failed status=\(status, privacy: .public).")
+            AppLog.web.error("H265 low-latency hardware encoder creation failed status=\(status, privacy: .public).")
             _ = release()
             return -1
         }
         let properties: [CFString: Any] = [
             kVTCompressionPropertyKey_RealTime: true,
-            kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_High_AutoLevel,
+            kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_HEVC_Main_AutoLevel,
             kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality: true,
             kVTCompressionPropertyKey_AllowFrameReordering: false,
             kVTCompressionPropertyKey_MaxFrameDelayCount: 0,
@@ -85,11 +85,14 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
             kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 240,
             kVTCompressionPropertyKey_ExpectedFrameRate: settings.maxFramerate,
             kVTCompressionPropertyKey_AverageBitRate: UInt64(settings.startBitrate) * 1_000,
+            // AverageBitRate is a soft target. The shared Main-tier contract
+            // also requires a hard bitrate/CPB bound before declaring its PTL.
+            kVTCompressionPropertyKey_DataRateLimits: [WebRTCHEVCFormat.maxBitrateBps / 8, 1],
         ]
         let configured = VTSessionSetProperties(session, propertyDictionary: properties as CFDictionary)
         let prepared = configured == noErr ? VTCompressionSessionPrepareToEncodeFrames(session) : configured
         guard prepared == noErr else {
-            AppLog.web.error("H264 low-latency encoder configuration failed status=\(prepared, privacy: .public).")
+            AppLog.web.error("H265 low-latency encoder configuration failed status=\(prepared, privacy: .public).")
             _ = release()
             return -1
         }
@@ -142,7 +145,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
             // A synchronous failure can also invoke the output callback. The
             // dictionary gives both paths one shared completion boundary.
             _ = output.withLock { $0.frames.removeValue(forKey: frameID) }
-            AppLog.web.error("H264 low-latency frame encode failed status=\(status, privacy: .public).")
+            AppLog.web.error("H265 low-latency frame encode failed status=\(status, privacy: .public).")
             return -1
         }
         needsKeyframe = false
@@ -195,7 +198,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
         var parameterSets: [Data] = []
         var headerLength: Int32 = 0
         var parameterCount = 0
-        guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+        guard CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
             format, parameterSetIndex: 0, parameterSetPointerOut: nil,
             parameterSetSizeOut: nil, parameterSetCountOut: &parameterCount,
             nalUnitHeaderLengthOut: &headerLength
@@ -204,7 +207,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
             for index in 0..<parameterCount {
                 var pointer: UnsafePointer<UInt8>?
                 var size = 0
-                guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+                guard CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
                     format, parameterSetIndex: index, parameterSetPointerOut: &pointer,
                     parameterSetSizeOut: &size, parameterSetCountOut: nil,
                     nalUnitHeaderLengthOut: nil
@@ -212,13 +215,13 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
                 parameterSets.append(Data(bytes: pointer, count: size))
             }
         }
-        var avcc = Data(count: CMBlockBufferGetDataLength(block))
-        guard !avcc.isEmpty else { return }
-        let copied = avcc.withUnsafeMutableBytes {
+        var lengthPrefixed = Data(count: CMBlockBufferGetDataLength(block))
+        guard !lengthPrefixed.isEmpty else { return }
+        let copied = lengthPrefixed.withUnsafeMutableBytes {
             CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!)
         }
         guard copied == noErr,
-              let annexB = H264AnnexB.convert(avcc, headerLength: Int(headerLength), parameterSets: parameterSets) else { return }
+              let annexB = HEVCAnnexB.convert(lengthPrefixed, headerLength: Int(headerLength), parameterSets: parameterSets) else { return }
         let image = RTCEncodedImage()
         image.buffer = annexB
         image.encodedWidth = metadata.width
@@ -230,35 +233,74 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder {
         image.contentType = .screenshare
         image.encodeStartMs = metadata.startedAtMs
         image.encodeFinishMs = Int64(ProcessInfo.processInfo.systemUptime * 1_000)
-        let info = RTCCodecSpecificInfoH264()
-        info.packetizationMode = .nonInterleaved
+        let info = ScreenCodecSpecificInfo()
         _ = callback(image, info)
     }
 }
 
-package enum H264AnnexB {
-    package static func convert(_ avcc: Data, headerLength: Int, parameterSets: [Data]) -> Data? {
+// The H.265 bitstream carries VPS/SPS/PPS; the Objective-C callback needs no
+// additional codec-specific fields for the negotiated RTP packetizer.
+private nonisolated final class ScreenCodecSpecificInfo: NSObject, RTCCodecSpecificInfo {}
+
+package enum HEVCAnnexB {
+    package static func convert(_ lengthPrefixed: Data, headerLength: Int, parameterSets: [Data]) -> Data? {
         guard (1...4).contains(headerLength) else { return nil }
         let startCode: [UInt8] = [0, 0, 0, 1]
         var output = Data()
         for parameter in parameterSets {
+            guard let parameter = sharedParameterSet(parameter) else { return nil }
             output.append(contentsOf: startCode)
             output.append(parameter)
         }
         var offset = 0
-        while offset < avcc.count {
-            guard avcc.count - offset >= headerLength else { return nil }
+        while offset < lengthPrefixed.count {
+            guard lengthPrefixed.count - offset >= headerLength else { return nil }
             var length = 0
-            for byte in avcc[offset..<(offset + headerLength)] {
+            for byte in lengthPrefixed[offset..<(offset + headerLength)] {
                 length = (length << 8) | Int(byte)
             }
             offset += headerLength
-            guard length > 0, length <= avcc.count - offset else { return nil }
+            guard length > 0, length <= lengthPrefixed.count - offset else { return nil }
+            guard let nal = sharedParameterSet(lengthPrefixed[offset..<(offset + length)]) else { return nil }
             output.append(contentsOf: startCode)
-            output.append(avcc[offset..<(offset + length)])
+            output.append(nal)
             offset += length
         }
         return output.isEmpty ? nil : output
+    }
+
+    private static func sharedParameterSet(_ nal: Data) -> Data? {
+        guard let first = nal.first else { return nil }
+        let type = (first >> 1) & 0x3F
+        guard type == 32 || type == 33 else { return nal }
+        // The hardware emits High tier even with a Main-tier data-rate cap.
+        // Declare the bounded Main Level 6 stream at the existing Annex B
+        // boundary. Preserve every field other than general_tier/level_idc.
+        let bytes = [UInt8](nal)
+        var rbsp: [UInt8] = []
+        for index in bytes.indices {
+            if index >= 2, bytes[index] == 3, bytes[index - 1] == 0, bytes[index - 2] == 0 { continue }
+            rbsp.append(bytes[index])
+        }
+        let profileOffset = type == 32 ? 6 : 3
+        let subLayersOffset = type == 32 ? 3 : 2
+        guard rbsp.count > profileOffset + 11,
+              (rbsp[subLayersOffset] >> 1) & 7 == 0,
+              rbsp[profileOffset] & 0xDF == 1,
+              rbsp[profileOffset + 11] <= WebRTCHEVCFormat.level else { return nil }
+        rbsp[profileOffset] = 1
+        rbsp[profileOffset + 11] = WebRTCHEVCFormat.level
+        var output = Data()
+        var zeroCount = 0
+        for byte in rbsp {
+            if zeroCount == 2, byte <= 3 {
+                output.append(3)
+                zeroCount = 0
+            }
+            output.append(byte)
+            zeroCount = byte == 0 ? zeroCount + 1 : 0
+        }
+        return output
     }
 }
 #endif
