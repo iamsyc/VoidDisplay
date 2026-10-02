@@ -47,7 +47,7 @@ extension AppBootstrap {
         let idStore = DisplayShareIDStore(storeURL: persistence.context.displayShareIDMappingsURL)
         let sharingCoordinator = DisplaySharingCoordinator(
             idStore: idStore,
-            acquireShare: { display, invalidationContext in
+            acquireShare: UITestCaptureFixture.acquireShare() ?? { display, invalidationContext in
                 try await captureRegistry.acquireShare(
                     display: SendableDisplay(display),
                     invalidationContext: invalidationContext

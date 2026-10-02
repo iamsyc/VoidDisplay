@@ -21,7 +21,7 @@ struct DiagnosticsAdvancedSnapshotDetails: View {
                 value: runtimeSummary.schemaVersion.map(String.init) ?? "-"
             )
             DiagnosticsReadableRow(
-                title: String(localized: "Active Viewer Count"),
+                title: String(localized: "Connections"),
                 value: "\(runtimeSummary.activeViewerCount)"
             )
             DiagnosticsReadableRow(

@@ -150,7 +150,7 @@ package enum DisplaySurfacePresentationMapper {
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "viewerCount",
-                title: String(localized: "Viewers"),
+                title: String(localized: "Connections"),
                 value: String(viewerCount),
                 accessibilityIdentifier: "displays_viewer_count",
                 tone: viewerCount > 0 ? .info : .neutral
@@ -177,7 +177,7 @@ package enum DisplaySurfacePresentationMapper {
         )
         let accessibilitySummary = DisplaySurfaceActionPresentation.accessibilitySummary(
             title: title,
-            statusItems: compactStatusItems
+            statusItems: compactStatusItems.filter { isSharing || $0.id != "viewerCount" }
         )
         let technicalStatusItems = [
             DisplaySurfaceStatusItemPresentation(

@@ -49,8 +49,8 @@
             ui.setVideoInfo("");
         }
 
-        function localOfferSDPWithIceCredentials() {
-            const localDescription = peer?.localDescription;
+        function localOfferSDPWithIceCredentials(activePeer) {
+            const localDescription = activePeer.localDescription;
             if (
                 !localDescription ||
                 localDescription.type !== "offer" ||
@@ -65,10 +65,11 @@
             return localDescription.sdp;
         }
 
-        async function waitForLocalOfferSDP() {
+        async function waitForLocalOfferSDP(activePeer, lifecycleID) {
             const startedAt = windowObject.performance.now();
             while (windowObject.performance.now() - startedAt < localOfferIceTimeoutMs) {
-                const sdp = localOfferSDPWithIceCredentials();
+                if (peer !== activePeer || lifecycleID !== peerLifecycleID) return null;
+                const sdp = localOfferSDPWithIceCredentials(activePeer);
                 if (sdp) {
                     return sdp;
                 }
@@ -169,6 +170,7 @@
                         transitionConnection("streaming");
                         browserStatsMonitor.start(activePeer);
                     } catch (error) {
+                        if (peer !== activePeer || lifecycleID !== peerLifecycleID) return;
                         if (isStreamStartupTimeoutError(error)) {
                             console.warn("[VoidDisplay] First video frame timed out", error);
                             close();
@@ -206,8 +208,13 @@
             };
 
             const offer = await activePeer.createOffer();
+            if (peer !== activePeer || lifecycleID !== peerLifecycleID) return;
             await activePeer.setLocalDescription(offer);
-            await sendSignal({ type: "offer", sdp: await waitForLocalOfferSDP() });
+            if (peer !== activePeer || lifecycleID !== peerLifecycleID) return;
+            const sdp = await waitForLocalOfferSDP(activePeer, lifecycleID);
+            if (!sdp || peer !== activePeer || lifecycleID !== peerLifecycleID) return;
+            await sendSignal({ type: "offer", sdp });
+            if (peer !== activePeer || lifecycleID !== peerLifecycleID) return;
             transitionConnection("negotiating");
         }
 

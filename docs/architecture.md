@@ -87,7 +87,7 @@ Diagnostics 以 runtime snapshot 作为主要结构化状态来源。支持包�
 
 Runtime 的 lease 集合只保存仍受管理的 consumer。释放时先生成终态结果并解除等待，再移除条目；失败且可重试的 Preview 保留到用户重试或关闭。只有 attach 可以创建 lease，其他状态更新只能修改现存 ID。关闭后返回的异步结果使用 `invalidated`，不能恢复旧窗口或采集需求。历史排障信息由现有事件与事务诊断记录承担。
 
-Runtime snapshot 使用 schema 6，`latestFailure` 保存最近一次有效失败的代码与进程内递增序号。Runtime 在接受采集结果、独立 consumer 失败和事务终态时记录该值；过期结果、正常取消及同一失败的重复传播不推进序号，成功操作不清除最近失败。Diagnostics 直接读取该字段，禁止从显示器顺序或不同诊断集合的排列推断失败先后。
+Runtime snapshot 使用 schema 7，`latestFailure` 保存最近一次有效失败的代码与进程内递增序号。Runtime 在接受采集结果、独立 consumer 失败和事务终态时记录该值；过期结果、正常取消及同一失败的重复传播不推进序号，成功操作不清除最近失败。Diagnostics 直接读取该字段，禁止从显示器顺序或不同诊断集合的排列推断失败先后。
 
 采集失败按当前 intent 内的失败码去重，其他 consumer 的成功或失败结果不会使旧通知重新计数。新 intent 替换旧 intent 时回收该显示源的去重记录，避免保存跨请求历史。
 
@@ -102,3 +102,16 @@ scripts/ci/xcode.sh --action build --configuration Debug \
 ```
 
 跨模块、并发、持久化、网络、安全或发布相关改动按照 [测试策略](./testing/testing-strategy.md) 和根目录 [AGENTS.md](../AGENTS.md) 提升验证范围。
+
+
+## 用途模板、共享窗口和场景
+
+创建表单位于 VirtualDisplay，返回 `CreatedDisplayOutcome(configID, shouldOpenPreview)`。App 使用该 ID 调用现有预览入口；创建后的内容放置说明由主窗口和共享窗口共用。共享窗口使用 configID 标识，读取当前运行 displayID 与有效路由。Core Image 生成带留白的二维码，不引入编码依赖或第二份共享会话状态。
+
+`DisplaySceneStore` 使用 PersistenceContext 的隔离目录与写入保护，在 `display-scenes.json` 保存 schema 1。每条记录只有 UUID、名称和启用配置 ID 集合。写入原子完成后发布内存值。加载失败阻止覆盖保存；重置只影响场景文件。删除显示器保留缺失引用，避免跨文件联动写入。
+
+AppBootstrap 创建一份 `DisplaySceneController`，主窗口和菜单栏共用。控制器在创建异步任务前同步占用提交状态，重复申请不能覆盖有效批次的结果归属；结果发布后解除占用。匹配由有效引用、当前启用意图、运行集合及无活动事务派生，历史 `latestFailure` 不影响匹配。独立消费者故障保留其恢复入口。
+
+Runtime 的 `prepareVirtualDisplayEnabledSet` 记录参数、启用意图、实例和受管理消费者身份；`applyVirtualDisplayEnabledSet` 占用单个事务队列位置，实际开始时重新比较计划。连接数不参与过期判断。子步骤调用现有生命周期执行体，先启用后停用，失败、取消或恢复失败停止剩余步骤，保留部分结果。每步返回或抛错后及批次终态解除忙状态前，同步 `onStateSettled` 回读 VirtualDisplayController 缓存。
+
+schema 7 的 `enabledSetApplication` 记录活动批次进度，终态清除；父事务 `enabledSetResult` 保留子事务 ID、完整步骤结果、未执行项和最终显示器事实。场景诊断只输出数量、缺失引用数和错误类别，不输出名称、原始文件、二维码或访问凭证。

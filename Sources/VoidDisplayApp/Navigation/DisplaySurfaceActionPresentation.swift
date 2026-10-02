@@ -52,7 +52,10 @@ static func rowActions(
         statusItems: [DisplaySurfaceStatusItemPresentation]
     ) -> String {
         let statuses = statusItems
-            .map { "\($0.title): \($0.value)" }
+            .map { item in
+                if item.id == "viewerCount", let count = Int(item.value) { return SharingConnectionText.status(count) }
+                return "\(item.title): \(item.value)"
+            }
             .joined(separator: ", ")
         return "\(title), \(statuses)"
     }

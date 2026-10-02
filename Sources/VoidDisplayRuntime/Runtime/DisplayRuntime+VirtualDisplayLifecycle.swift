@@ -18,7 +18,7 @@ extension DisplayRuntime {
         }
     }
 
-    private func executeVirtualDisplayDesiredEnabledTransaction(
+    func executeVirtualDisplayDesiredEnabledTransaction(
         _ context: ActiveVirtualDisplayTransactionContext,
         desiredEnabled: Bool
     ) async throws -> DisplayRuntimeVirtualDisplayRebuildTransactionResult {

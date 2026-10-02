@@ -379,7 +379,6 @@ final class HomeSmokeTests: XCTestCase {
                 "virtual_display_toggle_button",
                 "home_virtual_display_preview_toggle",
                 "home_virtual_display_web_view_toggle",
-                "virtual_display_edit_button",
                 "home_virtual_display_more_button",
                 "home_add_virtual_display_button"
             ],
@@ -430,7 +429,6 @@ final class HomeSmokeTests: XCTestCase {
             "virtual_display_toggle_button",
             "home_virtual_display_preview_toggle",
             "home_virtual_display_web_view_toggle",
-            "virtual_display_edit_button",
             "home_virtual_display_more_button"
         ]
         for identifier in ["home_add_virtual_display_button"] + minimumWidthIdentifiers {

@@ -46,11 +46,13 @@ extension XCTestCase {
         preferredPort: UInt16? = nil,
         windowSize: (width: Int, height: Int)? = nil,
         advanceFocus: Bool = false,
-        scenario: String = "baseline"
+        scenario: String = "baseline",
+        language: String? = nil
     ) -> XCUIApplication {
         let app = XCUIApplication()
         configureAppForUITestLaunch(app)
         app.launchEnvironment["VOIDDISPLAY_UI_TEST_SCENARIO"] = scenario
+        if let language { app.launchArguments.append(contentsOf: ["-AppleLanguages", "(\(language))"]) }
         if let preferredPort {
             app.launchArguments.append(contentsOf: [
                 "-sharing.preferredPort",

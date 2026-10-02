@@ -1,6 +1,7 @@
 import Foundation
 
 package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable {
+    package let enabledSetApplication: DisplayRuntimeEnabledSetProgress?
     package let schemaVersion: Int
     package let latestFailure: DisplayRuntimeFailure?
     package let surfaces: [DisplaySurface]
@@ -15,7 +16,7 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
     package let consumerSummary: DisplayRuntimeConsumerSummarySnapshot
 
     package init(
-        schemaVersion: Int = 6,
+        schemaVersion: Int = 7,
         surfaces: [DisplaySurface],
         catalog: DisplayRuntimeCatalogSnapshot,
         capture: DisplayRuntimeCaptureSnapshot,
@@ -27,8 +28,10 @@ package nonisolated struct DisplayRuntimeSnapshot: Codable, Equatable, Sendable 
         effectiveCaptureIntents: [DisplayRuntimeEffectiveCaptureIntent] = [],
         surfaceEpochs: [DisplayRuntimeSurfaceEpochSnapshot] = [],
         latestCaptureIntentRevision: DisplayRuntimeCaptureIntentRevision? = nil,
-        latestFailure: DisplayRuntimeFailure? = nil
+        latestFailure: DisplayRuntimeFailure? = nil,
+        enabledSetApplication: DisplayRuntimeEnabledSetProgress? = nil
     ) {
+        self.enabledSetApplication = enabledSetApplication
         self.schemaVersion = schemaVersion
         self.latestFailure = latestFailure
         self.surfaces = surfaces.sorted {

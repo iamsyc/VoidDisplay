@@ -14,7 +14,10 @@ package struct CreateVirtualDisplay: View {
     // MARK: - State Properties
     
     // Basic info
-    @State private var name = String(localized: "Virtual Display")
+    @State private var name = ""
+    @State private var selectedTemplate = VirtualDisplayCreationTemplate.presentation
+    @State private var showsAdvancedSettings = false
+    @State private var shouldOpenPreview = true
     @State private var serialNum: UInt32 = 1
     @State private var customSerialNum = false
     
@@ -23,7 +26,7 @@ package struct CreateVirtualDisplay: View {
     @State private var selectedAspectRatio: AspectRatio = .ratio_16_9
     
     // Resolution modes
-    @State private var selectedModes: [ResolutionSelection] = []
+    @State private var selectedModes: [ResolutionSelection] = [.init(preset: .w1920h1080, enableHiDPI: false)]
     
     // Mode input
     @State private var usePresetMode = true
@@ -41,23 +44,17 @@ package struct CreateVirtualDisplay: View {
     
     @Binding var isShow: Bool
     @Environment(VirtualDisplayController.self) private var virtualDisplay
+    private let onCreated: @MainActor (CreatedDisplayOutcome) -> Void
 
-    package init(isShow: Binding<Bool>) {
+    package init(isShow: Binding<Bool>, onCreated: @escaping @MainActor (CreatedDisplayOutcome) -> Void) {
         _isShow = isShow
+        self.onCreated = onCreated
     }
 
     private func clearFocus() {
         focusedField = nil
     }
 
-    private var baseDisplayName: String {
-        String(localized: "Virtual Display")
-    }
-
-    private func defaultName(for serial: UInt32) -> String {
-        CreateVirtualDisplayInputValidator.defaultName(baseName: baseDisplayName, serialNum: serial)
-    }
-    
     // MARK: - Computed Properties
     
     private var physicalSize: (width: Int, height: Int) {
@@ -74,33 +71,71 @@ package struct CreateVirtualDisplay: View {
         @Bindable var bindableVirtualDisplay = virtualDisplay
 
         Form {
+            Section {
+                Picker("Use", selection: $selectedTemplate) {
+                    ForEach(VirtualDisplayCreationTemplate.allCases) { template in
+                        Text(template.title).tag(template)
+                    }
+                }
+                .accessibilityIdentifier("virtual_display_creation_template_picker")
+                .onChange(of: selectedTemplate) { previous, selected in
+                    name = selected.replacingName(name, from: previous, serial: serialNum)
+                    if let modes = selected.modes {
+                        selectedModes = modes
+                        screenDiagonal = 14
+                        selectedAspectRatio = .ratio_16_9
+                    } else {
+                        showsAdvancedSettings = true
+                    }
+                    clearFocus()
+                }
+                Text("Choosing a template replaces the resolution and physical size. Your edited name is kept.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(selectedModes) { mode in
+                    LabeledContent("Workspace", value: "\(mode.width) × \(mode.height) · \(Int(mode.refreshRate)) Hz")
+                    if case .resolved(let width, let height) = CreateVirtualDisplayInputValidator.maxPixelDimensions(for: [mode]) {
+                        LabeledContent("Native Pixels", value: "\(width) × \(height)")
+                    }
+                }
+            }
             basicInfoSection
-            VirtualDisplayPhysicalConfigurationSection(
-                screenDiagonal: $screenDiagonal,
-                selectedAspectRatio: $selectedAspectRatio,
-                physicalSizeText: "\(physicalSize.width) × \(physicalSize.height) mm",
-                focusedField: $focusedField,
-                onAspectRatioChange: clearFocus
-            )
-            VirtualDisplayResolutionModesSection(
-                selectedModes: $selectedModes,
-                usePresetMode: $usePresetMode,
-                presetResolution: $presetResolution,
-                customWidth: $customWidth,
-                customHeight: $customHeight,
-                customRefreshRate: $customRefreshRate,
-                alert: $localAlert,
-                focusedField: $focusedField,
-                hiDPIAccessibilityIdentifier: "virtual_display_create_mode_hidpi_toggle",
-                onInputChange: clearFocus
-            )
+            Section {
+                Toggle("Open preview after creating", isOn: $shouldOpenPreview)
+                    .accessibilityIdentifier("virtual_display_create_preview_toggle")
+                Toggle("Advanced Settings", isOn: $showsAdvancedSettings)
+                    .accessibilityIdentifier("virtual_display_create_advanced_toggle")
+            }
+            if showsAdvancedSettings {
+                serialSection
+                VirtualDisplayPhysicalConfigurationSection(
+                    screenDiagonal: $screenDiagonal,
+                    selectedAspectRatio: $selectedAspectRatio,
+                    physicalSizeText: "\(physicalSize.width) × \(physicalSize.height) mm",
+                    focusedField: $focusedField,
+                    onAspectRatioChange: clearFocus
+                )
+                VirtualDisplayResolutionModesSection(
+                    selectedModes: $selectedModes,
+                    usePresetMode: $usePresetMode,
+                    presetResolution: $presetResolution,
+                    customWidth: $customWidth,
+                    customHeight: $customHeight,
+                    customRefreshRate: $customRefreshRate,
+                    alert: $localAlert,
+                    focusedField: $focusedField,
+                    hiDPIAccessibilityIdentifier: "virtual_display_create_mode_hidpi_toggle",
+                    onInputChange: clearFocus
+                )
+            }
         }
         .formStyle(.grouped)
+        .disabled(isCreating)
         .frame(width: 480, height: 580)
         .accessibilityIdentifier("virtual_display_create_form")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Create") {
+                Button(shouldOpenPreview ? String(localized: "Create and Preview") : String(localized: "Create")) {
                     clearFocus()
                     Task {
                         await createDisplayAction()
@@ -135,18 +170,10 @@ package struct CreateVirtualDisplay: View {
             )
         }
         .onAppear {
-            let initial = CreateVirtualDisplayInputValidator.initializeNameAndSerial(
-                currentName: name,
-                baseName: baseDisplayName,
-                nextSerial: virtualDisplay.nextAvailableSerialNumber()
-            )
-            serialNum = initial.serialNum
-            name = initial.name
+            guard name.isEmpty else { return }
+            serialNum = virtualDisplay.nextAvailableSerialNumber()
+            name = selectedTemplate.defaultName(serial: serialNum)
             focusedField = .name
-            // Add a default mode
-            if selectedModes.isEmpty {
-                selectedModes.append(ResolutionSelection(preset: .w1920h1080))
-            }
         }
     }
     
@@ -155,7 +182,13 @@ package struct CreateVirtualDisplay: View {
         Section {
             TextField("Name", text: $name)
                 .focused($focusedField, equals: .name)
-            
+        } header: {
+            Text("Basic Info")
+        }
+    }
+
+    private var serialSection: some View {
+        Section {
             HStack {
                 Text("Serial Number")
                 Spacer()
@@ -192,7 +225,7 @@ package struct CreateVirtualDisplay: View {
         isCreating = true
         defer { isCreating = false }
         do {
-            _ = try await virtualDisplay.createVirtualDisplay(
+            let configID = try await virtualDisplay.createVirtualDisplay(
                 VirtualDisplayCreateRequest(
                     displayName: name,
                     serialNumber: serialNum,
@@ -204,6 +237,7 @@ package struct CreateVirtualDisplay: View {
                 )
             )
             isShow = false
+            onCreated(.init(configID: configID, shouldOpenPreview: shouldOpenPreview))
         } catch {}
     }
 }

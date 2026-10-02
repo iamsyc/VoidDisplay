@@ -206,7 +206,7 @@ private struct HomeSummaryViewersStatus: View {
 
     var body: some View {
         HomeSummaryStatusItem(
-            title: String(localized: "Viewers"),
+            title: String(localized: "Connections"),
             value: "\(summary.activeViewerCount)",
             systemImage: "person.2",
             tint: summary.activeViewerCount > 0 ? .blue : .secondary,

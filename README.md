@@ -16,7 +16,7 @@ The main window keeps each display's resolution, running state, preview controls
 
 ![VoidDisplay main window with virtual display status and controls](./docs/imgs/home-overview.png)
 
-The creation sheet lets you name the display, configure its physical size and aspect ratio, and add preset or custom resolution modes with optional HiDPI.
+Choose **Present and Share** (1920 × 1080 at 60 Hz) or **Clear Text** (1920 × 1080 workspace with 3840 × 2160 HiDPI pixels). Advanced Settings exposes physical size, serial number and custom modes. **Create and Preview** opens the new display; a preview failure keeps the saved display available for retry.
 
 ![Create virtual display sheet with display and resolution settings](./docs/imgs/add-virtual-display.png)
 
@@ -34,7 +34,7 @@ The preview window supports Fit, 1:1, and cursor visibility controls.
 Share an enabled virtual display over your local network through the built-in low-latency live page.
 Open the generated capability-protected `/display` URL in a modern browser on a trusted LAN. Playback uses WebRTC media streaming with WebSocket signaling.
 
-The browser page reports the current stream state and provides 1:1 and fullscreen viewing.
+The browser page reports playback state and provides Fit, 1:1, fullscreen, expandable stream details and manual retry for recoverable connection failures. Host counts represent signaling connections, including separate tabs on one device. Confirm actual playback on the receiver.
 
 ![VoidDisplay LAN web view receiving a live display stream](./docs/imgs/lan-web-view.png)
 
@@ -77,8 +77,9 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 1. Open VoidDisplay. The **Displays** page opens by default.
 2. Click **Add Virtual Display**.
-3. Choose a preset or configure a custom resolution and refresh rate.
-4. The virtual display appears immediately in your macOS display arrangement.
+3. Choose a use template and click **Create and Preview**.
+4. In **System Settings > Displays**, use it as an extended display and check its position.
+5. Drag the original document window onto that display and confirm its content in Preview. Edit in the original window.
 
 ### Preview a Virtual Display
 
@@ -90,7 +91,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 1. On the **Displays** page, open **Sharing Settings** to adjust performance mode or port when needed.
 2. Enable the target virtual display, then turn on **LAN Web View** in its status row. The web service starts automatically.
-3. Use **Copy Access Link**, or choose **Open Share Page** from the display's More menu.
+3. The **Sharing Details** window opens. Scan its QR code or use **Copy Access Link**. Both the main window and menu bar reopen this same window.
 4. Open the generated URL, such as `http://192.168.x.x:8089/display/1/{capability}`, in a modern browser on the same network.
 
 Notes:
@@ -99,6 +100,12 @@ Notes:
 - `/signal/{capability}` and `/signal/{id}/{capability}` are the protected WebSocket signaling routes.
 - The capability rotates whenever sharing restarts. Old and credentialless links are rejected.
 - HTTP and WebSocket traffic is not encrypted. Use LAN sharing only on a trusted network and do not expose it through public port forwarding or tunnels. See [LAN Web View security](./docs/security/lan-web-view.md).
+
+### Saved Display Scenes
+
+Use **Save Current Combination** or **Manage Scenes** to save named sets of enabled displays. Scenes reference the displays’ current settings. Applying a scene enables its targets before disabling other managed displays. Review interrupted previews and sharing before applying. Partial failures retain completed changes and offer retry or restoration of the previous combination. Deleted displays leave a scene marked **Needs Repair** until edited. Scenes do not save window positions, display arrangement, preview windows or sharing sessions.
+
+Closing Sharing Details keeps sharing active. **Stop Sharing** revokes its link. After changing networks, use **Refresh Address**. Modify the document and verify the update on another device, then continue working on your main screen.
 
 ## ❓ Troubleshooting
 

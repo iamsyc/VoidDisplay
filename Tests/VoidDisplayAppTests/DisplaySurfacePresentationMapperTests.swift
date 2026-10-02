@@ -99,7 +99,7 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(compactValue("displays_issue_status", in: surface).isEmpty)
         #expect(surface.accessibilitySummary.contains("Preview: Previewing"))
         #expect(surface.accessibilitySummary.contains("Web Sharing: Sharing"))
-        #expect(surface.accessibilitySummary.contains("Viewers: 3"))
+        #expect(surface.accessibilitySummary.contains(SharingConnectionText.status(3)))
         #expect(!surface.accessibilitySummary.contains("Issue:"))
         let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
         #expect(stopPreviewAction.title == "Stop")

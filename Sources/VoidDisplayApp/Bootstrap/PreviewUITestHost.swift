@@ -4,6 +4,7 @@ import SwiftUI
 import VoidDisplayCapture
 import VoidDisplayFoundation
 import VoidDisplayRuntime
+import VoidDisplaySharing
 
 /// Seeds a failed or active lease, then opens the same preview scene used by Home.
 /// The UI, controller, lifecycle service and runtime remain real; capture acquisition is isolated.
@@ -47,7 +48,18 @@ struct PreviewUITestHost<HomeContent: View>: View {
 private enum PreviewUITestFailure: Error { case unavailable }
 
 @MainActor
-enum PreviewUITestFixture {
+enum UITestCaptureFixture {
+    static func acquireShare() -> DisplaySharingCoordinator.AcquireShare? {
+        guard UITestRuntime.isEnabled else { return nil }
+        return { display, _ in
+            .started(DisplayShareSubscription(
+                displayID: display.displayID,
+                shareFrameConsumer: UITestShareConsumer(),
+                cancelClosure: {}
+            ))
+        }
+    }
+
     static func acquirePreview() -> CapturePreviewLifecycleService.AcquirePreview? {
         guard UITestRuntime.isEnabled else { return nil }
         var shouldFail = UITestRuntime.scenario == .previewRecovery
@@ -59,7 +71,7 @@ enum PreviewUITestFixture {
             return .started(DisplayPreviewSubscription(
                 displayID: display.displayID,
                 resolutionText: "\(display.width) × \(display.height)",
-                session: UITestPreviewCaptureSession(),
+                session: UITestCaptureSession(),
                 cancelClosure: {},
                 setShowsCursorClosure: { _ in }
             ))
@@ -67,7 +79,7 @@ enum PreviewUITestFixture {
     }
 }
 
-private final class UITestPreviewShareConsumer: DisplayShareFrameConsumer, @unchecked Sendable {
+private final class UITestShareConsumer: DisplayShareFrameConsumer, @unchecked Sendable {
     nonisolated var hasDemand: Bool { false }
     nonisolated func updateSourceVideoSpec(_: SourceVideoSpec) {}
     nonisolated func updatePerformanceMode(_: CapturePerformanceMode) {}
@@ -75,9 +87,9 @@ private final class UITestPreviewShareConsumer: DisplayShareFrameConsumer, @unch
     nonisolated func submitFrame(pixelBuffer _: CVPixelBuffer, ptsUs _: UInt64) {}
 }
 
-private final class UITestPreviewCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
+private final class UITestCaptureSession: DisplayCaptureSessioning, @unchecked Sendable {
     nonisolated func setTerminationHandler(_: @escaping @Sendable () -> Void) {}
-    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = UITestPreviewShareConsumer()
+    nonisolated let shareFrameConsumer: any DisplayShareFrameConsumer = UITestShareConsumer()
     nonisolated func attachPreviewSink(_: any DisplayPreviewSink) {}
     nonisolated func detachPreviewSink(_: any DisplayPreviewSink) {}
     nonisolated func stopSharing() {}

@@ -110,6 +110,8 @@ extension DisplayRuntime {
     ) -> Bool {
         let surfacesToResolve: [DisplayRuntimeAffectedSurface]
         switch kind {
+        case .virtualDisplayApplyEnabledSet:
+            surfacesToResolve = []
         case .virtualDisplayDisable, .virtualDisplayDelete:
             surfacesToResolve = affectedSurfaces.filter { $0.reason != .requestedConfig }
         case .virtualDisplayRebuild, .virtualDisplayEnable, .virtualDisplayEditRebuild, .virtualDisplayCreate,

@@ -15,7 +15,10 @@ __DISPLAY_PAGE_STYLES__
                 <p class="eyebrow" id="hero-eyebrow">VoidDisplay Live</p>
             </div>
             <div class="hero-metadata">
-                <div class="video-info" id="video-info"></div>
+                <details>
+                    <summary id="video-details-label">Stream details</summary>
+                    <div class="video-info" id="video-info"></div>
+                </details>
                 <div class="hero-actions">
                     <div class="controls">
                         <button class="control-btn" id="scale-mode-btn" type="button">1:1</button>
@@ -35,6 +38,7 @@ __DISPLAY_PAGE_STYLES__
         <footer class="footer">
             <p class="footnote" id="footnote">Use `1:1` for original size and `Fullscreen` for immersive view.</p>
             <div class="connection-status" id="connection-status">
+                <button class="control-btn" id="retry-btn" type="button" hidden>Retry</button>
                 <div class="connection-status-title" id="connection-status-title">Connecting…</div>
                 <div class="connection-status-detail" id="connection-status-detail">Preparing the WebRTC stream.</div>
             </div>

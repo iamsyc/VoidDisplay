@@ -119,6 +119,7 @@ function makeHarness({ includeCodecPreferenceAPI = true } = {}) {
     });
 
     return {
+        windowObject,
         codecPreferences,
         controller,
         getPeer: () => peerInstance,
@@ -193,4 +194,43 @@ test("close prevents an old track callback from entering streaming state", async
     assert.equal(harness.getStreamingStartedCount(), 0);
     assert.deepEqual(harness.transitions, ["negotiating"]);
     assert.equal(harness.monitors[0].startedWith, null);
+});
+
+test("a replaced peer cannot send an offer after its pending description completes", async () => {
+    const harness = makeHarness();
+    let finishDescription;
+    let descriptionStarted;
+    const entered = new Promise(resolve => { descriptionStarted = resolve; });
+    const oldStart = harness.controller.start();
+    const oldPeer = harness.getPeer();
+    oldPeer.setLocalDescription = async description => {
+        descriptionStarted();
+        await new Promise(resolve => { finishDescription = resolve; });
+        oldPeer.localDescription = description;
+    };
+    await entered;
+    await harness.controller.start();
+    assert.equal(harness.signals.length, 1);
+    finishDescription();
+    await oldStart;
+    assert.equal(harness.signals.length, 1);
+    assert.deepEqual(harness.transitions, ["negotiating"]);
+    assert.equal(harness.getPeer().closed, undefined);
+    harness.controller.close();
+});
+
+test("a replaced track timeout cannot close the current peer", async () => {
+    const harness = makeHarness();
+    await harness.controller.start();
+    let fireTimeout;
+    harness.windowObject.setTimeout = callback => { fireTimeout = callback; return 1; };
+    harness.windowObject.clearTimeout = () => {};
+    const oldTrack = harness.getPeer().ontrack({ streams: [{ id: "old-stream" }] });
+    await harness.controller.start();
+    const replacement = harness.getPeer();
+    fireTimeout();
+    await oldTrack;
+    assert.equal(replacement.closed, undefined);
+    assert.deepEqual(harness.transitions, ["negotiating", "negotiating"]);
+    harness.controller.close();
 });

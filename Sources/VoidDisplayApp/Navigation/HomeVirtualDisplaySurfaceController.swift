@@ -26,6 +26,8 @@ package final class HomeVirtualDisplaySurfaceController {
     package var actionAlert: UserFacingAlertState?
     package var sharingPortInput: String
     package var sharingPortErrorMessage: String?
+    package var contentGuideConfigID: UUID?
+    package private(set) var previewFailureConfigID: UUID?
 
     private var displayDetectionState = HomeDisplayDetectionState()
     private var catalogSurfaceRegistration: DisplayRuntimeCatalogSurfaceRegistration?
@@ -111,7 +113,9 @@ package final class HomeVirtualDisplaySurfaceController {
                 item: item,
                 isFirst: items.first?.id == item.id,
                 isLast: items.last?.id == item.id,
-                isToggling: viewModel.isToggling(configId: item.id),
+                isToggling: viewModel.isToggling(configId: item.id) || displayRuntime.makeSnapshot().transactions.activeTransactions.contains {
+                    $0.targetConfigID == item.id && [.virtualDisplayEnable, .virtualDisplayDisable].contains($0.kind)
+                },
                 isRebuilding: virtualDisplay.isRebuilding(configId: item.id),
                 hasRecentApplySuccess: virtualDisplay.hasRecentApplySuccess(configId: item.id),
                 rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: item.id),
@@ -221,9 +225,19 @@ package final class HomeVirtualDisplaySurfaceController {
         for item: HomeVirtualDisplayItemPresentation,
         openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void,
         openSharePage: @escaping @MainActor (URL) -> Void,
-        editConfig: @escaping @MainActor (UUID) -> Void
+        editConfig: @escaping @MainActor (UUID) -> Void,
+        openShareWindow: @escaping @MainActor (UUID) -> Void = { _ in }
     ) {
         switch action {
+        case .retryEnable:
+            Task {
+                do { try await virtualDisplay.setVirtualDisplayDesiredEnabled(configId: item.id, enabled: true) }
+                catch { presentActionError(title: String(localized: "Enable Failed"), message: error.localizedDescription) }
+            }
+        case .shareDetails:
+            openShareWindow(item.id)
+        case .contentGuide:
+            contentGuideConfigID = contentGuideConfigID == item.id ? nil : item.id
         case .toggle:
             guard let config = virtualDisplay.getConfig(item.id) else { return }
             viewModel.toggleDisplayState(config)
@@ -237,7 +251,7 @@ package final class HomeVirtualDisplaySurfaceController {
             if item.isSharing {
                 stopWebView(item)
             } else {
-                startWebView(item)
+                startWebView(item, openShareWindow: openShareWindow)
             }
         case .openSharePage:
             guard item.isSharing,
@@ -274,16 +288,20 @@ package final class HomeVirtualDisplaySurfaceController {
     package func performMenuBarAction(
         _ action: MenuBarVirtualDisplayAction,
         for item: HomeVirtualDisplayItemPresentation,
-        openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
+        openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void,
+        openShareWindow: @escaping @MainActor (UUID) -> Void = { _ in }
     ) {
         switch action {
+        case .shareDetails:
+            openShareWindow(item.id)
         case .toggle:
             perform(
                 .toggle,
                 for: item,
                 openPreviewWindow: openPreviewWindow,
                 openSharePage: { _ in },
-                editConfig: { _ in }
+                editConfig: { _ in },
+                openShareWindow: openShareWindow
             )
         case .openPreview:
             startPreview(item, openPreviewWindow: openPreviewWindow)
@@ -293,7 +311,8 @@ package final class HomeVirtualDisplaySurfaceController {
                 for: item,
                 openPreviewWindow: openPreviewWindow,
                 openSharePage: { _ in },
-                editConfig: { _ in }
+                editConfig: { _ in },
+                openShareWindow: openShareWindow
             )
         case .copyShareAddress:
             copyShareAddress(item)
@@ -353,41 +372,61 @@ package final class HomeVirtualDisplaySurfaceController {
         _ item: HomeVirtualDisplayItemPresentation,
         openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
     ) {
-        guard let displayID = item.displayID else { return }
         Task {
-            if let existingSession = previewActions.previewIDForDisplayID(displayID) {
-                openPreviewWindow(existingSession)
-                return
-            }
-            guard let display = await resolveDisplay(displayID: displayID) else {
-                presentActionError(
-                    title: String(localized: "Start Preview Failed"),
-                    message: String(localized: "Display is not available for preview.")
+            await openPreview(configID: item.id, openPreviewWindow: openPreviewWindow)
+        }
+    }
+
+    package func handleCreatedDisplay(
+        _ outcome: CreatedDisplayOutcome,
+        openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
+    ) async {
+        contentGuideConfigID = outcome.configID
+        if outcome.shouldOpenPreview {
+            await openPreview(configID: outcome.configID, openPreviewWindow: openPreviewWindow)
+        }
+    }
+
+    package func openPreview(
+        configID: UUID,
+        openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
+    ) async {
+        let displayID = presentation.items.first(where: { $0.id == configID })?.displayID
+        if let displayID, let existingSession = previewActions.previewIDForDisplayID(displayID) {
+            previewFailureConfigID = nil
+            openPreviewWindow(existingSession)
+            return
+        }
+        guard let displayID, let display = await resolveDisplay(displayID: displayID) else {
+            previewFailureConfigID = configID
+            contentGuideConfigID = configID
+            presentActionError(
+                title: String(localized: "Start Preview Failed"),
+                message: String(localized: "Display is not available for preview.")
+            )
+            return
+        }
+        do {
+            let outcome = try await previewActions.startPreview(
+                display,
+                CapturePreviewDisplayMetadata(
+                    displayName: displayName(for: display),
+                    resolutionText: resolutionText(for: display),
+                    isVirtualDisplay: true
                 )
-                return
+            )
+            if case .started(let previewID) = outcome {
+                previewFailureConfigID = nil
+                openPreviewWindow(previewID)
             }
-            do {
-                let outcome = try await previewActions.startPreview(
-                    display,
-                    CapturePreviewDisplayMetadata(
-                        displayName: displayName(for: display),
-                        resolutionText: resolutionText(for: display),
-                        isVirtualDisplay: true
-                    )
-                )
-                if case .started(let previewID) = outcome {
-                    openPreviewWindow(previewID)
-                }
-            } catch is CancellationError {
-            } catch {
-                presentActionError(
-                    title: String(localized: "Start Preview Failed"),
-                    message: AppErrorMapper.userMessage(
-                        for: error,
-                        fallback: String(localized: "Failed to start preview.")
-                    )
-                )
-            }
+        } catch is CancellationError {
+        } catch {
+            previewFailureConfigID = configID
+            contentGuideConfigID = configID
+            presentActionError(
+                title: String(localized: "Start Preview Failed"),
+                message: AppErrorMapper.userMessage(for: error, fallback: String(localized: "Failed to start preview."))
+            )
         }
     }
 
@@ -401,7 +440,7 @@ package final class HomeVirtualDisplaySurfaceController {
         }
     }
 
-    private func startWebView(_ item: HomeVirtualDisplayItemPresentation) {
+    private func startWebView(_ item: HomeVirtualDisplayItemPresentation, openShareWindow: @escaping @MainActor (UUID) -> Void) {
         guard let displayID = item.displayID else { return }
         Task {
             guard await prepareWebViewSharing() else { return }
@@ -413,10 +452,11 @@ package final class HomeVirtualDisplaySurfaceController {
                 return
             }
             do {
-                _ = try await sharingAdapter.beginLANWebViewSharing(
+                let outcome = try await sharingAdapter.beginLANWebViewSharing(
                     display: display,
                     runtime: displayRuntime
                 )
+                if case .started = outcome { openShareWindow(item.id) }
             } catch is CancellationError {
             } catch {
                 presentActionError(

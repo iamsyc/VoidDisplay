@@ -95,7 +95,7 @@ struct FeedbackBundleExporterTests {
         #expect(manifest.consent.includeCrashReportExcerpt == false)
         #expect(manifest.consent.includeRelatedConfigSnapshots == false)
         #expect(state.sections["runtime"] != nil)
-        #expect(state.sections["runtime"]?.objectValue?["schemaVersion"]?.intValue == 6)
+        #expect(state.sections["runtime"]?.objectValue?["schemaVersion"]?.intValue == 7)
         #expect(state.sections["runtime"]?.objectValue?["latestFailure"]?.objectValue?["code"]?.stringValue == "fixture_failure")
         #expect(state.sections["runtime"]?.objectValue?["latestFailure"]?.objectValue?["sequence"]?.intValue == 7)
         #expect(commandInvocationCount == 0)
@@ -577,7 +577,7 @@ private func makeStateSnapshot() -> ObservabilityStateSnapshot {
         sections: [
             "capture": .object(["sessions": .array([])]),
             "runtime": .object([
-                "schemaVersion": .number(6),
+                "schemaVersion": .number(7),
                 "surfaces": .array([]),
                 "latestFailure": .object(["code": .string("fixture_failure"), "sequence": .number(7)])
             ])

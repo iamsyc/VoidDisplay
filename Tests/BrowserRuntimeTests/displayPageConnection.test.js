@@ -31,6 +31,7 @@ test("connection start reports a missing WebSocket without starting a peer", () 
         bootstrap: { iceServers: [] },
         ui: {
             t: (key) => key,
+            setRetryAvailable() {},
             setConnectionStatus: (...args) => statusUpdates.push(args),
             setLoadingOverlayVisible: (visible) => overlayVisibility.push(visible)
         },
@@ -97,6 +98,7 @@ function makeConnectionHarness({ fetchPage = async () => ({ status: 200 }), star
         bootstrap: { iceServers: [] },
         ui: {
             t: (key) => key,
+            setRetryAvailable() {},
             setConnectionStatus: (...args) => statusUpdates.push(args),
             setLoadingOverlayVisible: (visible) => { overlayVisible = visible; },
             setProgressOverlay: (...args) => { statusUpdates.push(args); overlayVisible = true; }
@@ -232,3 +234,80 @@ test("stopping during a sharing-page check prevents a late reconnection", async 
     assert.equal(harness.sockets.length, 1);
     assert.equal(harness.timers.size, 0);
 });
+
+test("manual retry clears the pending timer and replaces the existing socket", async () => {
+    const harness = makeConnectionHarness();
+    harness.controller.start();
+    harness.sockets[0].emit("close");
+    assert.equal(harness.timers.size, 1);
+    await harness.controller.retry();
+    assert.equal(harness.timers.size, 0);
+    assert.equal(harness.sockets.length, 2);
+    harness.sockets[0].emit("close");
+    assert.equal(harness.timers.size, 0);
+    harness.controller.stop();
+});
+
+test("manual retry cannot restart a revoked link", async () => {
+    const harness = makeConnectionHarness({ fetchPage: async () => ({ status: 404 }) });
+    harness.controller.start();
+    await harness.controller.retry();
+    await harness.controller.retry();
+    assert.equal(harness.requests.length, 1);
+    assert.equal(harness.sockets.length, 1);
+    assert.equal(harness.timers.size, 0);
+});
+
+test("an older reconnect response cannot revoke a manually retried connection", async () => {
+    let completeOldRequest;
+    let requests = 0;
+    const harness = makeConnectionHarness({ fetchPage: () => ++requests === 1
+        ? new Promise(resolve => { completeOldRequest = resolve; })
+        : Promise.resolve({ status: 200 }) });
+    harness.controller.start();
+    harness.sockets[0].emit("close");
+    const oldReconnect = harness.runTimer();
+    await harness.controller.retry();
+    completeOldRequest({ status: 404 });
+    await oldReconnect;
+    assert.equal(harness.sockets.length, 2);
+    assert.notEqual(harness.statusUpdates.at(-1)[0], "overlaySharingStoppedTitle");
+    harness.controller.stop();
+});
+
+for (const pendingOperation of ["initial start", "peer retry", "answer"]) {
+    test(`manual retry ignores a late failure from an old ${pendingOperation}`, async () => {
+        let rejectOldOperation;
+        let startCount = 0;
+        const pending = () => new Promise((_, reject) => { rejectOldOperation = reject; });
+        const harness = makeConnectionHarness({
+            startPeer: () => ++startCount === (pendingOperation === "peer retry" ? 2 : 1)
+                && pendingOperation !== "answer" ? pending() : Promise.resolve(),
+            applyAnswer: pending
+        });
+        harness.controller.start();
+        let oldTask = harness.sockets[0].emit("open");
+        if (pendingOperation !== "initial start") {
+            await oldTask;
+            if (pendingOperation === "answer") {
+                oldTask = harness.sockets[0].emit("message", { data: JSON.stringify({ type: "answer", sdp: "old-answer" }) });
+            } else {
+                harness.getPeerOptions().schedulePeerRetry("retry", "retry");
+                oldTask = harness.runTimer();
+            }
+        } else {
+            await Promise.resolve();
+        }
+        assert.equal(typeof rejectOldOperation, "function");
+        await harness.controller.retry();
+        const replacement = harness.sockets[1];
+        await replacement.emit("open");
+        assert.equal(replacement.readyState, 1);
+        rejectOldOperation(new Error("Operation completed after its peer was closed"));
+        await oldTask;
+        assert.equal(replacement.readyState, 1);
+        assert.equal(harness.timers.size, 0);
+        assert.equal(harness.getPeerOptions().getConnectionState(), "signalingReady");
+        harness.controller.stop();
+    });
+}

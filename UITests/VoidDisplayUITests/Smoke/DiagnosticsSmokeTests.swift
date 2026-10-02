@@ -158,10 +158,11 @@ final class DiagnosticsSmokeTests: XCTestCase {
                 lhs.frame.width < rhs.frame.width
             }
         )
-        for _ in 0..<5 where exportButton.isHittable == false {
+        for _ in 0..<5 where !exportButton.isHittable || !window.frame.contains(exportButton.frame) {
             scrollView.scroll(byDeltaX: 0, deltaY: -320)
         }
         XCTAssertTrue(exportButton.isHittable)
+        XCTAssertTrue(window.frame.contains(exportButton.frame))
 
         exportButton.click()
 
@@ -176,16 +177,17 @@ final class DiagnosticsSmokeTests: XCTestCase {
         )
         XCTAssertTrue(window.frame.contains(validation.frame))
         XCTAssertTrue(happenedField.isHittable)
-        let focusedControl = app.descendants(matching: .any)
+        let focusedHappenedField = app.descendants(matching: .any)
+            .matching(identifier: "support_bundle_happened_field")
             .matching(NSPredicate(format: "hasKeyboardFocus == true"))
             .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(focusedControl, timeout: 2))
-        XCTAssertEqual(focusedControl.identifier, "support_bundle_happened_field")
+        XCTAssertTrue(waitForExistenceIfNeeded(focusedHappenedField, timeout: 2))
 
-        for _ in 0..<5 where exportButton.isHittable == false {
+        for _ in 0..<5 where !exportButton.isHittable || !window.frame.contains(exportButton.frame) {
             scrollView.scroll(byDeltaX: 0, deltaY: -320)
         }
         XCTAssertTrue(exportButton.isHittable)
+        XCTAssertTrue(window.frame.contains(exportButton.frame))
 
         exportButton.click()
 
@@ -195,11 +197,7 @@ final class DiagnosticsSmokeTests: XCTestCase {
             "Repeated validation feedback did not settle into the visible window."
         )
         XCTAssertTrue(window.frame.contains(validation.frame))
-        let refocusedControl = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "hasKeyboardFocus == true"))
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(refocusedControl, timeout: 2))
-        XCTAssertEqual(refocusedControl.identifier, "support_bundle_happened_field")
+        XCTAssertTrue(waitForExistenceIfNeeded(focusedHappenedField, timeout: 2))
 
         try performSmokeStep("Check diagnostic actions at narrow width") {
             try assertDiagnosticsActionsRemainVisibleAtNarrowWindowSize(app)

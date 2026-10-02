@@ -2,27 +2,22 @@ import AppKit
 import XCTest
 
 final class MenuBarQuickActionsSmokeTests: XCTestCase {
-    private struct MenuBarWindow {
-        let id: CGWindowID
-        let frame: CGRect
-    }
-
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     @MainActor
     func testPanelActions() throws {
-        let existingMenuBarWindowIDs = Set(controlCenterMenuBarWindows().map(\.id))
         let app = launchAppForSmoke(
             preferredPort: UITestPortAllocator.randomUnprivilegedPort(),
-            scenario: "menu_bar_quick_actions"
+            scenario: "menu_bar_quick_actions",
+            language: "en"
         )
         let mainWindow = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(mainWindow, timeout: 6))
         mainWindow.buttons[XCUIIdentifierCloseWindow].click()
         XCTAssertTrue(waitForAbsence(mainWindow, timeout: 2))
-        openQuickActionsPanel(app, excluding: existingMenuBarWindowIDs)
+        openQuickActionsPanel(app)
 
         assertAllExist(
             app,
@@ -38,7 +33,7 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
 
         let panel = smokeElement(app, identifier: "menu_bar_quick_actions_panel")
         XCTAssertLessThanOrEqual(panel.frame.width, 340)
-        XCTAssertLessThanOrEqual(panel.frame.height, 180)
+        XCTAssertLessThanOrEqual(panel.frame.height, 250)
 
         let summary = smokeElement(app, identifier: "menu_bar_runtime_summary")
         XCTAssertGreaterThan(panel.frame.height, summary.frame.height)
@@ -47,6 +42,8 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
             .matching(identifier: "menu_bar_virtual_display_row")
             .allElementsBoundByIndex
         XCTAssertEqual(rows.count, 2)
+        XCTAssertTrue(smokeElement(app, identifier: "display_scene_menu").exists)
+        XCTAssertTrue(rows.allSatisfy { $0.frame.height <= 80 })
         XCTAssertLessThan(rows[0].frame.minY, rows[1].frame.minY)
 
         XCTAssertEqual(app.buttons.matching(identifier: "menu_bar_web_view_button").count, 1)
@@ -92,7 +89,7 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
         let previewContent = assertExists(app, identifier: "capture_preview_content", timeout: 6)
         XCTAssertTrue(previewContent.exists)
 
-        openQuickActionsPanel(app, excluding: existingMenuBarWindowIDs)
+        openQuickActionsPanel(app)
         tapIdentifier(app, identifier: "menu_bar_open_main_window_button")
         assertExists(app, identifier: "detail_home", timeout: 4)
         XCTAssertFalse(smokeElement(app, identifier: "capture_preview_waiting_for_identity").exists)
@@ -100,11 +97,16 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
         let homeRows = app.descendants(matching: .any)
             .matching(identifier: "home_virtual_display_list_row")
         XCTAssertEqual(homeRows.count, 2)
-        let editedRow = homeRows.element(boundBy: 1)
+        let editedRow = homeRows.matching(NSPredicate(format: "label BEGINSWITH %@", "虚拟显示器 14 寸")).firstMatch
+        let editedMore = editedRow.descendants(matching: .any).matching(identifier: "home_virtual_display_more_button").firstMatch
+        let homeScroll = app.scrollViews.allElementsBoundByIndex.max { $0.frame.width < $1.frame.width }!
+        for _ in 0..<4 where !editedMore.isHittable { homeScroll.scroll(byDeltaX: 0, deltaY: -200) }
+        XCTAssertTrue(editedMore.isHittable)
 
         for enabled in [false, true] {
             performSmokeStep("Save preserves the menu bar's \(enabled ? "enabled" : "disabled") state") {
-                editedRow.buttons["virtual_display_edit_button"].click()
+                editedMore.click()
+                app.menuItems["virtual_display_edit_button"].click()
                 let form = assertExists(app, identifier: "edit_virtual_display_form")
                 let hiDPI = assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle")
                 let originalHiDPI = (hiDPI.value as? NSNumber)?.boolValue
@@ -117,7 +119,7 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
                 let editedHiDPI = (hiDPI.value as? NSNumber)?.boolValue
                 XCTAssertEqual(editedHiDPI, originalHiDPI.map { !$0 })
 
-                openQuickActionsPanel(app, excluding: existingMenuBarWindowIDs)
+                openQuickActionsPanel(app)
                 let menuToggle = rows[1].buttons["menu_bar_virtual_display_toggle_button"]
                 XCTAssertTrue(waitForHittable(menuToggle))
                 menuToggle.click()
@@ -141,7 +143,8 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
                 )
                 XCTAssertEqual(editedRow.switches["home_virtual_display_preview_toggle"].isEnabled, enabled)
 
-                editedRow.buttons["virtual_display_edit_button"].click()
+                editedMore.click()
+                app.menuItems["virtual_display_edit_button"].click()
                 XCTAssertEqual(
                     (assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle").value as? NSNumber)?.boolValue,
                     editedHiDPI,
@@ -151,6 +154,26 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
                 XCTAssertTrue(waitForAbsence(form, timeout: 2))
             }
         }
+        performSmokeStep("Sharing details reuse and stop") {
+            openQuickActionsPanel(app)
+            rows[0].buttons["menu_bar_web_view_button"].click()
+            assertExists(app, identifier: "sharing_session_window", timeout: 10)
+            assertExists(app, identifier: "sharing_access_address")
+            XCTAssertTrue(smokeElement(app, identifier: "sharing_stop_button").isHittable)
+            let sharingScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            sharingScreenshot.name = "Sharing details with isolated test route"
+            sharingScreenshot.lifetime = .keepAlways
+            add(sharingScreenshot)
+            let shareWindow = app.windows.containing(.any, identifier: "sharing_session_window").firstMatch
+            shareWindow.buttons[XCUIIdentifierCloseWindow].click()
+            openQuickActionsPanel(app)
+            rows[0].buttons["menu_bar_sharing_details_button"].click()
+            assertExists(app, identifier: "sharing_session_window")
+            XCTAssertEqual(app.windows.containing(.any, identifier: "sharing_session_window").count, 1)
+            tapIdentifier(app, identifier: "sharing_stop_button")
+            XCTAssertTrue(waitForAbsence(smokeElement(app, identifier: "sharing_access_address")))
+        }
+
     }
 
     @MainActor
@@ -163,70 +186,12 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
     }
 
     @MainActor
-    private func openQuickActionsPanel(
-        _ app: XCUIApplication,
-        excluding existingWindowIDs: Set<CGWindowID>
-    ) {
+    private func openQuickActionsPanel(_ app: XCUIApplication) {
         let panel = smokeElement(app, identifier: "menu_bar_quick_actions_panel")
         if panel.exists { return }
-
-        var targetFrame: CGRect?
-        XCTAssertTrue(
-            waitForCondition(timeout: 6) {
-                targetFrame = controlCenterMenuBarWindows()
-                    .first(where: { !existingWindowIDs.contains($0.id) })?
-                    .frame
-                return targetFrame != nil
-            },
-            "VoidDisplay did not register a new menu bar item window."
-        )
-        guard let targetFrame else { return }
-
-        let controlCenter = XCUIApplication(bundleIdentifier: "com.apple.controlcenter")
-        let clock = controlCenter.menuBars.statusItems
-            .matching(identifier: "com.apple.menuextra.clock")
-            .firstMatch
-        XCTAssertTrue(waitForExistenceIfNeeded(clock, timeout: 6))
-
-        clock.coordinate(withNormalizedOffset: .zero)
-            .withOffset(
-                CGVector(
-                    dx: targetFrame.midX - clock.frame.minX,
-                    dy: targetFrame.midY - clock.frame.minY
-                )
-            )
-            .click()
-
+        let statusItem = app.menuBars.statusItems.firstMatch
+        XCTAssertTrue(waitForHittable(statusItem, timeout: 6))
+        statusItem.click()
         XCTAssertTrue(waitForExistenceIfNeeded(panel, timeout: 6))
-    }
-
-    private func controlCenterMenuBarWindows() -> [MenuBarWindow] {
-        guard let processIdentifier = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.apple.controlcenter"
-        ).first?.processIdentifier else {
-            return []
-        }
-        let windowInfo = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] ?? []
-
-        return windowInfo.compactMap { entry in
-            guard (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == processIdentifier,
-                  (entry[kCGWindowLayer as String] as? NSNumber)?.intValue == 25,
-                  let windowID = (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
-                  let bounds = entry[kCGWindowBounds as String] as? [String: Any],
-                  let x = (bounds["X"] as? NSNumber)?.doubleValue,
-                  let y = (bounds["Y"] as? NSNumber)?.doubleValue,
-                  let width = (bounds["Width"] as? NSNumber)?.doubleValue,
-                  let height = (bounds["Height"] as? NSNumber)?.doubleValue
-            else {
-                return nil
-            }
-            return MenuBarWindow(
-                id: windowID,
-                frame: CGRect(x: x, y: y, width: width, height: height)
-            )
-        }
     }
 }

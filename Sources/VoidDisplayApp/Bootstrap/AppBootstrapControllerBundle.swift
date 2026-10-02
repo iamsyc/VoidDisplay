@@ -25,7 +25,7 @@ extension AppBootstrap {
             capturePreviewLifecycleService: CapturePreviewLifecycleService(
                 capturePreviewService: captureSharing.capturePreviewService,
                 captureRegistry: captureSharing.captureRegistry,
-                acquirePreview: PreviewUITestFixture.acquirePreview()
+                acquirePreview: UITestCaptureFixture.acquirePreview()
             ),
             catalogService: captureSharing.catalogService,
             observability: persistence.observability

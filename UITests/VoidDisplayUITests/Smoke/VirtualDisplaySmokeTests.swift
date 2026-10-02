@@ -16,6 +16,9 @@ final class VirtualDisplaySmokeTests: XCTestCase {
                 identifiers: ["virtual_display_create_form", "virtual_display_create_cancel_button"],
                 timeout: 3
             )
+            assertExists(app, identifier: "virtual_display_creation_template_picker")
+            assertExists(app, identifier: "virtual_display_create_preview_toggle")
+            tapIdentifier(app, identifier: "virtual_display_create_advanced_toggle")
             assertSingleFormLabel(app, english: "Screen Size", chinese: "屏幕尺寸")
             tapIdentifier(app, identifier: "virtual_display_create_custom_serial_toggle")
             assertSingleFormLabel(app, english: "Serial Number", chinese: "序列号")
@@ -24,6 +27,7 @@ final class VirtualDisplaySmokeTests: XCTestCase {
         }
 
         performSmokeStep("Edit form and cancel") {
+            tapIdentifier(app, identifier: "home_virtual_display_more_button")
             tapIdentifier(app, identifier: "virtual_display_edit_button", timeout: 3)
             assertAllExist(
                 app,
@@ -37,6 +41,7 @@ final class VirtualDisplaySmokeTests: XCTestCase {
         }
 
         performSmokeStep("Save the edited mode, reopen it and rebuild") {
+            tapIdentifier(app, identifier: "home_virtual_display_more_button")
             tapIdentifier(app, identifier: "virtual_display_edit_button")
             let hiDPI = assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle")
             let form = smokeElement(app, identifier: "edit_virtual_display_form")
@@ -53,6 +58,7 @@ final class VirtualDisplaySmokeTests: XCTestCase {
                 NSPredicate(format: "value IN %@", ["Applied", "已应用"])
             ).firstMatch
             XCTAssertFalse(appliedBadge.exists)
+            tapIdentifier(app, identifier: "home_virtual_display_more_button")
             tapIdentifier(app, identifier: "virtual_display_edit_button")
             XCTAssertEqual(
                 (assertExists(app, identifier: "virtual_display_edit_mode_hidpi_toggle").value as? NSNumber)?.boolValue,

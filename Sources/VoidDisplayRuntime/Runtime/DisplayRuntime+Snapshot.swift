@@ -35,7 +35,8 @@ extension DisplayRuntime {
             effectiveCaptureIntents: effectiveCaptureIntents,
             surfaceEpochs: currentSurfaceEpochSnapshot(),
             latestCaptureIntentRevision: currentLatestCaptureIntentRevision(),
-            latestFailure: latestFailure
+            latestFailure: latestFailure,
+            enabledSetApplication: enabledSetProgress
         )
     }
 
