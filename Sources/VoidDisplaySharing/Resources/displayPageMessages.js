@@ -1,5 +1,7 @@
 const messages = {
     en: {
+        retryConnection: "Retry now",
+        streamDetails: "Stream details",
         pageTitle: "Screen Share",
         heroEyebrow: "VoidDisplay Live",
         statusSignalingConnected: "Signaling connected",
@@ -47,6 +49,8 @@ const messages = {
         footnote: "Use `1:1` for original size and `Fullscreen` for immersive view."
     },
     zhHans: {
+        retryConnection: "立即重试",
+        streamDetails: "画面详情",
         pageTitle: "屏幕共享",
         heroEyebrow: "VOIDDISPLAY 实时画面",
         statusSignalingConnected: "信令已连接",

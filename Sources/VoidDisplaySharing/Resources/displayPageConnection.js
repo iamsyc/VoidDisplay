@@ -23,6 +23,7 @@
         let reconnectTimer = null;
         let terminalStop = false;
         let state = "idle";
+        let reconnectGeneration = 0;
 
         function transition(nextState) {
             if (terminalStop && nextState !== "closed") return;
@@ -65,6 +66,7 @@
             }
             const delay = reconnectDelayAt(reconnectDelays, reconnectIndex);
             reconnectIndex += 1;
+            ui.setRetryAvailable(true);
             ui.setProgressOverlay(overlayTitle, overlayBody);
             transition("handshaking");
             reconnectTimer = windowObject.setTimeout(async () => {
@@ -75,6 +77,7 @@
 
         async function reconnect() {
             if (terminalStop) return;
+            const generation = reconnectGeneration;
             try {
                 // WebSocket errors do not expose the HTTP status of a rejected upgrade.
                 // Reuse the protected page route to distinguish revocation from network loss.
@@ -82,7 +85,7 @@
                     cache: "no-store",
                     signal: windowObject.AbortSignal.timeout(5000)
                 });
-                if (terminalStop) return;
+                if (terminalStop || generation !== reconnectGeneration) return;
                 if (response.status === 404) {
                     finishSharing();
                     return;
@@ -92,6 +95,7 @@
                     return;
                 }
             } catch {
+                if (terminalStop || generation !== reconnectGeneration) return;
                 scheduleReconnect();
                 return;
             }
@@ -107,6 +111,7 @@
             }
             const delay = reconnectDelayAt(reconnectDelays, reconnectIndex);
             reconnectIndex += 1;
+            ui.setRetryAvailable(true);
             ui.setProgressOverlay(overlayTitle, overlayBody);
             transition("signalingReady");
             reconnectTimer = windowObject.setTimeout(async () => {
@@ -124,6 +129,7 @@
                     if (socket !== activeSocket || terminalStop) return;
                     ui.setProgressOverlay(ui.t("overlayNegotiatingTitle"), ui.t("overlayNegotiatingBody"));
                 } catch (error) {
+                    if (socket !== activeSocket || terminalStop) return;
                     handlePeerStartupError(error);
                 }
             }, delay);
@@ -137,6 +143,7 @@
         function failCodecRequirement(error) {
             if (terminalStop) return;
             terminalStop = true;
+            ui.setRetryAvailable(false);
             ui.setConnectionStatus(
                 ui.t("overlayCodecRequiredTitle"),
                 error?.message || ui.t("overlayCodecRequiredBody")
@@ -171,6 +178,7 @@
 
         function finishSharing() {
             terminalStop = true;
+            ui.setRetryAvailable(false);
             transition("closed");
             clearReconnectTimer();
             peerController.close();
@@ -195,6 +203,7 @@
             schedulePeerRetry,
             onStreamingStarted: () => {
                 reconnectIndex = 0;
+                ui.setRetryAvailable(false);
             },
             onConnectionLost: handlePeerConnectionLost,
             onCodecRequirementFailure: failCodecRequirement
@@ -236,6 +245,7 @@
                     if (socket !== webSocket || terminalStop) return;
                     ui.setProgressOverlay(ui.t("overlayNegotiatingTitle"), ui.t("overlayNegotiatingBody"));
                 } catch (error) {
+                    if (socket !== webSocket || terminalStop) return;
                     handlePeerStartupError(error);
                 }
             });
@@ -258,6 +268,7 @@
                                 ui.setConnectionStatus(ui.t("statusConnected"), ui.t("overlayLiveBody"));
                             }
                         } catch (error) {
+                            if (socket !== webSocket || terminalStop) return;
                             failCodecRequirement(error);
                         }
                         break;
@@ -278,6 +289,7 @@
                             break;
                         }
                         terminalStop = true;
+                        ui.setRetryAvailable(false);
                         ui.setConnectionStatus(
                             ui.t("overlayStreamErrorTitle"),
                             payload.reason || ui.t("overlayStreamErrorFallback")
@@ -313,6 +325,7 @@
 
         function stop() {
             terminalStop = true;
+            ui.setRetryAvailable(false);
             clearReconnectTimer();
             peerController.close();
             closeSocketAndClearReference();
@@ -323,7 +336,19 @@
             connect();
         }
 
-        return Object.freeze({ start, stop });
+        async function retry() {
+            if (terminalStop || state === "closed" || state === "stopping") return;
+            reconnectGeneration += 1;
+            clearReconnectTimer();
+            peerController.close();
+            closeSocketAndClearReference();
+            reconnectIndex = 0;
+            transition("handshaking");
+            ui.setRetryAvailable(false);
+            await reconnect();
+        }
+
+        return Object.freeze({ start, stop, retry });
     }
 
     namespace.connection = Object.freeze({

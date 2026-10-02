@@ -255,7 +255,7 @@ struct AppBootstrapTests {
         let runtimeSection = try #require(diagnostics.state.sections["runtime"])
         let runtime = try runtimeSection.decode(DisplayRuntimeSnapshot.self)
 
-        #expect(runtime.schemaVersion == 6)
+        #expect(runtime.schemaVersion == 7)
         #expect(diagnostics.state.sections["system"] != nil)
         #expect(diagnostics.state.sections["persistence"] != nil)
         #expect(diagnostics.state.sections["capture"] == nil)

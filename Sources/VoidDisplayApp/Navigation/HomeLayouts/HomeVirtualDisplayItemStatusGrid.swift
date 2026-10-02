@@ -71,6 +71,12 @@ package struct HomeVirtualDisplayItemStatusGrid: View {
                                 actions.perform(.webView, for: state)
                             }
                         )
+                    case "viewerCount":
+                        if item.isSharing {
+                            Text(SharingConnectionText.status(item.viewerCount))
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("home_viewer_count")
+                        }
                     default:
                         HomeInlineStatusText(item: statusItem)
                     }

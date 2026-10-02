@@ -46,6 +46,7 @@
         const stage = documentObject.querySelector(".stage");
         const scaleModeBtn = documentObject.getElementById("scale-mode-btn");
         const fullscreenBtn = documentObject.getElementById("fullscreen-btn");
+        const retryBtn = documentObject.getElementById("retry-btn");
         const locale = resolveLocale(navigatorObject);
         const currentMessages = messagesObject[locale] || messagesObject.en;
         let originalScaleEnabled = false;
@@ -60,6 +61,9 @@
 
         function applyStaticCopy() {
             documentObject.title = t("pageTitle");
+            if (retryBtn) retryBtn.textContent = t("retryConnection");
+            const details = documentObject.getElementById("video-details-label");
+            if (details) details.textContent = t("streamDetails");
             if (heroEyebrowEl) {
                 heroEyebrowEl.textContent = t("heroEyebrow");
             }
@@ -132,6 +136,7 @@
 
         return Object.freeze({
             player,
+            setRetryAvailable(available) { if (retryBtn) retryBtn.hidden = !available; },
             setConnectionStatus,
             setLoadingOverlayVisible,
             setProgressOverlay,

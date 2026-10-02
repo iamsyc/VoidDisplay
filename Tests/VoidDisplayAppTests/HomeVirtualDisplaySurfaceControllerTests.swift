@@ -189,6 +189,34 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         #expect(environment.virtualDisplay.persistenceAlert == nil)
     }
 
+    @Test func creationWithoutPreviewOnlyOpensTheGuideForItsConfig() async throws {
+        let facade = makeFacade()
+        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        let configID = try #require(facade.currentDisplayConfigs.last?.id)
+        await controller.handleCreatedDisplay(.init(configID: configID, shouldOpenPreview: false)) { _ in
+            Issue.record("Preview must stay closed")
+        }
+        #expect(controller.contentGuideConfigID == configID)
+        #expect(environment.displayRuntime.currentConsumerLeaseSnapshot().isEmpty)
+    }
+
+    @Test func failedCreatedDisplayPreviewKeepsTheConfigAndRetryTarget() async throws {
+        let facade = makeFacade()
+        let configs = facade.currentDisplayConfigs
+        let configID = try #require(configs.last?.id)
+        facade.runtimeDisplayIDByConfigId[configID] = nil
+        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        for _ in 0..<2 {
+            await controller.handleCreatedDisplay(.init(configID: configID, shouldOpenPreview: true)) { _ in
+                Issue.record("Unavailable display must not open a preview")
+            }
+            #expect(controller.contentGuideConfigID == configID)
+            #expect(controller.previewFailureConfigID == configID)
+            #expect(environment.virtualDisplay.displayConfigs == configs)
+            #expect(environment.displayRuntime.currentConsumerLeaseSnapshot().isEmpty)
+        }
+    }
+
     private func makeFacade() -> MockVirtualDisplayFacade {
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [UInt32(9_904), 9_905].map { serial in

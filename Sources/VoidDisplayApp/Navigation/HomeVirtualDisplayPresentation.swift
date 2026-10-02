@@ -242,7 +242,7 @@ package enum HomeVirtualDisplayPresentationMapper {
             ),
             DisplaySurfaceStatusItemPresentation(
                 id: "viewerCount",
-                title: String(localized: "Viewers"),
+                title: String(localized: "Connections"),
                 value: "0",
                 accessibilityIdentifier: "home_viewer_count"
             )

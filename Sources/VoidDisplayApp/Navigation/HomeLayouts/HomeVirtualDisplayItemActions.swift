@@ -38,7 +38,11 @@ package struct HomeVirtualDisplayItemActionCluster: View {
     package var body: some View {
         HStack(spacing: AppUI.Spacing.xSmall + 2) {
             HomeVirtualDisplayItemCopyShareAddressButton(state: state, actions: actions)
-            HomeVirtualDisplayItemEditButton(state: state, actions: actions)
+            if state.item.isSharing {
+                Button("Sharing Details") { actions.perform(.shareDetails, for: state) }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("home_sharing_details_button")
+            }
             HomeVirtualDisplayItemMoreMenu(state: state, actions: actions)
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -144,36 +148,6 @@ package struct HomeVirtualDisplayItemCopyShareAddressButton: View {
     }
 }
 
-package struct HomeVirtualDisplayItemEditButton: View {
-    package let state: HomeVirtualDisplayItemRenderState
-    package let actions: HomeLayoutActions
-
-    package init(
-        state: HomeVirtualDisplayItemRenderState,
-        actions: HomeLayoutActions
-    ) {
-        self.state = state
-        self.actions = actions
-    }
-
-    package var body: some View {
-        Button {
-            actions.perform(.edit, for: state)
-        } label: {
-            Image(systemName: "square.and.pencil")
-                .font(.callout)
-                .frame(width: AppUI.Spacing.large, height: AppUI.Spacing.large)
-        }
-        .appActionButtonStyle(variant: .default)
-        .disabled(state.isBusy)
-        .controlSize(.small)
-        .frame(minWidth: 32)
-        .help(Text("Edit"))
-        .accessibilityLabel(Text("Edit"))
-        .accessibilityIdentifier("virtual_display_edit_button")
-    }
-}
-
 package struct HomeVirtualDisplayItemMoreMenu: View {
     package let state: HomeVirtualDisplayItemRenderState
     package let actions: HomeLayoutActions
@@ -198,6 +172,14 @@ package struct HomeVirtualDisplayItemMoreMenu: View {
 
     package var body: some View {
         Menu {
+            Button("Edit", systemImage: "square.and.pencil") { actions.perform(.edit, for: state) }
+                .disabled(state.isBusy)
+                .accessibilityIdentifier("virtual_display_edit_button")
+            Divider()
+            Button("Put content on this display", systemImage: "questionmark.circle") {
+                actions.perform(.contentGuide, for: state)
+            }
+            Divider()
             if shareAddress != nil {
                 Button("Open Share Page", systemImage: "link") {
                     actions.perform(.openSharePage, for: state)

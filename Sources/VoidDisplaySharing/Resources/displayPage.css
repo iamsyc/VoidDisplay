@@ -247,3 +247,6 @@ body.mode-native video {
         font-size: 12px;
     }
 }
+
+.control-btn[hidden] { display: none; }
+summary { cursor: pointer; }

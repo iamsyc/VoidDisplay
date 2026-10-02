@@ -36,7 +36,7 @@ struct DiagnosticsDisplaySystemPanel: View {
                     tint: .cyan
                 )
                 DiagnosticsMetricTile(
-                    title: String(localized: "Active Viewers"),
+                    title: String(localized: "Connections"),
                     value: "\(runtimeSummary.activeViewerCount)",
                     systemImage: "person.2",
                     tint: .green

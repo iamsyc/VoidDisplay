@@ -97,7 +97,7 @@ static func virtualDisplayStatus(
             case .virtualDisplayEditRebuild:
                 return trace.targetConfigID == configID
                     || trace.affectedSurfaces.contains { $0.identity == .managedVirtualDisplay(configID: configID) }
-            case .virtualDisplayDisable, .virtualDisplayCreate, .virtualDisplayDelete:
+            case .virtualDisplayApplyEnabledSet, .virtualDisplayDisable, .virtualDisplayCreate, .virtualDisplayDelete:
                 return false
             }
         }
@@ -120,7 +120,7 @@ static func virtualDisplayStatus(
                     || trace.affectedSurfaces.contains {
                         $0.identity == .managedVirtualDisplay(configID: configID)
                     }
-            case .virtualDisplayDisable, .virtualDisplayCreate, .virtualDisplayDelete:
+            case .virtualDisplayApplyEnabledSet, .virtualDisplayDisable, .virtualDisplayCreate, .virtualDisplayDelete:
                 return false
             }
         }

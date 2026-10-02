@@ -6,9 +6,13 @@ extension AppBootstrap {
         configuration: AppBootstrapConfiguration,
         persistence: AppBootstrapPersistenceBundle,
         controllers: AppBootstrapControllerBundle,
-        runtime: AppBootstrapRuntimeBundle
+        runtime: AppBootstrapRuntimeBundle,
+        displayScenes: DisplaySceneController
     ) -> Task<Void, Never> {
         Task { @MainActor in
+            await persistence.observability.registerSnapshotProvider(
+                AnyObservabilitySnapshotProvider(DisplaySceneSnapshotProvider(controller: displayScenes))
+            )
             await persistence.observability.registerSnapshotProvider(
                 AnyObservabilitySnapshotProvider(
                     DisplayRuntimeSnapshotProvider(runtime: runtime.displayRuntime)

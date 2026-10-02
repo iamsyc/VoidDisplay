@@ -18,7 +18,7 @@ extension DisplayRuntime {
         case .virtualDisplayDisable, .virtualDisplayRebuild, .virtualDisplayEditRebuild, .virtualDisplayDelete,
              .virtualDisplayStartupRestore:
             intents = pauseIntents
-        case .virtualDisplayCreate:
+        case .virtualDisplayApplyEnabledSet, .virtualDisplayCreate:
             intents = []
         }
         return makeSessionRestoreIntents(

@@ -87,6 +87,7 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     func testDisplayRescanJourney() throws {
         let app = launchAppForSmoke(
+            windowSize: (width: 1180, height: 720),
             scenario: "display_catalog_loading_missing_managed_display"
         )
 
@@ -196,7 +197,8 @@ final class HomeSmokeTests: XCTestCase {
     private func assertDisplayRescanControlsRemainStableWhileScanning(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
-        resizeWindow(window, to: CGSize(width: 1180, height: 720))
+        XCTAssertEqual(window.frame.width, 1180, accuracy: 6)
+        XCTAssertEqual(window.frame.height, 720, accuracy: 6)
         let toolbarRescanIdentifier = "home_rescan_displays_button"
         let inlineRescanIdentifier = "home_virtual_display_rescan_button"
         let toolbarRescanButton = assertExists(
@@ -327,9 +329,9 @@ final class HomeSmokeTests: XCTestCase {
             identifier: "home_rescan_displays_button",
             timeout: 6
         )
-        let summary = assertExists(
+        let topControl = assertExists(
             app,
-            identifier: "home_summary_status_strip",
+            identifier: "display_scene_menu",
             timeout: 6
         )
         let scrollView = try XCTUnwrap(
@@ -343,12 +345,12 @@ final class HomeSmokeTests: XCTestCase {
         }
         XCTAssertTrue(rescanButton.isEnabled)
 
-        for _ in 0..<6 where summary.isHittable {
+        for _ in 0..<6 where topControl.isHittable {
             scrollView.scroll(byDeltaX: 0, deltaY: -240)
         }
         XCTAssertFalse(
-            summary.isHittable,
-            "Test precondition failed: the Home content did not scroll away from its top."
+            topControl.isHittable,
+            "Test precondition failed: the top scene control did not scroll out of view."
         )
 
         rescanButton.click()
@@ -379,7 +381,6 @@ final class HomeSmokeTests: XCTestCase {
                 "virtual_display_toggle_button",
                 "home_virtual_display_preview_toggle",
                 "home_virtual_display_web_view_toggle",
-                "virtual_display_edit_button",
                 "home_virtual_display_more_button",
                 "home_add_virtual_display_button"
             ],
@@ -430,7 +431,6 @@ final class HomeSmokeTests: XCTestCase {
             "virtual_display_toggle_button",
             "home_virtual_display_preview_toggle",
             "home_virtual_display_web_view_toggle",
-            "virtual_display_edit_button",
             "home_virtual_display_more_button"
         ]
         for identifier in ["home_add_virtual_display_button"] + minimumWidthIdentifiers {

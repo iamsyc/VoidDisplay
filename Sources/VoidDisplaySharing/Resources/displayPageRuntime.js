@@ -19,5 +19,6 @@
         peerAPI: runtime.peer
     });
 
+    root.document.getElementById("retry-btn")?.addEventListener("click", () => connection.retry());
     connection.start();
 })(window);

@@ -82,14 +82,20 @@ package enum AppBootstrap {
             captureSharing: captureSharing,
             capturePerformancePreferences: persistence.capturePerformancePreferences
         )
+        let displayScenes = DisplaySceneController(
+            store: DisplaySceneStore(context: persistence.context),
+            runtime: runtime.displayRuntime, virtualDisplay: controllers.virtualDisplay
+        )
         let startupTask = makeStartupTask(
             configuration: configuration,
             persistence: persistence,
             controllers: controllers,
-            runtime: runtime
+            runtime: runtime,
+            displayScenes: displayScenes
         )
 
         return AppEnvironment(
+            displayScenes: displayScenes,
             capture: controllers.capture,
             observability: persistence.observability,
             sharing: controllers.sharing,

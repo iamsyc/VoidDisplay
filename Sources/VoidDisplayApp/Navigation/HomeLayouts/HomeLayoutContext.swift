@@ -3,6 +3,9 @@ import SwiftUI
 import VoidDisplayFoundation
 
 package enum HomeVirtualDisplayItemAction {
+    case retryEnable
+    case shareDetails
+    case contentGuide
     case toggle
     case preview
     case webView
@@ -166,6 +169,8 @@ package struct HomeLayoutContext {
     package let metrics: HomeLayoutMetrics
     package let presentation: HomeVirtualDisplaySurfacePresentation
     package let itemStates: [HomeVirtualDisplayItemRenderState]
+    package let contentGuideConfigID: UUID?
+    package let previewFailureConfigID: UUID?
     package let isCreateVirtualDisplayDisabled: Bool
     package let showsRescanToolbarTitle: Bool
     package let permissionStatus: HomePermissionStatusRenderState
@@ -185,6 +190,8 @@ package struct HomeLayoutContext {
         metrics: HomeLayoutMetrics,
         presentation: HomeVirtualDisplaySurfacePresentation,
         itemStates: [HomeVirtualDisplayItemRenderState],
+        contentGuideConfigID: UUID?,
+        previewFailureConfigID: UUID?,
         isCreateVirtualDisplayDisabled: Bool,
         showsRescanToolbarTitle: Bool,
         permissionStatus: HomePermissionStatusRenderState,
@@ -195,6 +202,8 @@ package struct HomeLayoutContext {
         self.metrics = metrics
         self.presentation = presentation
         self.itemStates = itemStates
+        self.contentGuideConfigID = contentGuideConfigID
+        self.previewFailureConfigID = previewFailureConfigID
         self.isCreateVirtualDisplayDisabled = isCreateVirtualDisplayDisabled
         self.showsRescanToolbarTitle = showsRescanToolbarTitle
         self.permissionStatus = permissionStatus

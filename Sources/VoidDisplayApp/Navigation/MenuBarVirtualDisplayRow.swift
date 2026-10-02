@@ -21,32 +21,29 @@ package struct MenuBarVirtualDisplayRow: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: AppUI.Spacing.xSmall + 2) {
+            identity
+
             HStack(alignment: .center, spacing: AppUI.Spacing.small) {
-                identity
+                toggleButton
 
-                if !showsSupplementalActions {
-                    toggleButton
+                if showsPreviewAction {
+                    previewButton
                 }
-            }
 
-            if showsSupplementalActions {
-                HStack(alignment: .center, spacing: AppUI.Spacing.small) {
-                    toggleButton
-
-                    if showsPreviewAction {
-                        previewButton
-                    }
-
-                    if showsWebViewAction {
-                        webViewButton
-                    }
-
-                    if item.shareAddress != nil {
-                        copyButton
-                    }
-
-                    Spacer(minLength: 0)
+                if showsWebViewAction {
+                    webViewButton
                 }
+
+                if item.shareAddress != nil {
+                    copyButton
+                    Button("Sharing Details", systemImage: "qrcode") { performAction(.shareDetails) }
+                        .labelStyle(.iconOnly)
+                        .controlSize(.small)
+                        .help(Text("Sharing Details"))
+                        .accessibilityIdentifier("menu_bar_sharing_details_button")
+                }
+
+                Spacer(minLength: 0)
             }
         }
         .padding(.vertical, AppUI.Spacing.xSmall + 2)
@@ -58,10 +55,6 @@ package struct MenuBarVirtualDisplayRow: View {
         .task(id: copyFeedback.revision) {
             await hideCopyConfirmationAfterDelay(revision: copyFeedback.revision)
         }
-    }
-
-    private var showsSupplementalActions: Bool {
-        showsPreviewAction || showsWebViewAction || item.shareAddress != nil
     }
 
     private var showsPreviewAction: Bool {
@@ -86,7 +79,7 @@ package struct MenuBarVirtualDisplayRow: View {
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
-                Text(item.subtitle)
+                Text(item.isSharing ? SharingConnectionText.status(item.viewerCount) : item.subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

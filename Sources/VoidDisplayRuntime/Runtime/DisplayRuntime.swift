@@ -68,8 +68,9 @@ package final class DisplayRuntime {
     @ObservationIgnored var virtualDisplayTransactionQueueTail: Task<Void, Never>?
     @ObservationIgnored var coalescibleVirtualDisplayTransactionTail: ActiveVirtualDisplayCoalescibleTail?
     var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]
+    var enabledSetProgress: DisplayRuntimeEnabledSetProgress?
     var recentTransactionTraces: [DisplayRuntimeTransactionTrace] = []
-    @ObservationIgnored var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
+    var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
     @ObservationIgnored var activeStartupRestoreCoalescedRequestCount = 0
     var completedStartupRestoreResult: DisplayRuntimeStartupRestoreResult?
 

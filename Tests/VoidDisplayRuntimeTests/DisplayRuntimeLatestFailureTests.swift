@@ -48,7 +48,7 @@ struct DisplayRuntimeLatestFailureTests {
         #expect(runtime.makeSnapshot().latestFailure == .init(code: "second", sequence: 4))
         let encoded = try JSONEncoder().encode(runtime.makeSnapshot())
         let decoded = try JSONDecoder().decode(DisplayRuntimeSnapshot.self, from: encoded)
-        #expect(decoded.schemaVersion == 6)
+        #expect(decoded.schemaVersion == 7)
         #expect(decoded.latestFailure == runtime.makeSnapshot().latestFailure)
     }
 

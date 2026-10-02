@@ -45,6 +45,7 @@ package nonisolated struct DisplayRuntimeTransactionSnapshotEvidence: Codable, E
 }
 
 package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, Sendable {
+    package let enabledSetResult: DisplayRuntimeEnabledSetResult?
     package let id: DisplayRuntimeTransactionID
     package let kind: DisplayRuntimeTransactionKind
     package let source: DisplayRuntimeTransactionSource
@@ -110,8 +111,10 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         startupRestoreRunID: DisplayRuntimeStartupRestoreRunID? = nil,
         startupConfigLoadResult: DisplayRuntimeStartupRestoreConfigLoadTrace? = nil,
         startupRestoreIntent: DisplayRuntimeStartupRestoreIntent? = nil,
-        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil
+        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil,
+        enabledSetResult: DisplayRuntimeEnabledSetResult? = nil
     ) {
+        self.enabledSetResult = enabledSetResult
         self.id = id
         self.kind = kind
         self.source = source
@@ -179,7 +182,8 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
         startupRestoreRunID: DisplayRuntimeStartupRestoreRunID? = nil,
         startupConfigLoadResult: DisplayRuntimeStartupRestoreConfigLoadTrace? = nil,
         startupRestoreIntent: DisplayRuntimeStartupRestoreIntent? = nil,
-        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil
+        startupRestoreCommandResult: DisplayRuntimeStartupRestoreCommandTrace? = nil,
+        enabledSetResult: DisplayRuntimeEnabledSetResult? = nil
     ) -> Self {
         Self(
             id: id,
@@ -213,7 +217,8 @@ package nonisolated struct DisplayRuntimeTransactionTrace: Codable, Equatable, S
             startupRestoreRunID: startupRestoreRunID ?? self.startupRestoreRunID,
             startupConfigLoadResult: startupConfigLoadResult ?? self.startupConfigLoadResult,
             startupRestoreIntent: startupRestoreIntent ?? self.startupRestoreIntent,
-            startupRestoreCommandResult: startupRestoreCommandResult ?? self.startupRestoreCommandResult
+            startupRestoreCommandResult: startupRestoreCommandResult ?? self.startupRestoreCommandResult,
+            enabledSetResult: enabledSetResult ?? self.enabledSetResult
         )
     }
 }

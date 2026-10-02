@@ -16,6 +16,37 @@ package struct HomeListRows: View {
                     actions: context.actions
                 )
                 .accessibilityIdentifier("home_virtual_display_list_row")
+                if state.item.desiredEnabled && !state.item.isRunning && state.item.hasIssue {
+                    HStack {
+                        Text("This display could not start. Retry enabling it or edit its settings.").font(.callout)
+                        Button("Retry Enable") { context.actions.perform(.retryEnable, for: state) }
+                            .disabled(state.isToggling || state.isRebuilding)
+                    }
+                }
+                if context.contentGuideConfigID == state.id {
+                    GroupBox {
+                        VStack(alignment: .leading) {
+                            DisplayContentGuideView(displayName: state.item.title)
+                            HStack {
+                                if context.previewFailureConfigID == state.id {
+                                    Button("Retry Preview") {
+                                        context.actions.perform(.preview, for: state)
+                                    }
+                                    .disabled(state.isPreviewStarting || state.isToggling || state.isRebuilding)
+                                    .accessibilityIdentifier("created_display_retry_preview_button")
+                                    Button("Screen Recording Settings") {
+                                        context.actions.openScreenCapturePrivacySettings()
+                                    }
+                                }
+                                Spacer()
+                                Button("Close") {
+                                    context.actions.perform(.contentGuide, for: state)
+                                }
+                            }
+                        }
+                        .padding(context.metrics.itemVerticalPadding)
+                    }
+                }
             }
         }
         .accessibilityIdentifier("home_virtual_display_list")
