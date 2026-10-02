@@ -17,9 +17,7 @@ struct DisplaySceneControllerTests {
             modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)], desiredEnabled: false)
         facade.currentDisplayConfigs = [config]
         facade.enableRuntimeDisplayError = NSError(domain: "injected", code: 1)
-        let environment = AppBootstrap.makeEnvironment(preview: true,
-            capturePreviewService: MockCapturePreviewService(), sharingService: MockSharingService(),
-            virtualDisplayFacade: facade, startupPlan: .skipAll, isRunningUnderXCTestOverride: true)
+        let environment = makeSceneEnvironment(facade: facade)
         let controller = DisplaySceneController(store: fixture.store, runtime: environment.displayRuntime, virtualDisplay: environment.virtualDisplay)
         let accepted = try environment.displayRuntime.prepareVirtualDisplayEnabledSet(targetConfigIDs: [config.id])
         let duplicate = try environment.displayRuntime.prepareVirtualDisplayEnabledSet(targetConfigIDs: [config.id])
@@ -44,9 +42,7 @@ struct DisplaySceneControllerTests {
             modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)], desiredEnabled: false)
         facade.currentDisplayConfigs = [config]
         facade.enableRuntimeDisplayError = NSError(domain: "injected", code: 1)
-        let environment = AppBootstrap.makeEnvironment(preview: true,
-            capturePreviewService: MockCapturePreviewService(), sharingService: MockSharingService(),
-            virtualDisplayFacade: facade, startupPlan: .skipAll, isRunningUnderXCTestOverride: true)
+        let environment = makeSceneEnvironment(facade: facade)
         let controller = DisplaySceneController(store: fixture.store, runtime: environment.displayRuntime, virtualDisplay: environment.virtualDisplay)
         controller.apply(try environment.displayRuntime.prepareVirtualDisplayEnabledSet(targetConfigIDs: [config.id]))
         #expect(await waitUntil { controller.lastResult != nil })
@@ -69,9 +65,7 @@ struct DisplaySceneControllerTests {
         facade.currentDisplayConfigs = [config]
         facade.currentRunningConfigIds = [config.id]
         facade.runtimeDisplayIDByConfigId = [config.id: 9901]
-        let environment = AppBootstrap.makeEnvironment(preview: true,
-            capturePreviewService: MockCapturePreviewService(), sharingService: MockSharingService(),
-            virtualDisplayFacade: facade, startupPlan: .skipAll, isRunningUnderXCTestOverride: true)
+        let environment = makeSceneEnvironment(facade: facade)
         let controller = DisplaySceneController(store: fixture.store, runtime: environment.displayRuntime, virtualDisplay: environment.virtualDisplay)
         try fixture.store.save(name: "Demo", enabledConfigIDs: [config.id])
         environment.displayRuntime.recordFailure(code: "historical_failure")
@@ -99,4 +93,23 @@ struct DisplaySceneControllerTests {
         #expect(!String(decoding: data, as: UTF8.self).contains(scene.name))
         #expect(!String(decoding: data, as: UTF8.self).contains(config.id.uuidString))
     }
+}
+
+@MainActor
+private func makeSceneEnvironment(
+    facade: MockVirtualDisplayFacade
+) -> (displayRuntime: DisplayRuntime, virtualDisplay: VirtualDisplayController) {
+    // These controller tests stop at the injected display failure or read facade state.
+    // Keep system catalog loading and app startup diagnostics outside this fixture.
+    let adapter = DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade)
+    let runtime = DisplayRuntime(
+        virtualDisplayProvider: adapter,
+        virtualDisplayCommander: adapter
+    )
+    let virtualDisplay = VirtualDisplayController(
+        virtualDisplayFacade: facade,
+        runtimeExecutors: AppBootstrap.makeVirtualDisplayRuntimeExecutors(runtime: runtime),
+        appliedBadgeDisplayDuration: .zero
+    )
+    return (runtime, virtualDisplay)
 }

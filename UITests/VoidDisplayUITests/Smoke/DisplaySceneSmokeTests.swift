@@ -5,7 +5,10 @@ final class DisplaySceneSmokeTests: XCTestCase {
 
     @MainActor func testSaveApplyAndRepairJourney() throws {
         let app = launchAppForSmoke()
-        tapIdentifier(app, identifier: "display_scene_save_current_button", timeout: 8)
+        let saveCurrent = assertExists(app, identifier: "display_scene_save_current_button", timeout: 8)
+        XCTAssertTrue(waitForCondition(timeout: 8) { saveCurrent.isEnabled },
+            "Saving a scene must become available after startup restoration settles.")
+        saveCurrent.click()
         let name = assertExists(app, identifier: "display_scene_name_field")
         let sceneName = try XCTUnwrap(name.value as? String)
         XCTAssertFalse(sceneName.isEmpty)

@@ -327,9 +327,9 @@ final class HomeSmokeTests: XCTestCase {
             identifier: "home_rescan_displays_button",
             timeout: 6
         )
-        let summary = assertExists(
+        let topControl = assertExists(
             app,
-            identifier: "home_summary_status_strip",
+            identifier: "display_scene_menu",
             timeout: 6
         )
         let scrollView = try XCTUnwrap(
@@ -343,12 +343,12 @@ final class HomeSmokeTests: XCTestCase {
         }
         XCTAssertTrue(rescanButton.isEnabled)
 
-        for _ in 0..<6 where summary.isHittable {
+        for _ in 0..<6 where topControl.isHittable {
             scrollView.scroll(byDeltaX: 0, deltaY: -240)
         }
         XCTAssertFalse(
-            summary.isHittable,
-            "Test precondition failed: the Home content did not scroll away from its top."
+            topControl.isHittable,
+            "Test precondition failed: the top scene control did not scroll out of view."
         )
 
         rescanButton.click()
