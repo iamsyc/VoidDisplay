@@ -70,7 +70,7 @@ package final class DisplayRuntime {
     var activeTransactionTracesByID: [DisplayRuntimeTransactionID: DisplayRuntimeTransactionTrace] = [:]
     var enabledSetProgress: DisplayRuntimeEnabledSetProgress?
     var recentTransactionTraces: [DisplayRuntimeTransactionTrace] = []
-    @ObservationIgnored var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
+    var activeStartupRestoreTask: Task<DisplayRuntimeStartupRestoreResult, Never>?
     @ObservationIgnored var activeStartupRestoreCoalescedRequestCount = 0
     var completedStartupRestoreResult: DisplayRuntimeStartupRestoreResult?
 

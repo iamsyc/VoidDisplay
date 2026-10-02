@@ -87,6 +87,7 @@ final class HomeSmokeTests: XCTestCase {
     @MainActor
     func testDisplayRescanJourney() throws {
         let app = launchAppForSmoke(
+            windowSize: (width: 1180, height: 720),
             scenario: "display_catalog_loading_missing_managed_display"
         )
 
@@ -196,7 +197,8 @@ final class HomeSmokeTests: XCTestCase {
     private func assertDisplayRescanControlsRemainStableWhileScanning(_ app: XCUIApplication) {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
-        resizeWindow(window, to: CGSize(width: 1180, height: 720))
+        XCTAssertEqual(window.frame.width, 1180, accuracy: 6)
+        XCTAssertEqual(window.frame.height, 720, accuracy: 6)
         let toolbarRescanIdentifier = "home_rescan_displays_button"
         let inlineRescanIdentifier = "home_virtual_display_rescan_button"
         let toolbarRescanButton = assertExists(

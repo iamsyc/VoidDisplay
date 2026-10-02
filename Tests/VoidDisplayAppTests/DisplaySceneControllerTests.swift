@@ -8,6 +8,33 @@ import Testing
 
 @MainActor
 struct DisplaySceneControllerTests {
+    @Test func startupRestoreKeepsSceneActionsBusyBetweenDisplayTransactions() async throws {
+        let fixture = try SceneStoreFixture()
+        defer { fixture.remove() }
+        let facade = MockVirtualDisplayFacade()
+        facade.currentDisplayConfigs = [1, 2].map { serial in
+            VirtualDisplayConfig(displayName: "Display \(serial)", serialNum: UInt32(serial),
+                physicalWidth: 300, physicalHeight: 190,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)], desiredEnabled: true)
+        }
+        let recorder = SceneStartupRecorder()
+        let environment = makeSceneEnvironment(facade: facade, recorder: recorder)
+        let runtime = environment.displayRuntime
+        let controller = DisplaySceneController(store: fixture.store, runtime: runtime, virtualDisplay: environment.virtualDisplay)
+        var busyStatesBetweenDisplays: [Bool] = []
+        recorder.onRefresh = { [weak runtime, weak controller] in
+            guard let runtime, let controller,
+                  facade.startupRestoreCommandRequests.count == 1,
+                  runtime.makeSnapshot().transactions.activeTransactions.isEmpty else { return }
+            busyStatesBetweenDisplays.append(controller.isBusy)
+        }
+        _ = await runtime.restoreStartupVirtualDisplays()
+        #expect(!busyStatesBetweenDisplays.isEmpty)
+        #expect(busyStatesBetweenDisplays.allSatisfy { $0 })
+        #expect(facade.startupRestoreCommandRequests.count == 2)
+        #expect(!controller.isBusy)
+    }
+
     @Test func repeatedApplicationPreservesTheAcceptedBatchResult() async throws {
         let fixture = try SceneStoreFixture()
         defer { fixture.remove() }
@@ -97,14 +124,18 @@ struct DisplaySceneControllerTests {
 
 @MainActor
 private func makeSceneEnvironment(
-    facade: MockVirtualDisplayFacade
+    facade: MockVirtualDisplayFacade,
+    recorder: SceneStartupRecorder? = nil
 ) -> (displayRuntime: DisplayRuntime, virtualDisplay: VirtualDisplayController) {
-    // These controller tests stop at the injected display failure or read facade state.
-    // Keep system catalog loading and app startup diagnostics outside this fixture.
+    // Exercise controller state with real runtime wiring, without system catalog loading.
+    // Startup tests observe the boundary between transactions through the recorder.
     let adapter = DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade)
     let runtime = DisplayRuntime(
         virtualDisplayProvider: adapter,
-        virtualDisplayCommander: adapter
+        virtualDisplayCommander: adapter,
+        startupRestoreCommander: adapter,
+        observabilityRecorder: recorder,
+        topologyWaitPolicy: .init(requiredStableSampleCount: 1, maximumSampleCount: 1, sampleIntervalNanoseconds: 0)
     )
     let virtualDisplay = VirtualDisplayController(
         virtualDisplayFacade: facade,
@@ -112,4 +143,12 @@ private func makeSceneEnvironment(
         appliedBadgeDisplayDuration: .zero
     )
     return (runtime, virtualDisplay)
+}
+
+@MainActor
+private final class SceneStartupRecorder: DisplayRuntimeObservabilityRecording {
+    var onRefresh: (() -> Void)?
+
+    func record(_ event: DisplayRuntimeObservabilityEvent) async {}
+    func refreshSnapshot(reason: DisplayRuntimeObservabilityRefreshReason) async { onRefresh?() }
 }

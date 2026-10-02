@@ -110,7 +110,7 @@ scripts/ci/xcode.sh --action build --configuration Debug \
 
 `DisplaySceneStore` 使用 PersistenceContext 的隔离目录与写入保护，在 `display-scenes.json` 保存 schema 1。每条记录只有 UUID、名称和启用配置 ID 集合。写入原子完成后发布内存值。加载失败阻止覆盖保存；重置只影响场景文件。删除显示器保留缺失引用，避免跨文件联动写入。
 
-AppBootstrap 创建一份 `DisplaySceneController`，主窗口和菜单栏共用。控制器在创建异步任务前同步占用提交状态，重复申请不能覆盖有效批次的结果归属；结果发布后解除占用。匹配由有效引用、当前启用意图、运行集合及无活动事务派生，历史 `latestFailure` 不影响匹配。独立消费者故障保留其恢复入口。
+AppBootstrap 创建一份 `DisplaySceneController`，主窗口和菜单栏共用。控制器在创建异步任务前同步占用提交状态，重复申请不能覆盖有效批次的结果归属；结果发布后解除占用。启动恢复的忙状态覆盖整个恢复任务，包含逐屏子事务之间的诊断等待，防止场景按钮在启动间隙短暂启用；恢复任务完成后通过 Observation 更新入口。匹配由有效引用、当前启用意图、运行集合及无活动事务派生，历史 `latestFailure` 不影响匹配。独立消费者故障保留其恢复入口。
 
 Runtime 的 `prepareVirtualDisplayEnabledSet` 记录参数、启用意图、实例和受管理消费者身份；`applyVirtualDisplayEnabledSet` 占用单个事务队列位置，实际开始时重新比较计划。连接数不参与过期判断。子步骤调用现有生命周期执行体，先启用后停用，失败、取消或恢复失败停止剩余步骤，保留部分结果。每步返回或抛错后及批次终态解除忙状态前，同步 `onStateSettled` 回读 VirtualDisplayController 缓存。
 

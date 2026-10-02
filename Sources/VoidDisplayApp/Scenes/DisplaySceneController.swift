@@ -19,7 +19,10 @@ package final class DisplaySceneController {
     }
 
     package var configs: [VirtualDisplayConfig] { virtualDisplay.displayConfigs }
-    package var isBusy: Bool { isApplying || !runtime.makeSnapshot().transactions.activeTransactions.isEmpty }
+    package var isBusy: Bool {
+        isApplying || runtime.isRestoringStartupVirtualDisplays
+            || !runtime.makeSnapshot().transactions.activeTransactions.isEmpty
+    }
     package var desiredConfigIDs: [UUID] { runtime.makeSnapshot().virtualDisplay.configs.filter(\.desiredEnabled).map(\.id) }
     package var currentCombinationIsSettled: Bool {
         !isBusy && Set(desiredConfigIDs) == Set(runtime.makeSnapshot().virtualDisplay.runningConfigIDs)
