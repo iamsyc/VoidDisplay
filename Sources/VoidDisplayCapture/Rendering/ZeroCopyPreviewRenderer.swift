@@ -5,7 +5,8 @@ import SwiftUI
 import Synchronization
 
 @Observable
-package final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreviewSink {
+@MainActor
+package final class ZeroCopyPreviewRenderer: DisplayPreviewSink {
     package struct MetricsSnapshot: Sendable {
         var receivedFrameCount: UInt64
         var renderedFrameCount: UInt64
@@ -14,13 +15,13 @@ package final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreview
         var pendingSlotOccupied: Bool
     }
 
-    private struct PendingFrame {
+    private struct PendingFrame: Sendable {
         let buffer: UncheckedSendableBuffer
         let submittedAtNanoseconds: UInt64
         let generation: UInt64
     }
 
-    private struct State {
+    private struct State: Sendable {
         var pendingFrame: PendingFrame?
         var isDraining = false
         var activeDrainToken: UInt64?
@@ -44,9 +45,8 @@ package final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreview
 
     nonisolated private let state = Mutex(State())
     @ObservationIgnored
-    @MainActor var willEnqueueFrameForTesting: (() -> Void)?
+    var willEnqueueFrameForTesting: (() -> Void)?
 
-    @MainActor
     package init() {}
 
     package nonisolated func submitFrame(_ sampleBuffer: CMSampleBuffer) {
@@ -96,7 +96,6 @@ package final class ZeroCopyPreviewRenderer: @unchecked Sendable, DisplayPreview
         }
     }
 
-    @MainActor
     private func drainLoop(drainToken: UInt64) {
         while true {
             let nextFrame = state.withLock { state -> PendingFrame? in

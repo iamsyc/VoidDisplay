@@ -9,6 +9,18 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct WebServerSocketIntegrationTests {
+    @Test func socketWriteAfterShutdownThrowsWithoutTerminatingProcess() async throws {
+        let setup = try await startMainSignalServer(sessionHub: TestSignalSessionHub())
+        defer { setup.server.stopListener() }
+        let socket = try await connectLoopbackSocket(port: setup.port)
+        defer { close(socket) }
+
+        #expect(shutdown(socket, SHUT_WR) == 0)
+        #expect(throws: SocketIntegrationError.self) {
+            try sendAll(socket, data: Data([0]))
+        }
+    }
+
     private static let mainAliasShareID: UInt32 = 5
     private static let replacementMainAliasShareID: UInt32 = 6
     private static let mainDisplayPath = ShareTarget.main.displayPath(
@@ -742,9 +754,8 @@ private func probeOversizedFrameClose(
 
             let oversizedChunk = makeIncompleteMaskedFrameChunk(
                 announcedPayloadLength: 900_000,
-                partialPayloadBytes: 180_000
+                partialPayloadBytes: 0
             )
-            try sendAll(socketFD, data: oversizedChunk)
             try sendAll(socketFD, data: oversizedChunk)
             let didClose = try waitForCloseOrEOF(from: socketFD, deadlineSeconds: 15)
             guard didClose else {

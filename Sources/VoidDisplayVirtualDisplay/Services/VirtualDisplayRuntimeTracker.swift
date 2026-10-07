@@ -126,7 +126,7 @@ package final class VirtualDisplayRuntimeTracker {
         AppLog.virtualDisplay.debug(
             "Create runtime display begin (config: \(config.id.uuidString, privacy: .public), serial: \(config.serialNum, privacy: .public), generation: \(generation, privacy: .public), pendingGenerationBeforeCreate: \(String(describing: self.runtimeGenerationByConfigId[config.id]), privacy: .public))."
         )
-        let task = Task {
+        let task = Task { [self] in
             try await runtimeDriver.createRuntimeDisplay(
                 descriptor: runtimeDescriptor(from: config, maximumPixelDimensions: maxPixels),
                 onTermination: { [weak self] in
