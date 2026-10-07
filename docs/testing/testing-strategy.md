@@ -52,6 +52,8 @@ UI 用例按用户旅程组织，分为 Home、VirtualDisplay、Preview、Diagno
 
 ## 本地验证
 
+显示画质、编码槽位对照与分阶段指标的可执行入口见[显示质量与编码延迟基准](./display-quality-benchmark.md)。其合成硬件结果与真实采集/跨设备验收分开报告。
+
 日常完整本地入口：
 
 ```bash
@@ -116,7 +118,7 @@ scripts/dev/build_signed_runtime.sh
 
 ### 原生显示模式与进程回收验收
 
-`VirtualDisplayModeSelectionTests` 覆盖尺寸、HiDPI 和刷新率选择；`VirtualDisplayProcessTests` 使用无显示器副作用的子进程覆盖 EOF、提前退出、无效响应、超时、取消和管道断开。`VirtualDisplayRuntimeTrackerTests` 覆盖创建中的序列号占用、取消、reset、配置删除和 generation 竞争。
+`VirtualDisplayModeSelectionTests` 覆盖尺寸、HiDPI 和刷新率选择；`VirtualDisplayProcessTests` 使用无显示器副作用的子进程覆盖 EOF、提前退出、无效响应、超时、取消和管道断开，并用模式提供者替身验证正常/意外退出只恢复存活屏幕、保留用户所选模式、恢复先于终止通知。`VirtualDisplayRuntimeTrackerTests` 覆盖创建中的序列号占用、取消、reset、配置删除和 generation 竞争。
 
 需要实际创建原生显示器时，先完成上述开发签名构建，再单独运行：
 
@@ -126,7 +128,7 @@ scripts/dev/verify_display_host.sh \
   .ai-tmp/display-host-acceptance
 ```
 
-该验收创建序列号 `4000932` 的临时显示器，覆盖小尺寸普通模式、HiDPI、同序列号重复创建、59.94 Hz、120 Hz、进程终止和父进程退出，逐次核对实际逻辑尺寸、像素尺寸与回收结果。序列号已在线时会中止。测试不改应用保存配置，结果写入 `native-acceptance.json`，原始显示列表必须保持一致。这个入口有真实显示副作用，不加入普通单元或 UI 自动化门禁；应用内的编辑、重建、预览和共享仍需通过签名 App 验收。
+该验收创建序列号 `4000932`、`4000933` 的临时显示器。6 个宿主场景覆盖小尺寸普通模式、HiDPI、同序列号重复创建、59.94 Hz、120 Hz、进程终止和父进程退出，结果写入 `native-acceptance.json`。随后构建并运行 `DisplayHostAcceptance`，在 AppKit 事件循环中使用产品的 `CGVirtualDisplayRuntimeDriver`，启动同一签名 App 内的宿主；8 个双屏场景分别在 1080p 和 4K 下关闭先创建或后创建的屏幕，覆盖 EOF 和意外终止，结果写入 `native-driver-acceptance.json`。逐次核对实际逻辑尺寸、像素尺寸、其他屏幕模式和回收结果，任一测试序列号已在线时中止，失败时也等待原始显示列表恢复。测试不改应用保存配置。这个入口有真实显示副作用，不加入普通单元或 UI 自动化门禁；应用内的编辑、重建、预览和共享仍需通过签名 App 验收。
 
 ## 环境故障分类
 

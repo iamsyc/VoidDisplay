@@ -144,23 +144,7 @@ if [[ "$RUN_GO_TESTS" == "true" ]]; then
 	go_status="$(parallel_job_status go)"
 fi
 
-swift_test_count="$(
-	awk '
-    match($0, /Test run with [0-9]+ tests?/) {
-      line = substr($0, RSTART, RLENGTH)
-      sub("Test run with ", "", line)
-      sub(" tests?", "", line)
-      total = line
-    }
-    END {
-      if (total == "") {
-        print "0"
-      } else {
-        print total
-      }
-    }
-  ' "$SWIFT_LOG"
-)"
+swift_test_count="$(count_swift_tests "$SWIFT_LOG")"
 
 if [[ "$swift_test_count" == "0" ]]; then
 	write_unit_summary failed swiftpm_zero_tests

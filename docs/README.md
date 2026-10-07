@@ -13,6 +13,7 @@
 ## 开发文档
 
 - [当前架构](./architecture.md)：组件职责、控制平面、数据平面和依赖边界。
+- [显示质量与编码延迟基准](./testing/display-quality-benchmark.md)：合成图案、槽位对照、画质误差和阶段诊断。
 - [测试策略](./testing/testing-strategy.md)：测试分层、环境隔离和本地验证入口。
 - [CI Workflows](./testing/ci-workflows.md)：远程门禁、工作流矩阵和发布验证。
 - 根目录 [AGENTS.md](../AGENTS.md)：分支、交付、验证和自动化约束。

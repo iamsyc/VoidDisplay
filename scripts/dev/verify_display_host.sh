@@ -9,11 +9,16 @@ source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 source "$TOOL_ROOT/scripts/lib/common.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
+# shellcheck source=scripts/lib/xcode.sh
+source "$TOOL_ROOT/scripts/lib/xcode.sh"
+
+cd "$ROOT_DIR"
+require_xcode_build_environment
 
 SUMMARY="${1:?Usage: verify_display_host.sh signed-runtime-summary.json [output-directory]}"
 OUT_DIR="${2:-$(make_artifact_dir display-host-acceptance)}"
 mkdir -p "$OUT_DIR"
-require_command jq xcrun codesign
+require_command jq xcrun codesign swift rg
 APP_PATH="$(jq -er 'select(.status == "passed") | .app_path' "$SUMMARY")"
 HOST_PATH="$APP_PATH/Contents/MacOS/VoidDisplayHost"
 [[ -x "$HOST_PATH" ]] || die "Signed display host is missing: $HOST_PATH"
@@ -32,7 +37,7 @@ CGGetOnlineDisplayList(count, &ids, &count)
 let result = ids.prefix(Int(count)).map { id -> [String: Any] in
     var data: [String: Any] = ["displayID": id, "serial": CGDisplaySerialNumber(id), "isMain": CGDisplayIsMain(id) != 0]
     if let mode = CGDisplayCopyDisplayMode(id) {
-        data.merge(["width": mode.width, "height": mode.height, "pixelWidth": mode.pixelWidth,
+        data.merge(["modeID": mode.ioDisplayModeID, "width": mode.width, "height": mode.height, "pixelWidth": mode.pixelWidth,
                     "pixelHeight": mode.pixelHeight, "refreshRate": mode.refreshRate]) { _, value in value }
     }
     return data
@@ -50,40 +55,48 @@ def line_with_timeout(process):
         selector.register(process.stdout, selectors.EVENT_READ)
         assert selector.select(5), 'Host readiness timed out'
         return json.loads(process.stdout.readline())
-def wait_for_baseline():
+def wait_for_displays(expected):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        if inspect() == baseline:
+        actual = inspect()
+        if actual == expected:
             return
         time.sleep(.1)
-    raise AssertionError('Temporary display remained online or original displays changed')
-def request(hidpi=False, hz=60, large=False):
-    return dict(name='VoidDisplay native acceptance', serialNumber=4000932,
+    raise AssertionError(f'Display set or surviving mode changed: expected {expected}, actual {actual}')
+def request(hidpi=False, hz=60, large=False, serial=4000932):
+    return dict(name='VoidDisplay native acceptance', serialNumber=serial,
                 physicalSize=[531, 299] if large else [310, 174],
                 maximumPixelDimensions=dict(width=3840 if hidpi else 1920, height=2160 if hidpi else 1080),
                 modes=[dict(width=1920, height=1080, refreshRate=hz, isHiDPI=hidpi)])
-def check_ready(ready, hidpi, hz):
+def check_ready(ready, hidpi, hz, expected_others):
+    assert 'ready' in ready, ready
     display_id = ready['ready']['displayID']
     displays = inspect()
     actual = next(d for d in displays if d['displayID'] == display_id)
     assert (actual['width'], actual['height']) == (1920, 1080), actual
     assert (actual['pixelWidth'], actual['pixelHeight']) == ((3840, 2160) if hidpi else (1920, 1080)), actual
     assert round(actual['refreshRate']) == round(hz), actual
-    assert [d for d in displays if d['displayID'] != display_id] == baseline
+    others = [d for d in displays if d['displayID'] != display_id]
+    assert others == expected_others, dict(expected_others=expected_others, actual_others=others)
     return actual
+def host_request(settings):
+    return dict(descriptor=settings, preservedModes=[])
+def start_host(settings):
+    child = subprocess.Popen([host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    children.append(child)
+    child.stdin.write(json.dumps(host_request(settings)) + '\n')
+    child.stdin.flush()
+    return child, line_with_timeout(child)
 baseline = inspect()
-assert not any(d['serial'] == 4000932 for d in baseline), 'Acceptance serial is already in use'
+assert not any(d['serial'] in (4000932, 4000933) for d in baseline), 'Acceptance serial is already in use'
 results = []
 children = []
 try:
     for hidpi, hz, large, shutdown in [(False, 60, False, 'eof'), (True, 60, False, 'eof'),
                                       (False, 60, False, 'eof'), (False, 59.94, False, 'eof'),
                                       (False, 120, True, 'terminate')]:
-        child = subprocess.Popen([host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        children.append(child)
-        child.stdin.write(json.dumps(request(hidpi, hz, large)) + '\n')
-        child.stdin.flush()
-        actual = check_ready(line_with_timeout(child), hidpi, hz)
+        child, ready = start_host(request(hidpi, hz, large))
+        actual = check_ready(ready, hidpi, hz, baseline)
         start = time.monotonic()
         if shutdown == 'terminate':
             child.terminate()
@@ -91,7 +104,7 @@ try:
         child.wait(timeout=5)
         if shutdown == 'eof':
             assert child.returncode == 0, child.returncode
-        wait_for_baseline()
+        wait_for_displays(baseline)
         results.append(dict(hidpi=hidpi, hz=hz, shutdown=shutdown, child_exit=child.returncode, actual=actual,
                             cleanup_seconds=round(time.monotonic()-start, 3)))
     # The intermediate parent exits without shutting down its child explicitly.
@@ -103,17 +116,28 @@ sys.stdin.readline()
 '''
     parent = subprocess.Popen([sys.executable, '-c', parent_code, host], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     children.append(parent)
-    parent.stdin.write(json.dumps(request()) + '\n'); parent.stdin.flush()
-    actual = check_ready(line_with_timeout(parent), False, 60)
+    parent.stdin.write(json.dumps(host_request(request())) + '\n'); parent.stdin.flush()
+    actual = check_ready(line_with_timeout(parent), False, 60, baseline)
     start = time.monotonic()
     parent.stdin.close(); parent.wait(timeout=5)
-    wait_for_baseline()
+    wait_for_displays(baseline)
     results.append(dict(shutdown='parent_exit', actual=actual, cleanup_seconds=round(time.monotonic()-start, 3)))
 finally:
-    for child in children:
-        if child.poll() is None:
-            child.terminate()
-            child.wait(timeout=5)
-    (out / 'native-acceptance.json').write_text(json.dumps(dict(baseline=baseline, scenarios=results, final=inspect()), indent=2))
+    try:
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=5)
+        wait_for_displays(baseline)
+    finally:
+        (out / 'native-acceptance.json').write_text(json.dumps(dict(baseline=baseline, scenarios=results, final=inspect()), indent=2))
 print(f'Native display host acceptance: {len(results)}/6 passed; original displays unchanged.')
 PY
+
+# Exercise the production parent driver as well as the signed per-display hosts.
+# This runner needs an AppKit event loop, just like the app, for fresh CG mode data.
+swift build --product DisplayHostAcceptance >"$OUT_DIR/driver-build.log" 2>&1
+diagnostics="$(collect_build_log_diagnostics "$OUT_DIR/driver-build.log")"
+[[ -z "$diagnostics" ]] || die "Native runner compiler diagnostics: $diagnostics"
+bin_dir="$(swift build --show-bin-path)"
+"$bin_dir/DisplayHostAcceptance" "$HOST_PATH" "$OUT_DIR/native-driver-acceptance.json" | tee "$OUT_DIR/driver-run.log"

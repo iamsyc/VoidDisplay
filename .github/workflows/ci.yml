@@ -11,6 +11,8 @@ on:
       - 'Apps/VoidDisplay/**'
       - 'VoidDisplay.xcodeproj/**'
       - 'Tools/VoidDisplayRelay/**'
+      - 'Tools/DisplayQualityBenchmark/**'
+      - 'Tools/DisplayHostAcceptance/**'
       - 'Package.swift'
       - 'Package.resolved'
       - '**/Package.resolved'

@@ -63,6 +63,28 @@ package protocol VirtualDisplayRuntimeDriving: AnyObject {
     ) async throws -> any VirtualDisplayRuntimeHandling
 }
 
+package struct VirtualDisplayHostRequest: Codable, Sendable {
+    package struct PreservedMode: Codable, Sendable {
+        package let displayID: CGDirectDisplayID
+        package let serialNumber: UInt32
+        package let mode: VirtualDisplayRuntimeDisplayMode
+
+        package init(displayID: CGDirectDisplayID, serialNumber: UInt32, mode: VirtualDisplayRuntimeDisplayMode) {
+            self.displayID = displayID
+            self.serialNumber = serialNumber
+            self.mode = mode
+        }
+    }
+
+    package let descriptor: VirtualDisplayRuntimeDescriptor
+    package let preservedModes: [PreservedMode]
+
+    package init(descriptor: VirtualDisplayRuntimeDescriptor, preservedModes: [PreservedMode]) {
+        self.descriptor = descriptor
+        self.preservedModes = preservedModes
+    }
+}
+
 /// The host reports readiness only after selecting and reading back the actual mode.
 package enum VirtualDisplayHostResponse: Codable, Sendable {
     case ready(displayID: CGDirectDisplayID, mode: VirtualDisplayRuntimeDisplayMode)

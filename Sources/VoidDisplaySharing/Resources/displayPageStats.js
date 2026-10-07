@@ -4,6 +4,8 @@
     const namespace = root.VoidDisplayBrowser || {};
     root.VoidDisplayBrowser = namespace;
 
+    let latestDiagnostics = null;
+
     function browserStatsCodecName(codec) {
         const mimeType = String(codec?.mimeType || "").toLowerCase();
         if (mimeType === "video/h265") return "H.265";
@@ -48,15 +50,15 @@
         if (!sourceSpec) return "normal";
         const roundedFps = Math.max(0, Math.round(fps));
         const sourceFps = Number(sourceSpec.framesPerSecond || 0);
-        const packetsLost = Number(report.packetsLost || 0);
-        const framesDropped = Number(report.framesDropped || 0);
-        const bitrateBps = Number(derived?.bitrateBps || 0);
+        const packetsLost = derived?.packetsLost;
+        const framesDropped = derived?.framesDropped;
+        const bitrateBps = derived?.bitrateBps;
         const hasDerivedBitrate = Boolean(derived && Number.isFinite(bitrateBps));
         const belowSourceResolution =
             (width > 0 && width < sourceSpec.width) ||
             (height > 0 && height < sourceSpec.height);
         const belowSourceFps = sourceFps > 0 && roundedFps > 0 && roundedFps < sourceFps - 5;
-        const cleanTransport = packetsLost === 0 && framesDropped === 0;
+        const cleanTransport = packetsLost !== null && packetsLost <= 0 && framesDropped === 0;
 
         if (belowSourceResolution || packetsLost > 0 || framesDropped > 0) {
             return "degraded";
@@ -67,30 +69,50 @@
         return "normal";
     }
 
-    function deriveBrowserStatsSample(previousState, report, fallbackTimestamp) {
-        const timestamp = Number(report.timestamp || fallbackTimestamp);
-        const bytesReceived = Number(report.bytesReceived || 0);
-        const framesDecoded = Number(report.framesDecoded || 0);
-        let derived = null;
+    const counterFields = [
+        "bytesReceived", "framesDecoded", "framesDropped", "packetsLost",
+        "totalDecodeTime", "totalProcessingDelay", "jitterBufferDelay", "jitterBufferEmittedCount"
+    ];
 
-        if (previousState.lastTimestamp !== null && timestamp > previousState.lastTimestamp) {
-            const elapsedSeconds = (timestamp - previousState.lastTimestamp) / 1000;
-            const byteDelta = Math.max(0, bytesReceived - previousState.lastBytesReceived);
-            const frameDelta = Math.max(0, framesDecoded - previousState.lastFramesDecoded);
-            derived = {
-                bitrateBps: elapsedSeconds > 0 ? (byteDelta * 8) / elapsedSeconds : 0,
-                framesPerSecond: elapsedSeconds > 0 ? frameDelta / elapsedSeconds : 0
-            };
-        }
+    function finiteNumber(value) {
+        return typeof value === "number" && Number.isFinite(value) ? value : null;
+    }
 
+    function deriveBrowserStatsSample(previousState, report, fallbackTimestamp, playback = null) {
+        const timestamp = finiteNumber(report.timestamp) ?? fallbackTimestamp;
+        const counters = Object.fromEntries(counterFields.map((key) => [key, finiteNumber(report[key])]));
+        counters.presentationDrops = finiteNumber(playback?.droppedVideoFrames);
+        const nextState = { timestamp, id: report.id, ssrc: report.ssrc, counters };
+        const previous = previousState?.counters;
+        const reset = !previous || report.id !== previousState.id || report.ssrc !== previousState.ssrc ||
+            timestamp <= previousState.timestamp || Object.keys(counters).some((key) =>
+                key !== "packetsLost" && counters[key] !== null && previous[key] !== null &&
+                counters[key] < previous[key]);
+        if (reset) return { derived: null, nextState };
+
+        const delta = (key) => counters[key] === null || previous[key] === null ? null : counters[key] - previous[key];
+        const rate = (key, scale) => delta(key) === null ? null : delta(key) * scale / (timestamp - previousState.timestamp);
+        const meanMs = (total, count) => delta(total) === null || !(delta(count) > 0) ? null : 1000 * delta(total) / delta(count);
         return {
-            derived,
-            nextState: {
-                lastBytesReceived: bytesReceived,
-                lastFramesDecoded: framesDecoded,
-                lastTimestamp: timestamp
-            }
+            derived: {
+                bitrateBps: rate("bytesReceived", 8000),
+                framesPerSecond: rate("framesDecoded", 1000),
+                packetsLost: delta("packetsLost"),
+                framesDropped: delta("framesDropped"),
+                presentationDrops: delta("presentationDrops"),
+                decodeMs: meanMs("totalDecodeTime", "framesDecoded"),
+                receiveToDecodeMs: meanMs("totalProcessingDelay", "framesDecoded"),
+                jitterBufferMs: meanMs("jitterBufferDelay", "jitterBufferEmittedCount")
+            },
+            nextState
         };
+    }
+
+    function selectedRoundTripTimeMs(stats, report) {
+        const transport = stats.get(report.transportId);
+        const pair = stats.get(transport?.selectedCandidatePairId);
+        const seconds = finiteNumber(pair?.currentRoundTripTime);
+        return seconds === null ? null : seconds * 1000;
     }
 
     function createBrowserStatsMonitor({
@@ -105,40 +127,33 @@
     }) {
         const statusIntervalMs = 2000;
         let timer = null;
-        let sampleState = {
-            lastBytesReceived: null,
-            lastFramesDecoded: null,
-            lastTimestamp: null
-        };
-
-        function reset() {
-            sampleState = {
-                lastBytesReceived: null,
-                lastFramesDecoded: null,
-                lastTimestamp: null
-            };
-        }
+        let generation = 0;
+        let polling = false;
+        let sampleState = null;
 
         function stop() {
-            if (timer) {
-                windowObject.clearInterval(timer);
-                timer = null;
-            }
-            reset();
+            generation += 1;
+            if (timer !== null) windowObject.clearInterval(timer);
+            timer = null;
+            polling = false;
+            sampleState = null;
+            latestDiagnostics = null;
         }
 
         function updateLiveStatus(report, codec, derived) {
             const codecName = browserStatsCodecName(codec);
             const width = Number(report.frameWidth || player.videoWidth || 0);
             const height = Number(report.frameHeight || player.videoHeight || 0);
-            const fps = Number(report.framesPerSecond || derived?.framesPerSecond || 0);
+            // Use the same measured interval as the numeric diagnostics. A browser's
+            // startup estimate may report hundreds of FPS for a short decode burst.
+            const fps = finiteNumber(derived?.framesPerSecond);
             const sourceSpec = getSourceSpec();
 
             if (getState() !== "streaming" || width <= 0 || height <= 0) {
                 return;
             }
 
-            const roundedFps = Math.max(0, Math.round(fps));
+            const roundedFps = fps === null ? "—" : Math.max(0, Math.round(fps));
             if (sourceSpec) {
                 const diagnosis = classifyLiveStats(width, height, fps, report, derived, sourceSpec);
                 if (diagnosis === "lowMotion") {
@@ -182,20 +197,28 @@
         }
 
         async function poll(targetPeer) {
-            if (!targetPeer || getPeer() !== targetPeer || typeof targetPeer.getStats !== "function") return;
-            const stats = await targetPeer.getStats();
-            if (getPeer() !== targetPeer) return;
-
-            const selected = videoInboundStatsFromReport(stats);
-            if (!selected) return;
-
-            const sample = deriveBrowserStatsSample(
-                sampleState,
-                selected.report,
-                performanceObject.now()
-            );
-            sampleState = sample.nextState;
-            updateLiveStatus(selected.report, selected.codec, sample.derived);
+            if (polling || !targetPeer || getPeer() !== targetPeer || typeof targetPeer.getStats !== "function") return;
+            const token = generation;
+            polling = true;
+            try {
+                const stats = await targetPeer.getStats();
+                if (token !== generation || getPeer() !== targetPeer) return;
+                const selected = videoInboundStatsFromReport(stats);
+                if (!selected) return;
+                const sample = deriveBrowserStatsSample(
+                    sampleState, selected.report, performanceObject.now(), player.getVideoPlaybackQuality?.()
+                );
+                sampleState = sample.nextState;
+                // Numeric, connection-local evidence only; no SDP, addresses or credentials.
+                latestDiagnostics = Object.freeze({
+                    timestamp: sample.nextState.timestamp,
+                    interval: sample.derived && Object.freeze(sample.derived),
+                    roundTripTimeMs: selectedRoundTripTimeMs(stats, selected.report)
+                });
+                updateLiveStatus(selected.report, selected.codec, sample.derived);
+            } finally {
+                if (token === generation) polling = false;
+            }
         }
 
         function start(targetPeer) {
@@ -217,6 +240,8 @@
         createBrowserStatsMonitor,
         deriveBrowserStatsSample,
         sourceSpecFromSignal,
+        selectedRoundTripTimeMs,
+        getLatestDiagnostics: () => latestDiagnostics,
         videoInboundStatsFromReport
     });
 })(globalThis);

@@ -10,7 +10,7 @@ require_command jq mktemp swift
 mkdir -p "$AI_TMP_DIR"
 fixture="$(mktemp -d "$AI_TMP_DIR/unit-filters.XXXXXX")"
 trap 'rm -rf "$fixture"' EXIT
-mkdir -p "$fixture/scripts/lib" "$fixture/Tests/FilterTests"
+mkdir -p "$fixture/scripts/lib" "$fixture/Tests/FilterTests" "$fixture/Tests/SecondaryTests"
 for helper in common artifacts parallel; do
 	cp "$TOOL_ROOT/scripts/lib/$helper.sh" "$fixture/scripts/lib/$helper.sh"
 done
@@ -18,7 +18,7 @@ printf 'select_required_xcode() { :; }\n' >"$fixture/scripts/lib/xcode.sh"
 cat >"$fixture/Package.swift" <<'SWIFT'
 // swift-tools-version: 6.0
 import PackageDescription
-let package = Package(name: "FilterFixture", platforms: [.macOS("15.6")], targets: [.testTarget(name: "FilterTests")])
+let package = Package(name: "FilterFixture", platforms: [.macOS("15.6")], targets: [.testTarget(name: "FilterTests"), .testTarget(name: "SecondaryTests")])
 SWIFT
 cat >"$fixture/Tests/FilterTests/FilterTests.swift" <<'SWIFT'
 import Testing
@@ -28,6 +28,13 @@ struct RequestedSuite {
 }
 struct UnrelatedSuite {
     @Test func sharedName() { Issue.record("The filter selected the wrong suite.") }
+}
+SWIFT
+
+cat >"$fixture/Tests/SecondaryTests/SecondaryTests.swift" <<'SWIFT'
+import Testing
+struct SecondarySuite {
+    @Test func secondaryName() { #expect(true) }
 }
 SWIFT
 
@@ -52,4 +59,6 @@ jq -e '.status == "failed" and .reason == "swiftpm_zero_tests" and .swift_test_c
 
 run_unit --filter 'RequestedSuite/sharedName' --filter 'RequestedSuite/secondName' >"$fixture/run.log" 2>&1
 jq -e '.status == "passed" and .swift_test_count == 2' "$fixture/output/unit-summary.json" >/dev/null
+run_unit --filter 'RequestedSuite' --filter 'SecondarySuite' >"$fixture/run.log" 2>&1
+jq -e '.status == "passed" and .swift_test_count == 3' "$fixture/output/unit-summary.json" >/dev/null
 info "Unit filter fixtures passed."

@@ -108,6 +108,18 @@ if [[ -z "${VOIDDISPLAY_COMMON_SH_SOURCED:-}" ]]; then
 		(cd "$module_dir" && run_with_retry 3 env GOPROXY="$goproxy_value" "$go_bin" mod download)
 	}
 
+	count_swift_tests() {
+		awk '
+      match($0, /Test run with [0-9]+ tests?/) {
+        line = substr($0, RSTART, RLENGTH)
+        sub("Test run with ", "", line)
+        sub(" tests?", "", line)
+        total += line
+      }
+      END { print total + 0 }
+    ' "$1"
+	}
+
 	collect_build_log_diagnostics() {
 		local log_path="$1"
 		local matches
