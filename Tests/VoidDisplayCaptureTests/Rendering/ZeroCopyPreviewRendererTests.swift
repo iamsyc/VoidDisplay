@@ -8,6 +8,35 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ZeroCopyPreviewRendererTests {
+    @Test func backgroundSubmissionRendersOnMainActorAndResumesAfterFlush() async throws {
+        let renderer = ZeroCopyPreviewRenderer()
+        let session = try TestCapturePreviewSession(
+            sourcePixelSize: CGSize(width: 640, height: 360)
+        )
+        var enqueueCount = 0
+        renderer.willEnqueueFrameForTesting = {
+            MainActor.assertIsolated()
+            enqueueCount += 1
+        }
+
+        for expectedCount in 1...2 {
+            let submittedCount = await Task.detached {
+                session.attachPreviewSink(renderer)
+                return renderer.metricsSnapshot().receivedFrameCount
+            }.value
+            #expect(submittedCount == UInt64(expectedCount))
+
+            let rendered = await waitUntil {
+                renderer.metricsSnapshot().renderedFrameCount == UInt64(expectedCount)
+            }
+            #expect(rendered)
+            #expect(enqueueCount == expectedCount)
+            #expect(renderer.framePixelSize == CGSize(width: 640, height: 360))
+            renderer.flush()
+            #expect(renderer.metricsSnapshot().pendingSlotOccupied == false)
+        }
+    }
+
     @Test func submitFrameRendersAndPublishesMetrics() async throws {
         let renderer = ZeroCopyPreviewRenderer()
         let session = try TestCapturePreviewSession(

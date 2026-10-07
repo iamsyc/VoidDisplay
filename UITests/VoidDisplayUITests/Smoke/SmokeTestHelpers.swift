@@ -221,7 +221,7 @@ extension XCTestCase {
             file: file,
             line: line
         )
-        target.tap()
+        target.click()
     }
 
 }
