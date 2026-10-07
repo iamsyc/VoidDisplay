@@ -1,7 +1,8 @@
 import Foundation
+import VoidDisplayFoundation
 package enum UITestFixture {
-    package static func virtualDisplayConfigs() -> [VirtualDisplayConfig] {
-        [
+    package static func virtualDisplayConfigs(for scenario: UITestScenario = UITestRuntime.scenario) -> [VirtualDisplayConfig] {
+        var configs = [
             VirtualDisplayConfig(
                 id: UUID(uuidString: "00000000-0000-0000-0000-000000000013")!,
                 displayName: "虚拟显示器 13 寸",
@@ -25,5 +26,18 @@ package enum UITestFixture {
                 desiredEnabled: true
             )
         ]
+        if scenario == .displayCatalogLoadingWithMissingManagedDisplay {
+            // Keep enough content to scroll the complete summary out of view on CI.
+            configs.append(VirtualDisplayConfig(
+                id: UUID(uuidString: "00000000-0000-0000-0000-000000000015")!,
+                displayName: "VoidDisplay 3",
+                serialNum: 3,
+                physicalWidth: 309,
+                physicalHeight: 174,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                desiredEnabled: false
+            ))
+        }
+        return configs
     }
 }
