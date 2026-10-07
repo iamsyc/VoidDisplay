@@ -67,6 +67,11 @@ func configureReceiveTimeout(fd: Int32, milliseconds: Int) {
 func connectLoopbackSocket(port: UInt16) async throws -> Int32 {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else { throw SocketIntegrationError.socketCreationFailed }
+    var noSIGPIPE: Int32 = 1
+    guard setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSIGPIPE, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+        close(fd)
+        throw SocketIntegrationError.socketCreationFailed
+    }
 
     var address = sockaddr_in()
     address.sin_len = UInt8(MemoryLayout<sockaddr_in>.stride)
