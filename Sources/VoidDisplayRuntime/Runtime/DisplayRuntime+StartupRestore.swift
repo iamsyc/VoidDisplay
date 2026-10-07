@@ -2,8 +2,6 @@ import Foundation
 
 @MainActor
 extension DisplayRuntime {
-    package var isRestoringStartupVirtualDisplays: Bool { activeStartupRestoreTask != nil }
-
     package func cancelStartupRestore() {
         activeStartupRestoreTask?.cancel()
     }

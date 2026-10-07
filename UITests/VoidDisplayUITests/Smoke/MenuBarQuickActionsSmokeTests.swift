@@ -42,7 +42,7 @@ final class MenuBarQuickActionsSmokeTests: XCTestCase {
             .matching(identifier: "menu_bar_virtual_display_row")
             .allElementsBoundByIndex
         XCTAssertEqual(rows.count, 2)
-        XCTAssertTrue(smokeElement(app, identifier: "display_scene_menu").exists)
+        XCTAssertFalse(smokeElement(app, identifier: "display_scene_menu").exists)
         XCTAssertTrue(rows.allSatisfy { $0.frame.height <= 80 })
         XCTAssertLessThan(rows[0].frame.minY, rows[1].frame.minY)
 

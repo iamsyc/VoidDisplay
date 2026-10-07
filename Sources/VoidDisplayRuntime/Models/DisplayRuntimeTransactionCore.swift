@@ -9,7 +9,6 @@ package nonisolated struct DisplayRuntimeTransactionID: Codable, Equatable, Hash
 }
 
 package nonisolated enum DisplayRuntimeTransactionKind: String, Codable, Equatable, Hashable, Sendable {
-    case virtualDisplayApplyEnabledSet
     case virtualDisplayRebuild
     case virtualDisplayEnable
     case virtualDisplayDisable
@@ -20,7 +19,6 @@ package nonisolated enum DisplayRuntimeTransactionKind: String, Codable, Equatab
 }
 
 package nonisolated enum DisplayRuntimeTransactionSource: String, Codable, Equatable, Sendable {
-    case displaySceneApply
     case virtualDisplayRowRetry
     case virtualDisplayRowToggle
     case editSaveAndRebuild

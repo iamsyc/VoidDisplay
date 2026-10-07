@@ -80,7 +80,6 @@ package struct ShareSessionView: View {
                             }
                         }
                         .accessibilityIdentifier("sharing_stop_button")
-                        .disabled(displayRuntime.isApplyingVirtualDisplayEnabledSet)
                     }
                     Text("Open this link on a supported device on the same trusted local network.")
                         .foregroundStyle(.secondary)
@@ -125,7 +124,6 @@ package struct ShareSessionView: View {
                         Button("Start sharing") {
                             controller.perform(.webView, for: item, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
                         }
-                        .disabled(displayRuntime.isApplyingVirtualDisplayEnabledSet)
                     }
                 }
                 if let alert = controller.actionAlert { Text(alert.message).foregroundStyle(.red) }
