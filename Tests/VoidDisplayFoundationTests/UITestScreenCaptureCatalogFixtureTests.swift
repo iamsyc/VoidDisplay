@@ -11,7 +11,7 @@ struct UITestScreenCaptureCatalogFixtureTests {
         .displayCatalogLoadingWithMissingManagedDisplay
     ])
     func catalogAndActiveIDsUseTheSameScenario(scenario: UITestScenario) {
-        let reservedIDs = Set(UITestRuntime.managedVirtualDisplayIDs)
+        let reservedIDs = Set(UITestRuntime.managedVirtualDisplayIDs(for: scenario))
         let managedDisplayIDs = Set(UITestRuntime.catalogManagedVirtualDisplayIDs(for: scenario))
         let activeDisplayIDs = ScreenCaptureActiveDisplayIDsProviderFactory.makeDefault(
             environment: [
@@ -58,7 +58,7 @@ struct UITestScreenCaptureCatalogFixtureTests {
         try #require(clock.pendingSleepCount == 0)
 
         let displayIDs = try await loading.value
-        let reservedIDs = Set(UITestRuntime.managedVirtualDisplayIDs)
+        let reservedIDs = Set(UITestRuntime.managedVirtualDisplayIDs(for: scenario))
         #expect(
             Set(displayIDs).intersection(reservedIDs)
                 == Set(UITestRuntime.catalogManagedVirtualDisplayIDs(for: scenario))

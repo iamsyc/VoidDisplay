@@ -12,7 +12,6 @@ package struct MenuBarQuickActionsView: View {
     private static let visibleRowLimit = 3
     private static let scrollViewportHeight: CGFloat = 240
 
-    @Environment(DisplaySceneController.self) private var displayScenes
     @Environment(\.openWindow) private var openWindow
     @Environment(AppNavigationController.self) private var navigation
 
@@ -55,9 +54,6 @@ package struct MenuBarQuickActionsView: View {
             .padding(.horizontal, AppUI.Spacing.large)
             .padding(.vertical, AppUI.Spacing.small)
 
-            DisplaySceneControls(compact: true)
-                .padding(.horizontal, AppUI.Spacing.large)
-                .padding(.bottom, AppUI.Spacing.small)
             Divider()
 
             if itemStates.isEmpty {
@@ -137,8 +133,6 @@ package struct MenuBarQuickActionsView: View {
                         perform(action, for: state.item)
                     }
                 )
-
-                .disabled(displayScenes.runtime.isApplyingVirtualDisplayEnabledSet)
 
                 if !state.isLast {
                     Divider()

@@ -27,7 +27,6 @@ public struct VoidDisplayApplication: App {
     @State private var navigation: AppNavigationController
     @State private var feedbackController: AppSettingsFeedbackController
     private let observability: ObservabilityCenter
-    private let displayScenes: DisplaySceneController
     private let displayRuntime: DisplayRuntime
     private let sharingAdapter: DisplayRuntimeSharingAdapter
     private let openScreenCapturePrivacySettings: @MainActor (@escaping (URL) -> Void) -> Void
@@ -42,7 +41,6 @@ public struct VoidDisplayApplication: App {
         _navigation = State(initialValue: AppNavigationController())
         _feedbackController = State(initialValue: env.feedbackController)
         observability = env.observability
-        displayScenes = env.displayScenes
         displayRuntime = env.displayRuntime
         sharingAdapter = env.sharingAdapter
         openScreenCapturePrivacySettings = env.openScreenCapturePrivacySettings
@@ -89,7 +87,6 @@ public struct VoidDisplayApplication: App {
             .environment(virtualDisplay)
             .environment(capturePerformancePreferences)
             .environment(navigation)
-            .environment(displayScenes)
             .background {
                 if UITestRuntime.isEnabled {
                     UITestWindowSizeHost(
@@ -125,7 +122,6 @@ public struct VoidDisplayApplication: App {
                 sharingAdapter: sharingAdapter
             )
             .environment(navigation)
-            .environment(displayScenes)
         }
         .menuBarExtraStyle(.window)
 
@@ -171,7 +167,6 @@ public struct VoidDisplayApplication: App {
                 .environment(virtualDisplay)
                 .environment(capturePerformancePreferences)
                 .environment(navigation)
-            .environment(displayScenes)
         }
     }
 }

@@ -8,7 +8,6 @@ import VoidDisplayVirtualDisplay
 
 @MainActor
 package struct AppEnvironment {
-    package let displayScenes: DisplaySceneController
     package let capture: CaptureController
     package let observability: ObservabilityCenter
     package let sharing: SharingController
@@ -22,7 +21,6 @@ package struct AppEnvironment {
     private let captureRegistry: DisplayCaptureRegistry
 
     package init(
-        displayScenes: DisplaySceneController,
         capture: CaptureController,
         observability: ObservabilityCenter,
         sharing: SharingController,
@@ -35,7 +33,6 @@ package struct AppEnvironment {
         startupTask: Task<Void, Never>,
         captureRegistry: DisplayCaptureRegistry
     ) {
-        self.displayScenes = displayScenes
         self.capture = capture
         self.observability = observability
         self.sharing = sharing

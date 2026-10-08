@@ -15,10 +15,14 @@ package enum UITestScenario: String {
 }
 package enum UITestRuntime {
     package nonisolated static let managedVirtualDisplayIDBase: CGDirectDisplayID = 0xF000_0001
-    package nonisolated static let managedVirtualDisplayIDs: [CGDirectDisplayID] = [
-        managedVirtualDisplayIDBase,
-        managedVirtualDisplayIDBase + 1
-    ]
+    package nonisolated static var managedVirtualDisplayIDs: [CGDirectDisplayID] {
+        managedVirtualDisplayIDs(for: scenario)
+    }
+
+    package nonisolated static func managedVirtualDisplayIDs(for scenario: UITestScenario) -> [CGDirectDisplayID] {
+        let count = scenario == .displayCatalogLoadingWithMissingManagedDisplay ? 3 : 2
+        return (0..<count).map { managedVirtualDisplayIDBase + CGDirectDisplayID($0) }
+    }
     package nonisolated static let modeEnvironmentKey = "VOIDDISPLAY_UI_TEST_MODE"
     package nonisolated static let scenarioEnvironmentKey = "VOIDDISPLAY_UI_TEST_SCENARIO"
     package nonisolated static let feedbackIssueTypeEnvironmentKey = "VOIDDISPLAY_FEEDBACK_ISSUE_TYPE"
@@ -53,7 +57,7 @@ package enum UITestRuntime {
         if scenario == .displayCatalogLoadingWithMissingManagedDisplay {
             return [managedVirtualDisplayIDBase]
         }
-        return managedVirtualDisplayIDs
+        return managedVirtualDisplayIDs(for: scenario)
     }
 
     package nonisolated static var feedbackExportFailureMessage: String? {

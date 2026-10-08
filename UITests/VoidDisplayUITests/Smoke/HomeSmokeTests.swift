@@ -324,6 +324,7 @@ final class HomeSmokeTests: XCTestCase {
         let window = app.windows.firstMatch
         XCTAssertTrue(waitForExistenceIfNeeded(window, timeout: 6))
         resizeWindow(window, to: CGSize(width: 600, height: 300))
+        XCTAssertFalse(smokeElement(app, identifier: "display_scene_menu").exists)
         let rescanButton = assertExists(
             app,
             identifier: "home_rescan_displays_button",
@@ -331,7 +332,7 @@ final class HomeSmokeTests: XCTestCase {
         )
         let topControl = assertExists(
             app,
-            identifier: "display_scene_menu",
+            identifier: "home_summary_status_strip",
             timeout: 6
         )
         let scrollView = try XCTUnwrap(
@@ -350,7 +351,7 @@ final class HomeSmokeTests: XCTestCase {
         }
         XCTAssertFalse(
             topControl.isHittable,
-            "Test precondition failed: the top scene control did not scroll out of view."
+            "Test precondition failed: the summary strip did not scroll out of view."
         )
 
         rescanButton.click()

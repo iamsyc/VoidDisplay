@@ -44,7 +44,7 @@ struct RuntimeDiagnosticsSummaryTests {
 
         #expect(summary.availability == .available)
         #expect(summary.isAvailable)
-        #expect(summary.schemaVersion == 7)
+        #expect(summary.schemaVersion == 8)
         #expect(summary.surfaceCount == 1)
         #expect(summary.virtualDisplayCount == 0)
         #expect(summary.runningVirtualDisplayCount == 0)

@@ -10,7 +10,6 @@ import VoidDisplayVirtualDisplay
 
 @MainActor
 package struct HomeVirtualDisplaySurfaceView: View {
-    @Environment(DisplaySceneController.self) private var displayScenes
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
 
@@ -64,8 +63,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
         )
 
         ScrollView {
-            DisplaySceneControls()
-                .padding(.horizontal)
             HomeVirtualDisplaySurfaceContent(
                 context: context,
                 configStorePresentation: virtualDisplay.configStorePresentation,
@@ -74,7 +71,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
             )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("home_virtual_display_surface")
-            .disabled(displayScenes.runtime.isApplyingVirtualDisplayEnabledSet)
             .frame(maxWidth: metrics.contentMaxWidth, alignment: .topLeading)
             .appListContentInsets()
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -112,13 +108,11 @@ package struct HomeVirtualDisplaySurfaceView: View {
                 }
             }
                 .environment(virtualDisplay)
-                .disabled(displayScenes.runtime.isApplyingVirtualDisplayEnabledSet)
         }
         .sheet(isPresented: editingConfigIsPresented) {
             if let editingConfigID {
                 EditVirtualDisplayConfigView(configId: editingConfigID)
                     .environment(virtualDisplay)
-                .disabled(displayScenes.runtime.isApplyingVirtualDisplayEnabledSet)
             }
         }
         .confirmationDialog(
@@ -134,10 +128,6 @@ package struct HomeVirtualDisplaySurfaceView: View {
             }
         } message: { config in
             Text("This will remove the configuration and disable the display if it is running.\n\n\(config.displayName) (Serial \(config.serialNum))")
-            let names = displayScenes.sceneNames(referencing: config.id)
-            if !names.isEmpty {
-                Text("Scenes requiring repair: \(names.joined(separator: ", "))")
-            }
         }
         .alert(item: $bindableViewModel.userFacingAlert) { alert in
             Alert(

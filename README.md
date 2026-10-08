@@ -101,10 +101,6 @@ Notes:
 - The capability rotates whenever sharing restarts. Old and credentialless links are rejected.
 - HTTP and WebSocket traffic is not encrypted. Use LAN sharing only on a trusted network and do not expose it through public port forwarding or tunnels. See [LAN Web View security](./docs/security/lan-web-view.md).
 
-### Saved Display Scenes
-
-Use **Save Current Combination** or **Manage Scenes** to save named sets of enabled displays. Scenes reference the displays’ current settings. Applying a scene enables its targets before disabling other managed displays. Review interrupted previews and sharing before applying. Partial failures retain completed changes and offer retry or restoration of the previous combination. Deleted displays leave a scene marked **Needs Repair** until edited. Scenes do not save window positions, display arrangement, preview windows or sharing sessions.
-
 Closing Sharing Details keeps sharing active. **Stop Sharing** revokes its link. After changing networks, use **Refresh Address**. Modify the document and verify the update on another device, then continue working on your main screen.
 
 ## ❓ Troubleshooting
