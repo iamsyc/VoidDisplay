@@ -18,6 +18,20 @@ struct RebuildPresentationStateTests {
         #expect(state.rebuildingConfigIds.contains(id) == false)
     }
 
+    @Test func lastWaiterOwnsRebuildCompletion() {
+        var state = RebuildPresentationState()
+        let id = UUID()
+        state.beginRebuild(configId: id)
+        state.beginRebuild(configId: id)
+        state.finishRebuild(configId: id)
+        #expect(state.rebuildingConfigIds.contains(id))
+        state.finishRebuild(configId: id)
+        #expect(!state.rebuildingConfigIds.contains(id))
+        state.clear(configId: id)
+        state.finishRebuild(configId: id)
+        #expect(state.allConfigIds().isEmpty)
+    }
+
     @Test func successAndFailureMutateBadgesAndMessages() {
         var state = RebuildPresentationState()
         let id = UUID()

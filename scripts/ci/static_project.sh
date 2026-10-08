@@ -292,7 +292,7 @@ validate_xcode_runner_signing_modes() {
 	mkdir -p "$runner_xcconfig_bin"
 	printf '%s\n' \
 		'#!/bin/bash' \
-		'if [[ "${1:-}" == "-version" ]]; then printf "Xcode 26.6\nBuild version TEST\n"; exit 0; fi' \
+		'if [[ "${1:-}" == "-version" ]]; then printf "Xcode 27.0\nBuild version TEST\n"; exit 0; fi' \
 		': >"$XCODEBUILD_SENTINEL"' \
 		'exit 97' >"$runner_xcconfig_bin/xcodebuild"
 	printf '#!/bin/bash\nprintf "  1) TESTHASH \\"Apple Development: Developer (TEAM)\\"\n"\n' >"$runner_xcconfig_bin/security"

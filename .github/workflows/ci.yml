@@ -24,6 +24,7 @@ on:
       - 'scripts/**'
       - '.github/workflows/**'
       - '.github/actions/**'
+      - '.github/actionlint.yaml'
       - '.github/dependabot.yml'
   pull_request:
 
@@ -160,7 +161,7 @@ jobs:
       - classify_changes
       - script_static_checks
     if: ${{ needs.classify_changes.outputs.requires_xcode_build == 'true' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 25
     permissions:
       contents: read
@@ -231,7 +232,7 @@ jobs:
       - classify_changes
       - script_static_checks
     if: ${{ needs.classify_changes.outputs.requires_release_smoke == 'true' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     permissions:
       contents: read
@@ -277,7 +278,7 @@ jobs:
       - classify_changes
       - script_static_checks
     if: ${{ github.event_name == 'push' && needs.classify_changes.outputs.requires_release_smoke == 'true' }}
-    runs-on: macos-26-intel
+    runs-on: xcode-27
     timeout-minutes: 30
     permissions:
       contents: read

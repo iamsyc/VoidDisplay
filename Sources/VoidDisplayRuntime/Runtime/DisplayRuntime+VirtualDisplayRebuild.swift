@@ -84,7 +84,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedSurfaces
         )
         guard !consumerTransition.hasQuiesceFailure else {
-            let restoreResults = await compensateConsumerQuiesceFailure(
+            let consumerCompensation = await compensateConsumerTransitionFailure(
                 consumerTransition,
                 transactionID: request.transactionID
             )
@@ -99,19 +99,16 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                compensation: consumerCompensation
             )
         }
 
         await appendPhase(.executingVirtualDisplayCommand, transactionID: request.transactionID)
         guard let virtualDisplayCommander else {
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
-            updateTrace(request.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: request.transactionID
+            )
             return await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .failed,
@@ -123,21 +120,18 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                compensation: consumerCompensation
             )
         }
 
         do {
             _ = try await virtualDisplayCommander.rebuildVirtualDisplay(configID: request.configID)
         } catch {
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: request.transactionID
+            )
             let postSnapshot = makeSnapshot()
-            updateTrace(request.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
             _ = await finalizeTransaction(
                 transactionID: request.transactionID,
                 status: .failed,
@@ -150,10 +144,7 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: postSnapshot,
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                compensation: consumerCompensation
             )
             throw error
         }

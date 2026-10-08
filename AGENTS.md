@@ -21,6 +21,7 @@
 - Use the matching installed Waza skill when available. Repository rules remain binding as the project-specific source of truth.
 
 ## Swift & SDK Baseline
+- Build with Xcode 27.0 and its Swift 6.4 toolchain. Keep Swift language mode at 6.
 - Use Swift 6 for all Swift targets and new code.
 - Keep deployment target at `15.6` unless user requests otherwise.
 - Prefer modern APIs compatible with target `15.6`; avoid deprecated APIs.

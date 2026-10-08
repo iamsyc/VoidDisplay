@@ -154,3 +154,48 @@ struct HomeSharingPortApplyButtonLayoutTests {
         return hostingView.fittingSize.width
     }
 }
+
+@MainActor
+struct HomeConsumerActionAvailabilityTests {
+    @Test func existingConsumersRemainStoppableWithoutCatalogOrPermission() {
+        #expect(!HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+            displayID: 1, isTransitionBusy: false, isStarting: false,
+            isActive: true, displayIsAvailable: false, permission: false
+        ))
+        #expect(HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+            displayID: 1, isTransitionBusy: true, isStarting: false,
+            isActive: true, displayIsAvailable: true, permission: true
+        ))
+        #expect(HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+            displayID: 1, isTransitionBusy: false, isStarting: true,
+            isActive: true, displayIsAvailable: true, permission: true
+        ))
+    }
+
+    @Test func startingRequiresAnAvailableDisplayAndDoesNotTreatUnknownPermissionAsDenied() {
+        #expect(!HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+            displayID: 1, isTransitionBusy: false, isStarting: false,
+            isActive: false, displayIsAvailable: true, permission: nil
+        ))
+        #expect(HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+            displayID: 1, isTransitionBusy: false, isStarting: false,
+            isActive: false, displayIsAvailable: true, permission: false
+        ))
+        #expect(HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+            displayID: nil, isTransitionBusy: false, isStarting: false,
+            isActive: false, displayIsAvailable: false, permission: true
+        ))
+    }
+
+    @Test func permissionPresentationPreservesItsThreeStates() {
+        let allowed = HomePermissionStatusRenderState(permission: true)
+        let denied = HomePermissionStatusRenderState(permission: false)
+        let checking = HomePermissionStatusRenderState(permission: nil)
+        #expect(allowed.isActive && !allowed.canOpenSettings)
+        #expect(denied.isActive && denied.canOpenSettings)
+        #expect(!checking.isActive && !checking.canOpenSettings)
+        #expect(allowed.systemImage == "checkmark.shield")
+        #expect(denied.systemImage == "lock.shield")
+        #expect(checking.systemImage == "arrow.triangle.2.circlepath")
+    }
+}

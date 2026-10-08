@@ -11,6 +11,13 @@ struct DisplayRuntimeExecutorError: LocalizedError {
 
     let operation: Operation
     let reason: String
+    let underlyingError: (any Error)?
+
+    init(operation: Operation, reason: String, underlyingError: (any Error)? = nil) {
+        self.operation = operation
+        self.reason = reason
+        self.underlyingError = underlyingError
+    }
 
     var errorDescription: String? {
         switch operation {

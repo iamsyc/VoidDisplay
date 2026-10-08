@@ -90,7 +90,7 @@ STUB
 
 cat >"$fixture_bin/xcodebuild" <<'STUB'
 #!/usr/bin/env bash
-if [[ "${1:-}" == "-version" ]]; then printf 'Xcode 26.6\nBuild version Fixture\n'; fi
+if [[ "${1:-}" == "-version" ]]; then printf 'Xcode 27.0\nBuild version Fixture\n'; fi
 STUB
 cat >"$fixture_bin/xcrun" <<'STUB'
 #!/usr/bin/env bash

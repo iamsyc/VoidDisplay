@@ -123,10 +123,11 @@ package struct DiagnosticsView: View {
     private func reload(refresh: Bool) async {
         if refresh {
             isRefreshing = true
-            await observability.refreshSnapshot(reason: .manualDiagnosticsRefresh)
+            snapshot = await observability.refreshDiagnosticsSnapshot()
             isRefreshing = false
+        } else {
+            snapshot = await observability.diagnosticsSnapshot()
         }
-        snapshot = await observability.diagnosticsSnapshot()
         dataDirectoryDisplayPath = await observability.dataDirectoryDisplayPath()
     }
 

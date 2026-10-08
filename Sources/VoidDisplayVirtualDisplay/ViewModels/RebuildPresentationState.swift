@@ -1,17 +1,23 @@
 import Foundation
 package struct RebuildPresentationState {
-    private(set) var rebuildingConfigIds: Set<UUID> = []
+    private var waiterCountByConfigId: [UUID: Int] = [:]
+
+    var rebuildingConfigIds: Set<UUID> { Set(waiterCountByConfigId.keys) }
     private(set) var rebuildFailureMessageByConfigId: [UUID: String] = [:]
     private(set) var recentlyAppliedConfigIds: Set<UUID> = []
 
     mutating func beginRebuild(configId: UUID) {
-        rebuildFailureMessageByConfigId.removeValue(forKey: configId)
-        recentlyAppliedConfigIds.remove(configId)
-        rebuildingConfigIds.insert(configId)
+        let count = waiterCountByConfigId[configId, default: 0]
+        waiterCountByConfigId[configId] = count + 1
+        if count == 0 {
+            rebuildFailureMessageByConfigId.removeValue(forKey: configId)
+            recentlyAppliedConfigIds.remove(configId)
+        }
     }
 
     mutating func finishRebuild(configId: UUID) {
-        rebuildingConfigIds.remove(configId)
+        let count = waiterCountByConfigId[configId, default: 0]
+        waiterCountByConfigId[configId] = count > 1 ? count - 1 : nil
     }
 
     mutating func markRebuildSuccess(configId: UUID) {
@@ -29,7 +35,7 @@ package struct RebuildPresentationState {
     }
 
     mutating func clear(configId: UUID) {
-        rebuildingConfigIds.remove(configId)
+        waiterCountByConfigId[configId] = nil
         rebuildFailureMessageByConfigId.removeValue(forKey: configId)
         recentlyAppliedConfigIds.remove(configId)
     }

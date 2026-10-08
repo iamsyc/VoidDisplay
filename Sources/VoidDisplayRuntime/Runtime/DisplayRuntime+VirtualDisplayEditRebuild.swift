@@ -212,16 +212,13 @@ extension DisplayRuntime {
                 virtualDisplayCommander: virtualDisplayCommander,
                 shouldRebuild: false
             )
-            let restoreResults = await compensateConsumerQuiesceFailure(
+            let consumerCompensation = await compensateConsumerTransitionFailure(
                 consumerTransition,
                 transactionID: request.transactionID
             )
             let compensation = mergingCompensation(
                 persistenceCompensation,
-                with: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                with: consumerCompensation
             )
             return await finalizeTransaction(
                 transactionID: request.transactionID,
@@ -253,16 +250,13 @@ extension DisplayRuntime {
                 previousConfigForCompensation: saveResult.previousConfigForCompensation,
                 virtualDisplayCommander: virtualDisplayCommander
             )
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
-            updateTrace(request.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: request.transactionID
+            )
             let compensation = mergingCompensation(
                 persistenceCompensation,
-                with: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                with: consumerCompensation
             )
             return await finalizeTransaction(
                 transactionID: request.transactionID,

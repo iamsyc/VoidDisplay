@@ -55,7 +55,7 @@ extension DisplayRuntime {
                 $0.identity == surfaceIdentity
             }?.currentDisplayID
         }
-        return makeSnapshot().surfaces.first {
+        return currentSurfaceSnapshot().first {
             $0.identity == surfaceIdentity
         }?.currentDisplayID
     }

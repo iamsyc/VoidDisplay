@@ -16,7 +16,13 @@ The workflow set is:
 
 The repository uses GitHub Free compatible capabilities only: standard macOS hosted runners, Dependabot, Dependency Review, CodeQL, release artifacts, and artifact attestations. Larger runners, self-hosted runners, paid scanning services, Developer ID signing, notarization, and stapling are out of scope.
 
-Xcode selection prefers the Xcode `26.6.0` installation and requires `xcodebuild` version prefix `26.6` with Swift `6.3` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` and `EXPECTED_SWIFT_VERSION_PREFIX` only for an intentional temporary override.
+Xcode selection prefers the Xcode `27.0.0` installation and requires `xcodebuild` version prefix `27.0` with Swift `6.4` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` and `EXPECTED_SWIFT_VERSION_PREFIX` only for an intentional temporary override.
+
+Jobs that compile Swift packages, build the app, run UI tests, or collect Swift coverage use the standard `xcode-27` hosted runner. The Swift CodeQL matrix uses the same runner. The selector only chooses an installed toolchain, so these jobs require an image that includes Xcode 27.0. The [official image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists the installed toolchain.
+
+The pinned actionlint version does not yet recognize `xcode-27`. `.github/actionlint.yaml` adds this exact hosted label to its inventory through the linter's `self-hosted-runner.labels` configuration key. Changes to this configuration trigger main CI; other unknown labels still fail validation.
+
+Both release architectures use `xcode-27`, an arm64 host. CI release smoke, Nightly dry runs, and Release builds pass the target architecture explicitly: `--arch arm64 --label arm64` or `--arch x86_64 --label intel64`. The existing release scripts cross-compile the Intel app and relay, thin WebRTC to the target architecture, and verify every bundled executable. An Intel build on this runner provides build and packaging evidence; Intel device runtime acceptance requires separate verification. Classification, static fixtures, Go CodeQL, summary, and publishing jobs retain `macos-26` because they do not compile with the required Xcode toolchain.
 
 Local command selection and environment-failure handling are documented in [Testing Strategy](./testing-strategy.md). This document covers workflow-side orchestration and release evidence.
 

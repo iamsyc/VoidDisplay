@@ -402,15 +402,18 @@ extension DisplayRuntime {
         )
     }
 
-    func compensateConsumerQuiesceFailure(
+    func compensateConsumerTransitionFailure(
         _ batch: DisplayRuntimeConsumerTransitionBatch,
         transactionID: DisplayRuntimeTransactionID
-    ) async -> [DisplayRuntimeSessionRestoreResult] {
+    ) async -> DisplayRuntimeCompensationResult {
         let restoreResults = await compensateConsumerTransition(batch)
         updateTrace(transactionID) { trace in
             trace.replacing(restoreResults: restoreResults)
         }
-        return restoreResults
+        return consumerCompensationResult(
+            restoreResults: restoreResults,
+            restoreIntentCount: batch.restoreIntentCount
+        )
     }
 
     private func uniqueTransitionsByKind(

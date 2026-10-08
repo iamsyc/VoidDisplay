@@ -37,7 +37,7 @@ package nonisolated struct DisplayRuntimeVirtualDisplayRebuildTransactionResult:
     package let kind: DisplayRuntimeTransactionKind
     package let status: DisplayRuntimeTransactionStatus
     package let virtualDisplayCommandSucceeded: Bool
-    package let hasSessionRecoveryFailures: Bool
+    package var hasSessionRecoveryFailures: Bool { status == .completedWithRecoveryFailures }
     package let desiredEnabled: Bool?
 
     package init(
@@ -45,14 +45,12 @@ package nonisolated struct DisplayRuntimeVirtualDisplayRebuildTransactionResult:
         kind: DisplayRuntimeTransactionKind = .virtualDisplayRebuild,
         status: DisplayRuntimeTransactionStatus,
         virtualDisplayCommandSucceeded: Bool,
-        hasSessionRecoveryFailures: Bool,
         desiredEnabled: Bool? = nil
     ) {
         self.transactionID = transactionID
         self.kind = kind
         self.status = status
         self.virtualDisplayCommandSucceeded = virtualDisplayCommandSucceeded
-        self.hasSessionRecoveryFailures = hasSessionRecoveryFailures
         self.desiredEnabled = desiredEnabled
     }
 }

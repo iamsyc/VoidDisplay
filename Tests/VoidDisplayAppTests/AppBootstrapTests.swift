@@ -134,6 +134,35 @@ struct AppBootstrapTests {
         }
     }
 
+    @Test func runtimeExecutorRetainsUnderlyingFailureInDiagnostics() async {
+        let cause = NSError(domain: "RuntimeExecutorProbe", code: 73)
+        do {
+            let _: Void = try await AppBootstrap.performRuntimeOperation(operation: .create) { throw cause }
+            Issue.record("Expected a runtime executor error")
+        } catch let error as DisplayRuntimeExecutorError {
+            #expect(error.errorDescription == String(localized: "Create failed."))
+            #expect((error.underlyingError as? NSError) === cause)
+            #expect(String(describing: error).contains(cause.domain))
+        } catch {
+            Issue.record("Unexpected error type")
+        }
+    }
+
+    @Test func runtimeExecutorPreservesAlreadyWrappedFailure() async {
+        let cause = NSError(domain: "RuntimeExecutorProbe", code: 73)
+        let wrapped = DisplayRuntimeExecutorError(operation: .rebuild, reason: "known_failure", underlyingError: cause)
+        do {
+            let _: Void = try await AppBootstrap.performRuntimeOperation(operation: .delete) { throw wrapped }
+            Issue.record("Expected a runtime executor error")
+        } catch let error as DisplayRuntimeExecutorError {
+            #expect(error.operation == .rebuild)
+            #expect(error.reason == "known_failure")
+            #expect((error.underlyingError as? NSError) === cause)
+        } catch {
+            Issue.record("Unexpected error type")
+        }
+    }
+
     @Test func runtimeExecutorUsesDesiredEnabledFailureMessage() {
         let enableError = DisplayRuntimeExecutorError(
             operation: .setDesiredEnabled(true),

@@ -20,8 +20,8 @@ TERMINATION_LOG="$SESSION_ROOT/termination-events.log"
 SESSION_ENV=(
 	"VOIDDISPLAY_UI_SESSION_FIXTURE_MODE=1"
 	"VOIDDISPLAY_UI_SESSION_FIXTURE_ROOT=$SESSION_ROOT"
-	"EXPECTED_XCODE_VERSION_PREFIX=26.6"
-	"EXPECTED_SWIFT_VERSION_PREFIX=6.3"
+	"EXPECTED_XCODE_VERSION_PREFIX=27.0"
+	"EXPECTED_SWIFT_VERSION_PREFIX=6.4"
 )
 HOLDER_PID=""
 SIGNAL_WRAPPER_PID=""
@@ -201,7 +201,7 @@ printf '%s\n' \
 printf '%s\n' \
 	'#!/usr/bin/env bash' \
 	'if [[ "${1:-}" == "-version" ]]; then' \
-	'  printf "Xcode 26.6\nBuild version 17F113\n"' \
+	'  printf "Xcode 27.0\nBuild version 17F113\n"' \
 	'  exit 0' \
 	'fi' \
 	'printf "%s\n" "$$" >"$SIGNAL_ROOT/xcodebuild.pid"' \
@@ -212,7 +212,7 @@ printf '%s\n' \
 # Keep the mock toolchain independent of the host Xcode selection and overrides.
 fixture_developer_dir="$FIXTURE_ROOT/developer"
 /bin/mkdir -p "$fixture_developer_dir"
-printf '%s\n' '#!/usr/bin/env bash' 'printf "Apple Swift version 6.3\n"' >"$fixture_bin/swift"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "Apple Swift version 6.4\n"' >"$fixture_bin/swift"
 printf '%s\n' '#!/usr/bin/env bash' '[[ "${1:-}" == "-p" ]] || exit 1' 'printf "%s\n" "$DEVELOPER_DIR"' >"$fixture_bin/xcode-select"
 /bin/chmod +x "$fixture_bin/go" "$fixture_bin/xcodebuild" "$fixture_bin/swift" "$fixture_bin/xcode-select"
 

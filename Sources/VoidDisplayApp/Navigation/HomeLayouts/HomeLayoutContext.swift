@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import SwiftUI
 import VoidDisplayFoundation
 
@@ -37,6 +38,23 @@ package struct HomeVirtualDisplayItemRenderState: Identifiable {
     package let isWebViewStarting: Bool
 
     package var id: UUID { item.id }
+
+    package static func isConsumerActionDisabled(
+        displayID: CGDirectDisplayID?, isTransitionBusy: Bool, isStarting: Bool,
+        isActive: Bool, displayIsAvailable: Bool, permission: Bool?
+    ) -> Bool {
+        isTransitionBusy || displayID == nil || isStarting
+            || (!isActive && (!displayIsAvailable || permission == false))
+    }
+
+    package static func needsDisplayDetection(
+        item: HomeVirtualDisplayItemPresentation, permission: Bool?,
+        hasCatalogError: Bool, displayIsAvailable: Bool
+    ) -> Bool {
+        permission == true && !hasCatalogError && item.isRunning
+            && !item.isPreviewing && !item.isSharing && item.displayID != nil
+            && !displayIsAvailable
+    }
 
     package init(
         item: HomeVirtualDisplayItemPresentation,
@@ -80,18 +98,23 @@ package struct HomePermissionStatusRenderState {
     package let isActive: Bool
     package let canOpenSettings: Bool
 
-    package init(
-        label: String,
-        systemImage: String,
-        tint: Color,
-        isActive: Bool,
-        canOpenSettings: Bool
-    ) {
-        self.label = label
-        self.systemImage = systemImage
-        self.tint = tint
-        self.isActive = isActive
-        self.canOpenSettings = canOpenSettings
+    package init(permission: Bool?) {
+        switch permission {
+        case true:
+            label = String(localized: "Allowed")
+            systemImage = "checkmark.shield"
+            tint = .green
+        case false:
+            label = String(localized: "Permission Needed")
+            systemImage = "lock.shield"
+            tint = .orange
+        case nil:
+            label = String(localized: "Checking")
+            systemImage = "arrow.triangle.2.circlepath"
+            tint = .blue
+        }
+        isActive = permission != nil
+        canOpenSettings = permission == false
     }
 }
 

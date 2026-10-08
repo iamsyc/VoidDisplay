@@ -183,7 +183,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedScope.surfaces
         )
         guard !consumerTransition.hasQuiesceFailure else {
-            let restoreResults = await compensateConsumerQuiesceFailure(
+            let consumerCompensation = await compensateConsumerTransitionFailure(
                 consumerTransition,
                 transactionID: context.transactionID
             )
@@ -199,10 +199,7 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                ),
+                compensation: consumerCompensation,
                 desiredEnabled: desiredEnabled,
                 virtualDisplayCommandOutcome: .notAttempted
             )
@@ -223,10 +220,10 @@ extension DisplayRuntime {
                 trace.replacing(virtualDisplayCommandOutcome: .succeeded)
             }
         } catch {
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
-            updateTrace(context.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: context.transactionID
+            )
             _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
@@ -240,10 +237,7 @@ extension DisplayRuntime {
                 ),
                 virtualDisplayCommandSucceeded: false,
                 postSnapshot: makeSnapshot(),
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                ),
+                compensation: consumerCompensation,
                 desiredEnabled: desiredEnabled,
                 virtualDisplayCommandOutcome: .failed
             )

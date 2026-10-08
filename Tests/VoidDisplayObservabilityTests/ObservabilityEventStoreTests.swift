@@ -236,4 +236,72 @@ struct ObservabilityEventStoreTests {
         #expect(snapshot.windowSummary.eventCount == 1)
         #expect(snapshot.windowSummary.highestSeverity == .warning)
     }
+    @Test func recentQueriesReadEnoughFilesAfterSubsystemFilteringAndStopAtTheWindow() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "event-store-bounded-recent")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 20 * 86_400 + 3_600)
+        let store = EventStore(directoryURL: directory, dateProvider: { now })
+        for (offset, domain, operation) in [
+            (-7_200.0, ObservabilityDomain.capture, "Capture yesterday"),
+            (-60.0, .capture, "Capture today"),
+            (-30.0, .support, "Support today")
+        ] {
+            try await store.append(ObservabilityEvent(
+                timestamp: now.addingTimeInterval(offset), severity: .info,
+                subsystem: domain, operation: operation, message: "Recorded"
+            ))
+        }
+        // Reading an irrelevant older file would throw; both queries must stop before it.
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("events-19700119.ndjson"), withIntermediateDirectories: true
+        )
+        let recent = try await store.recentEvents(limit: 2, excludingSubsystems: [.support])
+        #expect(recent.map(\.operation) == ["Capture yesterday", "Capture today"])
+        let withinToday = try await store.recentEvents(limit: 10, since: now.addingTimeInterval(-3_600), excludingSubsystems: [.support])
+        #expect(withinToday.map(\.operation) == ["Capture today"])
+    }
+
+    @Test func snapshotKeepsTheFullHealthWindowEvenWhenTheRecentLimitIsSatisfied() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "event-store-bounded-health")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 20 * 86_400 + 3_600)
+        let store = EventStore(directoryURL: directory, dateProvider: { now })
+        for (offset, domain, severity) in [
+            (-7_200.0, ObservabilityDomain.capture, ObservabilitySeverity.warning),
+            (-60.0, .capture, .info),
+            (-30.0, .support, .error)
+        ] {
+            try await store.append(ObservabilityEvent(
+                timestamp: now.addingTimeInterval(offset), severity: severity,
+                subsystem: domain, operation: "Event \(offset)", message: "Recorded"
+            ))
+        }
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("events-19700119.ndjson"), withIntermediateDirectories: true
+        )
+        let snapshot = try await store.snapshot(
+            recentLimit: 1, summarySince: now.addingTimeInterval(-86_400), summaryExcludingSubsystems: [.support]
+        )
+        #expect(snapshot.recentEvents.count == 1)
+        #expect(snapshot.recentEvents.first?.subsystem == .support)
+        #expect(snapshot.windowSummary.eventCount == 2)
+        #expect(snapshot.windowSummary.highestSeverity == .warning)
+    }
+
+    @Test func aWindowWithoutPersistedEventsDoesNotSelectUnpersistedMemoryEvents() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "event-store-empty-window")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 20 * 86_400 + 3_600)
+        let store = EventStore(directoryURL: directory, inMemoryLimit: 1, dateProvider: { now })
+        for timestamp in [now.addingTimeInterval(-3 * 86_400), now] {
+            try await store.append(ObservabilityEvent(
+                timestamp: timestamp, severity: .info, subsystem: .capture,
+                operation: "Event", message: "Recorded"
+            ))
+        }
+        try FileManager.default.removeItem(at: directory.appendingPathComponent("events-19700121.ndjson"))
+        let recent = try await store.recentEvents(limit: 10, since: now.addingTimeInterval(-86_400))
+        #expect(recent.isEmpty)
+    }
+
 }

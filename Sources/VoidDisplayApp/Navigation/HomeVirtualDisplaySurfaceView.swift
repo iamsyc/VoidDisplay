@@ -53,13 +53,15 @@ package struct HomeVirtualDisplaySurfaceView: View {
         @Bindable var bindableVirtualDisplay = virtualDisplay
         @Bindable var bindableViewModel = controller.viewModel
 
-        let presentation = controller.presentation
+        let render = controller.makeRenderState()
+        let presentation = render.presentation
         let metrics = HomeLayoutMetrics.current
-        let itemStates = controller.itemRenderStates(for: presentation.items)
+        let itemStates = render.itemStates
         let context = layoutContext(
             metrics: metrics,
             presentation: presentation,
-            itemStates: itemStates
+            itemStates: itemStates,
+            displayDetection: render.displayDetection
         )
 
         ScrollView {
@@ -163,29 +165,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         } message: {
             Text(VirtualDisplayRowPresentation.restoreFailureSummary(virtualDisplay.restoreFailures))
         }
-        .onAppear {
-            controller.handleAppear()
-        }
-        .onDisappear {
-            controller.handleDisappear()
-        }
-        .onChange(of: virtualDisplay.restoreFailures) { _, newValue in
-            controller.handleRestoreFailuresChanged(newValue)
-        }
-        .onChange(of: controller.isCatalogLoading) { _, isLoading in
-            controller.handleCatalogLoadingChanged(isLoading)
-        }
-        .onChange(of: controller.isWebServiceRunning) { _, isRunning in
-            controller.handleSharingServiceStateChanged(isRunning: isRunning)
-        }
-        .onChange(of: controller.preferredSharingPort) { oldValue, newValue in
-            controller.handlePreferredSharingPortChanged(from: oldValue, to: newValue)
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-        ) { _ in
-            controller.handleCatalogTopologyChanged()
-        }
+        .modifier(HomeVirtualDisplayLifecycle(controller: controller, virtualDisplay: virtualDisplay))
     }
 
     private var editingConfigIsPresented: Binding<Bool> {
@@ -202,7 +182,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func layoutContext(
         metrics: HomeLayoutMetrics,
         presentation: HomeVirtualDisplaySurfacePresentation,
-        itemStates: [HomeVirtualDisplayItemRenderState]
+        itemStates: [HomeVirtualDisplayItemRenderState],
+        displayDetection: HomeDisplayDetectionPresentation
     ) -> HomeLayoutContext {
         HomeLayoutContext(
             metrics: metrics,
@@ -214,7 +195,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
             showsRescanToolbarTitle:
                 homeSurfaceWidth >= metrics.minimumContentWidthForRescanToolbarTitle,
             permissionStatus: controller.permissionStatus,
-            displayDetection: controller.displayDetectionPresentation,
+            displayDetection: displayDetection,
             sharingSettings: controller.sharingSettings,
             actions: HomeLayoutActions(
                 createVirtualDisplay: {

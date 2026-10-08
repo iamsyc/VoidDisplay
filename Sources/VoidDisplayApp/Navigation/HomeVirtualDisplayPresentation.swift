@@ -99,123 +99,176 @@ package enum HomeVirtualDisplayPresentationMapper {
         displayConfigs: [VirtualDisplayConfig],
         sharePageAddresses: [CGDirectDisplayID: String] = [:]
     ) -> HomeVirtualDisplaySurfacePresentation {
-        let namesByConfigID = Dictionary(
-            uniqueKeysWithValues: displayConfigs.map { ($0.id, $0.displayName) }
-        )
-        let surfacePresentation = DisplaySurfacePresentationMapper.makePresentation(
-            snapshot: snapshot,
-            virtualDisplayNamesByConfigID: namesByConfigID
-        )
+        let managedSurfaces = snapshot.surfaces.filter { $0.kind == .managedVirtualDisplay }
         let surfacesByConfigID = Dictionary(
-            surfacePresentation.surfaces.compactMap { surface in
-                configID(for: surface).map { ($0, surface) }
+            managedSurfaces.compactMap { surface in
+                surface.managedVirtualDisplay.map { ($0.configID, surface) }
             },
             uniquingKeysWith: { first, _ in first }
         )
-        let runtimeSurfacesByConfigID = Dictionary(
-            snapshot.surfaces.compactMap { surface in
-                configID(for: surface).map { ($0, surface) }
-            },
+        let leasesBySurface = Dictionary(grouping: snapshot.consumerLeases, by: \.surfaceIdentity)
+        let demandsBySurface = Dictionary(
+            snapshot.aggregatedDemands.map { ($0.surfaceIdentity, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let intentsBySurface = Dictionary(
+            snapshot.effectiveCaptureIntents.map { ($0.intent.surfaceIdentity, $0) },
+            uniquingKeysWith: { _, last in last }
+        )
+        let ordinalsByIdentity = Dictionary(
+            managedSurfaces.enumerated().map { ($0.element.identity, $0.offset + 1) },
             uniquingKeysWith: { first, _ in first }
         )
         let items = displayConfigs.map { config in
-            makeItem(
+            let surface = surfacesByConfigID[config.id]
+            let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: config.id)
+            return makeItem(
                 config: config,
-                surface: surfacesByConfigID[config.id],
-                runtimeSurface: runtimeSurfacesByConfigID[config.id],
+                surface: surface,
+                snapshot: snapshot,
+                leases: leasesBySurface[identity] ?? [],
+                aggregate: demandsBySurface[identity],
+                effectiveIntent: intentsBySurface[identity],
+                ordinal: managedSurfaces.count > 1
+                    ? ordinalsByIdentity[identity]
+                    : nil,
                 sharePageAddresses: sharePageAddresses
             )
         }
         return HomeVirtualDisplaySurfacePresentation(
-            summary: makeSummary(items: items),
+            summary: HomeRuntimeSummaryPresentation(
+                virtualDisplayCount: items.count,
+                runningVirtualDisplayCount: items.count { $0.isRunning },
+                previewingCount: items.count { $0.isPreviewing },
+                sharingCount: items.count { $0.isSharing },
+                activeViewerCount: items.reduce(0) { $0 + $1.viewerCount }
+            ),
             items: items
         )
     }
 
     private static func makeItem(
         config: VirtualDisplayConfig,
-        surface: DisplaySurfacePresentation?,
-        runtimeSurface: DisplaySurface?,
+        surface: DisplaySurface?,
+        snapshot: DisplayRuntimeSnapshot,
+        leases: [DisplayRuntimeConsumerLeaseSnapshot],
+        aggregate: DisplayRuntimeAggregatedDemand?,
+        effectiveIntent: DisplayRuntimeEffectiveCaptureIntent?,
+        ordinal: Int?,
         sharePageAddresses: [CGDirectDisplayID: String]
     ) -> HomeVirtualDisplayItemPresentation {
-        let virtualDisplayStatus = surface?.compactStatusItems.first { $0.id == "virtualDisplay" }
-        let hasIssue = surface?.compactStatusItems.contains { $0.id == "issue" } ?? false
-        let compactStatusItems = surface?.compactStatusItems ?? fallbackStatusItems(for: config)
-        let viewerCount = surface?.compactStatusItems.first { $0.id == "viewerCount" }
-            .flatMap { Int($0.value) } ?? 0
-        let displayID = surface?.displayID
-        let isRunning = runtimeSurface.map(isRunningVirtualDisplay) ?? false
-        let statusLabel = statusLabel(
-            config: config,
-            surface: surface,
-            virtualDisplayStatus: virtualDisplayStatus,
-            hasIssue: hasIssue
+        let previewLeases = leases.filter { $0.kind == .preview }
+        let lanWebViewLeases = leases.filter { $0.kind == .lanWebView }
+        let runtimeConsumerKinds = DisplaySurfaceStatusPresentation.runtimeConsumerKinds(
+            aggregate: aggregate, effectiveIntent: effectiveIntent
         )
-        let statusTone = statusTone(
-            config: config,
-            surface: surface,
-            virtualDisplayStatus: virtualDisplayStatus,
-            hasIssue: hasIssue
+        let isPreviewing = surface != nil && DisplaySurfaceStatusPresentation.hasRuntimeDemand(
+            kind: .preview, leases: previewLeases, runtimeConsumerKinds: runtimeConsumerKinds
         )
-
+        let isSharing = surface != nil && DisplaySurfaceStatusPresentation.hasRuntimeDemand(
+            kind: .lanWebView, leases: lanWebViewLeases, runtimeConsumerKinds: runtimeConsumerKinds
+        )
+        let lastFailureCode = surface.flatMap {
+            DisplaySurfaceStatusPresentation.lastFailureCode(
+                surface: $0, leases: leases, effectiveIntent: effectiveIntent,
+                sharing: snapshot.sharing, snapshot: snapshot
+            )
+        }
+        let virtualDisplayStatus = surface.flatMap {
+            DisplaySurfaceStatusPresentation.virtualDisplayStatus(for: $0, snapshot: snapshot)
+        }
+        let previewStatus = DisplaySurfaceStatusPresentation.previewStatus(
+            leases: previewLeases, hasRuntimeDemand: isPreviewing
+        )
+        let lanWebViewStatus = DisplaySurfaceStatusPresentation.lanWebViewStatus(
+            leases: lanWebViewLeases, hasRuntimeDemand: isSharing
+        )
+        let viewerCount = surface == nil ? 0 : max(surface?.sharing?.viewerCount ?? 0, aggregate?.activeViewerCount ?? 0)
+        var compactStatusItems: [DisplaySurfaceStatusItemPresentation] = []
+        if surface == nil {
+            compactStatusItems = fallbackStatusItems(for: config)
+        } else {
+            if let virtualDisplayStatus {
+                compactStatusItems.append(
+                    DisplaySurfaceStatusItemPresentation(
+                        id: "virtualDisplay",
+                        title: String(localized: "Virtual Display"),
+                        value: virtualDisplayStatus.value,
+                        accessibilityIdentifier: "displays_virtual_display_status",
+                        tone: virtualDisplayStatus.tone
+                    )
+                )
+            }
+            compactStatusItems.append(contentsOf: [
+                DisplaySurfaceStatusItemPresentation(
+                    id: "preview",
+                    title: String(localized: "Preview"),
+                    value: previewStatus.value,
+                    accessibilityIdentifier: "displays_preview_status",
+                    tone: previewStatus.tone
+                ),
+                DisplaySurfaceStatusItemPresentation(
+                    id: "webView",
+                    title: String(localized: "Web Sharing"),
+                    value: lanWebViewStatus.value,
+                    accessibilityIdentifier: "displays_lan_web_view_status",
+                    tone: lanWebViewStatus.tone
+                ),
+                DisplaySurfaceStatusItemPresentation(
+                    id: "viewerCount",
+                    title: String(localized: "Connections"),
+                    value: String(viewerCount),
+                    accessibilityIdentifier: "displays_viewer_count",
+                    tone: viewerCount > 0 ? .info : .neutral
+                )
+            ])
+            if let issueStatus = DisplaySurfaceStatusPresentation.issueStatus(for: lastFailureCode) {
+                compactStatusItems.append(DisplaySurfaceStatusItemPresentation(
+                    id: "issue",
+                    title: String(localized: "Last Failure"),
+                    value: issueStatus.value,
+                    accessibilityIdentifier: "displays_issue_status",
+                    tone: issueStatus.tone
+                ))
+            }
+        }
+        let hasIssue = compactStatusItems.contains { $0.id == "issue" }
+        let statusLabel = virtualDisplayStatus?.value
+            ?? (hasIssue && config.desiredEnabled
+                ? "\(String(localized: "Enabled")) · \(String(localized: "Startup Failed"))"
+                : config.desiredEnabled ? String(localized: "Enabled") : String(localized: "Disabled"))
+        let statusTone = virtualDisplayStatus?.tone
+            ?? (hasIssue ? .danger : config.desiredEnabled ? .warning : .neutral)
+        let name = config.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = surface == nil ? config.displayName : !name.isEmpty ? name : ordinal.map {
+            String(format: String(localized: "Virtual Display %lld"), Int64($0))
+        } ?? String(localized: "Virtual Display")
+        let accessibilitySummary = surface == nil ? "\(config.displayName), \(statusLabel)" :
+            "\(title), " + compactStatusItems.filter { isSharing || $0.id != "viewerCount" }.map { item in
+                item.id == "viewerCount" ? SharingConnectionText.status(viewerCount) : "\(item.title): \(item.value)"
+            }.joined(separator: ", ")
+        let displayID = surface?.currentDisplayID
+        let isRunning = surface.map {
+            $0.currentDisplayID != nil && ($0.managedVirtualDisplay?.isRunning == true || $0.managedVirtualDisplay?.isLiveRuntime == true)
+        } ?? false
         return HomeVirtualDisplayItemPresentation(
             id: config.id,
             displayID: displayID,
             shareAddress: displayID.flatMap { sharePageAddresses[$0] },
-            title: surface?.title ?? config.displayName,
+            title: title,
             subtitle: VirtualDisplayRowPresentation.subtitleText(for: config),
             desiredEnabled: config.desiredEnabled,
             isRunning: isRunning,
-            isPreviewing: surface?.isPreviewing ?? false,
-            isSharing: surface?.isSharing ?? false,
+            isPreviewing: isPreviewing,
+            isSharing: isSharing,
             viewerCount: viewerCount,
             statusLabel: statusLabel,
             statusTone: statusTone,
             hasIssue: hasIssue,
             compactStatusItems: compactStatusItems,
-            operationalStatusItems: operationalStatusItems(from: compactStatusItems),
-            accessibilitySummary: surface?.accessibilitySummary ?? "\(config.displayName), \(statusLabel)"
+            operationalStatusItems: compactStatusItems.filter { !["virtualDisplay", "issue"].contains($0.id) },
+            accessibilitySummary: accessibilitySummary
         )
-    }
-
-    private static func makeSummary(items: [HomeVirtualDisplayItemPresentation]) -> HomeRuntimeSummaryPresentation {
-        HomeRuntimeSummaryPresentation(
-            virtualDisplayCount: items.count,
-            runningVirtualDisplayCount: items.count { $0.isRunning },
-            previewingCount: items.count { $0.isPreviewing },
-            sharingCount: items.count { $0.isSharing },
-            activeViewerCount: items.reduce(0) { $0 + $1.viewerCount }
-        )
-    }
-
-    private static func statusLabel(
-        config: VirtualDisplayConfig,
-        surface: DisplaySurfacePresentation?,
-        virtualDisplayStatus: DisplaySurfaceStatusItemPresentation?,
-        hasIssue: Bool
-    ) -> String {
-        if let virtualDisplayStatus {
-            return virtualDisplayStatus.value
-        }
-        if hasIssue, config.desiredEnabled {
-            return "\(String(localized: "Enabled")) · \(String(localized: "Startup Failed"))"
-        }
-        return config.desiredEnabled ? String(localized: "Enabled") : String(localized: "Disabled")
-    }
-
-    private static func statusTone(
-        config: VirtualDisplayConfig,
-        surface _: DisplaySurfacePresentation?,
-        virtualDisplayStatus: DisplaySurfaceStatusItemPresentation?,
-        hasIssue: Bool
-    ) -> DisplaySurfaceStatusTone {
-        if let virtualDisplayStatus {
-            return virtualDisplayStatus.tone
-        }
-        if hasIssue {
-            return .danger
-        }
-        return config.desiredEnabled ? .warning : .neutral
     }
 
     private static func fallbackStatusItems(
@@ -247,39 +300,5 @@ package enum HomeVirtualDisplayPresentationMapper {
                 accessibilityIdentifier: "home_viewer_count"
             )
         ]
-    }
-
-    private static func operationalStatusItems(
-        from items: [DisplaySurfaceStatusItemPresentation]
-    ) -> [DisplaySurfaceStatusItemPresentation] {
-        items.filter { item in
-            switch item.id {
-            case "virtualDisplay", "issue":
-                false
-            default:
-                true
-            }
-        }
-    }
-
-    private static func configID(for surface: DisplaySurfacePresentation) -> UUID? {
-        guard surface.surfaceIdentity.kind == .managedVirtualDisplay else {
-            return nil
-        }
-        return UUID(uuidString: surface.surfaceIdentity.stableID)
-    }
-
-    private static func configID(for surface: DisplaySurface) -> UUID? {
-        guard surface.identity.kind == .managedVirtualDisplay || surface.kind == .managedVirtualDisplay else {
-            return nil
-        }
-        return UUID(uuidString: surface.identity.stableID) ?? surface.managedVirtualDisplay?.configID
-    }
-
-    private static func isRunningVirtualDisplay(_ surface: DisplaySurface) -> Bool {
-        guard let state = surface.managedVirtualDisplay else {
-            return false
-        }
-        return surface.currentDisplayID != nil && (state.isRunning || state.isLiveRuntime)
     }
 }
