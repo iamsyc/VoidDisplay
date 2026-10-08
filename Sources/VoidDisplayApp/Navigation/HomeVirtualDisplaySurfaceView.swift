@@ -165,29 +165,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
         } message: {
             Text(VirtualDisplayRowPresentation.restoreFailureSummary(virtualDisplay.restoreFailures))
         }
-        .onAppear {
-            controller.handleAppear()
-        }
-        .onDisappear {
-            controller.handleDisappear()
-        }
-        .onChange(of: virtualDisplay.restoreFailures) { _, newValue in
-            controller.handleRestoreFailuresChanged(newValue)
-        }
-        .onChange(of: controller.isCatalogLoading) { _, isLoading in
-            controller.handleCatalogLoadingChanged(isLoading)
-        }
-        .onChange(of: controller.isWebServiceRunning) { _, isRunning in
-            controller.handleSharingServiceStateChanged(isRunning: isRunning)
-        }
-        .onChange(of: controller.preferredSharingPort) { oldValue, newValue in
-            controller.handlePreferredSharingPortChanged(from: oldValue, to: newValue)
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-        ) { _ in
-            controller.handleCatalogTopologyChanged()
-        }
+        .modifier(HomeVirtualDisplayLifecycle(controller: controller, virtualDisplay: virtualDisplay))
     }
 
     private var editingConfigIsPresented: Binding<Bool> {

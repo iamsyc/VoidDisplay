@@ -10,20 +10,20 @@ struct HomeVirtualDisplayPresentationTests {
         let firstID = try #require(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
         let secondID = try #require(UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
         let firstIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: firstID)
-        let previewLease = makeLease(
+        let previewLease = makeHomeConsumerLease(
             surfaceIdentity: firstIdentity,
             displayID: 7101,
             kind: .preview,
             state: .attached
         )
-        let webViewLease = makeLease(
+        let webViewLease = makeHomeConsumerLease(
             surfaceIdentity: firstIdentity,
             displayID: 7101,
             kind: .lanWebView,
             state: .attached,
             activeViewerCount: 2
         )
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedSurface(
                     configID: firstID,
@@ -103,7 +103,7 @@ struct HomeVirtualDisplayPresentationTests {
 
     @Test func marksItemWhenVirtualDisplayNeedsAttention() throws {
         let configID = try #require(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc"))
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedSurface(
                     configID: configID,
@@ -130,7 +130,7 @@ struct HomeVirtualDisplayPresentationTests {
 
     @Test func enabledButStoppedVirtualDisplayDoesNotReadAsRunning() throws {
         let configID = try #require(UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd"))
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedSurface(
                     configID: configID,
@@ -160,7 +160,7 @@ struct HomeVirtualDisplayPresentationTests {
     @Test func routeOnlyShareAddressKeepsDefaultHomeOperationalStatus() throws {
         let configID = try #require(UUID(uuidString: "12121212-1212-1212-1212-121212121212"))
         let displayID: DisplayRuntimeDisplayID = 7404
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedSurface(
                     configID: configID,
@@ -217,7 +217,7 @@ struct HomeVirtualDisplayPresentationTests {
     @Test func summaryUsesCurrentConfigItemsOnly() throws {
         let currentID = try #require(UUID(uuidString: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"))
         let staleID = try #require(UUID(uuidString: "ffffffff-ffff-ffff-ffff-ffffffffffff"))
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedSurface(
                     configID: currentID,
@@ -249,7 +249,7 @@ struct HomeVirtualDisplayPresentationTests {
 
     @Test func marksItemWhenSharingLifecycleFails() throws {
         let configID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
-        let snapshot = DisplayRuntimeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedSurface(
                     configID: configID,
@@ -344,33 +344,4 @@ struct HomeVirtualDisplayPresentationTests {
         )
     }
 
-    private func makeLease(
-        surfaceIdentity: DisplaySurfaceIdentity,
-        displayID: DisplayRuntimeDisplayID,
-        kind: DisplaySurfaceConsumerKind,
-        state: DisplayRuntimeConsumerLeaseState,
-        activeViewerCount: Int = 0
-    ) -> DisplayRuntimeConsumerLease {
-        DisplayRuntimeConsumerLease(
-            surfaceIdentity: surfaceIdentity,
-            surfaceEpoch: .initial,
-            resolvedDisplayID: displayID,
-            kind: kind,
-            owner: .init(source: .localUI, redactedLabel: nil),
-            createdAt: Date(timeIntervalSince1970: 1),
-            updatedAt: Date(timeIntervalSince1970: 2),
-            state: state,
-            demand: DisplayRuntimeConsumerDemand(
-                sourcePixelSize: DisplayRuntimePixelSize(width: 1920, height: 1080),
-                preferredPixelSize: nil,
-                maximumPixelSize: nil,
-                sourceFramesPerSecond: 60,
-                preferredFramesPerSecond: nil,
-                capturesCursor: false,
-                powerProfile: .automatic,
-                latencyPreference: .realtime,
-                activeViewerCount: activeViewerCount
-            )
-        )
-    }
 }

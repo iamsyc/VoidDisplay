@@ -16,6 +16,8 @@ package actor ObservabilityCenter {
     private var snapshotProviders: [String: AnyObservabilitySnapshotProvider] = [:]
     private var latestStateSnapshot: ObservabilityStateSnapshot?
     private var latestHealthSummary: ObservabilityHealthSummary?
+    private var automaticRefreshTask: Task<Void, Never>?
+    private var pendingAutomaticRefreshReason: SnapshotRefreshReason?
     private(set) var lastExportedBundleURL: URL?
 
     package init(
@@ -73,14 +75,43 @@ package actor ObservabilityCenter {
     }
 
     package func refreshSnapshot(reason: SnapshotRefreshReason) async {
+        switch reason {
+        case .startup, .manualDiagnosticsRefresh, .exportRequested:
+            _ = await refreshDiagnosticsSnapshot(reason: reason)
+        case .eventRecorded, .captureStateChanged, .sharingStateChanged,
+             .virtualDisplayStateChanged, .screenCatalogStateChanged, .displayRuntimeTransactionChanged:
+            pendingAutomaticRefreshReason = reason
+            if let automaticRefreshTask {
+                await automaticRefreshTask.value
+                return
+            }
+            let task = Task { [self] in
+                await Task.yield()
+                while let pendingReason = pendingAutomaticRefreshReason {
+                    pendingAutomaticRefreshReason = nil
+                    await collectSnapshot(reason: pendingReason)
+                }
+                automaticRefreshTask = nil
+            }
+            automaticRefreshTask = task
+            await task.value
+        }
+    }
+
+    package func refreshDiagnosticsSnapshot(
+        reason: SnapshotRefreshReason = .manualDiagnosticsRefresh
+    ) async -> ObservabilityDiagnosticsSnapshot {
+        if let automaticRefreshTask { await automaticRefreshTask.value }
+        return await collectSnapshot(reason: reason)
+    }
+
+    @discardableResult
+    private func collectSnapshot(reason: SnapshotRefreshReason) async -> ObservabilityDiagnosticsSnapshot {
         let now = dateProvider()
         let healthCutoff = now.addingTimeInterval(-Self.healthLookbackInterval)
         let sections = await buildSnapshotSections()
-        let issues = Array(
-            await issueStore.recentIssues(limit: 100, since: healthCutoff)
-                .filter { $0.subsystem != .support }
-                .prefix(25)
-        )
+        let recentIssues = await issueStore.recentIssues(limit: 100, since: healthCutoff)
+        let issues = Array(recentIssues.filter { $0.subsystem != .support }.prefix(25))
         let eventSnapshot: ObservabilityEventSnapshot
         if let persistedSnapshot = try? await eventStore.snapshot(
             recentLimit: 200,
@@ -115,6 +146,12 @@ package actor ObservabilityCenter {
             state: state,
             health: health,
             events: eventSnapshot.recentEvents
+        )
+        return ObservabilityDiagnosticsSnapshot(
+            state: state, health: health,
+            issues: Array(recentIssues.prefix(25)),
+            events: eventSnapshot.recentEvents.filter { $0.timestamp >= healthCutoff },
+            lastExportedBundleDisplayPath: lastExportedBundleDisplayPath()
         )
     }
 
@@ -189,8 +226,7 @@ package actor ObservabilityCenter {
         let state = latestStateSnapshot ?? makeFallbackState(reason: .manualDiagnosticsRefresh)
         let health = latestHealthSummary ?? makeFallbackHealth()
         let issues = await issueStore.recentIssues(limit: issueLimit, since: earliestDate)
-        let events = ((try? await eventStore.recentEvents(limit: eventLimit)) ?? [])
-            .filter { $0.timestamp >= earliestDate }
+        let events = (try? await eventStore.recentEvents(limit: eventLimit, since: earliestDate)) ?? []
         return ObservabilityDiagnosticsSnapshot(
             state: state,
             health: health,

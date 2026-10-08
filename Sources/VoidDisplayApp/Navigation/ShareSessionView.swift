@@ -140,7 +140,7 @@ package struct ShareSessionView: View {
     }
 
     private func refreshAddress() {
-        address = isStopping ? nil : controller.makeRenderState().presentation.items.first { $0.id == configID }?.shareAddress
+        address = isStopping ? nil : controller.sharePageAddress(for: configID)
         copied = false
     }
 }

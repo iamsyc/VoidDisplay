@@ -3,7 +3,6 @@ import CoreGraphics
 import Foundation
 import Observation
 import ScreenCaptureKit
-import SwiftUI
 import VoidDisplayCapture
 import VoidDisplayDesignSystem
 import VoidDisplayFoundation
@@ -73,13 +72,7 @@ package final class HomeVirtualDisplaySurfaceController {
     }
 
     package var permissionStatus: HomePermissionStatusRenderState {
-        HomePermissionStatusRenderState(
-            label: permissionLabel,
-            systemImage: permissionSystemImage,
-            tint: permissionTint,
-            isActive: capture.displayCatalogState.hasScreenCapturePermission != nil,
-            canOpenSettings: capture.displayCatalogState.hasScreenCapturePermission == false
-        )
+        HomePermissionStatusRenderState(permission: capture.displayCatalogState.hasScreenCapturePermission)
     }
 
     package var sharingSettings: HomeSharingSettingsRenderState {
@@ -121,6 +114,13 @@ package final class HomeVirtualDisplaySurfaceController {
         sharing.preferredWebServicePort
     }
 
+    package func sharePageAddress(for configID: UUID) -> String? {
+        guard let displayID = managedDisplayID(for: configID),
+              shareAddressDisplayIDs.contains(displayID)
+        else { return nil }
+        return sharing.sharePageAddress(for: displayID)
+    }
+
     private func itemRenderStates(
         for items: [HomeVirtualDisplayItemPresentation],
         snapshot: DisplayRuntimeSnapshot,
@@ -130,7 +130,14 @@ package final class HomeVirtualDisplaySurfaceController {
             [.virtualDisplayEnable, .virtualDisplayDisable].contains(trace.kind) ? trace.targetConfigID : nil
         })
         return items.map { item in
-            HomeVirtualDisplayItemRenderState(
+            let displayIsAvailable = item.displayID.flatMap { display(for: $0) } != nil
+            let isTransitionBusy = displayRuntime.isConsumerTransitionBusy(
+                surfaceIdentity: .managedVirtualDisplay(configID: item.id)
+            )
+            let isPreviewStarting = item.displayID.map(capture.isStarting(displayID:)) ?? false
+            let isWebViewStarting = item.displayID.map(sharing.isStarting(displayID:)) ?? false
+            let permission = capture.displayCatalogState.hasScreenCapturePermission
+            return HomeVirtualDisplayItemRenderState(
                 item: item,
                 isFirst: items.first?.id == item.id,
                 isLast: items.last?.id == item.id,
@@ -140,12 +147,25 @@ package final class HomeVirtualDisplaySurfaceController {
                 rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: item.id),
                 isPrimary: viewModel.isPrimaryDisplay(configID: item.id),
                 canSetAsPrimary: canSetAsPrimary(item),
-                needsDisplayDetection: needsDisplayDetection(item),
+                needsDisplayDetection: HomeVirtualDisplayItemRenderState.needsDisplayDetection(
+                    item: item, permission: permission,
+                    hasCatalogError: capture.displayCatalogState.loadErrorMessage != nil
+                        || capture.displayCatalogState.lastLoadError != nil,
+                    displayIsAvailable: displayIsAvailable
+                ),
                 isDisplayDetectionScanning: detection.isScanning,
-                isPreviewActionDisabled: isPreviewActionDisabled(item),
-                isPreviewStarting: item.displayID.map(capture.isStarting(displayID:)) ?? false,
-                isWebViewActionDisabled: isWebViewActionDisabled(item),
-                isWebViewStarting: item.displayID.map(sharing.isStarting(displayID:)) ?? false
+                isPreviewActionDisabled: HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+                    displayID: item.displayID, isTransitionBusy: isTransitionBusy,
+                    isStarting: isPreviewStarting, isActive: item.isPreviewing,
+                    displayIsAvailable: displayIsAvailable, permission: permission
+                ),
+                isPreviewStarting: isPreviewStarting,
+                isWebViewActionDisabled: HomeVirtualDisplayItemRenderState.isConsumerActionDisabled(
+                    displayID: item.displayID, isTransitionBusy: isTransitionBusy,
+                    isStarting: isWebViewStarting, isActive: item.isSharing,
+                    displayIsAvailable: displayIsAvailable, permission: permission
+                ),
+                isWebViewStarting: isWebViewStarting
             )
         }
     }
@@ -203,14 +223,8 @@ package final class HomeVirtualDisplaySurfaceController {
     }
 
     package func applySharingPortDraft() {
-        switch SharePortValidationError.parse(sharingPortInput) {
-        case .success(let port):
-            sharing.savePreferredWebServicePort(port)
-            sharingPortInput = String(port)
-            sharingPortErrorMessage = nil
-        case .failure(let validationError):
-            sharingPortErrorMessage = validationError.userMessage
-        }
+        guard let port = parseSharingPortDraft() else { return }
+        sharing.savePreferredWebServicePort(port)
     }
 
     package func resetConfigStore() {
@@ -410,7 +424,7 @@ package final class HomeVirtualDisplaySurfaceController {
         configID: UUID,
         openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
     ) async {
-        let displayID = makeRenderState().presentation.items.first(where: { $0.id == configID })?.displayID
+        let displayID = managedDisplayID(for: configID)
         if let displayID, let existingSession = previewActions.previewIDForDisplayID(displayID) {
             previewFailureConfigID = nil
             openPreviewWindow(existingSession)
@@ -507,7 +521,7 @@ package final class HomeVirtualDisplaySurfaceController {
 
     private func prepareWebViewSharing() async -> Bool {
         if !sharing.isWebServiceRunning {
-            guard let requestedPort = requestedSharingPortForStart() else {
+            guard let requestedPort = parseSharingPortDraft() else {
                 return false
             }
             let result = await sharing.startWebService(requestedPort: requestedPort)
@@ -523,7 +537,7 @@ package final class HomeVirtualDisplaySurfaceController {
         return sharing.isWebServiceRunning
     }
 
-    private func requestedSharingPortForStart() -> UInt16? {
+    private func parseSharingPortDraft() -> UInt16? {
         switch SharePortValidationError.parse(sharingPortInput) {
         case .success(let port):
             sharingPortInput = String(port)
@@ -541,6 +555,11 @@ package final class HomeVirtualDisplaySurfaceController {
         }
         _ = await displayRuntime.forceRefreshCatalog(source: .capturePage)
         return display(for: displayID)
+    }
+
+    private func managedDisplayID(for configID: UUID) -> CGDirectDisplayID? {
+        guard virtualDisplay.getConfig(configID) != nil else { return nil }
+        return virtualDisplay.managedDisplays.first { $0.configId == configID }?.displayID
     }
 
     private func display(for displayID: CGDirectDisplayID) -> SCDisplay? {
@@ -571,46 +590,6 @@ package final class HomeVirtualDisplaySurfaceController {
         return firstEnabledID != item.id
     }
 
-    private func isPreviewActionDisabled(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
-        if displayRuntime.isConsumerTransitionBusy(
-            surfaceIdentity: .managedVirtualDisplay(configID: item.id)
-        ) {
-            return true
-        }
-        guard let displayID = item.displayID else { return true }
-        if capture.isStarting(displayID: displayID) { return true }
-        if item.isPreviewing { return false }
-        return display(for: displayID) == nil
-            || capture.displayCatalogState.hasScreenCapturePermission == false
-    }
-
-    private func needsDisplayDetection(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
-        guard capture.displayCatalogState.hasScreenCapturePermission == true,
-              capture.displayCatalogState.loadErrorMessage == nil,
-              capture.displayCatalogState.lastLoadError == nil,
-              item.isRunning,
-              !item.isPreviewing,
-              !item.isSharing,
-              let displayID = item.displayID
-        else {
-            return false
-        }
-        return display(for: displayID) == nil
-    }
-
-    private func isWebViewActionDisabled(_ item: HomeVirtualDisplayItemPresentation) -> Bool {
-        if displayRuntime.isConsumerTransitionBusy(
-            surfaceIdentity: .managedVirtualDisplay(configID: item.id)
-        ) {
-            return true
-        }
-        guard let displayID = item.displayID else { return true }
-        if sharing.isStarting(displayID: displayID) { return true }
-        if item.isSharing { return false }
-        return display(for: displayID) == nil
-            || capture.displayCatalogState.hasScreenCapturePermission == false
-    }
-
     private func performPersistenceAction(_ action: () throws -> Void) {
         do {
             try action()
@@ -621,15 +600,17 @@ package final class HomeVirtualDisplaySurfaceController {
         actionAlert = UserFacingAlertState(title: title, message: message)
     }
 
-    private var sharePageAddresses: [CGDirectDisplayID: String] {
-        let catalogDisplayIDs = Set(
+    private var shareAddressDisplayIDs: Set<CGDirectDisplayID> {
+        Set(
             (sharing.displayCatalogState.activeShareableDisplays ?? []).map(\.displayID)
         )
-        let displayIDs = catalogDisplayIDs
             .union(sharing.activeSharingDisplayIDs)
             .union(sharing.startingDisplayIDs)
+    }
+
+    private var sharePageAddresses: [CGDirectDisplayID: String] {
         return Dictionary(
-            uniqueKeysWithValues: displayIDs.compactMap { displayID in
+            uniqueKeysWithValues: shareAddressDisplayIDs.compactMap { displayID in
                 sharing.sharePageAddress(for: displayID).map { (displayID, $0) }
             }
         )
@@ -641,39 +622,6 @@ package final class HomeVirtualDisplaySurfaceController {
             displayRuntime: displayRuntime,
             capturePerformancePreferences: capturePerformancePreferences
         )
-    }
-
-    private var permissionLabel: String {
-        switch capture.displayCatalogState.hasScreenCapturePermission {
-        case true:
-            String(localized: "Allowed")
-        case false:
-            String(localized: "Permission Needed")
-        case nil:
-            String(localized: "Checking")
-        }
-    }
-
-    private var permissionSystemImage: String {
-        switch capture.displayCatalogState.hasScreenCapturePermission {
-        case true:
-            "checkmark.shield"
-        case false:
-            "lock.shield"
-        case nil:
-            "arrow.triangle.2.circlepath"
-        }
-    }
-
-    private var permissionTint: Color {
-        switch capture.displayCatalogState.hasScreenCapturePermission {
-        case true:
-            .green
-        case false:
-            .orange
-        case nil:
-            .blue
-        }
     }
 
     private var isSharingPortDirty: Bool {

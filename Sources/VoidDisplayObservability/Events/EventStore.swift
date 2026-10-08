@@ -69,7 +69,10 @@ package actor EventStore {
         since earliestDate: Date? = nil,
         excludingSubsystems: Set<ObservabilityDomain> = []
     ) async throws -> [ObservabilityEvent] {
-        let persisted = try loadPersistedEventsLocked()
+        let persisted = try loadPersistedEventsLocked(
+            recentLimit: limit, recentSince: earliestDate,
+            recentExcludingSubsystems: excludingSubsystems
+        )
         let source = persisted.isEmpty ? inMemoryEvents : persisted
         return filteredRecentEvents(
             source,
@@ -97,7 +100,9 @@ package actor EventStore {
         summarySince earliestDate: Date,
         summaryExcludingSubsystems: Set<ObservabilityDomain> = []
     ) async throws -> ObservabilityEventSnapshot {
-        let persisted = try loadPersistedEventsLocked()
+        let persisted = try loadPersistedEventsLocked(
+            recentLimit: recentLimit, summarySince: earliestDate
+        )
         let source = persisted.isEmpty ? inMemoryEvents : persisted
         return makeSnapshot(
             source,
@@ -124,7 +129,10 @@ package actor EventStore {
         try pruneExpiredFilesLocked()
     }
 
-    private func loadPersistedEventsLocked() throws -> [ObservabilityEvent] {
+    private func loadPersistedEventsLocked(
+        recentLimit: Int, recentSince: Date? = nil,
+        recentExcludingSubsystems: Set<ObservabilityDomain> = [], summarySince: Date? = nil
+    ) throws -> [ObservabilityEvent] {
         guard fileManager.fileExists(atPath: directoryURL.path) else { return [] }
         let files = try fileManager.contentsOfDirectory(
             at: directoryURL,
@@ -134,11 +142,26 @@ package actor EventStore {
             .filter { $0.pathExtension == "ndjson" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
+        let recentBoundary = recentSince.map(Self.filename(for:))
+        let summaryBoundary = summarySince.map(Self.filename(for:))
         var events: [ObservabilityEvent] = []
-        for fileURL in files {
+        var recentCount = 0
+        for fileURL in files.reversed() {
+            let filename = fileURL.lastPathComponent
+            let isBeforeRecentWindow = recentBoundary.map { filename < $0 } ?? false
+            let hasCoveredSummaryWindow = summaryBoundary.map { filename < $0 } ?? true
+            // Keep the persisted-source decision even when all valid records precede the requested window.
+            if !events.isEmpty && (isBeforeRecentWindow || (recentCount >= recentLimit && hasCoveredSummaryWindow)) {
+                break
+            }
             let data = try Data(contentsOf: fileURL)
             guard let content = String(data: data, encoding: .utf8) else { continue }
-            events.append(contentsOf: Self.decodeEvents(from: content))
+            let decoded = Self.decodeEvents(from: content)
+            recentCount += filteredRecentEvents(
+                decoded, limit: recentLimit, since: recentSince,
+                excludingSubsystems: recentExcludingSubsystems
+            ).count
+            events.insert(contentsOf: decoded, at: 0)
         }
         return events.enumerated()
             .sorted { lhs, rhs in

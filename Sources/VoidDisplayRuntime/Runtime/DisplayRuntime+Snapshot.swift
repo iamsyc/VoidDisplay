@@ -43,10 +43,35 @@ extension DisplayRuntime {
         )
     }
 
+    func currentSurfaceSnapshot() -> [DisplaySurface] {
+        DisplaySurfaceGraphBuilder.makeSurfaces(
+            catalog: currentCatalogSnapshot(),
+            capture: currentCaptureSnapshot(),
+            sharing: currentSharingSnapshot(),
+            virtualDisplay: currentVirtualDisplaySnapshot()
+        )
+    }
+
     package func surfaceIdentityForDisplayID(
         _ displayID: DisplayRuntimeDisplayID
     ) -> DisplaySurfaceIdentity? {
-        makeSnapshot().surfaces.first {
+        let catalog = currentCatalogSnapshot()
+        let virtualDisplay = currentVirtualDisplaySnapshot()
+        let catalogSurfaces = DisplaySurfaceGraphBuilder.makeSurfaces(
+            catalog: catalog,
+            capture: .empty,
+            sharing: .empty,
+            virtualDisplay: virtualDisplay
+        )
+        if let surface = catalogSurfaces.first(where: { $0.currentDisplayID == displayID }) {
+            return surface.identity
+        }
+        return DisplaySurfaceGraphBuilder.makeSurfaces(
+            catalog: catalog,
+            capture: currentCaptureSnapshot(),
+            sharing: currentSharingSnapshot(),
+            virtualDisplay: virtualDisplay
+        ).first {
             $0.currentDisplayID == displayID
         }?.identity
     }

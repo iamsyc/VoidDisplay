@@ -10,20 +10,20 @@ struct HomeVirtualDisplayStatusTests {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
         let displayID: DisplayRuntimeDisplayID = 4242
         let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
-        let previewLease = makeLease(
+        let previewLease = makeHomeConsumerLease(
             surfaceIdentity: identity,
             displayID: displayID,
             kind: .preview,
             state: .attached
         )
-        let lanLease = makeLease(
+        let lanLease = makeHomeConsumerLease(
             surfaceIdentity: identity,
             displayID: displayID,
             kind: .lanWebView,
             state: .attached,
             activeViewerCount: 3
         )
-        let snapshot = makeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedVirtualSurface(
                     configID: configID,
@@ -109,7 +109,7 @@ struct HomeVirtualDisplayStatusTests {
     @Test func hidesCatalogOnlyPhysicalSurfacesFromHomeOverview() throws {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
         let managedIdentity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
-        let snapshot = makeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedVirtualSurface(
                     configID: configID,
@@ -494,14 +494,14 @@ struct HomeVirtualDisplayStatusTests {
         let displayID: DisplayRuntimeDisplayID = 77
         let configID = UUID()
         let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
-        let failedLease = makeLease(
+        let failedLease = makeHomeConsumerLease(
             surfaceIdentity: identity,
             displayID: displayID,
             kind: .preview,
             state: .failed,
             lastFailureCode: "capture_intent_permission_unavailable"
         )
-        let snapshot = makeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedVirtualSurface(configID: configID, displayID: displayID, desiredEnabled: true, maximumPixelWidth: 1280, maximumPixelHeight: 720)
             ],
@@ -518,7 +518,7 @@ struct HomeVirtualDisplayStatusTests {
         let configID = UUID()
         let displayID: DisplayRuntimeDisplayID = 78
         let sessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000078"))
-        let snapshot = makeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedVirtualSurface(
                     configID: configID,
@@ -595,7 +595,7 @@ struct HomeVirtualDisplayStatusTests {
             activeViewerCount: 4,
             permitsExplicitDowngrade: false
         )
-        let snapshot = makeSnapshot(
+        let snapshot = makeHomeRuntimeSnapshot(
             surfaces: [
                 managedVirtualSurface(configID: configID, displayID: displayID, desiredEnabled: true, maximumPixelWidth: 2560, maximumPixelHeight: 1440)
             ],
@@ -650,60 +650,6 @@ struct HomeVirtualDisplayStatusTests {
 
     private func compactValue(_ identifier: String, in surface: HomeVirtualDisplayItemPresentation) -> String {
         surface.compactStatusItems.first { $0.accessibilityIdentifier == identifier }?.value ?? ""
-    }
-
-    private func makeLease(
-        surfaceIdentity: DisplaySurfaceIdentity,
-        displayID: DisplayRuntimeDisplayID,
-        kind: DisplaySurfaceConsumerKind,
-        state: DisplayRuntimeConsumerLeaseState,
-        activeViewerCount: Int = 0,
-        lastFailureCode: String? = nil
-    ) -> DisplayRuntimeConsumerLease {
-        DisplayRuntimeConsumerLease(
-            surfaceIdentity: surfaceIdentity,
-            surfaceEpoch: .initial,
-            resolvedDisplayID: displayID,
-            kind: kind,
-            owner: .init(source: .localUI, redactedLabel: nil),
-            createdAt: Date(timeIntervalSince1970: 1),
-            updatedAt: Date(timeIntervalSince1970: 2),
-            state: state,
-            demand: DisplayRuntimeConsumerDemand(
-                sourcePixelSize: DisplayRuntimePixelSize(width: 1920, height: 1080),
-                preferredPixelSize: nil,
-                maximumPixelSize: nil,
-                sourceFramesPerSecond: 60,
-                preferredFramesPerSecond: nil,
-                capturesCursor: false,
-                powerProfile: .automatic,
-                latencyPreference: .realtime,
-                activeViewerCount: activeViewerCount
-            ),
-            lastFailureCode: lastFailureCode
-        )
-    }
-
-    private func makeSnapshot(
-        surfaces: [DisplaySurface],
-        capture: DisplayRuntimeCaptureSnapshot = .empty,
-        sharing: DisplayRuntimeSharingSnapshot = .empty,
-        transactions: DisplayRuntimeTransactionSnapshot = .empty,
-        consumerLeases: [DisplayRuntimeConsumerLeaseSnapshot] = [],
-        aggregatedDemands: [DisplayRuntimeAggregatedDemand] = [],
-        effectiveCaptureIntents: [DisplayRuntimeEffectiveCaptureIntent] = []
-    ) -> DisplayRuntimeSnapshot {
-        DisplayRuntimeSnapshot(
-            surfaces: surfaces,
-            catalog: .empty,
-            capture: capture,
-            sharing: sharing,
-            virtualDisplay: .empty,
-            transactions: transactions,
-            consumerLeases: consumerLeases,
-            aggregatedDemands: aggregatedDemands,
-            effectiveCaptureIntents: effectiveCaptureIntents
-        )
     }
 
     private func physicalSurface(
@@ -764,7 +710,7 @@ struct HomeVirtualDisplayStatusTests {
         activeTransactions: [DisplayRuntimeTransactionTrace] = [],
         recentTransactions: [DisplayRuntimeTransactionTrace] = []
     ) -> DisplayRuntimeSnapshot {
-        makeSnapshot(
+        makeHomeRuntimeSnapshot(
             surfaces: [surface],
             transactions: .init(
                 activeTransactions: activeTransactions,

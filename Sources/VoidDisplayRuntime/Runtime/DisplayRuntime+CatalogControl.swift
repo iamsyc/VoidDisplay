@@ -64,7 +64,7 @@ extension DisplayRuntime {
             return DisplayRuntimeCatalogRefreshOutcome(
                 settlementID: nil,
                 result: .failed,
-                catalog: makeSnapshot().catalog
+                catalog: currentCatalogSnapshot()
             )
         }
         let granted = catalogCommander.refreshPermission()
@@ -80,7 +80,7 @@ extension DisplayRuntime {
                 return DisplayRuntimeCatalogRefreshOutcome(
                     settlementID: nil,
                     result: .failed,
-                    catalog: makeSnapshot().catalog
+                    catalog: currentCatalogSnapshot()
                 )
             }
             return await refreshAndConverge(intent: .userForcedRefresh)
@@ -139,7 +139,7 @@ extension DisplayRuntime {
             return DisplayRuntimeCatalogRefreshOutcome(
                 settlementID: nil,
                 result: .failed,
-                catalog: makeSnapshot().catalog
+                catalog: currentCatalogSnapshot()
             )
         }
         let outcome = await catalogCommander.clearSnapshotForDeniedPermission(
@@ -185,7 +185,7 @@ extension DisplayRuntime {
             return DisplayRuntimeCatalogRefreshOutcome(
                 settlementID: nil,
                 result: .failed,
-                catalog: makeSnapshot().catalog
+                catalog: currentCatalogSnapshot()
             )
         }
         let outcome = await catalogCommander.submitRefresh(intent: intent)

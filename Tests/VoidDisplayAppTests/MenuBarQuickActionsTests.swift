@@ -19,7 +19,7 @@ struct MenuBarQuickActionsTests {
         facade.currentDisplayConfigs = [config]
         facade.currentRunningConfigIds = [config.id]
         facade.runtimeDisplayIDByConfigId[config.id] = displayID
-        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        let (controller, environment) = makeHomeController(virtualDisplayFacade: facade)
         let now = Date.now
         let leaseID = DisplayRuntimeConsumerLeaseID(rawValue: previewID)
         environment.displayRuntime.consumerLeasesByID[leaseID] = DisplayRuntimeConsumerLease(
@@ -59,7 +59,7 @@ struct MenuBarQuickActionsTests {
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [config]
         facade.runtimeDisplayIDByConfigId[config.id] = 9_902
-        let (controller, _) = makeController(virtualDisplayFacade: facade)
+        let (controller, _) = makeHomeController(virtualDisplayFacade: facade)
         let item = try #require(controller.makeRenderState().presentation.items.first)
 
         controller.performMenuBarAction(
@@ -86,7 +86,7 @@ struct MenuBarQuickActionsTests {
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [config]
         facade.setDesiredEnabledError = VirtualDisplayOperationError.creationFailed
-        let (controller, _) = makeController(virtualDisplayFacade: facade)
+        let (controller, _) = makeHomeController(virtualDisplayFacade: facade)
         let item = try #require(controller.makeRenderState().presentation.items.first)
 
         controller.performMenuBarAction(
@@ -103,7 +103,7 @@ struct MenuBarQuickActionsTests {
 
     @Test
     func controllerUsesSavedSharingPort() {
-        let (controller, environment) = makeController()
+        let (controller, environment) = makeHomeController()
 
         environment.sharing.savePreferredWebServicePort(18_084)
         controller.handlePreferredSharingPortChanged(from: 8_081, to: 18_084)
@@ -114,7 +114,7 @@ struct MenuBarQuickActionsTests {
 
     @Test
     func copyShareAddressWritesExpectedURL() {
-        let (controller, _) = makeController()
+        let (controller, _) = makeHomeController()
         let expectedAddress = "http://127.0.0.1:18084/display/9902"
         let item = makeItem(
             displayID: 9_902,
@@ -157,7 +157,7 @@ struct MenuBarQuickActionsTests {
         let sharingService = MockSharingService()
         sharingService.activeSharingDisplayIDs = [displayID]
         sharingService.hasAnyActiveSharing = true
-        let (controller, environment) = makeController(
+        let (controller, environment) = makeHomeController(
             sharingService: sharingService,
             virtualDisplayFacade: facade
         )
@@ -192,30 +192,6 @@ struct MenuBarQuickActionsTests {
         }
 
         #expect(didReleaseLease)
-    }
-
-    private func makeController(
-        captureService: MockCapturePreviewService = MockCapturePreviewService(),
-        sharingService: MockSharingService = MockSharingService(),
-        virtualDisplayFacade: MockVirtualDisplayFacade = MockVirtualDisplayFacade()
-    ) -> (HomeVirtualDisplaySurfaceController, AppEnvironment) {
-        let environment = AppBootstrap.makeEnvironment(
-            preview: true,
-            capturePreviewService: captureService,
-            sharingService: sharingService,
-            virtualDisplayFacade: virtualDisplayFacade,
-            startupPlan: .init(shouldRestoreVirtualDisplays: false),
-            isRunningUnderXCTestOverride: true
-        )
-        let controller = HomeVirtualDisplaySurfaceController(
-            capture: environment.capture,
-            sharing: environment.sharing,
-            virtualDisplay: environment.virtualDisplay,
-            capturePerformancePreferences: environment.capturePerformancePreferences,
-            displayRuntime: environment.displayRuntime,
-            sharingAdapter: environment.sharingAdapter
-        )
-        return (controller, environment)
     }
 
     private func makeConfig(desiredEnabled: Bool) -> VirtualDisplayConfig {

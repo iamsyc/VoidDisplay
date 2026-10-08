@@ -469,6 +469,153 @@ struct ObservabilityCenterTests {
     }
 }
 
+@MainActor
+@Suite(.serialized)
+struct ObservabilitySnapshotRefreshTests {
+    @Test func automaticRefreshIncludesStateChangedDuringSampling() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "snapshot-refresh-state")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let center = makeObservabilityCenter(rootURL: directory, now: Date())
+        let provider = RefreshCountingProvider()
+        var trailingRefresh: Task<Void, Never>?
+        provider.onSnapshot = { count in
+            if count == 1 {
+                provider.value = 42
+                trailingRefresh = Task { await center.refreshSnapshot(reason: .sharingStateChanged) }
+            }
+        }
+        await center.registerSnapshotProvider(AnyObservabilitySnapshotProvider(provider))
+        await center.refreshSnapshot(reason: .captureStateChanged)
+        await trailingRefresh?.value
+        let diagnostics = await center.diagnosticsSnapshot()
+        let value = try #require(diagnostics.state.sections[provider.key])
+        #expect(try value.decode([String: Int].self)["value"] == 42)
+        #expect(provider.readCount == 2)
+    }
+
+    @Test(arguments: [SnapshotRefreshReason.manualDiagnosticsRefresh, .exportRequested])
+    func explicitRefreshAlwaysResamplesCurrentState(reason: SnapshotRefreshReason) async throws {
+        let directory = try makeTemporaryDirectory(prefix: "snapshot-refresh-manual")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let center = makeObservabilityCenter(rootURL: directory, now: Date())
+        let provider = RefreshCountingProvider()
+        await center.registerSnapshotProvider(AnyObservabilitySnapshotProvider(provider))
+        await center.refreshSnapshot(reason: .captureStateChanged)
+        provider.value = 42
+        await center.refreshSnapshot(reason: reason)
+        let diagnostics = await center.diagnosticsSnapshot()
+        let value = try #require(diagnostics.state.sections[provider.key])
+        #expect(try value.decode([String: Int].self)["value"] == 42)
+        #expect(diagnostics.state.refreshReason == reason)
+        #expect(provider.readCount == 2)
+    }
+
+    @Test func diagnosticsRefreshUsesOneEventReadAndPreservesDisplayAndHealthFilters() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "snapshot-refresh-one-read")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date()
+        let counter = EventListingCounter()
+        let store = EventStore(
+            directoryURL: directory.appendingPathComponent("events"),
+            fileManager: EventCountingFileManager(counter: counter),
+            dateProvider: { @Sendable in now }
+        )
+        let center = makeObservabilityCenter(rootURL: directory, now: now, eventStore: store)
+        for domain in [ObservabilityDomain.capture, .support] {
+            await center.record(ObservabilityEvent(
+                timestamp: now, severity: .error, subsystem: domain,
+                operation: "State changed in \(domain)", message: "State changed."
+            ))
+        }
+        for round in 0..<5 {
+            counter.reset()
+            await center.refreshSnapshot(reason: .manualDiagnosticsRefresh)
+            let separateRead = await center.diagnosticsSnapshot()
+            let beforeScans = counter.listingCount
+            counter.reset()
+            let refreshed = await center.refreshDiagnosticsSnapshot()
+            #expect(counter.listingCount == 1)
+            #expect(beforeScans == 2)
+            #expect(refreshed.state.refreshReason == .manualDiagnosticsRefresh)
+            #expect(refreshed.events == separateRead.events)
+            #expect(refreshed.health == separateRead.health)
+            #expect(refreshed.issues == separateRead.issues)
+            #expect(refreshed.health.recentEventCount == 1)
+            #expect(refreshed.health.recentIssueCount == 1)
+            #expect(refreshed.health.highestSeverity == .error)
+            #expect(refreshed.events.count == 2)
+            #expect(refreshed.issues.count == 1)
+            #expect(refreshed.issues.first?.subsystem == .capture)
+            print("OPTIMIZATION_METRIC diagnostics_round=\(round) before_directory_scans=\(beforeScans) after_directory_scans=\(counter.listingCount)")
+        }
+        let eventsDirectory = directory.appendingPathComponent("events")
+        try FileManager.default.removeItem(at: eventsDirectory)
+        try Data("unavailable event directory".utf8).write(to: eventsDirectory)
+        let fallback = await center.refreshDiagnosticsSnapshot()
+        #expect(fallback.events.count == 2)
+        #expect(fallback.health.recentEventCount == 1)
+        #expect(fallback.issues.count == 1)
+    }
+
+    @Test func concurrentEventRefreshKeepsEveryEvent() async throws {
+        let directory = try makeTemporaryDirectory(prefix: "snapshot-refresh-events")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let center = makeObservabilityCenter(rootURL: directory, now: Date())
+        let provider = RefreshCountingProvider()
+        await center.registerSnapshotProvider(AnyObservabilitySnapshotProvider(provider))
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<20 {
+                group.addTask {
+                    await center.record(ObservabilityEvent(
+                        severity: .info, subsystem: .capture,
+                        operation: "Event \(index)", message: "State changed."
+                    ))
+                }
+            }
+        }
+        let diagnostics = await center.diagnosticsSnapshot()
+        #expect(diagnostics.health.recentEventCount == 20)
+        #expect(Set(diagnostics.events.map(\.operation)).count == 20)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct OptimizationSnapshotMeasurements {
+    @Test func measureAutomaticRefreshBurst() async throws {
+        for round in 0..<5 {
+            let directory = try makeTemporaryDirectory(prefix: "snapshot-refresh-measure")
+            let center = makeObservabilityCenter(rootURL: directory, now: Date())
+            let provider = RefreshCountingProvider()
+            await center.registerSnapshotProvider(AnyObservabilitySnapshotProvider(provider))
+            await withTaskGroup(of: Void.self) { group in
+                for _ in 0..<50 {
+                    group.addTask { await center.refreshSnapshot(reason: .captureStateChanged) }
+                }
+            }
+            let diagnostics = await center.diagnosticsSnapshot()
+            #expect(diagnostics.state.sections[provider.key] != nil)
+            print("OPTIMIZATION_METRIC automatic_refresh_round=\(round) requests=50 provider_reads=\(provider.readCount)")
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+}
+
+@MainActor
+private final class RefreshCountingProvider: ObservabilitySnapshotProvider {
+    let key = "refresh-counting"
+    private(set) var readCount = 0
+    var value = 0
+    var onSnapshot: (Int) -> Void = { _ in }
+
+    func makeSnapshot() -> [String: Int] {
+        let value = self.value
+        readCount += 1
+        onSnapshot(readCount)
+        return ["value": value]
+    }
+}
+
 private struct StaticSnapshotProvider<Snapshot: Codable & Sendable>: ObservabilitySnapshotProvider, Sendable {
     let key: String
     let snapshot: Snapshot
@@ -551,4 +698,31 @@ private func decodeArchiveEntry<T: Decodable>(
     let entryURL = bundleRoot?.appendingPathComponent(String(relativePathSuffix.dropFirst()))
     let data = try Data(contentsOf: try #require(entryURL))
     return try ObservabilityCodec.decode(type, from: data)
+}
+
+private final class EventListingCounter: @unchecked Sendable {
+    private let counterLock = NSLock()
+    private var listings = 0
+
+    var listingCount: Int { counterLock.withLock { listings } }
+
+    func reset() { counterLock.withLock { listings = 0 } }
+
+    func recordListing() { counterLock.withLock { listings += 1 } }
+}
+
+private final class EventCountingFileManager: FileManager, @unchecked Sendable {
+    private let counter: EventListingCounter
+
+    init(counter: EventListingCounter) {
+        self.counter = counter
+        super.init()
+    }
+
+    override func contentsOfDirectory(
+        at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?, options mask: FileManager.DirectoryEnumerationOptions = []
+    ) throws -> [URL] {
+        counter.recordListing()
+        return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+    }
 }

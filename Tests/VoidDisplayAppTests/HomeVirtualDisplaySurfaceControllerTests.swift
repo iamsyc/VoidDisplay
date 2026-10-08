@@ -1,4 +1,5 @@
 @testable import VoidDisplayApp
+@testable import VoidDisplayCapture
 @testable import VoidDisplayFoundation
 @testable import VoidDisplayRuntime
 @testable import VoidDisplaySharing
@@ -15,7 +16,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let service = MockSharingService()
         service.isWebServiceRunning = true
         let facade = makeFacade()
-        let (_, environment) = makeController(sharingService: service, virtualDisplayFacade: facade)
+        let (_, environment) = makeHomeController(sharingService: service, virtualDisplayFacade: facade)
         environment.sharing.configureObservability(nil)
         let captureAdapter = DisplayRuntimeCaptureAdapter(controller: environment.capture, sharingController: environment.sharing)
         // Keep catalog refresh outside this lifecycle test so it never consults real permissions.
@@ -72,7 +73,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
 
     @Test
     func sharingPortDraftValidatesBeforePersisting() {
-        let (controller, environment) = makeController()
+        let (controller, environment) = makeHomeController()
         let originalPort = environment.sharing.preferredWebServicePort
 
         controller.updateSharingPortDraft("70000")
@@ -91,7 +92,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
 
     @Test
     func externalPortChangeDoesNotReplaceInvalidDraft() {
-        let (controller, environment) = makeController()
+        let (controller, environment) = makeHomeController()
         let originalPort = environment.sharing.preferredWebServicePort
 
         controller.updateSharingPortDraft("70000")
@@ -107,7 +108,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
     func startingSharingRejectsInvalidPortBeforeStartingService() async throws {
         let service = MockSharingService()
         let facade = makeFacade()
-        let (controller, environment) = makeController(sharingService: service, virtualDisplayFacade: facade)
+        let (controller, environment) = makeHomeController(sharingService: service, virtualDisplayFacade: facade)
         let item = try #require(controller.makeRenderState().presentation.items.first)
         controller.updateSharingPortDraft("70000")
 
@@ -124,7 +125,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let service = MockSharingService()
         let failure = WebServiceStartFailure.listenerFailed(port: 18_085, message: "injected bind failure")
         service.startResult = .failed(failure)
-        let (controller, environment) = makeController(sharingService: service, virtualDisplayFacade: makeFacade())
+        let (controller, environment) = makeHomeController(sharingService: service, virtualDisplayFacade: makeFacade())
         let item = try #require(controller.makeRenderState().presentation.items.first)
         controller.updateSharingPortDraft("18085")
         let alertChanges = AsyncStream<Void> { continuation in
@@ -154,7 +155,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let facade = makeFacade()
         let originalConfigs = facade.currentDisplayConfigs
         facade.moveConfigError = NSError(domain: "surface-tests", code: 1)
-        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        let (controller, environment) = makeHomeController(virtualDisplayFacade: facade)
         let item: HomeVirtualDisplayItemPresentation
         if case .moveUp = action {
             item = try #require(controller.makeRenderState().presentation.items.last)
@@ -175,7 +176,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let facade = makeFacade()
         let originalConfigs = facade.currentDisplayConfigs
         facade.resetAllVirtualDisplayDataError = NSError(domain: "surface-tests", code: 2)
-        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        let (controller, environment) = makeHomeController(virtualDisplayFacade: facade)
 
         controller.resetConfigStore()
 
@@ -191,7 +192,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
 
     @Test func creationWithoutPreviewOnlyOpensTheGuideForItsConfig() async throws {
         let facade = makeFacade()
-        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        let (controller, environment) = makeHomeController(virtualDisplayFacade: facade)
         let configID = try #require(facade.currentDisplayConfigs.last?.id)
         await controller.handleCreatedDisplay(.init(configID: configID, shouldOpenPreview: false)) { _ in
             Issue.record("Preview must stay closed")
@@ -205,7 +206,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let configs = facade.currentDisplayConfigs
         let configID = try #require(configs.last?.id)
         facade.runtimeDisplayIDByConfigId[configID] = nil
-        let (controller, environment) = makeController(virtualDisplayFacade: facade)
+        let (controller, environment) = makeHomeController(virtualDisplayFacade: facade)
         for _ in 0..<2 {
             await controller.handleCreatedDisplay(.init(configID: configID, shouldOpenPreview: true)) { _ in
                 Issue.record("Unavailable display must not open a preview")
@@ -219,7 +220,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
 
     @Test func oneRenderPassReadsEachRuntimeProviderOnce() {
         let facade = makeFacade()
-        let (_, environment) = makeController(virtualDisplayFacade: facade)
+        let (_, environment) = makeHomeController(virtualDisplayFacade: facade)
         let provider = CountingHomeRuntimeProvider(
             virtualDisplay: DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade).makeVirtualDisplaySnapshot()
         )
@@ -239,6 +240,69 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         #expect(provider.readCounts == [2, 1, 1, 1])
     }
 
+    @Test func shareAddressQuerySkipsRuntimeSnapshotsAndRejectsUnknownConfiguration() throws {
+        let facade = makeFacade()
+        let config = try #require(facade.currentDisplayConfigs.first)
+        let service = MockSharingService()
+        service.isWebServiceRunning = true
+        service.activeSharingDisplayIDs = [config.serialNum]
+        service.sharePagePathByDisplayID = [config.serialNum: "/display/query-test"]
+        let (_, environment) = makeHomeController(sharingService: service, virtualDisplayFacade: facade)
+        let provider = CountingHomeRuntimeProvider(
+            virtualDisplay: DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade).makeVirtualDisplaySnapshot()
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: provider, captureProvider: provider,
+            sharingProvider: provider, virtualDisplayProvider: provider
+        )
+        let controller = HomeVirtualDisplaySurfaceController(
+            capture: environment.capture, sharing: environment.sharing, virtualDisplay: environment.virtualDisplay,
+            capturePerformancePreferences: environment.capturePerformancePreferences,
+            displayRuntime: runtime, sharingAdapter: environment.sharingAdapter
+        )
+        #expect(controller.sharePageAddress(for: config.id) == environment.sharing.sharePageAddress(for: config.serialNum))
+        #expect(controller.sharePageAddress(for: UUID()) == nil)
+        #expect(provider.readCounts == [0, 0, 0, 0])
+
+        environment.sharing.stopWebService()
+        #expect(controller.sharePageAddress(for: config.id) == nil)
+        #expect(provider.readCounts == [0, 0, 0, 0])
+    }
+
+    @Test func openingExistingPreviewSkipsUnrelatedRenderProviders() async throws {
+        let facade = makeFacade()
+        let config = try #require(facade.currentDisplayConfigs.first)
+        let (_, environment) = makeHomeController(virtualDisplayFacade: facade)
+        let provider = CountingHomeRuntimeProvider(
+            virtualDisplay: DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade).makeVirtualDisplaySnapshot()
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: provider, captureProvider: provider,
+            sharingProvider: provider, virtualDisplayProvider: provider
+        )
+        let lease = makeHomeConsumerLease(
+            surfaceIdentity: .managedVirtualDisplay(configID: config.id),
+            displayID: config.serialNum, kind: .preview, state: .attached
+        )
+        runtime.consumerLeasesByID[lease.id] = lease
+        let controller = HomeVirtualDisplaySurfaceController(
+            capture: environment.capture, sharing: environment.sharing, virtualDisplay: environment.virtualDisplay,
+            capturePerformancePreferences: environment.capturePerformancePreferences,
+            displayRuntime: runtime, sharingAdapter: environment.sharingAdapter
+        )
+        let renderDisplayID = controller.makeRenderState().presentation.items.first { $0.id == config.id }?.displayID
+        #expect(renderDisplayID == config.serialNum)
+        #expect(provider.readCounts == [1, 1, 1, 1])
+        let removedRenderReads = provider.readCounts.reduce(0, +)
+        provider.readCounts = [0, 0, 0, 0]
+        var openedID: UUID?
+        await controller.openPreview(configID: config.id) { openedID = $0.rawValue }
+        #expect(openedID == lease.id.rawValue)
+        #expect(provider.readCounts == [1, 0, 0, 1])
+        let identityReads = provider.readCounts.reduce(0, +)
+        print("OPTIMIZATION_METRIC preview_reuse before_provider_reads=\(removedRenderReads + identityReads) after_provider_reads=\(identityReads)")
+    }
+
     private func makeFacade() -> MockVirtualDisplayFacade {
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [UInt32(9_904), 9_905].map { serial in
@@ -253,31 +317,6 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         return facade
     }
 
-    private func makeController(
-        sharingService: MockSharingService = MockSharingService(),
-        virtualDisplayFacade: MockVirtualDisplayFacade = MockVirtualDisplayFacade()
-    ) -> (
-        HomeVirtualDisplaySurfaceController,
-        AppEnvironment
-    ) {
-        let environment = AppBootstrap.makeEnvironment(
-            preview: true,
-            capturePreviewService: MockCapturePreviewService(),
-            sharingService: sharingService,
-            virtualDisplayFacade: virtualDisplayFacade,
-            startupPlan: .init(shouldRestoreVirtualDisplays: false),
-            isRunningUnderXCTestOverride: true
-        )
-        let controller = HomeVirtualDisplaySurfaceController(
-            capture: environment.capture,
-            sharing: environment.sharing,
-            virtualDisplay: environment.virtualDisplay,
-            capturePerformancePreferences: environment.capturePerformancePreferences,
-            displayRuntime: environment.displayRuntime,
-            sharingAdapter: environment.sharingAdapter
-        )
-        return (controller, environment)
-    }
 }
 
 @MainActor
