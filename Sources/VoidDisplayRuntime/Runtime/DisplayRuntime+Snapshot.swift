@@ -11,6 +11,10 @@ extension DisplayRuntime {
         catalogProvider?.makeCatalogSnapshot() ?? .empty
     }
 
+    package func managedDisplayID(for configID: UUID) -> DisplayRuntimeDisplayID? {
+        currentVirtualDisplaySnapshot().managedDisplays.first { $0.configID == configID }?.displayID
+    }
+
     func makeSnapshot(catalog: DisplayRuntimeCatalogSnapshot) -> DisplayRuntimeSnapshot {
         let capture = captureProvider?.makeCaptureSnapshot() ?? .empty
         let sharing = sharingProvider?.makeSharingSnapshot() ?? .empty

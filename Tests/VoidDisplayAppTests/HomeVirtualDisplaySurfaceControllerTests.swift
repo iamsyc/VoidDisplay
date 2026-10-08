@@ -240,14 +240,16 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         #expect(provider.readCounts == [2, 1, 1, 1])
     }
 
-    @Test func shareAddressQuerySkipsRuntimeSnapshotsAndRejectsUnknownConfiguration() throws {
+    @Test func shareAddressQueryReadsOnlyCurrentVirtualDisplayAndRejectsUnknownConfiguration() throws {
         let facade = makeFacade()
         let config = try #require(facade.currentDisplayConfigs.first)
+        let currentDisplayID = config.serialNum + 100_000
         let service = MockSharingService()
         service.isWebServiceRunning = true
-        service.activeSharingDisplayIDs = [config.serialNum]
-        service.sharePagePathByDisplayID = [config.serialNum: "/display/query-test"]
+        service.activeSharingDisplayIDs = [currentDisplayID]
+        service.sharePagePathByDisplayID = [currentDisplayID: "/display/query-test"]
         let (_, environment) = makeHomeController(sharingService: service, virtualDisplayFacade: facade)
+        facade.runtimeDisplayIDByConfigId[config.id] = currentDisplayID
         let provider = CountingHomeRuntimeProvider(
             virtualDisplay: DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade).makeVirtualDisplaySnapshot()
         )
@@ -260,13 +262,39 @@ struct HomeVirtualDisplaySurfaceControllerTests {
             capturePerformancePreferences: environment.capturePerformancePreferences,
             displayRuntime: runtime, sharingAdapter: environment.sharingAdapter
         )
-        #expect(controller.sharePageAddress(for: config.id) == environment.sharing.sharePageAddress(for: config.serialNum))
+        #expect(environment.virtualDisplay.runtimeDisplayID(for: config.id) == config.serialNum)
+        #expect(controller.sharePageAddress(for: config.id) == environment.sharing.sharePageAddress(for: currentDisplayID))
         #expect(controller.sharePageAddress(for: UUID()) == nil)
-        #expect(provider.readCounts == [0, 0, 0, 0])
+        #expect(provider.readCounts == [0, 0, 0, 1])
 
         environment.sharing.stopWebService()
         #expect(controller.sharePageAddress(for: config.id) == nil)
-        #expect(provider.readCounts == [0, 0, 0, 0])
+        #expect(provider.readCounts == [0, 0, 0, 2])
+    }
+
+    @Test(arguments: [false, true])
+    func openingExistingPreviewUsesCurrentRuntimeDisplayBeforeControllerRefresh(hasCachedDisplay: Bool) async throws {
+        let facade = makeFacade()
+        let config = try #require(facade.currentDisplayConfigs.first)
+        if !hasCachedDisplay { facade.runtimeDisplayIDByConfigId.removeAll() }
+        let (controller, environment) = makeHomeController(virtualDisplayFacade: facade)
+        let currentDisplayID: UInt32 = 45_009
+        facade.runtimeDisplayIDByConfigId[config.id] = currentDisplayID
+        facade.currentRunningConfigIds.insert(config.id)
+        let lease = makeHomeConsumerLease(
+            surfaceIdentity: .managedVirtualDisplay(configID: config.id),
+            displayID: currentDisplayID, kind: .preview, state: .attached
+        )
+        environment.displayRuntime.consumerLeasesByID[lease.id] = lease
+
+        #expect(environment.virtualDisplay.runtimeDisplayID(for: config.id) != currentDisplayID)
+        let state = try #require(controller.makeRenderState().itemStates.first { $0.id == config.id })
+        #expect(state.item.displayID == currentDisplayID)
+        #expect(!state.isPreviewActionDisabled)
+        var openedID: UUID?
+        await controller.openPreview(configID: config.id) { openedID = $0.rawValue }
+        #expect(openedID == lease.id.rawValue)
+        #expect(controller.actionAlert == nil)
     }
 
     @Test func openingExistingPreviewSkipsUnrelatedRenderProviders() async throws {
@@ -293,14 +321,19 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let renderDisplayID = controller.makeRenderState().presentation.items.first { $0.id == config.id }?.displayID
         #expect(renderDisplayID == config.serialNum)
         #expect(provider.readCounts == [1, 1, 1, 1])
-        let removedRenderReads = provider.readCounts.reduce(0, +)
+        let legacyPreviewID = CaptureUIComposition.previewActions(
+            capture: environment.capture, displayRuntime: runtime,
+            capturePerformancePreferences: environment.capturePerformancePreferences
+        ).previewIDForDisplayID(try #require(renderDisplayID))
+        #expect(legacyPreviewID?.rawValue == lease.id.rawValue)
+        let legacyReads = provider.readCounts.reduce(0, +)
         provider.readCounts = [0, 0, 0, 0]
         var openedID: UUID?
         await controller.openPreview(configID: config.id) { openedID = $0.rawValue }
         #expect(openedID == lease.id.rawValue)
-        #expect(provider.readCounts == [1, 0, 0, 1])
-        let identityReads = provider.readCounts.reduce(0, +)
-        print("OPTIMIZATION_METRIC preview_reuse before_provider_reads=\(removedRenderReads + identityReads) after_provider_reads=\(identityReads)")
+        #expect(provider.readCounts == [1, 0, 0, 2])
+        let currentReads = provider.readCounts.reduce(0, +)
+        print("OPTIMIZATION_METRIC preview_reuse before_provider_reads=\(legacyReads) after_provider_reads=\(currentReads)")
     }
 
     private func makeFacade() -> MockVirtualDisplayFacade {

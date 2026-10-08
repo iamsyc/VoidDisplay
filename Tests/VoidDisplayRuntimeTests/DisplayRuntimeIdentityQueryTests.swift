@@ -5,6 +5,19 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct DisplayRuntimeIdentityQueryTests {
+    @Test func managedDisplayIDReadsCurrentVirtualProviderOnly() {
+        let providers = IdentityQueryProviders()
+        let configID = UUID()
+        let runtime = providers.makeRuntime()
+        #expect(runtime.managedDisplayID(for: configID) == nil)
+        providers.virtualDisplay = virtualDisplaySnapshot(configID: configID, displayID: 77)
+        #expect(runtime.managedDisplayID(for: configID) == 77)
+        providers.virtualDisplay = virtualDisplaySnapshot(configID: configID, displayID: 88)
+        #expect(runtime.managedDisplayID(for: configID) == 88)
+        #expect(runtime.managedDisplayID(for: UUID()) == nil)
+        #expect(providers.readCounts == [0, 0, 0, 4])
+    }
+
     @Test func managedAndCatalogQueriesSkipUnrelatedProviders() {
         let providers = IdentityQueryProviders()
         let configID = UUID()
@@ -61,6 +74,9 @@ struct DisplayRuntimeIdentityQueryTests {
         providers.sharing = activeSharingSnapshot(displayID: 88)
         let runtime = providers.makeRuntime()
         let surfaces = runtime.makeSnapshot().surfaces
+        #expect(runtime.managedDisplayID(for: configID) == surfaces.first {
+            $0.identity == .managedVirtualDisplay(configID: configID)
+        }?.currentDisplayID)
         for displayID in [77, 88, 99] as [DisplayRuntimeDisplayID] {
             #expect(runtime.surfaceIdentityForDisplayID(displayID) == surfaces.first { $0.currentDisplayID == displayID }?.identity)
         }

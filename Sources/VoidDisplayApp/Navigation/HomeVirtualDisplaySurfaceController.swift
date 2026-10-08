@@ -559,7 +559,7 @@ package final class HomeVirtualDisplaySurfaceController {
 
     private func managedDisplayID(for configID: UUID) -> CGDirectDisplayID? {
         guard virtualDisplay.getConfig(configID) != nil else { return nil }
-        return virtualDisplay.managedDisplays.first { $0.configId == configID }?.displayID
+        return displayRuntime.managedDisplayID(for: configID)
     }
 
     private func display(for displayID: CGDirectDisplayID) -> SCDisplay? {
