@@ -20,6 +20,8 @@ TERMINATION_LOG="$SESSION_ROOT/termination-events.log"
 SESSION_ENV=(
 	"VOIDDISPLAY_UI_SESSION_FIXTURE_MODE=1"
 	"VOIDDISPLAY_UI_SESSION_FIXTURE_ROOT=$SESSION_ROOT"
+	"EXPECTED_XCODE_VERSION_PREFIX=26.6"
+	"EXPECTED_SWIFT_VERSION_PREFIX=6.3"
 )
 HOLDER_PID=""
 SIGNAL_WRAPPER_PID=""
@@ -207,7 +209,12 @@ printf '%s\n' \
 	'trap "" TERM INT HUP' \
 	'while true; do /bin/sleep 1; done' \
 	>"$fixture_bin/xcodebuild"
-/bin/chmod +x "$fixture_bin/go" "$fixture_bin/xcodebuild"
+# Keep the mock toolchain independent of the host Xcode selection and overrides.
+fixture_developer_dir="$FIXTURE_ROOT/developer"
+/bin/mkdir -p "$fixture_developer_dir"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "Apple Swift version 6.3\n"' >"$fixture_bin/swift"
+printf '%s\n' '#!/usr/bin/env bash' '[[ "${1:-}" == "-p" ]] || exit 1' 'printf "%s\n" "$DEVELOPER_DIR"' >"$fixture_bin/xcode-select"
+/bin/chmod +x "$fixture_bin/go" "$fixture_bin/xcodebuild" "$fixture_bin/swift" "$fixture_bin/xcode-select"
 
 # A preflight failure must preserve old artifacts without claiming they were produced now.
 preflight_out="$FIXTURE_ROOT/preflight"
@@ -219,7 +226,7 @@ preflight_release="$FIXTURE_ROOT/preflight.release"
 start_holder "$preflight_ready" "$preflight_release"
 assert_command_fails "Xcode ran while the UI session was busy" \
 	env "${SESSION_ENV[@]}" PATH="$fixture_bin:$PATH" \
-	DEVELOPER_DIR="$(xcode-select -p)" VOIDDISPLAY_UI_SESSION_WAIT_SECONDS=0 SIGNAL_ROOT="$signal_root" \
+	DEVELOPER_DIR="$fixture_developer_dir" VOIDDISPLAY_UI_SESSION_WAIT_SECONDS=0 SIGNAL_ROOT="$signal_root" \
 	"$TOOL_ROOT/scripts/ci/xcode.sh" --action test --destination platform=macOS \
 	--only-testing VoidDisplayUITests/SignalFixture --out-dir "$preflight_out"
 stop_holder "$preflight_release"
@@ -231,7 +238,7 @@ jq -e '.status == "failed" and .reason == "ui_session_acquire_failed" and .log_p
 
 env "${SESSION_ENV[@]}" \
 	PATH="$fixture_bin:$PATH" \
-	DEVELOPER_DIR="$(xcode-select -p)" \
+	DEVELOPER_DIR="$fixture_developer_dir" \
 	AI_TMP_DIR="$AI_TMP_DIR" \
 	VOIDDISPLAY_UI_SESSION_WAIT_SECONDS=0 \
 	SIGNAL_ROOT="$signal_root" \

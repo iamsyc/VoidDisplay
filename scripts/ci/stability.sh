@@ -56,23 +56,7 @@ for iteration in $(seq 1 "$ITERATIONS"); do
 	swift_status=${PIPESTATUS[0]}
 	set -e
 
-	iteration_test_count="$(
-		awk '
-      match($0, /Test run with [0-9]+ tests?/) {
-        line = substr($0, RSTART, RLENGTH)
-        sub("Test run with ", "", line)
-        sub(" tests?", "", line)
-        total = line
-      }
-      END {
-        if (total == "") {
-          print "0"
-        } else {
-          print total
-        }
-      }
-    ' "$swift_log"
-	)"
+	iteration_test_count="$(count_swift_tests "$swift_log")"
 
 	if [[ "$iteration_test_count" -eq 0 ]]; then
 		die "Stability iteration $iteration ran zero Swift tests."

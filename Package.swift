@@ -2,6 +2,10 @@
 
 import PackageDescription
 
+// Keep the effective Swift 6 language baseline explicit. Actor isolation is
+// declared at the owning types and entry points rather than imposed globally.
+let sharedSwiftSettings: [SwiftSetting] = [.swiftLanguageMode(.v6)]
+
 let package = Package(
     name: "VoidDisplay",
     defaultLocalization: "en",
@@ -16,6 +20,23 @@ let package = Package(
         .package(url: "https://github.com/stasel/WebRTC.git", exact: "152.0.0")
     ],
     targets: [
+        .executableTarget(
+            name: "DisplayHostAcceptance",
+            dependencies: ["VoidDisplayCGVirtualDisplay", "VoidDisplayVirtualDisplay"],
+            path: "Tools/DisplayHostAcceptance",
+            swiftSettings: sharedSwiftSettings
+        ),
+        .executableTarget(
+            name: "DisplayQualityBenchmark",
+            dependencies: ["VoidDisplaySharing", .product(name: "WebRTC", package: "WebRTC")],
+            path: "Tools/DisplayQualityBenchmark",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "DisplayQualityBenchmarkTests",
+            dependencies: ["DisplayQualityBenchmark"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .target(
             name: "VoidDisplayApp",
             dependencies: [
@@ -231,11 +252,3 @@ let package = Package(
         )
     ]
 )
-
-let sharedSwiftSettings: [SwiftSetting] = [
-    .swiftLanguageMode(.v6),
-    .enableUpcomingFeature("MemberImportVisibility"),
-    .enableUpcomingFeature("InferIsolatedConformances"),
-    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
-    .defaultIsolation(MainActor.self)
-]

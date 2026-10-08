@@ -12,9 +12,10 @@ public enum VirtualDisplayHost {
         do {
             var input = FileHandle.standardInput.bytes.lines.makeAsyncIterator()
             guard let line = try await input.next() else { return }
-            let request = try JSONDecoder().decode(VirtualDisplayRuntimeDescriptor.self, from: Data(line.utf8))
-            let display = try createDisplay(request)
-            let mode = try selectMode(displayID: display.displayID, requested: request.modes)
+            let request = try JSONDecoder().decode(VirtualDisplayHostRequest.self, from: Data(line.utf8))
+            let display = try createDisplay(request.descriptor)
+            let mode = try selectMode(displayID: display.displayID, requested: request.descriptor.modes,
+                                      preserving: request.preservedModes)
             try respond(.ready(displayID: display.displayID, mode: mode))
             // EOF also covers an unexpected parent exit. Keep the native object alive until then.
             while try await input.next() != nil {}
@@ -56,7 +57,11 @@ public enum VirtualDisplayHost {
         return display
     }
 
-    private static func selectMode(displayID: CGDirectDisplayID, requested: [VirtualDisplayRuntimeMode]) throws -> VirtualDisplayRuntimeDisplayMode {
+    private static func selectMode(
+        displayID: CGDirectDisplayID,
+        requested: [VirtualDisplayRuntimeMode],
+        preserving: [VirtualDisplayHostRequest.PreservedMode]
+    ) throws -> VirtualDisplayRuntimeDisplayMode {
         let current = CGDisplayCopyDisplayMode(displayID).map(snapshot)
         let available = CGDisplayCopyAllDisplayModes(
             displayID, [kCGDisplayShowDuplicateLowResolutionModes: true] as CFDictionary
@@ -64,21 +69,15 @@ public enum VirtualDisplayHost {
         guard let selected = VirtualDisplayModeSelection.select(current: current, available: available.map(snapshot), requested: requested) else {
             throw VirtualDisplayOperationError.creationFailed
         }
-        if current?.id != selected.id {
-            guard let mode = available.first(where: { $0.ioDisplayModeID == selected.id }),
-                  CGDisplaySetDisplayMode(displayID, mode, nil) == .success else {
-                throw VirtualDisplayOperationError.creationFailed
-            }
-        }
-        guard let actual = CGDisplayCopyDisplayMode(displayID).map(snapshot),
-              VirtualDisplayModeSelection.select(current: actual, available: [], requested: requested) != nil else {
-            throw VirtualDisplayOperationError.creationFailed
-        }
-        return actual
+        // Native creation can change another virtual display's logical size or HiDPI scale.
+        let selectedMode = PreservedVirtualDisplayMode(
+            displayID: displayID, serialNumber: CGDisplaySerialNumber(displayID), mode: selected
+        )
+        try SystemVirtualDisplayModePreserver().restore([selectedMode] + preserving)
+        return selectedMode.mode
     }
 
     private static func snapshot(_ mode: CGDisplayMode) -> VirtualDisplayRuntimeDisplayMode {
-        .init(id: mode.ioDisplayModeID, width: mode.width, height: mode.height,
-              pixelWidth: mode.pixelWidth, pixelHeight: mode.pixelHeight, refreshRate: mode.refreshRate)
+        SystemVirtualDisplayModePreserver.snapshot(mode)
     }
 }
