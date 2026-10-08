@@ -53,11 +53,22 @@ package final class HomeVirtualDisplaySurfaceController {
         sharingPortInput = String(sharing.preferredWebServicePort)
     }
 
-    package var presentation: HomeVirtualDisplaySurfacePresentation {
-        HomeVirtualDisplayPresentationMapper.makePresentation(
-            snapshot: displayRuntime.makeSnapshot(),
+    package func makeRenderState() -> (
+        presentation: HomeVirtualDisplaySurfacePresentation,
+        itemStates: [HomeVirtualDisplayItemRenderState],
+        displayDetection: HomeDisplayDetectionPresentation
+    ) {
+        let snapshot = displayRuntime.makeSnapshot()
+        let presentation = HomeVirtualDisplayPresentationMapper.makePresentation(
+            snapshot: snapshot,
             displayConfigs: virtualDisplay.displayConfigs,
             sharePageAddresses: sharePageAddresses
+        )
+        let detection = displayDetectionPresentation(for: snapshot.catalog)
+        return (
+            presentation,
+            itemRenderStates(for: presentation.items, snapshot: snapshot, detection: detection),
+            detection
         )
     }
 
@@ -83,7 +94,12 @@ package final class HomeVirtualDisplaySurfaceController {
     }
 
     package var displayDetectionPresentation: HomeDisplayDetectionPresentation {
-        let catalog = displayRuntime.makeSnapshot().catalog
+        displayDetectionPresentation(for: displayRuntime.currentCatalogSnapshot())
+    }
+
+    private func displayDetectionPresentation(
+        for catalog: DisplayRuntimeCatalogSnapshot
+    ) -> HomeDisplayDetectionPresentation {
         if displayDetectionState.isScanning || catalog.isLoadingDisplays {
             return .scanning
         }
@@ -94,7 +110,7 @@ package final class HomeVirtualDisplaySurfaceController {
     }
 
     package var isCatalogLoading: Bool {
-        displayRuntime.makeSnapshot().catalog.isLoadingDisplays
+        displayRuntime.currentCatalogSnapshot().isLoadingDisplays
     }
 
     package var isWebServiceRunning: Bool {
@@ -105,24 +121,27 @@ package final class HomeVirtualDisplaySurfaceController {
         sharing.preferredWebServicePort
     }
 
-    package func itemRenderStates(
-        for items: [HomeVirtualDisplayItemPresentation]
+    private func itemRenderStates(
+        for items: [HomeVirtualDisplayItemPresentation],
+        snapshot: DisplayRuntimeSnapshot,
+        detection: HomeDisplayDetectionPresentation
     ) -> [HomeVirtualDisplayItemRenderState] {
-        items.map { item in
+        let togglingConfigIDs = Set(snapshot.transactions.activeTransactions.compactMap { trace in
+            [.virtualDisplayEnable, .virtualDisplayDisable].contains(trace.kind) ? trace.targetConfigID : nil
+        })
+        return items.map { item in
             HomeVirtualDisplayItemRenderState(
                 item: item,
                 isFirst: items.first?.id == item.id,
                 isLast: items.last?.id == item.id,
-                isToggling: viewModel.isToggling(configId: item.id) || displayRuntime.makeSnapshot().transactions.activeTransactions.contains {
-                    $0.targetConfigID == item.id && [.virtualDisplayEnable, .virtualDisplayDisable].contains($0.kind)
-                },
+                isToggling: viewModel.isToggling(configId: item.id) || togglingConfigIDs.contains(item.id),
                 isRebuilding: virtualDisplay.isRebuilding(configId: item.id),
                 hasRecentApplySuccess: virtualDisplay.hasRecentApplySuccess(configId: item.id),
                 rebuildFailureMessage: virtualDisplay.rebuildFailureMessage(configId: item.id),
                 isPrimary: viewModel.isPrimaryDisplay(configID: item.id),
                 canSetAsPrimary: canSetAsPrimary(item),
                 needsDisplayDetection: needsDisplayDetection(item),
-                isDisplayDetectionScanning: displayDetectionPresentation.isScanning,
+                isDisplayDetectionScanning: detection.isScanning,
                 isPreviewActionDisabled: isPreviewActionDisabled(item),
                 isPreviewStarting: item.displayID.map(capture.isStarting(displayID:)) ?? false,
                 isWebViewActionDisabled: isWebViewActionDisabled(item),
@@ -203,7 +222,7 @@ package final class HomeVirtualDisplaySurfaceController {
     package func rescanDisplays() {
         guard !displayDetectionState.isScanning else { return }
         let operationID = displayDetectionState.begin(
-            previousCatalog: displayRuntime.makeSnapshot().catalog
+            previousCatalog: displayRuntime.currentCatalogSnapshot()
         )
 
         rescanTask?.cancel()
@@ -391,7 +410,7 @@ package final class HomeVirtualDisplaySurfaceController {
         configID: UUID,
         openPreviewWindow: @escaping @MainActor (CapturePreviewID) -> Void
     ) async {
-        let displayID = presentation.items.first(where: { $0.id == configID })?.displayID
+        let displayID = makeRenderState().presentation.items.first(where: { $0.id == configID })?.displayID
         if let displayID, let existingSession = previewActions.previewIDForDisplayID(displayID) {
             previewFailureConfigID = nil
             openPreviewWindow(existingSession)

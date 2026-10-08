@@ -68,7 +68,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 ### Build from Source
 
 1. Clone this repository.
-2. Open `VoidDisplay.xcworkspace` in Xcode 26.6.
+2. Open `VoidDisplay.xcworkspace` in Xcode 27.0.
 3. Build and run (⌘R).
 
 ## 🚀 Getting Started
@@ -126,7 +126,7 @@ Closing Sharing Details keeps sharing active. **Stop Sharing** revokes its link.
 
 ### Build & Test
 
-Requirements: Xcode 26.6 with Swift 6.3, macOS 15.6 or later on an Intel or Apple Silicon Mac.
+Requirements: Xcode 27.0 with Swift 6.4, macOS 15.6 or later on an Intel or Apple Silicon Mac.
 
 ```bash
 # Install pinned local tooling with mise or Homebrew fallback

@@ -38,7 +38,7 @@ struct MenuBarQuickActionsTests {
                 latencyPreference: .realtime
             )
         )
-        let item = controller.presentation.items.first ?? makeItem(displayID: displayID, isRunning: true)
+        let item = controller.makeRenderState().presentation.items.first ?? makeItem(displayID: displayID, isRunning: true)
         var openedPreviewID: CapturePreviewID?
 
         controller.performMenuBarAction(
@@ -60,7 +60,7 @@ struct MenuBarQuickActionsTests {
         facade.currentDisplayConfigs = [config]
         facade.runtimeDisplayIDByConfigId[config.id] = 9_902
         let (controller, _) = makeController(virtualDisplayFacade: facade)
-        let item = try #require(controller.presentation.items.first)
+        let item = try #require(controller.makeRenderState().presentation.items.first)
 
         controller.performMenuBarAction(
             .toggle,
@@ -87,7 +87,7 @@ struct MenuBarQuickActionsTests {
         facade.currentDisplayConfigs = [config]
         facade.setDesiredEnabledError = VirtualDisplayOperationError.creationFailed
         let (controller, _) = makeController(virtualDisplayFacade: facade)
-        let item = try #require(controller.presentation.items.first)
+        let item = try #require(controller.makeRenderState().presentation.items.first)
 
         controller.performMenuBarAction(
             .toggle,

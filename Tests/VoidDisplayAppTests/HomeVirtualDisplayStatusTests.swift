@@ -1,10 +1,11 @@
 @testable import VoidDisplayApp
 @testable import VoidDisplayRuntime
+@testable import VoidDisplayVirtualDisplay
 import Foundation
 import Testing
 
 @Suite
-struct DisplaySurfacePresentationMapperTests {
+struct HomeVirtualDisplayStatusTests {
     @Test func mapsManagedVirtualSurfaceStatusWithoutRawIdentity() throws {
         let configID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
         let displayID: DisplayRuntimeDisplayID = 4242
@@ -75,11 +76,11 @@ struct DisplaySurfacePresentationMapperTests {
             ]
         )
 
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: snapshot,
             virtualDisplayNamesByConfigID: [configID: "虚拟显示器 13 寸"]
         )
-        let surface = try #require(presentation.surfaces.first)
+        let surface = try #require(presentation.items.first)
 
         #expect(surface.title == "虚拟显示器 13 寸")
         #expect(surface.isPreviewing)
@@ -101,29 +102,8 @@ struct DisplaySurfacePresentationMapperTests {
         #expect(surface.accessibilitySummary.contains("Web Sharing: Sharing"))
         #expect(surface.accessibilitySummary.contains(SharingConnectionText.status(3)))
         #expect(!surface.accessibilitySummary.contains("Issue:"))
-        let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
-        #expect(stopPreviewAction.title == "Stop")
-        #expect(stopPreviewAction.help == "Stop Preview")
-        #expect(stopPreviewAction.isEnabled)
-        let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
-        #expect(stopLANWebViewAction.title == "Stop")
-        #expect(stopLANWebViewAction.help == "Stop Sharing")
-        #expect(stopLANWebViewAction.isEnabled)
-        #expect(technicalValue("displays_capture_state_status", in: surface) == "Capture, Attach, Applied")
-        #expect(technicalValue("displays_lease_status", in: surface) == "2 of 2 active")
-        #expect(technicalValue("displays_last_failure_code", in: surface) == "None")
-
-        let identityText = technicalValue("displays_surface_identity_value", in: surface)
-        #expect(identityText.hasPrefix("ID hash "))
-        #expect(!identityText.contains(configID.uuidString))
-        #expect(!identityText.contains(String(displayID)))
+        #expect(surface.viewerCount == 3)
         #expect(!surface.accessibilitySummary.contains(configID.uuidString))
-        #expect(technicalTitles(in: surface) == [
-            "Display Identifier",
-            "Capture State",
-            "Runtime Attachment",
-            "Diagnostic Code"
-        ])
     }
 
     @Test func hidesCatalogOnlyPhysicalSurfacesFromHomeOverview() throws {
@@ -158,14 +138,13 @@ struct DisplaySurfacePresentationMapperTests {
             effectiveCaptureIntents: []
         )
 
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: snapshot,
             virtualDisplayNamesByConfigID: [configID: "虚拟显示器 14 寸"]
         )
 
-        #expect(presentation.surfaces.map(\.surfaceIdentity) == [managedIdentity])
-        #expect(presentation.surfaces.first?.title == "虚拟显示器 14 寸")
-        #expect(presentation.surfaces.first?.subtitle == "3840 × 2160 pixels")
+        #expect(presentation.items.map { DisplaySurfaceIdentity.managedVirtualDisplay(configID: $0.id) } == [managedIdentity])
+        #expect(presentation.items.first?.title == "虚拟显示器 14 寸")
     }
 
     @Test(arguments: [
@@ -185,11 +164,11 @@ struct DisplaySurfacePresentationMapperTests {
             isRunning: state.running,
             isLiveRuntime: state.running
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface)
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == state.expected)
     }
 
@@ -214,11 +193,11 @@ struct DisplaySurfacePresentationMapperTests {
                 )
             )
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface, activeTransactions: [trace])
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Starting")
     }
 
@@ -230,11 +209,11 @@ struct DisplaySurfacePresentationMapperTests {
             status: .active,
             targetConfigID: configID
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface, activeTransactions: [trace])
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Starting")
     }
 
@@ -253,11 +232,11 @@ struct DisplaySurfacePresentationMapperTests {
             ),
             targetConfigID: configID
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface, recentTransactions: [trace])
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Startup Failed")
         #expect(compactValue("displays_issue_status", in: item) == "Startup Failed")
     }
@@ -288,14 +267,14 @@ struct DisplaySurfacePresentationMapperTests {
             status: .completed,
             targetConfigID: configID
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(
                 surface: surface,
                 recentTransactions: [newerSuccess, olderFailure]
             )
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
@@ -315,11 +294,11 @@ struct DisplaySurfacePresentationMapperTests {
             ),
             targetConfigID: configID
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface, recentTransactions: [failedDisable])
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Not Running")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
@@ -334,11 +313,11 @@ struct DisplaySurfacePresentationMapperTests {
             isLiveRuntime: true,
             hasRestoreFailure: true
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface)
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
@@ -363,7 +342,7 @@ struct DisplaySurfacePresentationMapperTests {
             ),
             targetConfigID: configID
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(
                 surface: surface,
                 activeTransactions: [activeRetry],
@@ -371,10 +350,9 @@ struct DisplaySurfacePresentationMapperTests {
             )
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Starting")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
-        #expect(technicalValue("displays_last_failure_code", in: item) == "None")
     }
 
     @Test func managedVirtualDisplayStatusShowsStartupFailureForRecentStartupFailure() throws {
@@ -403,11 +381,11 @@ struct DisplaySurfacePresentationMapperTests {
                 compensationFailureReason: nil
             )
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface, recentTransactions: [trace])
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Startup Failed")
         #expect(compactValue("displays_issue_status", in: item) == "Startup Failed")
     }
@@ -460,11 +438,11 @@ struct DisplaySurfacePresentationMapperTests {
                 compensationFailureReason: nil
             )
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(surface: surface, recentTransactions: [newerSuccess, olderFailure])
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Running")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
@@ -500,21 +478,22 @@ struct DisplaySurfacePresentationMapperTests {
             status: .completed,
             targetConfigID: configID
         )
-        let presentation = DisplaySurfacePresentationMapper.makePresentation(
+        let presentation = makePresentation(
             snapshot: managedVirtualSnapshot(
                 surface: surface,
                 recentTransactions: [newerSuccess, olderFailure]
             )
         )
 
-        let item = try #require(presentation.surfaces.first)
+        let item = try #require(presentation.items.first)
         #expect(compactValue("displays_virtual_display_status", in: item) == "Enabled · Not Running")
         #expect(compactValue("displays_issue_status", in: item).isEmpty)
     }
 
-    @Test func mapsFailureCodeFromLeaseWithoutEnablingStopActions() throws {
+    @Test func managedDisplayFailureUsesLeaseStatus() throws {
         let displayID: DisplayRuntimeDisplayID = 77
-        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
+        let configID = UUID()
+        let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
         let failedLease = makeLease(
             surfaceIdentity: identity,
             displayID: displayID,
@@ -524,33 +503,29 @@ struct DisplaySurfacePresentationMapperTests {
         )
         let snapshot = makeSnapshot(
             surfaces: [
-                physicalSurface(displayID: displayID, pixelWidth: 1280, pixelHeight: 720)
+                managedVirtualSurface(configID: configID, displayID: displayID, desiredEnabled: true, maximumPixelWidth: 1280, maximumPixelHeight: 720)
             ],
             consumerLeases: [DisplayRuntimeConsumerLeaseSnapshot(lease: failedLease)]
         )
 
-        let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
+        let surface = makePresentation(snapshot: snapshot).items[0]
 
-        #expect(surface.title == "Physical Display")
-        #expect(compactValue("displays_virtual_display_status", in: surface).isEmpty)
         #expect(compactValue("displays_preview_status", in: surface) == "Failed")
         #expect(compactValue("displays_issue_status", in: surface) == "Failed")
-        let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
-        #expect(openPreviewAction.isEnabled)
-        #expect(rowAction(.stopPreview, in: surface) == nil)
-        #expect(technicalValue("displays_last_failure_code", in: surface) == "capture_intent_permission_unavailable")
-        #expect(!technicalValue("displays_surface_identity_value", in: surface).contains(String(displayID)))
     }
 
-    @Test func surfaceFactsWithoutRuntimeDemandDoNotEnableControlState() throws {
+    @Test func captureFactsWithoutRuntimeDemandRemainOff() throws {
+        let configID = UUID()
         let displayID: DisplayRuntimeDisplayID = 78
         let sessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000078"))
         let snapshot = makeSnapshot(
             surfaces: [
-                physicalSurface(
+                managedVirtualSurface(
+                    configID: configID,
                     displayID: displayID,
-                    pixelWidth: 2560,
-                    pixelHeight: 1440,
+                    desiredEnabled: true,
+                    maximumPixelWidth: 2560,
+                    maximumPixelHeight: 1440,
                     capture: DisplayRuntimeCaptureSurfaceState(
                         displayID: displayID,
                         isStarting: true,
@@ -592,26 +567,19 @@ struct DisplaySurfacePresentationMapperTests {
             effectiveCaptureIntents: []
         )
 
-        let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
+        let surface = makePresentation(snapshot: snapshot).items[0]
 
         #expect(!surface.isPreviewing)
         #expect(!surface.isSharing)
         #expect(compactValue("displays_preview_status", in: surface) == "Off")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Off")
         #expect(compactValue("displays_viewer_count", in: surface) == "2")
-        let openPreviewAction = try #require(rowAction(.openPreview, in: surface))
-        #expect(openPreviewAction.isEnabled)
-        let openLANWebViewAction = try #require(rowAction(.openLANWebView, in: surface))
-        #expect(openLANWebViewAction.title == "Sharing")
-        #expect(openLANWebViewAction.help == "Sharing")
-        #expect(openLANWebViewAction.isEnabled)
-        #expect(rowAction(.stopPreview, in: surface) == nil)
-        #expect(rowAction(.stopLANWebView, in: surface) == nil)
     }
 
-    @Test func effectiveIntentRuntimeDemandDrivesAttachedStateWithoutStopActions() throws {
+    @Test func effectiveIntentRuntimeDemandDrivesStatus() throws {
         let displayID: DisplayRuntimeDisplayID = 79
-        let identity = DisplaySurfaceIdentity.physicalDisplay(displayID: displayID)
+        let configID = UUID()
+        let identity = DisplaySurfaceIdentity.managedVirtualDisplay(configID: configID)
         let aggregateDemand = DisplayRuntimeAggregatedDemand(
             surfaceIdentity: identity,
             surfaceEpoch: .initial,
@@ -629,7 +597,7 @@ struct DisplaySurfacePresentationMapperTests {
         )
         let snapshot = makeSnapshot(
             surfaces: [
-                physicalSurface(displayID: displayID, pixelWidth: 2560, pixelHeight: 1440)
+                managedVirtualSurface(configID: configID, displayID: displayID, desiredEnabled: true, maximumPixelWidth: 2560, maximumPixelHeight: 1440)
             ],
             consumerLeases: [],
             aggregatedDemands: [],
@@ -649,56 +617,39 @@ struct DisplaySurfacePresentationMapperTests {
             ]
         )
 
-        let surface = DisplaySurfacePresentationMapper.makePresentation(snapshot: snapshot).surfaces[0]
+        let surface = makePresentation(snapshot: snapshot).items[0]
 
         #expect(surface.isPreviewing)
         #expect(surface.isSharing)
         #expect(compactValue("displays_preview_status", in: surface) == "Previewing")
         #expect(compactValue("displays_lan_web_view_status", in: surface) == "Sharing")
-        let stopPreviewAction = try #require(rowAction(.stopPreview, in: surface))
-        #expect(!stopPreviewAction.isEnabled)
-        let stopLANWebViewAction = try #require(rowAction(.stopLANWebView, in: surface))
-        #expect(!stopLANWebViewAction.isEnabled)
-        #expect(technicalValue("displays_capture_state_status", in: surface) == "Capture, Attach, Applied")
-        #expect(technicalValue("displays_lease_status", in: surface) == "No attachments")
     }
 
-    private func compactIDs(in surface: DisplaySurfacePresentation) -> [String] {
+    private func makePresentation(
+        snapshot: DisplayRuntimeSnapshot,
+        virtualDisplayNamesByConfigID: [UUID: String] = [:]
+    ) -> HomeVirtualDisplaySurfacePresentation {
+        let configs = snapshot.surfaces.compactMap { surface -> VirtualDisplayConfig? in
+            guard let state = surface.managedVirtualDisplay else { return nil }
+            return VirtualDisplayConfig(
+                id: state.configID,
+                displayName: virtualDisplayNamesByConfigID[state.configID] ?? "Virtual Display",
+                serialNum: state.serialNumber ?? 14,
+                physicalWidth: 300,
+                physicalHeight: 190,
+                modes: [.init(width: 1920, height: 1080, refreshRate: 60, enableHiDPI: false)],
+                desiredEnabled: state.desiredEnabled ?? false
+            )
+        }
+        return HomeVirtualDisplayPresentationMapper.makePresentation(snapshot: snapshot, displayConfigs: configs)
+    }
+
+    private func compactIDs(in surface: HomeVirtualDisplayItemPresentation) -> [String] {
         surface.compactStatusItems.map(\.id)
     }
 
-    private func rowAction(
-        _ kind: DisplaySurfaceRowActionKind,
-        in surface: DisplaySurfacePresentation
-    ) -> DisplaySurfaceRowActionPresentation? {
-        surface.rowActions.first { $0.kind == kind }
-    }
-
-    private func compactValue(
-        _ accessibilityIdentifier: String,
-        in surface: DisplaySurfacePresentation
-    ) -> String {
-        value(accessibilityIdentifier, in: surface.compactStatusItems)
-    }
-
-    private func technicalValue(
-        _ accessibilityIdentifier: String,
-        in surface: DisplaySurfacePresentation
-    ) -> String {
-        value(accessibilityIdentifier, in: surface.technicalStatusItems)
-    }
-
-    private func value(
-        _ accessibilityIdentifier: String,
-        in items: [DisplaySurfaceStatusItemPresentation]
-    ) -> String {
-        items.first {
-            $0.accessibilityIdentifier == accessibilityIdentifier
-        }?.value ?? ""
-    }
-
-    private func technicalTitles(in surface: DisplaySurfacePresentation) -> [String] {
-        surface.technicalStatusItems.map(\.title)
+    private func compactValue(_ identifier: String, in surface: HomeVirtualDisplayItemPresentation) -> String {
+        surface.compactStatusItems.first { $0.accessibilityIdentifier == identifier }?.value ?? ""
     }
 
     private func makeLease(
@@ -832,6 +783,7 @@ struct DisplaySurfacePresentationMapperTests {
         serialNumber: UInt32 = 14,
         maximumPixelWidth: Int = 1920,
         maximumPixelHeight: Int = 1080,
+        capture: DisplayRuntimeCaptureSurfaceState? = nil,
         sharing: DisplayRuntimeSharingSurfaceState? = nil
     ) -> DisplaySurface {
         DisplaySurface(
@@ -840,7 +792,7 @@ struct DisplaySurfacePresentationMapperTests {
             currentDisplayID: displayID,
             isAuxiliary: false,
             catalog: nil,
-            capture: nil,
+            capture: capture,
             sharing: sharing,
             managedVirtualDisplay: DisplayRuntimeManagedVirtualDisplaySurfaceState(
                 configID: configID,

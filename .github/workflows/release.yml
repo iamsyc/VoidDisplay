@@ -222,10 +222,10 @@ jobs:
         include:
           - label: arm64
             arch: arm64
-            runs_on: macos-26
+            runs_on: xcode-27
           - label: intel64
             arch: x86_64
-            runs_on: macos-26-intel
+            runs_on: xcode-27
     steps:
       - name: Checkout trusted release tools
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

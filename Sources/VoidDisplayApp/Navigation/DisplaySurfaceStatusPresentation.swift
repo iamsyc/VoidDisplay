@@ -146,7 +146,6 @@ static func virtualDisplayStatus(
     }
 
     static func lanWebViewStatus(
-        surface: DisplaySurface,
         leases: [DisplayRuntimeConsumerLeaseSnapshot],
         hasRuntimeDemand: Bool
     ) -> (value: String, tone: DisplaySurfaceStatusTone) {
@@ -173,38 +172,6 @@ static func virtualDisplayStatus(
             return (String(localized: "Startup Failed"), .danger)
         }
         return (String(localized: "Failed"), .danger)
-    }
-
-static func captureStateStatus(
-        _ effectiveIntent: DisplayRuntimeEffectiveCaptureIntent?
-    ) -> String {
-        guard let effectiveIntent else {
-            return String(localized: "No active capture")
-        }
-        let kind: String
-        switch effectiveIntent.intent.kind {
-        case .capture:
-            kind = String(localized: "Capture")
-        case .drain:
-            kind = String(localized: "Drain")
-        }
-        let reason = reasonText(effectiveIntent.intent.reason)
-        let outcome = effectiveIntent.lastApplyResult.map {
-            outcomeText($0.outcome)
-        } ?? String(localized: "Pending")
-        return [kind, reason, outcome].joined(separator: ", ")
-    }
-
-    static func runtimeAttachmentStatus(_ leases: [DisplayRuntimeConsumerLeaseSnapshot]) -> String {
-        guard leases.isEmpty == false else {
-            return String(localized: "No attachments")
-        }
-        let activeCount = leases.filter { $0.state.contributesDemand }.count
-        return String(
-            format: String(localized: "%lld of %lld active"),
-            Int64(activeCount),
-            Int64(leases.count)
-        )
     }
 
     static func lastFailureCode(
@@ -236,31 +203,4 @@ static func captureStateStatus(
         return nil
     }
 
-    static func reasonText(_ reason: DisplayRuntimeCaptureIntentReason) -> String {
-        switch reason {
-        case .attach:
-            String(localized: "Attach")
-        case .detach:
-            String(localized: "Detach")
-        case .epochChanged:
-            String(localized: "Epoch changed")
-        case .transactionQuiesce:
-            String(localized: "Transaction quiesce")
-        case .performanceModeChanged:
-            String(localized: "Performance mode changed")
-        case .retry:
-            String(localized: "Retry")
-        }
-    }
-
-    static func outcomeText(_ outcome: DisplayRuntimeCaptureIntentApplyOutcome) -> String {
-        switch outcome {
-        case .applied:
-            String(localized: "Applied")
-        case .failed:
-            String(localized: "Failed")
-        case .ignored:
-            String(localized: "Ignored")
-        }
-    }
 }

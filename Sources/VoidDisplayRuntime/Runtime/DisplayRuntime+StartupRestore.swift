@@ -305,7 +305,7 @@ extension DisplayRuntime {
             affectedSurfaces: affectedSurfaces
         )
         guard !consumerTransition.hasQuiesceFailure else {
-            let restoreResults = await compensateConsumerQuiesceFailure(
+            let consumerCompensation = await compensateConsumerTransitionFailure(
                 consumerTransition,
                 transactionID: context.transactionID
             )
@@ -318,19 +318,16 @@ extension DisplayRuntime {
                 topologyResult: nil,
                 postSnapshot: makeSnapshot(),
                 recoverability: .retryable,
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                compensation: consumerCompensation
             )
         }
 
         await appendPhase(.executingVirtualDisplayCommand, transactionID: context.transactionID)
         guard let startupRestoreCommander else {
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
-            updateTrace(context.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: context.transactionID
+            )
             return await startupRestoreFailedConfigResult(
                 transactionID: context.transactionID,
                 configID: context.configID,
@@ -340,10 +337,7 @@ extension DisplayRuntime {
                 topologyResult: nil,
                 postSnapshot: makeSnapshot(),
                 recoverability: .retryable,
-                compensation: consumerCompensationResult(
-                    restoreResults: restoreResults,
-                    restoreIntentCount: consumerTransition.restoreIntentCount
-                )
+                compensation: consumerCompensation
             )
         }
 
@@ -359,7 +353,10 @@ extension DisplayRuntime {
                 )
             )
         } catch {
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: context.transactionID
+            )
             let failure = transactionFailure(
                 phase: .executingVirtualDisplayCommand,
                 reason: "startup_restore_lower_command_failed",
@@ -367,9 +364,6 @@ extension DisplayRuntime {
                 recoverability: .retryable
             )
             let postSnapshot = makeSnapshot()
-            updateTrace(context.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
             _ = await finalizeTransaction(
                 transactionID: context.transactionID,
                 kind: context.kind,
@@ -383,10 +377,7 @@ extension DisplayRuntime {
                         compensationOutcome: .notAttempted,
                         compensationFailureReason: nil
                     ),
-                    with: consumerCompensationResult(
-                        restoreResults: restoreResults,
-                        restoreIntentCount: consumerTransition.restoreIntentCount
-                    )
+                    with: consumerCompensation
                 ),
                 virtualDisplayCommandOutcome: .failed
             )
@@ -418,10 +409,10 @@ extension DisplayRuntime {
             } else {
                 topologyResult = nil
             }
-            let restoreResults = await compensateConsumerTransition(consumerTransition)
-            updateTrace(context.transactionID) { trace in
-                trace.replacing(restoreResults: restoreResults)
-            }
+            let consumerCompensation = await compensateConsumerTransitionFailure(
+                consumerTransition,
+                transactionID: context.transactionID
+            )
             return await startupRestoreFailedConfigResult(
                 transactionID: context.transactionID,
                 configID: context.configID,
@@ -438,10 +429,7 @@ extension DisplayRuntime {
                         compensationOutcome: commandResult.compensationOutcome,
                         compensationFailureReason: commandResult.compensationFailureReason
                     ),
-                    with: consumerCompensationResult(
-                        restoreResults: restoreResults,
-                        restoreIntentCount: consumerTransition.restoreIntentCount
-                    )
+                    with: consumerCompensation
                 )
             )
         }

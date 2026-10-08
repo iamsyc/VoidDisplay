@@ -110,7 +110,6 @@ extension DisplayRuntime {
             kind: kind,
             status: status,
             virtualDisplayCommandSucceeded: virtualDisplayCommandSucceeded,
-            hasSessionRecoveryFailures: status == .completedWithRecoveryFailures,
             desiredEnabled: desiredEnabled
         )
     }

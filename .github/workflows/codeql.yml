@@ -34,7 +34,7 @@ jobs:
       matrix:
         include:
           - language: swift
-            runs_on: macos-26
+            runs_on: xcode-27
             build_command: swift build
           - language: go
             runs_on: macos-26

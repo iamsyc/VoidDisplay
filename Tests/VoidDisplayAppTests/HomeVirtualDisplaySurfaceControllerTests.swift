@@ -32,7 +32,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
             capturePerformancePreferences: environment.capturePerformancePreferences,
             displayRuntime: runtime, sharingAdapter: environment.sharingAdapter
         )
-        let item = try #require(controller.presentation.items.first)
+        let item = try #require(controller.makeRenderState().presentation.items.first)
         let displayID = try #require(item.displayID)
         let display = SharedMockSCDisplay.make(displayID: displayID, width: 1920, height: 1080)
         let catalog = environment.capture.displayCatalogState
@@ -55,7 +55,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let oldLease = try #require(runtime.currentConsumerLeaseSnapshot().first)
         environment.sharing.stopSharing(displayID: displayID)
         runtime.captureSessionDidTerminate(displayID: displayID)
-        let retryItem = try #require(controller.presentation.items.first)
+        let retryItem = try #require(controller.makeRenderState().presentation.items.first)
         controller.perform(.webView, for: retryItem, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
         #expect(await waitUntil { runtime.currentConsumerLeaseSnapshot().contains { $0.id != oldLease.id } })
         #expect(runtime.consumerLease(leaseID: oldLease.id) == nil)
@@ -108,7 +108,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let service = MockSharingService()
         let facade = makeFacade()
         let (controller, environment) = makeController(sharingService: service, virtualDisplayFacade: facade)
-        let item = try #require(controller.presentation.items.first)
+        let item = try #require(controller.makeRenderState().presentation.items.first)
         controller.updateSharingPortDraft("70000")
 
         controller.perform(.webView, for: item, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
@@ -125,7 +125,7 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let failure = WebServiceStartFailure.listenerFailed(port: 18_085, message: "injected bind failure")
         service.startResult = .failed(failure)
         let (controller, environment) = makeController(sharingService: service, virtualDisplayFacade: makeFacade())
-        let item = try #require(controller.presentation.items.first)
+        let item = try #require(controller.makeRenderState().presentation.items.first)
         controller.updateSharingPortDraft("18085")
         let alertChanges = AsyncStream<Void> { continuation in
             withObservationTracking {
@@ -157,9 +157,9 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         let (controller, environment) = makeController(virtualDisplayFacade: facade)
         let item: HomeVirtualDisplayItemPresentation
         if case .moveUp = action {
-            item = try #require(controller.presentation.items.last)
+            item = try #require(controller.makeRenderState().presentation.items.last)
         } else {
-            item = try #require(controller.presentation.items.first)
+            item = try #require(controller.makeRenderState().presentation.items.first)
         }
 
         controller.perform(action, for: item, openPreviewWindow: { _ in }, openSharePage: { _ in }, editConfig: { _ in })
@@ -217,6 +217,28 @@ struct HomeVirtualDisplaySurfaceControllerTests {
         }
     }
 
+    @Test func oneRenderPassReadsEachRuntimeProviderOnce() {
+        let facade = makeFacade()
+        let (_, environment) = makeController(virtualDisplayFacade: facade)
+        let provider = CountingHomeRuntimeProvider(
+            virtualDisplay: DisplayRuntimeVirtualDisplayAdapter(commandFacade: facade).makeVirtualDisplaySnapshot()
+        )
+        let runtime = DisplayRuntime(
+            catalogProvider: provider, captureProvider: provider,
+            sharingProvider: provider, virtualDisplayProvider: provider
+        )
+        let controller = HomeVirtualDisplaySurfaceController(
+            capture: environment.capture, sharing: environment.sharing, virtualDisplay: environment.virtualDisplay,
+            capturePerformancePreferences: environment.capturePerformancePreferences,
+            displayRuntime: runtime, sharingAdapter: environment.sharingAdapter
+        )
+        let render = controller.makeRenderState()
+        #expect(render.itemStates.count == 2)
+        #expect(provider.readCounts == [1, 1, 1, 1])
+        #expect(!controller.isCatalogLoading)
+        #expect(provider.readCounts == [2, 1, 1, 1])
+    }
+
     private func makeFacade() -> MockVirtualDisplayFacade {
         let facade = MockVirtualDisplayFacade()
         facade.currentDisplayConfigs = [UInt32(9_904), 9_905].map { serial in
@@ -255,5 +277,34 @@ struct HomeVirtualDisplaySurfaceControllerTests {
             sharingAdapter: environment.sharingAdapter
         )
         return (controller, environment)
+    }
+}
+
+@MainActor
+private final class CountingHomeRuntimeProvider: DisplayRuntimeCatalogProviding, DisplayRuntimeCaptureProviding,
+    DisplayRuntimeSharingProviding, DisplayRuntimeVirtualDisplayProviding {
+    var readCounts = [0, 0, 0, 0]
+    let virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot
+
+    init(virtualDisplay: DisplayRuntimeVirtualDisplaySnapshot) { self.virtualDisplay = virtualDisplay }
+
+    func makeCatalogSnapshot() -> DisplayRuntimeCatalogSnapshot {
+        readCounts[0] += 1
+        return .empty
+    }
+
+    func makeCaptureSnapshot() -> DisplayRuntimeCaptureSnapshot {
+        readCounts[1] += 1
+        return .empty
+    }
+
+    func makeSharingSnapshot() -> DisplayRuntimeSharingSnapshot {
+        readCounts[2] += 1
+        return .empty
+    }
+
+    func makeVirtualDisplaySnapshot() -> DisplayRuntimeVirtualDisplaySnapshot {
+        readCounts[3] += 1
+        return virtualDisplay
     }
 }

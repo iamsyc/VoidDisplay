@@ -3,8 +3,12 @@ import Foundation
 @MainActor
 extension DisplayRuntime {
     package func makeSnapshot() -> DisplayRuntimeSnapshot {
-        let catalog = catalogProvider?.makeCatalogSnapshot() ?? .empty
+        let catalog = currentCatalogSnapshot()
         return makeSnapshot(catalog: catalog)
+    }
+
+    package func currentCatalogSnapshot() -> DisplayRuntimeCatalogSnapshot {
+        catalogProvider?.makeCatalogSnapshot() ?? .empty
     }
 
     func makeSnapshot(catalog: DisplayRuntimeCatalogSnapshot) -> DisplayRuntimeSnapshot {

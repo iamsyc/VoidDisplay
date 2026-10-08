@@ -133,10 +133,10 @@ extension AppBootstrap {
             return try await body()
         } catch let error as DisplayRuntimeExecutorError {
             throw error
-        } catch is CancellationError {
-            throw DisplayRuntimeExecutorError(operation: operation, reason: "cancelled")
+        } catch let error as CancellationError {
+            throw DisplayRuntimeExecutorError(operation: operation, reason: "cancelled", underlyingError: error)
         } catch {
-            throw DisplayRuntimeExecutorError(operation: operation, reason: "runtime_operation_failed")
+            throw DisplayRuntimeExecutorError(operation: operation, reason: "runtime_operation_failed", underlyingError: error)
         }
     }
 

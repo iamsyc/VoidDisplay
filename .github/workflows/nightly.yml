@@ -15,7 +15,7 @@ concurrency:
 jobs:
   core_regression:
     name: core-regression
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -52,7 +52,7 @@ jobs:
 
   full_ui_tests:
     name: full-ui-tests
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -108,7 +108,7 @@ jobs:
 
   coverage:
     name: coverage
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -187,10 +187,10 @@ jobs:
         include:
           - label: arm64
             arch: arm64
-            runs_on: macos-26
+            runs_on: xcode-27
           - label: intel64
             arch: x86_64
-            runs_on: macos-26-intel
+            runs_on: xcode-27
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

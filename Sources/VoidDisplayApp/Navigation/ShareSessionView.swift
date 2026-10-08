@@ -54,15 +54,10 @@ package struct ShareSessionView: View {
         ))
     }
 
-    private var item: HomeVirtualDisplayItemPresentation? {
-        controller.presentation.items.first { $0.id == configID }
-    }
-
-    private var isStarting: Bool {
-        item.map { controller.itemRenderStates(for: [$0]).first?.isWebViewStarting == true } ?? false
-    }
-
     package var body: some View {
+        let state = controller.makeRenderState().itemStates.first { $0.id == configID }
+        let item = state?.item
+        let isStarting = state?.isWebViewStarting == true
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(item?.title ?? String(localized: "Virtual Display")).font(.title2.bold())
@@ -145,7 +140,7 @@ package struct ShareSessionView: View {
     }
 
     private func refreshAddress() {
-        address = isStopping ? nil : item?.shareAddress
+        address = isStopping ? nil : controller.makeRenderState().presentation.items.first { $0.id == configID }?.shareAddress
         copied = false
     }
 }

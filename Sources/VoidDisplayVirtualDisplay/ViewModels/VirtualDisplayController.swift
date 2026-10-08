@@ -40,7 +40,6 @@ package final class VirtualDisplayController {
     @ObservationIgnored private let virtualDisplayFacade: any VirtualDisplayFacade
     @ObservationIgnored private var rebuildTasksByConfigId: [UUID: [UUID: Task<Void, Never>]] = [:]
     @ObservationIgnored private var appliedBadgeClearTasksByConfigId: [UUID: Task<Void, Never>] = [:]
-    @ObservationIgnored private var rebuildPresentationWaiterCountByConfigId: [UUID: Int] = [:]
     @ObservationIgnored private let runtimeExecutors: VirtualDisplayRuntimeExecutors
     private var virtualDisplaySnapshot: VirtualDisplaySnapshot
     private var rebuildPresentationState = RebuildPresentationState()
@@ -286,7 +285,6 @@ package final class VirtualDisplayController {
             }
         }
         rebuildTasksByConfigId[configId] = nil
-        rebuildPresentationWaiterCountByConfigId[configId] = nil
         appliedBadgeClearTasksByConfigId[configId]?.cancel()
         appliedBadgeClearTasksByConfigId[configId] = nil
         rebuildPresentationState.clear(configId: configId)
@@ -504,23 +502,12 @@ package final class VirtualDisplayController {
     }
 
     private func incrementRebuildPresentationWaiter(configId: UUID) {
-        let currentCount = rebuildPresentationWaiterCountByConfigId[configId] ?? 0
-        rebuildPresentationWaiterCountByConfigId[configId] = currentCount + 1
-        if currentCount == 0 {
-            rebuildPresentationState.beginRebuild(configId: configId)
-        }
+        rebuildPresentationState.beginRebuild(configId: configId)
         syncRebuildPresentationState()
     }
 
     private func decrementRebuildPresentationWaiter(configId: UUID) {
-        let currentCount = rebuildPresentationWaiterCountByConfigId[configId] ?? 0
-        let nextCount = max(0, currentCount - 1)
-        if nextCount == 0 {
-            rebuildPresentationWaiterCountByConfigId[configId] = nil
-            rebuildPresentationState.finishRebuild(configId: configId)
-        } else {
-            rebuildPresentationWaiterCountByConfigId[configId] = nextCount
-        }
+        rebuildPresentationState.finishRebuild(configId: configId)
         syncRebuildPresentationState()
     }
 

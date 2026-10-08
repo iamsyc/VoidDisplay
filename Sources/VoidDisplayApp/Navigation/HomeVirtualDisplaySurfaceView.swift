@@ -53,13 +53,15 @@ package struct HomeVirtualDisplaySurfaceView: View {
         @Bindable var bindableVirtualDisplay = virtualDisplay
         @Bindable var bindableViewModel = controller.viewModel
 
-        let presentation = controller.presentation
+        let render = controller.makeRenderState()
+        let presentation = render.presentation
         let metrics = HomeLayoutMetrics.current
-        let itemStates = controller.itemRenderStates(for: presentation.items)
+        let itemStates = render.itemStates
         let context = layoutContext(
             metrics: metrics,
             presentation: presentation,
-            itemStates: itemStates
+            itemStates: itemStates,
+            displayDetection: render.displayDetection
         )
 
         ScrollView {
@@ -202,7 +204,8 @@ package struct HomeVirtualDisplaySurfaceView: View {
     private func layoutContext(
         metrics: HomeLayoutMetrics,
         presentation: HomeVirtualDisplaySurfacePresentation,
-        itemStates: [HomeVirtualDisplayItemRenderState]
+        itemStates: [HomeVirtualDisplayItemRenderState],
+        displayDetection: HomeDisplayDetectionPresentation
     ) -> HomeLayoutContext {
         HomeLayoutContext(
             metrics: metrics,
@@ -214,7 +217,7 @@ package struct HomeVirtualDisplaySurfaceView: View {
             showsRescanToolbarTitle:
                 homeSurfaceWidth >= metrics.minimumContentWidthForRescanToolbarTitle,
             permissionStatus: controller.permissionStatus,
-            displayDetection: controller.displayDetectionPresentation,
+            displayDetection: displayDetection,
             sharingSettings: controller.sharingSettings,
             actions: HomeLayoutActions(
                 createVirtualDisplay: {

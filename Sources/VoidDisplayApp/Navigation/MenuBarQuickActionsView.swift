@@ -43,8 +43,9 @@ package struct MenuBarQuickActionsView: View {
         @Bindable var bindableController = controller
         @Bindable var bindableViewModel = controller.viewModel
 
-        let presentation = controller.presentation
-        let itemStates = controller.itemRenderStates(for: presentation.items)
+        let render = controller.makeRenderState()
+        let presentation = render.presentation
+        let itemStates = render.itemStates
 
         VStack(alignment: .leading, spacing: 0) {
             MenuBarQuickActionsHeader(

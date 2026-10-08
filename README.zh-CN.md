@@ -68,7 +68,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 ### 从源码构建
 
 1. 克隆本仓库。
-2. 用 Xcode 26.6 打开 `VoidDisplay.xcworkspace`。
+2. 用 Xcode 27.0 打开 `VoidDisplay.xcworkspace`。
 3. 构建并运行（⌘R）。
 
 ## 🚀 快速上手
@@ -126,7 +126,7 @@ xattr -dr com.apple.quarantine "/Applications/VoidDisplay.app"
 
 ### 构建与测试
 
-环境要求：Xcode 26.6、Swift 6.3、macOS 15.6 或更高版本，以及 Intel 或 Apple Silicon Mac。
+环境要求：Xcode 27.0、Swift 6.4、macOS 15.6 或更高版本，以及 Intel 或 Apple Silicon Mac。
 
 ```bash
 # 安装并检查本地工具
