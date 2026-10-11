@@ -3,11 +3,38 @@
 import AppKit
 import AVFoundation
 import CoreGraphics
+import SwiftUI
 import Testing
 
 @MainActor
 @Suite(.serialized)
 struct ZeroCopyPreviewRendererTests {
+    @Test func closedLayerHostReleasesRenderer() async throws {
+        var renderer: ZeroCopyPreviewRenderer? = ZeroCopyPreviewRenderer()
+        let frames = try TestCapturePreviewSession(sourcePixelSize: CGSize(width: 640, height: 360))
+        frames.attachPreviewSink(try #require(renderer))
+        let rendered = await waitUntil { renderer?.hasReceivedFrame == true }
+        #expect(rendered)
+        var window: NSWindow? = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        window?.isReleasedWhenClosed = false
+        window?.contentView = NSHostingView(rootView: ZeroCopyPreviewLayerView(renderer: try #require(renderer)))
+        window?.orderFront(nil)
+        let hosted = await waitUntil {
+            window?.contentView.map(Self.containsLayerHost) == true
+        }
+        #expect(hosted)
+        weak let releasedRenderer = renderer
+        weak let releasedWindow = window
+        window?.close()
+        window = nil
+        renderer = nil
+        let released = await waitUntil { releasedWindow == nil && releasedRenderer == nil }
+        #expect(released)
+    }
+
     @Test func backgroundSubmissionRendersOnMainActorAndResumesAfterFlush() async throws {
         let renderer = ZeroCopyPreviewRenderer()
         let session = try TestCapturePreviewSession(
@@ -120,7 +147,7 @@ struct ZeroCopyPreviewRendererTests {
 
     private func waitUntil(
         timeout: Duration = .seconds(1),
-        condition: @escaping @Sendable () async -> Bool
+        condition: @escaping @MainActor () async -> Bool
     ) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
@@ -131,5 +158,9 @@ struct ZeroCopyPreviewRendererTests {
             await Task.yield()
         }
         return await condition()
+    }
+
+    private static func containsLayerHost(_ view: NSView) -> Bool {
+        view is ZeroCopyHostView || view.subviews.contains(where: containsLayerHost)
     }
 }

@@ -15,6 +15,12 @@ on:
   schedule:
     - cron: '31 17 * * 2'
   workflow_dispatch:
+    inputs:
+      scan_swift:
+        description: Attempt Swift scanning (Xcode 27 / Swift 6.4 is currently unsupported)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,18 +33,14 @@ concurrency:
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ matrix.language == 'swift' && 'xcode-27' || 'macos-26' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: swift
-            runs_on: xcode-27
-            build_command: swift build
-          - language: go
-            runs_on: macos-26
-            build_command: cd Tools/VoidDisplayRelay && go test ./...
+        # Restore automatic Swift coverage only after upstream Swift 6.4 support
+        # and a successful repository analysis/upload. See docs/testing/ci-workflows.md.
+        language: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.scan_swift && '["go", "swift"]' || '["go"]') }}
 
     steps:
       - name: Checkout
@@ -61,11 +63,40 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: manual
 
-      - name: Manual build
+      - name: Build Swift
+        if: ${{ matrix.language == 'swift' }}
         shell: bash
-        run: |
-          set -euo pipefail
-          ${{ matrix.build_command }}
+        run: swift build
+
+      - name: Build Go
+        if: ${{ matrix.language == 'go' }}
+        shell: bash
+        working-directory: Tools/VoidDisplayRelay
+        run: go test ./...
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@e46ed2cbd01164d986452f91f178727624ae40d7 # v4
+
+      - name: Report scanning coverage
+        if: ${{ always() && matrix.language == 'go' }}
+        env:
+          SWIFT_SCAN_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.scan_swift }}
+        shell: bash
+        run: |
+          {
+            echo '## CodeQL coverage'
+            echo
+            echo 'Go scanning is included in this run; inspect this job for its result.'
+            echo
+            if [[ "$SWIFT_SCAN_REQUESTED" == 'true' ]]; then
+              echo 'Swift scanning was manually requested; inspect the analyze (swift) job for its result.'
+            else
+              echo '**Swift scanning was not run.** Automatic Swift scanning is paused because CodeQL does not support Xcode 27 / Swift 6.4.'
+            fi
+            echo
+            echo 'Successful Go scanning does not establish Swift scanning coverage.'
+            echo
+            echo '[Upstream limitation](https://github.com/github/codeql/issues/22742#issuecomment-5949040893)'
+            echo
+            echo 'Restore automatic Swift scanning after official Swift 6.4 support and successful database creation, analysis, and upload for this repository.'
+          } >> "$GITHUB_STEP_SUMMARY"

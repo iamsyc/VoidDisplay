@@ -1,7 +1,10 @@
 import AppKit
+import Observation
+@Observable
 @MainActor
 package final class CapturePreviewWindowCoordinator: NSObject {
-    private weak var window: NSWindow?
+    package private(set) weak var window: NSWindow?
+    @ObservationIgnored
     nonisolated(unsafe) private var forwardedDelegate: (any NSWindowDelegate)?
     private var aspect = CGSize.zero
     private var shouldLockAspect = true

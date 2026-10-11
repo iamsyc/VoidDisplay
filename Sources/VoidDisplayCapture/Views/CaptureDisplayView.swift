@@ -12,7 +12,6 @@ package struct CaptureDisplayView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var renderer = ZeroCopyPreviewRenderer()
-    @State private var window: NSWindow?
     @State private var windowCoordinator = CapturePreviewWindowCoordinator()
     @State private var hasAppliedInitialSize = false
     @State private var scaleMode: CapturePreviewScaleMode = .fit
@@ -46,7 +45,7 @@ package struct CaptureDisplayView: View {
     }
 
     private var currentScaleFactor: CGFloat {
-        max(1, window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+        max(1, windowCoordinator.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
     }
 
     private var nativeFrameSizeInPoints: CGSize {
@@ -132,7 +131,6 @@ package struct CaptureDisplayView: View {
         }
         .overlay {
             CapturePreviewWindowSizingHost(
-                window: $window,
                 hasAppliedInitialSize: $hasAppliedInitialSize,
                 coordinator: windowCoordinator,
                 scaleMode: scaleMode,
