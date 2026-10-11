@@ -51,6 +51,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder, @
     private var session: VTCompressionSession?
     private var width: Int32 = 0
     private var height: Int32 = 0
+    private var scalingScratch: [UInt8] = []
 
     // The factory keeps the measured production default; only the benchmark
     // selects one slot. Pending images are copied out of the capture pool.
@@ -70,6 +71,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder, @
     }
 
     package var diagnostics: ScreenEncoderDiagnostics { onExecutor { frames.diagnostics } }
+    package var scalingScratchByteCount: Int { onExecutor { scalingScratch.count } }
     package var resolutionAlignment: Int { 2 }
     package var applyAlignmentToAllSimulcastLayers: Bool { true }
     package var supportsNativeHandle: Bool { true }
@@ -141,6 +143,7 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder, @
 
     private func stopSession() {
         frames.stop()
+        scalingScratch.removeAll(keepingCapacity: false)
         if let session {
             self.session = nil
             VTCompressionSessionInvalidate(session)
@@ -222,8 +225,12 @@ package nonisolated final class ScreenVideoEncoder: NSObject, RTCVideoEncoder, @
             return buffer
         }
         let count = native.bufferSizeForCroppingAndScaling(toWidth: width, height: height)
-        var scratch = [UInt8](repeating: 0, count: Int(count))
-        return scratch.withUnsafeMutableBufferPointer {
+        // cropAndScale uses scratch synchronously on this encoder's executor.
+        // Keep the session's high-water size as input crops/dimensions change.
+        if scalingScratch.count < Int(count) {
+            scalingScratch = [UInt8](repeating: 0, count: Int(count))
+        }
+        return scalingScratch.withUnsafeMutableBufferPointer {
             native.cropAndScale(to: buffer, withTempBuffer: $0.baseAddress)
         } ? buffer : nil
     }

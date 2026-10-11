@@ -51,16 +51,17 @@ func (w *viewerRTPWriter) enqueue(packet *rtp.Packet) bool {
 	if w.closed {
 		return false
 	}
-	packetCopy := packet.Clone()
-	w.rewriteHeaderExtensions(packetCopy)
-	select {
-	case w.queue <- packetCopy:
-		return true
-	default:
+	// All producers hold mu, the consumer only removes packets, and queue is
+	// never closed. A free slot cannot disappear before the send below.
+	if len(w.queue) == cap(w.queue) {
 		w.dropped.Add(1)
 		w.logger.Debug("viewer RTP queue full", "room", w.roomID, "clientID", w.clientID)
 		return false
 	}
+	packetCopy := packet.Clone()
+	w.rewriteHeaderExtensions(packetCopy)
+	w.queue <- packetCopy
+	return true
 }
 
 func (w *viewerRTPWriter) setViewerExtensions(extensions map[string]uint8) {
@@ -121,8 +122,10 @@ func (w *viewerRTPWriter) run() {
 		case <-w.done:
 			return
 		case packet := <-w.queue:
-			if err := w.sink.WriteRTP(packet); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-				w.logger.Debug("viewer RTP write failed", "room", w.roomID, "clientID", w.clientID, "error", err)
+			if err := w.sink.WriteRTP(packet); err != nil {
+				if !errors.Is(err, io.ErrClosedPipe) {
+					w.logger.Debug("viewer RTP write failed", "room", w.roomID, "clientID", w.clientID, "error", err)
+				}
 			} else {
 				w.written.Add(1)
 			}
