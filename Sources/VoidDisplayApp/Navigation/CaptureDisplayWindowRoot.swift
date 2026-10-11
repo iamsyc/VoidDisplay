@@ -12,7 +12,7 @@ package struct CaptureDisplayWindowRoot: View {
     package let previewID: CapturePreviewID?
     private let previewActions: CapturePreviewActions
     private let sharingStatusProvider: CaptureSharingStatusProvider
-    @State private var waitingWindow: NSWindow?
+    @State private var waitingWindowTitle = ""
 
     package init(
         previewID: CapturePreviewID?,
@@ -36,13 +36,12 @@ package struct CaptureDisplayWindowRoot: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel(Text(waitingWindow?.title ?? ""))
+                .accessibilityLabel(Text(waitingWindowTitle))
                 .accessibilityIdentifier("capture_preview_waiting_for_identity")
                 .navigationTitle(String(localized: "Preview"))
                 .overlay {
                     CapturePreviewWindowAccessor { window in
-                        guard waitingWindow !== window else { return }
-                        waitingWindow = window
+                        waitingWindowTitle = window.title
                     }
                     .allowsHitTesting(false)
                 }

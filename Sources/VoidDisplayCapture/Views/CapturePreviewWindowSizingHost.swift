@@ -3,7 +3,6 @@ import CoreGraphics
 import SwiftUI
 
 package struct CapturePreviewWindowSizingHost: View {
-    @Binding var window: NSWindow?
     @Binding var hasAppliedInitialSize: Bool
 
     let coordinator: CapturePreviewWindowCoordinator
@@ -22,27 +21,26 @@ package struct CapturePreviewWindowSizingHost: View {
         }
         .onAppear {
             updateCoordinator()
-            if let window {
+            if let window = coordinator.window {
                 applyInitialWindowSize(to: window)
             }
         }
         .onChange(of: scaleMode) { _, _ in
             updateCoordinator()
-            if shouldLockAspect, let window {
+            if shouldLockAspect, let window = coordinator.window {
                 coordinator.snapWindowToAspect(window)
             }
         }
         .onChange(of: framePixelSize) { _, _ in
             updateCoordinator()
-            if let window {
+            if let window = coordinator.window {
                 applyInitialWindowSize(to: window)
             }
         }
     }
 
     private func configure(_ resolvedWindow: NSWindow) {
-        guard window !== resolvedWindow else { return }
-        window = resolvedWindow
+        guard coordinator.window !== resolvedWindow else { return }
         coordinator.attach(to: resolvedWindow)
         updateCoordinator()
         applyInitialWindowSize(to: resolvedWindow)
