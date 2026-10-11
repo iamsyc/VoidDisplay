@@ -2,11 +2,120 @@ package relay
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"log/slog"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/pion/rtp"
 )
+
+type rtpSinkFunc func(*rtp.Packet) error
+
+func (f rtpSinkFunc) WriteRTP(packet *rtp.Packet) error { return f(packet) }
+
+func TestViewerWriterCountsOnlySuccessfulWrites(t *testing.T) {
+	results := []error{nil, io.ErrClosedPipe, fmt.Errorf("wrapped: %w", io.ErrClosedPipe), io.ErrUnexpectedEOF, nil}
+	writer := &viewerRTPWriter{
+		queue: make(chan *rtp.Packet, len(results)), done: make(chan struct{}), logger: slog.Default(),
+	}
+	attempts := 0
+	writer.sink = rtpSinkFunc(func(_ *rtp.Packet) error {
+		err := results[attempts]
+		attempts++
+		if attempts == len(results) {
+			writer.close()
+		}
+		return err
+	})
+	for range results {
+		writer.queue <- &rtp.Packet{}
+	}
+	writer.run()
+	written, dropped := writer.stats()
+	if written != 2 || dropped != 0 {
+		t.Fatalf("written=%d queue-dropped=%d, want 2 and 0; failed writes are not successful writes or queue overflow", written, dropped)
+	}
+}
+
+func TestViewerWriterFullQueuePreservesQueuedPacketAndRecovers(t *testing.T) {
+	writer := &viewerRTPWriter{queue: make(chan *rtp.Packet, 1), logger: slog.Default()}
+	first := &rtp.Packet{Header: rtp.Header{SequenceNumber: 1}, Payload: []byte{1}}
+	second := &rtp.Packet{Header: rtp.Header{SequenceNumber: 2}, Payload: []byte{2}}
+	if !writer.enqueue(first) || writer.enqueue(second) {
+		t.Fatal("queue must accept the first packet and reject overflow")
+	}
+	if got := <-writer.queue; got.SequenceNumber != 1 {
+		t.Fatalf("overflow replaced queued packet with %d", got.SequenceNumber)
+	}
+	if !writer.enqueue(second) {
+		t.Fatal("queue did not recover after draining")
+	}
+	second.Payload[0] = 99
+	if got := <-writer.queue; got.SequenceNumber != 2 || got.Payload[0] != 2 {
+		t.Fatalf("queued packet changed: %+v", got)
+	}
+	written, dropped := writer.stats()
+	if written != 0 || dropped != 1 {
+		t.Fatalf("written=%d dropped=%d, want 0 and 1", written, dropped)
+	}
+}
+
+func BenchmarkViewerWriterFullQueue(b *testing.B) {
+	writer := &viewerRTPWriter{queue: make(chan *rtp.Packet, 1), logger: slog.Default()}
+	packet := &rtp.Packet{Payload: make([]byte, 1200)}
+	writer.queue <- packet
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		writer.enqueue(packet)
+	}
+}
+
+func BenchmarkViewerWriterAvailableQueue(b *testing.B) {
+	writer := &viewerRTPWriter{queue: make(chan *rtp.Packet, 1), logger: slog.Default()}
+	packet := &rtp.Packet{Payload: make([]byte, 1200)}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		writer.enqueue(packet)
+		<-writer.queue
+	}
+}
+
+func TestViewerWriterConcurrentProducersRespectCapacity(t *testing.T) {
+	writer := &viewerRTPWriter{queue: make(chan *rtp.Packet, 8), done: make(chan struct{}), logger: slog.Default()}
+	var producers sync.WaitGroup
+	for producer := 0; producer < 4; producer++ {
+		producers.Add(1)
+		go func() {
+			defer producers.Done()
+			for i := 0; i < 16; i++ {
+				writer.enqueue(&rtp.Packet{Payload: []byte{1}})
+			}
+		}()
+	}
+	finished := make(chan struct{})
+	go func() { producers.Wait(); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("concurrent producers blocked on a full queue")
+	}
+	if queued := len(writer.queue); queued != 8 {
+		t.Fatalf("queued %d packets, want 8", queued)
+	}
+	if _, dropped := writer.stats(); dropped != 56 {
+		t.Fatalf("dropped %d packets, want 56", dropped)
+	}
+	writer.close()
+	if writer.enqueue(&rtp.Packet{}) {
+		t.Fatal("closed writer accepted a packet")
+	}
+}
 
 func TestViewerWriterRejectsEnqueueAfterClose(t *testing.T) {
 	sink := &recordingSink{}

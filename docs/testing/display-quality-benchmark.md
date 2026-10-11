@@ -84,3 +84,19 @@ scripts/dev/validate.sh --skip-ui-smoke
 常规单元测试只验证纯指标、参数校验、NAL 边界、统计语义和不启动编码 session 的输入失败路径，不调用真实采集或硬件编解码。独立硬件回归需显式设置 `VOIDDISPLAY_ENCODER_HARDWARE_TESTS=1` 并运行 `scripts/ci/unit.sh --filter 'ScreenEncoder.*HardwareTests'`，覆盖最后输入、回调重入、停止/重启及在途销毁；仍不请求采集权限。性能实验需显式调用基准入口，其缺失不是自动化测试通过后的隐含证据。
 
 本基准未覆盖 capture-to-photon、浏览器预计呈现、跨设备时钟同步、网络背压、CPU/RSS 正式采样和接收端能力预算。真实应用验收继续遵循[测试策略](./testing-strategy.md)：签名副本、30 秒预热与 90 秒采样的三轮交错比较、同帧身份和时间边界验证，以及独立的接收设备矩阵。
+
+## 热路径分配与计数回归
+
+编码器在现有串行执行器内复用缩放临时缓冲，仅在容量不足时扩容；`scalingScratchByteCount` 返回当前会话保留的字节数。尺寸或裁剪变化仍逐帧计算所需容量，停止、重启以及重启失败均释放旧缓冲。同尺寸直接复制路径不分配缩放缓冲；这不改变 VideoToolbox 自有输入池、双在途槽、码率或 HEVC 契约。复用以会话内保留最大临时容量为代价，减少逐帧分配和清零，不能据此推断总 RSS 或端到端延迟下降。
+
+Relay 的 `written` 只统计 `WriteRTP` 返回成功；普通错误及关闭管道错误均不计成功，也不混入表示队列溢出的 `dropped`。该成功仍不代表接收端已经显示。所有入队生产者持有同一把锁；消费者只移走包，队列不关闭，因此在锁内确认空位后可安全复制并入队。队列满时保留已有包、丢弃本次新包，关闭后拒收；每个接收端仍拥有独立的包副本。
+
+```sh
+VOIDDISPLAY_ENCODER_HARDWARE_TESTS=1 scripts/ci/unit.sh \
+  --filter 'ScreenEncoderHardwareTests/(scalingScratch|failedRestart)'
+go -C Tools/VoidDisplayRelay test -race ./...
+go -C Tools/VoidDisplayRelay test ./internal/relay -run '^$' \
+  -bench 'BenchmarkViewerWriter(Full|Available)Queue' -benchmem -count=3
+```
+
+硬件回归使用合成 NV12 输入，覆盖 1080p/720p 输出、最多 4K 输入、裁剪、容量复用与扩容、停止和失败重启，不采集桌面或改变显示器。Relay 微基准分别测量有空位和队列已满的单次入队操作；分配量与吞吐仅代表该代码段，不能替代真实网络、浏览器或 capture-to-photon 测量。
