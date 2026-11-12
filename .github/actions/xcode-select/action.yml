@@ -5,7 +5,7 @@ inputs:
   preferred_path:
     description: Preferred DEVELOPER_DIR path.
     required: false
-    default: /Applications/Xcode_27.0.0.app/Contents/Developer
+    default: /Applications/Xcode_27.2.app/Contents/Developer
   fallback_path:
     description: Fallback DEVELOPER_DIR path when preferred path is unavailable.
     required: false
@@ -13,7 +13,7 @@ inputs:
   expected_xcode_version_prefix:
     description: Required Xcode version prefix.
     required: false
-    default: "27.0"
+    default: "27.2"
   expected_swift_version_prefix:
     description: Required Swift version prefix.
     required: false
@@ -37,14 +37,13 @@ runs:
         expected_swift="${{ inputs.expected_swift_version_prefix }}"
 
         selected=""
-        for candidate in "$preferred" "/Applications/Xcode-27.0.0.app/Contents/Developer" "/Applications/Xcode_27.0.app/Contents/Developer" "/Applications/Xcode_27.0.0.app/Contents/Developer" "$fallback"; do
+        for candidate in "$preferred" "/Applications/Xcode_27.2.0.app/Contents/Developer" "/Applications/Xcode-27.2.0.app/Contents/Developer" "$fallback"; do
           if [ ! -d "$candidate" ]; then
             continue
           fi
 
-          sudo xcode-select -s "$candidate"
-          xcode_ver="$(xcodebuild -version | awk 'NR==1{print $2}')"
-          swift_ver="$(swift --version 2>&1 | awk 'match($0, /Swift version [0-9.]+/) { print substr($0, RSTART + 14, RLENGTH - 14); exit }')"
+          xcode_ver="$(DEVELOPER_DIR="$candidate" xcodebuild -version | awk 'NR==1{print $2}')" || continue
+          swift_ver="$(DEVELOPER_DIR="$candidate" swift --version 2>&1 | awk 'match($0, /Swift version [0-9.]+/) { print substr($0, RSTART + 14, RLENGTH - 14); exit }')" || continue
 
           case "$xcode_ver" in
             "$expected_xcode"*) ;;
@@ -71,6 +70,8 @@ runs:
           exit 1
         fi
 
+        sudo xcode-select -s "$selected"
+        export DEVELOPER_DIR="$selected"
         xcode_ver="$(xcodebuild -version | awk 'NR==1{print $2}')"
         xcode_build="$(xcodebuild -version | awk 'NR==2{print $3}')"
         echo "Selected Xcode ${xcode_ver} at ${selected}"

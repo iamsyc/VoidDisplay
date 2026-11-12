@@ -13,6 +13,8 @@ source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 source "$TOOL_ROOT/scripts/lib/parallel.sh"
 # shellcheck source=scripts/lib/checkpoint.sh
 source "$TOOL_ROOT/scripts/lib/checkpoint.sh"
+# shellcheck source=scripts/lib/xcode.sh
+source "$TOOL_ROOT/scripts/lib/xcode.sh"
 
 cd "$ROOT_DIR"
 
@@ -92,6 +94,9 @@ xcode_preflight=("$TOOL_ROOT/scripts/ci/xcode.sh" --action build --configuration
 if [[ "$RUN_UI_SMOKE" == "true" ]]; then
 	xcode_preflight=("$TOOL_ROOT/scripts/ci/ui_smoke.sh" --build-only --only-testing "$UI_SELECTOR")
 fi
+
+failure_phase="toolchain-selection"
+select_required_xcode
 
 failure_phase="preflight"
 preflight_started_at="$(date +%s)"
