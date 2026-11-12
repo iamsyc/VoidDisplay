@@ -146,7 +146,7 @@ tool_runner="$fixture_bin/tool-runner"
 write_fixture_executable "$tool_runner" \
 	'#!/usr/bin/env bash' \
 	'case "${0##*/}" in' \
-	'  xcodebuild) printf '\''Xcode 27.0\nBuild version Fixture\n'\'' ;;' \
+	'  xcodebuild) printf '\''Xcode 27.2\nBuild version Fixture\n'\'' ;;' \
 	'  swift) printf '\''Swift version 6.4\n'\'' ;;' \
 	'  go) printf '\''go version go1.fixture darwin/arm64\n'\'' ;;' \
 	'  node) printf '\''vfixture\n'\'' ;;' \

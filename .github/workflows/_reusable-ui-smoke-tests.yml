@@ -78,6 +78,9 @@ jobs:
 
           ROOT_DIR="$GITHUB_WORKSPACE" TOOL_ROOT="$tool_root" "$tool_root/scripts/dev/bootstrap.sh" --profile ui-smoke
 
+      - name: Select Xcode
+        uses: ./.github/actions/xcode-select
+
       - name: Prepare UI desktop
         shell: bash
         run: |

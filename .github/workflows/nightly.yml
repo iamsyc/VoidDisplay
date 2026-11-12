@@ -71,6 +71,9 @@ jobs:
           path: .ai-tmp/nightly-full-ui/DerivedData/ModuleCache.noindex
           key: xcode-meta-nightly-ui-${{ runner.os }}-${{ hashFiles('VoidDisplay.xcodeproj/**', '**/Package.resolved') }}
 
+      - name: Select Xcode
+        uses: ./.github/actions/xcode-select
+
       - name: Prepare UI desktop
         shell: bash
         run: |

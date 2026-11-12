@@ -16,9 +16,9 @@ The workflow set is:
 
 The repository uses GitHub Free compatible capabilities only: standard macOS hosted runners, Dependabot, Dependency Review, CodeQL, release artifacts, and artifact attestations. Larger runners, self-hosted runners, paid scanning services, Developer ID signing, notarization, and stapling are out of scope.
 
-Xcode selection prefers the Xcode `27.0.0` installation and requires `xcodebuild` version prefix `27.0` with Swift `6.4` by default. Set `EXPECTED_XCODE_VERSION_PREFIX` and `EXPECTED_SWIFT_VERSION_PREFIX` only for an intentional temporary override.
+Xcode selection prefers the Xcode `27.2.0` installation and requires `xcodebuild` version prefix `27.2` with Swift `6.4` by default. Local scripts select the toolchain through `DEVELOPER_DIR` for their own process. Set `EXPECTED_XCODE_VERSION_PREFIX` and `EXPECTED_SWIFT_VERSION_PREFIX` only for an intentional temporary override.
 
-Jobs that compile Swift packages, build the app, run UI tests, or collect Swift coverage use the standard `xcode-27` hosted runner. Manually requested Swift CodeQL scanning uses the same runner. The selector only chooses an installed toolchain, so these jobs require an image that includes Xcode 27.0. The [official image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists the installed toolchain.
+Jobs that compile Swift packages, build the app, run UI tests, or collect Swift coverage use the standard `xcode-27` hosted runner. Manually requested Swift CodeQL scanning uses the same runner. The selector only chooses an installed toolchain, so these jobs require an image that includes Xcode 27.2. The [official image inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md) lists the installed toolchain.
 
 The pinned actionlint version does not yet recognize `xcode-27`. `.github/actionlint.yaml` adds this exact hosted label to its inventory through the linter's `self-hosted-runner.labels` configuration key. Changes to this configuration trigger main CI; other unknown labels still fail validation.
 
@@ -28,7 +28,7 @@ Local command selection and environment-failure handling are documented in [Test
 
 ## CodeQL Coverage
 
-`codeql.yml` runs Go scanning on eligible pushes to `main`, the existing weekly schedule, and manual dispatch. Automatic Swift scanning is paused: [CodeQL's supported language matrix](https://codeql.github.com/docs/codeql-overview/supported-languages-and-frameworks/) currently ends at Swift 6.3, and the [CodeQL product team's explanation](https://github.com/github/codeql/issues/22742#issuecomment-5949040893) identifies build-tracing limitations in macOS 27 / Xcode 27. The repository retains Xcode 27.0, Swift 6.4, Swift language mode 6, and deployment target 15.6.
+`codeql.yml` runs Go scanning on eligible pushes to `main`, the existing weekly schedule, and manual dispatch. Automatic Swift scanning is paused: [CodeQL's supported language matrix](https://codeql.github.com/docs/codeql-overview/supported-languages-and-frameworks/) currently ends at Swift 6.3, and the [CodeQL product team's explanation](https://github.com/github/codeql/issues/22742#issuecomment-5949040893) identifies build-tracing limitations in macOS 27 / Xcode 27. The repository retains Xcode 27.2, Swift 6.4, Swift language mode 6, and deployment target 15.6.
 
 Manual dispatch exposes `scan_swift`, a boolean that defaults to `false`. Selecting it requests both Go and Swift scanning; the Swift job uses Xcode 27 and preserves build, analysis, and upload failures. It is available for checking upstream support and does not bypass the current limitation. Pushes and scheduled runs include only Go.
 

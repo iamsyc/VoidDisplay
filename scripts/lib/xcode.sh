@@ -12,7 +12,7 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 	}
 
 	select_required_xcode() {
-		local expected_xcode_prefix="${EXPECTED_XCODE_VERSION_PREFIX:-27.0}"
+		local expected_xcode_prefix="${EXPECTED_XCODE_VERSION_PREFIX:-27.2}"
 		local expected_swift_prefix="${EXPECTED_SWIFT_VERSION_PREFIX:-6.4}"
 		local candidates=()
 		local candidate
@@ -21,30 +21,22 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 			candidates+=("$DEVELOPER_DIR")
 		fi
 		candidates+=(
-			"/Applications/Xcode-27.0.0.app/Contents/Developer"
-			"/Applications/Xcode_27.0.app/Contents/Developer"
-			"/Applications/Xcode_27.0.0.app/Contents/Developer"
+			"/Applications/Xcode-27.2.0.app/Contents/Developer"
+			"/Applications/Xcode_27.2.app/Contents/Developer"
+			"/Applications/Xcode_27.2.0.app/Contents/Developer"
 			"/Applications/Xcode.app/Contents/Developer"
 		)
 
 		for candidate in "${candidates[@]}"; do
 			[[ -d "$candidate" ]] || continue
 
-			if [[ "$(xcode-select -p 2>/dev/null || true)" == "$candidate" ]]; then
-				export DEVELOPER_DIR="$candidate"
-			elif sudo -n xcode-select -s "$candidate" >/dev/null 2>&1; then
-				export DEVELOPER_DIR="$candidate"
-			else
-				export DEVELOPER_DIR="$candidate"
-				warn "Using DEVELOPER_DIR=$candidate because xcode-select could not switch without sudo."
-			fi
-
 			local xcode_version
 			local swift_version
-			xcode_version="$(xcodebuild -version | awk 'NR==1{print $2}')"
-			swift_version="$(swift --version 2>&1 | awk 'match($0, /Swift version [0-9.]+/) { print substr($0, RSTART + 14, RLENGTH - 14); exit }')"
+			xcode_version="$(DEVELOPER_DIR="$candidate" xcodebuild -version | awk 'NR==1{print $2}')" || continue
+			swift_version="$(DEVELOPER_DIR="$candidate" swift --version 2>&1 | awk 'match($0, /Swift version [0-9.]+/) { print substr($0, RSTART + 14, RLENGTH - 14); exit }')" || continue
 
 			if [[ "$xcode_version" == "$expected_xcode_prefix"* && "$swift_version" == "$expected_swift_prefix"* ]]; then
+				export DEVELOPER_DIR="$candidate"
 				info "Selected Xcode $xcode_version at $candidate"
 				info "Swift version $swift_version"
 				return 0
@@ -53,7 +45,8 @@ if [[ -z "${VOIDDISPLAY_XCODE_SH_SOURCED:-}" ]]; then
 			warn "Rejected Xcode at $candidate: Xcode=$xcode_version Swift=$swift_version"
 		done
 
-		die "Required Xcode $expected_xcode_prefix with Swift $expected_swift_prefix was not found."
+		warn "Required Xcode $expected_xcode_prefix with Swift $expected_swift_prefix was not found."
+		return 1
 	}
 
 	xcode_cache_suffix() {

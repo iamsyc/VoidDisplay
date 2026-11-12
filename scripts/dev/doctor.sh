@@ -5,6 +5,8 @@ set -euo pipefail
 source "${BASH_SOURCE[0]%/*}/../lib/contract.sh"
 # shellcheck source=scripts/lib/common.sh
 source "$TOOL_ROOT/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/xcode.sh
+source "$TOOL_ROOT/scripts/lib/xcode.sh"
 # shellcheck source=scripts/lib/artifacts.sh
 source "$TOOL_ROOT/scripts/lib/artifacts.sh"
 
@@ -12,7 +14,7 @@ cd "$ROOT_DIR"
 
 OUT_DIR="${OUT_DIR:-$(make_artifact_dir doctor)}"
 SUMMARY_PATH="$OUT_DIR/doctor-summary.json"
-EXPECTED_XCODE_PREFIX="${EXPECTED_XCODE_VERSION_PREFIX:-27.0}"
+EXPECTED_XCODE_PREFIX="${EXPECTED_XCODE_VERSION_PREFIX:-27.2}"
 EXPECTED_SWIFT_PREFIX="${EXPECTED_SWIFT_VERSION_PREFIX:-6.4}"
 
 while [[ $# -gt 0 ]]; do
@@ -49,11 +51,16 @@ xcode_version="missing"
 swift_version="missing"
 go_version="missing"
 
+status="passed"
+if ! select_required_xcode; then
+	status="failed"
+fi
+
 if command -v xcodebuild >/dev/null 2>&1; then
-	xcode_version="$(xcodebuild -version | awk 'NR==1{print $2}')"
+	xcode_version="$(xcodebuild -version 2>/dev/null | awk 'NR==1{print $2}')" || xcode_version="missing"
 fi
 if command -v swift >/dev/null 2>&1; then
-	swift_version="$(swift --version 2>&1 | awk 'match($0, /Swift version [0-9.]+/) { print substr($0, RSTART + 14, RLENGTH - 14); exit }')"
+	swift_version="$(swift --version 2>&1 | awk 'match($0, /Swift version [0-9.]+/) { print substr($0, RSTART + 14, RLENGTH - 14); exit }')" || swift_version="missing"
 fi
 if command -v go >/dev/null 2>&1; then
 	go_version="$(go version | awk '{print $3}')"
@@ -69,7 +76,6 @@ for resolved_path in \
 	fi
 done
 
-status="passed"
 if [[ "${#missing[@]}" -gt 0 ]]; then
 	status="failed"
 fi
